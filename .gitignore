@@ -1,0 +1,26 @@
+node_modules/
+dist/
+out/
+coverage/
+test-results/
+/release/
+*.log
+.env
+.vidcom-tools/
+.DS_Store
+Thumbs.db
+.temp-documents/
+# Runtime state
+config/*.json
+!config/*.example.json
+
+# Legacy app owns its detailed Python and generated-media ignores.
+
+# Next.js
+/.next/
+/build
+.vercel
+next-env.d.ts
+*.tsbuildinfo
+.env*
+!.env.example

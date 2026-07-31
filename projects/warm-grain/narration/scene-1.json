@@ -1,0 +1,10 @@
+{
+  "sceneId": "scene-1",
+  "text": "Ship faster, meet less",
+  "voice": "af_heart",
+  "status": "mock",
+  "audioPath": "narration/scene-1.wav",
+  "command": "hyperframes tts --text \"Ship faster, meet less\" --voice af_heart -o narration/scene-1.wav",
+  "revision": 6,
+  "updatedAt": "2026-07-31T11:23:53.012Z"
+}
