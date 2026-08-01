@@ -1,6 +1,6 @@
 # Spec Core Backend Foundation — Detailed Goals
 
-> **Reference**: [Main Spec](./spec-core-backend-foundation-complete.md)
+> **Reference**: [Main Spec](./spec-core-backend-foundation-inprocess.md)
 >
 > **Source scope**: [Phase 1 — Nền móng](../../../product-features/15-build-order.md#giai-đoạn-1--nền-móng-34-tuần), mục 1.1–1.13.
 
@@ -297,7 +297,7 @@ Nguyên tắc domain bị chi phối xuyên suốt: **P1** (`data-*` là source 
 - **Status**: **Approved**
 - **Confirmed by**: Chủ dự án (alvin0)
 - **Confirmation date**: 2026-08-01
-- **Notes / required revisions before design**: Chờ phản hồi về phạm vi R1–R13, đặc biệt mốc “`src/` chỉ còn một server forward entry” và planning baseline story points.
+- **Notes / required revisions before design**: Không còn — phạm vi R1–R13 và planning baseline đã được chủ dự án duyệt ngày 2026-08-01.
 - **Sửa đổi sau review ngày 2026-08-01**:
   - R1 AC1/AC1a — bổ sung package `worker`, chốt Phase 1 chạy worker in-process.
   - R2 AC2 — viết lại theo EARS hợp lệ (`BEFORE … THEN` không phải pattern EARS).

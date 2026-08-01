@@ -15,6 +15,7 @@
     "test": "vitest run",
     "test:boundaries": "node scripts/verify-import-boundaries.mjs",
     "test:golden": "vitest run tests/golden",
+    "test:runtime-smoke": "node scripts/verify-next-runtime.mjs",
     "db:generate": "drizzle-kit generate",
     "typecheck": "tsc --noEmit"
   },

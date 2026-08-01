@@ -18,6 +18,8 @@ export interface JobTypeDefinition {
   idempotent: boolean;
   timeoutMs?: number;
   maxAttempts?: number;
+  retryBaseDelayMs?: number;
+  retryMaxDelayMs?: number;
   run(input: unknown, context: JobExecutionContext): Promise<unknown>;
   cleanup?(job: Job): Promise<void>;
 }
@@ -33,6 +35,14 @@ export class JobCancelledError extends Error {
   constructor() {
     super("job cancelled");
     this.name = "JobCancelledError";
+  }
+}
+
+/** Explicit marker for transient failures that an idempotent job may retry. */
+export class JobRetryableError extends Error {
+  constructor(message: string, options?: ErrorOptions) {
+    super(message, options);
+    this.name = "JobRetryableError";
   }
 }
 
@@ -144,16 +154,18 @@ export class JobScheduler {
     if (!definition) return;
     const controller = new AbortController();
     let lastProgress = job.progress;
+    let lastStage = job.stage;
     let lastProgressAt = Number.NEGATIVE_INFINITY;
     const context: JobExecutionContext = {
       job,
       signal: controller.signal,
       updateProgress: async (progress, stage) => {
         const bounded = Math.min(1, Math.max(0, progress));
-        if (bounded <= lastProgress) return;
+        if (bounded < lastProgress || (bounded === lastProgress && stage === lastStage)) return;
         const now = this.clock.now().getTime();
-        if (bounded < 1 && now - lastProgressAt < 250) return;
+        if (bounded > lastProgress && bounded < 1 && now - lastProgressAt < 250) return;
         lastProgress = bounded;
+        lastStage = stage;
         lastProgressAt = now;
         await this.store.updateProgress(job.id as JobId, bounded, stage);
         const persisted = await this.store.get(job.id as JobId);
@@ -183,7 +195,7 @@ export class JobScheduler {
         new Promise<never>((_resolve, reject) => {
           timeout = this.timers.setTimeout(() => {
             controller.abort();
-            reject(new Error(`job timed out after ${timeoutMs}ms`));
+            reject(new JobRetryableError(`job timed out after ${timeoutMs}ms`));
           }, timeoutMs);
         }),
       ]);
@@ -200,12 +212,24 @@ export class JobScheduler {
           type: "job.done", projectId: job.projectId, payload: { jobId: job.id, status: "cancelled" },
         });
       } else {
-        if (definition.idempotent && job.attempt < (definition.maxAttempts ?? 3)) {
+        if (definition.idempotent
+          && error instanceof JobRetryableError
+          && job.attempt < (definition.maxAttempts ?? 3)) {
+          await this.store.updateProgress(job.id as JobId, lastProgress, "retrying");
+          const baseDelay = Math.max(0, definition.retryBaseDelayMs ?? 1_000);
+          const maxDelay = Math.max(baseDelay, definition.retryMaxDelayMs ?? 30_000);
+          const delayMs = Math.min(maxDelay, baseDelay * (2 ** Math.max(0, job.attempt - 1)));
+          await new Promise<void>((resolve) => this.timers.setTimeout(resolve, delayMs));
           await this.store.requeue(job.id as JobId);
+          const persisted = await this.store.get(job.id as JobId);
           await this.emit({
             type: "job.progress",
             projectId: job.projectId,
-            payload: { jobId: job.id, progress: job.progress, stage: "retrying" },
+            payload: {
+              jobId: job.id,
+              progress: persisted?.progress ?? lastProgress,
+              stage: persisted?.stage ?? "retrying",
+            },
           });
           return;
         }

@@ -241,6 +241,14 @@ describe("loopback listener", () => {
       await new Promise<void>((resolve, reject) => occupied.close((error) => error ? reject(error) : resolve()));
     }
   });
+
+  it("closes the socket when the listener app factory throws", async () => {
+    await expect(bindLoopback(() => { throw new Error("factory failed"); }))
+      .rejects.toMatchObject({
+        name: "LoopbackBindError",
+        cause: expect.objectContaining({ message: "factory failed" }),
+      });
+  });
 });
 
 describe("bridge credential file", () => {

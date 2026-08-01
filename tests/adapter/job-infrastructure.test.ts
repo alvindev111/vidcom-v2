@@ -8,6 +8,7 @@ import { ErrorCode, type ContentHash, type ProjectId } from "@vidcom/contracts";
 import {
   canonicalizeJobInput,
   JobScheduler,
+  JobRetryableError,
   type JobExecutionContext,
   type JobId,
   type JobTypeDefinition,
@@ -98,6 +99,7 @@ describe("SQLite job infrastructure", () => {
         store.claim("job_claim" as JobId, "worker_b"),
       ])).filter(Boolean)).toHaveLength(1);
       await store.updateProgress("job_claim" as JobId, 0.7, "later");
+      await store.updateProgress("job_claim" as JobId, 0.7, "same-progress-new-stage");
       await store.updateProgress("job_claim" as JobId, 0.4, "earlier");
       await store.finish("job_claim" as JobId, { status: "succeeded", result: { ok: true } });
       await store.requestCancel("job_claim" as JobId);
@@ -105,7 +107,7 @@ describe("SQLite job infrastructure", () => {
         status: "failed", error: { code: ErrorCode.Internal, message: "too late" },
       });
       expect(await store.get("job_claim" as JobId)).toMatchObject({
-        status: "succeeded", progress: 1, stage: "later", result: { ok: true }, attempt: 1,
+        status: "succeeded", progress: 1, stage: "same-progress-new-stage", result: { ok: true }, attempt: 1,
       });
     } finally {
       await database.destroy();
@@ -147,6 +149,66 @@ describe("SQLite job infrastructure", () => {
     }
   });
 
+  it("keeps stage-only scheduler updates and persists retrying before emitting it", async () => {
+    const { database, store, clock } = await fixture();
+    const emitted: Array<{ type: string; payload: Record<string, unknown> }> = [];
+    let runs = 0;
+    const definition: JobTypeDefinition = {
+      type: "noop-probe", concurrency: 1, idempotent: true, maxAttempts: 2, retryBaseDelayMs: 0,
+      async run(_input, context) {
+        runs += 1;
+        await context.updateProgress(0, runs === 1 ? "started" : "resumed");
+        if (runs === 1) throw new JobRetryableError("transient");
+        return { ok: true };
+      },
+    };
+    try {
+      await store.enqueue(newJob("job_stage", p1, {}));
+      const scheduler = new JobScheduler(store, clock, createSequentialIdPort(), [definition], {
+        async append(event) { emitted.push(event as typeof emitted[number]); return emitted.length; },
+        async readFrom() { return { events: [], gap: false }; },
+        async latestSeq() { return 0; },
+      }, nodeSchedulerTimers);
+      await scheduler.runAvailable();
+      await scheduler.waitForIdle();
+      expect(await store.get("job_stage" as JobId)).toMatchObject({
+        status: "succeeded", stage: "resumed", attempt: 2,
+      });
+      expect(emitted).toContainEqual(expect.objectContaining({
+        type: "job.progress", payload: expect.objectContaining({ stage: "retrying" }),
+      }));
+    } finally {
+      await database.destroy();
+    }
+  });
+
+  it("times out work and bounds transient retries with exponential-delay configuration", async () => {
+    const { database, store, clock } = await fixture();
+    const definition: JobTypeDefinition = {
+      type: "noop-probe",
+      concurrency: 1,
+      idempotent: true,
+      timeoutMs: 5,
+      maxAttempts: 2,
+      retryBaseDelayMs: 1,
+      retryMaxDelayMs: 2,
+      async run() { return new Promise(() => {}); },
+    };
+    try {
+      await store.enqueue(newJob("job_timeout", p1, {}));
+      const scheduler = new JobScheduler(store, clock, createSequentialIdPort(), [definition], undefined, nodeSchedulerTimers);
+      await scheduler.runAvailable();
+      await scheduler.waitForIdle();
+      expect(await store.get("job_timeout" as JobId)).toMatchObject({
+        status: "failed",
+        attempt: 2,
+        error: { message: "job timed out after 5ms" },
+      });
+    } finally {
+      await database.destroy();
+    }
+  });
+
   it("cancels at a noop-probe safe point and records worker failures", async () => {
     const { database, store, clock } = await fixture();
     let release!: () => void;
@@ -172,10 +234,10 @@ describe("SQLite job infrastructure", () => {
       await store.requestCancel("job_cancel" as JobId);
       release();
       await scheduler.waitForIdle();
-      expect(waits).toBe(4);
+      expect(waits).toBe(2);
       expect(await store.get("job_cancel" as JobId)).toMatchObject({ status: "cancelled", progress: 0.5 });
       expect(await store.get("job_fail" as JobId)).toMatchObject({
-        status: "failed", attempt: 3,
+        status: "failed", attempt: 1,
         error: { code: ErrorCode.Internal, message: "noop-probe failed at step 1" },
       });
       expect(cleaned).toContain("job_cancel");

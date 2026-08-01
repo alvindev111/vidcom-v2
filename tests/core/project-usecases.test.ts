@@ -239,6 +239,16 @@ describe("project write and legacy use cases without HTTP", () => {
       ok: true, value: { sceneId: "scene-2", start: 4, duration: 4 },
     });
     expect(runtime.mutations).toHaveLength(3);
+    expect(runtime.mutations[0]).toMatchObject({
+      kind: "file",
+      path: "compositions/scene-2.html",
+      expectedContentHash: null,
+    });
+    const scene = (runtime.mutations[0] as { content: string }).content;
+    expect(scene).toContain("<style>");
+    expect(scene).toContain("width:1920px;height:1080px");
+    expect(scene).toContain("<h2>Next</h2>");
+    expect(runtime.mutations[2]).toMatchObject({ kind: "file", path: "narration/scene-2.json" });
   });
   const missingWrites: Array<[string, (deps: ProjectWriteDependencies) => Promise<unknown>]> = [
     ["save", (deps) => saveSourceFile(deps, { projectId, path: "index.html" as RelPath, content: "x", expectedContentHash: null }, "user")],

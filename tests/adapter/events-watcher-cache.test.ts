@@ -1,4 +1,6 @@
 import { createHash } from "node:crypto";
+import { EventEmitter } from "node:events";
+import type { FSWatcher } from "node:fs";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -21,7 +23,7 @@ import {
   type AbsolutePath,
   type CompositionModel,
 } from "@vidcom/core";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { dbOne, dbRun } from "../support/database";
 
 const roots: string[] = [];
@@ -49,6 +51,40 @@ afterEach(async () => {
 });
 
 describe("event outbox, watcher and project cache", () => {
+  it("restarts a failed filesystem watcher and cancels future restarts on close", async () => {
+    const ref = {
+      id: projectId,
+      slug: "watch",
+      root: "/workspace/watch" as AbsolutePath,
+      entry: "index.html",
+    } as const;
+    const created: Array<EventEmitter & { close: ReturnType<typeof vi.fn> }> = [];
+    const factory = () => {
+      const value = Object.assign(new EventEmitter(), { close: vi.fn() });
+      created.push(value);
+      return value as unknown as FSWatcher;
+    };
+    const watcher = new WorkspaceWatcher(
+      { async listProjects() { return [ref]; } } as never,
+      {} as never,
+      {} as never,
+      new ProjectCache(),
+      new WrittenHashTracker(),
+      mutableClock("2026-08-01T00:00:00.000Z"),
+      1,
+      factory,
+    );
+    await watcher.start();
+    created[0]!.emit("error", new Error("watch failed"));
+    await eventually(async () => created.length === 2);
+    expect(created[0]!.close).toHaveBeenCalledOnce();
+    watcher.close();
+    const countAfterClose = created.length;
+    created[1]!.emit("error", new Error("closed"));
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    expect(created).toHaveLength(countAfterClose);
+  });
+
   it("resumes from durable sequence after reopen and reports retention gaps", async () => {
     const root = await mkdtemp(path.join(tmpdir(), "vidcom-events-"));
     roots.push(root);

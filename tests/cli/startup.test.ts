@@ -4,7 +4,7 @@ import path from "node:path";
 
 import { describe, expect, it } from "vitest";
 
-import { runStartupSequence, startVidcomFoundation, StartupError, type StartupStepName } from "@vidcom/cli";
+import { createBootstrapNonce, runStartupSequence, startVidcomFoundation, StartupError, type StartupStepName } from "@vidcom/cli";
 import type { AbsolutePath } from "@vidcom/core";
 import { createFixedClock, createSequentialIdPort } from "../support/deterministic";
 
@@ -37,6 +37,9 @@ function steps(log: string[], fail?: StartupStepName) {
 }
 
 describe("startup order", () => {
+  it("creates a nonce accepted by the 32-byte bootstrap contract", () => {
+    expect(Buffer.from(createBootstrapNonce(), "base64url")).toHaveLength(32);
+  });
   it("runs every prerequisite before opening the listener", async () => {
     const log: string[] = [];
     await expect(runStartupSequence(steps(log))).resolves.toBe("listener");
@@ -85,6 +88,61 @@ describe("startup order", () => {
       expect(JSON.parse(await readFile(path.join(project, "vidcom.json"), "utf8"))).toEqual({ id: "project_0002" });
       expect(runtime.listener).toEqual({ port: 4321 });
       await runtime.stop();
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("unwinds scheduler and watcher when listener startup fails", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "vidcom-startup-unwind-"));
+    const workspace = path.join(root, "workspace");
+    const project = path.join(workspace, "project");
+    await mkdir(project, { recursive: true });
+    await writeFile(path.join(project, "hyperframes.json"), "{}\n");
+    await writeFile(path.join(project, "index.html"), '<main data-composition-id="root"></main>');
+    const lifecycle: string[] = [];
+    try {
+      await expect(startVidcomFoundation({
+        appDataRoot: path.join(root, "app-data"),
+        workspaceRoot: workspace as AbsolutePath,
+        holderId: "test:unwind",
+        clock: createFixedClock("2026-08-01T00:00:00.000Z"),
+        ids: createSequentialIdPort(),
+      }, {
+        async recoverJobs() {},
+        async startScheduler() { return { stop() { lifecycle.push("scheduler.stop"); } }; },
+        async startWatcher() { return { close() { lifecycle.push("watcher.close"); } }; },
+        async openListener() { throw new Error("bind failed"); },
+      })).rejects.toMatchObject({ name: "StartupError", step: "listener" });
+      expect(lifecycle).toEqual(["scheduler.stop", "watcher.close"]);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("stops listener before background work on a successful shutdown", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "vidcom-startup-stop-"));
+    const workspace = path.join(root, "workspace");
+    const project = path.join(workspace, "project");
+    await mkdir(project, { recursive: true });
+    await writeFile(path.join(project, "hyperframes.json"), "{}\n");
+    await writeFile(path.join(project, "index.html"), '<main data-composition-id="root"></main>');
+    const lifecycle: string[] = [];
+    try {
+      const runtime = await startVidcomFoundation({
+        appDataRoot: path.join(root, "app-data"),
+        workspaceRoot: workspace as AbsolutePath,
+        holderId: "test:stop",
+        clock: createFixedClock("2026-08-01T00:00:00.000Z"),
+        ids: createSequentialIdPort(),
+      }, {
+        async recoverJobs() {},
+        async startScheduler() { return { stop() { lifecycle.push("scheduler.stop"); } }; },
+        async startWatcher() { return { close() { lifecycle.push("watcher.close"); } }; },
+        async openListener() { return { close() { lifecycle.push("listener.close"); } }; },
+      });
+      await runtime.stop();
+      expect(lifecycle).toEqual(["listener.close", "scheduler.stop", "watcher.close"]);
     } finally {
       await rm(root, { recursive: true, force: true });
     }

@@ -46,3 +46,6 @@ jobs:
 
       - name: Production build
         run: bun run build
+
+      - name: Real Next runtime and SSE smoke
+        run: bun run test:runtime-smoke

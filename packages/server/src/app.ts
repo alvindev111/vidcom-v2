@@ -17,7 +17,7 @@ import { createProjectReadRoutes, type ProjectReadRouteDependencies } from "./ro
 import { createJobRoutes } from "./routes/jobs";
 import { createEventRoutes } from "./routes/events";
 import { createProjectWriteRoutes, type ProjectWriteRouteDependencies } from "./routes/project-writes";
-import { ErrorCode } from "@vidcom/contracts";
+import { ErrorCode, MAX_BGM_BYTES, MAX_SOURCE_BYTES } from "@vidcom/contracts";
 
 export interface ServerAppDependencies {
   port: number;
@@ -55,8 +55,8 @@ export function createServerApp(deps: ServerAppDependencies): Hono {
   register("auth", sessionAuth(deps.sessions));
   const limits = {
     regular: bodyLimit({ maxSize: 1_048_576, onError: bodyTooLarge }),
-    source: bodyLimit({ maxSize: 2 * 1_048_576 + 65_536, onError: bodyTooLarge }),
-    bgm: bodyLimit({ maxSize: 20 * 1_048_576 + 65_536, onError: bodyTooLarge }),
+    source: bodyLimit({ maxSize: MAX_SOURCE_BYTES + 65_536, onError: bodyTooLarge }),
+    bgm: bodyLimit({ maxSize: MAX_BGM_BYTES + 65_536, onError: bodyTooLarge }),
   };
   app.use("*", observed("bodyLimit", async (c, next) => {
     const pathname = c.req.path;

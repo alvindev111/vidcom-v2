@@ -8,6 +8,9 @@ const contentHashSchema = z.string().regex(/^sha256:[0-9a-f]{64}$/);
 const isoTimestampSchema = z.iso.datetime({ offset: true });
 const hexColorSchema = z.string().regex(/^#[0-9a-fA-F]{6}$/);
 
+export const MAX_SOURCE_BYTES = 2 * 1024 * 1024;
+export const MAX_BGM_BYTES = 20 * 1024 * 1024;
+
 export const DiagnosticSchema = z.strictObject({
   severity: z.enum(["error", "warning", "info"]),
   code: z.string().min(1),
@@ -286,7 +289,7 @@ export const ReadProjectFileResponseSchema = z.strictObject({ file: ProjectFileS
 
 export const PutProjectFileRequestSchema = z.strictObject({
   path: relativePathSchema,
-  content: z.string().max(2 * 1024 * 1024),
+  content: z.string().max(MAX_SOURCE_BYTES),
   expectedContentHash: z.string().max(255).nullable(),
 });
 export const PutProjectFileResponseSchema = z.strictObject({
@@ -342,7 +345,7 @@ export const DomainEventSchema = z.strictObject({
 export const AssetResponseSchema = z.instanceof(Uint8Array);
 
 export const UploadBgmRequestSchema = z.strictObject({
-  file: z.file().max(20 * 1024 * 1024),
+  file: z.file().max(MAX_BGM_BYTES),
   expectedRevision: z.preprocess(
     (value) => typeof value === "string" && value.trim() !== "" ? Number(value) : value,
     z.number().int().nonnegative(),

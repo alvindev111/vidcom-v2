@@ -1,5 +1,7 @@
 import {
   ErrorCode,
+  MAX_BGM_BYTES,
+  MAX_SOURCE_BYTES,
   LegacySceneMutationRequestSchema,
   PatchPreviewSettingsRequestSchema,
   PatchSceneScriptRequestSchema,
@@ -80,7 +82,13 @@ export function createProjectWriteRoutes(dependencies: ProjectWriteRouteDependen
   const routes = new Hono();
   routes.put("/v1/projects/:id/files", async (c) => {
     const parsed = PutProjectFileRequestSchema.safeParse(await json(c));
-    if (!parsed.success) fail({ code: ErrorCode.SchemaInvalid, message: "file write payload is invalid" });
+    if (!parsed.success) {
+      const oversized = parsed.error.issues.some((issue) => issue.code === "too_big" && issue.path[0] === "content");
+      fail({
+        code: oversized ? ErrorCode.TooLarge : ErrorCode.SchemaInvalid,
+        message: oversized ? `source content exceeds ${MAX_SOURCE_BYTES} bytes` : "file write payload is invalid",
+      });
+    }
     return c.json(valueOf(await saveSourceFile(dependencies, {
       projectId: projectId(c),
       path: parsed.data.path as RelPath,
@@ -100,7 +108,16 @@ export function createProjectWriteRoutes(dependencies: ProjectWriteRouteDependen
     const parsed = UploadBgmRequestSchema.safeParse({
       file: form?.get("file"), expectedRevision: form?.get("expectedRevision"),
     });
-    if (!parsed.success) fail({ code: ErrorCode.PreconditionRequired, message: "file and expectedRevision are required" });
+    if (!parsed.success) {
+      const oversized = parsed.error.issues.some((issue) => issue.code === "too_big" && issue.path[0] === "file");
+      const missingPrecondition = form?.get("expectedRevision") === null || form?.get("expectedRevision") === "";
+      fail({
+        code: oversized ? ErrorCode.TooLarge : missingPrecondition ? ErrorCode.PreconditionRequired : ErrorCode.SchemaInvalid,
+        message: oversized
+          ? `BGM file exceeds ${MAX_BGM_BYTES} bytes`
+          : missingPrecondition ? "expectedRevision is required" : "BGM upload payload is invalid",
+      });
+    }
     const bytes = new Uint8Array(await parsed.data.file.arrayBuffer());
     if (!audioMagic(bytes)) fail({ code: ErrorCode.UnsupportedMedia, message: "BGM file signature is unsupported" });
     return c.json(valueOf(await uploadBgm(dependencies, {

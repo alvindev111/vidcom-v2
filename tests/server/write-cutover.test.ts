@@ -91,6 +91,12 @@ describe("Phase N write cutover", () => {
       });
       expect(legacyVersion.status).toBe(400);
       expect(await legacyVersion.json()).toMatchObject({ error: { code: "version_format_legacy" } });
+      const executableAsset = await request(`/api/v1/projects/${id}/files`, {
+        method: "PUT", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ path: "assets/payload.exe", content: "MZ", expectedContentHash: null }),
+      });
+      expect(executableAsset.status).toBe(403);
+      expect(await executableAsset.json()).toMatchObject({ error: { code: "asset_not_allowed" } });
 
       const patch = await request(`/api/v1/projects/${id}/preview-settings`, {
         method: "PATCH", headers: { "Content-Type": "application/json" },

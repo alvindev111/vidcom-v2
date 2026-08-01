@@ -131,6 +131,8 @@ A (monorepo + boundary lint + CI typecheck/lint + skills + notes)
 
 ## Phase A: Monorepo, import boundary, CI
 
+**Skill**: `bun/SKILL.md` · **Read first**: steering 01, 02; `package.json`, `eslint.config.mjs`, `next.config.ts`
+
 **Addresses**: R1 · **Design**: §4.2, §5.1, D1 · **Prerequisite**: không
 
 **Tasks**:
@@ -151,11 +153,11 @@ A (monorepo + boundary lint + CI typecheck/lint + skills + notes)
   - Node 24 pin minor version
   - _Requirements: R2 AC1_ — _Design: §11.1_
 - [x] A.5 **Sửa steering 07 §1** — một `vidcom.sqlite` thay `jobs.sqlite` + `audit.sqlite`
-  - _Design: D5_
+  - _Requirements: R11 AC10_ — _Design: D5_
 - [x] A.6 Tạo `implementation-notes.html` rỗng có khung sẵn (Tailwind CDN, tiếng Việt)
-  - _Requirements: —_ — _AGENTS.md mục 4_
+  - _Requirements: nghĩa vụ quy trình AGENTS.md mục 4_ — _Design: §11.1_
 - [x] A.7 Test: fixture import sai chiều → lint fail
-  - _Requirements: R1 AC6_
+  - _Requirements: R1 AC6_ — _Design: D1, §11.1_
 
 **Acceptance Criteria**:
 - [x] `npx tsc --noEmit` sạch toàn workspace
@@ -168,6 +170,8 @@ A (monorepo + boundary lint + CI typecheck/lint + skills + notes)
 ---
 
 ## Phase B: Golden baseline — GATE
+
+**Skill**: `bun/SKILL.md` · **Read first**: steering 10 §4; legacy SDK module và hai project mẫu
 
 **Addresses**: R2 · **Design**: §11.2, Finding 3 · **Prerequisite**: A
 
@@ -203,6 +207,8 @@ A (monorepo + boundary lint + CI typecheck/lint + skills + notes)
 
 ## Phase C: `contracts` — schema, ErrorCode, Diagnostic
 
+**Skill**: không cần skill riêng · **Read first**: steering 04 §3, 06; legacy studio types/settings
+
 **Addresses**: R7 · **Design**: §5.1, §6.3, §8 · **Prerequisite**: B
 
 **Tasks**:
@@ -228,6 +234,8 @@ A (monorepo + boundary lint + CI typecheck/lint + skills + notes)
 
 ## Phase D: Domain, port, WorkspaceResolver, PathPolicy
 
+**Skill**: không cần skill riêng · **Read first**: steering 03 §2, 11 §4; legacy project resolver
+
 **Addresses**: R3, R4 (một phần), R6 (phần thuần) · **Design**: §5.2, §5.3, §5.6 · **Prerequisite**: **C**
 
 **Tasks**:
@@ -245,7 +253,7 @@ A (monorepo + boundary lint + CI typecheck/lint + skills + notes)
 - [x] D.5 `PathPolicy` thuần: `checkSyntax`, `checkPurpose` — không chạm đĩa
   - _Requirements: R6 AC1, AC2_ — _Design: §5.6, D14_
 - [x] D.6 Unit test: invariant, resolver order, PathPolicy 5 purpose
-  - _Requirements: R2 AC6_
+  - _Requirements: R2 AC6_ — _Design: §5.2, §5.3, §5.6_
 
 **Acceptance Criteria**:
 - [x] `packages/core` không import `node:fs`, `hono`, `next`, `react`, adapter — lint xác nhận
@@ -256,6 +264,8 @@ A (monorepo + boundary lint + CI typecheck/lint + skills + notes)
 ---
 
 ## Phase E: `adapter/fs`
+
+**Skill**: không cần skill riêng · **Read first**: steering 06 §5, 09 §5–6; legacy path/file helpers
 
 **Addresses**: R6 · **Design**: §5.6, D14 · **Prerequisite**: D
 
@@ -278,10 +288,10 @@ A (monorepo + boundary lint + CI typecheck/lint + skills + notes)
   - _Requirements: R4 AC1_ — _Design: §5.2_
 - [x] E.6 Integration test filesystem thật — containment
   - `..`, absolute path, symlink escape, **ancestor** symlink escape × 5 purpose
-  - _Requirements: R6 AC7, R2 AC5_
+  - _Requirements: R6 AC7, R2 AC5_ — _Design: §5.6, §11.3_
 - [x] E.7 Integration test — allowlist & tạo mới
   - Đuôi ngoài danh sách bị chặn trong thư mục hợp lệ; **tạo file mới (target chưa tồn tại) thành công**; kill giữa `writeAtomic` → file đích còn nguyên bản cũ
-  - _Requirements: R6 AC6, R5 AC5_
+  - _Requirements: R6 AC6, R5 AC5_ — _Design: §4.3.1, §5.6_
 
 **Acceptance Criteria**:
 - [x] Không đường gọi `readFile`/`writeAtomic` bằng string thô — typecheck xác nhận
@@ -293,11 +303,13 @@ A (monorepo + boundary lint + CI typecheck/lint + skills + notes)
 
 ## Phase F: `adapter/db` + bảng identity
 
+**Skill**: `bun/SKILL.md` · **Read first**: steering 07 §9 và schema/migration hiện hành
+
 **Addresses**: R11 (nền), R12 (nền), R5 (nền), R3 · **Design**: §6.4, §6.5, D11, D17 · **Prerequisite**: D
 
 **Tasks**:
 - [x] F.1 Kết nối Drizzle trực tiếp với `node:sqlite` `DatabaseSync`, không còn dialect/facade Kysely; có smoke test result metadata
-  - _Design: D17_
+  - _Requirements: R13 AC1, R11 AC10_ — _Design: D17_
 - [x] F.2 Bật WAL, một writer; khai Drizzle schema DB một chỗ
   - _Requirements: R11 AC10_ — _Design: §6.1_
 - [x] F.3 Drizzle migration nền tạo **11 bảng ứng dụng**
@@ -309,7 +321,7 @@ A (monorepo + boundary lint + CI typecheck/lint + skills + notes)
 - [x] F.4 Drizzle migrator chạy lúc khởi động, idempotent, **trước** khi mở listener; không có compatibility shim ORM cũ
   - _Requirements: R11 AC9_ — _Design: §6.5_
 - [x] F.5 Integration test: migration từ DB rỗng, chạy lại idempotent, `PRAGMA integrity_check`, mọi CHECK/FK/partial-unique
-  - _Requirements: R2 AC5_
+  - _Requirements: R2 AC5_ — _Design: §6.1, §6.4, §11.3_
 - [x] F.6 Smoke test bề mặt Drizzle + `node:sqlite` đang dùng
   - _Requirements: R13 AC1_ — _Design: D11_
 
@@ -322,6 +334,8 @@ A (monorepo + boundary lint + CI typecheck/lint + skills + notes)
 ---
 
 ## Phase G: WriteAuthority — lease, journal, reconciliation, bootstrap identity
+
+**Skill**: không cần skill riêng · **Read first**: steering 07 §4–6; legacy source/settings write paths
 
 **Addresses**: R5, R3 · **Design**: §4.3.1, §5.5, §5.12, D13 · **Prerequisite**: **B xanh**, E, F
 
@@ -361,13 +375,13 @@ A (monorepo + boundary lint + CI typecheck/lint + skills + notes)
   - _Requirements: R5 AC5_ — _Design: §6.5_
 - [x] G.11 Integration test — crash boundary
   - Kill ở từng mốc; khởi động lại cho đúng `aborted`/`recovered`/`orphaned`
-  - _Requirements: R5 AC5, R2 AC5_
+  - _Requirements: R5 AC5, R2 AC5_ — _Design: §4.3.1, §5.5_
 - [x] G.12 Integration test — concurrency & lease
   - Hai mutation cùng `expectedContentHash` → đúng một thắng; daemon B không acquire được khi A giữ; A chết → B chiếm sau TTL; mất lease → `workspace_lease_lost`
-  - _Requirements: R5 AC7_
+  - _Requirements: R5 AC7_ — _Design: §4.3.2, §5.4, §5.5_
 - [x] G.13 Integration test — identity
   - Project thiếu `vidcom.json` → sinh ID, composition **không đổi** · project di chuyển thư mục → **giữ** ID · hai thư mục trùng ID → cấp mới + audit
-  - _Requirements: R3 AC4, AC5, AC6_
+  - _Requirements: R3 AC4, AC5, AC6_ — _Design: §4.3.1, §6.5_
 
 **Acceptance Criteria**:
 - [x] Không đường ghi project thứ hai — grep xác nhận chỉ `WriteAuthority` gọi `writeAtomic`
@@ -379,6 +393,8 @@ A (monorepo + boundary lint + CI typecheck/lint + skills + notes)
 ---
 
 ## Phase H: `adapter/hyperframes` + compat wrapper
+
+**Skill**: không cần skill riêng · **Read first**: steering 03 §3, parsing logic đầy đủ; scene/root/composition modules
 
 **Addresses**: R4 · **Design**: §5.4, §4.3.2 · **Prerequisite**: **B xanh**, D
 
@@ -404,11 +420,11 @@ A (monorepo + boundary lint + CI typecheck/lint + skills + notes)
   - _Requirements: R5 AC1_ — _Design: §5.2_
 - [x] H.8 **Compat wrapper**: `src/lib/hyperframes/*.server.ts` giữ nguyên chữ ký, ủy quyền xuống adapter
   - App vẫn chạy trong suốt H → N
-  - _Requirements: R9 AC4_
+  - _Requirements: R9 AC4_ — _Design: §4.4, D16_
 - [x] H.9 Trỏ golden harness của B vào adapter mới, **không** đổi expected file
-  - _Requirements: R2 AC3_
+  - _Requirements: R2 AC3_ — _Design: §11.2_
 - [x] H.10 Giữ "đếm, không đoán" cho `unresolvedEffects`; test 9 fixture qua `parseProject()`
-  - _Requirements: R4 AC3, AC4_
+  - _Requirements: R4 AC3, AC4_ — _Design: §6.2, §11.3_
 
 **Acceptance Criteria**:
 - [x] Golden `serialize()` của B vẫn xanh sau khi chuyển
@@ -420,6 +436,8 @@ A (monorepo + boundary lint + CI typecheck/lint + skills + notes)
 ---
 
 ## Phase I: Application use case + composition root + startup order
+
+**Skill**: không cần skill riêng · **Read first**: steering 03 §2.2, §5 và các port/use case Phase D–H
 
 **Addresses**: R1 AC4, AC5 · **Design**: §5 (design), §2.2 (goals R1) · **Prerequisite**: G, H
 
@@ -444,8 +462,9 @@ A (monorepo + boundary lint + CI typecheck/lint + skills + notes)
   - _Requirements: R11 AC9, R5 AC5, R3 AC5_ — _Design: §6.5_
 - [x] I.6 Unit test happy path + failure path cho **mỗi** use case
   - Dùng port giả; clock/ID deterministic
-  - _Requirements: R2 AC6_
+  - _Requirements: R2 AC6_ — _Design: §5.1, §5.13_
 - [x] I.7 Integration test startup order: từng bước fail → daemon không mở listener
+  - _Requirements: R1 AC4, AC5; R2 AC5_ — _Design: §5.13, §9.2_
 
 **Acceptance Criteria**:
 - [x] Bỏ hoàn toàn tầng HTTP thì mọi use case vẫn gọi được — kiểm bằng test gọi thẳng use case
@@ -457,6 +476,8 @@ A (monorepo + boundary lint + CI typecheck/lint + skills + notes)
 ---
 
 ## Phase J: Hono app, middleware, auth, bridge credential
+
+**Skill**: `hono/SKILL.md` · **Read first**: steering 09 §1–4, 04 §10
 
 **Addresses**: R8 · **Design**: §5.7, §5.8, §4.3.4, D15 · **Prerequisite**: **D** (SessionPort)
 
@@ -484,9 +505,9 @@ A (monorepo + boundary lint + CI typecheck/lint + skills + notes)
   - _Requirements: R8 AC1_ — _Design: §9.2_
 - [x] J.9 Integration test bảo mật
   - Host lạ → 403 **trước** auth; cross-origin → 403; không session → 401 kể cả localhost; nonce dùng hai lần → fail; restart daemon → cookie cũ vô hiệu; `?t=` không có trong log
-  - _Requirements: R8 AC2–AC6, R2 AC5_
+  - _Requirements: R8 AC2–AC6, R2 AC5_ — _Design: §5.8, §9.2, §11.3_
 - [x] J.10 Integration test credential file: quyền thật trên đĩa là `0600`, không đọc được bởi user khác
-  - _Requirements: R8 AC8_
+  - _Requirements: R8 AC8_ — _Design: §5.12, §11.3_
 
 **Acceptance Criteria**:
 - [x] Không endpoint nào (trừ `/auth/exchange`) phục vụ request thiếu session
@@ -498,6 +519,8 @@ A (monorepo + boundary lint + CI typecheck/lint + skills + notes)
 ---
 
 ## Phase K: Cutover route ĐỌC + snapshot API
+
+**Skill**: `hono/SKILL.md`, `http-driver/SKILL.md` khi dùng fetch layer · **Read first**: steering 02 §3, 04 §2; page và route GET cũ
 
 **Addresses**: R9, R10 · **Design**: §4.4, §7.2, §7.3, D4, D16 · **Prerequisite**: I, **J**
 
@@ -519,15 +542,15 @@ A (monorepo + boundary lint + CI typecheck/lint + skills + notes)
 - [x] K.2 Smoke test precedence trên codebase thật trước khi dựa vào nó
   - _Requirements: R9 AC1_ — _Design: Finding 2_
 - [x] K.3 Cutover `GET /runtime` → `/api/v1/runtime` + legacy alias; xoá `runtime/route.ts`; verify
-  - _Requirements: R9 AC2, AC4_
+  - _Requirements: R9 AC2, AC4_ — _Design: §4.4, §7.1_
 - [x] K.4 Cutover `GET /files/*` → `/api/v1/projects/:id/assets/*` **kèm allowlist + MIME lock**; alias; xoá file; verify
-  - _Requirements: R9 AC2, R6 AC5_
+  - _Requirements: R9 AC2, R6 AC5_ — _Design: §4.4, §5.6, §7.4_
 - [x] K.5 Cutover `GET /preview` → `/api/v1/projects/:id/preview`; alias; xoá file; verify
-  - _Requirements: R9 AC2_
+  - _Requirements: R9 AC2_ — _Design: §4.4, §7.9_
 - [x] K.6 Thêm `/api/v1/projects/:id/files?path=` và `/api/v1/projects/:id/preview-settings` (GET); **chuyển UI sang dùng chúng**
   - **Không** xoá file Next tương ứng — chúng còn write handler
   - Trong cửa sổ K→N tồn tại hai đường đọc cùng dữ liệu; cả hai gọi **cùng use case** nên không lệch hành vi (design §4.4)
-  - _Requirements: R9 AC4_
+  - _Requirements: R9 AC4_ — _Design: §4.4, §7.3, §7.6_
 - [x] K.7 `GET /api/v1/projects` + `GET /api/v1/projects/:id/studio-snapshot`
   - Đủ để mở studio trong **một** request
   - _Requirements: R10 AC1, AC2, AC3_ — _Design: §7.2, §7.3_
@@ -536,7 +559,7 @@ A (monorepo + boundary lint + CI typecheck/lint + skills + notes)
 - [x] K.9 Không rò absolute path trong lỗi
   - _Requirements: R10 AC4_ — _Design: §8.2_
 - [x] K.10 Routing contract test: precedence, error mapping, tương đương trước/sau **mỗi** cutover
-  - _Requirements: R9 AC6, AC8_
+  - _Requirements: R9 AC6, AC8_ — _Design: §4.4, §11.1_
 
 **Acceptance Criteria**:
 - [x] Studio mở được sau **mỗi** bước; không bước nào app hỏng
@@ -548,6 +571,8 @@ A (monorepo + boundary lint + CI typecheck/lint + skills + notes)
 ---
 
 ## Phase L: Job infrastructure
+
+**Skill**: không cần skill riêng · **Read first**: steering 08 đầy đủ
 
 **Addresses**: R11 · **Design**: §5.9, §4.5, §6.4 · **Prerequisite**: F
 
@@ -569,7 +594,7 @@ A (monorepo + boundary lint + CI typecheck/lint + skills + notes)
 - [x] L.7 `GET /api/v1/jobs/:id`, `POST /api/v1/jobs/:id/cancel`
   - _Requirements: R11 AC3_ — _Design: §7.7_
 - [x] L.8 Integration test: lifecycle, cancel, kill → recovery, idempotency ba trường hợp
-  - _Requirements: R2 AC5_
+  - _Requirements: R2 AC5_ — _Design: §4.5, §5.9, §11.3_
 
 **Acceptance Criteria**:
 - [x] Job state sống qua restart
@@ -580,6 +605,8 @@ A (monorepo + boundary lint + CI typecheck/lint + skills + notes)
 ---
 
 ## Phase M: Event outbox, SSE, watcher, cache
+
+**Skill**: `hono/SKILL.md` · **Read first**: steering 04 §7, 07 §7–8; legacy memo/fingerprint
 
 **Addresses**: R12 · **Design**: §5.10, §5.11, §4.3.3, D7 · **Prerequisite**: F
 
@@ -601,7 +628,7 @@ A (monorepo + boundary lint + CI typecheck/lint + skills + notes)
 - [x] M.6 Integration test
   - Resume `Last-Event-ID` **sau restart**; ngoài retention → `resync`; `job.progress` không sinh revision vẫn có `seq`; sửa ngoài `preview-settings.json` → patch revision cũ nhận `write_conflict`; ghi từ WriteAuthority **không** sinh event trùng
   - SSE qua host Next **không bị buffer**
-  - _Requirements: R12 AC5, AC7, AC8_
+  - _Requirements: R12 AC5, AC7, AC8_ — _Design: §4.3.3, §5.10, §7.8_
 
 **Acceptance Criteria**:
 - [x] Poll endpoint và SSE phản ánh **cùng** persisted job state
@@ -613,6 +640,8 @@ A (monorepo + boundary lint + CI typecheck/lint + skills + notes)
 
 ## Phase N: Cutover route GHI + legacy alias + xoá module cũ
 
+**Skill**: `hono/SKILL.md` · **Read first**: steering 07 §4; legacy scene route và source hook
+
 **Addresses**: R5, R9 · **Design**: §4.4, §7.5, §7.6, §7.10, §7.11, D16 · **Prerequisite**: I, K, L, M
 
 **Tasks**:
@@ -622,9 +651,9 @@ A (monorepo + boundary lint + CI typecheck/lint + skills + notes)
 - [x] N.2 Client đổi `baseVersion` → `expectedContentHash` **trong cùng bước** với N.1
   - Server phát hiện format cũ bằng regex ở design §7.5 → `version_format_legacy`; **không** bao giờ coi format lạ là bỏ qua kiểm tra
   - `src/components/studio/use-source-files.ts`
-  - _Requirements: R5 AC3b_
+  - _Requirements: R5 AC3b_ — _Design: §7.5, D16_
 - [x] N.3 Xoá `[slug]/source/route.ts` (cả GET lẫn PUT đã có tương đương); verify
-  - _Requirements: R9 AC2_
+  - _Requirements: R9 AC2_ — _Design: §4.4, §7.5_
 - [x] N.4 `PATCH /api/v1/projects/:id/preview-settings` — entity mutation
   - _Requirements: R5 AC2_ — _Design: §7.6_
 - [x] N.5 `POST /api/v1/projects/:id/assets/bgm` — **composite mutation**
@@ -635,21 +664,21 @@ A (monorepo + boundary lint + CI typecheck/lint + skills + notes)
   - *(Sửa finding: v1 gọi là entity mutation nhưng thiếu `expectedRevision` và không xử lý hai tài nguyên)*
   - _Requirements: R5 AC1, AC2, AC5, AC8_ — _Design: §7.10_
 - [x] N.6 Xoá `[slug]/preview-settings/route.ts`; verify
-  - _Requirements: R9 AC2_
+  - _Requirements: R9 AC2_ — _Design: §4.4, §7.6, §7.10_
 - [x] N.7 Tách `PATCH /scene` action `timing` và `script` thành route `/api/v1` riêng
-  - _Requirements: R9 AC3_
+  - _Requirements: R9 AC3_ — _Design: §7.11, D16_
 - [x] N.8 **Legacy alias bắt buộc** cho `tts` và `generate` trong Hono
   - Hình dạng response chốt **byte-for-byte** ở design §7.11 — `narration.status` vẫn `"mock"`, `transcript` vẫn dựng sẵn
   - Chỉ đường ghi bên dưới đổi sang WriteAuthority; **không** thêm hành vi mới
   - _Requirements: R9 AC4_ — _Design: §7.11, D16_
 - [x] N.9 Xoá `[slug]/scene/route.ts`; verify tab AI Composer và nút Regenerate TTS vẫn chạy
-  - _Requirements: R9 AC4_
+  - _Requirements: R9 AC4_ — _Design: §4.4, §7.11_
 - [x] N.10 Xoá `src/lib/hyperframes/*.server.ts` (compat wrapper) — **chỉ sau khi** mọi consumer đã chuyển
-  - _Requirements: R9 AC5_
+  - _Requirements: R9 AC5_ — _Design: §4.4, D16_
 - [x] N.11 Ghi lại từng bước cutover đủ để hoàn tác một route
-  - _Requirements: R9 AC7_
+  - _Requirements: R9 AC7_ — _Design: §4.4_
 - [x] N.12 Contract test khoá **cả hai** hình dạng (v1 và legacy) trước/sau cutover
-  - _Requirements: R9 AC8_
+  - _Requirements: R9 AC8_ — _Design: §7.11, §11.1_
 
 **Acceptance Criteria**:
 - [x] Nút *Regenerate TTS* và tab *AI Composer* vẫn chạy
@@ -661,6 +690,8 @@ A (monorepo + boundary lint + CI typecheck/lint + skills + notes)
 ---
 
 ## Phase O: Milestone verification
+
+**Skill**: `bun/SKILL.md` · **Read first**: steering 10 §10; CI workflow và milestone evidence
 
 **Addresses**: R13 · **Design**: §9, §12 · **Prerequisite**: N
 
@@ -674,8 +705,9 @@ A (monorepo + boundary lint + CI typecheck/lint + skills + notes)
 - [x] O.4 End-to-end trên 3 project mẫu: list → mở → sửa → lưu → job → event
   - _Requirements: R13 AC4_ — _Design: §12_
 - [x] O.5 Ghi rõ Node SEA artifact smoke là gate **Phase 4**
-  - _Requirements: R13 AC5_
+  - _Requirements: R13 AC5_ — _Design: §4.6, §13_
 - [x] O.6 Hoàn tất `implementation-notes.html`; cập nhật spec hiện hành §Spec Review + Retrospective; đổi tên spec `inprocess` → `complete`
+  - _Requirements: R13 AC2–AC4 và nghĩa vụ quy trình AGENTS.md mục 4_ — _Design: §11.1, §12_
 
 **Acceptance Criteria**:
 - [x] Toàn bộ CI bắt buộc xanh
@@ -753,6 +785,13 @@ Chi tiết: [Detail Design](./spec-core-backend-foundation-detailed-design.md) �
 ## Execution Log
 
 > Ghi một entry mỗi phiên làm việc.
+
+2026-08-01 — Vòng remediation theo `review.md` (đang thực hiện)
+  - Files: `review.md`, main spec `inprocess`, checklist, detailed goals/design, `implementation-notes.html`; code và regression test sẽ được bổ sung theo từng finding.
+  - Summary: Thu hồi trạng thái Complete để audit lại từng finding. Đã xác nhận các vá symlink canonical allowlist, journal abort, conflict revision, entity-state error và Drizzle thuần đã có; các gap lifecycle/runtime/traceability còn lại đang được xử lý.
+  - Decisions: Không tính lại 118 task lịch sử; bổ sung bằng chứng remediation trực tiếp cho task liên quan và chỉ đóng spec sau full CI cùng CI remote xanh.
+  - Verification local: frozen install không đổi lockfile; typecheck, lint 0 error, boundary, 32 file/180 test, build, real Next/SSE runtime smoke và Drizzle schema-drift đều xanh. Audit checklist: 118 task, 0 thiếu Requirements/Design, 15/15 phase có Skill/Read-first.
+  - Blockers: Còn completion gate commit/push và remote CI; spec giữ `inprocess` cho tới khi gate này xanh.
 
 2026-08-01 — Phase A, Task A.1
   - Files: `package.json`, `bun.lock`, `tsconfig.json`, `tsconfig.base.json`, `packages/**`, `eslint.config.mjs`, `.github/workflows/ci.yml`, `scripts/verify-import-boundaries.mjs`, `llm-documents/steering/{05,07,08,09}-*.md`, `spec-core-backend-foundation-complete.md`, `spec-core-backend-foundation-detailed-goal.md`, `spec-core-backend-foundation-implementation-checklist.md`, `implementation-notes.html`

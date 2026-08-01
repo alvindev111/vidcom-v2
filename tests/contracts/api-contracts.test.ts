@@ -115,6 +115,9 @@ describe("API request contracts", () => {
       file: upload,
       expectedRevision: 3,
     });
+    for (const expectedRevision of [null, "", "   ", undefined]) {
+      expect(UploadBgmRequestSchema.safeParse({ file: upload, expectedRevision }).success).toBe(false);
+    }
     expect(PatchSceneTimingRequestSchema.parse({
       timing: { start: 1, duration: 2, trackIndex: 3 }, expectedContentHash: hash,
     })).toMatchObject({ expectedContentHash: hash });

@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import { spawn } from "node:child_process";
+import { randomBytes } from "node:crypto";
 import net from "node:net";
 import path from "node:path";
 
@@ -43,6 +44,12 @@ function openBrowser(url: string): void {
   opener.unref();
 }
 
+/** Creates a single-use bootstrap nonce with the 32-byte entropy required by the nonce store. */
+export function createBootstrapNonce(): string {
+  return randomBytes(32).toString("base64url");
+}
+
+/** Selects an explicit workspace, launches the production Next host, and opens an authenticated browser handoff. */
 export async function runVidcomCli(): Promise<void> {
   const appDataRoot = defaultAppDataRoot();
   const workspaceRoot = await selectWorkspace({
@@ -50,7 +57,7 @@ export async function runVidcomCli(): Promise<void> {
     appDataRoot,
   });
   const port = Number(argument("--port")) || await freePort();
-  const nonce = crypto.randomUUID();
+  const nonce = createBootstrapNonce();
   const nextBin = path.join(process.cwd(), "node_modules", "next", "dist", "bin", "next");
   const child = spawn(process.execPath, [nextBin, "start", "-p", String(port), "-H", "127.0.0.1"], {
     cwd: process.cwd(),

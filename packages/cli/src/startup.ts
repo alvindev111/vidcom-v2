@@ -94,8 +94,8 @@ export async function startVidcomFoundation<Listener>(
   let listenerHandle: Listener | null = null;
   let leaseLost = false;
   const stopBackground = async () => {
-    await watcherHandle?.close();
     await schedulerHandle?.stop();
+    await watcherHandle?.close();
   };
   try {
     const listener = await runStartupSequence({

@@ -1,6 +1,6 @@
 # Spec Core Backend Foundation
 
-> **Status**: Complete — 118/118 và GitHub Actions CI xanh sau vòng hậu review.
+> **Status**: In process — đang xử lý vòng review độc lập trong `review.md`; chưa được đóng lại trước khi full CI và CI từ remote đều xanh.
 
 > **Related Documents**:
 > - [Detailed Goals](./spec-core-backend-foundation-detailed-goal.md) — đã duyệt 2026-08-01
@@ -40,7 +40,7 @@ Xây nền móng backend có thể kiểm thử và bảo vệ dữ liệu cho V
   - Giả định để ước lượng: repo hiện có **0 test**, nên R2 gồm cả việc dựng test harness từ số không, không chỉ viết test.
   - Ước lượng 3–4 tuần ở build order giả định một đội đã quen codebase làm toàn thời gian. Nếu khác, con số phải đổi trước khi cam kết bất cứ điều gì.
 - **Testing**: Typecheck, lint/import-boundary, unit, golden, contract và integration trên filesystem/**SQLite** thật trong thư mục tạm; golden `serialize()` phải có trước thay đổi đường ghi
-  > Lưu ý lệch rule: `spec-rule.md` §3 yêu cầu "a real PostgreSQL test database". Project này dùng SQLite ở application-data và không có PostgreSQL ở bất kỳ đâu. Spec theo SQLite là đúng; rule cần được sửa cho khớp project.
+  > Datastore thật của spec này là SQLite + filesystem trong temp directory, đúng runtime production của VidCom.
 - **Risks**:
   - **Migration breadth**: RSC và các route `/api/hf` đang gọi trực tiếp nhiều module filesystem; cutover sai thứ tự có thể làm studio không mở được.
   - **Write compatibility**: `@hyperframes/sdk` serialize lại toàn document; thay đổi SDK hoặc save path có thể tạo diff lớn hay làm hỏng project.
@@ -81,7 +81,7 @@ Xây nền móng backend có thể kiểm thử và bảo vệ dữ liệu cho V
 
 ## Spec Review
 
-- **Completed**: 118/118 task ID; Phase A→O tuần tự; gate B trước G/H/N và J trước K đều được giữ. Persistence được rebuild Drizzle thuần, không Kysely dependency/import/facade hoặc compatibility shim.
+- **Review remediation in progress**: 118 task ID vẫn đã được thực thi, nhưng trạng thái Complete bị thu hồi trong lúc kiểm chứng và sửa toàn bộ finding của `review.md`. Persistence tiếp tục bắt buộc Drizzle thuần, không Kysely dependency/import/facade hoặc compatibility shim.
 - **Demo**: Playwright trên Next thật mở studio, lưu source, Regenerate TTS và AI Composer với 0 console error. E2E tự động chạy đủ ba project mẫu qua list → snapshot → save → job → event/SSE.
 - **Feedback**: Toàn bộ CI bắt buộc xanh sau vòng hậu review: frozen install, typecheck, lint, boundary và 31 file/170 test. Production build và schema-drift gate cũng xanh. GitHub Actions run `30704521208` của commit `32f93cd` hoàn tất thành công trong 1m32s. Persistence đã rebuild Drizzle thuần với một foundation migration, không compatibility shim; P1 symlink allowlist và P2 journal cleanup đã có regression coverage. Node SEA artifact smoke đầy đủ vẫn là gate Phase 4 theo đúng R13 AC5, không phải deliverable đã hoàn tất ở Phase 1.
 

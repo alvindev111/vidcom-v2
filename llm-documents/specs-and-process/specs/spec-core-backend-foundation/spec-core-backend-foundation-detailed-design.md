@@ -1,7 +1,7 @@
 # Spec Core Backend Foundation — Detail Design
 
 > **Reference**: [Detailed Goals](./spec-core-backend-foundation-detailed-goal.md) — duyệt 2026-08-01
-> **Next**: [Implementation Checklist](./spec-core-backend-foundation-implementation-checklist.md) — đã tạo, chờ duyệt
+> **Next**: [Implementation Checklist](./spec-core-backend-foundation-implementation-checklist.md) — đã duyệt và đang ở vòng remediation hậu review
 > **Steering**: [00-index](../../../steering/00-index.md) · **Build order**: [15-build-order](../../../product-features/15-build-order.md) Phase 1
 
 ## 1. Overview
@@ -1599,6 +1599,16 @@ Chạy trên **SQLite thật + filesystem thật trong temp dir**, không mock `
 
 > Vòng trước các mục "components" và "material decisions" đã bị tick sớm trong khi `JobStorePort` còn là placeholder và driver/schema library chưa quyết. Review [P2] đúng; các mục đó chỉ được tick lại sau khi bổ sung ở trên.
 
+## 15. Hậu review — runtime hardening
+
+- CLI sinh bootstrap nonce bằng 32 byte ngẫu nhiên rồi mã hoá base64url; cùng contract với `InMemoryNonceStore.register()`. UUID không hợp lệ cho luồng này.
+- Giới hạn nghiệp vụ dùng hai constant contract: source 2 MiB, BGM 20 MiB. Middleware cho thêm tối đa 64 KiB encoding overhead, còn schema quyết kích thước nội dung; vượt giới hạn trả `too_large`/413, thiếu BGM revision trả `precondition_required`/400.
+- Watcher bắt cả lỗi tạo watcher và event `error`, đóng handle lỗi rồi mở lại sau debounce. `close()` huỷ cả debounce và lịch restart để shutdown không hồi sinh watcher.
+- Job progress cho phép đổi `stage` khi progress giữ nguyên. Trước khi emit `retrying`, scheduler persist stage rồi đọc lại datastore; event không được đi trước state authoritative. Chỉ `JobRetryableError` hoặc timeout mới retry trên type idempotent; delay exponential có trần và `maxAttempts` bắt buộc hữu hạn.
+- Generated scene phải tự chứa style nền tối/typography tối thiểu và narration sidecar; root duration cùng insertion index vẫn do composition op quản lý.
+- Shutdown theo thứ tự listener → scheduler → watcher → lease → database. Partial startup failure chạy cùng cleanup cho mọi handle đã mở.
+- CI sau production build phải chạy smoke qua tiến trình `next start` và HTTP loopback thật: nonce exchange, workspace list, watcher, SSE no-buffer và `Last-Event-ID` resume.
+
 ## Approval Gate
 
 > Không tạo Implementation Checklist cho tới khi phần này được xác nhận rõ ràng.
@@ -1607,10 +1617,10 @@ Chạy trên **SQLite thật + filesystem thật trong temp dir**, không mock `
 - **Confirmed by**: Chủ dự án (alvin0)
 - **Confirmation date**: 2026-08-01
 - **Quyết định đã chốt cùng lần duyệt**: D5 một `vidcom.sqlite` (kèm sửa steering 07 §1) · D11 `node:sqlite` · D17 Drizzle (sửa đổi hậu review) · D16 giữ legacy alias · §5.12 lease qua app-data chấp nhận giới hạn D7 · §5.9 job `noop-probe`
-- **Điểm cần quyết trước khi sang checklist**:
-  1. **Decision 5** — một `vidcom.sqlite` và sửa steering 07 §1?
+- **Các điểm đã chốt trước khi sang checklist**:
+  1. **Decision 5** — một `vidcom.sqlite` và steering 07 §1 đã đồng bộ.
   2. **Decision 11 + 17** — `node:sqlite` (experimental) + Drizzle. Đánh đổi: tránh native addon ở Phase 4, pin Drizzle RC và khóa rủi ro bằng migration/runtime smoke trong CI.
-  3. **Decision 16 / §4.4 / §7.11** — giữ legacy alias `/api/hf/*` thay vì xoá; đặc biệt `tts` và `generate` phải giữ tới Phase 2/3.
+  3. **Decision 16 / §4.4 / §7.11** — giữ legacy alias `/api/hf/*`; đặc biệt `tts` và `generate` giữ tới Phase 2/3.
   4. **§5.12** — lease qua app-data, chấp nhận giới hạn D7 (hai daemon khác `--app-data`).
   5. **§5.9** — job type giả lập `noop-probe` cho Phase 1.
 

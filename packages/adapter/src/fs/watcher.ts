@@ -11,6 +11,12 @@ import type { VidcomDatabase } from "../db/client";
 
 export const WATCH_DEBOUNCE_MS = 150;
 
+export type WatchFactory = (
+  root: string,
+  options: { recursive: true },
+  listener: (event: string, filename: string | Buffer | null) => void,
+) => FSWatcher;
+
 function key(projectId: ProjectId, relativePath: RelPath): string {
   return `${projectId}\u0000${relativePath}`;
 }
@@ -40,7 +46,9 @@ function digest(bytes: Uint8Array): ContentHash {
 export class WorkspaceWatcher {
   private readonly watchers: FSWatcher[] = [];
   private readonly pending = new Map<string, ReturnType<typeof setTimeout>>();
+  private readonly restarts = new Set<ReturnType<typeof setTimeout>>();
   private readonly observedHashes = new Map<string, ContentHash | null>();
+  private closed = false;
 
   constructor(
     private readonly workspace: WorkspacePort,
@@ -50,27 +58,22 @@ export class WorkspaceWatcher {
     private readonly tracker: WrittenHashTracker,
     private readonly clock: ClockPort,
     private readonly debounceMs = WATCH_DEBOUNCE_MS,
+    private readonly watchFactory: WatchFactory = watch,
   ) {}
 
   async start(): Promise<void> {
-    for (const ref of await this.workspace.listProjects()) {
-      const watcher = watch(ref.root, { recursive: true }, (_event, filename) => {
-        if (!filename) return;
-        const relative = String(filename).split(path.sep).join("/") as RelPath;
-        if (relative.split("/").some((part) => [".git", ".hyperframes", "node_modules"].includes(part))) return;
-        const basename = path.posix.basename(relative);
-        if (basename.startsWith(".") && basename.endsWith(".tmp")) return;
-        this.debounce(ref, relative);
-      });
-      this.watchers.push(watcher);
-    }
+    this.closed = false;
+    for (const ref of await this.workspace.listProjects()) this.open(ref);
   }
 
   close(): void {
+    this.closed = true;
     for (const watcher of this.watchers) watcher.close();
     this.watchers.length = 0;
     for (const timeout of this.pending.values()) clearTimeout(timeout);
     this.pending.clear();
+    for (const timeout of this.restarts) clearTimeout(timeout);
+    this.restarts.clear();
   }
 
   /** Public deterministic seam used by integration tests after a real filesystem edit. */
@@ -120,5 +123,39 @@ export class WorkspaceWatcher {
       this.pending.delete(itemKey);
       void this.observe(ref, relativePath).catch(() => this.debounce(ref, relativePath));
     }, this.debounceMs));
+  }
+
+  private open(ref: ProjectRef): void {
+    if (this.closed) return;
+    let watcher: FSWatcher;
+    try {
+      watcher = this.watchFactory(ref.root, { recursive: true }, (_event, filename) => {
+        if (!filename) return;
+        const relative = String(filename).split(path.sep).join("/") as RelPath;
+        if (relative.split("/").some((part) => [".git", ".hyperframes", "node_modules"].includes(part))) return;
+        const basename = path.posix.basename(relative);
+        if (basename.startsWith(".") && basename.endsWith(".tmp")) return;
+        this.debounce(ref, relative);
+      });
+    } catch {
+      this.scheduleRestart(ref);
+      return;
+    }
+    this.watchers.push(watcher);
+    watcher.once("error", () => {
+      watcher.close();
+      const index = this.watchers.indexOf(watcher);
+      if (index >= 0) this.watchers.splice(index, 1);
+      this.scheduleRestart(ref);
+    });
+  }
+
+  private scheduleRestart(ref: ProjectRef): void {
+    if (this.closed) return;
+    const timeout = setTimeout(() => {
+      this.restarts.delete(timeout);
+      this.open(ref);
+    }, this.debounceMs);
+    this.restarts.add(timeout);
   }
 }

@@ -234,7 +234,7 @@ export async function regenerateNarration(
 
 function sceneSource(sceneId: string, title: string, duration: number): string {
   const escaped = title.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
-  return `<!doctype html><html><head><meta charset="UTF-8" /></head><body><div id="${sceneId}" data-composition-id="${sceneId}" data-width="1920" data-height="1080" data-start="0" data-duration="${duration}"><h2>${escaped}</h2></div></body></html>\n`;
+  return `<!doctype html><html><head><meta charset="UTF-8" /><style>html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#0f172a;color:#f8fafc;font-family:system-ui,sans-serif}#${sceneId}{display:grid;place-items:center;width:1920px;height:1080px}h2{max-width:1400px;margin:0;padding:96px;text-align:center;font-size:96px;line-height:1.1}</style></head><body><div id="${sceneId}" data-composition-id="${sceneId}" data-width="1920" data-height="1080" data-start="0" data-duration="${duration}"><h2>${escaped}</h2></div></body></html>\n`;
 }
 
 export async function createScene(

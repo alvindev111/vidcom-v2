@@ -98,6 +98,18 @@ describe("composite BGM crash recovery", () => {
     } finally { await item.database.destroy(); }
   });
 
+  it("removes an installed asset when preview settings disappeared before recovery", async () => {
+    const item = await fixture("missing-settings");
+    try {
+      await item.staged.commit();
+      const target = path.join(item.projectRoot, item.targetPath);
+      await rm(path.join(item.projectRoot, "preview-settings.json"));
+      await reconcileStagedAssets(item.database, clock, item.appData);
+      expect(await absent(target)).toBe(true);
+      expect(await item.journal.listPending()).toEqual([]);
+    } finally { await item.database.destroy(); }
+  });
+
   it("keeps the asset and completes the pending mutation when both files landed", async () => {
     const item = await fixture("after-settings");
     try {
