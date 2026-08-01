@@ -1,3 +1,4 @@
+import { injectPreviewSettings } from "@/lib/hyperframes/preview-settings.server";
 import { buildPreviewHtml } from "@/lib/hyperframes/projects.server";
 
 export const dynamic = "force-dynamic";
@@ -11,7 +12,7 @@ export async function GET(
   const html = buildPreviewHtml(slug);
   if (!html) return new Response("composition not found", { status: 404 });
 
-  return new Response(html, {
+  return new Response(injectPreviewSettings(slug, html, { root: true }), {
     headers: {
       "content-type": "text/html; charset=utf-8",
       "cache-control": "no-store",

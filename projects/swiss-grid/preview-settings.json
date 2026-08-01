@@ -1,0 +1,44 @@
+{
+  "tone": {
+    "colorMode": "dark",
+    "backgroundColor": "#0a1e3d",
+    "backgroundFx": "scan",
+    "mainLight": "#d4a017",
+    "mainLightPosition": "top-left",
+    "mainLightIntensity": "high",
+    "softLight": "#54d9ff",
+    "softLightPosition": "bottom-right",
+    "softLightIntensity": "medium"
+  },
+  "theme": {
+    "variables": {
+      "--primary": "#ff8a3d",
+      "--primary-light": "#ffd1ad",
+      "--accent": "#54d9ff",
+      "--accent-light": "#c8f2ff",
+      "--success": "#47e6a0",
+      "--info": "#b08cff"
+    }
+  },
+  "bgm": {
+    "enabled": false,
+    "volume": 0.3,
+    "loop": true,
+    "track": null
+  },
+  "subtitles": {
+    "enabled": true,
+    "override": true,
+    "color": "#d4a017",
+    "activeColor": "#ff8a3d",
+    "fontSize": 96,
+    "bottom": 200
+  },
+  "scenes": {
+    "captions": {
+      "transitionSound": "retro",
+      "revealSound": "chime",
+      "hidden": false
+    }
+  }
+}

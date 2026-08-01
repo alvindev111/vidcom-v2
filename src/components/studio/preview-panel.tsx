@@ -7,7 +7,8 @@ import {
   ResizablePanel,
   ResizablePanelGroup,
 } from "@/components/ui/resizable";
-import type { TimelineSection } from "@/lib/studio/types";
+import type { PreviewSettings } from "@/lib/studio/preview-settings";
+import type { RootTrack, Scene } from "@/lib/studio/types";
 import { PlaybackBar } from "./playback-bar";
 import { PreviewCanvas } from "./preview-canvas";
 import { Timeline } from "./timeline";
@@ -19,14 +20,24 @@ export function PreviewPanel({
   duration,
   state,
   controls,
-  sections,
+  scenes,
+  rootTrack,
+  settings,
+  selectedId,
+  onSelectScene,
+  onToggleHidden,
 }: {
   containerRef: React.Ref<HTMLDivElement>;
   aspectRatio: number;
   duration: number;
   state: PlayerState;
   controls: PlayerControls;
-  sections: TimelineSection[];
+  scenes: Scene[];
+  rootTrack: RootTrack | null;
+  settings: PreviewSettings;
+  selectedId: string;
+  onSelectScene: (scene: Scene) => void;
+  onToggleHidden: (scene: Scene) => void;
 }) {
   return (
     <ResizablePanelGroup orientation="vertical">
@@ -40,7 +51,6 @@ export function PreviewPanel({
           />
           <PlaybackBar
             duration={duration}
-            currentTime={state.currentTime}
             paused={state.paused}
             muted={state.muted}
             playbackRate={state.playbackRate}
@@ -57,10 +67,14 @@ export function PreviewPanel({
 
       <ResizablePanel defaultSize="38" minSize="15">
         <Timeline
-          sections={sections}
+          scenes={scenes}
+          rootTrack={rootTrack}
+          settings={settings}
           duration={duration}
-          currentTime={state.currentTime}
+          selectedId={selectedId}
           onScrub={controls.seek}
+          onSelect={onSelectScene}
+          onToggleHidden={onToggleHidden}
         />
       </ResizablePanel>
     </ResizablePanelGroup>

@@ -8,15 +8,14 @@ import {
   ResizablePanel,
   ResizablePanelGroup,
 } from "@/components/ui/resizable";
-import type {
-  FileNode,
-  Scene,
-  SourceFile,
-  TimelineSection,
-} from "@/lib/studio/types";
+import { sceneSettings, type PreviewSettings } from "@/lib/studio/preview-settings";
+import { orderedScenes } from "@/lib/studio/scene-order";
+import type { FileNode, RootTrack, Scene, SourceFile } from "@/lib/studio/types";
+import { PlayerTimeProvider } from "./player-time";
 import { PreviewPanel } from "./preview-panel";
 import { SourcePane } from "./source-pane";
 import { useHyperframesPlayer } from "./use-hyperframes-player";
+import { usePreviewSettings } from "./use-preview-settings";
 
 export function StudioShell({
   projectSlug,
@@ -25,8 +24,9 @@ export function StudioShell({
   authoredDuration,
   tree,
   files,
-  sections,
   scenes,
+  rootTrack,
+  previewSettings,
 }: {
   projectSlug: string;
   previewUrl: string;
@@ -34,8 +34,9 @@ export function StudioShell({
   authoredDuration: number | null;
   tree: FileNode[];
   files: SourceFile[];
-  sections: TimelineSection[];
   scenes: Scene[];
+  rootTrack: RootTrack | null;
+  previewSettings: PreviewSettings;
 }) {
   const router = useRouter();
   // Bumped after a scene edit: it changes the player's src, which remounts the
@@ -44,42 +45,97 @@ export function StudioShell({
 
   // The player lives here, not in the preview pane: the Scene tab on the left
   // seeks it too, and both sides need the same currentTime.
-  const { containerRef, state, controls } = useHyperframesPlayer(
+  const { containerRef, state, controls, timeStore } = useHyperframesPlayer(
     revision === 0 ? previewUrl : `${previewUrl}?r=${revision}`,
   );
   const duration = state.duration || authoredDuration || 0;
 
+  // A source edit changes what the scenes *are*, so the page has to be re-read.
   const handleProjectChanged = React.useCallback(() => {
     setRevision((current) => current + 1);
     router.refresh();
   }, [router]);
 
+  // A preview-settings edit does not: the values are baked into the preview
+  // document, so the player has to reload, but the scenes, the file tree and
+  // the root track on the server are untouched. Refreshing them too meant a
+  // full re-parse of the project behind every colour change.
+  const rebuildPreview = React.useCallback(() => {
+    setRevision((current) => current + 1);
+  }, []);
+
+  const preview = usePreviewSettings(
+    projectSlug,
+    previewSettings,
+    rebuildPreview,
+  );
+
+  // Selection is shared, not per-pane: clicking a storyboard card and clicking a
+  // timeline lane are the same act, and both panes highlight the result.
+  const [requestedId, setSelectedId] = React.useState("");
+  const selectScene = React.useCallback(
+    (scene: Scene) => {
+      setSelectedId(scene.id);
+      controls.seek(scene.start);
+    },
+    [controls],
+  );
+
+  // Resolved against the scenes that actually exist, so a scene renamed or
+  // removed by an agent edit falls back to the first beat in both panes at once
+  // instead of leaving the timeline with nothing highlighted while the detail
+  // panel shows something else.
+  const ordered = orderedScenes(scenes);
+  const selectedId =
+    ordered.find(({ scene }) => scene.id === requestedId)?.scene.id ??
+    ordered[0]?.scene.id ??
+    "";
+
+  // Stable so the memoized lanes and cards below only re-render when their own
+  // scene changes, not whenever this shell does.
+  const toggleHidden = React.useCallback(
+    (scene: Scene) =>
+      preview.patchScene(scene.id, {
+        hidden: !sceneSettings(preview.settings, scene.id).hidden,
+      }),
+    [preview],
+  );
+
   return (
-    <ResizablePanelGroup orientation="horizontal" className="min-h-0 flex-1">
-      <ResizablePanel defaultSize="38" minSize="20">
-        <SourcePane
-          projectSlug={projectSlug}
-          tree={tree}
-          files={files}
-          scenes={scenes}
-          currentTime={state.currentTime}
-          onSeek={controls.seek}
-          onProjectChanged={handleProjectChanged}
-        />
-      </ResizablePanel>
+    <PlayerTimeProvider store={timeStore}>
+      <ResizablePanelGroup orientation="horizontal" className="min-h-0 flex-1">
+        <ResizablePanel defaultSize="38" minSize="20">
+          <SourcePane
+            projectSlug={projectSlug}
+            tree={tree}
+            files={files}
+            scenes={scenes}
+            preview={preview}
+            selectedId={selectedId}
+            onSeek={controls.seek}
+            onSelectScene={selectScene}
+            onProjectChanged={handleProjectChanged}
+          />
+        </ResizablePanel>
 
-      <ResizableHandle />
+        <ResizableHandle />
 
-      <ResizablePanel defaultSize="62" minSize="25">
-        <PreviewPanel
-          containerRef={containerRef}
-          aspectRatio={aspectRatio}
-          duration={duration}
-          state={state}
-          controls={controls}
-          sections={sections}
-        />
-      </ResizablePanel>
-    </ResizablePanelGroup>
+        <ResizablePanel defaultSize="62" minSize="25">
+          <PreviewPanel
+            containerRef={containerRef}
+            aspectRatio={aspectRatio}
+            duration={duration}
+            state={state}
+            controls={controls}
+            scenes={scenes}
+            rootTrack={rootTrack}
+            settings={preview.settings}
+            selectedId={selectedId}
+            onSelectScene={selectScene}
+            onToggleHidden={toggleHidden}
+          />
+        </ResizablePanel>
+      </ResizablePanelGroup>
+    </PlayerTimeProvider>
   );
 }

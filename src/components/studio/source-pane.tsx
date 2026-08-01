@@ -16,6 +16,7 @@ import type { FileNode, Scene, SourceFile } from "@/lib/studio/types";
 import { AiComposerPanel } from "./ai-composer-panel";
 import { CodePane } from "./code-pane";
 import { ScenePane } from "./scene-pane";
+import type { usePreviewSettings } from "./use-preview-settings";
 
 const TRIGGER_CLASS = "h-9 flex-1 rounded-md border border-transparent";
 
@@ -28,16 +29,20 @@ export function SourcePane({
   tree,
   files,
   scenes,
-  currentTime,
+  preview,
+  selectedId,
   onSeek,
+  onSelectScene,
   onProjectChanged,
 }: {
   projectSlug: string;
   tree: FileNode[];
   files: SourceFile[];
   scenes: Scene[];
-  currentTime: number;
+  preview: ReturnType<typeof usePreviewSettings>;
+  selectedId: string;
   onSeek: (seconds: number) => void;
+  onSelectScene: (scene: Scene) => void;
   onProjectChanged: () => void;
 }) {
   const [tab, setTab] = React.useState("code");
@@ -85,15 +90,22 @@ export function SourcePane({
       </div>
 
       <TabsContent value="code" className="min-h-0 flex-1 border-t">
-        <CodePane tree={tree} files={files} />
+        <CodePane
+          projectSlug={projectSlug}
+          tree={tree}
+          files={files}
+          onProjectChanged={onProjectChanged}
+        />
       </TabsContent>
       <TabsContent value="scene" className="min-h-0 flex-1 border-t">
         <ScenePane
           projectSlug={projectSlug}
           scenes={scenes}
           tree={tree}
-          currentTime={currentTime}
+          preview={preview}
+          selectedId={selectedId}
           onSeek={onSeek}
+          onSelectScene={onSelectScene}
           onProjectChanged={onProjectChanged}
         />
       </TabsContent>

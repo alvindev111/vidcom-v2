@@ -11,10 +11,13 @@ import { FileTreeItem } from "./file-tree-item";
 export function FileExplorer({
   tree,
   selectedPath,
+  dirtyPaths,
   onSelect,
 }: {
   tree: FileNode[];
   selectedPath: string;
+  /** Files with unsaved edits, marked in the tree as well as on the tab. */
+  dirtyPaths: string[];
   onSelect: (path: string) => void;
 }) {
   const [expanded, setExpanded] = React.useState<string[]>([]);
@@ -35,6 +38,7 @@ export function FileExplorer({
             node={node}
             depth={depth}
             selected={node.path === selectedPath}
+            dirty={dirtyPaths.includes(node.path)}
             expanded={isExpanded}
             onSelect={onSelect}
             onToggle={toggle}

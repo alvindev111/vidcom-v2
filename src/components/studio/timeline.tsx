@@ -2,88 +2,177 @@
 
 import * as React from "react";
 
+import { orderedScenes } from "@/lib/studio/scene-order";
+import {
+  sceneSettings,
+  type PreviewSettings,
+} from "@/lib/studio/preview-settings";
+import type { RootTrack, Scene } from "@/lib/studio/types";
 import { cn } from "@/lib/utils";
-import { toPercent } from "@/lib/studio/format";
-import type { TimelineSection } from "@/lib/studio/types";
-import { TIMELINE_GUTTER } from "./timeline-constants";
+import { Playhead, useLiveScenes } from "./player-time";
+import { TIMELINE_GUTTER_PX, ZOOM_LEVELS } from "./timeline-constants";
+import { TimelineElementRows, TimelineRootRows } from "./timeline-elements";
 import { TimelineRuler } from "./timeline-ruler";
 import { TimelineToolbar } from "./timeline-toolbar";
-import { TimelineTrack } from "./timeline-track";
+import { TimelineLane, TimelineRootLane } from "./timeline-track";
 
-const ZOOM_STEPS = ["Fit", "1x", "2x", "4x"];
-
+/**
+ * The composition on a time axis, built from the same `Scene[]` the storyboard
+ * renders. Both panes therefore agree on what a scene is, what number it has
+ * and which one is selected — before this, the timeline listed source files in
+ * track order while the storyboard listed beats in playback order, and nothing
+ * tied a row to a card.
+ */
 export function Timeline({
-  sections,
+  scenes,
+  rootTrack,
+  settings,
   duration,
-  currentTime,
+  selectedId,
   onScrub,
+  onSelect,
+  onToggleHidden,
 }: {
-  sections: TimelineSection[];
+  scenes: Scene[];
+  /** The entry document's own media and motion, when it has any. */
+  rootTrack: RootTrack | null;
+  settings: PreviewSettings;
   duration: number;
-  currentTime: number;
+  selectedId: string;
   onScrub: (seconds: number) => void;
+  onSelect: (scene: Scene) => void;
+  onToggleHidden: (scene: Scene) => void;
 }) {
-  const [zoomStep, setZoomStep] = React.useState(0);
-  const [hidden, setHidden] = React.useState<string[]>([]);
+  const [zoom, setZoom] = React.useState(1);
+  const [laneWidth, setLaneWidth] = React.useState(0);
+  const viewport = React.useRef<HTMLDivElement>(null);
 
-  const toggleVisible = (trackId: string) =>
-    setHidden((current) =>
-      current.includes(trackId)
-        ? current.filter((id) => id !== trackId)
-        : [...current, trackId],
-    );
+  // Collapsed by default so the timeline still reads as a list of beats, with
+  // the selected scene open. Derived rather than synced from an effect: only
+  // the scenes the user explicitly toggled are stored, so selecting a scene
+  // opens it without a render pass that first shows it closed.
+  const [override, setOverride] = React.useState<Record<string, boolean>>({});
+  // The root track has no scene id; it opens by default because its footage is
+  // usually the thing being timed against.
+  const isExpanded = (sceneId: string) =>
+    override[sceneId] ?? (sceneId === ROOT_LANE || sceneId === selectedId);
+  // The lane already knows whether it is open, and passing that back keeps this
+  // handler stable — a new identity per render would defeat the memoized lanes.
+  const toggleExpanded = React.useCallback(
+    (sceneId: string, expanded: boolean) =>
+      setOverride((current) => ({ ...current, [sceneId]: !expanded })),
+    [],
+  );
+
+  // The lane area is whatever is left of the viewport once the pinned gutter is
+  // taken out, so "Fit" has to be measured rather than assumed.
+  React.useEffect(() => {
+    const element = viewport.current;
+    if (!element) return;
+
+    const measure = () => setLaneWidth(element.clientWidth - TIMELINE_GUTTER_PX);
+    measure();
+
+    const observer = new ResizeObserver(measure);
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, []);
+
+  const ordered = React.useMemo(() => orderedScenes(scenes), [scenes]);
+  const liveScenes = useLiveScenes(scenes);
+  const fitScale = duration > 0 && laneWidth > 0 ? laneWidth / duration : 0;
+  const pixelsPerSecond = fitScale * zoom;
+  const zoomIndex = ZOOM_LEVELS.indexOf(zoom as (typeof ZOOM_LEVELS)[number]);
+
+  const selected = ordered.find(({ scene }) => scene.id === selectedId);
 
   return (
     <div className="bg-sidebar flex h-full flex-col">
       <TimelineToolbar
-        zoomLabel={ZOOM_STEPS[zoomStep]}
-        onFit={() => setZoomStep(0)}
+        zoom={zoom}
+        canZoomIn={zoomIndex < ZOOM_LEVELS.length - 1}
+        canZoomOut={zoomIndex > 0}
+        sceneCount={ordered.length}
+        selectedLabel={selected ? `${selected.index}. ${selected.scene.id}` : null}
+        onFit={() => setZoom(1)}
         onZoomIn={() =>
-          setZoomStep((step) => Math.min(step + 1, ZOOM_STEPS.length - 1))
+          setZoom(ZOOM_LEVELS[Math.min(zoomIndex + 1, ZOOM_LEVELS.length - 1)])
         }
-        onZoomOut={() => setZoomStep((step) => Math.max(step - 1, 0))}
+        onZoomOut={() => setZoom(ZOOM_LEVELS[Math.max(zoomIndex - 1, 0)])}
       />
 
-      <div className="relative min-h-0 flex-1 overflow-auto">
-        <TimelineRuler
-          duration={duration}
-          currentTime={currentTime}
-          onScrub={onScrub}
-        />
+      <div ref={viewport} className="relative min-h-0 flex-1 overflow-auto">
+        <div style={{ width: TIMELINE_GUTTER_PX + duration * pixelsPerSecond }}>
+          <TimelineRuler
+            duration={duration}
+            pixelsPerSecond={pixelsPerSecond}
+            onScrub={onScrub}
+          />
 
-        {sections.map((section) => (
-          <div key={section.id}>
-            <div className="flex h-6 shrink-0 items-center border-b">
-              <div className={cn(TIMELINE_GUTTER, "shrink-0 border-r")} />
-              <div className="relative grow">
-                <span className="px-1.5 font-mono text-[10px] tracking-wide">
-                  {section.label}
-                </span>
-                <span
-                  className="bg-studio-accent absolute inset-y-0 z-10 w-px"
-                  style={{ left: toPercent(currentTime, duration) }}
+          <div className="relative">
+            {rootTrack ? (
+              <>
+                <TimelineRootLane
+                  track={rootTrack}
+                  pixelsPerSecond={pixelsPerSecond}
+                  expanded={isExpanded(ROOT_LANE)}
+                  laneId={ROOT_LANE}
+                  onToggleExpanded={toggleExpanded}
                 />
-              </div>
-            </div>
+                {isExpanded(ROOT_LANE) ? (
+                  <TimelineRootRows
+                    track={rootTrack}
+                    pixelsPerSecond={pixelsPerSecond}
+                  />
+                ) : null}
+              </>
+            ) : null}
 
-            {section.tracks.map((track) => (
-              <TimelineTrack
-                key={track.id}
-                track={{ ...track, visible: !hidden.includes(track.id) }}
-                duration={duration}
-                currentTime={currentTime}
-                onToggleVisible={toggleVisible}
-              />
+            {ordered.map(({ scene, index }) => (
+              <React.Fragment key={scene.id}>
+                <TimelineLane
+                  scene={scene}
+                  index={index}
+                  pixelsPerSecond={pixelsPerSecond}
+                  selected={scene.id === selectedId}
+                  live={liveScenes.has(scene.id)}
+                  hidden={sceneSettings(settings, scene.id).hidden}
+                  expanded={isExpanded(scene.id)}
+                  onSelect={onSelect}
+                  onToggleHidden={onToggleHidden}
+                  onToggleExpanded={toggleExpanded}
+                />
+                {isExpanded(scene.id) ? (
+                  <TimelineElementRows
+                    scene={scene}
+                    pixelsPerSecond={pixelsPerSecond}
+                  />
+                ) : null}
+              </React.Fragment>
             ))}
-          </div>
-        ))}
 
-        {sections.length === 0 ? (
+            {/* One playhead over every lane, not one per row: a line drawn per
+                lane visibly stair-steps as rows scroll. */}
+            <Playhead
+              pixelsPerSecond={pixelsPerSecond}
+              offset={TIMELINE_GUTTER_PX}
+              className={cn(
+                "bg-studio-accent pointer-events-none absolute inset-y-0 z-10 w-px",
+                ordered.length === 0 && "hidden",
+              )}
+            />
+          </div>
+        </div>
+
+        {ordered.length === 0 ? (
           <p className="text-muted-foreground p-3 text-xs">
-            No timeline elements found in this composition.
+            No scenes found in this composition.
           </p>
         ) : null}
       </div>
     </div>
   );
 }
+
+/** Expansion key for the root track, which has no scene id of its own. */
+const ROOT_LANE = "\u0000root-track";

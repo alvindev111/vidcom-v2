@@ -10,13 +10,43 @@ import {
 
 import { Button } from "@/components/ui/button";
 import { Slider } from "@/components/ui/slider";
-import { formatTimecode } from "@/lib/studio/format";
+import { TimeReadout, useCurrentTime } from "./player-time";
 
 const RATES = [0.5, 1, 1.5, 2] as const;
 
+/**
+ * The parts that move with the clock, split out of the bar.
+ *
+ * The transport ticks ten times a second; keeping the subscription down here
+ * means those ticks re-render a slider and a timecode rather than the whole bar
+ * and its buttons.
+ */
+function Scrubber({
+  duration,
+  disabled,
+  onSeek,
+}: {
+  duration: number;
+  disabled: boolean;
+  onSeek: (seconds: number) => void;
+}) {
+  const currentTime = useCurrentTime();
+
+  return (
+    <Slider
+      value={[currentTime]}
+      max={duration || 1}
+      step={0.05}
+      disabled={disabled}
+      onValueChange={([value]) => onSeek(value)}
+      aria-label="Seek"
+      className="grow [&_[data-slot=slider-range]]:bg-studio-accent [&_[data-slot=slider-thumb]]:border-studio-accent"
+    />
+  );
+}
+
 export function PlaybackBar({
   duration,
-  currentTime,
   paused,
   muted,
   playbackRate,
@@ -27,7 +57,6 @@ export function PlaybackBar({
   onPlaybackRateChange,
 }: {
   duration: number;
-  currentTime: number;
   paused: boolean;
   muted: boolean;
   playbackRate: number;
@@ -59,19 +88,12 @@ export function PlaybackBar({
         )}
       </Button>
 
-      <span className="text-muted-foreground shrink-0 font-mono text-xs tabular-nums">
-        {formatTimecode(currentTime)} / {formatTimecode(duration)}
-      </span>
-
-      <Slider
-        value={[currentTime]}
-        max={duration || 1}
-        step={0.05}
-        disabled={disabled}
-        onValueChange={([value]) => onSeek(value)}
-        aria-label="Seek"
-        className="grow [&_[data-slot=slider-range]]:bg-studio-accent [&_[data-slot=slider-thumb]]:border-studio-accent"
+      <TimeReadout
+        duration={duration}
+        className="text-muted-foreground shrink-0 font-mono text-xs tabular-nums"
       />
+
+      <Scrubber duration={duration} disabled={disabled} onSeek={onSeek} />
 
       <Button
         variant="ghost"

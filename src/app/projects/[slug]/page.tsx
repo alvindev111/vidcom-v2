@@ -2,11 +2,12 @@ import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 
 import { StudioShell } from "@/components/studio/studio-shell";
+import { readPreviewSettings } from "@/lib/hyperframes/preview-settings.server";
+import { readRootTrack } from "@/lib/hyperframes/root-track.server";
 import {
   readProject,
   readProjectTree,
   readSourceFile,
-  readTimeline,
 } from "@/lib/hyperframes/projects.server";
 import { readScenes } from "@/lib/hyperframes/scenes.server";
 
@@ -40,8 +41,9 @@ export default async function ComposerPage({ params }: ComposerParams) {
         authoredDuration={project.duration}
         tree={readProjectTree(slug)}
         files={entry ? [entry] : []}
-        sections={readTimeline(slug)}
         scenes={scenes}
+        rootTrack={readRootTrack(slug)}
+        previewSettings={readPreviewSettings(slug)}
       />
     </div>
   );

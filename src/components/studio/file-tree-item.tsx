@@ -10,6 +10,7 @@ export function FileTreeItem({
   node,
   depth = 0,
   selected,
+  dirty = false,
   expanded,
   onSelect,
   onToggle,
@@ -17,6 +18,8 @@ export function FileTreeItem({
   node: FileNode;
   depth?: number;
   selected: boolean;
+  /** Has unsaved edits in the editor. */
+  dirty?: boolean;
   expanded: boolean;
   onSelect: (path: string) => void;
   onToggle: (path: string) => void;
@@ -44,6 +47,12 @@ export function FileTreeItem({
       )}
       <FileIcon node={node} />
       <span className="truncate">{node.name}</span>
+      {dirty ? (
+        <span
+          aria-label="unsaved changes"
+          className="bg-studio-accent ml-auto size-1.5 shrink-0 rounded-full"
+        />
+      ) : null}
     </button>
   );
 }

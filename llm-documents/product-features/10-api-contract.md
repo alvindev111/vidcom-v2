@@ -1,0 +1,231 @@
+# 10 — Đặc tả HTTP API hiện tại
+
+Tất cả route nằm dưới `/api/hf/`, đều `export const dynamic = "force-dynamic"`.
+
+**Không có auth, không có versioning, không có rate limit.**
+
+Tổng: **6 route**, **9 method**.
+
+---
+
+## 1. `GET /api/hf/runtime`
+
+Trả script runtime HyperFrames.
+
+| | |
+|---|---|
+| Params | không |
+| 200 | `text/javascript; charset=utf-8`, body = `getHyperframeRuntimeScript()` |
+| Headers | `cache-control: no-store` |
+| Lỗi | không có nhánh lỗi |
+
+---
+
+## 2. `GET /api/hf/{slug}/preview`
+
+Tài liệu HTML mà `<hyperframes-player src>` load.
+
+| | |
+|---|---|
+| 200 | `text/html; charset=utf-8` — composition đã inject runtime + preview settings (`root: true`) |
+| 404 | `text/plain` `"composition not found"` — project không tồn tại hoặc thiếu `index.html` |
+| Headers | `cache-control: no-store` |
+
+Client dùng query `?r=<revision>` chỉ để **cache-bust / remount**, server không đọc nó.
+
+---
+
+## 3. `GET /api/hf/{slug}/files/{...path}`
+
+Asset tĩnh trong project.
+
+| | |
+|---|---|
+| Path param | `path[]` — segment join bằng `/`, resolve trong project dir |
+| 200 | content-type từ `getMimeType()`, body raw (string hoặc `Uint8Array`) |
+| 404 | `text/plain` `"not found"` — project không tồn tại, path thoát khỏi project, không tồn tại, hoặc không phải file |
+| Headers | `cache-control: no-store` |
+
+Không hỗ trợ Range. Không inject preview settings (có chủ ý — xem [04](04-feature-preview-player.md) F-4.3).
+
+---
+
+## 4. `GET /api/hf/{slug}/source?path={path}`
+
+Đọc một file text để mở trong editor.
+
+**Request:** query `path` (bắt buộc, đường dẫn relative project root).
+
+**200:**
+```json
+{ "file": {
+    "path": "compositions/intro.html",
+    "code": "<!doctype html>…",
+    "foldableLines": [3, 7, 12],
+    "saved": true,
+    "version": "1m8k2p9-1a4" } }
+```
+
+**Lỗi:**
+| Status | Body | Khi nào |
+|---|---|---|
+| 400 | `{"error":"path is required"}` | thiếu query `path` |
+| 404 | `{"error":"file is not editable"}` | project không có, path thoát, file không tồn tại, không phải file, **hoặc đuôi ngoài whitelist** |
+
+Whitelist đuôi: `html css js mjs ts json md txt py svg`.
+
+---
+
+## 5. `PUT /api/hf/{slug}/source`
+
+Lưu file đã sửa.
+
+**Request:**
+```json
+{ "path": "index.html",
+  "code": "…",
+  "baseVersion": "1m8k2p9-1a4" }   // tuỳ chọn; bỏ = force write
+```
+
+**200:** `{ "ok": true, "file": { …SourceFile mới… } }`
+
+**Lỗi:**
+| Status | Body | Khi nào |
+|---|---|---|
+| 400 | `{"error":"invalid JSON body"}` | body không parse được |
+| 400 | `{"error":"path and code are required"}` | thiếu `path`, hoặc `code` không phải string |
+| 413 | `{"error":"file is larger than 2 MB"}` | `code.length > 2*1024*1024` |
+| 404 | `{"error":"file is not editable"}` | như GET |
+| **409** | `{"error":"file changed on disk since you opened it — reload before saving"}` | `baseVersion !== fileVersion(target)` |
+| 500 | `{"error":"write succeeded but the file could not be re-read"}` | ghi xong nhưng đọc lại thất bại |
+
+---
+
+## 6. `GET /api/hf/{slug}/preview-settings`
+
+**200:** `{ "settings": { …PreviewSettings đã normalize… } }`
+
+Project không tồn tại → vẫn trả `200` với `DEFAULT_PREVIEW_SETTINGS` (`normalizePreviewSettings(null)`). **Không có nhánh 404** — hành vi khác các route còn lại.
+
+---
+
+## 7. `PATCH /api/hf/{slug}/preview-settings`
+
+Patch **theo section** — section không gửi thì giữ nguyên.
+
+**Request** (mọi field tuỳ chọn):
+```json
+{ "tone":      { "enabled": true, "mainLight": "#ff8a3d" },
+  "theme":     { "variables": { "--primary": "#00ffcc" } },
+  "bgm":       { "volume": 0.45 },
+  "subtitles": { "fontSize": 96 },
+  "scenes":    { "captions": { "hidden": true, "transitionSound": "retro", "revealSound": "chime" } } }
+```
+
+**200:** `{ "ok": true, "settings": { …bản đã merge + normalize… } }`
+
+**Lỗi:**
+| Status | Body |
+|---|---|
+| 400 | `{"error":"invalid JSON body"}` |
+| 404 | `{"error":"project not found"}` |
+
+Ghi chú: **không validate schema đầu vào** — giá trị sai (`fontSize: "big"`, `mainLight: "red"`) không bị từ chối, chỉ bị `normalizePreviewSettings` thay bằng default/clamp. Response trả về giá trị thực đã lưu, nên client tự thấy khác biệt.
+
+Với `scenes`: patch merge **cả object scene**, không merge từng field — client (`patchScene`) tự đọc giá trị hiện tại rồi spread trước khi gửi.
+
+---
+
+## 8. `POST /api/hf/{slug}/preview-settings`
+
+Upload nhạc nền (multipart).
+
+**Request:** `multipart/form-data`, field `file`.
+
+**200:** `{ "ok": true, "settings": { …settings mới, bgm.enabled = true, bgm.track set… } }`
+
+**Lỗi:**
+| Status | Body | Khi nào |
+|---|---|---|
+| 400 | `{"error":"no file uploaded"}` | `formData()` fail hoặc field `file` không phải `File` |
+| 413 | `{"error":"file is larger than 20 MB"}` | `file.size > 20*1024*1024` |
+| 404 | `{"error":"project not found"}` | project không có, hoặc tên file rỗng sau sanitize |
+
+Lưu tại `preview-assets/bgm/<sanitized-name>` — **ghi đè im lặng** nếu trùng tên.
+
+---
+
+## 9. `PATCH /api/hf/{slug}/scene`
+
+Endpoint đa năng cho mọi thao tác scene. Phân nhánh theo `action`.
+
+**Lỗi chung:**
+| Status | Body |
+|---|---|
+| 400 | `{"error":"invalid JSON body"}` |
+| 400 | `{"error":"unknown action"}` |
+
+### 9a. `action: "timing"`
+
+```json
+{ "action": "timing", "sceneId": "graphics",
+  "start": 2.5, "duration": 6, "trackIndex": 3 }
+```
+`start`/`duration`/`trackIndex` đều tuỳ chọn (chỉ field nào gửi mới đổi).
+
+- **200:** `{ "ok": true }` ← **không trả scene mới**, client phải refresh cả trang.
+- **400:** `{"error":"project not found"}` | `{"error":"composition not found"}` | `{"error":"scene <id> not found"}` | message từ `composition.can()` | `{"error":"edit rejected by the SDK"}`
+
+### 9b. `action: "script"`
+
+```json
+{ "action": "script", "sceneId": "intro",
+  "file": "compositions/intro.html",
+  "elementId": "hf-a1b2",
+  "text": "Ship faster, meet less" }
+```
+- **200:** `{ "ok": true, "narration": { …Narration mới… } | null }` ← ghi text **và** regenerate narration.
+- **400:** `{"error":"file not found"}` | message từ `can()` | `{"error":"edit rejected by the SDK"}`
+
+Lưu ý: `file` do **client** quyết định (lấy từ `SceneScriptLine.file`). Server không kiểm tra file đó có thuộc scene `sceneId` không. `openProjectFile` dùng `join(paths.dir, file)` — **không đi qua `resolveWithinProject`** ⇒ về lý thuyết `file: "../../etc/passwd"` sẽ resolve ra ngoài project. Thực tế `openComposition` sẽ fail khi parse, và `existsSync` chặn phần lớn, nhưng đây là **lỗ hổng cần bịt** ở backend mới.
+
+### 9c. `action: "tts"`
+
+```json
+{ "action": "tts", "sceneId": "scene-1", "text": "Ship faster, meet less" }
+```
+- **200:** `{ "ok": true, "narration": { … } }`
+- **404:** `{"error":"project not found"}`
+
+Không validate `text` rỗng.
+
+### 9d. `action: "generate"`
+
+```json
+{ "action": "generate", "prompt": "Team retro cadence" }
+```
+- **200:**
+```json
+{ "ok": true, "sceneId": "scene-2",
+  "transcript": [ {"kind":"command","text":"codex"}, … ] }
+```
+- **400:** `{"error":"prompt is empty"}` | `{"error":"project not found"}` | `{"error":"composition not found"}` | `{"error":"root composition not found"}` | message `can()` | `{"error":"insert rejected by the SDK"}`
+
+---
+
+## Tổng hợp vấn đề của API hiện tại (cần khắc phục khi viết lại)
+
+| # | Vấn đề | Ảnh hưởng |
+|---|---|---|
+| 1 | Không auth / không phân quyền | Ai truy cập được URL đều đọc/ghi được mọi project |
+| 2 | Route `/files` đọc được **mọi** file trong project | Rò `AGENTS.md`, `package.json`, secret nếu có |
+| 3 | `action:"script"` dùng `join()` không qua `resolveWithinProject` | Path traversal tiềm ẩn |
+| 4 | Chỉ `PUT /source` có optimistic concurrency | `scene`/`preview-settings` ghi đè im lặng |
+| 5 | Response ghi trả `{ok:true}` thay vì entity mới | Client buộc `router.refresh()` toàn trang sau mỗi edit |
+| 6 | Không có schema validation đầu vào | Giá trị sai bị âm thầm thay bằng default |
+| 7 | Endpoint đa năng `PATCH /scene` với 4 action | Khó version, khó phân quyền, khó test |
+| 8 | Không có mã lỗi máy đọc được (chỉ `error: string`) | UI không gắn lỗi vào field |
+| 9 | Ghi file không atomic | Crash giữa lúc ghi làm hỏng composition |
+| 10 | `cache-control: no-store` cho mọi thứ kể cả runtime/asset | Băng thông + độ trễ |
+| 11 | Không có endpoint: create project, delete/rename file, delete scene, render, snapshot, lint, registry | Xem [13](13-backend-requirements.md) |
+| 12 | `GET /preview-settings` không 404 khi project không tồn tại | Không nhất quán |

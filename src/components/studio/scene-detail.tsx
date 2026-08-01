@@ -5,7 +5,9 @@ import { PlayIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { formatTimecode } from "@/lib/studio/format";
+import type { SceneSettings } from "@/lib/studio/preview-settings";
 import type { Scene, SceneScriptLine } from "@/lib/studio/types";
+import { SceneAudio } from "./scene-audio";
 import { SceneMediaList } from "./scene-media-list";
 import { SceneNarration } from "./scene-narration";
 import { SceneScriptEditor } from "./scene-script-editor";
@@ -33,6 +35,7 @@ function Section({
 
 export function SceneDetail({
   scene,
+  settings,
   transitions,
   pending,
   error,
@@ -40,8 +43,11 @@ export function SceneDetail({
   onSaveTiming,
   onSaveScriptLine,
   onRegenerateTts,
+  onSaveSettings,
 }: {
   scene: Scene;
+  /** Preview-only settings for this scene: sound design and visibility. */
+  settings: SceneSettings;
   /** Transition scenes of the whole composition, for context. */
   transitions: Scene[];
   pending: boolean;
@@ -54,6 +60,7 @@ export function SceneDetail({
   }) => void;
   onSaveScriptLine: (line: SceneScriptLine, text: string) => void;
   onRegenerateTts: (text: string) => void;
+  onSaveSettings: (patch: Partial<SceneSettings>) => void;
 }) {
   const end = scene.start + scene.duration;
   const overlapping = transitions.filter(
@@ -101,6 +108,12 @@ export function SceneDetail({
 
       <Section title="Images & media" count={scene.media.length}>
         <SceneMediaList media={scene.media} />
+      </Section>
+
+      <Separator />
+
+      <Section title="Scene sound">
+        <SceneAudio scene={settings} onChange={onSaveSettings} />
       </Section>
 
       <Separator />

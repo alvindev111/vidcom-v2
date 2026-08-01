@@ -1,70 +1,208 @@
 "use client";
 
-import { EyeIcon, EyeOffIcon } from "lucide-react";
+import * as React from "react";
+import {
+  ChevronDownIcon,
+  ChevronRightIcon,
+  EyeIcon,
+  EyeOffIcon,
+  FilmIcon,
+} from "lucide-react";
 
+import { formatTimecode } from "@/lib/studio/format";
+import { groupOf } from "@/lib/studio/snapshots";
+import type { RootTrack, Scene } from "@/lib/studio/types";
 import { cn } from "@/lib/utils";
-import { toPercent } from "@/lib/studio/format";
-import type { TimelineTrack as TimelineTrackModel } from "@/lib/studio/types";
-import { TIMELINE_GUTTER } from "./timeline-constants";
+import { TIMELINE_GUTTER_STYLE } from "./timeline-constants";
 
-export function TimelineTrack({
+const GROUP_STYLE: Record<string, string> = {
+  scene: "bg-studio-accent/25 border-studio-accent/50",
+  transition: "bg-amber-500/25 border-amber-500/50",
+  overlay: "bg-violet-500/25 border-violet-500/50",
+};
+
+/**
+ * Lane for the entry document's own track.
+ *
+ * Deliberately not a scene lane: it has no composition host, so it carries no
+ * number, cannot be selected as a beat and cannot be hidden. It exists so a
+ * footage-led composition shows its footage — before this the A-roll and the
+ * camera moves authored around it were absent from the timeline entirely.
+ */
+export const TimelineRootLane = React.memo(function TimelineRootLane({
   track,
-  duration,
-  currentTime,
-  onToggleVisible,
+  pixelsPerSecond,
+  expanded,
+  laneId,
+  onToggleExpanded,
 }: {
-  track: TimelineTrackModel;
-  duration: number;
-  currentTime: number;
-  onToggleVisible: (trackId: string) => void;
+  track: RootTrack;
+  pixelsPerSecond: number;
+  expanded: boolean;
+  /** Expansion key — the root track has no scene id of its own. */
+  laneId: string;
+  onToggleExpanded: (laneId: string, expanded: boolean) => void;
 }) {
-  const Icon = track.visible ? EyeIcon : EyeOffIcon;
+  const Chevron = expanded ? ChevronDownIcon : ChevronRightIcon;
+  const inside = track.elements.length + track.unresolvedEffects;
 
   return (
-    <div className="flex h-11 shrink-0 border-b">
+    <div className="bg-muted/20 flex h-10 shrink-0 border-b">
       <div
-        className={cn(
-          TIMELINE_GUTTER,
-          "flex shrink-0 items-center justify-center border-r",
-        )}
+        style={TIMELINE_GUTTER_STYLE}
+        className="bg-sidebar sticky left-0 z-20 flex shrink-0 items-center gap-1.5 border-r px-1.5"
       >
         <button
           type="button"
-          onClick={() => onToggleVisible(track.id)}
-          aria-label={`Toggle ${track.label}`}
-          aria-pressed={track.visible}
-          className="text-muted-foreground hover:text-foreground rounded-sm p-1"
+          onClick={() => onToggleExpanded(laneId, expanded)}
+          aria-label={`${expanded ? "Collapse" : "Expand"} ${track.id}`}
+          aria-expanded={expanded}
+          title={`${inside} root-level clip${inside === 1 ? "" : "s"} and effects`}
+          className="text-muted-foreground hover:text-foreground shrink-0 rounded-sm"
+        >
+          <Chevron className="size-3.5" />
+        </button>
+        <FilmIcon className="text-muted-foreground size-3 shrink-0" />
+        <span
+          title={`${track.id} · index.html`}
+          className="min-w-0 grow truncate text-[11px] font-medium"
+        >
+          {track.id}
+        </span>
+      </div>
+
+      <div className="relative grow">
+        <span
+          title={`root composition · ${formatTimecode(0)} → ${formatTimecode(track.duration)}`}
+          className="absolute inset-y-1.5 flex items-center overflow-hidden rounded-sm border border-dashed border-neutral-500/50 bg-neutral-500/15 px-1.5"
+          style={{ left: 0, width: Math.max(track.duration * pixelsPerSecond, 6) }}
+        >
+          <span className="text-foreground/70 truncate font-mono text-[10px]">
+            index.html
+          </span>
+        </span>
+      </div>
+    </div>
+  );
+});
+
+/**
+ * One lane per scene, addressed the same way the storyboard addresses it — same
+ * number, same name, same grouping colour — so a card above and a bar down here
+ * are visibly the same thing.
+ *
+ * Memoized, and every callback takes the scene rather than closing over it, so
+ * the playhead crossing a boundary repaints the two lanes that changed instead
+ * of all of them.
+ */
+export const TimelineLane = React.memo(function TimelineLane({
+  scene,
+  index,
+  pixelsPerSecond,
+  selected,
+  live,
+  hidden,
+  expanded,
+  onSelect,
+  onToggleHidden,
+  onToggleExpanded,
+}: {
+  scene: Scene;
+  /** Position in the storyboard, 1-based. */
+  index: number;
+  pixelsPerSecond: number;
+  selected: boolean;
+  live: boolean;
+  hidden: boolean;
+  expanded: boolean;
+  onSelect: (scene: Scene) => void;
+  onToggleHidden: (scene: Scene) => void;
+  onToggleExpanded: (sceneId: string, expanded: boolean) => void;
+}) {
+  const Icon = hidden ? EyeOffIcon : EyeIcon;
+  const Chevron = expanded ? ChevronDownIcon : ChevronRightIcon;
+  const group = groupOf(scene);
+  const end = scene.start + scene.duration;
+  const inside = scene.elements.length + scene.unresolvedEffects;
+
+  return (
+    <div
+      data-selected={selected || undefined}
+      className="data-selected:bg-studio-accent/5 flex h-10 shrink-0 border-b"
+    >
+      <div
+        style={TIMELINE_GUTTER_STYLE}
+        className="bg-sidebar sticky left-0 z-20 flex shrink-0 items-center gap-1.5 border-r px-1.5"
+      >
+        <button
+          type="button"
+          onClick={() => onToggleExpanded(scene.id, expanded)}
+          disabled={inside === 0}
+          aria-label={`${expanded ? "Collapse" : "Expand"} ${scene.id}`}
+          aria-expanded={expanded}
+          title={
+            inside === 0
+              ? "Nothing timed inside this scene"
+              : `${inside} element${inside === 1 ? "" : "s"} and effects`
+          }
+          className="text-muted-foreground hover:text-foreground shrink-0 rounded-sm disabled:opacity-25"
+        >
+          <Chevron className="size-3.5" />
+        </button>
+        <span
+          className={cn(
+            "text-muted-foreground w-3 shrink-0 text-center font-mono text-[10px]",
+            selected && "text-studio-accent",
+          )}
+        >
+          {index}
+        </span>
+        <button
+          type="button"
+          onClick={() => onSelect(scene)}
+          title={`${scene.id} · ${scene.src ?? "index.html"}`}
+          className={cn(
+            "min-w-0 grow truncate text-left text-[11px]",
+            selected ? "text-studio-accent font-medium" : "hover:text-foreground",
+            hidden && "text-muted-foreground line-through",
+          )}
+        >
+          {scene.id}
+        </button>
+        <button
+          type="button"
+          onClick={() => onToggleHidden(scene)}
+          aria-label={`${hidden ? "Show" : "Hide"} ${scene.id} in the preview`}
+          aria-pressed={!hidden}
+          className="text-muted-foreground hover:text-foreground shrink-0 rounded-sm p-1"
         >
           <Icon className="size-3.5" />
         </button>
       </div>
 
-      <div className="relative grow px-px py-1.5">
-        {track.clips.map((clip) => (
-          <div
-            key={clip.id}
-            className={cn(
-              "absolute inset-y-1.5 flex items-center overflow-hidden rounded-sm border px-1.5",
-              track.visible
-                ? "bg-muted-foreground/25"
-                : "bg-muted-foreground/10 opacity-60",
-            )}
-            style={{
-              left: toPercent(clip.start, duration),
-              width: toPercent(clip.end - clip.start, duration),
-            }}
-          >
-            <span className="text-foreground/80 truncate font-mono text-[10px]">
-              {clip.label}
-            </span>
-          </div>
-        ))}
-
-        <span
-          className="bg-studio-accent absolute inset-y-0 z-10 w-px"
-          style={{ left: toPercent(currentTime, duration) }}
-        />
+      <div className="relative grow">
+        <button
+          type="button"
+          onClick={() => onSelect(scene)}
+          title={`${formatTimecode(scene.start)} → ${formatTimecode(end)}`}
+          className={cn(
+            "absolute inset-y-1.5 flex items-center overflow-hidden rounded-sm border px-1.5 transition-colors",
+            GROUP_STYLE[group] ?? GROUP_STYLE.scene,
+            selected && "ring-studio-accent ring-2",
+            live && !selected && "border-studio-accent",
+            hidden && "opacity-35",
+          )}
+          style={{
+            left: scene.start * pixelsPerSecond,
+            // Never collapse to nothing: a 0.2s flash still has to be clickable.
+            width: Math.max(scene.duration * pixelsPerSecond, 6),
+          }}
+        >
+          <span className="text-foreground/85 truncate font-mono text-[10px]">
+            {scene.duration}s
+          </span>
+        </button>
       </div>
     </div>
   );
-}
+});

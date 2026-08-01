@@ -6,11 +6,18 @@ import { join, posix } from "node:path";
 import { readClipTiming } from "@hyperframes/core";
 // resolveBlockCategory is only on the ./registry subpath, not the package root.
 import { resolveBlockCategory } from "@hyperframes/core/registry";
-import { parseHTML } from "linkedom";
+
+import type { Composition } from "@hyperframes/sdk";
 
 import type { Scene, SceneBlock, SceneMedia } from "@/lib/studio/types";
-import { projectPaths, readCompositionHosts } from "./projects.server";
-import { readSceneScript } from "./sdk.server";
+import { compositionRoot } from "./composition-root.server";
+import {
+  memoPerProject,
+  projectPaths,
+  readCompositionHosts,
+} from "./projects.server";
+import { readSceneElements } from "./scene-elements.server";
+import { openProjectComposition, sceneScriptLines } from "./sdk.server";
 import { readNarration } from "./tts.server";
 
 /**
@@ -36,7 +43,7 @@ function mediaUrl(slug: string, hostFile: string, src: string): string {
 function collectMedia(
   slug: string,
   hostFile: string,
-  root: Element,
+  root: ParentNode,
 ): SceneMedia[] {
   const nodes = [...root.querySelectorAll("img, video, audio, source")];
 
@@ -108,58 +115,94 @@ async function readBlock(
   return block;
 }
 
-export async function readScenes(slug: string): Promise<Scene[]> {
+/**
+ * The scenes of a project, as both panes see them.
+ *
+ * Memoized on the project's files: the studio calls `router.refresh()` after
+ * every edit, and rebuilding this from scratch meant re-parsing the whole
+ * composition each time.
+ */
+export const readScenes = memoPerProject(loadScenes);
+
+async function loadScenes(slug: string): Promise<Scene[]> {
   const paths = projectPaths(slug);
   if (!paths) return [];
 
   const { dir, entry, registryBaseUrl } = paths;
   const hosts = readCompositionHosts(readFileSync(join(dir, entry), "utf8"));
 
-  return Promise.all(
-    hosts.map(async (host) => {
-      const src = host.src;
-      let hostFile = entry;
-      let root = host.element;
-      let block: SceneBlock | null = null;
+  // One open composition per file, not per scene. Every inline beat lives in
+  // index.html, so opening it per host re-parsed the same document N times.
+  const compositions = new Map<string, Promise<Composition | null>>();
+  const composition = (file: string) => {
+    const open = compositions.get(file) ?? openProjectComposition(slug, file);
+    compositions.set(file, open);
+    return open;
+  };
 
-      if (src) {
-        const file = join(dir, src);
-        if (existsSync(file)) {
-          const raw = readFileSync(file, "utf8");
-          hostFile = src;
-          root = parseHTML(raw).document.body;
+  try {
+    return await Promise.all(
+      hosts.map(async (host) => {
+        const src = host.src;
+        let hostFile = entry;
+        let root: ParentNode = host.element;
+        let block: SceneBlock | null = null;
 
-          const marker = raw.match(REGISTRY_MARKER);
-          if (marker && registryBaseUrl) {
-            block = await readBlock(registryBaseUrl, marker[1]);
-          } else if (marker) {
-            block = {
-              name: marker[1],
-              title: null,
-              description: null,
-              category: null,
-              tags: [],
-            };
+        if (src) {
+          const file = join(dir, src);
+          if (existsSync(file)) {
+            const raw = readFileSync(file, "utf8");
+            hostFile = src;
+            // compositionRoot(), not `document.body`: the scaffolded scenes wrap
+            // their content in a <template>, whose children a body walk misses
+            // entirely — media included.
+            root = compositionRoot(raw);
+
+            const marker = raw.match(REGISTRY_MARKER);
+            if (marker && registryBaseUrl) {
+              block = await readBlock(registryBaseUrl, marker[1]);
+            } else if (marker) {
+              block = {
+                name: marker[1],
+                title: null,
+                description: null,
+                category: null,
+                tags: [],
+              };
+            }
           }
         }
-      }
 
-      return {
-        id: host.id,
-        src,
-        start: host.start,
-        duration: host.duration,
-        trackIndex: host.trackIndex,
-        block,
-        isTransition:
-          block?.category === "transitions" ||
-          (block?.tags.includes("transition") ?? false),
-        media: collectMedia(slug, hostFile, root),
         // Script lines come from the SDK so each one carries the hf-id that
-        // setText needs — the DOM walk here has no stable element identity.
-        script: await readSceneScript(slug, { id: host.id, src }),
-        narration: readNarration(slug, host.id),
-      };
-    }),
-  );
+        // setText needs — the DOM walk here has no stable element identity. An
+        // inline scene reads from the entry document; a scene whose file is
+        // missing has no script at all, rather than the entry's.
+        const scriptFile = src ? (hostFile === src ? src : null) : entry;
+        const opened = scriptFile ? await composition(scriptFile) : null;
+
+        return {
+          id: host.id,
+          src,
+          start: host.start,
+          duration: host.duration,
+          trackIndex: host.trackIndex,
+          block,
+          isTransition:
+            block?.category === "transitions" ||
+            (block?.tags.includes("transition") ?? false),
+          media: collectMedia(slug, hostFile, root),
+          script:
+            opened && scriptFile
+              ? sceneScriptLines(opened, scriptFile, { id: host.id, src })
+              : [],
+          narration: readNarration(slug, host.id),
+          ...readSceneElements(root, host.id),
+        };
+      }),
+    );
+  } finally {
+    for (const open of compositions.values()) {
+      void open.then((item) => item?.dispose());
+    }
+  }
 }

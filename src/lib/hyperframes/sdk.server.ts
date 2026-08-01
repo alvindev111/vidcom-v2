@@ -77,28 +77,34 @@ function findByCompositionId(
   return null;
 }
 
-/** Editable script lines of a scene, addressed by hf-id. */
-export async function readSceneScript(
+/**
+ * Open a project file as a composition. The caller owns it and must `dispose()`.
+ *
+ * Exposed because reading a project means asking several questions of the same
+ * document: opening it once per scene parsed `index.html` from scratch for
+ * every inline beat in it.
+ */
+export async function openProjectComposition(
   slug: string,
-  scene: { id: string; src: string | null },
-): Promise<SceneScriptLine[]> {
-  const paths = projectPaths(slug);
-  if (!paths) return [];
-
-  const file = scene.src ?? paths.entry;
+  file: string,
+): Promise<Composition | null> {
   const opened = await openProjectFile(slug, file);
-  if (!opened) return [];
+  return opened?.composition ?? null;
+}
 
-  try {
-    const roots = opened.composition.getRootElements();
-    if (scene.src) return scriptLines(roots, file);
+/** Editable script lines of a scene, addressed by hf-id. */
+export function sceneScriptLines(
+  composition: Composition,
+  /** Path of the file the composition was opened from. */
+  file: string,
+  scene: { id: string; src: string | null },
+): SceneScriptLine[] {
+  const roots = composition.getRootElements();
+  if (scene.src) return scriptLines(roots, file);
 
-    // Inline scene: only the host's own subtree belongs to it.
-    const host = findByCompositionId(roots, scene.id);
-    return host ? scriptLines(host.children, file) : [];
-  } finally {
-    opened.composition.dispose();
-  }
+  // Inline scene: only the host's own subtree belongs to it.
+  const host = findByCompositionId(roots, scene.id);
+  return host ? scriptLines(host.children, file) : [];
 }
 
 export async function updateSceneTiming(

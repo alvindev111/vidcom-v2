@@ -1,6 +1,7 @@
 "use client";
 
-import { ImageOffIcon, SparkleIcon } from "lucide-react";
+import * as React from "react";
+import { EyeOffIcon, ImageOffIcon, SparkleIcon } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 import { formatTimecode } from "@/lib/studio/format";
@@ -11,13 +12,19 @@ import {
   type SnapshotFrame,
 } from "@/lib/studio/snapshots";
 
-export function SceneCard({
+/**
+ * Memoized: the playhead crossing a scene boundary re-renders the storyboard,
+ * and only the two cards whose `live` flag flipped have anything new to paint.
+ * `onSelect` takes the scene so the handler can stay stable across renders.
+ */
+export const SceneCard = React.memo(function SceneCard({
   scene,
   index,
   frame,
   projectSlug,
   selected,
   live,
+  hidden,
   onSelect,
 }: {
   scene: Scene;
@@ -27,7 +34,9 @@ export function SceneCard({
   projectSlug: string;
   selected: boolean;
   live: boolean;
-  onSelect: () => void;
+  /** Hidden from the preview by the scene's preview settings. */
+  hidden: boolean;
+  onSelect: (scene: Scene) => void;
 }) {
   const end = scene.start + scene.duration;
   const group = groupOf(scene);
@@ -35,7 +44,7 @@ export function SceneCard({
   return (
     <button
       type="button"
-      onClick={onSelect}
+      onClick={() => onSelect(scene)}
       data-selected={selected || undefined}
       className={cn(
         "group/card flex flex-col overflow-hidden rounded-md border text-left transition-colors",
@@ -43,7 +52,12 @@ export function SceneCard({
         "data-selected:border-studio-accent data-selected:ring-studio-accent/30 data-selected:ring-2",
       )}
     >
-      <span className="relative block aspect-video overflow-hidden bg-black">
+      <span
+        className={cn(
+          "relative block aspect-video overflow-hidden bg-black",
+          hidden && "opacity-40 grayscale",
+        )}
+      >
         {frame ? (
           // Frame captured by `hyperframes snapshot`, served from the project.
           // eslint-disable-next-line @next/next/no-img-element
@@ -75,7 +89,12 @@ export function SceneCard({
       </span>
 
       <span className="flex flex-col gap-0.5 px-2 py-1.5">
-        <span className="truncate text-xs font-medium">{scene.id}</span>
+        <span className="flex items-center gap-1.5 truncate text-xs font-medium">
+          {hidden ? (
+            <EyeOffIcon className="text-muted-foreground size-3 shrink-0" />
+          ) : null}
+          {scene.id}
+        </span>
         <span className="text-muted-foreground font-mono text-[10px]">
           {formatTimecode(scene.start)} → {formatTimecode(end)} ·{" "}
           {scene.duration}s
@@ -83,4 +102,4 @@ export function SceneCard({
       </span>
     </button>
   );
-}
+});

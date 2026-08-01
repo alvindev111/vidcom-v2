@@ -1,7 +1,5 @@
 "use client";
 
-import * as React from "react";
-
 import {
   ResizableHandle,
   ResizablePanel,
@@ -10,24 +8,32 @@ import {
 import type { FileNode, SourceFile } from "@/lib/studio/types";
 import { EditorPanel } from "./editor-panel";
 import { FileExplorer } from "./file-explorer";
+import { useSourceFiles } from "./use-source-files";
 
 /** Source-code side of the Code tab: the project's files and the open editor. */
 export function CodePane({
+  projectSlug,
   tree,
   files,
+  onProjectChanged,
 }: {
+  projectSlug: string;
   tree: FileNode[];
+  /** Files shipped with the page — the entry composition. */
   files: SourceFile[];
+  /** Called after a save so the preview rebuilds against the new source. */
+  onProjectChanged: () => void;
 }) {
-  const [selectedPath, setSelectedPath] = React.useState(files[0]?.path ?? "");
+  const source = useSourceFiles(projectSlug, files);
 
   return (
     <ResizablePanelGroup orientation="horizontal">
       <ResizablePanel defaultSize="26" minSize="12">
         <FileExplorer
           tree={tree}
-          selectedPath={selectedPath}
-          onSelect={setSelectedPath}
+          selectedPath={source.activePath}
+          dirtyPaths={source.dirtyPaths}
+          onSelect={(path) => void source.openPath(path)}
         />
       </ResizablePanel>
 
@@ -35,9 +41,17 @@ export function CodePane({
 
       <ResizablePanel defaultSize="74" minSize="30">
         <EditorPanel
-          files={files}
-          activePath={selectedPath}
-          onActivate={setSelectedPath}
+          files={source.files}
+          active={source.active}
+          activePath={source.activePath}
+          dirtyPaths={source.dirtyPaths}
+          loading={source.loading}
+          openError={source.openError}
+          onActivate={(path) => void source.openPath(path)}
+          onClose={source.close}
+          onEdit={(code) => source.edit(source.activePath, code)}
+          onSave={() => void source.save(source.activePath, onProjectChanged)}
+          onRevert={() => source.revert(source.activePath)}
         />
       </ResizablePanel>
     </ResizablePanelGroup>

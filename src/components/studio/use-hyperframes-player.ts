@@ -2,6 +2,8 @@
 
 import * as React from "react";
 
+import { createTimeStore, type TimeStore } from "./player-time";
+
 /** The slice of `<hyperframes-player>` this app drives. */
 interface HyperframesPlayerElement extends HTMLElement {
   play(): void;
@@ -22,8 +24,12 @@ export interface PlayerControls {
   toggleMuted: () => void;
 }
 
+/**
+ * Everything about the player *except* the clock, which lives in a `TimeStore`
+ * — see `player-time.tsx`. Every field here changes a handful of times per
+ * session, so a change to this object can safely re-render the studio.
+ */
 export interface PlayerState {
-  currentTime: number;
   duration: number;
   paused: boolean;
   ready: boolean;
@@ -33,7 +39,6 @@ export interface PlayerState {
 }
 
 const INITIAL: PlayerState = {
-  currentTime: 0,
   duration: 0,
   paused: true,
   ready: false,
@@ -52,6 +57,7 @@ export function useHyperframesPlayer(previewUrl: string) {
   const containerRef = React.useRef<HTMLDivElement | null>(null);
   const playerRef = React.useRef<HyperframesPlayerElement | null>(null);
   const [state, setState] = React.useState<PlayerState>(INITIAL);
+  const [timeStore] = React.useState<TimeStore>(createTimeStore);
 
   React.useEffect(() => {
     let disposed = false;
@@ -65,6 +71,7 @@ export function useHyperframesPlayer(previewUrl: string) {
       // Reset after the await so switching projects starts from a clean state
       // without a synchronous setState inside the effect body.
       setState(INITIAL);
+      timeStore.set(0);
 
       player = document.createElement(
         "hyperframes-player",
@@ -73,18 +80,39 @@ export function useHyperframesPlayer(previewUrl: string) {
       player.style.position = "absolute";
       player.style.inset = "0";
 
-      const sync = () =>
-        setState((current) => ({
-          ...current,
-          currentTime: player?.currentTime ?? current.currentTime,
-          duration: player?.duration || current.duration,
-          paused: player?.paused ?? current.paused,
-          muted: player?.muted ?? current.muted,
-          playbackRate: player?.playbackRate ?? current.playbackRate,
-        }));
+      // Fires on every `timeupdate`. The clock goes to the store, and the rest
+      // only reaches React when it actually moved — otherwise a paused-state
+      // check ten times a second would re-render the studio anyway.
+      const sync = () => {
+        if (!player) return;
+        timeStore.set(player.currentTime);
 
-      const onReady = () =>
+        const duration = player.duration || 0;
+        const { paused, muted, playbackRate } = player;
+        setState((current) =>
+          (duration === 0 || duration === current.duration) &&
+          paused === current.paused &&
+          muted === current.muted &&
+          playbackRate === current.playbackRate
+            ? current
+            : {
+                ...current,
+                duration: duration || current.duration,
+                paused,
+                muted,
+                playbackRate,
+              },
+        );
+      };
+
+      const onReady = () => {
         setState((current) => ({ ...current, ready: true, error: null }));
+        // The runtime only applies per-clip visibility on a tick, so the very
+        // first painted frame has every scene visible at once — a 10s-in scene
+        // stacked on top of the opening one. One seek at the current time forces
+        // that tick and leaves the transport where it was.
+        player?.seek(player.currentTime);
+      };
       const onError = (event: Event) =>
         setState((current) => ({
           ...current,
@@ -114,7 +142,7 @@ export function useHyperframesPlayer(previewUrl: string) {
       player?.remove();
       playerRef.current = null;
     };
-  }, [previewUrl]);
+  }, [previewUrl, timeStore]);
 
   const controls = React.useMemo<PlayerControls>(
     () => ({
@@ -127,7 +155,7 @@ export function useHyperframesPlayer(previewUrl: string) {
       },
       seek: (seconds: number) => {
         playerRef.current?.seek(seconds);
-        setState((current) => ({ ...current, currentTime: seconds }));
+        timeStore.set(seconds);
       },
       setPlaybackRate: (rate: number) => {
         const player = playerRef.current;
@@ -141,8 +169,8 @@ export function useHyperframesPlayer(previewUrl: string) {
         setState((current) => ({ ...current, muted: player.muted }));
       },
     }),
-    [],
+    [timeStore],
   );
 
-  return { containerRef, state, controls };
+  return { containerRef, state, controls, timeStore };
 }

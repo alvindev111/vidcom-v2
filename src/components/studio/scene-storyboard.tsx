@@ -3,12 +3,14 @@
 import * as React from "react";
 import { ChevronDownIcon, ChevronRightIcon, CameraIcon } from "lucide-react";
 
-import type { FileNode, Scene } from "@/lib/studio/types";
 import {
-  collectFrames,
-  frameForScene,
-  groupOf,
-} from "@/lib/studio/snapshots";
+  sceneSettings,
+  type PreviewSettings,
+} from "@/lib/studio/preview-settings";
+import { splitScenes, type OrderedScene } from "@/lib/studio/scene-order";
+import type { FileNode, Scene } from "@/lib/studio/types";
+import { collectFrames, frameForScene } from "@/lib/studio/snapshots";
+import { useLiveScenes } from "./player-time";
 import { SceneCard } from "./scene-card";
 
 /**
@@ -20,43 +22,38 @@ export function SceneStoryboard({
   projectSlug,
   scenes,
   tree,
+  settings,
   selectedId,
-  currentTime,
   onSelect,
 }: {
   projectSlug: string;
   scenes: Scene[];
   tree: FileNode[];
+  settings: PreviewSettings;
   selectedId: string;
-  currentTime: number;
   onSelect: (scene: Scene) => void;
 }) {
   const [showLayers, setShowLayers] = React.useState(false);
   const frames = React.useMemo(() => collectFrames(tree), [tree]);
+  const liveScenes = useLiveScenes(scenes);
 
-  // Playback order, then authored layer order — several scenes legitimately
-  // start at 0, and track index is the author's own stacking intent.
-  const byStart = [...scenes].sort(
-    (a, b) => a.start - b.start || a.trackIndex - b.trackIndex,
-  );
-  const contentScenes = byStart.filter((scene) => groupOf(scene) === "scene");
-  const layers = byStart.filter((scene) => groupOf(scene) !== "scene");
+  // Shared with the timeline so a card and a lane carry the same number.
+  const { content: contentScenes, layers } = splitScenes(scenes);
   const missingFrames = contentScenes.filter(
-    (scene) => frameForScene(frames, scene) === null,
+    ({ scene }) => frameForScene(frames, scene) === null,
   ).length;
 
-  const card = (scene: Scene, index: number) => (
+  const card = ({ scene, index }: OrderedScene) => (
     <SceneCard
       key={scene.id}
       scene={scene}
-      index={index + 1}
+      index={index}
       frame={frameForScene(frames, scene)}
       projectSlug={projectSlug}
       selected={scene.id === selectedId}
-      live={
-        currentTime >= scene.start && currentTime < scene.start + scene.duration
-      }
-      onSelect={() => onSelect(scene)}
+      live={liveScenes.has(scene.id)}
+      hidden={sceneSettings(settings, scene.id).hidden}
+      onSelect={onSelect}
     />
   );
 

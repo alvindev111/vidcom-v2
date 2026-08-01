@@ -1,6 +1,12 @@
 import "server-only";
 
-import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
+import {
+  existsSync,
+  readdirSync,
+  readFileSync,
+  statSync,
+  writeFileSync,
+} from "node:fs";
 import { join, relative } from "node:path";
 
 import {
@@ -15,11 +21,7 @@ import {
 } from "@hyperframes/studio-server";
 import { DOMParser, parseHTML } from "linkedom";
 
-import type {
-  FileNode,
-  SourceFile,
-  TimelineSection,
-} from "@/lib/studio/types";
+import type { FileNode, SourceFile } from "@/lib/studio/types";
 
 // @hyperframes/parsers reads compositions with the DOM's DOMParser, which does
 // not exist in Node. The hyperframes CLI installs linkedom's implementation as
@@ -83,6 +85,70 @@ export function projectPaths(
       typeof config?.registry === "string"
         ? config.registry.replace(/\/$/, "")
         : null,
+  };
+}
+
+const IGNORED_ENTRIES = new Set(["node_modules", ".git", ".hyperframes"]);
+
+/**
+ * Path, size and mtime of every file the studio can see in a project.
+ *
+ * Projects are read fresh on every request — they are `force-dynamic` because
+ * the agent and the CLI edit these files behind the app's back — which meant a
+ * full parse of the composition behind every `router.refresh()`, and the studio
+ * refreshes on each edit. Stat-walking the directory costs a few dozen syscalls
+ * next to that, so it is what decides whether the last parse can be reused.
+ */
+export function projectFingerprint(slug: string): string | null {
+  const dir = projectDir(slug);
+  if (!dir) return null;
+
+  const parts: string[] = [];
+  const walk = (current: string) => {
+    for (const entry of readdirSync(current, { withFileTypes: true }).sort(
+      (a, b) => a.name.localeCompare(b.name),
+    )) {
+      if (IGNORED_ENTRIES.has(entry.name)) continue;
+      const absolute = join(current, entry.name);
+      if (entry.isDirectory()) {
+        walk(absolute);
+        continue;
+      }
+      const stat = statSync(absolute);
+      parts.push(`${absolute}:${stat.mtimeMs}:${stat.size}`);
+    }
+  };
+
+  walk(dir);
+  return parts.join("|");
+}
+
+/**
+ * Remember one value per project, thrown away as soon as anything on disk
+ * moves. Wraps the reads that parse HTML — the expensive ones.
+ */
+export function memoPerProject<T>(
+  compute: (slug: string) => T,
+): (slug: string) => T {
+  const cache = new Map<string, { fingerprint: string; value: T }>();
+
+  return (slug: string): T => {
+    const fingerprint = projectFingerprint(slug);
+    if (fingerprint === null) return compute(slug);
+
+    const hit = cache.get(slug);
+    if (hit && hit.fingerprint === fingerprint) return hit.value;
+
+    const value = compute(slug);
+    cache.set(slug, { fingerprint, value });
+
+    // A rejected read must not be remembered as the project's state.
+    if (value instanceof Promise) {
+      value.catch(() => {
+        if (cache.get(slug)?.value === value) cache.delete(slug);
+      });
+    }
+    return value;
   };
 }
 
@@ -179,7 +245,9 @@ export function readCompositionHosts(html: string): CompositionHost[] {
   return root ? nestedHosts(hosts, root) : [];
 }
 
-export function readProject(slug: string): HyperframesProject | null {
+export const readProject = memoPerProject(function readProject(
+  slug: string,
+): HyperframesProject | null {
   const dir = projectDir(slug);
   if (!dir) return null;
 
@@ -209,7 +277,7 @@ export function readProject(slug: string): HyperframesProject | null {
     duration: composition.duration,
     entry,
   };
-}
+});
 
 export function listProjects(): HyperframesProject[] {
   return listProjectSlugs()
@@ -222,7 +290,9 @@ export function listProjects(): HyperframesProject[] {
  * `hyperframes preview` applies, borrowed from @hyperframes/studio-server so
  * preview and render stay on one code path.
  */
-export function buildPreviewHtml(slug: string): string | null {
+export const buildPreviewHtml = memoPerProject(function buildPreviewHtml(
+  slug: string,
+): string | null {
   const dir = projectDir(slug);
   if (!dir) return null;
   return buildSubCompositionHtml(
@@ -231,7 +301,7 @@ export function buildPreviewHtml(slug: string): string | null {
     RUNTIME_URL,
     `/api/hf/${slug}/files/`,
   );
-}
+});
 
 /**
  * The pre-built runtime IIFE. `loadHyperframeRuntimeSource()` is the other
@@ -242,36 +312,40 @@ export function readRuntimeSource(): string {
   return getHyperframeRuntimeScript();
 }
 
-export function readProjectFile(
+/**
+ * Where a project asset lives and what it is, without reading it.
+ *
+ * Sub-compositions are served verbatim, the way the official studio serves
+ * them. They are not standalone documents here: the runtime fetches the file
+ * named by `data-composition-src` and inlines its body into the root preview.
+ * Wrapping each one in a full document first — index.html's <head>, its
+ * <style>, GSAP and a second runtime bootstrap — is what made scenes lay out
+ * with the right geometry yet paint nothing.
+ */
+export function statProjectFile(
   slug: string,
   segments: string[],
-): { body: Buffer | string; contentType: string } | null {
+): { path: string; contentType: string; size: number; mtimeMs: number } | null {
   const dir = projectDir(slug);
   if (!dir) return null;
 
-  const relativePath = segments.join("/");
-  const target = resolveWithinProject(dir, relativePath);
-  if (!target || !existsSync(target) || !statSync(target).isFile()) return null;
+  const target = resolveWithinProject(dir, segments.join("/"));
+  if (!target || !existsSync(target)) return null;
 
-  // A sub-composition must be served the same way the studio serves it — with
-  // the runtime injected. Handing back the raw file makes its scripts run
-  // without the runtime bootstrap ("Illegal invocation" from the shader blocks).
-  if (relativePath.endsWith(".html")) {
-    const html = buildSubCompositionHtml(
-      dir,
-      relativePath,
-      RUNTIME_URL,
-      `/api/hf/${slug}/files/`,
-    );
-    if (html) return { body: html, contentType: "text/html; charset=utf-8" };
-  }
+  const stat = statSync(target);
+  if (!stat.isFile()) return null;
 
-  return { body: readFileSync(target), contentType: getMimeType(target) };
+  return {
+    path: target,
+    contentType: getMimeType(target),
+    size: stat.size,
+    mtimeMs: stat.mtimeMs,
+  };
 }
 
-const IGNORED_ENTRIES = new Set(["node_modules", ".git", ".hyperframes"]);
-
-export function readProjectTree(slug: string): FileNode[] {
+export const readProjectTree = memoPerProject(function readProjectTree(
+  slug: string,
+): FileNode[] {
   const dir = projectDir(slug);
   if (!dir) return [];
 
@@ -293,7 +367,7 @@ export function readProjectTree(slug: string): FileNode[] {
   };
 
   return walk(dir);
-}
+});
 
 const TEXT_EXTENSIONS = new Set([
   "html",
@@ -308,7 +382,14 @@ const TEXT_EXTENSIONS = new Set([
   "svg",
 ]);
 
-export function readSourceFile(slug: string, path: string): SourceFile | null {
+/**
+ * Absolute path of an editable project file, or null when it is outside the
+ * project, missing, or not a text format.
+ *
+ * `resolveWithinProject` is the containment check — the path arrives from the
+ * browser, so `../../etc/passwd` has to resolve to null rather than to a file.
+ */
+function editablePath(slug: string, path: string): string | null {
   const dir = projectDir(slug);
   if (!dir) return null;
 
@@ -316,10 +397,62 @@ export function readSourceFile(slug: string, path: string): SourceFile | null {
   if (!target || !existsSync(target) || !statSync(target).isFile()) return null;
 
   const extension = path.split(".").pop() ?? "";
-  if (!TEXT_EXTENSIONS.has(extension)) return null;
+  return TEXT_EXTENSIONS.has(extension) ? target : null;
+}
+
+/**
+ * The file's version as the editor last saw it — mtime and size.
+ *
+ * The agent and the SDK write these same files, so a manual save has to be able
+ * to tell "nothing moved under me" from "this changed since I opened it" and
+ * refuse to clobber the second case.
+ */
+function fileVersion(target: string): string {
+  const stat = statSync(target);
+  return `${stat.mtimeMs.toString(36)}-${stat.size.toString(36)}`;
+}
+
+export function readSourceFile(slug: string, path: string): SourceFile | null {
+  const target = editablePath(slug, path);
+  if (!target) return null;
 
   const code = readFileSync(target, "utf8");
-  return { path, code, foldableLines: foldableLines(code), saved: true };
+  return {
+    path,
+    code,
+    foldableLines: foldableLines(code),
+    saved: true,
+    version: fileVersion(target),
+  };
+}
+
+export function writeSourceFile(
+  slug: string,
+  path: string,
+  code: string,
+  /** Version the editor loaded; omit to force the write. */
+  baseVersion?: string,
+):
+  | { ok: true; file: SourceFile }
+  | { ok: false; error: string; status: number } {
+  const target = editablePath(slug, path);
+  if (!target) {
+    return { ok: false, error: "file is not editable", status: 404 };
+  }
+
+  if (baseVersion && baseVersion !== fileVersion(target)) {
+    return {
+      ok: false,
+      error: "file changed on disk since you opened it — reload before saving",
+      status: 409,
+    };
+  }
+
+  writeFileSync(target, code, "utf8");
+  const file = readSourceFile(slug, path);
+  return file
+    ? { ok: true, file }
+    : { ok: false, error: "write succeeded but the file could not be re-read", status: 500 };
 }
 
 /** Line numbers whose indentation opens a block — drives the fold gutter. */
@@ -334,41 +467,4 @@ function foldableLines(code: string): number[] {
     }
     return acc;
   }, []);
-}
-
-/** One track per nested composition host, labelled `<source file>:<composition id>`. */
-export function readTimeline(slug: string): TimelineSection[] {
-  const dir = projectDir(slug);
-  if (!dir) return [];
-
-  const entry = "index.html";
-  const entryPath = join(dir, entry);
-  if (!existsSync(entryPath)) return [];
-
-  const composition = readComposition(readFileSync(entryPath, "utf8"));
-  if (composition.clips.length === 0) return [];
-
-  const rootId = composition.id ?? "root";
-  return [
-    {
-      id: rootId,
-      label: `INSIDE: ${rootId.toUpperCase()}`,
-      tracks: composition.clips.map((clip) => {
-        const label = `${clip.src ?? entry}:${clip.id}`;
-        return {
-          id: clip.id,
-          label,
-          visible: true,
-          clips: [
-            {
-              id: `${clip.id}-clip`,
-              label,
-              start: clip.start,
-              end: clip.start + clip.duration,
-            },
-          ],
-        };
-      }),
-    },
-  ];
 }
