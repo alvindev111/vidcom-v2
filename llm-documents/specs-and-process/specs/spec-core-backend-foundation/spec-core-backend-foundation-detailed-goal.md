@@ -1,6 +1,6 @@
 # Spec Core Backend Foundation — Detailed Goals
 
-> **Reference**: [Main Spec](./spec-core-backend-foundation-inprocess.md)
+> **Reference**: [Main Spec](./spec-core-backend-foundation-complete.md)
 >
 > **Source scope**: [Phase 1 — Nền móng](../../../product-features/15-build-order.md#giai-đoạn-1--nền-móng-34-tuần), mục 1.1–1.13.
 

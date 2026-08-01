@@ -675,10 +675,10 @@ A (monorepo + boundary lint + CI typecheck/lint + skills + notes)
   - _Requirements: R13 AC4_ — _Design: §12_
 - [x] O.5 Ghi rõ Node SEA artifact smoke là gate **Phase 4**
   - _Requirements: R13 AC5_
-- [ ] O.6 Hoàn tất `implementation-notes.html`; cập nhật spec hiện hành §Spec Review + Retrospective; đổi tên spec `inprocess` → `complete`
+- [x] O.6 Hoàn tất `implementation-notes.html`; cập nhật spec hiện hành §Spec Review + Retrospective; đổi tên spec `inprocess` → `complete`
 
 **Acceptance Criteria**:
-- [ ] Toàn bộ CI bắt buộc xanh
+- [x] Toàn bộ CI bắt buộc xanh
 - [x] Ba project mẫu vẫn mở, sửa và lưu được
 
 ---
@@ -755,7 +755,7 @@ Chi tiết: [Detail Design](./spec-core-backend-foundation-detailed-design.md) �
 > Ghi một entry mỗi phiên làm việc.
 
 2026-08-01 — Phase A, Task A.1
-  - Files: `package.json`, `bun.lock`, `tsconfig.json`, `tsconfig.base.json`, `packages/**`, `eslint.config.mjs`, `.github/workflows/ci.yml`, `scripts/verify-import-boundaries.mjs`, `llm-documents/steering/{05,07,08,09}-*.md`, `spec-core-backend-foundation-inprocess.md`, `spec-core-backend-foundation-detailed-goal.md`, `spec-core-backend-foundation-implementation-checklist.md`, `implementation-notes.html`
+  - Files: `package.json`, `bun.lock`, `tsconfig.json`, `tsconfig.base.json`, `packages/**`, `eslint.config.mjs`, `.github/workflows/ci.yml`, `scripts/verify-import-boundaries.mjs`, `llm-documents/steering/{05,07,08,09}-*.md`, `spec-core-backend-foundation-complete.md`, `spec-core-backend-foundation-detailed-goal.md`, `spec-core-backend-foundation-implementation-checklist.md`, `implementation-notes.html`
   - Summary: Mở Code Execution, xác minh đúng 118 task ID, dựng 8 workspace package, thêm import boundary, pin dependency, tạo CI static checks, đồng bộ một `vidcom.sqlite` và hoàn tất negative test cho lint boundary.
   - Decisions: Giữ ngoại lệ migration tường minh cho `src/app/api/hf/**` và `src/lib/hyperframes/*.server.ts` tới H/K/N. Đồng bộ thêm steering 05/08/09 vì chúng còn tham chiếu hai database cũ. Checkout có staged baseline từ trước nên chưa commit để tránh trộn thay đổi thuộc người dùng.
   - Blockers: Không có blocker code; còn 10 lint warning có sẵn trong `.temp-documents`, không làm CI fail.
@@ -860,6 +860,13 @@ Chi tiết: [Detail Design](./spec-core-backend-foundation-detailed-design.md) �
   - Summary: Xoá dependency và toàn bộ production/test query Kysely; nối `drizzle-orm/node-sqlite` trực tiếp với `DatabaseSync`; Drizzle schema quản lý 11 bảng, CHECK/FK/index và một foundation migration sạch, reviewable.
   - Scope correction: Theo xác nhận của chủ dự án, bỏ hoàn toàn compatibility shim ORM cũ vì đây là greenfield. Runtime chỉ còn Drizzle ORM/Drizzle Kit; database dev cũ phải tạo lại từ migration Drizzle.
   - Evidence: `typecheck` xanh; 11 suite DB/job/recovery/SSE với 34 test xanh; fresh + reopen + WAL/integrity/FK/CHECK/partial-unique đều xanh; một foundation migration sạch và `drizzle-kit generate` báo không có schema drift.
+
+2026-08-01 — Closeout hậu review
+
+  - Summary: Đã xử lý toàn bộ finding bảo mật, durability, lifecycle, API/SSE, parser/UI và rebuild persistence Drizzle thuần; checklist trở lại 118/118.
+  - Evidence local: Frozen install không đổi lockfile; typecheck, lint (0 error), boundary, 31 file/170 test, production build và schema-drift gate đều exit 0.
+  - Evidence remote: GitHub Actions CI run `30704521208` cho implementation commit `32f93cd` hoàn tất thành công trong 1m32s.
+  - Closeout: Không còn blocker; O.6 và CI acceptance được tick sau remote CI, spec đổi `inprocess` → `complete` trong commit tài liệu riêng.
   - Blockers: Chưa có blocker. `drizzle-orm/node-sqlite` hiện ở 1.0.0-rc.4 nên version được pin và full migration/runtime CI là gate bắt buộc trước khi đánh dấu lại Phase F.
 
 Format:

@@ -1,6 +1,6 @@
 # Spec Core Backend Foundation
 
-> **Status**: In process — mở lại để xử lý toàn bộ finding review và completion gate commit/push.
+> **Status**: Complete — 118/118 và GitHub Actions CI xanh sau vòng hậu review.
 
 > **Related Documents**:
 > - [Detailed Goals](./spec-core-backend-foundation-detailed-goal.md) — đã duyệt 2026-08-01
@@ -81,14 +81,14 @@ Xây nền móng backend có thể kiểm thử và bảo vệ dữ liệu cho V
 
 ## Spec Review
 
-- **Completed**: 118/118 task ID; Phase A→O tuần tự; gate B trước G/H/N và J trước K đều được giữ.
+- **Completed**: 118/118 task ID; Phase A→O tuần tự; gate B trước G/H/N và J trước K đều được giữ. Persistence được rebuild Drizzle thuần, không Kysely dependency/import/facade hoặc compatibility shim.
 - **Demo**: Playwright trên Next thật mở studio, lưu source, Regenerate TTS và AI Composer với 0 console error. E2E tự động chạy đủ ba project mẫu qua list → snapshot → save → job → event/SSE.
-- **Feedback**: Toàn bộ CI bắt buộc xanh sau vòng hậu review: frozen install, typecheck, lint, boundary và 31 file/170 test. Production build cũng xanh. Persistence đã rebuild Drizzle thuần với một foundation migration, không compatibility shim; P1 symlink allowlist và P2 journal cleanup đã có regression coverage. Node SEA artifact smoke đầy đủ vẫn là gate Phase 4 theo đúng R13 AC5, không phải deliverable đã hoàn tất ở Phase 1.
+- **Feedback**: Toàn bộ CI bắt buộc xanh sau vòng hậu review: frozen install, typecheck, lint, boundary và 31 file/170 test. Production build và schema-drift gate cũng xanh. GitHub Actions run `30704521208` của commit `32f93cd` hoàn tất thành công trong 1m32s. Persistence đã rebuild Drizzle thuần với một foundation migration, không compatibility shim; P1 symlink allowlist và P2 journal cleanup đã có regression coverage. Node SEA artifact smoke đầy đủ vẫn là gate Phase 4 theo đúng R13 AC5, không phải deliverable đã hoàn tất ở Phase 1.
 
 ## Spec Retrospective
 
-- **Well**: Golden gate sớm giữ serialize/preview ổn định; cutover từng route và test filesystem/SQLite thật bắt được race, crash, no-overwrite và compatibility. Ghi design drift cùng lúc giữ contract, schema và recovery thống nhất.
-- **Not Well**: Lease renewal bị bỏ sót trong implementation ban đầu dù design đã ghi 10 giây; chỉ browser session dài hơn TTL mới lộ 409. Test containment ban đầu chỉ phủ symlink thoát project, chưa phủ symlink nội-project trỏ vào file bị allowlist cấm. Next production build vẫn cảnh báo NFT trace rộng, và lint còn warning trong `.temp-documents` ngoài phạm vi spec.
+- **Well**: Golden gate sớm giữ serialize/preview ổn định; cutover từng route và test filesystem/SQLite thật bắt được race, crash, no-overwrite và compatibility. Rebuild greenfield sang Drizzle cho phép squash thành một migration nền sạch; guard CI khóa không cho Kysely quay lại. Ghi design drift cùng lúc giữ contract, schema và recovery thống nhất.
+- **Not Well**: Lease renewal bị bỏ sót trong implementation ban đầu dù design đã ghi 10 giây; chỉ browser session dài hơn TTL mới lộ 409. Test containment ban đầu chỉ phủ symlink thoát project, chưa phủ symlink nội-project trỏ vào file bị allowlist cấm. Migration Drizzle đầu tiên tạm sinh thêm một migration vá CHECK trước khi được squash lại vì greenfield. Lint còn warning trong `.temp-documents` ngoài phạm vi spec.
 - **Improvements**: Các daemon lifecycle sau nên có test vượt TTL ngay từ Phase startup; mỗi phase route cần browser smoke dài hơn lease TTL. Phase 4 phải xử lý NFT/package tracing cùng Node SEA cold/warm artifact matrix trước release.
 
 ## Next Spec Adjustments
