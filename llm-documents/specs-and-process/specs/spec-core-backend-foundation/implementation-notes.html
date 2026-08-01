@@ -435,12 +435,12 @@
       <section class="border-t border-slate-800 py-8" aria-labelledby="session-2026-08-01-review-remediation">
         <div class="flex flex-wrap items-baseline justify-between gap-3">
           <h2 id="session-2026-08-01-review-remediation" class="text-2xl font-semibold">Phiên 2026-08-01 — Mở lại spec theo review độc lập</h2>
-          <span class="rounded-full bg-sky-400/10 px-3 py-1 text-sm text-sky-300">Local xanh · chờ remote CI</span>
+          <span class="rounded-full bg-emerald-400/10 px-3 py-1 text-sm text-emerald-300">118/118 · CI xanh</span>
         </div>
         <dl class="mt-6 grid gap-5 sm:grid-cols-2">
           <div class="rounded-xl border border-slate-800 bg-slate-900/60 p-5"><dt class="font-semibold text-slate-200">Quyết định</dt><dd class="mt-2 text-sm leading-6 text-slate-400">Đổi main spec từ Complete về In process. Mỗi finding trong <code>review.md</code> phải có code/test hoặc bằng chứng hiện trạng; không dùng kết quả CI cũ để đóng phiên mới.</dd></div>
           <div class="rounded-xl border border-slate-800 bg-slate-900/60 p-5"><dt class="font-semibold text-slate-200">Design drift</dt><dd class="mt-2 text-sm leading-6 text-slate-400">Detailed Design §15 ghi contract nonce 32 byte, payload constants/413, watcher restart, stage-only job event, scene style, cleanup lifecycle và real Next smoke. Thiết kế và code được đổi cùng phiên.</dd></div>
-          <div class="rounded-xl border border-slate-800 bg-slate-900/60 p-5"><dt class="font-semibold text-slate-200">Bằng chứng local</dt><dd class="mt-2 text-sm leading-6 text-slate-400">Frozen install không đổi lockfile; typecheck, lint 0 error, boundary, 32 file/180 test, production build, Next runtime/SSE smoke và Drizzle schema-drift đều xanh. Checklist audit: 118 task, 0 traceability gap, 15 phase annotation.</dd></div>
+          <div class="rounded-xl border border-slate-800 bg-slate-900/60 p-5"><dt class="font-semibold text-slate-200">Bằng chứng</dt><dd class="mt-2 text-sm leading-6 text-slate-400">Frozen install không đổi lockfile; typecheck, lint 0 error, boundary, 32 file/180 test, production build, Next runtime/SSE smoke và Drizzle schema-drift đều xanh. Checklist audit: 118 task, 0 traceability gap, 15 phase annotation. Remote run <code>30706454500</code> của commit <code>c8828a8</code> thành công.</dd></div>
           <div class="rounded-xl border border-slate-800 bg-slate-900/60 p-5"><dt class="font-semibold text-slate-200">Bất ngờ / cạm bẫy</dt><dd class="mt-2 text-sm leading-6 text-slate-400">CLI dùng UUID nhưng nonce store đòi đúng 32 byte; test cũ gọi thẳng adapter nên không chứng minh Next/network; job stage đổi ở cùng progress bị guard đơn điệu nuốt mất. Cả ba đã có regression.</dd></div>
         </dl>
       </section>

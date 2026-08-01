@@ -1,6 +1,6 @@
 # Spec Core Backend Foundation
 
-> **Status**: In process — đang xử lý vòng review độc lập trong `review.md`; chưa được đóng lại trước khi full CI và CI từ remote đều xanh.
+> **Status**: Complete — 118/118, toàn bộ finding trong `review.md` đã xử lý và GitHub Actions CI xanh.
 
 > **Related Documents**:
 > - [Detailed Goals](./spec-core-backend-foundation-detailed-goal.md) — đã duyệt 2026-08-01
@@ -81,9 +81,9 @@ Xây nền móng backend có thể kiểm thử và bảo vệ dữ liệu cho V
 
 ## Spec Review
 
-- **Review remediation in progress**: 118 task ID vẫn đã được thực thi, nhưng trạng thái Complete bị thu hồi trong lúc kiểm chứng và sửa toàn bộ finding của `review.md`. Persistence tiếp tục bắt buộc Drizzle thuần, không Kysely dependency/import/facade hoặc compatibility shim.
+- **Completed**: 118/118 task ID; toàn bộ finding trong `review.md` đã có code/test hoặc evidence hiện trạng. Persistence là Drizzle thuần, không Kysely dependency/import/facade hoặc compatibility shim.
 - **Demo**: Playwright trên Next thật mở studio, lưu source, Regenerate TTS và AI Composer với 0 console error. E2E tự động chạy đủ ba project mẫu qua list → snapshot → save → job → event/SSE.
-- **Feedback**: Toàn bộ CI bắt buộc xanh sau vòng hậu review: frozen install, typecheck, lint, boundary và 31 file/170 test. Production build và schema-drift gate cũng xanh. GitHub Actions run `30704521208` của commit `32f93cd` hoàn tất thành công trong 1m32s. Persistence đã rebuild Drizzle thuần với một foundation migration, không compatibility shim; P1 symlink allowlist và P2 journal cleanup đã có regression coverage. Node SEA artifact smoke đầy đủ vẫn là gate Phase 4 theo đúng R13 AC5, không phải deliverable đã hoàn tất ở Phase 1.
+- **Feedback**: Gate cuối xanh: frozen install, typecheck, lint 0 error, boundary, 32 file/180 test, production build, real Next runtime/SSE smoke và Drizzle schema-drift. GitHub Actions run `30706454500` của remediation commit `c8828a8` hoàn tất thành công. Persistence đã rebuild Drizzle thuần với một foundation migration, không compatibility shim. Node SEA artifact smoke đầy đủ vẫn là gate Phase 4 theo đúng R13 AC5, không phải deliverable Phase 1.
 
 ## Spec Retrospective
 

@@ -791,7 +791,8 @@ Chi tiết: [Detail Design](./spec-core-backend-foundation-detailed-design.md) �
   - Summary: Thu hồi trạng thái Complete để audit lại từng finding. Đã xác nhận các vá symlink canonical allowlist, journal abort, conflict revision, entity-state error và Drizzle thuần đã có; các gap lifecycle/runtime/traceability còn lại đang được xử lý.
   - Decisions: Không tính lại 118 task lịch sử; bổ sung bằng chứng remediation trực tiếp cho task liên quan và chỉ đóng spec sau full CI cùng CI remote xanh.
   - Verification local: frozen install không đổi lockfile; typecheck, lint 0 error, boundary, 32 file/180 test, build, real Next/SSE runtime smoke và Drizzle schema-drift đều xanh. Audit checklist: 118 task, 0 thiếu Requirements/Design, 15/15 phase có Skill/Read-first.
-  - Blockers: Còn completion gate commit/push và remote CI; spec giữ `inprocess` cho tới khi gate này xanh.
+  - Remote gate: remediation commit `c8828a8` đã push `main`; GitHub Actions run `30706454500` hoàn tất **Success**. Sau đó main spec đổi `inprocess` → `complete` trong commit closeout riêng.
+  - Blockers: Không còn.
 
 2026-08-01 — Phase A, Task A.1
   - Files: `package.json`, `bun.lock`, `tsconfig.json`, `tsconfig.base.json`, `packages/**`, `eslint.config.mjs`, `.github/workflows/ci.yml`, `scripts/verify-import-boundaries.mjs`, `llm-documents/steering/{05,07,08,09}-*.md`, `spec-core-backend-foundation-complete.md`, `spec-core-backend-foundation-detailed-goal.md`, `spec-core-backend-foundation-implementation-checklist.md`, `implementation-notes.html`
