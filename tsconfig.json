@@ -1,4 +1,5 @@
 {
+  "extends": "./tsconfig.base.json",
   "compilerOptions": {
     "target": "ES2017",
     "lib": ["dom", "dom.iterable", "esnext"],
@@ -19,7 +20,14 @@
       }
     ],
     "paths": {
-      "@/*": ["./src/*"]
+      "@/*": ["./src/*"],
+      "@vidcom/adapter": ["./packages/adapter/src/index.ts"],
+      "@vidcom/cli": ["./packages/cli/src/index.ts"],
+      "@vidcom/contracts": ["./packages/contracts/src/index.ts"],
+      "@vidcom/core": ["./packages/core/src/index.ts"],
+      "@vidcom/mcp": ["./packages/mcp/src/index.ts"],
+      "@vidcom/server": ["./packages/server/src/index.ts"],
+      "@vidcom/worker": ["./packages/worker/src/index.ts"]
     }
   },
   "include": [
@@ -30,5 +38,5 @@
     ".next/dev/types/**/*.ts",
     "**/*.mts"
   ],
-  "exclude": ["node_modules"]
+  "exclude": ["node_modules", "spikes/**"]
 }

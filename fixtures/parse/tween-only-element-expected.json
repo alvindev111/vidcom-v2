@@ -1,0 +1,23 @@
+{
+  "elements": [
+    {
+      "id": "#motion-only",
+      "label": "#motion-only",
+      "kind": "element",
+      "start": null,
+      "duration": null,
+      "src": null,
+      "effects": [
+        {
+          "id": "0:#motion-only-from-1250-position",
+          "method": "from",
+          "start": 1.25,
+          "duration": 0.75,
+          "ease": null,
+          "propertyGroup": "position"
+        }
+      ]
+    }
+  ],
+  "unresolvedEffects": 0
+}

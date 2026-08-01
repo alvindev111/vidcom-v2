@@ -1,0 +1,10 @@
+<!-- Guards selector normalization from a composition-scoped selector to the target row. -->
+<template>
+  <div data-composition-id="scoped-scene">
+    <div id="target"></div>
+    <script>
+      const tl = gsap.timeline({ paused: true });
+      tl.to('[data-composition-id="scoped-scene"] #target', { x: 100, duration: 1 }, 0.5);
+    </script>
+  </div>
+</template>

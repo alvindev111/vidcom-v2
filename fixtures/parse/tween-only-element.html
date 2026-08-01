@@ -1,0 +1,10 @@
+<!-- Guards elements that have motion but no data-start/data-duration of their own. -->
+<template>
+  <div data-composition-id="tween-scene">
+    <div id="motion-only"></div>
+    <script>
+      const tl = gsap.timeline({ paused: true });
+      tl.from("#motion-only", { y: 20, duration: 0.75 }, 1.25);
+    </script>
+  </div>
+</template>

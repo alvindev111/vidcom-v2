@@ -1,0 +1,17 @@
+{
+  "name": "@vidcom/adapter",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": "./src/index.ts",
+  "dependencies": {
+    "@hyperframes/core": "0.7.86",
+    "@hyperframes/parsers": "0.7.86",
+    "@hyperframes/sdk": "0.7.86",
+    "@hyperframes/studio-server": "0.7.86",
+    "@vidcom/contracts": "workspace:*",
+    "@vidcom/core": "workspace:*",
+    "drizzle-orm": "1.0.0-rc.4",
+    "linkedom": "0.18.13"
+  }
+}

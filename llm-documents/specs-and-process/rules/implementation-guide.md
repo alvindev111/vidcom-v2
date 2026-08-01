@@ -40,7 +40,7 @@ Open the checklist and confirm:
 - [ ] Every phase has `Skill`, `Read first`, `Design reference` annotations
 - [ ] Every sub-task carries `_Requirements: [Goal ID]_ — _Design: [Sec X.Y]_`
 - [ ] Requirements Coverage Matrix is filled
-- [ ] Persistence-bound phases have BOTH logic tests AND real-PostgreSQL tests
+- [ ] Persistence-bound phases have BOTH logic tests AND real-datastore tests (SQLite + real filesystem for VidCom)
 
 If any box above is empty, the checklist is not ready. STOP and either fill the gap or escalate — do not start coding a partially-specified plan.
 
@@ -95,7 +95,7 @@ Default style: test first when the task is testable, incremental commits, small 
 Before flipping to `[x]`:
 
 - [ ] All new and existing unit tests pass.
-- [ ] For persistence-bound work, all real-PostgreSQL-backed tests pass: round-trip, transactions, constraints, workspace isolation.
+- [ ] For persistence-bound work, all real-datastore-backed tests pass: round-trip, transactions, constraints, workspace isolation.
 - [ ] Acceptance criteria for the phase are re-checked.
 - [ ] Typecheck / lint / build passes on the changed files.
 - [ ] No debug logs, `console.log`, commented-out code, or stray test fixtures left behind.
@@ -322,6 +322,6 @@ Do NOT:
 - Mark a task `[x]` with failing or skipped tests.
 - Silently edit files outside `Files affected`.
 - Disable a pre-existing test to "unblock" a new one.
-- Fake a DB-backed test with a mock when the checklist requires real-PostgreSQL verification.
+- Fake a datastore-backed test with a mock when the checklist requires real-datastore verification. For VidCom this explicitly includes never mocking `node:fs`.
 - Let `implementation-checklist.md` and `detailed-design.md` diverge.
 - Batch up many tasks into one giant commit at the end of the day.

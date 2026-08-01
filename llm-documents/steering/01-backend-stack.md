@@ -6,7 +6,7 @@
 |---|---|---|
 | Ngôn ngữ | TypeScript, `strict: true` | Không JavaScript thuần trong `packages/` |
 | HTTP framework | **Hono** | Trùng với studio server chính thức của HyperFrames |
-| Runtime đích | **Bun** | Fallback Node ≥22 nếu spike thất bại |
+| Runtime đích | **Node SEA (Node 24 LTS toolchain đã kiểm thử)** | Bun `--compile` trực tiếp và native-loader rewrite đều thất bại; Node SEA cold/warm probe ONNX + Sharp đã PASS ngày 2026-08-01 |
 | MCP modern (`2026-07-28`) | `@modelcontextprotocol/server@2.x` + `core@2.x` | Package **server**, không phải `client` |
 | MCP legacy (≤ `2025-11-25`) | `@modelcontextprotocol/sdk@1.x` | Bắt buộc — phải phục vụ cả hai thế hệ |
 | HTML parse (server) | `linkedom` | Đúng **một** bản trong dependency tree |
@@ -54,6 +54,8 @@ Những thứ sau **không nhúng được** vào JS bundle và ảnh hưởng t
 | `puppeteer-core` + Chromium | browser runtime, tải lúc chạy |
 | FFmpeg / FFprobe | binary ngoài |
 
+Kết quả spike Phase 0: executable Bun trực tiếp không load được `onnxruntime-node` và `sharp`; Bun native-loader rewrite vẫn không resolve dependency filesystem động. Node SEA nhúng archive native có manifest/checksum đã chạy được ONNX + Sharp ở cold extraction và warm cache. D2 MUST dùng Node SEA và build artifact riêng theo OS × kiến trúc; không được quay lại Bun loader nếu chưa có spike mới phủ đúng probe. Xem [kết quả spike](../../spikes/phase-0/README.md).
+
 MUST truy cập chúng qua **port** trong Core, không gọi trực tiếp từ use case (xem [03-architecture-ddd](03-architecture-ddd.md) §3). Lý do: khi đóng gói phải thay chỗ tìm binary mà không sửa nghiệp vụ.
 
 ## 3. Chính sách dependency
@@ -79,7 +81,7 @@ Mỗi project có `package.json` gọi `npx hyperframes@<version>`. App bundle m
 
 | Cấm | Vì sao |
 |---|---|
-| Import `next` trong `packages/**` | D4 — backend phải chạy độc lập dưới `Bun.serve` |
+| Import `next` trong `packages/**` | D4 — backend phải chạy độc lập dưới Hono host của Node SEA |
 | Import `react` trong `packages/core` hoặc `packages/server` | Core không biết UI |
 | Gọi `process.cwd()` để tìm project | Workspace do người dùng chọn, phải inject (xem [07-data-and-storage](07-data-and-storage.md)) |
 | `child_process` với chuỗi shell | Dùng argument array. Xem [09-security](09-security.md) |

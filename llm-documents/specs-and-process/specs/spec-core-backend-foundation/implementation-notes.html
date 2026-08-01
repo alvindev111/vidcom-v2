@@ -1,0 +1,437 @@
+<!doctype html>
+<html lang="vi">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Ghi chú triển khai Core Backend Foundation</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+  </head>
+  <body class="bg-slate-950 text-slate-100 antialiased">
+    <main class="mx-auto min-h-screen max-w-4xl px-6 py-12">
+      <header class="border-b border-slate-800 pb-8">
+        <p class="text-sm font-semibold uppercase tracking-[0.2em] text-cyan-400">VidCom v2</p>
+        <h1 class="mt-3 text-4xl font-bold tracking-tight">Ghi chú triển khai Core Backend Foundation</h1>
+        <p class="mt-4 max-w-2xl text-slate-400">Nhật ký các quyết định ngoài spec, lệch design, đánh đổi và cạm bẫy phát hiện trong quá trình chạy Phase A đến O.</p>
+      </header>
+
+      <section class="py-8" aria-labelledby="session-2026-08-01">
+        <div class="flex flex-wrap items-baseline justify-between gap-3">
+          <h2 id="session-2026-08-01" class="text-2xl font-semibold">Phiên 2026-08-01 — Khởi động Phase A</h2>
+          <span class="rounded-full bg-cyan-400/10 px-3 py-1 text-sm text-cyan-300">Đang thực thi</span>
+        </div>
+        <dl class="mt-6 grid gap-5 sm:grid-cols-2">
+          <div class="rounded-xl border border-slate-800 bg-slate-900/60 p-5">
+            <dt class="font-semibold text-slate-200">Quyết định</dt>
+            <dd class="mt-2 text-sm leading-6 text-slate-400">Goal hiện tại là xác nhận tường minh cho Code Execution. Giữ thứ tự A→O; B phải xanh trước G/H/N và J phải xong trước K.</dd>
+          </div>
+          <div class="rounded-xl border border-slate-800 bg-slate-900/60 p-5">
+            <dt class="font-semibold text-slate-200">Design drift</dt>
+            <dd class="mt-2 text-sm leading-6 text-slate-400">Chưa có.</dd>
+          </div>
+          <div class="rounded-xl border border-slate-800 bg-slate-900/60 p-5">
+            <dt class="font-semibold text-slate-200">Đánh đổi</dt>
+            <dd class="mt-2 text-sm leading-6 text-slate-400">Bảo toàn toàn bộ thay đổi đang có trong working tree. Import-boundary cho <code>src/</code> tạm miễn các route <code>/api/hf</code> và module <code>hyperframes/*.server.ts</code> đang chờ cutover ở H/K/N; code mới ngoài hai vùng này vẫn bị chặn ngay.</dd>
+          </div>
+          <div class="rounded-xl border border-slate-800 bg-slate-900/60 p-5">
+            <dt class="font-semibold text-slate-200">Bất ngờ / cạm bẫy</dt>
+            <dd class="mt-2 text-sm leading-6 text-slate-400">Checklist có 161 checkbox tổng cộng nhưng đúng 118 task ID; 43 checkbox còn lại là acceptance criteria. Quyết định một database còn xuất hiện sai ở steering 05/08/09 ngoài file 07 được A.5 nêu tên, nên cả bốn tham chiếu được đồng bộ cùng lúc.</dd>
+          </div>
+        </dl>
+      </section>
+
+      <section class="border-t border-slate-800 py-8" aria-labelledby="session-2026-08-01-phase-b">
+        <div class="flex flex-wrap items-baseline justify-between gap-3">
+          <h2 id="session-2026-08-01-phase-b" class="text-2xl font-semibold">Phiên 2026-08-01 — Khóa golden baseline Phase B</h2>
+          <span class="rounded-full bg-emerald-400/10 px-3 py-1 text-sm text-emerald-300">Gate B xanh</span>
+        </div>
+        <dl class="mt-6 grid gap-5 sm:grid-cols-2">
+          <div class="rounded-xl border border-slate-800 bg-slate-900/60 p-5">
+            <dt class="font-semibold text-slate-200">Quyết định</dt>
+            <dd class="mt-2 text-sm leading-6 text-slate-400">Giữ harness ở <code>tests/golden</code>, gọi SDK và logic preview hiện hành trực tiếp. Clock/ID giả dùng đúng structural shape của <code>ClockPort</code>/<code>IdPort</code> để các phase Core sau tái sử dụng mà không tạo phụ thuộc ngược.</dd>
+          </div>
+          <div class="rounded-xl border border-slate-800 bg-slate-900/60 p-5">
+            <dt class="font-semibold text-slate-200">Design drift</dt>
+            <dd class="mt-2 text-sm leading-6 text-slate-400">Không có. Ma trận preview triển khai đủ 3 tone × 5 background effect × 2 trạng thái subtitle override × 2 trạng thái scene hidden, tổng cộng 60 trường hợp như §11.2.</dd>
+          </div>
+          <div class="rounded-xl border border-slate-800 bg-slate-900/60 p-5">
+            <dt class="font-semibold text-slate-200">Bằng chứng</dt>
+            <dd class="mt-2 text-sm leading-6 text-slate-400">15 test golden xanh hai lượt liên tiếp. Thử sửa một byte expected serialize làm suite đỏ rồi đã hoàn nguyên. Chín fixture parse đều có mô tả lỗi hồi quy và expected JSON được commit.</dd>
+          </div>
+          <div class="rounded-xl border border-slate-800 bg-slate-900/60 p-5">
+            <dt class="font-semibold text-slate-200">Bất ngờ / cạm bẫy</dt>
+            <dd class="mt-2 text-sm leading-6 text-slate-400">Fixture media cấp body phải là tài liệu HTML đầy đủ để parser đặt phần tử vào <code>body</code> đúng như runtime. Project preview tạm được đặt dưới <code>projects/</code> để đi qua resolver thật và luôn dọn sau suite.</dd>
+          </div>
+        </dl>
+      </section>
+
+      <section class="border-t border-slate-800 py-8" aria-labelledby="session-2026-08-01-phase-c">
+        <div class="flex flex-wrap items-baseline justify-between gap-3">
+          <h2 id="session-2026-08-01-phase-c" class="text-2xl font-semibold">Phiên 2026-08-01 — Contracts Phase C</h2>
+          <span class="rounded-full bg-emerald-400/10 px-3 py-1 text-sm text-emerald-300">Hoàn tất C</span>
+        </div>
+        <dl class="mt-6 grid gap-5 sm:grid-cols-2">
+          <div class="rounded-xl border border-slate-800 bg-slate-900/60 p-5">
+            <dt class="font-semibold text-slate-200">Quyết định</dt>
+            <dd class="mt-2 text-sm leading-6 text-slate-400">Mọi object boundary dùng schema strict. Contract test import public entry <code>@vidcom/contracts</code>, khóa cả request và response đại diện thay vì kiểm file nội bộ.</dd>
+          </div>
+          <div class="rounded-xl border border-slate-800 bg-slate-900/60 p-5">
+            <dt class="font-semibold text-slate-200">Design drift</dt>
+            <dd class="mt-2 text-sm leading-6 text-slate-400">Không có. Endpoint cancel giữ body rỗng vì §7.7 chỉ cam kết HTTP status; không tự thêm response payload.</dd>
+          </div>
+          <div class="rounded-xl border border-slate-800 bg-slate-900/60 p-5">
+            <dt class="font-semibold text-slate-200">Bằng chứng</dt>
+            <dd class="mt-2 text-sm leading-6 text-slate-400">6 contract test xanh, gồm negative case thiếu field bắt buộc và trả field đã loại bỏ. Package contracts không import bất kỳ package nội bộ <code>@vidcom/*</code> nào.</dd>
+          </div>
+          <div class="rounded-xl border border-slate-800 bg-slate-900/60 p-5">
+            <dt class="font-semibold text-slate-200">Bất ngờ / cạm bẫy</dt>
+            <dd class="mt-2 text-sm leading-6 text-slate-400"><code>cancel_requested</code> là cột boolean riêng trong bảng job, không phải một giá trị status. Schema ban đầu đã được sửa ngay khi đối chiếu lại §6.4.</dd>
+          </div>
+        </dl>
+      </section>
+
+      <section class="border-t border-slate-800 py-8" aria-labelledby="session-2026-08-01-phase-d">
+        <div class="flex flex-wrap items-baseline justify-between gap-3">
+          <h2 id="session-2026-08-01-phase-d" class="text-2xl font-semibold">Phiên 2026-08-01 — Core domain và ports Phase D</h2>
+          <span class="rounded-full bg-amber-400/10 px-3 py-1 text-sm text-amber-300">Design đã đồng bộ</span>
+        </div>
+        <dl class="mt-6 grid gap-5 sm:grid-cols-2">
+          <div class="rounded-xl border border-slate-800 bg-slate-900/60 p-5">
+            <dt class="font-semibold text-slate-200">Quyết định</dt>
+            <dd class="mt-2 text-sm leading-6 text-slate-400">Workspace resolver thuần chỉ nhận candidate đã được composition root xác minh marker. Core không gọi filesystem và không suy ra từ <code>process.cwd()</code>. <code>ResolvedPath</code> là capability branded cho toàn bộ port đọc/ghi.</dd>
+          </div>
+          <div class="rounded-xl border border-slate-800 bg-slate-900/60 p-5">
+            <dt class="font-semibold text-slate-200">Design drift</dt>
+            <dd class="mt-2 text-sm leading-6 text-slate-400">Bổ sung <code>timing_invalid</code> vào §8, ErrorCode và contract test. Lý do: payload timing có thể đúng shape nhưng vi phạm <code>duration &gt; 0</code>, <code>start ≥ 0</code> hoặc track nguyên; đây là domain 422, không thể dùng <code>schema_invalid</code> 400.</dd>
+          </div>
+          <div class="rounded-xl border border-slate-800 bg-slate-900/60 p-5">
+            <dt class="font-semibold text-slate-200">Bằng chứng</dt>
+            <dd class="mt-2 text-sm leading-6 text-slate-400">23 core test xanh. Typecheck và lint sạch cho packages/core. Quét import không tìm thấy <code>node:fs</code>, Hono, Next, React hoặc adapter.</dd>
+          </div>
+          <div class="rounded-xl border border-slate-800 bg-slate-900/60 p-5">
+            <dt class="font-semibold text-slate-200">Bất ngờ / cạm bẫy</dt>
+            <dd class="mt-2 text-sm leading-6 text-slate-400"><code>system-write</code> phải cho đúng <code>vidcom.json</code>, <code>preview-settings.json</code> và narration JSON, trong khi các protected path đó vẫn bị chặn với mọi purpose nhận path từ client.</dd>
+          </div>
+        </dl>
+      </section>
+
+      <section class="border-t border-slate-800 py-8" aria-labelledby="session-2026-08-01-phase-e">
+        <div class="flex flex-wrap items-baseline justify-between gap-3">
+          <h2 id="session-2026-08-01-phase-e" class="text-2xl font-semibold">Phiên 2026-08-01 — Filesystem adapter Phase E</h2>
+          <span class="rounded-full bg-emerald-400/10 px-3 py-1 text-sm text-emerald-300">Hoàn tất E</span>
+        </div>
+        <dl class="mt-6 grid gap-5 sm:grid-cols-2">
+          <div class="rounded-xl border border-slate-800 bg-slate-900/60 p-5">
+            <dt class="font-semibold text-slate-200">Quyết định</dt>
+            <dd class="mt-2 text-sm leading-6 text-slate-400">Resolver canonicalize project root và ancestor gần nhất tồn tại trước khi cấp <code>ResolvedPath</code>. MIME chỉ suy từ extension đã allowlist; bytes và header do client gửi không tham gia quyết định.</dd>
+          </div>
+          <div class="rounded-xl border border-slate-800 bg-slate-900/60 p-5">
+            <dt class="font-semibold text-slate-200">Design drift</dt>
+            <dd class="mt-2 text-sm leading-6 text-slate-400">Không có. <code>FileContent</code> nội bộ chỉ giữ content + hash; relative path đã có ở request/capability và response adapter ghép lại theo DTO, tránh suy ngược sai từ absolute path.</dd>
+          </div>
+          <div class="rounded-xl border border-slate-800 bg-slate-900/60 p-5">
+            <dt class="font-semibold text-slate-200">Bằng chứng</dt>
+            <dd class="mt-2 text-sm leading-6 text-slate-400">13 integration test chạy trên filesystem thật: traversal, absolute path, symlink và ancestor symlink cho đủ 5 purpose; extension/MIME; target mới; hash/tree/stat/identity; child process bị SIGKILL trước rename vẫn giữ nguyên file cũ.</dd>
+          </div>
+          <div class="rounded-xl border border-slate-800 bg-slate-900/60 p-5">
+            <dt class="font-semibold text-slate-200">Bất ngờ / cạm bẫy</dt>
+            <dd class="mt-2 text-sm leading-6 text-slate-400">Negative crash test cần pause hook đúng trước rename và chạy ở child process thật. <code>finally</code> dọn temp khi lỗi bình thường; khi process bị kill, target vẫn nguyên nhờ rename chưa xảy ra.</dd>
+          </div>
+        </dl>
+      </section>
+
+      <section class="border-t border-slate-800 py-8" aria-labelledby="session-2026-08-01-phase-f">
+        <div class="flex flex-wrap items-baseline justify-between gap-3">
+          <h2 id="session-2026-08-01-phase-f" class="text-2xl font-semibold">Phiên 2026-08-01 — SQLite foundation Phase F</h2>
+          <span class="rounded-full bg-emerald-400/10 px-3 py-1 text-sm text-emerald-300">Hoàn tất F</span>
+        </div>
+        <dl class="mt-6 grid gap-5 sm:grid-cols-2">
+          <div class="rounded-xl border border-slate-800 bg-slate-900/60 p-5">
+            <dt class="font-semibold text-slate-200">Quyết định</dt>
+            <dd class="mt-2 text-sm leading-6 text-slate-400">Một <code>vidcom.sqlite</code> được mở dưới app-data, bật foreign keys, busy timeout và WAL trước migration. Root tests đi qua public adapter factory, giữ isolated workspace boundary.</dd>
+          </div>
+          <div class="rounded-xl border border-slate-800 bg-slate-900/60 p-5">
+            <dt class="font-semibold text-slate-200">Design drift</dt>
+            <dd class="mt-2 text-sm leading-6 text-slate-400">Không có. <code>@types/node</code> được nâng lên 24.13.3 để khớp runtime Node 24 đã duyệt và cung cấp type chính thức cho <code>node:sqlite</code>.</dd>
+          </div>
+          <div class="rounded-xl border border-slate-800 bg-slate-900/60 p-5">
+            <dt class="font-semibold text-slate-200">Bằng chứng</dt>
+            <dd class="mt-2 text-sm leading-6 text-slate-400">Migration từ DB rỗng tạo đúng 13 bảng, chạy lại không đổi, integrity <code>ok</code>, journal mode <code>wal</code>, 10 FK đúng và không vi phạm. Negative tests phủ mọi nhóm CHECK, composite PK và partial unique theo project.</dd>
+          </div>
+          <div class="rounded-xl border border-slate-800 bg-slate-900/60 p-5">
+            <dt class="font-semibold text-slate-200">Bất ngờ / cạm bẫy</dt>
+            <dd class="mt-2 text-sm leading-6 text-slate-400">Kysely 0.29 chuyển migration imports sang <code>kysely/migration</code> và constructor dùng property <code>db</code>. Smoke test khóa bề mặt native cùng <code>numUpdatedRows</code> để Node upgrade làm đổi hành vi sẽ đỏ CI.</dd>
+          </div>
+        </dl>
+      </section>
+
+      <section class="border-t border-slate-800 py-8" aria-labelledby="session-2026-08-01-phase-g">
+        <div class="flex flex-wrap items-baseline justify-between gap-3">
+          <h2 id="session-2026-08-01-phase-g" class="text-2xl font-semibold">Phiên 2026-08-01 — Write authority và recovery Phase G</h2>
+          <span class="rounded-full bg-amber-400/10 px-3 py-1 text-sm text-amber-300">Design đã đồng bộ</span>
+        </div>
+        <dl class="mt-6 grid gap-5 sm:grid-cols-2">
+          <div class="rounded-xl border border-slate-800 bg-slate-900/60 p-5">
+            <dt class="font-semibold text-slate-200">Quyết định</dt>
+            <dd class="mt-2 text-sm leading-6 text-slate-400">Mọi mutation ghi intent trước filesystem, giữ lease workspace và mutex theo project. Reconciliation so hash thật với from/to hash; nhánh mơ hồ chỉ orphan + audit, không ghi đè dữ liệu người dùng, đồng thời trả journal ID để startup/doctor surface.</dd>
+          </div>
+          <div class="rounded-xl border border-slate-800 bg-slate-900/60 p-5">
+            <dt class="font-semibold text-slate-200">Design drift</dt>
+            <dd class="mt-2 text-sm leading-6 text-slate-400">Bổ sung <code>previous_content</code> và byte size vào pending journal vì recovery sau rename cần dựng <code>revision_blob</code> mà file cũ không còn. Bootstrap được sửa thành transaction A đăng ký/seed/pending, atomic write, rồi transaction B settle; không giữ transaction SQLite xuyên filesystem I/O.</dd>
+          </div>
+          <div class="rounded-xl border border-slate-800 bg-slate-900/60 p-5">
+            <dt class="font-semibold text-slate-200">Bằng chứng</dt>
+            <dd class="mt-2 text-sm leading-6 text-slate-400">22 test Phase G trọng tâm xanh. Năm crash-recovery case dùng child process và <code>SIGKILL</code>: sau journal, giữa write, sau rename, giữa commit transaction và third-party overwrite. Concurrency thật cho đúng một winner; lease peer bị từ chối, takeover sau TTL và daemon cũ nhận <code>workspace_lease_lost</code>.</dd>
+          </div>
+          <div class="rounded-xl border border-slate-800 bg-slate-900/60 p-5">
+            <dt class="font-semibold text-slate-200">Bất ngờ / cạm bẫy</dt>
+            <dd class="mt-2 text-sm leading-6 text-slate-400">SQLite blob trả <code>Uint8Array</code>, nên pending intent không thể giả định giữ kiểu string. Kill giữa commit phải để transaction chưa COMMIT; khi process chết, WAL rollback và startup recovery tạo đúng một revision/blob/event thay vì nhân đôi.</dd>
+          </div>
+        </dl>
+      </section>
+
+      <section class="border-t border-slate-800 py-8" aria-labelledby="session-2026-08-01-phase-h">
+        <div class="flex flex-wrap items-baseline justify-between gap-3">
+          <h2 id="session-2026-08-01-phase-h" class="text-2xl font-semibold">Phiên 2026-08-01 — HyperFrames adapter Phase H</h2>
+          <span class="rounded-full bg-amber-400/10 px-3 py-1 text-sm text-amber-300">Design đã đồng bộ</span>
+        </div>
+        <dl class="mt-6 grid gap-5 sm:grid-cols-2">
+          <div class="rounded-xl border border-slate-800 bg-slate-900/60 p-5">
+            <dt class="font-semibold text-slate-200">Quyết định</dt>
+            <dd class="mt-2 text-sm leading-6 text-slate-400"><code>CompositionHf</code> trả một model dùng chung cho project, scenes và root track. Root host dựa trên ancestor ownership; element thiếu ID dùng DOM path. Base document chỉ có một nơi gọi HyperFrames builder, rồi cùng settings injector phục vụ preview hiện tại và port mới.</dd>
+          </div>
+          <div class="rounded-xl border border-slate-800 bg-slate-900/60 p-5">
+            <dt class="font-semibold text-slate-200">Design drift</dt>
+            <dd class="mt-2 text-sm leading-6 text-slate-400"><code>CompositionOp</code> được đóng thành union <code>setText</code>, <code>setTiming</code>, <code>addElement</code> thay vì string + unknown. Detailed Design đã cập nhật cùng lúc để Core/typecheck chặn operation sai trước khi chạm SDK.</dd>
+          </div>
+          <div class="rounded-xl border border-slate-800 bg-slate-900/60 p-5">
+            <dt class="font-semibold text-slate-200">Bằng chứng</dt>
+            <dd class="mt-2 text-sm leading-6 text-slate-400">Golden serialize và ma trận preview 60 tổ hợp không đổi. Cả 9 fixture parse đi qua <code>parseProject()</code>; unresolved tween vẫn chỉ tăng counter. Build production xanh; smoke test <code>/</code>, studio và preview đều HTTP 200.</dd>
+          </div>
+          <div class="rounded-xl border border-slate-800 bg-slate-900/60 p-5">
+            <dt class="font-semibold text-slate-200">Bất ngờ / cạm bẫy</dt>
+            <dd class="mt-2 text-sm leading-6 text-slate-400">linkedom đặt HTML fragment và full document ở root khác nhau; parser phải chọn template content, body có host, hoặc document fallback. SQLite warning xuất hiện khi import public adapter trong golden test vì barrel còn export DB; warning không làm thay đổi runtime hay kết quả.</dd>
+          </div>
+        </dl>
+      </section>
+
+      <section class="border-t border-slate-800 py-8" aria-labelledby="session-2026-08-01-phase-i">
+        <div class="flex flex-wrap items-baseline justify-between gap-3">
+          <h2 id="session-2026-08-01-phase-i" class="text-2xl font-semibold">Phiên 2026-08-01 — Use case và startup Phase I</h2>
+          <span class="rounded-full bg-amber-400/10 px-3 py-1 text-sm text-amber-300">Cutover route còn mở</span>
+        </div>
+        <dl class="mt-6 grid gap-5 sm:grid-cols-2">
+          <div class="rounded-xl border border-slate-800 bg-slate-900/60 p-5">
+            <dt class="font-semibold text-slate-200">Quyết định</dt>
+            <dd class="mt-2 text-sm leading-6 text-slate-400">Mười hai use case nhận dependencies qua tham số và trả Result. Write use case chỉ gọi WriteAuthority; scene edit dùng SDK serialize in-memory trước. Composition root CLI là nơi duy nhất new filesystem, SQLite, HyperFrames và authority adapter.</dd>
+          </div>
+          <div class="rounded-xl border border-slate-800 bg-slate-900/60 p-5">
+            <dt class="font-semibold text-slate-200">Design drift</dt>
+            <dd class="mt-2 text-sm leading-6 text-slate-400">WorkspacePort bổ sung <code>readBytes</code> vì <code>readAsset</code> không được ép ảnh/audio/video qua UTF-8 <code>readFile</code>. Detailed Design đã cập nhật method và null semantics cùng lúc.</dd>
+          </div>
+          <div class="rounded-xl border border-slate-800 bg-slate-900/60 p-5">
+            <dt class="font-semibold text-slate-200">Bằng chứng</dt>
+            <dd class="mt-2 text-sm leading-6 text-slate-400">25 test gọi thẳng từng use case phủ happy/failure, không import server. 10 startup test khóa migration → lease → reconciliation → job recovery → identity → scheduler → watcher → listener; integration thật backfill identity trước port bind. Tổng 116 test core/adapter/cli/golden xanh.</dd>
+          </div>
+          <div class="rounded-xl border border-slate-800 bg-slate-900/60 p-5">
+            <dt class="font-semibold text-slate-200">Bất ngờ / cạm bẫy</dt>
+            <dd class="mt-2 text-sm leading-6 text-slate-400">Lease và project ID dùng chung IdPort nên deterministic startup sinh lease_0001 rồi project_0002; test khóa đúng thứ tự thay vì giả định sequence riêng. Acceptance route-thin chỉ có thể đóng sau Hono/Next cutover, nên vẫn để mở.</dd>
+          </div>
+        </dl>
+      </section>
+
+      <section class="border-t border-slate-800 py-8" aria-labelledby="session-2026-08-01-phase-j">
+        <div class="flex flex-wrap items-baseline justify-between gap-3">
+          <h2 id="session-2026-08-01-phase-j" class="text-2xl font-semibold">Phiên 2026-08-01 — Hono perimeter và auth Phase J</h2>
+          <span class="rounded-full bg-emerald-400/10 px-3 py-1 text-sm text-emerald-300">Hoàn tất J</span>
+        </div>
+        <dl class="mt-6 grid gap-5 sm:grid-cols-2">
+          <div class="rounded-xl border border-slate-800 bg-slate-900/60 p-5">
+            <dt class="font-semibold text-slate-200">Quyết định</dt>
+            <dd class="mt-2 text-sm leading-6 text-slate-400">App dùng <code>basePath('/api')</code> và một chain middleware có trace test được. Listener nhận factory sau khi OS chọn port, nhờ đó Host allowlist luôn khóa đúng actual port. Nonce bị xoá đồng bộ trước khi mint token mới.</dd>
+          </div>
+          <div class="rounded-xl border border-slate-800 bg-slate-900/60 p-5">
+            <dt class="font-semibold text-slate-200">Design drift</dt>
+            <dd class="mt-2 text-sm leading-6 text-slate-400">Không có. Quyền bridge credential thực thi đủ hai nhánh đã duyệt: POSIX <code>0600</code>; Windows gỡ inherited ACL và grant read/write duy nhất cho SID hiện tại bằng <code>whoami</code>/<code>icacls</code> argument array.</dd>
+          </div>
+          <div class="rounded-xl border border-slate-800 bg-slate-900/60 p-5">
+            <dt class="font-semibold text-slate-200">Bằng chứng</dt>
+            <dd class="mt-2 text-sm leading-6 text-slate-400">13 security integration test xanh: middleware order, hostile Host trước auth, CORS deny, localhost thiếu cookie, schema/body limit, TTL, nonce hai lần, token khác nonce và chỉ lưu SHA-256, restart invalidation, log redaction, listener thật, conflict port, mode thật trên disk và Windows ACL boundary. Toàn bộ 22 file/135 test xanh.</dd>
+          </div>
+          <div class="rounded-xl border border-slate-800 bg-slate-900/60 p-5">
+            <dt class="font-semibold text-slate-200">Bất ngờ / cạm bẫy</dt>
+            <dd class="mt-2 text-sm leading-6 text-slate-400"><code>app.request()</code> dùng WHATWG Request nên không tự thêm Host như Node HTTP listener; harness phải gửi Host tường minh, còn thiếu Host vẫn bị production middleware từ chối. Lệnh <code>npx hono request</code> trong skill không có executable ở package Hono đã pin, nên kiểm bằng <code>app.request()</code> và listener HTTP thật.</dd>
+          </div>
+        </dl>
+      </section>
+
+      <section class="border-t border-slate-800 py-8" aria-labelledby="session-2026-08-01-phase-k">
+        <div class="flex flex-wrap items-baseline justify-between gap-3">
+          <h2 id="session-2026-08-01-phase-k" class="text-2xl font-semibold">Phiên 2026-08-01 — Hono read cutover Phase K</h2>
+          <span class="rounded-full bg-amber-400/10 px-3 py-1 text-sm text-amber-300">K xong, cleanup chờ N</span>
+        </div>
+        <dl class="mt-6 grid gap-5 sm:grid-cols-2">
+          <div class="rounded-xl border border-slate-800 bg-slate-900/60 p-5">
+            <dt class="font-semibold text-slate-200">Quyết định</dt>
+            <dd class="mt-2 text-sm leading-6 text-slate-400">Next chỉ host Hono qua optional catch-all. Ba GET-only route được xoá lần lượt sau smoke riêng; alias và v1 cùng gọi Core use case. Home và studio trở thành client API consumer; link project dùng stable ID, snapshot một request đủ mở editor.</dd>
+          </div>
+          <div class="rounded-xl border border-slate-800 bg-slate-900/60 p-5">
+            <dt class="font-semibold text-slate-200">Design drift</dt>
+            <dd class="mt-2 text-sm leading-6 text-slate-400">Đã đồng bộ §5.2: <code>buildDocument</code> nhận thêm <code>runtimeUrl</code>/<code>fileBaseUrl</code> tùy chọn để adapter không hardcode transport. §4.4 bổ sung cầu nối K→N: PUT legacy chấp nhận SHA-256 từ GET v1 cùng format mtime-size của client cũ; PUT v1 vẫn cấm legacy.</dd>
+          </div>
+          <div class="rounded-xl border border-slate-800 bg-slate-900/60 p-5">
+            <dt class="font-semibold text-slate-200">Bằng chứng</dt>
+            <dd class="mt-2 text-sm leading-6 text-slate-400">Next thật chứng minh exact route thắng catch-all trước cutover. Sau từng lần xoá, runtime 200, asset legacy/v1 cùng MIME và 287903 bytes, preview legacy/v1 đều 200. Playwright exchange nonce, URL mất <code>?t</code>, Home hiện 3 project và Warm Grain mở đủ code editor, iframe, timeline với 0 console error. 24 test file/143 test xanh.</dd>
+          </div>
+          <div class="rounded-xl border border-slate-800 bg-slate-900/60 p-5">
+            <dt class="font-semibold text-slate-200">Bất ngờ / cạm bẫy</dt>
+            <dd class="mt-2 text-sm leading-6 text-slate-400">Xoá route khi dev server còn chạy làm cache Turbopack mất SST; phải dừng server rồi tái build sạch. Full lint cũng bắt 13 <code>any</code> trong test Phase I, đã thay bằng type port/request thật. NFT build còn warning trace rộng từ filesystem adapter nhưng exit 0; ba import compatibility <code>.server.ts</code> cố ý chỉ biến mất ở N.</dd>
+          </div>
+        </dl>
+      </section>
+      <section class="border-t border-slate-800 py-8" aria-labelledby="session-2026-08-01-phase-l">
+        <div class="flex flex-wrap items-baseline justify-between gap-3">
+          <h2 id="session-2026-08-01-phase-l" class="text-2xl font-semibold">Phiên 2026-08-01 — Job infrastructure Phase L</h2>
+          <span class="rounded-full bg-amber-400/10 px-3 py-1 text-sm text-amber-300">Design đã đồng bộ</span>
+        </div>
+        <dl class="mt-6 grid gap-5 sm:grid-cols-2">
+          <div class="rounded-xl border border-slate-800 bg-slate-900/60 p-5">
+            <dt class="font-semibold text-slate-200">Quyết định</dt>
+            <dd class="mt-2 text-sm leading-6 text-slate-400">SQLite là nguồn trạng thái duy nhất. Claim dùng conditional update; scheduler giới hạn theo type và loại cặp project/type đang active khỏi truy vấn tiếp theo để không overlap cũng không chặn project khác. Cancel queued kết thúc ngay, cancel running được worker nhận ở safe point.</dd>
+          </div>
+          <div class="rounded-xl border border-slate-800 bg-slate-900/60 p-5">
+            <dt class="font-semibold text-slate-200">Design drift</dt>
+            <dd class="mt-2 text-sm leading-6 text-slate-400">Đã cập nhật §5.2/§5.9: <code>Job</code> nội bộ có input, project, hash, cancel và heartbeat nhưng route chỉ trả <code>JobDto</code>. Port thêm đọc cancellation, requeue stale và excluded active pair. Mô tả noop được sửa để kiểm huỷ thật sự ở đầu vòng, trước sleep.</dd>
+          </div>
+          <div class="rounded-xl border border-slate-800 bg-slate-900/60 p-5">
+            <dt class="font-semibold text-slate-200">Bằng chứng</dt>
+            <dd class="mt-2 text-sm leading-6 text-slate-400">7 integration test mới khóa canonical hash ba trường hợp, atomic claim, monotonic progress, concurrency 2 không overlap cùng cặp, cancel + cleanup, failure, đóng/mở lại DB rồi requeue/fail theo idempotent, và GET/cancel qua auth perimeter. Toàn suite 26 file/150 test xanh; typecheck, boundary, lint và build đều exit 0.</dd>
+          </div>
+          <div class="rounded-xl border border-slate-800 bg-slate-900/60 p-5">
+            <dt class="font-semibold text-slate-200">Bất ngờ / cạm bẫy</dt>
+            <dd class="mt-2 text-sm leading-6 text-slate-400">Kysely suy rộng <code>CASE</code> status thành string, không còn khớp union schema. Hai conditional update queued/running vừa giữ type-safe vừa xử lý race claim/cancel. Lệnh <code>bun test</code> gọi test runner Bun không hỗ trợ <code>node:sqlite</code>; CI đúng của repo là <code>bun run test</code>, tức Vitest trên Node, đã xanh.</dd>
+          </div>
+        </dl>
+      </section>
+      <section class="border-t border-slate-800 py-8" aria-labelledby="session-2026-08-01-phase-m">
+        <div class="flex flex-wrap items-baseline justify-between gap-3">
+          <h2 id="session-2026-08-01-phase-m" class="text-2xl font-semibold">Phiên 2026-08-01 — Event, watcher và cache Phase M</h2>
+          <span class="rounded-full bg-amber-400/10 px-3 py-1 text-sm text-amber-300">Design đã đồng bộ</span>
+        </div>
+        <dl class="mt-6 grid gap-5 sm:grid-cols-2">
+          <div class="rounded-xl border border-slate-800 bg-slate-900/60 p-5">
+            <dt class="font-semibold text-slate-200">Quyết định</dt>
+            <dd class="mt-2 text-sm leading-6 text-slate-400">Outbox SQLite là nguồn duy nhất cho resume SSE, giữ tối đa 24 giờ và 5000 dòng. Scheduler persist job trước khi append progress/done. Watcher nhích revision entity khi sửa ngoài, invalidate cache theo event và không tự phát lại write nội bộ.</dd>
+          </div>
+          <div class="rounded-xl border border-slate-800 bg-slate-900/60 p-5">
+            <dt class="font-semibold text-slate-200">Design drift</dt>
+            <dd class="mt-2 text-sm leading-6 text-slate-400">Đã cập nhật §4.3.3/§5.11: WriteAuthority báo hash vừa commit qua observer composition-root; watcher consume hash, dedupe notification cùng nội dung và bỏ qua sibling temp của atomic writer. ProjectReadDependencies nhận cache optional cho test, production luôn dùng instance chung.</dd>
+          </div>
+          <div class="rounded-xl border border-slate-800 bg-slate-900/60 p-5">
+            <dt class="font-semibold text-slate-200">Bằng chứng</dt>
+            <dd class="mt-2 text-sm leading-6 text-slate-400">6 test mới phủ reopen DB + retention gap, LRU/reject, fs.watch thật + debounce, external revision conflict, one-event mutation, job poll/SSE cùng trạng thái, resync, heartbeat và chunk event đi qua Next catch-all không buffer. Tổng 28 file/156 test xanh; typecheck, boundary, lint và build exit 0.</dd>
+          </div>
+          <div class="rounded-xl border border-slate-800 bg-slate-900/60 p-5">
+            <dt class="font-semibold text-slate-200">Bất ngờ / cạm bẫy</dt>
+            <dd class="mt-2 text-sm leading-6 text-slate-400">Một atomic write tạo event cho cả temp file và target; chỉ so target hash vẫn sinh event thừa. Test one-logical-event bắt được lỗi này. Watcher nay bỏ qua đúng mẫu temp và nhớ hash cuối để nhiều notification của cùng rename chỉ xử lý một lần.</dd>
+          </div>
+        </dl>
+      </section>
+      <section class="border-t border-slate-800 py-8" aria-labelledby="session-2026-08-01-phase-n">
+        <div class="flex flex-wrap items-baseline justify-between gap-3">
+          <h2 id="session-2026-08-01-phase-n" class="text-2xl font-semibold">Phiên 2026-08-01 — Write cutover Phase N</h2>
+          <span class="rounded-full bg-emerald-400/10 px-3 py-1 text-sm text-emerald-300">Route cũ đã xoá</span>
+        </div>
+        <dl class="mt-6 grid gap-5 sm:grid-cols-2">
+          <div class="rounded-xl border border-slate-800 bg-slate-900/60 p-5">
+            <dt class="font-semibold text-slate-200">Quyết định</dt>
+            <dd class="mt-2 text-sm leading-6 text-slate-400">Source, settings, BGM và scene edit đều đi qua Hono/Core/WriteAuthority. Mỗi route được bật, khóa contract và smoke trước khi xoá exact Next handler. TTS/generate giữ nguyên response legacy; toàn bộ wrapper <code>.server.ts</code> chỉ xoá sau khi không còn consumer.</dd>
+          </div>
+          <div class="rounded-xl border border-slate-800 bg-slate-900/60 p-5">
+            <dt class="font-semibold text-slate-200">Design drift</dt>
+            <dd class="mt-2 text-sm leading-6 text-slate-400">Snapshot tách <code>previewSettingsRevision</code> khỏi mutation revision toàn project. Journal thêm staged temp/target; BGM dùng stage → journal → no-overwrite install → settings commit, cho phép startup dọn hoặc hoàn tất đúng theo trạng thái crash.</dd>
+          </div>
+          <div class="rounded-xl border border-slate-800 bg-slate-900/60 p-5">
+            <dt class="font-semibold text-slate-200">Bằng chứng</dt>
+            <dd class="mt-2 text-sm leading-6 text-slate-400">30 file/160 test xanh trước browser smoke; targeted startup/write/events 14 test xanh sau lifecycle fix. Playwright thật xác nhận source save, Regenerate TTS và AI Composer đều trả 200, transcript thêm scene mới và console 0 error. Ba crash state BGM không để asset mồ côi hay settings trỏ file thiếu.</dd>
+          </div>
+          <div class="rounded-xl border border-slate-800 bg-slate-900/60 p-5">
+            <dt class="font-semibold text-slate-200">Bất ngờ / cạm bẫy</dt>
+            <dd class="mt-2 text-sm leading-6 text-slate-400">Browser chạy lâu hơn 30 giây bắt được lease chỉ acquire mà chưa renew, khiến action thứ hai nhận 409. Design vốn yêu cầu renew 10 giây; startup nay có interval <code>unref</code> và một <code>stop()</code> duy nhất dọn renewal, lease, watcher và database.</dd>
+          </div>
+        </dl>
+      </section>
+      <section class="border-t border-slate-800 py-8" aria-labelledby="session-2026-08-01-phase-o">
+        <div class="flex flex-wrap items-baseline justify-between gap-3">
+          <h2 id="session-2026-08-01-phase-o" class="text-2xl font-semibold">Phiên 2026-08-01 — Milestone verification Phase O</h2>
+          <span class="rounded-full bg-emerald-400/10 px-3 py-1 text-sm text-emerald-300">118/118 · CI xanh</span>
+        </div>
+        <dl class="mt-6 grid gap-5 sm:grid-cols-2">
+          <div class="rounded-xl border border-slate-800 bg-slate-900/60 p-5">
+            <dt class="font-semibold text-slate-200">Quyết định</dt>
+            <dd class="mt-2 text-sm leading-6 text-slate-400">Production packages giữ Node-only; đường dẫn native sidecar đi qua <code>CompositionRootConfig.nativeDependenciesRoot</code>. Node SEA artifact cold/warm, signing và platform matrix vẫn là gate Phase 4, không được tính là đã làm trong Phase 1.</dd>
+          </div>
+          <div class="rounded-xl border border-slate-800 bg-slate-900/60 p-5">
+            <dt class="font-semibold text-slate-200">Design drift</dt>
+            <dd class="mt-2 text-sm leading-6 text-slate-400">Đã bổ sung seam native path vào §4.6 và Decision 10. Không thêm loader giả hoặc suy đường dẫn từ <code>process.cwd()</code>; Phase 4 sẽ nối loader thật vào contract này.</dd>
+          </div>
+          <div class="rounded-xl border border-slate-800 bg-slate-900/60 p-5">
+            <dt class="font-semibold text-slate-200">Bằng chứng</dt>
+            <dd class="mt-2 text-sm leading-6 text-slate-400">E2E copy cả kinetic-type, swiss-grid và warm-grain vào temp: list, snapshot, save có content hash, ba job succeeded, ba file event, ba job done và SSE stream. Frozen install không đổi dependency; typecheck, lint, boundary, 31 file/161 test và production build đều exit 0.</dd>
+          </div>
+          <div class="rounded-xl border border-slate-800 bg-slate-900/60 p-5">
+            <dt class="font-semibold text-slate-200">Bất ngờ / cạm bẫy</dt>
+            <dd class="mt-2 text-sm leading-6 text-slate-400">Final lint bắt mutation ref ngay trong render ở hook settings; chuyển việc reseed revision sang effect rồi chạy lại toàn pipeline. Mười warning trong tài liệu tạm và một NFT trace warning vẫn tồn tại nhưng không phải lỗi, không làm CI/build fail.</dd>
+          </div>
+        </dl>
+      </section>
+      <section class="border-t border-slate-800 py-8" aria-labelledby="session-2026-08-01-post-review-security">
+        <div class="flex flex-wrap items-baseline justify-between gap-3">
+          <h2 id="session-2026-08-01-post-review-security" class="text-2xl font-semibold">Phiên 2026-08-01 — Sửa finding hậu review P1/P2</h2>
+          <span class="rounded-full bg-emerald-400/10 px-3 py-1 text-sm text-emerald-300">Security regression đã khóa</span>
+        </div>
+        <dl class="mt-6 grid gap-5 sm:grid-cols-2">
+          <div class="rounded-xl border border-slate-800 bg-slate-900/60 p-5">
+            <dt class="font-semibold text-slate-200">Quyết định</dt>
+            <dd class="mt-2 text-sm leading-6 text-slate-400">Path purpose được kiểm trên cả input và canonical target relative. Vì vậy symlink có tên hợp lệ dưới <code>assets/</code> không thể mượn extension để lộ <code>package.json</code>, <code>AGENTS.md</code> hoặc dotfile.</dd>
+          </div>
+          <div class="rounded-xl border border-slate-800 bg-slate-900/60 p-5">
+            <dt class="font-semibold text-slate-200">Design drift</dt>
+            <dd class="mt-2 text-sm leading-6 text-slate-400">§5.5 nay phân biệt lỗi trước và sau durable filesystem write: write lỗi thì abort ngay; commit lỗi sau write giữ pending cho reconciliation. §5.6 khóa authorize hai lần để containment-safe cũng phải allowlist-safe.</dd>
+          </div>
+          <div class="rounded-xl border border-slate-800 bg-slate-900/60 p-5">
+            <dt class="font-semibold text-slate-200">Bằng chứng</dt>
+            <dd class="mt-2 text-sm leading-6 text-slate-400">Sáu assertion đầu tiên đỏ đúng finding; sau fix, hai suite trọng tâm 27/27 xanh. Full CI: 31 file/169 test, typecheck, lint và boundary đều exit 0; production build exit 0.</dd>
+          </div>
+          <div class="rounded-xl border border-slate-800 bg-slate-900/60 p-5">
+            <dt class="font-semibold text-slate-200">Bất ngờ / cạm bẫy</dt>
+            <dd class="mt-2 text-sm leading-6 text-slate-400">Gọi abort chung cho mọi catch sẽ phá recovery nếu file đã rename nhưng SQLite commit lỗi. Implementation tách hai try/catch và test riêng nhánh commit-fail để bảo toàn pending. Revision conflict được chuẩn hóa <code>null → 0</code>; entity state thiếu dùng mã <code>internal</code>, không giả là storage outage.</dd>
+          </div>
+        </dl>
+      </section>
+      <section class="border-t border-slate-800 py-8" aria-labelledby="session-2026-08-01-drizzle-migration">
+        <div class="flex flex-wrap items-baseline justify-between gap-3">
+          <h2 id="session-2026-08-01-drizzle-migration" class="text-2xl font-semibold">Phiên 2026-08-01 — Đổi persistence sang Drizzle</h2>
+          <span class="rounded-full bg-emerald-400/10 px-3 py-1 text-sm text-emerald-300">Phase F xanh</span>
+        </div>
+        <dl class="mt-6 grid gap-5 sm:grid-cols-2">
+          <div class="rounded-xl border border-slate-800 bg-slate-900/60 p-5">
+            <dt class="font-semibold text-slate-200">Quyết định</dt>
+            <dd class="mt-2 text-sm leading-6 text-slate-400">Theo review, toàn bộ query layer và migration chuyển từ Kysely sang <code>drizzle-orm/node-sqlite</code>. Không giữ facade Kysely trong production; schema Drizzle là nguồn tên bảng, cột và index duy nhất.</dd>
+          </div>
+          <div class="rounded-xl border border-slate-800 bg-slate-900/60 p-5">
+            <dt class="font-semibold text-slate-200">Design drift</dt>
+            <dd class="mt-2 text-sm leading-6 text-slate-400">Decision 17 và §4.6/§6 đã đổi sang Drizzle ORM 1.0.0-rc.4 + Drizzle Kit. Driver vẫn là <code>node:sqlite</code>, WAL và transaction ownership không đổi; lợi ích được ghi đúng là maintainability/schema evolution, không phải tăng tốc SQLite engine.</dd>
+          </div>
+          <div class="rounded-xl border border-slate-800 bg-slate-900/60 p-5">
+            <dt class="font-semibold text-slate-200">Bằng chứng</dt>
+            <dd class="mt-2 text-sm leading-6 text-slate-400">Typecheck xanh; 11 suite trọng tâm với 34 test xanh. Fresh/reopen, WAL, integrity, FK, CHECK, partial unique, journal/outbox, job retry và crash recovery đều được chạy thật. Schema được squash thành một foundation migration sạch; Drizzle Kit xác nhận không còn drift; CI boundary cấm tái-introduce dependency/import Kysely.</dd>
+          </div>
+          <div class="rounded-xl border border-slate-800 bg-slate-900/60 p-5">
+            <dt class="font-semibold text-slate-200">Bất ngờ / cạm bẫy</dt>
+            <dd class="mt-2 text-sm leading-6 text-slate-400">Chủ dự án chốt greenfield cutover nên nhánh baseline ORM cũ đã bị gỡ thay vì giữ code chuyển tiếp. Tagged-template <code>sql</code> là API Drizzle chính thức cho PRAGMA/atomic statement, không phải facade. Ngoài ra macOS canonicalize <code>/var → /private/var</code>; staged recovery nay so canonical parent để không orphan nhầm temp hợp lệ.</dd>
+          </div>
+        </dl>
+      </section>
+    </main>
+  </body>
+</html>

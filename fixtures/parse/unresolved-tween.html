@@ -1,0 +1,11 @@
+<!-- Guards P5: a loop-local tween target is counted as unresolved instead of receiving invented timing. -->
+<template>
+  <div data-composition-id="unresolved-scene">
+    <script>
+      const tl = gsap.timeline({ paused: true });
+      nodes.forEach((node) => {
+        tl.to(node, { opacity: 1, duration: 0.5 }, 1);
+      });
+    </script>
+  </div>
+</template>

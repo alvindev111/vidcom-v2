@@ -1,0 +1,14 @@
+{
+  "elements": [
+    {
+      "id": "#a-roll",
+      "label": "a-roll",
+      "kind": "video",
+      "start": 0,
+      "duration": 5,
+      "src": "assets/a-roll.mp4",
+      "effects": []
+    }
+  ],
+  "unresolvedEffects": 0
+}

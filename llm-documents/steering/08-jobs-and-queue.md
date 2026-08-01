@@ -49,7 +49,7 @@ interface Job {
 }
 ```
 
-Lưu trong `<app-data>/jobs.sqlite`. MUST persist — job phải sống qua restart.
+Lưu trong bảng `job` của `<app-data>/vidcom.sqlite`. MUST persist — job phải sống qua restart.
 
 ## 4. Nhận job
 

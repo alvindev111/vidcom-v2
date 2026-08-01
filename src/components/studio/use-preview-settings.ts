@@ -19,13 +19,17 @@ import {
  * never waits on a round trip, then the server's normalized copy wins.
  */
 export function usePreviewSettings(
-  projectSlug: string,
+  projectId: string,
   initial: PreviewSettings,
+  initialRevision: number,
   onSaved: () => void,
 ) {
   const [settings, setSettings] = React.useState(initial);
   const [pending, setPending] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
+  const revision = React.useRef(initialRevision);
+  const queue = React.useRef(Promise.resolve());
+  const pendingCount = React.useRef(0);
 
   /**
    * The current settings, readable synchronously.
@@ -49,6 +53,10 @@ export function usePreviewSettings(
     setSettings(initial);
   }
 
+  React.useEffect(() => {
+    revision.current = initialRevision;
+  }, [initial, initialRevision]);
+
   // Mirrors state rather than being written during render; `apply` keeps the two
   // in step synchronously for edits that arrive in the same batch.
   React.useEffect(() => {
@@ -57,28 +65,36 @@ export function usePreviewSettings(
 
   const save = React.useCallback(
     async (request: () => Promise<Response>) => {
+      pendingCount.current += 1;
       setPending(true);
       setError(null);
-      try {
+      const operation = queue.current.catch(() => {}).then(async () => {
+       try {
         const response = await request();
         const payload = (await response.json().catch(() => null)) as {
-          error?: string;
-          settings?: PreviewSettings;
+          error?: { message?: string };
+          previewSettings?: PreviewSettings;
+          revision?: number;
         } | null;
 
         if (!response.ok) {
-          setError(payload?.error ?? `save failed (${response.status})`);
+          setError(payload?.error?.message ?? `save failed (${response.status})`);
           return;
         }
-        if (payload?.settings) apply(payload.settings);
+        if (payload?.previewSettings) apply(payload.previewSettings);
+        if (payload?.revision !== undefined) revision.current = payload.revision;
         // The preview document is built with these values baked in, so it has
         // to be rebuilt for the change to show.
         onSaved();
       } catch (cause) {
         setError(cause instanceof Error ? cause.message : "save failed");
       } finally {
-        setPending(false);
+        pendingCount.current -= 1;
+        if (pendingCount.current === 0) setPending(false);
       }
+      });
+      queue.current = operation;
+      await operation;
     },
     [apply, onSaved],
   );
@@ -87,14 +103,14 @@ export function usePreviewSettings(
     (value: PreviewSettingsPatch) => {
       apply(mergePreviewSettings(latest.current, value));
       void save(() =>
-        fetch(`/api/hf/${projectSlug}/preview-settings`, {
+        fetch(`/api/v1/projects/${projectId}/preview-settings`, {
           method: "PATCH",
           headers: { "content-type": "application/json" },
-          body: JSON.stringify(value),
+          body: JSON.stringify({ patch: value, expectedRevision: revision.current }),
         }),
       );
     },
-    [apply, projectSlug, save],
+    [apply, projectId, save],
   );
 
   const patchScene = React.useCallback(
@@ -106,25 +122,26 @@ export function usePreviewSettings(
       };
       apply(mergePreviewSettings(latest.current, merged));
       void save(() =>
-        fetch(`/api/hf/${projectSlug}/preview-settings`, {
+        fetch(`/api/v1/projects/${projectId}/preview-settings`, {
           method: "PATCH",
           headers: { "content-type": "application/json" },
-          body: JSON.stringify(merged),
+          body: JSON.stringify({ patch: merged, expectedRevision: revision.current }),
         }),
       );
     },
-    [apply, projectSlug, save],
+    [apply, projectId, save],
   );
 
   const uploadBgm = React.useCallback(
     (file: File) => {
       const body = new FormData();
       body.append("file", file);
+      body.append("expectedRevision", String(revision.current));
       void save(() =>
-        fetch(`/api/hf/${projectSlug}/preview-settings`, { method: "POST", body }),
+        fetch(`/api/v1/projects/${projectId}/assets/bgm`, { method: "POST", body }),
       );
     },
-    [projectSlug, save],
+    [projectId, save],
   );
 
   return { settings, pending, error, patch, patchScene, uploadBgm };

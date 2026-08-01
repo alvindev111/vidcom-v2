@@ -26,6 +26,17 @@ Không viết production code trước khi xong.
 
 **Nếu 0.1 hoặc 0.3 thất bại → dừng, thiết kế lại, không đi tiếp.**
 
+### Kết quả chạy ngày 2026-08-01
+
+| # | Kết quả | Quyết định |
+|---|---|---|
+| 0.1 | **FAIL trực tiếp; PASS qua fallback** — Bun executable không load được `onnxruntime-node`/`sharp`; Node SEA nhúng archive native chạy được cả cold extraction và warm cache | Chọn Node SEA cho D2; loại Bun native-loader rewrite |
+| 0.2 | **PASS trong phạm vi parse/lint/list** — hai lệnh thật exit 0 trên project mẫu | Chưa cần Node sidecar cho các đường CLI đã thử |
+| 0.3 | **PASS** — modern `2026-07-28` và legacy `2025-11-25` cùng PID; source và Bun executable đều gọi tool thành công | Dual-stack khả thi |
+| 0.4 | **PASS** — route cụ thể thắng optional catch-all trên Next 16.2.12 | Cutover D4 theo từng route đứng vững |
+
+**Gate kỹ thuật hiện tại: READY FOR DESIGN APPROVAL.** Spike thay thế đã chọn Node SEA và loại Bun native-loader rewrite. Phase 1 chưa tự động bắt đầu; phải xác nhận thay đổi thiết kế/runtime và checklist trước khi viết production code. Bằng chứng và lệnh tái hiện: [spikes/phase-0](../../spikes/phase-0/README.md).
+
 ---
 
 ## Giai đoạn 1 — Nền móng (3–4 tuần)
@@ -102,7 +113,7 @@ D1 là quyết định số một, nhưng nó cần nền móng ở giai đoạn
 | 4.4 | Directory picker server-driven + token flow | PK-3 |
 | 4.5 | Workspace lock/lease, single-writer daemon, MCP bridge qua IPC có xác thực | PK-4 |
 | 4.6 | `vidcom` CLI đủ mode + `doctor` | PK-5, PK-8 |
-| 4.7 | Bun compile: nhúng frontend asset, bỏ Next | PK-6 |
+| 4.7 | Node SEA: nhúng frontend asset, bỏ Next | PK-6 |
 | 4.8 | Giải nén sidecar runtime vào app-data lần chạy đầu | PK-7 |
 | 4.9 | Import project có sẵn | PK-12 |
 | 4.10 | Smoke test trên artifact, máy sạch | — |
@@ -156,7 +167,7 @@ D1 là quyết định số một, nhưng nó cần nền móng ở giai đoạn
 
 ## Ba việc làm ngay nếu chỉ chọn được ba
 
-1. **PK-1** — spike Bun compile với native addon. Nó có thể lật đổ D2.
+1. **PK-1** — spike packaging với native addon; đã chọn Node SEA và phải giữ smoke test artifact.
 2. **1.6 + 1.3** — service ghi file duy nhất và golden-file cho `serialize()`. Mọi thứ khác xây trên đó.
 3. **PR-1** — render MP4. Sản phẩm hiện chưa sinh ra được thứ người dùng thực sự cần.
 

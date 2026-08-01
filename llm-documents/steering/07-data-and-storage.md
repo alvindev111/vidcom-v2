@@ -22,10 +22,15 @@ State vận hành, không thuộc về project.
 
 ```text
 <app-data>/
-├── settings.json    jobs.sqlite    audit.sqlite
+├── settings.json    vidcom.sqlite
 ├── credentials      (0600)
 └── logs/  cache/  runtime/
 ```
+
+`vidcom.sqlite` là database vận hành duy nhất. Job, audit, revision, lease,
+event outbox và settings dạng bảng dùng chung file này để mutation có thể commit
+revision + audit + event trong một transaction; MUST NOT tách chúng thành các
+database không thể transaction cùng nhau.
 
 ## 2. Quy tắc phân loại — hỏi một câu
 

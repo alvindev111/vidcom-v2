@@ -81,7 +81,7 @@ Bản mock để `/files/[...path]` đọc **mọi** file trong project.
 |---|---|
 | MUST | Audit mọi tool call và mọi file mutation |
 | MUST | Redact prompt, nội dung file, token trước khi log |
-| MUST | Audit ghi vào `<app-data>/audit.sqlite` |
+| MUST | Audit ghi vào bảng `audit_entry` trong `<app-data>/vidcom.sqlite` |
 | MUST NOT | Log vào workspace của người dùng |
 | MUST NOT | Log token, credential, hay đường dẫn tuyệt đối chứa tên người dùng ở mức `info` |
 

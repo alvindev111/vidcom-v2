@@ -25,6 +25,7 @@ const TRIGGER_CLASS = "h-9 flex-1 rounded-md border border-transparent";
  * playback bar and timeline on the right stay mounted and keep playing.
  */
 export function SourcePane({
+  projectId,
   projectSlug,
   tree,
   files,
@@ -35,6 +36,7 @@ export function SourcePane({
   onSelectScene,
   onProjectChanged,
 }: {
+  projectId: string;
   projectSlug: string;
   tree: FileNode[];
   files: SourceFile[];
@@ -91,6 +93,7 @@ export function SourcePane({
 
       <TabsContent value="code" className="min-h-0 flex-1 border-t">
         <CodePane
+          projectId={projectId}
           projectSlug={projectSlug}
           tree={tree}
           files={files}
@@ -99,9 +102,11 @@ export function SourcePane({
       </TabsContent>
       <TabsContent value="scene" className="min-h-0 flex-1 border-t">
         <ScenePane
+          projectId={projectId}
           projectSlug={projectSlug}
           scenes={scenes}
           tree={tree}
+          files={files}
           preview={preview}
           selectedId={selectedId}
           onSeek={onSeek}

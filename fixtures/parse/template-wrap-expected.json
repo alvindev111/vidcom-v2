@@ -1,0 +1,14 @@
+{
+  "elements": [
+    {
+      "id": "#poster",
+      "label": "poster",
+      "kind": "image",
+      "start": 0,
+      "duration": 2,
+      "src": "assets/poster.png",
+      "effects": []
+    }
+  ],
+  "unresolvedEffects": 0
+}

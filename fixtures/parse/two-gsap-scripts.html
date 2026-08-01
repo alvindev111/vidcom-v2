@@ -1,0 +1,14 @@
+<!-- Guards effect identity when two GSAP scripts generate the same parser-local tween id. -->
+<template>
+  <div data-composition-id="two-scripts">
+    <div id="target"></div>
+    <script>
+      const first = gsap.timeline({ paused: true });
+      first.to("#target", { x: 10, duration: 1 }, 0);
+    </script>
+    <script>
+      const second = gsap.timeline({ paused: true });
+      second.to("#target", { y: 10, duration: 1 }, 0);
+    </script>
+  </div>
+</template>

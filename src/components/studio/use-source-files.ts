@@ -21,7 +21,7 @@ export interface OpenFile {
  * all up front. Saving is explicit — the agent is the main author of these
  * files, so a manual edit should land only when the user asks for it.
  */
-export function useSourceFiles(projectSlug: string, seed: SourceFile[]) {
+export function useSourceFiles(projectId: string, _projectSlug: string, seed: SourceFile[]) {
   const [open, setOpen] = React.useState<Record<string, OpenFile>>(() =>
     Object.fromEntries(
       seed.map((file) => [
@@ -50,21 +50,25 @@ export function useSourceFiles(projectSlug: string, seed: SourceFile[]) {
 
       setLoading(path);
       try {
-        const response = await fetch(
-          `/api/hf/${projectSlug}/source?path=${encodeURIComponent(path)}`,
-        );
+        const response = await fetch(`/api/v1/projects/${projectId}/files?path=${encodeURIComponent(path)}`);
         const payload = (await response.json().catch(() => null)) as {
-          file?: SourceFile;
-          error?: string;
+          file?: { path: string; content: string; contentHash: string };
+          error?: { message?: string };
         } | null;
 
         if (!response.ok || !payload?.file) {
-          setOpenError(payload?.error ?? `could not open ${path}`);
+          setOpenError(payload?.error?.message ?? `could not open ${path}`);
           setOrder((current) => current.filter((item) => item !== path));
           return;
         }
 
-        const file = payload.file;
+        const file: SourceFile = {
+          path: payload.file.path,
+          code: payload.file.content,
+          foldableLines: [],
+          saved: true,
+          version: payload.file.contentHash,
+        };
         setOpen((current) => ({
           ...current,
           [path]: { file, draft: file.code, saving: false, error: null },
@@ -76,7 +80,7 @@ export function useSourceFiles(projectSlug: string, seed: SourceFile[]) {
         setLoading(null);
       }
     },
-    [open, projectSlug],
+    [open, projectId],
   );
 
   const close = React.useCallback((path: string) => {
@@ -116,18 +120,18 @@ export function useSourceFiles(projectSlug: string, seed: SourceFile[]) {
       });
 
       try {
-        const response = await fetch(`/api/hf/${projectSlug}/source`, {
+        const response = await fetch(`/api/v1/projects/${projectId}/files`, {
           method: "PUT",
           headers: { "content-type": "application/json" },
           body: JSON.stringify({
             path,
-            code: entry.draft,
-            baseVersion: entry.file.version,
+            content: entry.draft,
+            expectedContentHash: entry.file.version,
           }),
         });
         const payload = (await response.json().catch(() => null)) as {
-          file?: SourceFile;
-          error?: string;
+          file?: { path: string; content: string; contentHash: string };
+          error?: { message?: string };
         } | null;
 
         if (!response.ok || !payload?.file) {
@@ -139,7 +143,7 @@ export function useSourceFiles(projectSlug: string, seed: SourceFile[]) {
                   [path]: {
                     ...item,
                     saving: false,
-                    error: payload?.error ?? `save failed (${response.status})`,
+                    error: payload?.error?.message ?? `save failed (${response.status})`,
                   },
                 }
               : current;
@@ -149,7 +153,13 @@ export function useSourceFiles(projectSlug: string, seed: SourceFile[]) {
 
         // `file.code` is what is now on disk; the draft matches it, so the tab
         // goes clean.
-        const saved = payload.file;
+        const saved: SourceFile = {
+          path: payload.file.path,
+          code: payload.file.content,
+          foldableLines: entry.file.foldableLines,
+          saved: true,
+          version: payload.file.contentHash,
+        };
         setOpen((current) => ({
           ...current,
           [path]: { file: saved, draft: saved.code, saving: false, error: null },
@@ -171,7 +181,7 @@ export function useSourceFiles(projectSlug: string, seed: SourceFile[]) {
         });
       }
     },
-    [open, projectSlug],
+    [open, projectId],
   );
 
   /** Discard unsaved edits and go back to what is on disk. */

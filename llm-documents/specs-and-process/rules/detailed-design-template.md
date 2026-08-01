@@ -145,7 +145,7 @@ erDiagram
 ### 6.1 Persistence Overview
 > Required when the spec touches persisted data. If no persistence is involved, explicitly write "No persistence changes".
 
-- **Database / datastore**: [PostgreSQL / Redis / object storage / external system / none]
+- **Database / datastore**: [SQLite / project filesystem / object storage / external system / none]
 - **Existing schema area**: [schema/module where related tables already live]
 - **New tables**: [list table names or "none"]
 - **Modified tables**: [list table names or "none"]
@@ -295,11 +295,11 @@ sequenceDiagram
 | Level | Scope | Tools | Owner |
 |-------|-------|-------|-------|
 | Unit | [Pure logic, services in isolation] | [vitest/…] | Dev |
-| Integration | [DB-backed, plugin wiring] | [real PostgreSQL test DB] | Dev |
+| Integration | [datastore-backed, plugin wiring] | [real datastore test instance — SQLite + real filesystem for VidCom] | Dev |
 | E2E | [User-visible flows] | [Playwright/…] | Dev/QA |
 
 ### 11.2 Persistence Verification
-> When the spec touches persistence, explicitly describe how writes, reads, transactions, and constraints will be verified against a real PostgreSQL test database (per `spec-rule.md`).
+> When the spec touches persistence, explicitly describe how writes, reads, transactions, and constraints will be verified against the project's real datastore (per `spec-rule.md`). For VidCom: real SQLite plus a real temp filesystem, not mocks.
 
 - [Schema migration tests]
 - [Constraint / FK / unique-index tests]
@@ -495,7 +495,7 @@ Use text or tables for details that need exactness:
 2. **Test Coverage**: What aspects of the system will be tested
 3. **Testing Tools**: Frameworks and tools for different types of testing
 4. **Quality Gates**: Criteria for determining when testing is sufficient
-5. **Persistence Verification**: When persistence is touched, call out real-PostgreSQL test-DB verification explicitly (required by `spec-rule.md`)
+5. **Persistence Verification**: When persistence is touched, call out real-datastore verification explicitly — SQLite + real filesystem for VidCom (required by `spec-rule.md`)
 
 → Produce in Sec 11 of the skeleton.
 

@@ -1,0 +1,27 @@
+{
+  "name": "@vidcom/spike-phase-0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "packaging:prepare": "bun run packaging-alternatives/prepare-native-runtime.ts",
+    "packaging:node-sea": "bun run packaging-alternatives/build-node-sea.ts",
+    "packaging:bun-loader": "bun run packaging-alternatives/build-bun-loader.ts",
+    "packaging:build": "bun run packaging:prepare && bun run packaging:node-sea && bun run packaging:bun-loader"
+  },
+  "dependencies": {
+    "@hyperframes/core": "0.7.86",
+    "@modelcontextprotocol/client": "2.0.0",
+    "@modelcontextprotocol/core": "2.0.0",
+    "@modelcontextprotocol/sdk": "1.30.0",
+    "@modelcontextprotocol/server": "2.0.0",
+    "esbuild": "0.25.12",
+    "onnxruntime-node": "1.21.1",
+    "puppeteer-core": "25.4.0",
+    "sharp": "0.35.3",
+    "zod": "4.4.3"
+  },
+  "devDependencies": {
+    "postject": "1.0.0-alpha.6",
+    "tar": "7.5.22"
+  }
+}

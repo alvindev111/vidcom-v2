@@ -11,7 +11,7 @@ import {
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { sceneSettings } from "@/lib/studio/preview-settings";
-import type { FileNode, Scene, SceneScriptLine } from "@/lib/studio/types";
+import type { FileNode, Scene, SceneScriptLine, SourceFile } from "@/lib/studio/types";
 import { PreviewEditor } from "./preview-editor";
 import { SceneDetail } from "./scene-detail";
 import { SceneStoryboard } from "./scene-storyboard";
@@ -36,18 +36,22 @@ type Edit =
 
 /** Video Scene tab: storyboard on top, the selected scene's details below. */
 export function ScenePane({
+  projectId,
   projectSlug,
   scenes,
   tree,
+  files,
   preview,
   selectedId,
   onSeek,
   onSelectScene,
   onProjectChanged,
 }: {
+  projectId: string;
   projectSlug: string;
   scenes: Scene[];
   tree: FileNode[];
+  files: SourceFile[];
   /** Preview settings shared with the timeline, so both write the same file. */
   preview: ReturnType<typeof usePreviewSettings>;
   selectedId: string;
@@ -58,6 +62,7 @@ export function ScenePane({
 }) {
   const [pending, setPending] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
+  const hashes = React.useRef(new Map(files.map((file) => [file.path, file.version])));
 
   const selected =
     scenes.find((scene) => scene.id === selectedId) ?? scenes[0] ?? null;
@@ -67,18 +72,37 @@ export function ScenePane({
     setPending(true);
     setError(null);
     try {
-      const response = await fetch(`/api/hf/${projectSlug}/scene`, {
+      const isV1 = edit.action === "timing" || edit.action === "script";
+      const file = edit.action === "script" ? edit.file : "index.html";
+      let expectedContentHash = hashes.current.get(file);
+      if (isV1 && !expectedContentHash) {
+        const current = await fetch(`/api/v1/projects/${projectId}/files?path=${encodeURIComponent(file)}`);
+        const currentBody = await current.json() as { file?: { contentHash?: string } };
+        expectedContentHash = currentBody.file?.contentHash;
+        if (expectedContentHash) hashes.current.set(file, expectedContentHash);
+      }
+      const response = await fetch(isV1
+        ? edit.action === "timing"
+          ? `/api/v1/projects/${projectId}/scenes/${edit.sceneId}`
+          : `/api/v1/projects/${projectId}/scenes/${edit.sceneId}/script`
+        : `/api/hf/${projectSlug}/scene`, {
         method: "PATCH",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify(edit),
+        body: JSON.stringify(edit.action === "timing"
+          ? { timing: { start: edit.start, duration: edit.duration, trackIndex: edit.trackIndex }, expectedContentHash }
+          : edit.action === "script"
+            ? { file: edit.file, elementId: edit.elementId, text: edit.text, expectedContentHash }
+            : edit),
       });
+      const payload = (await response.json().catch(() => null)) as {
+        file?: { path: string; contentHash: string };
+        error?: { message?: string } | string;
+      } | null;
       if (!response.ok) {
-        const payload = (await response.json().catch(() => null)) as {
-          error?: string;
-        } | null;
-        setError(payload?.error ?? `save failed (${response.status})`);
+        setError(typeof payload?.error === "string" ? payload.error : payload?.error?.message ?? `save failed (${response.status})`);
         return;
       }
+      if (payload?.file) hashes.current.set(payload.file.path, payload.file.contentHash);
       onProjectChanged();
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "save failed");

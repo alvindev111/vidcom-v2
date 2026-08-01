@@ -1,18 +1,18 @@
 import Link from "next/link";
+import type { ProjectSummaryDto } from "@vidcom/contracts";
 
 import { Button } from "@/components/ui/button";
 import { formatDuration } from "@/lib/studio/poster";
-import type { HyperframesProject } from "@/lib/hyperframes/projects.server";
 import { ProjectThumbnail } from "./project-thumbnail";
 
 export function ProjectCard({
   project,
   index,
 }: {
-  project: HyperframesProject;
+  project: ProjectSummaryDto;
   index: number;
 }) {
-  const href = `/projects/${project.slug}`;
+  const href = `/projects/${project.id}`;
   const duration = formatDuration(project.duration);
 
   return (

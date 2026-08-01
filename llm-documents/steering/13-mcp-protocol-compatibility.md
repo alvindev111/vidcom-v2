@@ -224,20 +224,20 @@ Trước khi đó, MUST NOT xoá adapter legacy dù nó phiền.
 
 ---
 
-## 9. Chưa xác minh — cần spike
+## 9. Kết quả spike và câu hỏi còn lại
 
-Những điểm dưới đây **chưa** kiểm chứng trên code thật, MUST xác minh trước khi khoá thiết kế:
+Phase 0 chạy ngày 2026-08-01 trên Bun 1.3.14. Bằng chứng tái hiện nằm ở [spikes/phase-0](../../spikes/phase-0/README.md).
 
-| # | Câu hỏi |
-|---|---|
-| S1 | API thật của `@modelcontextprotocol/server@2.0.0` — mức trừu tượng nào để bọc chung với SDK 1.x? |
-| S2 | Hai SDK cùng nằm trong một process/bundle có xung đột không (tên type, global, peer dep)? |
-| S3 | Bun `--compile` có nuốt được cả hai SDK không? Liên quan trực tiếp **D2** và rủi ro R1 |
-| S4 | Extension `io.modelcontextprotocol/tasks` — SDK v2 hỗ trợ tới đâu, hay phải tự implement? |
-| S5 | MRTR trên transport stdio hoạt động thế nào khi client retry — có ràng buộc gì về request ID? |
-| S6 | Claude Code và Codex hiện đang nói protocol revision nào? Quyết định thứ tự ưu tiên khi làm |
+| # | Trạng thái | Kết quả / câu hỏi còn lại |
+|---|---|---|
+| S1 | **ĐÃ XÁC MINH** | Modern HTTP dùng `createMcpHandler(factory)` để phân loại envelope và phục vụ `server/discover`. Client v2 mặc định giữ posture legacy; phải opt-in `versionNegotiation: auto` hoặc pin `2026-07-28`. Hand-constructed `McpServer` qua `InMemoryTransport` không tự trở thành modern serving entry |
+| S2 | **PASS qua adapter tách biệt** | `@modelcontextprotocol/server@2.0.0` và `sdk@1.30.0` cùng PID, cùng bundle, cùng trả `tools/list` và `tools/call`; không thấy xung đột runtime/global/peer dependency. Legacy dùng low-level `Server`, không chia sẻ trực tiếp schema type Zod v4 với modern server |
+| S3 | **PASS cho dual-stack** | Bun `--compile` nuốt được cả hai SDK và executable gọi được cả hai tool. Nhánh D2 dùng Bun vẫn FAIL vì native addon; fallback Node SEA đã PASS và không làm thay đổi boundary dual-stack |
+| S4 | **CHƯA XÁC MINH — gate Phase 2.6/2.8** | Extension `io.modelcontextprotocol/tasks` — SDK v2 hỗ trợ tới đâu, hay phải tự implement? |
+| S5 | **CHƯA XÁC MINH — gate Phase 2.6** | MRTR trên transport stdio hoạt động thế nào khi client retry — có ràng buộc gì về request ID? |
+| S6 | **CHƯA XÁC MINH — gate trước ưu tiên host** | Claude Code và Codex hiện đang nói protocol revision nào? |
 
-Ghi kết quả spike vào chính tài liệu này, MUST NOT để câu hỏi treo.
+MUST giải quyết S4–S6 trước khi khoá phần thiết kế tương ứng ở Phase 2. Không được suy diễn kết quả của Phase 0 cho ba câu hỏi này.
 
 ---
 

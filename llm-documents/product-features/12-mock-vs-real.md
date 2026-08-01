@@ -138,7 +138,7 @@ Bảng kiểm kê trạng thái từng chức năng. Dùng để biết viết l
 - **Agent kit** — `AGENTS.md` + skill ship vào project để Codex/Claude Code biết quy trình
 
 ### Đóng gói & phân phối (theo D2/D3)
-- Bun `--compile` thành một executable
+- Node SEA thành một executable
 - Nhúng frontend asset vào binary
 - Directory picker server-driven + token flow
 - `vidcom` CLI đa mode (`app`/`serve`/`mcp`/`worker`/`render`/`doctor`)

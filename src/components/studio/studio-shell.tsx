@@ -1,7 +1,6 @@
 "use client";
 
 import * as React from "react";
-import { useRouter } from "next/navigation";
 
 import {
   ResizableHandle,
@@ -18,6 +17,7 @@ import { useHyperframesPlayer } from "./use-hyperframes-player";
 import { usePreviewSettings } from "./use-preview-settings";
 
 export function StudioShell({
+  projectId,
   projectSlug,
   previewUrl,
   aspectRatio,
@@ -27,7 +27,10 @@ export function StudioShell({
   scenes,
   rootTrack,
   previewSettings,
+  previewSettingsRevision,
+  onRefresh,
 }: {
+  projectId: string;
   projectSlug: string;
   previewUrl: string;
   aspectRatio: number;
@@ -37,8 +40,9 @@ export function StudioShell({
   scenes: Scene[];
   rootTrack: RootTrack | null;
   previewSettings: PreviewSettings;
+  previewSettingsRevision: number;
+  onRefresh: () => Promise<void>;
 }) {
-  const router = useRouter();
   // Bumped after a scene edit: it changes the player's src, which remounts the
   // player against the rewritten composition instead of the stale iframe.
   const [revision, setRevision] = React.useState(0);
@@ -53,8 +57,8 @@ export function StudioShell({
   // A source edit changes what the scenes *are*, so the page has to be re-read.
   const handleProjectChanged = React.useCallback(() => {
     setRevision((current) => current + 1);
-    router.refresh();
-  }, [router]);
+    void onRefresh();
+  }, [onRefresh]);
 
   // A preview-settings edit does not: the values are baked into the preview
   // document, so the player has to reload, but the scenes, the file tree and
@@ -65,8 +69,9 @@ export function StudioShell({
   }, []);
 
   const preview = usePreviewSettings(
-    projectSlug,
+    projectId,
     previewSettings,
+    previewSettingsRevision,
     rebuildPreview,
   );
 
@@ -106,6 +111,7 @@ export function StudioShell({
       <ResizablePanelGroup orientation="horizontal" className="min-h-0 flex-1">
         <ResizablePanel defaultSize="38" minSize="20">
           <SourcePane
+            projectId={projectId}
             projectSlug={projectSlug}
             tree={tree}
             files={files}

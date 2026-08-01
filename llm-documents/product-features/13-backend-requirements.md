@@ -278,7 +278,7 @@ Luật chi tiết: [steering/14-agent-kit-and-skills](../steering/14-agent-kit-a
 
 | ID | Chức năng | Ưu tiên |
 |---|---|---|
-| PK-1 | **Spike**: Bun `--compile` với native addon thật (`onnxruntime-node`, `sharp`, `esbuild`, `puppeteer-core`) | **Chặn mọi thứ** |
+| PK-1 | **Spike**: Bun `--compile` và fallback Node SEA với native addon thật (`onnxruntime-node`, `sharp`, `esbuild`, `puppeteer-core`) — kết quả chọn Node SEA | **Đã giải quyết gate kỹ thuật** |
 | PK-2 | `WorkspaceRoot` inject được, bỏ `process.cwd()` | Cao |
 | PK-3 | Directory picker server-driven + one-time token flow | Cao |
 | PK-4 | Workspace lock/lease, single-writer daemon | Cao |

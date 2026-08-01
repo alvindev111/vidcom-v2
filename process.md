@@ -7,6 +7,8 @@ Việc	Xong nghĩa là
 0.4	Route cụ thể của Next thắng optional catch-all	Kế hoạch cắt chuyển D4 đứng vững
 0.1 hoặc 0.3 hỏng → dừng, thiết kế lại. Đừng viết production code trước khi biết.
 
+Kết quả spike ngày 2026-08-01: **0.1 Bun trực tiếp FAIL nhưng fallback Node SEA PASS; 0.2 PASS trong phạm vi parse/lint/list; 0.3 PASS; 0.4 PASS**. Gate kỹ thuật đã chọn Node SEA; Phase 1 chờ xác nhận thay đổi thiết kế/checklist. Bằng chứng và lệnh tái hiện: [spikes/phase-0/README.md](spikes/phase-0/README.md).
+
 Giai đoạn 1 — Nền móng (3–4 tuần)
 Không có tính năng mới. Đây là phần không thể thêm sau.
 
@@ -25,7 +27,7 @@ Render MP4 → snapshot theo scene → TTS thật + mount audio → sửa 2 bug 
 Mốc: người dùng mở app, nhờ AI dựng scene, nghe narration, xuất MP4.
 
 Giai đoạn 4 — Agent kit & đóng gói (3–4 tuần)
-AGENTS.md + skill router → cài/refresh agent-kit → 3 test đồng bộ → directory picker + token → workspace lock + single writer → vidcom CLI đủ mode → Bun compile, bỏ Next → giải nén sidecar → import project cũ → smoke test trên artifact.
+AGENTS.md + skill router → cài/refresh agent-kit → 3 test đồng bộ → directory picker + token → workspace lock + single writer → vidcom CLI đủ mode → Node SEA, bỏ Next → giải nén sidecar → import project cũ → smoke test trên artifact.
 
 Mốc: một file tải xuống, chạy trên máy sạch.
 
@@ -36,7 +38,7 @@ Giai đoạn 6 — AI Composer & hoàn thiện
 Agent thật trong app → streaming/cancel/diff/undo → sandbox → build matrix + signing + auto-update → render cloud → audio nâng cao.
 
 Nếu chỉ chọn được 3 việc
-PK-1 — spike Bun compile. Nó có thể lật đổ D2, và mọi kế hoạch đóng gói dựa vào nó.
+PK-1 — spike packaging native đã chọn Node SEA. Mọi thay đổi toolchain phải chạy lại smoke test artifact.
 Service ghi file duy nhất + golden-file serialize() — mọi đường ghi xây trên đó; làm sau nghĩa là viết lại.
 Render MP4 — sản phẩm hiện chưa sinh ra được thứ người dùng thực sự cần.
 Ước lượng tuần là thứ tự tương đối, không phải cam kết lịch — tôi không biết quy mô đội và thời gian dành cho dự án.

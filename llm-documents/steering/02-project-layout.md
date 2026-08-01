@@ -120,7 +120,7 @@ MUST NOT dùng `utils.ts`, `helpers.ts`, `common.ts`, `misc.ts`, `index.ts` ch�
 
 `packages/agent-kit/` chứa **markdown ship cho AI agent**: `AGENTS.md`/`CLAUDE.md` ghi vào project người dùng, skill, và MCP prompt.
 
-- Không có file `.ts` nào. Không import gì, không ai import nó **như code** — `packages/mcp` và `packages/cli` **nhúng** nó (Bun embedded files) rồi ghi ra đĩa.
+- Không có file `.ts` nào. Không import gì, không ai import nó **như code** — `packages/mcp` và `packages/cli` **nhúng** nó qua SEA assets rồi ghi ra đĩa.
 - Nội dung ở đây là **contract với AI**, mục ngang với tool schema. Đổi tool mà không đổi agent-kit là để lại tài liệu sai trong project người dùng.
 
 Luật viết và đồng bộ: [14-agent-kit-and-skills](14-agent-kit-and-skills.md).

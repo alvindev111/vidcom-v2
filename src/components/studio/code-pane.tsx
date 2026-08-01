@@ -12,11 +12,13 @@ import { useSourceFiles } from "./use-source-files";
 
 /** Source-code side of the Code tab: the project's files and the open editor. */
 export function CodePane({
+  projectId,
   projectSlug,
   tree,
   files,
   onProjectChanged,
 }: {
+  projectId: string;
   projectSlug: string;
   tree: FileNode[];
   /** Files shipped with the page — the entry composition. */
@@ -24,7 +26,7 @@ export function CodePane({
   /** Called after a save so the preview rebuilds against the new source. */
   onProjectChanged: () => void;
 }) {
-  const source = useSourceFiles(projectSlug, files);
+  const source = useSourceFiles(projectId, projectSlug, files);
 
   return (
     <ResizablePanelGroup orientation="horizontal">

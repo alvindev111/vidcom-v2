@@ -1,0 +1,23 @@
+{
+  "elements": [
+    {
+      "id": "#target",
+      "label": "#target",
+      "kind": "element",
+      "start": null,
+      "duration": null,
+      "src": null,
+      "effects": [
+        {
+          "id": "0:[data-composition-id=\"scoped-scene\"] #target-to-500-position",
+          "method": "to",
+          "start": 0.5,
+          "duration": 1,
+          "ease": null,
+          "propertyGroup": "position"
+        }
+      ]
+    }
+  ],
+  "unresolvedEffects": 0
+}

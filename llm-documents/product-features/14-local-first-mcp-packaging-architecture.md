@@ -14,11 +14,11 @@ Ba quyết định định hình toàn bộ phần còn lại:
 | # | Quyết định | Hệ quả chính |
 |---|---|---|
 | **D1** | **MCP là interface hạng nhất.** VidCom export một MCP server để Codex/Claude/AI host điều khiển backend qua tool contract có giới hạn. | MCP không phải adapter phụ. Use case nào không gọi được qua MCP thì coi như chưa hoàn chỉnh. §6.2, §11 |
-| **D2** | **Đóng gói thành một file thực thi**, che giấu source backend và frontend. Người dùng nhận một binary, không nhận source code. | Bun `--compile`. Ràng buộc nặng về native dependency. §2, §3, §14 (R1) |
+| **D2** | **Đóng gói thành một file thực thi**, che giấu source backend và frontend. Người dùng nhận một binary, không nhận source code. | Node SEA nhúng JS bundle + native runtime archive có checksum. §2, §3, §14 (R1) |
 | **D3** | **Người dùng bật web lên, chọn thư mục lưu project.** Project nằm public trong thư mục đó (xem được, copy được, Git commit được). Mọi thứ khác bị giấu. | Cần cơ chế chọn thư mục **không có native dialog**. §9. Ranh giới public/hidden: §10 |
 | **D4** | **Backend 100% do Hono xử lý. Next.js chỉ forward.** Không có nghiệp vụ nào ở lại trong Route Handler hay server component của Next. | Một backend duy nhất, hai host. Xoá bỏ rủi ro "hai đường ghi song song". §5 |
 
-Backend mới: **Hono + TypeScript**, ưu tiên Bun.
+Backend mới: **Hono + TypeScript**. Development vẫn có thể dùng Bun; artifact phát hành chạy bằng Node SEA.
 
 > Xác nhận: `hyperframes` CLI **đã dùng Hono** — `node_modules/hyperframes/dist/studio/index.js` import `hono`, và CLI khai báo dep `hono` + `@hono/node-server`. Chọn Hono trùng với studio server chính thức của HyperFrames, không phải lựa chọn tuỳ tiện.
 
@@ -33,19 +33,19 @@ Nhưng cần phân biệt ba mức để không thiết kế sai:
 | Mức | Ai | Compile giải quyết? |
 |---|---|---|
 | Người dùng thường / đối thủ copy nhanh | Không đọc được logic, không tái sử dụng source | ✅ Có |
-| Reverse engineer có chủ đích | Binary vẫn disassemble được; Bun `--compile` nhúng JS bundle, có thể trích xuất | ❌ Không |
+| Reverse engineer có chủ đích | Binary vẫn disassemble được; SEA nhúng JS bundle, có thể trích xuất | ❌ Không |
 | Bí mật thật (API key, license signing key, thuật toán tính phí) | Bất cứ thứ gì nằm trong bundle đều đọc được | ❌ Không — **phải nằm server-side** |
 
 ### Chiến lược che giấu — làm tối đa những gì có tác dụng
 
 **Backend** (chạy dưới dạng binary trên máy người dùng):
-- Bun `--compile` với `--minify`, **không kèm sourcemap**.
-- Cân nhắc `--bytecode` để tăng khó đọc và giảm startup time.
+- Bundle entry CommonJS rồi nhúng vào Node SEA, **không kèm sourcemap**.
+- Pin exact Node build toolchain; tắt code cache/snapshot khi build khác platform.
 - Không để file `.ts`/`.js` nào của backend nằm ngoài binary.
 
 **Frontend** (bắt buộc gửi tới browser để chạy):
 - Build production, minify, **tắt sourcemap**, bỏ comment.
-- Nhúng asset đã build **vào trong binary** (Bun embedded files), serve từ memory — không có thư mục `dist/` để người dùng mở.
+- Nhúng asset đã build **vào trong SEA assets**, serve từ memory — không có thư mục `dist/` để người dùng mở.
 - Chấp nhận: HTML/CSS/JS vẫn đọc được qua DevTools. Không có cách nào tránh, kể cả Tauri (webview cũng là browser).
 
 **Không bao giờ nhúng vào bundle:**
@@ -62,7 +62,7 @@ Vì logic quan trọng nằm trong backend chạy local (không phải trong fro
 
 ## 3. "Một file thực thi" — thực tế đạt được đến đâu
 
-Bun compile Hono + MCP + frontend asset thành một executable là khả thi. Vấn đề nằm ở **native dependency của pipeline video** — chúng không phải JavaScript và không nhúng được vào bundle JS:
+Node SEA nhúng Hono + MCP + frontend asset thành một executable. **Native dependency của pipeline video** không nằm trực tiếp trong JS bundle; chúng được đóng thành archive theo platform, nhúng như SEA asset và giải nén có checksum vào app-data:
 
 | Thành phần | Loại | Bằng chứng trong `node_modules` |
 |---|---|---|
@@ -95,7 +95,8 @@ Mỗi OS × kiến trúc CPU cần artifact, code signing và kiểm thử riên
                                        │  dev  : Next.js               │
                                        │         api/[[...route]]      │
                                        │         → handle(app)         │
-                                       │  prod : Bun.serve({app.fetch})│
+                                       │  prod : Node SEA              │
+                                       │         serve({app.fetch})    │
                                        │                               │
                                        │  ┌─────────────────────────┐  │
                                        │  │ Hono app  — SINGLE      │  │
@@ -123,7 +124,7 @@ Mỗi OS × kiến trúc CPU cần artifact, code signing và kiểm thử riên
 Ba nguyên tắc bất biến:
 
 1. **HTTP và MCP chỉ là adapter.** Cả hai gọi chung Application Core. Không được cài lại nghiệp vụ theo hai cách khác nhau — nếu không, AI và UI sẽ hành xử khác nhau trên cùng một thao tác.
-2. **Next.js không phải một tầng** (D4). Nó là host tạm thời của Hono app, thay được bằng `Bun.serve` mà không sửa code trong app. Xem §5.
+2. **Next.js không phải một tầng** (D4). Nó là host tạm thời của Hono app, thay được bằng `@hono/node-server` trong Node SEA mà không sửa code trong app. Xem §5.
 3. **Daemon là single writer.** MCP bridge không tự ghi file; nó là client của daemon (§8).
 
 ---
@@ -166,8 +167,8 @@ Cùng một object `app` chạy được dưới **hai host** mà không sửa d
 | Giai đoạn | Host | Cách chạy |
 |---|---|---|
 | Development | Next.js Route Handler | `handle(app)` qua `hono/vercel` |
-| Đóng gói (D2) | Bun standalone executable | `Bun.serve({ fetch: app.fetch })` |
-| Fallback Node | `@hono/node-server` | `serve({ fetch: app.fetch })` — cách `hyperframes` CLI đang làm |
+| Đóng gói (D2) | Node SEA | `@hono/node-server` với `serve({ fetch: app.fetch })` |
+| Spike/dev Bun | Bun runtime | Chỉ dùng khi đường code không phụ thuộc compiled native loader |
 
 Nghĩa là **không có "port backend sang Hono" ở cuối dự án**. Backend là Hono ngay từ commit đầu tiên; việc bỏ Next chỉ là đổi host và bỏ một file.
 
@@ -242,7 +243,7 @@ Trách nhiệm: khai báo tool/resource/prompt contract · validate input/output
 
 Route và versioned API · schema validation · local auth/session · map domain error thành HTTP status + machine-readable code · streaming progress (SSE/WS) · phục vụ frontend asset **đã nhúng trong binary** · directory-picker API (§9) · không chạy render/TTS dài trong request.
 
-Không được import `next` ở bất kỳ đâu trong `packages/server`. Adapter phải chạy được độc lập dưới `Bun.serve` — đó là bài kiểm tra xem D4 đã đạt chưa (§5.2).
+Không được import `next` ở bất kỳ đâu trong `packages/server`. Adapter phải chạy được độc lập dưới `@hono/node-server` — đó là bài kiểm tra xem D4 đã đạt chưa (§5.2).
 
 ### 6.4 Worker adapter
 
@@ -451,11 +452,11 @@ Việc export MCP server (D1) **không** tự động biến tab AI Composer hi�
 
 | # | Rủi ro | Bằng chứng | Ảnh hưởng | Xử lý đề xuất |
 |---|---|---|---|---|
-| R1 | **Bun `--compile` có thể không nhúng được native addon** — cả D2 phụ thuộc điều này | `onnxruntime-node`, `sharp` là `.node` addon; `esbuild` là platform binary | Chặn D2 | **Spike trước tiên** (§18 Bước 0). Nếu hỏng: fallback Node SEA, hoặc giải nén addon ra app-data lúc chạy đầu |
-| R2 | **`hyperframes` CLI khai báo `engines: { node: ">=22" }`**, chưa xác nhận chạy trên Bun | `node_modules/hyperframes/package.json` | Chặn "ưu tiên Bun" | Spike cùng R1. Có thể phải chạy CLI bằng Node sidecar dù daemon dùng Bun |
+| R1 | **ĐÃ GIẢI QUYẾT bằng Node SEA** — Bun trực tiếp và Bun loader đều FAIL; Node SEA PASS | SEA nhúng archive 34 package, cold/warm đều chạy ONNX + Sharp; checksum và code signature hợp lệ ([bằng chứng](../../spikes/phase-0/README.md)) | Không còn chặn kỹ thuật; còn phase approval | Pin Node toolchain, build archive riêng mỗi OS × kiến trúc, smoke-test cold + warm |
+| R2 | **ĐÃ XÁC MINH PASS trong phạm vi parse/lint/list** — CLI chạy dưới Bun | `lint` quét 6 file, `compositions` đọc 7 composition, cả hai exit 0 ([bằng chứng](../../spikes/phase-0/README.md)) | Không chặn đường CLI đã thử | Chưa cần Node sidecar cho parse/lint/list; render/TTS vẫn phải test cùng packaging mới |
 | R3 | **Repo hiện có 0 test** | không có file `*.test.*`/`*.spec.*`, không có test runner | Refactor sang Core không có lưới an toàn | §16 |
 | ~~R4~~ | ~~Migration song song vi phạm single-writer~~ | — | — | **ĐÃ GIẢI QUYẾT bởi D4.** Chỉ có một implementation backend (Hono); Next chỉ forward. Cắt chuyển bằng cách xoá route cũ của Next, không bao giờ có hai backend cùng ghi. §5.3 |
-| R4b | **Độ ưu tiên route của Next là giả định chịu tải** — cả kế hoạch cắt chuyển dựa vào việc route cụ thể thắng optional catch-all | Next App Router: static → dynamic → catch-all → optional catch-all | Nếu sai, phải cắt chuyển toàn bộ 6 route cùng lúc | Smoke test ngay bước đầu Mức 1, trước khi dựa vào nó |
+| R4b | **ĐÃ XÁC MINH PASS** — route cụ thể thắng optional catch-all trên Next 16.2.12 | Exact route và catch-all trả marker khác nhau trong spike ([bằng chứng](../../spikes/phase-0/README.md)) | Kế hoạch cutover đứng vững | Giữ smoke fixture; chạy lại khi nâng major Next |
 | R4c | **SSE và upload lớn đi qua Next Route Handler** chưa được xác minh | Hono `streamSSE` trả `ReadableStream`; BGM upload tới 20MB | Progress job có thể bị buffer; upload có thể bị chặn | Test sớm; nếu hỏng, đó là lý do đẩy nhanh sang `vidcom serve` |
 | R5 | **Registry fetch qua HTTP khi mở project** — timeout 4s mỗi block lạ | `readBlock` ([11-parsing-logic.md](11-parsing-logic.md) §3) | Local-first mà mở project phải chờ mạng | Cache registry persist trong `<app-data>/cache`, có TTL, không cache negative vô hạn; offline mode tường minh |
 | R6 | **Version skew HyperFrames** | mỗi project có `package.json` gọi `npx hyperframes@0.7.86`; app bundle mang version riêng | Project render khác nhau giữa CLI và app | Đọc version project yêu cầu → cảnh báo hoặc pin |
@@ -539,7 +540,7 @@ Repo hiện **không có test nào** (R3). Toàn bộ giá trị của việc t�
 > **Thứ tự task nằm ở [15-build-order](15-build-order.md).** Mục này mô tả **các mức đóng gói** — trạng thái artifact ở từng nấc — không phải backlog.
 
 ### Bước 0 — Spike, làm trước mọi thứ
-Xác minh **R1 + R2** bằng prototype nhỏ nhất: Bun compile một binary gọi `@hyperframes/core` (esbuild), `onnxruntime-node`, `sharp`, `puppeteer-core`. Nếu thất bại, D2 phải đổi cách hiện thực (Node SEA, hoặc giải nén addon ra app-data). **Không xây gì thêm trước khi biết kết quả.**
+Kết quả ngày 2026-08-01: Bun direct compile FAIL; spike thay thế chọn **Node SEA PASS** và loại Bun native-loader rewrite; R2 PASS trong phạm vi parse/lint/list; dual-stack MCP PASS; R4b PASS. Gate kỹ thuật đã giải quyết. Phase 1 chỉ bắt đầu sau khi thay đổi runtime/design và checklist được xác nhận. Xem [bằng chứng Phase 0](../../spikes/phase-0/README.md).
 
 ### Mức 1 — Hono thành backend, Next thành vỏ (D4)
 
@@ -557,8 +558,8 @@ Thứ tự có chủ đích — mỗi bước để lại app chạy được:
 Kết thúc Mức 1: `src/` không còn code server nào ngoài đúng một file forward.
 
 ### Mức 2 — Headless executable
-- Bỏ Next: `Bun.serve({ fetch: app.fetch })`; frontend build static, nhúng vào binary.
-- Bun compile Hono + MCP + frontend asset.
+- Bỏ Next: `@hono/node-server` phục vụ `app.fetch`; frontend build static, nhúng vào binary.
+- Bundle Hono + MCP + frontend asset vào Node SEA.
 - Directory-picker API + token flow (§9.1).
 - Kiểm thử: cold start, restart recovery, workspace lock, MCP handshake, stdout sạch.
 
@@ -594,6 +595,7 @@ Kiểm tra lần cuối: 2026-08-01.
 - Next.js route precedence (giả định R4b): <https://nextjs.org/docs/app/api-reference/file-conventions/dynamic-routes>
 - Bun standalone executable: <https://bun.sh/docs/bundler/executables>
 - Bun embedded files: <https://bun.sh/docs/bundler/executables#embedding-files>
+- Node.js single executable applications: <https://nodejs.org/api/single-executable-applications.html>
 - MCP spec `2026-07-28` (modern) + changelog: <https://modelcontextprotocol.io/specification/2026-07-28/changelog>
 - MCP spec `2025-11-25` (legacy mới nhất): <https://modelcontextprotocol.io/specification/2025-11-25>
 - MCP TypeScript SDK, server guide: <https://github.com/modelcontextprotocol/typescript-sdk/blob/main/docs/server.md>

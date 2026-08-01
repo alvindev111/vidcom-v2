@@ -80,7 +80,7 @@ Each `spec-<feature-slug>-<status>.md` file must follow this structure for easy 
 ### 3. Spec Planning
 - **Start and End Date**: Exact timing.
 - **Capacity**: Estimated available effort (e.g., story points or hours).
-- **Testing Strategy**: For every backend story, define how logic will be tested and, when the story touches persistence, how a real PostgreSQL test database will be used to verify writes, reads, transactions, and constraints.
+- **Testing Strategy**: For every backend story, define how logic will be tested and, when the story touches persistence, how the project's real datastore will be used in tests to verify writes, reads, transactions, and constraints. For VidCom this is **SQLite in application-data plus the real filesystem** in a temp directory — never a mock of `node:fs` or an in-memory stand-in for the datastore.
 - **Risks Identified**: Potential risks and mitigation plans.
 - **Commitments**: What the team commits to completing.
 

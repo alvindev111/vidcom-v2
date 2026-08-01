@@ -19,7 +19,7 @@
 
 > [!NOTE]
 > This checklist is the central source of truth for the LLM Agent during execution. All tasks must be tracked here.
-> For persistence-bound backend work, the checklist is not complete until it includes both logic coverage and verification against a real PostgreSQL test database.
+> For persistence-bound backend work, the checklist is not complete until it includes both logic coverage and verification against the project's real datastore — SQLite plus a real temp filesystem for VidCom.
 
 This document breaks down the features of Spec [Feature Name] into actionable tasks, tracing every task back to a detailed goal (the "What") and a design element (the "How").
 
@@ -168,7 +168,7 @@ Phase 4 (Frontend) depends on Phase 3
 - [ ] 3.4 Unit test pure logic for [scenario]
 - [ ] 3.5 Unit test backward-compat scenario
 
-**Tasks — Real PostgreSQL Test DB**:
+**Tasks — Real Datastore Tests** (SQLite + real filesystem for VidCom):
 - [ ] 3.6 Integration test: write → read round-trip for [entity]
 - [ ] 3.7 Integration test: transaction rollback on [error condition]
 - [ ] 3.8 Integration test: unique / FK / check constraint enforcement
@@ -263,7 +263,7 @@ The tasks phase serves to:
 1. **Review Design Components**: Walk the detailed-design file section by section; list every component, interface, data model, and contract.
 2. **Map to Code Artifacts**: Determine which files, classes, functions need to be created or modified.
 3. **Identify Dependencies**: What must be built before what.
-4. **Consider Testing Requirements**: Plan for unit, integration (real PostgreSQL), and E2E coverage alongside implementation.
+4. **Consider Testing Requirements**: Plan for unit, integration (real datastore — SQLite + filesystem for VidCom), and E2E coverage alongside implementation.
 5. **Sequence for Early Validation**: Order tasks to validate core functionality quickly.
 
 **Task Identification Guidelines**:
@@ -399,7 +399,7 @@ The Requirements Coverage Matrix at the bottom of the skeleton MUST be filled in
 
 When a phase touches persistence, the checklist is not complete until it contains BOTH:
 1. **Logic tests** — unit tests for pure logic with no DB.
-2. **Real PostgreSQL test-DB tests** — write/read round-trips, transactions, constraints, workspace isolation.
+2. **Real datastore tests** — write/read round-trips, transactions, constraints, workspace isolation. For VidCom: real SQLite and a real temp filesystem, covering atomic write, content-hash conflict, traversal/symlink containment, watcher and job recovery.
 
 This is non-negotiable per `spec-rule.md`.
 

@@ -135,7 +135,7 @@ Mô tả tool là thứ **luôn** tới được agent, kể cả host không đ
 
 Mỗi tool call ghi: thời điểm, tên tool, mức, `projectId`, input đã redact, kết quả (ok/error code), revision trước và sau, thời lượng.
 
-Audit ghi vào `<app-data>/audit.sqlite`, MUST NOT ghi vào workspace của người dùng.
+Audit ghi vào bảng `audit_entry` trong `<app-data>/vidcom.sqlite`, MUST NOT ghi vào workspace của người dùng.
 
 ## 10. Versioning
 

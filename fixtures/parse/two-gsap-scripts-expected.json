@@ -1,0 +1,31 @@
+{
+  "elements": [
+    {
+      "id": "#target",
+      "label": "#target",
+      "kind": "element",
+      "start": null,
+      "duration": null,
+      "src": null,
+      "effects": [
+        {
+          "id": "0:#target-to-0-position",
+          "method": "to",
+          "start": 0,
+          "duration": 1,
+          "ease": null,
+          "propertyGroup": "position"
+        },
+        {
+          "id": "1:#target-to-0-position",
+          "method": "to",
+          "start": 0,
+          "duration": 1,
+          "ease": null,
+          "propertyGroup": "position"
+        }
+      ]
+    }
+  ],
+  "unresolvedEffects": 0
+}
