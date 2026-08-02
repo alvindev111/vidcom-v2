@@ -2,6 +2,8 @@
 
 > **Trạng thái:** Định hướng kiến trúc. Chưa phải Detailed Design, chưa khởi động spec process.
 > §1 là **hướng đi đã chốt** của dự án. Phần còn lại là đề xuất cách hiện thực và các rủi ro đã xác định.
+>
+> **Hiện trạng 2026-08-02:** Giai đoạn 2 đã được hiện thực và xác minh local: một Registry 10 tool phục vụ legacy/modern qua stdio và Streamable HTTP; write composite/recovery, approval grant, backup, audit và credential đều dùng SQLite/filesystem production. Node SEA và authenticated IPC bridge vẫn thuộc Giai đoạn 4.
 
 Tài liệu này mô tả *cách* hiện thực các yêu cầu chức năng ở [13-backend-requirements.md](13-backend-requirements.md). Application Core phải bảo toàn 11 nguyên tắc **P1–P11** ở doc 13 §1 — đặc biệt **P3** (preview và render dùng chung code path), vì nó ràng buộc trực tiếp cách chia module ở §6.
 
@@ -260,6 +262,10 @@ vidcom                        # = vidcom app
 vidcom app                    # khởi động daemon + mở browser tới UI
 vidcom serve --workspace <p>  # daemon headless
 vidcom mcp --workspace <p>    # MCP stdio, để AI host spawn làm subprocess
+vidcom approve <requestId>    # duyệt destructive request từ trusted local CLI
+vidcom credential ...         # issue/list/rotate/revoke bearer cho HTTP
+vidcom backup ...             # list/verify/restore backup
+vidcom recovery ...           # inspect/reconcile/resolve journal recovery
 vidcom worker                 # worker tách riêng nếu cần cô lập render/TTS
 vidcom render <project>       # render headless cho CI/batch
 vidcom doctor                 # kiểm tra Chromium, FFmpeg, TTS model, quyền, workspace

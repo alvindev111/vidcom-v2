@@ -49,6 +49,22 @@ async function expectLeaseReleased(appData: string): Promise<void> {
   }
 }
 
+async function expectDestructiveAudit(appData: string): Promise<void> {
+  const database = await initializeDatabase(appData);
+  try {
+    expect(dbOne(database, `SELECT action, outcome, protocol_version AS protocolVersion,
+      revision_id AS revisionId FROM audit_entry WHERE action = 'tool:delete_file'`))
+      .toEqual({
+        action: "tool:delete_file",
+        outcome: "ok",
+        protocolVersion: modernRevision,
+        revisionId: 1,
+      });
+  } finally {
+    await database.destroy();
+  }
+}
+
 describe("real AI-host CLI smoke", () => {
   it("spawns legacy then modern, completes approval and shuts down with protocol-only stdout", async () => {
     const root = await mkdtemp(path.join(tmpdir(), "vidcom-ai-host-smoke-"));
@@ -133,6 +149,7 @@ describe("real AI-host CLI smoke", () => {
       expect(withoutNodeWarnings(Buffer.concat(modernStderr).toString("utf8"))).toBe("");
       await expect(access(path.join(projectRoot, unused))).rejects.toMatchObject({ code: "ENOENT" });
       await expectLeaseReleased(appData);
+      await expectDestructiveAudit(appData);
     } finally {
       await rm(root, { recursive: true, force: true });
     }

@@ -1338,8 +1338,8 @@ Mỗi phase chạy focused command dưới đây trước khi chạy `rtk bun ru
 2026-08-02 — Phase P, Task P.7 complete; Task P.8
   - Files: [Phase Verification Matrix và generated build artifacts không tracked]
   - Summary: Chạy nguyên văn toàn bộ local Verification Matrix trên commit gốc `f4c838b43744e676798c1fb2fc58a46cfecd1219`; mọi command exit 0, không skipped test. Bắt đầu AI-host demo/docs/remote closeout.
-  - Verification: `bun install --frozen-lockfile` exit 0 (870 installs/1034 packages, no changes); `typecheck` 0; `lint` 0 với baseline 10 warnings; `test:boundaries` 0; `test` 0 (66 files/425 tests); `test:golden` 0 (6 files/22 tests); `build` 0; `test:runtime-smoke` 0 (SSE 1→2); `test:schema-drift` 0 (4 artifacts); `git diff --check` 0.
-  - Decisions: ghi SHA pre-commit để liên kết exact working-tree baseline; P.8 sẽ tạo ship commit mới rồi chạy/xác minh remote CI trên SHA đó trước closeout.
+  - Verification: `bun install --frozen-lockfile` exit 0 (870 installs/1034 packages, no changes); `typecheck` 0; `lint` 0 với baseline 10 warnings; `test:boundaries` 0; `test` 0 (66 files/423 tests); `test:golden` 0 (6 files/22 tests); `build` 0; `test:runtime-smoke` 0 (production MCP bearer route + SSE 1→2); `test:schema-drift` 0 (4 artifacts); `git diff --check` 0.
+  - Decisions: ghi SHA pre-commit để liên kết exact working-tree baseline; closeout audit bổ sung MCP Registry/credential injection vào Next host và nâng runtime smoke thành bearer call thật. P.8 sẽ tạo ship commit mới rồi chạy/xác minh remote CI trên SHA đó trước closeout.
   - Blockers: không có.
 
 Format:

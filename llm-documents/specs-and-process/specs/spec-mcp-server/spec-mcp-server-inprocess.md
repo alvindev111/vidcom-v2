@@ -1,6 +1,6 @@
 # Spec MCP Server
 
-> **Status**: In process — Detailed Goals, Detailed Design bản 6 và Implementation Checklist đã được duyệt; Code Execution bắt đầu 2026-08-02.
+> **Status**: In process — 139/140 task hoàn tất; local Verification Matrix xanh, đang chờ ship commit + remote CI cho P.8.
 
 > **Related Documents**:
 > - [Detailed Goals](./spec-mcp-server-detailed-goal.md) — **Approved**, reconfirmed 2026-08-02
@@ -105,7 +105,7 @@ Chi tiết và hệ quả: [Detailed Goals §Quyết định đã chốt](./spec
 
 - **Completed**: local implementation + Verification Matrix hoàn tất 2026-08-02; chờ ship commit và remote CI để đóng spec.
 - **Demo**: exact SDK legacy `1.30.0` và modern client `2.0.0` spawn production bin. Cả hai negotiate/list/call; modern host nhận elicitation, gọi trusted `vidcom approve`, retry `delete_file` thành công, có backup/audit, child đóng sạch và lease về 0. Rerun riêng: 1 file/1 test, exit 0.
-- **Feedback**: contract cần giữ protocol-only stdout và admin approval ngoài MCP capability; cả hai đã thành dedicated CI guards.
+- **Feedback**: contract cần giữ protocol-only stdout và admin approval ngoài MCP capability; cả hai đã thành dedicated CI guards. Closeout audit còn phát hiện Next production host chưa inject MCP Registry/credential verifier; wiring đã được bổ sung và `test:runtime-smoke` nay cấp bearer bằng CLI thật rồi gọi `/api/mcp`.
 
 ## Spec Retrospective
 

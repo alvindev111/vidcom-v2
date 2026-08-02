@@ -131,7 +131,7 @@ try {
   await writeFile(entry, `${await readFile(entry, "utf8")}\n<!-- runtime-smoke-2 -->\n`);
   const secondId = await resumedEvent;
   if (!(secondId > firstId)) throw new Error("Last-Event-ID did not resume after the prior durable event");
-  process.stdout.write(`Next runtime smoke passed on port ${port}; SSE ${firstId} -> ${secondId}\n`);
+  process.stdout.write(`Next runtime smoke passed on port ${port}; MCP bearer route ok; SSE ${firstId} -> ${secondId}\n`);
 } finally {
   child.kill("SIGTERM");
   await Promise.race([
