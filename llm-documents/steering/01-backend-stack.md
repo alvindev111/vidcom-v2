@@ -7,8 +7,8 @@
 | Ngôn ngữ | TypeScript, `strict: true` | Không JavaScript thuần trong `packages/` |
 | HTTP framework | **Hono** | Trùng với studio server chính thức của HyperFrames |
 | Runtime đích | **Node SEA (Node 24 LTS toolchain đã kiểm thử)** | Bun `--compile` trực tiếp và native-loader rewrite đều thất bại; Node SEA cold/warm probe ONNX + Sharp đã PASS ngày 2026-08-01 |
-| MCP modern (`2026-07-28`) | `@modelcontextprotocol/server@2.x` + `core@2.x` | Package **server**, không phải `client` |
-| MCP legacy (≤ `2025-11-25`) | `@modelcontextprotocol/sdk@1.x` | Bắt buộc — phải phục vụ cả hai thế hệ |
+| MCP — **runtime duy nhất** | `@modelcontextprotocol/server@2.x` + `core@2.x` | Phục vụ **cả hai** era (legacy ≤ `2025-11-25` và modern `2026-07-28`) trên **cả** HTTP lẫn stdio. Package **server**, không phải `client` |
+| MCP — client cho test | `@modelcontextprotocol/sdk@1.x` (legacy), `@modelcontextprotocol/client@2.x` (modern) | **devDependency**. MUST NOT nằm trong đường chạy production |
 | HTML parse (server) | `linkedom` | Đúng **một** bản trong dependency tree |
 | Composition engine | `@hyperframes/{core,sdk,studio-server,parsers,lint}` | Node-only |
 | Validation | Một thư viện schema duy nhất cho cả HTTP và MCP | Xem [06-validation](06-validation.md) |
@@ -16,9 +16,9 @@
 
 MUST NOT thêm HTTP framework thứ hai. MUST NOT thêm ORM nặng — truy vấn SQLite viết tay hoặc query builder mỏng.
 
-**Hai SDK MCP là ngoại lệ có chủ đích** cho rule "không hai thư viện cùng việc": hai thế hệ protocol không nói chuyện được với nhau và không có package nào phục vụ cả hai. Xem [13-mcp-protocol-compatibility](13-mcp-protocol-compatibility.md).
+**Chỉ một MCP SDK ở runtime.** Spike Q10 (2026-08-01) chứng minh `@modelcontextprotocol/server@2.x` một mình phục vụ cả hai era: `createMcpHandler` mặc định `legacy: 'stateless'`, `serveStdio` mặc định `legacy: 'serve'`. `sdk@1.x` chỉ còn vai trò **client legacy trong test**. Bằng chứng: [spikes/phase-0 §Q10](../../spikes/phase-0/README.md). Luật: [13-mcp-protocol-compatibility](13-mcp-protocol-compatibility.md).
 
-MUST pin version của cả hai SDK. Nâng là thay đổi có chủ đích, kèm chạy lại contract test.
+MUST pin version SDK. Nâng là thay đổi có chủ đích, kèm chạy lại contract test và đối chiếu tập revision mà `contracts` công bố.
 
 ## 2. Ràng buộc runtime
 

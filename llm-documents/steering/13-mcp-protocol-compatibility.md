@@ -88,12 +88,14 @@ Daemon local vốn không cần session MCP — workspace và project resolve th
 
 [05-mcp-tool-design](05-mcp-tool-design.md) §3 yêu cầu tool destructive phải xác nhận. Cách hiện thực khác nhau theo thế hệ:
 
-| Thế hệ | Cách |
-|---|---|
-| Modern | Trả `InputRequiredResult` với `inputRequests` hỏi xác nhận. Client retry kèm `inputResponses`. **Đây là cách idiomatic** |
-| Legacy | Tham số `confirm: true` + `expectedRevision` trên chính tool call |
+> **Sửa 2026-08-01.** MRTR **không** phải bằng chứng người dùng đã duyệt — nó chỉ chứng minh client gửi phản hồi. Bằng chứng duyệt là **approval grant** do daemon phát hành; xem [05-mcp-tool-design](05-mcp-tool-design.md) §3.
 
-MUST hỗ trợ cả hai. Quyết định "có được xoá không" nằm ở **Core**, không ở adapter — adapter chỉ dịch sang cơ chế của thế hệ tương ứng.
+| Era | Vai trò trong luồng xác nhận |
+|---|---|
+| Modern | `InputRequiredResult` với `inputRequests` là **kênh dẫn** người dùng tới bước lấy grant, và là cách idiomatic để hỏi. Không thay thế grant |
+| Legacy | Trả `approval_required` kèm hướng dẫn. MUST NOT chấp nhận cờ `confirm` do agent tự đặt |
+
+MUST hỗ trợ cả hai. Quyết định "có được xoá không" nằm ở **Core**; transport chỉ dịch sang cơ chế của era tương ứng.
 
 ### 3.3 Job ↔ tasks extension
 
@@ -126,28 +128,61 @@ Modern chuẩn hoá `traceparent` / `tracestate` / `baggage` trong `_meta`. SHOU
 
 ---
 
-## 4. Kiến trúc dual-stack bắt buộc
+## 4. Kiến trúc — một handler, hai era
+
+> **Đã sửa 2026-08-01 theo spike Q10.** Bản trước mô tả hai transport adapter song song (`sdk@1.x` cho legacy, `server@2.x` cho modern). Điều đó **sai**: `@modelcontextprotocol/server@2.0.0` một mình phục vụ được cả hai era, trên **cả** HTTP lẫn stdio. Bằng chứng: [spikes/phase-0 §Q10](../../spikes/phase-0/README.md).
 
 ```
-                        ┌──────────────────────────┐
-AI host legacy ────────▶│ legacy transport adapter │──┐
-(sdk 1.x)               │ @modelcontextprotocol/sdk│  │
-                        └──────────────────────────┘  │
-                                                      ├──▶ Tool Registry ──▶ Application Core
-                        ┌──────────────────────────┐  │    (protocol-agnostic)
-AI host modern ────────▶│ modern transport adapter │──┘
-(2026-07-28)            │ @modelcontextprotocol/   │
-                        │ server@2.0.0             │
-                        └──────────────────────────┘
+AI host legacy  (sdk 1.x, ≤ 2025-11-25) ──┐
+                                          ├──▶ @modelcontextprotocol/server@2.x
+AI host modern  (2026-07-28) ─────────────┘     createMcpHandler  (HTTP)
+                                                serveStdio        (stdio)
+                                                       │
+                                                  factory({ era })
+                                                       │
+                                                       ▼
+                                          Tool Registry (protocol-agnostic)
+                                                       │
+                                                       ▼
+                                            Application Core
 ```
+
+Cơ chế: cả hai entry point nhận một **factory** và tự quyết era ở lần trao đổi mở đầu.
+
+| API | Option | Mặc định |
+|---|---|---|
+| `createMcpHandler` | `legacy?: 'stateless' \| 'reject'` | **`'stateless'`** — phục vụ legacy, mỗi request một instance mới |
+| `serveStdio` | `legacy?: 'serve' \| 'reject'` | **`'serve'`** — kết nối pin era ở opening exchange |
+
+SDK cũng **tự stamp field theo era**: result gửi cho legacy không có `resultType`/`ttlMs`/`cacheScope`; result gửi cho modern có đủ.
 
 ### Luật
 
-1. **Tool Registry là nguồn sự thật duy nhất.** Định nghĩa tool (tên, mức quyền, input/output schema, handler) khai báo **một lần**, protocol-agnostic. Hai transport adapter chỉ dịch.
+1. **Tool Registry là nguồn sự thật duy nhất.** Định nghĩa tool (tên, mức quyền, input/output schema, handler) khai báo **một lần**, protocol-agnostic.
 2. MUST NOT viết một tool hai lần cho hai thế hệ.
 3. MUST NOT để kiểu dữ liệu của bất kỳ SDK nào rò vào Core hay vào Tool Registry. Registry dùng type của `packages/contracts`.
-4. Tính năng chỉ có ở modern (MRTR, tasks extension, `resultType`, `CacheableResult`) MUST được **degrade** ở adapter legacy, không được làm hỏng tool.
-5. Tool nào **không** degrade được xuống legacy MUST khai báo tường minh và bị ẩn khỏi legacy `tools/list` — MUST NOT expose rồi lỗi lúc gọi.
+4. MUST NOT tự viết lại thứ SDK đã làm: phân loại era, stamp `resultType`/`CacheableResult`, validate header modern, `server/discover`, codec MRTR. Dùng export của `server@2` (xem §4.1).
+5. Tính năng chỉ có ở modern (MRTR, tasks extension) MUST degrade sạch ở era legacy, không được làm hỏng tool.
+6. Tool nào **không** degrade được xuống legacy MUST khai báo tường minh và bị ẩn khỏi legacy `tools/list` — MUST NOT expose rồi lỗi lúc gọi.
+7. **`@modelcontextprotocol/sdk@1.x` MUST là devDependency**, không phải runtime dependency. Nó chỉ dùng làm **client legacy trong test**.
+
+### 4.1 Dùng sẵn của `server@2`, đừng viết lại
+
+| Nhóm | Export |
+|---|---|
+| Entry point | `createMcpHandler`, `serveStdio`, `WebStandardStreamableHTTPServerTransport` |
+| Phân loại & negotiation | `classifyInboundRequest`, `isLegacyRequest`, `codecForVersion`, `isModernProtocolVersion`, `legacyProtocolVersions`, `modernProtocolVersions`, `UnsupportedProtocolVersionError` |
+| Hằng số revision | `SUPPORTED_PROTOCOL_VERSIONS`, `SUPPORTED_MODERN_PROTOCOL_VERSIONS`, `DEFAULT_NEGOTIATED_PROTOCOL_VERSION`, `LATEST_PROTOCOL_VERSION` |
+| Header modern | `validateMcpParamHeaders`, `scanXMcpHeaderDeclarations` |
+| Cache hint | `assertValidCacheHint`, `attachCacheHintFallback` |
+| MRTR | `inputRequired`, `inputResponse`, `isInputRequiredResult`, `createRequestStateCodec`, `requestStateAccessor`, `inputRequiredRoundsExceededMessage` |
+| Bảo mật | `validateHostHeader`, `validateOriginHeader`, `requireBearerAuth`, `verifyBearerToken` |
+
+### 4.2 Giới hạn đã biết
+
+- `legacy: 'stateless'` trả **`405`** cho `GET` và `DELETE` — đó là thao tác session đời 2025. Server tool-only không dùng, nhưng MUST ghi vào tài liệu cho host.
+- `responseMode: "json"` **drop notification giữa chừng**. Cần progress notification thì MUST NOT dùng mode đó.
+- `server/discover` chỉ liệt kê `supportedVersions` của modern. Danh sách revision legacy phải công bố ở chỗ khác nếu cần.
 
 ### Cấu trúc
 
@@ -155,23 +190,25 @@ AI host modern ────────▶│ modern transport adapter │──
 packages/mcp/
 ├── registry/          định nghĩa tool, protocol-agnostic  ← nguồn sự thật
 │   └── tools/         một file một tool
-├── transport-legacy/  @modelcontextprotocol/sdk@1.x
-├── transport-modern/  @modelcontextprotocol/server@2.x
-└── negotiate.ts       chọn adapter theo version
+├── http.ts            createMcpHandler → Request/Response thuần
+├── stdio.ts           serveStdio
+└── revisions.ts       re-export hằng số revision, đối chiếu với contracts
 ```
 
 ---
 
 ## 5. Version negotiation
 
+Negotiation do SDK thực hiện, không phải ta. Việc của ta là **không cản nó** và ánh xạ đúng phần còn lại.
+
 | Tình huống | Xử lý |
 |---|---|
-| Request mang protocol version hợp lệ | Route tới adapter đúng thế hệ |
-| Version không hỗ trợ | Trả `UnsupportedProtocolVersion` (`-32022` ở modern), kèm **danh sách version ta hỗ trợ** |
-| Không có version (legacy HTTP) | Mặc định `2025-03-26` — đúng `DEFAULT_NEGOTIATED_PROTOCOL_VERSION` của SDK 1.x |
-| STDIO, chưa biết đời | Modern client dùng `server/discover` để dò. MUST implement `server/discover` **và** vẫn chấp nhận `initialize` của legacy |
+| Request mang protocol version hợp lệ | SDK phân loại era và gọi factory với `era` tương ứng |
+| Version không hỗ trợ | `UnsupportedProtocolVersionError` (`-32022` ở modern), kèm **danh sách version ta hỗ trợ** |
+| Không có version (legacy HTTP) | Mặc định `2025-03-26` — `DEFAULT_NEGOTIATED_PROTOCOL_VERSION` |
+| STDIO | Era pin ở opening exchange; `serveStdio` mặc định `legacy: 'serve'` nên chấp nhận cả `initialize` lẫn đường modern |
 
-MUST khai báo tập version hỗ trợ ở **một chỗ** trong `contracts`, không hardcode rải rác.
+MUST khai báo tập version hỗ trợ ở **một chỗ** trong `contracts`, không hardcode rải rác. Nếu lấy từ SDK thì `contracts` là chỗ duy nhất re-export, và MUST có test đối chiếu để nâng SDK không âm thầm đổi tập version ta công bố.
 
 MUST log version đã negotiate vào audit của mỗi tool call — khi debug hành vi lạ, biết host đời nào là bước đầu tiên.
 
@@ -181,12 +218,12 @@ MUST log version đã negotiate vào audit của mỗi tool call — khi debug h
 
 | # | Rule |
 |---|---|
-| M1 | MUST hỗ trợ cả legacy và modern chừng nào chưa có dữ liệu cho thấy không host nào dùng legacy |
-| M2 | MUST định nghĩa tool **một lần** trong Tool Registry; adapter chỉ dịch |
+| M1 | MUST hỗ trợ cả legacy và modern. **Claude Code `2.1.207` chỉ nói legacy** (`LATEST = 2025-11-25`, 0 lần xuất hiện `2026-07-28`) — legacy là đường duy nhất chạy được với nó hôm nay, không phải lớp tương thích cho host cũ |
+| M2 | MUST định nghĩa tool **một lần** trong Tool Registry |
 | M3 | MUST NOT để type của SDK rò vào Core hoặc Registry |
 | M4 | MUST NOT thiết kế tool phụ thuộc session/connection state |
-| M5 | MUST implement `server/discover` cho modern |
-| M6 | MUST trả `resultType` + `CacheableResult` ở modern, MUST NOT gửi chúng cho legacy |
+| M5 | `server/discover` do `server@2` cung cấp sẵn — MUST NOT tự implement |
+| M6 | `resultType` + `CacheableResult` do SDK stamp theo era — MUST NOT tự thêm hay tự lọc |
 | M7 | MUST sort `tools/list` deterministic |
 | M8 | MUST dùng `cacheScope: "private"` |
 | M9 | MUST NOT dùng feature đã deprecated (Roots, Sampling, Logging, HTTP+SSE) cho code mới |
@@ -194,7 +231,9 @@ MUST log version đã negotiate vào audit của mỗi tool call — khi debug h
 | M11 | MUST NOT tự cấp phát error code trong dải `-32020`–`-32099` (dành cho spec) |
 | M12 | MUST ẩn tool không degrade được khỏi legacy `tools/list` |
 | M13 | MUST ghi protocol version vào audit mỗi tool call |
-| M14 | MUST pin version của cả hai SDK; nâng version là thay đổi có chủ đích, kèm chạy lại contract test |
+| M14 | MUST pin version SDK; nâng version là thay đổi có chủ đích, kèm chạy lại contract test |
+| M15 | `@modelcontextprotocol/sdk@1.x` MUST là **devDependency** — chỉ dùng làm client legacy trong test, MUST NOT nằm trong đường chạy production |
+| M16 | MUST NOT dùng `responseMode: "json"` nếu tool cần phát notification giữa chừng — mode đó drop chúng |
 
 ---
 
@@ -233,11 +272,12 @@ Phase 0 chạy ngày 2026-08-01 trên Bun 1.3.14. Bằng chứng tái hiện n�
 | S1 | **ĐÃ XÁC MINH** | Modern HTTP dùng `createMcpHandler(factory)` để phân loại envelope và phục vụ `server/discover`. Client v2 mặc định giữ posture legacy; phải opt-in `versionNegotiation: auto` hoặc pin `2026-07-28`. Hand-constructed `McpServer` qua `InMemoryTransport` không tự trở thành modern serving entry |
 | S2 | **PASS qua adapter tách biệt** | `@modelcontextprotocol/server@2.0.0` và `sdk@1.30.0` cùng PID, cùng bundle, cùng trả `tools/list` và `tools/call`; không thấy xung đột runtime/global/peer dependency. Legacy dùng low-level `Server`, không chia sẻ trực tiếp schema type Zod v4 với modern server |
 | S3 | **PASS cho dual-stack** | Bun `--compile` nuốt được cả hai SDK và executable gọi được cả hai tool. Nhánh D2 dùng Bun vẫn FAIL vì native addon; fallback Node SEA đã PASS và không làm thay đổi boundary dual-stack |
-| S4 | **CHƯA XÁC MINH — gate Phase 2.6/2.8** | Extension `io.modelcontextprotocol/tasks` — SDK v2 hỗ trợ tới đâu, hay phải tự implement? |
-| S5 | **CHƯA XÁC MINH — gate Phase 2.6** | MRTR trên transport stdio hoạt động thế nào khi client retry — có ràng buộc gì về request ID? |
-| S6 | **CHƯA XÁC MINH — gate trước ưu tiên host** | Claude Code và Codex hiện đang nói protocol revision nào? |
+| S4 | **ĐÃ TRẢ LỜI** | `server@2.0.0` có **schema** `tasks/get`/`tasks/cancel`/`tasks/list`/`tasks/result` + `RELATED_TASK_META_KEY` + `isTaskAugmentedRequestParams`, **không** có task manager (`registerTask`/`TaskHandle`). Phần ghép nối là việc của ta → giữ ngoài Phase 2, nhưng rẻ hơn giả định |
+| S5 | **ĐÃ TRẢ LỜI** | MRTR hỗ trợ đầy đủ phía server. Tương quan qua **`requestState`**, **không** qua request ID: `RETRY_PARAMS_KEYS = ["inputResponses", "requestState"]`, reserved trên client-initiated request; SDK bóc chúng ra trước khi handler thấy. Có sẵn guard `inputRequiredRoundsExceededMessage` |
+| S6 | **ĐÃ XÁC MINH (một phần)** | Claude Code `2.1.207`: revision `2024-10-07`…`2025-11-25`, `LATEST = "2025-11-25"`, **0** lần xuất hiện `2026-07-28` → **legacy only**. Codex `0.146.0` chưa xác minh được (launcher JS, binary thật không trên đĩa) |
+| **Q10** | **ĐÃ XÁC MINH — đảo ngược §4** | `server@2.0.0` một mình phục vụ **cả hai era** trên **cả** HTTP (`createMcpHandler`, `legacy: 'stateless'` mặc định) lẫn stdio (`serveStdio`, `legacy: 'serve'` mặc định). Bốn probe pass, stamp field theo era là tự động. → Không cần `sdk@1.x` phía server |
 
-MUST giải quyết S4–S6 trước khi khoá phần thiết kế tương ứng ở Phase 2. Không được suy diễn kết quả của Phase 0 cho ba câu hỏi này.
+Còn lại chưa xác minh: revision của **Codex**. Không được suy diễn từ Claude Code sang Codex.
 
 ---
 

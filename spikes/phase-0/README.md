@@ -138,3 +138,64 @@ Kết quả trên Next 16.2.12:
 /api/probe/other -> {"route":"optional-catch-all"}
 /api             -> {"route":"optional-catch-all"}
 ```
+
+## Q10 — `server@2` có tự phục vụ legacy không? (spike bổ sung, 2026-08-01)
+
+Câu hỏi phát sinh khi soạn spec Phase 2. Spike 0.3 chứng minh hai generation SDK sống chung được, nhưng nó phục vụ legacy bằng low-level `Server` của `sdk@1.30.0`. Chưa ai kiểm chứng liệu **một mình `@modelcontextprotocol/server@2.0.0`** có phủ được cả hai era hay không — nếu có thì một nửa dual-stack biến mất.
+
+Ca quan trọng nhất là **stdio + legacy**, vì Claude Code `2.1.207` chỉ nói legacy (`LATEST = 2025-11-25`, **0** lần xuất hiện `2026-07-28` trong binary) và spawn MCP server qua stdio.
+
+```bash
+bun run mcp-legacy-via-server-v2.ts        # HTTP, một handler, hai client
+bun run mcp-legacy-stdio-via-server-v2.ts  # stdio, hai child process
+```
+
+Trong cả hai probe, **phía server chỉ import `@modelcontextprotocol/server`**. `sdk@1.x` chỉ xuất hiện ở phía *client*, đóng vai host legacy.
+
+### Cơ chế tìm thấy trong type definition
+
+| API | Option | Mặc định |
+|---|---|---|
+| `createMcpHandler` | `legacy?: 'stateless' \| 'reject'` | **`'stateless'`** — mỗi request legacy được phục vụ bằng một instance mới từ cùng factory |
+| `serveStdio` | `legacy?: 'serve' \| 'reject'` | **`'serve'`** — kết nối được pin era ở lần trao đổi mở đầu, cùng factory phục vụ cả hai era |
+
+Spike 0.3 đặt `legacy: "reject"`, nên nó chưa bao giờ chạm vào đường phục vụ legacy của `server@2`.
+
+### Kết quả
+
+| Probe | Client | Era negotiate | `tools/list` | `tools/call` |
+|---|---|---|---|---|
+| HTTP | `sdk@1.x` | `2025-11-25` | `["echo"]` | `legacy-ok` |
+| HTTP | `client@2.x` pin `2026-07-28` | `2026-07-28` | `["echo"]` | `modern-ok` |
+| stdio | `sdk@1.x` | `2025-11-25` | `["echo"]` | `legacy-stdio-ok` |
+| stdio | `client@2.x` pin `2026-07-28` | `2026-07-28` | `["echo"]` | `modern-stdio-ok` |
+
+Factory được gọi với `era` là `"legacy"` rồi `"modern"` — cùng một factory, hai era.
+
+### Stamp field theo era là tự động
+
+Đọc raw JSON-RPC response ở probe HTTP:
+
+| Field | Result gửi cho legacy | Result gửi cho modern |
+|---|---|---|
+| `resultType` | không có | có |
+| `ttlMs` | không có | có |
+| `cacheScope` | không có | có (`"private"`) |
+
+`server/discover` trả sẵn `cacheScope: "private"`, `resultType: "complete"`, `supportedVersions: ["2026-07-28"]`.
+
+### Giới hạn đã ghi nhận
+
+- **`GET` trả `405`** ở chế độ `legacy: 'stateless'`. Đây là các thao tác session đời 2025 (SSE stream, DELETE session). Server tool-only của VidCom không dùng chúng, nhưng phải ghi vào tài liệu.
+- `responseMode: "json"` in cảnh báo: *"drops mid-call notifications... other notifications emitted before a result are dropped"*. Nếu Phase 2 cần progress notification thì **không** dùng `responseMode: "json"`.
+- `server/discover` chỉ liệt kê `supportedVersions: ["2026-07-28"]`. Đó là method modern-only nên hợp lý, nhưng nghĩa là danh sách revision legacy phải được công bố ở chỗ khác nếu ta muốn quảng bá nó.
+
+### Kết luận
+
+**Q10 = CÓ, cho cả HTTP lẫn stdio.** `@modelcontextprotocol/server@2.0.0` một mình phủ cả hai generation.
+
+Hệ quả:
+
+1. **Không cần `sdk@1.x` phía server.** Nó tụt xuống thành **devDependency** — dùng làm client legacy trong contract test.
+2. Kiến trúc "hai transport adapter" ở steering 13 §4 **không còn đúng**: đúng hơn là **một handler, một factory, SDK tự quyết era**. Phần cần ta viết là Tool Registry và ánh xạ lỗi, không phải hai stack song song.
+3. Endpoint định địa chỉ theo revision (`/api/mcp/<revision>`) vẫn giữ giá trị — nhưng để **pin và debug**, không phải để chọn implementation.

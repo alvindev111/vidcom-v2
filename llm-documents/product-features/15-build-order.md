@@ -73,8 +73,13 @@ D1 là quyết định số một, nhưng nó cần nền móng ở giai đoạn
 | 2.2 | Bộ tool đọc: `list_projects`, `get_project_context`, `read_composition`, `list_scenes` | MP-1 |
 | 2.3 | Transport modern `2026-07-28` + `server/discover` + `resultType` + `CacheableResult` | MP-3, MP-5, MP-6 |
 | 2.4 | Transport legacy ≤ `2025-11-25` + negotiation + map error code theo thế hệ | MP-4, MP-9 |
-| 2.5 | Bộ tool ghi: `create_scene`, `set_scene_timing`, `set_text`, `save_file` — kèm `expectedRevision` | MP-1 |
-| 2.6 | Tool destructive + MRTR (modern) / `confirm` (legacy) + backup trước khi xoá | MP-7, SC-1 |
+| 2.4b | **Nâng cấp Core**: `WriteAuthority` hỗ trợ mutation composite (nhiều file + tuỳ chọn một entity, một revision, recovery được) | CE-7 |
+| 2.4c | **Nâng cấp Core**: `createScene` dùng mutation composite, trả `revision` + `diagnostics`; `setSceneScript` đánh dấu narration stale | CE-6, NT-13 |
+| 2.5 | Bộ tool ghi: `create_scene`, `set_scene_timing`, `set_text`, `save_file` — kèm precondition bắt buộc | MP-1 |
+| 2.6 | Tool destructive + **approval grant do daemon phát hành** + backup restore được · **kèm use case `deleteScene` trong Core** | MP-7, SC-1 |
+| 2.10 | Transport Streamable HTTP, endpoint theo revision + vòng đời credential cho AI host | MP-3, MP-4 |
+
+> **Cập nhật 2026-08-01.** 2.4b/2.4c bổ sung sau review spec: `WriteAuthority` hiện chỉ ghi được một file hoặc một entity mỗi lần, và `createScene` đang ghi ba lần rời không có revision chung. Không có hai mục này thì "một thao tác = một revision" và `deleteScene` đều không khả thi. Giai đoạn 2 vì thế **rộng hơn** ước lượng 2–3 tuần ban đầu.
 | 2.7 | Audit mọi tool call, ghi cả protocol version | MP-12, SE-9 |
 | 2.8 | Contract test chạy **hai lần**, một lần mỗi thế hệ | — |
 | 2.9 | `vidcom mcp` mode, `stdout` sạch | PK-5 |
@@ -95,7 +100,7 @@ D1 là quyết định số một, nhưng nó cần nền móng ở giai đoạn
 | 3.4 | Sửa bug narration: bỏ auto-regenerate khi sửa script, hỗ trợ nhiều đoạn/scene | NT-13, NT-7 | Bug nghiệp vụ đã xác định (doc 12 #1, #2) |
 | 3.5 | Diagnostics endpoint + tích hợp `hyperframes check`, giữ 4 cảnh báo hiện có | VD-1, VD-2, VD-3 | Đã có logic, chỉ chưa expose |
 | 3.6 | Tạo / xoá / đổi tên project | PM-2, PM-4 | "New video" đang là nút chết |
-| 3.7 | Scene: xoá, chèn vị trí bất kỳ, **ripple edit**, validate timing | SC-1, SC-4, SC-5, SC-8 | Hiện chỉ append cuối, sửa duration để lại lỗ hổng |
+| 3.7 | Scene: chèn vị trí bất kỳ, **ripple edit**, validate timing (xoá đã chuyển lên 2.6 ngày 2026-08-01) | SC-4, SC-5, SC-8 | Hiện chỉ append cuối, sửa duration để lại lỗ hổng |
 | 3.8 | Thumbnail thật ở Home | PM-5 | |
 | 3.9 | Allowlist khi serve asset; Range request | SE-2, FA-8 | Lỗ bảo mật đã xác định |
 

@@ -35,7 +35,7 @@ Steering ≠ spec. Steering là **luật thường trực**, áp dụng cho mọ
 | [10-testing.md](10-testing.md) | Chiến lược test, golden file, contract test |
 | [11-code-style.md](11-code-style.md) | **Doc comment bắt buộc cho hàm**, TypeScript style, comment policy, error handling |
 | [12-documentation-rules.md](12-documentation-rules.md) | Khi nào và cách cập nhật tài liệu |
-| [13-mcp-protocol-compatibility.md](13-mcp-protocol-compatibility.md) | **Tương thích legacy ↔ `2026-07-28`**: dual-stack, negotiation, MRTR, tasks extension |
+| [13-mcp-protocol-compatibility.md](13-mcp-protocol-compatibility.md) | **Tương thích legacy ↔ `2026-07-28`**: một runtime SDK phục vụ hai era, negotiation, MRTR, tasks extension |
 | [14-agent-kit-and-skills.md](14-agent-kit-and-skills.md) | **AGENTS.md + skill ship cho Codex/Claude Code**, quy trình chuẩn 9 bước |
 
 ## Nguyên tắc bất biến

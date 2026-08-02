@@ -22,9 +22,9 @@ packages/
 │   └── app.ts               ráp mọi thứ, export `app`
 ├── mcp/                     MCP adapter — gọi core, KHÔNG gọi server
 │   ├── registry/tools/      định nghĩa tool, protocol-agnostic ← nguồn sự thật
-│   ├── transport-legacy/    @modelcontextprotocol/sdk@1.x   (≤ 2025-11-25)
-│   ├── transport-modern/    @modelcontextprotocol/server@2.x (2026-07-28)
-│   └── negotiate.ts         chọn adapter theo protocol version
+│   ├── http.ts              createMcpHandler → handler Request/Response thuần
+│   ├── stdio.ts             serveStdio
+│   └── revisions.ts         re-export hằng số revision, đối chiếu với contracts
 ├── worker/                  chạy job dài
 ├── contracts/               schema dùng chung: HTTP DTO, MCP tool schema, error code
 ├── agent-kit/               ASSET, không phải code — nhúng vào binary, cài vào project

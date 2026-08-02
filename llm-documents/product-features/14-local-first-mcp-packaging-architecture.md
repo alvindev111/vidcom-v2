@@ -237,7 +237,7 @@ Trách nhiệm: khai báo tool/resource/prompt contract · validate input/output
 > | Package | `@modelcontextprotocol/sdk@1.30.0` | `@modelcontextprotocol/{server,core}@2.0.0` |
 > | Trạng thái | có session | stateless |
 >
-> Repo hiện chỉ có `@modelcontextprotocol/client@2.0.0` (package **client**, không dùng làm server) và `sdk@1.30.0` kéo vào bởi `shadcn`/`@google/genai`. Cần thêm cả `server@2.x` lẫn `sdk@1.x` tường minh, và dựng **dual-stack**: một Tool Registry protocol-agnostic + hai transport adapter. Luật đầy đủ: [steering/13-mcp-protocol-compatibility](../steering/13-mcp-protocol-compatibility.md).
+> Repo hiện chỉ có `@modelcontextprotocol/client@2.0.0` (package **client**, không dùng làm server). Cần thêm `@modelcontextprotocol/server@2.x` làm **runtime dependency duy nhất** cho MCP — spike Q10 (2026-08-01) chứng minh nó một mình phục vụ **cả hai era** trên **cả** HTTP lẫn stdio. `sdk@1.x` chỉ là **devDependency**, dùng làm client legacy trong contract test. Cần **một** Tool Registry protocol-agnostic, **không** phải hai transport adapter. Luật đầy đủ: [steering/13-mcp-protocol-compatibility](../steering/13-mcp-protocol-compatibility.md).
 
 ### 6.3 Hono HTTP adapter — **toàn bộ** backend HTTP (D4)
 
@@ -406,7 +406,7 @@ MCP **không** "điều khiển backend tuỳ ý". AI chỉ gọi được nhữ
 - **read** — chạy tự do.
 - **write** — audit đầy đủ, trả entity + revision mới, có thể undo qua revision history.
 - **job** — trả `jobId` ngay, không block; có tool theo dõi và huỷ.
-- **destructive** — **cần xác nhận**. Hoặc người dùng confirm trong UI, hoặc AI phải truyền `confirm: true` kèm `expectedRevision`, và Core tạo backup trước khi xoá.
+- **destructive** — cần **approval grant** do daemon phát hành sau hành động của con người (bấm trong UI hoặc `vidcom approve`). Grant bind với tool + `projectId` + đối tượng + `expectedRevision`, dùng một lần, có hạn. Agent **không** tự tạo được — một cờ `confirm` do agent tự đặt không chứng minh gì. Core tạo backup trước khi xoá.
 
 ### 11.3 Không expose
 

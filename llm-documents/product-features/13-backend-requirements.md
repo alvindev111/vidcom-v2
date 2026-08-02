@@ -239,19 +239,21 @@ type Diagnostic = {
 
 MCP tool set đề xuất (khớp transcript đang mock): `list_compositions`, `read_composition`, `add_scene`, `delete_scene`, `set_timing`, `set_text`, `add_element`, `add_block`, `tts`, `snapshot`, `lint`, `check`, `render`.
 
-### 3.11 MCP protocol & dual-stack (D1)
+### 3.11 MCP protocol — hai era, một runtime SDK (D1)
 
 Luật chi tiết: [steering/13-mcp-protocol-compatibility](../steering/13-mcp-protocol-compatibility.md).
+
+> Thuật ngữ: **hai transport vật lý** (HTTP, stdio) × **hai protocol era** (legacy ≤ `2025-11-25`, modern `2026-07-28`), nhưng **một** runtime SDK. Spike Q10 chứng minh `@modelcontextprotocol/server@2.x` phục vụ cả hai era; `sdk@1.x` xuống devDependency.
 
 | ID | Chức năng | Ưu tiên |
 |---|---|---|
 | MP-1 | MCP server thật, chạy được (`vidcom mcp`, stdio) | **Cao nhất** |
 | MP-2 | Tool Registry protocol-agnostic — định nghĩa tool một lần | Cao |
-| MP-3 | Transport adapter **modern** `2026-07-28` (`@modelcontextprotocol/server@2.x`) | Cao |
-| MP-4 | Transport adapter **legacy** ≤ `2025-11-25` (`@modelcontextprotocol/sdk@1.x`) | Cao |
+| MP-3 | Phục vụ era **modern** `2026-07-28` qua `createMcpHandler` / `serveStdio` | Cao |
+| MP-4 | Phục vụ era **legacy** ≤ `2025-11-25` qua **cùng** handler (`legacy: 'stateless'` / `'serve'`) | **Cao nhất** — Claude Code hiện chỉ nói legacy |
 | MP-5 | Version negotiation + `server/discover` | Cao |
 | MP-6 | `resultType` + `CacheableResult` (`ttlMs`, `cacheScope: "private"`) ở modern | Cao |
-| MP-7 | MRTR cho xác nhận thao tác destructive | Cao |
+| MP-7 | Approval grant do daemon phát hành cho thao tác destructive; MRTR làm kênh dẫn | Cao |
 | MP-8 | Map job sang tasks extension `io.modelcontextprotocol/tasks` | Trung |
 | MP-9 | Map error code theo thế hệ (`-32002` ↔ `-32602`) | Cao |
 | MP-10 | `tools/list` thứ tự deterministic | Trung |

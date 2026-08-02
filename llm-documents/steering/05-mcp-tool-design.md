@@ -38,14 +38,28 @@ Tiền tố theo hành vi để AI đọc contract là đoán được:
 
 MUST khai báo mức trong metadata của tool, không chỉ ghi trong mô tả.
 
-### Xác nhận thao tác destructive — hai cơ chế
+### Xác nhận thao tác destructive — approval grant, không phải cờ
 
-| Thế hệ | Cách |
+> **Sửa 2026-08-01.** Bản trước chấp nhận `confirm: true` (legacy) và coi MRTR là bằng chứng duyệt (modern). Cả hai **sai**: chúng chỉ chứng minh *client gửi phản hồi*, không chứng minh *con người đã duyệt* — một agent tự đặt `confirm: true` là hợp lệ về giao thức.
+
+Tool mức `destructive` MUST yêu cầu một **approval grant**:
+
+| Thuộc tính | Ràng buộc |
 |---|---|
-| Modern `2026-07-28` | Trả `InputRequiredResult` (`resultType: "input_required"`) hỏi xác nhận; client retry kèm `inputResponses`. Đây là cách idiomatic (MRTR) |
-| Legacy | Tham số `confirm: true` **kèm** `expectedRevision` trên chính tool call |
+| Ai phát hành | **Daemon**, sau hành động của con người — bấm trong UI, hoặc chạy `vidcom approve` tường minh |
+| Bind với | tên tool + `projectId` + định danh đối tượng + `expectedRevision` |
+| Số lần dùng | **một lần** — chống replay |
+| Hết hạn | ngắn, cấu hình được |
+| Agent có tự tạo được không | **Không** |
 
-Quyết định "có được xoá không" nằm ở **Core**. Adapter chỉ dịch sang cơ chế của thế hệ đang phục vụ. Xem [13-mcp-protocol-compatibility](13-mcp-protocol-compatibility.md) §3.2.
+Vai trò của hai era:
+
+| Era | Vai trò |
+|---|---|
+| Modern | MRTR (`InputRequiredResult`) là **kênh dẫn** người dùng tới bước lấy grant. Không phải bằng chứng duyệt |
+| Legacy | Trả `approval_required` kèm hướng dẫn lấy grant. MUST NOT chấp nhận cờ do agent tự đặt |
+
+Quyết định "có được xoá không" nằm ở **Core**. Transport chỉ dịch sang cơ chế của era đang phục vụ. Xem [13-mcp-protocol-compatibility](13-mcp-protocol-compatibility.md) §3.2.
 
 ## 4. Không bao giờ expose
 

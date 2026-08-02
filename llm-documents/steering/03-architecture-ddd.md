@@ -38,7 +38,9 @@ Domain của vidcom xoay quanh:
 
 Invariant thuộc domain, MUST NOT nằm rải trong route handler:
 
-- `duration > 0`, `start >= 0`.
+- **Scene clip**: `duration > 0`, `start >= 0`, `trackIndex` nguyên. Đây là giá trị **tác giả khai**, nên phải hợp lệ.
+- **Root duration**: là giá trị **dẫn xuất**, không phải giá trị khai. `rootDuration = max(scene.start + scene.duration)` trên các scene còn lại, và **bằng 0 khi không còn scene nào**. Invariant `duration > 0` **MUST NOT** áp cho root — một composition rỗng là trạng thái hợp lệ, tạm thời, và người dùng phải xoá được scene cuối cùng.
+  > Làm rõ 2026-08-01 khi thiết kế `deleteScene`. Trước đó câu "duration > 0" không phân biệt hai khái niệm và bị đọc thành cấm root bằng 0.
 - `scene.start + scene.duration` vượt root duration → hoặc nới root, hoặc từ chối. Không im lặng.
 - Scene sinh ra phải có file `src` riêng (**P11**) — host inline không được runtime quản lý visibility.
 - Ghi text vào element phải qua `hf-id`, không qua selector đoán được.
