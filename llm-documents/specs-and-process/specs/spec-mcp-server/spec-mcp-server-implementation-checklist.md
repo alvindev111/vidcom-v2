@@ -3,7 +3,7 @@
 > **References**:
 > - [Detailed Goals](./spec-mcp-server-detailed-goal.md) — Approved, reconfirmed 2026-08-02
 > - [Detailed Design](./spec-mcp-server-detailed-design.md) — v6, Approved 2026-08-02
-> - [Main spec](./spec-mcp-server-inprocess.md)
+> - [Main spec](./spec-mcp-server-complete.md)
 > - [Canonical build order](../../../product-features/15-build-order.md) — Phase 2
 
 ## Context
@@ -784,12 +784,12 @@ Nguồn finding canonical: `mcp-server-review.md` và 7 raw report trong `mcp-se
 - [x] V.5 **L-05** — `test:mcp-contract` chứa matrix, negative và revision-pin suites thật. _Requirements: R9_ — _Design: §17.11_
 - [x] V.6 **L-06** — sắp `implementation-notes.html` theo B→P→R→V hoặc đánh sequence index rõ ràng. _Requirements: R9_ — _Design: §17.11_
 - [x] V.7 **L-08** — runtime smoke chạy legacy entry + modern exact/latest, audit credential; child timeout phải fail và kill cứng. _Requirements: R6c, R6d, R8, R9_ — _Design: §17.11_
-- [/] V.8 **M-24** — push final remediation SHA và lưu remote CI evidence trên exact HEAD. _Requirements: R9_ — _Design: §17.11, DR-31_
+- [x] V.8 **M-24** — push final remediation SHA và lưu remote CI evidence trên exact HEAD. _Requirements: R9_ — _Design: §17.11, DR-31_
 
 **Acceptance Criteria**:
-- [ ] 43/43 review findings có task `[x]`, regression evidence và raw-to-fix traceability.
-- [ ] Full local Verification Matrix exit 0, không skip/todo/only.
-- [ ] Remote CI xanh trên exact remediation HEAD trước khi đổi spec về `complete`.
+- [x] 43/43 review findings có task `[x]`, regression evidence và raw-to-fix traceability.
+- [x] Full local Verification Matrix exit 0, không skip/todo/only.
+- [x] Remote CI xanh trên exact remediation implementation HEAD trước khi đổi spec về `complete`; exact closeout HEAD được xác minh CI riêng trước khi kết thúc goal.
 
 ---
 
@@ -1780,6 +1780,13 @@ Nguồn finding canonical: `mcp-server-review.md` và 7 raw report trong `mcp-se
   - Summary: Production Next smoke dùng exact legacy client tại entry và modern client tại exact/latest, gọi list_projects bằng bearer rồi đọc SQLite xác nhận ba audit rows giữ đúng credential/protocol. Shutdown timeout nay SIGKILL nhưng vẫn fail. Bắt đầu final SHA/remote CI M-24.
   - Verification: production build + runtime smoke exit 0 (`legacy + modern exact/latest`, audit credential, SSE 1→2); hard-kill regression 1/1; typecheck, focused lint và diff check exit 0.
   - Decisions: dùng official installed clients thay raw JSON request để chứng minh negotiation; read-only DatabaseSync chỉ quan sát audit sau tool calls; graceful-timeout luôn là smoke failure kể cả hard kill thành công.
+  - Blockers: không có.
+
+2026-08-02 — Phase V, Task V.8 complete; 183/183 tasks
+  - Files: [`spec-mcp-server-implementation-checklist.md`, `implementation-notes.html`, `spec-mcp-server-complete.md`, `spec-mcp-server-{detailed-goal,detailed-design}.md`]
+  - Summary: Đóng M-24 và toàn bộ remediation: 43/43 finding có raw-to-fix traceability/regression evidence; spec chuyển `inprocess` → `complete` sau khi implementation SHA đã xanh local và remote.
+  - Verification: full local matrix trên `90e5594685c99a110149da5ba57b19ba2548d964` exit 0 — spec-path guard 37 paths/16 phases, typecheck/boundaries/schema-drift/build/runtime/diff check xanh, full test 68 files/477 tests, golden 6 files/23 tests; CI push run `30752396368` Success 3m13s trên exact SHA đó.
+  - Decisions: closeout là docs-only commit; chạy lại full matrix rồi push/xác minh CI trên exact final HEAD trước khi đóng goal. Không tạo commit evidence tự tham chiếu vô hạn; final HEAD/run được lưu trong GitHub CI và báo cáo closeout.
   - Blockers: không có.
 
 Format:

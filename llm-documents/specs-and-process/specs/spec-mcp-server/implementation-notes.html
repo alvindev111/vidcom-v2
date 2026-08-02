@@ -1223,6 +1223,19 @@
           <div><dt class="font-semibold text-slate-200">Gate</dt><dd class="mt-1 text-slate-400">Build/runtime, hard-kill 1/1, typecheck, focused lint và diff check exit 0; chuyển final SHA/remote CI.</dd></div>
         </dl>
       </section>
+      <section class="mt-6 rounded-2xl border border-emerald-500/30 bg-slate-900 p-6">
+        <div class="flex flex-wrap items-center justify-between gap-3">
+          <h2 class="text-2xl font-semibold">2026-08-02 · Phase V.8 hoàn tất · remediation closeout</h2>
+          <span class="rounded-full bg-emerald-400/10 px-3 py-1 text-sm text-emerald-300">183/183 · 43/43 findings</span>
+        </div>
+        <p class="mt-4 text-slate-300">Toàn bộ remediation đã có regression evidence; implementation tree vượt local Verification Matrix và remote CI trước khi spec trở lại trạng thái complete.</p>
+        <dl class="mt-5 grid gap-4 md:grid-cols-2">
+          <div><dt class="font-semibold text-slate-200">Traceability</dt><dd class="mt-1 text-slate-400">43/43 finding từ raw review map tới task R→V đã đóng, không còn task pending hoặc in-progress.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Local matrix</dt><dd class="mt-1 text-slate-400">37 test paths/16 phases, 68 files/477 tests, 6 golden files/23 tests, schema 8 artifacts, build/runtime và diff check đều exit 0.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Remote evidence</dt><dd class="mt-1 text-slate-400">Implementation SHA 90e5594685c99a110149da5ba57b19ba2548d964, CI push run 30752396368 Success trong 3m13s.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Final-head policy</dt><dd class="mt-1 text-slate-400">Closeout commit chỉ đổi tài liệu; full matrix và CI exact final HEAD vẫn là gate bắt buộc trước khi đóng goal.</dd></div>
+        </dl>
+      </section>
     </main>
     <script>
       (() => {

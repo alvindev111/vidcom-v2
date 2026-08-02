@@ -3,8 +3,8 @@
 > **Status**: Approved 2026-08-02 — người dùng xác nhận bản 6 cùng Implementation Checklist qua lệnh thực thi `/goal`.
 
 > **Reference**: [Detailed Goals](./spec-mcp-server-detailed-goal.md) — Approved, reconfirmed 2026-08-02
-> **Next**: [Implementation Checklist](./spec-mcp-server-implementation-checklist.md) — Review remediation Phase R→V đang thực thi
-> **Main spec**: [spec-mcp-server-inprocess.md](./spec-mcp-server-inprocess.md)
+> **Next**: [Implementation Checklist](./spec-mcp-server-implementation-checklist.md) — Complete, 183/183
+> **Main spec**: [spec-mcp-server-complete.md](./spec-mcp-server-complete.md)
 > **Bản 7, 2026-08-02** — mở lại sau raw implementation review; §17 khóa remediation design cho filesystem CAS, lease-scoped recovery, audit/response finalization, retention và operability.
 > **Bản 6, 2026-08-02** — sau audit Implementation Checklist. Bản này đóng đường truyền `PendingToolAudit` từ Registry tới mọi Core write use case, kể cả mutation một-step; đồng thời giữ source compatibility cho caller Phase 1. §16 đối chiếu mọi vòng review.
 
