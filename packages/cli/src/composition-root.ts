@@ -1,4 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
+import path from "node:path";
 
 import {
   CompositionHf,
@@ -9,20 +10,51 @@ import {
   WrittenHashTracker,
   WorkspaceWatcher,
   AppDataAssetStager,
+  AppDataBackupStore,
+  SqliteApprovalGrantStore,
+  SqliteMcpCredentialStore,
+  SqliteToolAuditRepository,
+  NodeMcpCredentialCrypto,
   WorkspaceFs,
   WorkspaceLease,
   hyperframesRuntimeSource,
   mimeFromPath,
   openVidcomDatabase,
 } from "@vidcom/adapter";
-import type { ContentHash } from "@vidcom/contracts";
+import type { ContentHash, ProjectId } from "@vidcom/contracts";
 import {
+  reconcileCompositeMutation,
+  ApprovalService,
+  McpCredentialService,
+  ToolAuditService,
   WriteAuthority,
   ProjectCache,
   type AbsolutePath,
   type ClockPort,
   type IdPort,
+  type LogPort,
+  type MetricPort,
+  type ProjectRef,
 } from "@vidcom/core";
+import { registerVidcomTools, ToolRegistry } from "@vidcom/mcp";
+
+export interface McpRuntimeConfig {
+  approvalRequestTtlMs: number;
+  approvalGrantTtlMs: number;
+  approvalRetentionMs: number;
+  backupPayloadRetentionMs: number;
+  backupOrphanGraceMs: number;
+  credentialRotationOverlapMs: number;
+}
+
+export const DEFAULT_MCP_RUNTIME_CONFIG: McpRuntimeConfig = {
+  approvalRequestTtlMs: 10 * 60 * 1_000,
+  approvalGrantTtlMs: 5 * 60 * 1_000,
+  approvalRetentionMs: 7 * 24 * 60 * 60 * 1_000,
+  backupPayloadRetentionMs: 30 * 24 * 60 * 60 * 1_000,
+  backupOrphanGraceMs: 24 * 60 * 60 * 1_000,
+  credentialRotationOverlapMs: 5 * 60 * 1_000,
+};
 
 export interface CompositionRootConfig {
   appDataRoot: string;
@@ -31,6 +63,9 @@ export interface CompositionRootConfig {
   nativeDependenciesRoot?: AbsolutePath;
   clock?: ClockPort;
   ids?: IdPort;
+  runtimeConfig?: Partial<McpRuntimeConfig>;
+  logger?: LogPort;
+  metrics?: MetricPort;
 }
 
 export function createSystemClock(): ClockPort {
@@ -49,6 +84,17 @@ export function hashContent(content: string | Uint8Array): ContentHash {
 export function createInfrastructure(config: CompositionRootConfig) {
   const clock = config.clock ?? createSystemClock();
   const ids = config.ids ?? createRuntimeIds();
+  const runtimeConfig = { ...DEFAULT_MCP_RUNTIME_CONFIG, ...config.runtimeConfig };
+  const logger = config.logger ?? {
+    warn: (message: string, detail?: Record<string, unknown>) =>
+      process.stderr.write(`${JSON.stringify({ level: "warn", message, detail })}\n`),
+    error: (message: string, detail?: Record<string, unknown>) =>
+      process.stderr.write(`${JSON.stringify({ level: "error", message, detail })}\n`),
+  };
+  const metrics = config.metrics ?? {
+    increment() {},
+    observeMilliseconds() {},
+  };
   const database = openVidcomDatabase(config.appDataRoot);
   const workspace = new WorkspaceFs(config.workspaceRoot);
   const journal = new MutationJournal(database, clock);
@@ -59,9 +105,49 @@ export function createInfrastructure(config: CompositionRootConfig) {
   const writtenHashes = new WrittenHashTracker();
   const watcher = new WorkspaceWatcher(workspace, database, events, cache, writtenHashes, clock);
   const stagedAssets = new AppDataAssetStager(config.appDataRoot);
+  const backups = new AppDataBackupStore(config.appDataRoot, database, clock, ids);
   const composition = new CompositionHf();
+  const grants = new SqliteApprovalGrantStore(database);
+  const approvals = new ApprovalService({
+    grants,
+    clock,
+    ids,
+    config: {
+      requestTtlMs: runtimeConfig.approvalRequestTtlMs,
+      grantTtlMs: runtimeConfig.approvalGrantTtlMs,
+    },
+  });
+  const credentialStore = new SqliteMcpCredentialStore(database);
+  const credentials = new McpCredentialService({
+    credentials: credentialStore,
+    crypto: new NodeMcpCredentialCrypto(),
+    clock,
+    ids,
+    config: { rotationOverlapMs: runtimeConfig.credentialRotationOverlapMs },
+  });
+  const toolAudit = new ToolAuditService(
+    new SqliteToolAuditRepository(database),
+    clock,
+    logger,
+    metrics,
+    journal,
+  );
+  const resolveProjectRef = async (projectId: ProjectId): Promise<ProjectRef | null> => {
+    const live = await workspace.readProjectRef(projectId);
+    if (live) return live;
+    const registration = await journal.findProjectRegistration(projectId);
+    return registration
+      ? {
+          id: projectId,
+          slug: registration.slug,
+          root: path.join(registration.workspaceRoot, registration.slug) as AbsolutePath,
+          entry: "index.html" as ProjectRef["entry"],
+        }
+      : null;
+  };
   return {
     ...config,
+    runtimeConfig,
     clock,
     ids,
     database,
@@ -74,10 +160,40 @@ export function createInfrastructure(config: CompositionRootConfig) {
     writtenHashes,
     watcher,
     stagedAssets,
+    backups,
     composition,
+    grants,
+    credentialStore,
+    credentials,
+    toolAudit,
+    approvalRequests: { request: approvals.request.bind(approvals) },
+    approvalAdmin: {
+      issue: approvals.issue.bind(approvals),
+      revoke: approvals.revoke.bind(approvals),
+      cleanupTerminal: approvals.cleanupTerminal.bind(approvals),
+    },
+    approvalPlanner: { planReserve: approvals.planReserve.bind(approvals) },
+    resolveProjectRef,
     runtimeSource: hyperframesRuntimeSource,
     mimeFromPath,
   };
+}
+
+/** Builds the sole production Tool Registry from the initialized application capabilities. */
+export function createMcpRegistry(
+  infrastructure: ReturnType<typeof createInfrastructure>,
+  application: ReturnType<typeof createApplication>,
+): ToolRegistry {
+  const registry = new ToolRegistry({
+    audit: infrastructure.toolAudit,
+    approvals: infrastructure.approvalRequests,
+  });
+  registerVidcomTools(registry, {
+    ...application.writeDependencies,
+    approvals: infrastructure.approvalRequests,
+    hashContent,
+  });
+  return registry;
 }
 
 export function createApplication(
@@ -87,6 +203,7 @@ export function createApplication(
   const authority = new WriteAuthority({
     workspace: infrastructure.workspace,
     journal: infrastructure.journal,
+    compositeJournal: infrastructure.journal,
     lease: infrastructure.lease,
     leaseId,
     hashContent,
@@ -101,6 +218,12 @@ export function createApplication(
     },
     notifyEvents() {},
     stagedAssets: infrastructure.stagedAssets,
+    backups: infrastructure.backups,
+    reconcileJournal: (journalId) => reconcileCompositeMutation({
+      workspace: infrastructure.workspace,
+      journal: infrastructure.journal,
+      resolveProjectRef: infrastructure.resolveProjectRef,
+    }, journalId),
   });
   const readDependencies = {
     workspace: infrastructure.workspace,

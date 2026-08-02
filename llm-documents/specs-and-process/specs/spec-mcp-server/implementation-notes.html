@@ -1,0 +1,636 @@
+<!doctype html>
+<html lang="vi">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Ghi chú thực thi — Spec MCP Server</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+  </head>
+  <body class="bg-slate-950 text-slate-100 antialiased">
+    <main class="mx-auto min-h-screen max-w-5xl px-6 py-12">
+      <header class="border-b border-slate-700 pb-8">
+        <p class="text-sm font-semibold uppercase tracking-widest text-cyan-400">VidCom Phase 2</p>
+        <h1 class="mt-3 text-4xl font-bold">Ghi chú thực thi MCP Server</h1>
+        <p class="mt-4 text-slate-300">Nhật ký quyết định, sai lệch thiết kế, đánh đổi, bất ngờ và blocker trong quá trình chạy Phase A→P.</p>
+      </header>
+      <section class="mt-10 rounded-2xl border border-slate-700 bg-slate-900 p-6">
+        <div class="flex flex-wrap items-center justify-between gap-3">
+          <h2 class="text-2xl font-semibold">2026-08-02 · Bắt đầu Phase A</h2>
+          <span class="rounded-full bg-cyan-400/10 px-3 py-1 text-sm text-cyan-300">Đang thực thi</span>
+        </div>
+        <dl class="mt-6 grid gap-5 md:grid-cols-2">
+          <div><dt class="font-semibold text-slate-200">Quyết định</dt><dd class="mt-1 text-slate-400">Giữ nguyên Execution Contract; lệnh /goal là xác nhận Design v6, checklist và Code Execution.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Design drift</dt><dd class="mt-1 text-slate-400">Chưa có.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Đánh đổi</dt><dd class="mt-1 text-slate-400">Thực thi tuần tự A→P vì B, E, F là hard gate.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Blocker / bất ngờ</dt><dd class="mt-1 text-slate-400">Chưa có; baseline đang được kiểm chứng trước production edit.</dd></div>
+        </dl>
+      </section>
+      <section class="mt-6 rounded-2xl border border-emerald-500/30 bg-slate-900 p-6">
+        <div class="flex flex-wrap items-center justify-between gap-3">
+          <h2 class="text-2xl font-semibold">2026-08-02 · Phase A hoàn tất</h2>
+          <span class="rounded-full bg-emerald-400/10 px-3 py-1 text-sm text-emerald-300">33 files · 184 tests</span>
+        </div>
+        <p class="mt-4 text-slate-300">Dependency, contracts, MCP skeleton và package-boundary guard đã xanh. Frozen install, typecheck, lint, boundaries, full test, build và diff check đều exit 0.</p>
+        <p class="mt-3 text-slate-400"><strong class="text-slate-200">Bất ngờ:</strong> SDK server 2.0.0 chỉ public-export allowlist legacy; test A.7 đối chiếu 5 revision legacy với SDK và khóa riêng modern revision 2026-07-28. Không đổi public contract.</p>
+      </section>
+      <section class="mt-6 rounded-2xl border border-emerald-500/30 bg-slate-900 p-6">
+        <div class="flex flex-wrap items-center justify-between gap-3">
+          <h2 class="text-2xl font-semibold">2026-08-02 · Phase C hoàn tất</h2>
+          <span class="rounded-full bg-emerald-400/10 px-3 py-1 text-sm text-emerald-300">34 files · 193 tests</span>
+        </div>
+        <p class="mt-4 text-slate-300">Core nhận đầy đủ contract composite, grant, backup và recovery nhưng vẫn SDK-neutral. Filesystem có delete atomic, parser trả source hash/byte size trong chính lượt đọc, preview patch xoá scene settings và narration cũ được chuẩn hoá không stale giả.</p>
+        <dl class="mt-5 grid gap-4 md:grid-cols-2">
+          <div><dt class="font-semibold text-slate-200">Quyết định</dt><dd class="mt-1 text-slate-400">Tạo CompositeMutationJournalPort kế thừa port Phase 1 để không ép adapter cũ chứa placeholder trước Phase D.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Đánh đổi</dt><dd class="mt-1 text-slate-400">Source metadata giữ first-reference order và de-duplicate theo path; hash tính trực tiếp từ raw UTF-8 đã đọc, không thêm I/O.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Design drift</dt><dd class="mt-1 text-slate-400">Không có.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Blocker</dt><dd class="mt-1 text-slate-400">Không có; focused 60 tests và toàn bộ Phase C gates đều xanh.</dd></div>
+        </dl>
+      </section>
+      <section class="mt-6 rounded-2xl border border-emerald-500/30 bg-slate-900 p-6">
+        <div class="flex flex-wrap items-center justify-between gap-3">
+          <h2 class="text-2xl font-semibold">2026-08-02 · Phase D hoàn tất</h2>
+          <span class="rounded-full bg-emerald-400/10 px-3 py-1 text-sm text-emerald-300">35 files · 201 tests</span>
+        </div>
+        <p class="mt-4 text-slate-300">Journal composite đã có transaction T1 và ba terminal transaction T2a/T2b/T2c, durable context, ordered steps, recovery gate và dual-write tương thích Phase 1.</p>
+        <dl class="mt-5 grid gap-4 md:grid-cols-2">
+          <div><dt class="font-semibold text-slate-200">Quyết định</dt><dd class="mt-1 text-slate-400">Commit retry bị chặn trước insert; abort xoá ownership context còn commit/orphan giữ context đủ cho audit và recovery.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Bất ngờ</dt><dd class="mt-1 text-slate-400">Grant hết hạn cần persist trạng thái ngay trong transaction nhưng chỉ throw sau khi transaction commit để không tự rollback cập nhật expired.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Design drift</dt><dd class="mt-1 text-slate-400">Không có.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Blocker</dt><dd class="mt-1 text-slate-400">Không có; toàn bộ gate Phase D exit 0.</dd></div>
+        </dl>
+      </section>
+      <section class="mt-6 rounded-2xl border border-emerald-500/30 bg-slate-900 p-6">
+        <div class="flex flex-wrap items-center justify-between gap-3">
+          <h2 class="text-2xl font-semibold">2026-08-02 · Phase E hoàn tất</h2>
+          <span class="rounded-full bg-emerald-400/10 px-3 py-1 text-sm text-emerald-300">36 files · 217 tests</span>
+        </div>
+        <p class="mt-4 text-slate-300">Composite WriteAuthority đã chạy dưới lease, mutex và recovery gate; validate toàn bộ target trước T1, apply theo thứ tự, rollback ngược kèm hash verify và giữ pending khi T2 chưa terminal.</p>
+        <dl class="mt-5 grid gap-4 md:grid-cols-2">
+          <div><dt class="font-semibold text-slate-200">Quyết định</dt><dd class="mt-1 text-slate-400">Facade mutate hai tham số giữ result, revision kind, audit action và event Phase 1; invocation MCP có thể chuyển durable audit context bằng tham số thứ ba.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Bất ngờ</dt><dd class="mt-1 text-slate-400">Full E2E bắt được event một-step bị đổi thành project.changed. Đường commit đã được phân nhánh để file giữ file.changed, entity giữ project.changed, composite nhiều bước có marker riêng.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Đánh đổi</dt><dd class="mt-1 text-slate-400">Khi bytes đã landed mà T2 lỗi, không rollback đĩa; giữ durable pending và chặn write sau để Phase F quyết định từ trạng thái thật.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Blocker</dt><dd class="mt-1 text-slate-400">Không có; 217 tests và toàn bộ verification gates đều exit 0.</dd></div>
+        </dl>
+      </section>
+      <section class="mt-6 rounded-2xl border border-emerald-500/30 bg-slate-900 p-6">
+        <div class="flex flex-wrap items-center justify-between gap-3">
+          <h2 class="text-2xl font-semibold">2026-08-02 · Phase B hoàn tất</h2>
+          <span class="rounded-full bg-emerald-400/10 px-3 py-1 text-sm text-emerald-300">34 files · 189 tests</span>
+        </div>
+        <p class="mt-4 text-slate-300">Migration Phase 2, backfill mutation step, rollback safety, bảo vệ file SQLite và schema-drift guard đều xanh. Focused migration, typecheck, lint, boundaries, full test và build đều exit 0.</p>
+        <dl class="mt-5 grid gap-4 md:grid-cols-2">
+          <div><dt class="font-semibold text-slate-200">Bất ngờ</dt><dd class="mt-1 text-slate-400">SQLite không áp dụng <code>PRAGMA foreign_keys = OFF</code> khi lệnh nằm trong transaction do Drizzle mở, làm fixture Phase 1 có dữ liệu thất bại khi rebuild bảng.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Quyết định</dt><dd class="mt-1 text-slate-400">Migrator tắt FK trước transaction, luôn bật lại và chạy foreign key check sau migrate. Migration SQL được chỉnh tay đúng Execution Contract để backfill ordered step và giữ đúng một artifact Phase 2.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Design drift</dt><dd class="mt-1 text-slate-400">Không có; thay đổi chỉ hiện thực hóa rollback/migration safety đã mô tả trong Design v6.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Blocker</dt><dd class="mt-1 text-slate-400">Không có. Schema và bốn migration artifacts đã đồng bộ.</dd></div>
+        </dl>
+      </section>
+      <section class="mt-6 rounded-2xl border border-emerald-500/30 bg-slate-900 p-6">
+        <div class="flex flex-wrap items-center justify-between gap-3">
+          <h2 class="text-2xl font-semibold">2026-08-02 · Phase F hoàn tất</h2>
+          <span class="rounded-full bg-emerald-400/10 px-3 py-1 text-sm text-emerald-300">38 files · 241 tests</span>
+        </div>
+        <p class="mt-4 text-slate-300">Recovery phân loại hoàn toàn theo hash thật, xử lý từng journal độc lập và chỉ gỡ gate sau verify cùng terminal transaction. Hai lựa chọn admin đều chạy dưới lease/mutex và audit bằng actor cli-external.</p>
+        <dl class="mt-5 grid gap-4 md:grid-cols-2">
+          <div><dt class="font-semibold text-slate-200">Quyết định</dt><dd class="mt-1 text-slate-400">Không tin step.status; all-landed roll-forward, none-landed abort, mixed rollback ngược, unknown hoặc verify fail thì orphan.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Bất ngờ</dt><dd class="mt-1 text-slate-400">Accept-current phải cho actor cli-external khác actor gốc của journal; adapter chỉ nới actor check cho source orphaned, còn pending commit vẫn giữ invariant cũ.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Đánh đổi</dt><dd class="mt-1 text-slate-400">Grant invalidated được giữ nguyên khi admin resolve; không revive hoặc consume lại approval đã qua destructive attempt.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Blocker</dt><dd class="mt-1 text-slate-400">Không có; full 241 tests và toàn bộ verification gate exit 0.</dd></div>
+        </dl>
+      </section>
+      <section class="mt-6 rounded-2xl border border-emerald-500/30 bg-slate-900 p-6">
+        <div class="flex flex-wrap items-center justify-between gap-3">
+          <h2 class="text-2xl font-semibold">2026-08-02 · Phase G hoàn tất</h2>
+          <span class="rounded-full bg-emerald-400/10 px-3 py-1 text-sm text-emerald-300">38 files · 245 tests</span>
+        </div>
+        <p class="mt-4 text-slate-300">Read model đã đủ precondition cho agent ghi tiếp, luôn hiển thị recovery live dù composition được cache, và không lộ absolute path.</p>
+        <dl class="mt-5 grid gap-4 md:grid-cols-2">
+          <div><dt class="font-semibold text-slate-200">Quyết định</dt><dd class="mt-1 text-slate-400">fileHashes lấy từ source metadata trong chính lượt parse; project/entity revision và gate lấy từ journal live.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Đánh đổi</dt><dd class="mt-1 text-slate-400">HTTP snapshot giữ field revision cũ và thêm projectRevision/entityRevision để không phá UI Phase 1.</dd></div>
+          <div><dt class="font-semibold text-slate-200">An toàn</dt><dd class="mt-1 text-slate-400">read_composition kiểm allowlist rồi stat giới hạn trước khi đọc content; outside, forbidden và too-large có lỗi riêng.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Blocker</dt><dd class="mt-1 text-slate-400">Không có; full 245 tests và toàn bộ gate exit 0.</dd></div>
+        </dl>
+      </section>
+      <section class="mt-6 rounded-2xl border border-emerald-500/30 bg-slate-900 p-6">
+        <div class="flex flex-wrap items-center justify-between gap-3">
+          <h2 class="text-2xl font-semibold">2026-08-02 · Phase H hoàn tất</h2>
+          <span class="rounded-full bg-emerald-400/10 px-3 py-1 text-sm text-emerald-300">41 files · 265 tests</span>
+        </div>
+        <p class="mt-4 text-slate-300">Approval lifecycle có request/issue/plan/revoke/retention, CAS SQLite thật và capability boundary khiến MCP chỉ có thể request approval.</p>
+        <dl class="mt-5 grid gap-4 md:grid-cols-2">
+          <div><dt class="font-semibold text-slate-200">Quyết định</dt><dd class="mt-1 text-slate-400">T1 journal vẫn là authority cuối cho reserve, binding, expiry và project revision; planReserve chỉ trả lỗi sớm tốt hơn.</dd></div>
+          <div><dt class="font-semibold text-slate-200">An toàn</dt><dd class="mt-1 text-slate-400">Registry nhận đúng Pick request; issue/revoke chỉ tồn tại trên admin surface của composition root.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Đánh đổi</dt><dd class="mt-1 text-slate-400">Grant reserved không timeout vì recovery phải quyết định filesystem truth; retention bỏ qua mọi grant gắn unresolved journal.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Blocker</dt><dd class="mt-1 text-slate-400">Không có; full 265 tests và toàn bộ gate exit 0.</dd></div>
+        </dl>
+      </section>
+      <section class="mt-6 rounded-2xl border border-emerald-500/30 bg-slate-900 p-6">
+        <div class="flex flex-wrap items-center justify-between gap-3">
+          <h2 class="text-2xl font-semibold">2026-08-02 · Phase I hoàn tất</h2>
+          <span class="rounded-full bg-emerald-400/10 px-3 py-1 text-sm text-emerald-300">44 files · 282 tests</span>
+        </div>
+        <p class="mt-4 text-slate-300">Backup store app-data đã publish atomic, verify toàn bộ payload, prune an toàn và restore thành revision mới mà không ghi đè later edit.</p>
+        <dl class="mt-5 grid gap-4 md:grid-cols-2">
+          <div><dt class="font-semibold text-slate-200">Quyết định</dt><dd class="mt-1 text-slate-400">Core đọc exact destructive revision steps qua journal seam theo backupId/revisionId; adapter backup chỉ sở hữu payload và metadata.</dd></div>
+          <div><dt class="font-semibold text-slate-200">An toàn</dt><dd class="mt-1 text-slate-400">Restore dùng từng to_hash làm precondition dưới mutex/lease, actor cli-external và durable audit cli:restore.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Bất ngờ</dt><dd class="mt-1 text-slate-400">bun test gọi Bun runner thiếu node:sqlite; Verification Matrix đúng là bun run test, chạy Vitest và pass 282/282.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Blocker</dt><dd class="mt-1 text-slate-400">Không có; schema drift, typecheck, lint, boundaries, full test, build và diff check đều exit 0.</dd></div>
+        </dl>
+      </section>
+      <section class="mt-6 rounded-2xl border border-emerald-500/30 bg-slate-900 p-6">
+        <div class="flex flex-wrap items-center justify-between gap-3">
+          <h2 class="text-2xl font-semibold">2026-08-02 · Phase J hoàn tất</h2>
+          <span class="rounded-full bg-emerald-400/10 px-3 py-1 text-sm text-emerald-300">47 files · 306 tests</span>
+        </div>
+        <p class="mt-4 text-slate-300">Write và destructive use case đã giữ một composite revision, approval binding, backup đã verify, rollback/recovery gate và audit không trùng.</p>
+        <dl class="mt-5 grid gap-4 md:grid-cols-2">
+          <div><dt class="font-semibold text-slate-200">Quyết định</dt><dd class="mt-1 text-slate-400">HTTP V1 chỉ làm compatibility mapping; Core trả canonical entity, project và WriteEnvelope cho MCP Registry sắp tới.</dd></div>
+          <div><dt class="font-semibold text-slate-200">An toàn</dt><dd class="mt-1 text-slate-400">Scene/file delete re-plan live dưới T1, bind grant, publish backup trước mutation và giữ recovery gate nếu T2 chưa xác định.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Đánh đổi</dt><dd class="mt-1 text-slate-400">backupId nằm cạnh envelope thay vì nằm trong WriteEnvelope để schema ghi chung vẫn nghiêm ngặt và có thể tái sử dụng.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Blocker</dt><dd class="mt-1 text-slate-400">Không có; toàn bộ Phase Verification Matrix hiện tại exit 0.</dd></div>
+        </dl>
+      </section>
+      <section class="mt-6 rounded-2xl border border-emerald-500/30 bg-slate-900 p-6">
+        <div class="flex flex-wrap items-center justify-between gap-3">
+          <h2 class="text-2xl font-semibold">2026-08-02 · Phase K hoàn tất</h2>
+          <span class="rounded-full bg-emerald-400/10 px-3 py-1 text-sm text-emerald-300">49 files · 324 tests</span>
+        </div>
+        <p class="mt-4 text-slate-300">Tool audit giờ có một policy xuyên suốt: redact trước T1, terminal cùng revision, retry fail-open đúng nhánh và ownership không phỏng đoán.</p>
+        <dl class="mt-5 grid gap-4 md:grid-cols-2">
+          <div><dt class="font-semibold text-slate-200">Quyết định</dt><dd class="mt-1 text-slate-400">ToolAuditService bao trọn ownership decision; lookup lỗi trả unknown, chỉ log + metric và tuyệt đối không insert error row suy đoán.</dd></div>
+          <div><dt class="font-semibold text-slate-200">An toàn</dt><dd class="mt-1 text-slate-400">SQLite trigger injection chứng minh tool audit insert lỗi rollback revision, mutation audit và terminal transition, giữ journal cho recovery.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Lịch sử</dt><dd class="mt-1 text-slate-400">Tool row nối mutation row bằng project revision; grant/backup ID bền vững sau payload prune và query planner dùng index hiện hữu.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Blocker</dt><dd class="mt-1 text-slate-400">Không có; full 324 tests và mọi Phase K gate exit 0.</dd></div>
+        </dl>
+      </section>
+      <section class="mt-6 rounded-2xl border border-sky-500/30 bg-slate-900 p-6">
+        <div class="flex flex-wrap items-center justify-between gap-3">
+          <h2 class="text-2xl font-semibold">2026-08-02 · Phase M.1 · Shared server factory</h2>
+          <span class="rounded-full bg-sky-400/10 px-3 py-1 text-sm text-sky-300">focused 1/1 · gates xanh</span>
+        </div>
+        <p class="mt-4 text-slate-300">Một factory và một registration seam giờ phục vụ Registry cho cả legacy/modern. SDK v2 tiếp tục sở hữu initialize, discover, negotiation và result stamping.</p>
+        <dl class="mt-5 grid gap-4 md:grid-cols-2">
+          <div><dt class="font-semibold text-slate-200">Quyết định</dt><dd class="mt-1 text-slate-400">Version server đọc từ package metadata; modern revision đọc từ reserved envelope key, legacy revision đọc từ negotiated accessor của SDK.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Boundary</dt><dd class="mt-1 text-slate-400">Root test không import runtime SDK trực tiếp; dependency vẫn chỉ thuộc package MCP theo Execution Contract.</dd></div>
+          <div><dt class="font-semibold text-slate-200">An toàn</dt><dd class="mt-1 text-slate-400">Credential context chỉ chuyển clientId đã được transport xác thực; tool error chưa tự tạo JSON-RPC ladder, dành cho mapper M.7.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Tiếp theo</dt><dd class="mt-1 text-slate-400">M.2 khóa legacy stdio initialize, result shape, resource error và clean close bằng SDK 1.30 client thật.</dd></div>
+        </dl>
+      </section>
+      <section class="mt-6 rounded-2xl border border-sky-500/30 bg-slate-900 p-6">
+        <div class="flex flex-wrap items-center justify-between gap-3">
+          <h2 class="text-2xl font-semibold">2026-08-02 · Phase M.2 · Legacy stdio</h2>
+          <span class="rounded-full bg-sky-400/10 px-3 py-1 text-sm text-sky-300">SDK 1.30 · focused 1/1</span>
+        </div>
+        <p class="mt-4 text-slate-300">Client legacy thật đã spawn server qua stdio, negotiate revision legacy, list/call Registry tool và clean close; kết quả không mang trường modern.</p>
+        <dl class="mt-5 grid gap-4 md:grid-cols-2">
+          <div><dt class="font-semibold text-slate-200">Quyết định</dt><dd class="mt-1 text-slate-400">Dùng serveStdio legacy serve mặc định; không có stack server 1.x thứ hai.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Stdout</dt><dd class="mt-1 text-slate-400">Chỉ transport được ghi stdout; error callback dùng stderr và test xác nhận stderr sạch ở happy path.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Dependency Order</dt><dd class="mt-1 text-slate-400">Code split resource-not-found được thực hiện tập trung ở M.7; M.2 không nhân đôi JSON-RPC ladder.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Blocker</dt><dd class="mt-1 text-slate-400">Không có; child PID đã kết thúc sau client close.</dd></div>
+        </dl>
+      </section>
+      <section class="mt-6 rounded-2xl border border-sky-500/30 bg-slate-900 p-6">
+        <div class="flex flex-wrap items-center justify-between gap-3">
+          <h2 class="text-2xl font-semibold">2026-08-02 · Phase M.3 · Legacy stateless HTTP</h2>
+          <span class="rounded-full bg-sky-400/10 px-3 py-1 text-sm text-sky-300">SDK 1.30 · 2/2 tests</span>
+        </div>
+        <p class="mt-4 text-slate-300">Entry HTTP đã phục vụ legacy stateless bằng cùng factory. Raw POST không header chạy theo default của SDK; GET và DELETE đều 405.</p>
+        <dl class="mt-5 grid gap-4 md:grid-cols-2">
+          <div><dt class="font-semibold text-slate-200">Quan sát</dt><dd class="mt-1 text-slate-400">SDK có thể trả legacy response bằng SSE hoặc JSON tùy Accept; server không tự parse hay ép format ngoài SDK.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Audit revision</dt><dd class="mt-1 text-slate-400">Stateless call lấy protocol header; khi thiếu dùng chính DEFAULT_NEGOTIATED_PROTOCOL_VERSION của SDK.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Compatibility</dt><dd class="mt-1 text-slate-400">Projection cũ vẫn có canonical text output dù structuredContent phụ thuộc revision legacy cụ thể.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Blocker</dt><dd class="mt-1 text-slate-400">Không có; handler close exit sạch.</dd></div>
+        </dl>
+      </section>
+      <section class="mt-6 rounded-2xl border border-sky-500/30 bg-slate-900 p-6">
+        <div class="flex flex-wrap items-center justify-between gap-3">
+          <h2 class="text-2xl font-semibold">2026-08-02 · Phase M.4 · Modern dual transport</h2>
+          <span class="rounded-full bg-sky-400/10 px-3 py-1 text-sm text-sky-300">client v2 · 2/2 tests</span>
+        </div>
+        <p class="mt-4 text-slate-300">Modern stdio và HTTP đã dùng server/discover, resultType, cache private và MRTR codec thật. Header mismatch được SDK từ chối đúng mã -32020.</p>
+        <dl class="mt-5 grid gap-4 md:grid-cols-2">
+          <div><dt class="font-semibold text-slate-200">MRTR</dt><dd class="mt-1 text-slate-400">Registry phát control signal; transport map sang input_required; client fulfil elicitation và retry với grantId qua inputResponses.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Identity</dt><dd class="mt-1 text-slate-400">serverInfo được SDK stamp trong reserved result metadata, không có code custom.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Cache</dt><dd class="mt-1 text-slate-400">tools/list mặc định ttlMs 0 và cacheScope private đúng SDK, không cần override.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Blocker</dt><dd class="mt-1 text-slate-400">Không có; modern stdio stdout protocol-only và close sạch.</dd></div>
+        </dl>
+      </section>
+      <section class="mt-6 rounded-2xl border border-sky-500/30 bg-slate-900 p-6">
+        <div class="flex flex-wrap items-center justify-between gap-3">
+          <h2 class="text-2xl font-semibold">2026-08-02 · Phase M.5 · Exact HTTP pin</h2>
+          <span class="rounded-full bg-sky-400/10 px-3 py-1 text-sm text-sky-300">6 revisions · 4/4 tests</span>
+        </div>
+        <p class="mt-4 text-slate-300">HTTP map có unpinned entry, từng revision exact và latest alias. Wrapper dùng classifier của SDK và chỉ so chuỗi revision sau classification.</p>
+        <dl class="mt-5 grid gap-4 md:grid-cols-2">
+          <div><dt class="font-semibold text-slate-200">Validation ladder</dt><dd class="mt-1 text-slate-400">Invalid JSON và classifier rejection được delegate cho inner SDK handler, giữ parse/header/body semantics gốc.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Exactness</dt><dd class="mt-1 text-slate-400">Pin 2025-06-18 từ chối 2025-11-25 dù cùng era và trả -32022 cùng toàn bộ allowlist.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Batch</dt><dd class="mt-1 text-slate-400">Legacy batch không claim revision được classifier gán default 2025-03-26; test khóa hai response frames.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Blocker</dt><dd class="mt-1 text-slate-400">Không có; latest dùng reference handler của revision đầu danh sách.</dd></div>
+        </dl>
+      </section>
+      <section class="mt-6 rounded-2xl border border-sky-500/30 bg-slate-900 p-6">
+        <div class="flex flex-wrap items-center justify-between gap-3">
+          <h2 class="text-2xl font-semibold">2026-08-02 · Phase M.6 · Exact stdio pin</h2>
+          <span class="rounded-full bg-sky-400/10 px-3 py-1 text-sm text-sky-300">pin/reject verified</span>
+        </div>
+        <p class="mt-4 text-slate-300">Stdio pin dùng chính supportedProtocolVersions của factory. Modern pin thêm legacy reject để SDK không fallback sang legacy latest khi initialize cũ xuất hiện.</p>
+        <dl class="mt-5 grid gap-4 md:grid-cols-2">
+          <div><dt class="font-semibold text-slate-200">Phát hiện</dt><dd class="mt-1 text-slate-400">Allowlist chỉ modern nhưng legacy serve vẫn fallback về legacy latest trong SDK; test đã bắt trước khi CLI mount.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Sửa</dt><dd class="mt-1 text-slate-400">Modern pin đặt legacy reject tại serving entry; không sửa initialize/discover.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Nguồn revision</dt><dd class="mt-1 text-slate-400">Modern latest lấy từ shared SUPPORTED_REVISIONS, vì SDK LATEST_PROTOCOL_VERSION hiện là legacy latest.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Blocker</dt><dd class="mt-1 text-slate-400">Không có; mismatch trả -32022 và child close sạch.</dd></div>
+        </dl>
+      </section>
+      <section class="mt-6 rounded-2xl border border-sky-500/30 bg-slate-900 p-6">
+        <div class="flex flex-wrap items-center justify-between gap-3">
+          <h2 class="text-2xl font-semibold">2026-08-02 · Phase M.7 · Error mapper</h2>
+          <span class="rounded-full bg-sky-400/10 px-3 py-1 text-sm text-sky-300">39 ErrorCode · exhaustive</span>
+        </div>
+        <p class="mt-4 text-slate-300">Mọi DomainError đi qua một mapper: resource split theo era, infra/recovery internal, validation/conflict/approval invalid params và detail không mất.</p>
+        <dl class="mt-5 grid gap-4 md:grid-cols-2">
+          <div><dt class="font-semibold text-slate-200">Resource</dt><dd class="mt-1 text-slate-400">Project/not-found/no-file map -32002 legacy và -32602 modern.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Recovery</dt><dd class="mt-1 text-slate-400">-32603, retryable false, giữ journal/phase detail và chỉ dẫn inspect/resolve.</dd></div>
+          <div><dt class="font-semibold text-slate-200">SDK seam</dt><dd class="mt-1 text-slate-400">High-level McpServer trả tool failure bằng isError; numeric category nằm trong io.vidcom/error và JSON text để host đọc máy.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Blocker</dt><dd class="mt-1 text-slate-400">Không có; mọi enum value được test.</dd></div>
+        </dl>
+      </section>
+      <section class="mt-6 rounded-2xl border border-sky-500/30 bg-slate-900 p-6">
+        <div class="flex flex-wrap items-center justify-between gap-3">
+          <h2 class="text-2xl font-semibold">2026-08-02 · Phase M.8 · Legacy contract</h2>
+          <span class="rounded-full bg-sky-400/10 px-3 py-1 text-sm text-sky-300">SDK 1.30 · 2/2 tests</span>
+        </div>
+        <p class="mt-4 text-slate-300">Legacy contract hiện có evidence end-to-end cho hai transport, default revision, no-modern-fields, resource category và process cleanliness.</p>
+        <dl class="mt-5 grid gap-4 md:grid-cols-2">
+          <div><dt class="font-semibold text-slate-200">Resource</dt><dd class="mt-1 text-slate-400">Registry probe trả no_file và host legacy nhận machine-readable -32002 qua canonical tool error.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Default</dt><dd class="mt-1 text-slate-400">Raw tools/list không protocol header được SDK xử lý ở default 2025-03-26.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Cleanliness</dt><dd class="mt-1 text-slate-400">Stdio happy path không có stderr, stdout parse được toàn bộ và child PID đã reap.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Blocker</dt><dd class="mt-1 text-slate-400">Không có; không skipped test.</dd></div>
+        </dl>
+      </section>
+      <section class="mt-6 rounded-2xl border border-sky-500/30 bg-slate-900 p-6">
+        <div class="flex flex-wrap items-center justify-between gap-3">
+          <h2 class="text-2xl font-semibold">2026-08-02 · Phase M.9 · Modern contract</h2>
+          <span class="rounded-full bg-sky-400/10 px-3 py-1 text-sm text-sky-300">client 2.0 · 2/2 tests</span>
+        </div>
+        <p class="mt-4 text-slate-300">Modern evidence hiện phủ raw wire fields, MRTR requestState round-trip, cache private, header mismatch và resource category trên cả stdio/HTTP.</p>
+        <dl class="mt-5 grid gap-4 md:grid-cols-2">
+          <div><dt class="font-semibold text-slate-200">Wire capture</dt><dd class="mt-1 text-slate-400">Raw HTTP response xác nhận complete/input_required; client neutral result không bị dùng để suy đoán wire-only fields.</dd></div>
+          <div><dt class="font-semibold text-slate-200">MRTR</dt><dd class="mt-1 text-slate-400">requestState approval-request-1 xuất hiện đúng input_required round và final retry trả structured output.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Resource</dt><dd class="mt-1 text-slate-400">Cùng error probe legacy -32002 được modern map -32602.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Blocker</dt><dd class="mt-1 text-slate-400">Không có; full focused gates xanh.</dd></div>
+        </dl>
+      </section>
+      <section class="mt-6 rounded-2xl border border-sky-500/30 bg-slate-900 p-6">
+        <div class="flex flex-wrap items-center justify-between gap-3">
+          <h2 class="text-2xl font-semibold">2026-08-02 · Phase M.10 · Exact-pin matrix</h2>
+          <span class="rounded-full bg-sky-400/10 px-3 py-1 text-sm text-sky-300">11 transport tests</span>
+        </div>
+        <p class="mt-4 text-slate-300">Entry, pinned, latest và stdio hiện trả cùng canonical tool output; negative matrix phủ same-era mismatch, unknown, invalid JSON và batch.</p>
+        <dl class="mt-5 grid gap-4 md:grid-cols-2">
+          <div><dt class="font-semibold text-slate-200">Unknown revision</dt><dd class="mt-1 text-slate-400">Fixture dùng envelope hợp lệ để chạm đúng -32022; thiếu envelope phải dừng trước ở -32602.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Canonical output</dt><dd class="mt-1 text-slate-400">Entry, exact modern, latest và pinned stdio đều trả projectId giống nhau qua Registry.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Delegation</dt><dd class="mt-1 text-slate-400">Invalid JSON vẫn là SDK parse error -32700, không bị wrapper biến thành revision error.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Blocker</dt><dd class="mt-1 text-slate-400">Không có; 11/11 transport tests xanh.</dd></div>
+        </dl>
+      </section>
+      <section class="mt-6 rounded-2xl border border-emerald-500/30 bg-slate-900 p-6">
+        <div class="flex flex-wrap items-center justify-between gap-3">
+          <h2 class="text-2xl font-semibold">2026-08-02 · Phase M hoàn tất</h2>
+          <span class="rounded-full bg-emerald-400/10 px-3 py-1 text-sm text-emerald-300">56 files · 362 tests</span>
+        </div>
+        <p class="mt-4 text-slate-300">Dual-era MCP transport đã hoàn chỉnh: một server factory, một Registry, HTTP/stdio, exact revision endpoints, MRTR, error mapping và client contract thật cho cả hai SDK generations.</p>
+        <dl class="mt-5 grid gap-4 md:grid-cols-2">
+          <div><dt class="font-semibold text-slate-200">Verification</dt><dd class="mt-1 text-slate-400">Full 362 tests, golden 18 tests, schema drift, typecheck, lint 0 errors, boundaries, build và diff check đều exit 0.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Architecture</dt><dd class="mt-1 text-slate-400">Không có server stack 1.x; SDK v2 sở hữu negotiation, discover, codec và result projection cho cả legacy/modern.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Safety</dt><dd class="mt-1 text-slate-400">Stdout stdio protocol-only; domain errors machine-readable; exact pin không làm tắt SDK validation ladder.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Blocker</dt><dd class="mt-1 text-slate-400">Không có; chuyển Phase N credential và Hono mount.</dd></div>
+        </dl>
+      </section>
+      <section class="mt-6 rounded-2xl border border-sky-500/30 bg-slate-900 p-6">
+        <div class="flex flex-wrap items-center justify-between gap-3">
+          <h2 class="text-2xl font-semibold">2026-08-02 · Phase N.1 · Phát hành credential</h2>
+          <span class="rounded-full bg-sky-400/10 px-3 py-1 text-sm text-sky-300">3/3 tests</span>
+        </div>
+        <p class="mt-4 text-slate-300">Credential AI host được sinh từ 32 byte CSPRNG, có prefix vcmcp_, và chỉ canonical SHA-256 digest đi vào SQLite.</p>
+        <dl class="mt-5 grid gap-4 md:grid-cols-2">
+          <div><dt class="font-semibold text-slate-200">Secret boundary</dt><dd class="mt-1 text-slate-400">Plaintext chỉ xuất hiện trong kết quả issue một lần; port persistence không có field secret.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Kiến trúc</dt><dd class="mt-1 text-slate-400">Core dùng crypto port; Node adapter sở hữu CSPRNG, SHA-256 và timingSafeEqual.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Persistence</dt><dd class="mt-1 text-slate-400">Unique index khóa digest trùng; metadata active có createdAt, không expiry và không rotatedFrom.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Blocker</dt><dd class="mt-1 text-slate-400">Không có; chuyển N.2 verify và lazy expiry.</dd></div>
+        </dl>
+      </section>
+      <section class="mt-6 rounded-2xl border border-sky-500/30 bg-slate-900 p-6">
+        <div class="flex flex-wrap items-center justify-between gap-3">
+          <h2 class="text-2xl font-semibold">2026-08-02 · Phase N.2 · Xác minh credential</h2>
+          <span class="rounded-full bg-sky-400/10 px-3 py-1 text-sm text-sky-300">5/5 tests</span>
+        </div>
+        <p class="mt-4 text-slate-300">Verify giữ một kết quả thất bại duy nhất, kiểm shape cố định trước hash và chỉ chấp nhận active hoặc rotating còn trong overlap.</p>
+        <dl class="mt-5 grid gap-4 md:grid-cols-2">
+          <div><dt class="font-semibold text-slate-200">Boundary</dt><dd class="mt-1 text-slate-400">expiresAt lớn hơn now đúng 1 ms còn hợp lệ; bằng now bị từ chối và lazy-revoke.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Timing</dt><dd class="mt-1 text-slate-400">Canonical digests sau lookup vẫn được timingSafeEqual trong process.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Uniformity</dt><dd class="mt-1 text-slate-400">Malformed, unknown và revoked đều trả null; middleware không có dữ liệu để lộ trạng thái.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Blocker</dt><dd class="mt-1 text-slate-400">Không có; chuyển N.3 lifecycle quản trị.</dd></div>
+        </dl>
+      </section>
+      <section class="mt-6 rounded-2xl border border-sky-500/30 bg-slate-900 p-6">
+        <div class="flex flex-wrap items-center justify-between gap-3">
+          <h2 class="text-2xl font-semibold">2026-08-02 · Phase N.3 · Vòng đời quản trị</h2>
+          <span class="rounded-full bg-sky-400/10 px-3 py-1 text-sm text-sky-300">7/7 tests</span>
+        </div>
+        <p class="mt-4 text-slate-300">Rotate tạo id và secret mới, giữ credential cũ trong overlap mặc định 5 phút; revoke có hiệu lực ngay và list không có plaintext.</p>
+        <dl class="mt-5 grid gap-4 md:grid-cols-2">
+          <div><dt class="font-semibold text-slate-200">Atomicity</dt><dd class="mt-1 text-slate-400">Old active→rotating và insert replacement nằm trong cùng SQLite transaction.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Override</dt><dd class="mt-1 text-slate-400">Caller có thể truyền overlap millisecond rõ ràng; giá trị âm hoặc không nguyên bị từ chối.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Disclosure</dt><dd class="mt-1 text-slate-400">List trả McpCredentialRecord, type này không có secret và test kiểm serialized output.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Blocker</dt><dd class="mt-1 text-slate-400">Không có; chuyển N.4 bearer context.</dd></div>
+        </dl>
+      </section>
+      <section class="mt-6 rounded-2xl border border-sky-500/30 bg-slate-900 p-6">
+        <div class="flex flex-wrap items-center justify-between gap-3">
+          <h2 class="text-2xl font-semibold">2026-08-02 · Phase N.4 · Bearer context</h2>
+          <span class="rounded-full bg-sky-400/10 px-3 py-1 text-sm text-sky-300">5/5 security tests</span>
+        </div>
+        <p class="mt-4 text-slate-300">HTTP MCP bắt buộc Bearer hợp lệ và downstream chỉ thấy credentialId; browser session cookie không thể thay thế bearer.</p>
+        <dl class="mt-5 grid gap-4 md:grid-cols-2">
+          <div><dt class="font-semibold text-slate-200">Context</dt><dd class="mt-1 text-slate-400">Typed Hono variable chứa credentialId, không chứa token hoặc digest.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Uniformity</dt><dd class="mt-1 text-slate-400">Bốn failure shapes cùng code/message/status, không lộ credential lifecycle.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Boundary</dt><dd class="mt-1 text-slate-400">Middleware phụ thuộc structural verifier; stdio transport không đi qua server package.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Blocker</dt><dd class="mt-1 text-slate-400">Không có; chuyển N.5 auth ordering.</dd></div>
+        </dl>
+      </section>
+      <section class="mt-6 rounded-2xl border border-sky-500/30 bg-slate-900 p-6">
+        <div class="flex flex-wrap items-center justify-between gap-3">
+          <h2 class="text-2xl font-semibold">2026-08-02 · Phase N.5 · Nhánh auth Hono</h2>
+          <span class="rounded-full bg-sky-400/10 px-3 py-1 text-sm text-sky-300">20/20 security tests</span>
+        </div>
+        <p class="mt-4 text-slate-300">Host và strict CORS vẫn là perimeter chung; sau đó MCP dùng bearer còn browser routes tiếp tục dùng session.</p>
+        <dl class="mt-5 grid gap-4 md:grid-cols-2">
+          <div><dt class="font-semibold text-slate-200">Order</dt><dd class="mt-1 text-slate-400">requestId → logger → hostCheck → cors → auth branch → bodyLimit.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Fail closed</dt><dd class="mt-1 text-slate-400">Không inject MCP verifier thì nhánh MCP vẫn credential_invalid, không fallback cookie.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Compatibility</dt><dd class="mt-1 text-slate-400">Toàn bộ security suite cũ giữ nguyên; browser session exchange và health không đổi.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Blocker</dt><dd class="mt-1 text-slate-400">Không có; chuyển N.6 mount handlers.</dd></div>
+        </dl>
+      </section>
+      <section class="mt-6 rounded-2xl border border-sky-500/30 bg-slate-900 p-6">
+        <div class="flex flex-wrap items-center justify-between gap-3">
+          <h2 class="text-2xl font-semibold">2026-08-02 · Phase N.6 · Structural MCP mount</h2>
+          <span class="rounded-full bg-sky-400/10 px-3 py-1 text-sm text-sky-300">14/14 focused tests</span>
+        </div>
+        <p class="mt-4 text-slate-300">Hono dispatch entry, exact revision và latest qua map được inject; server không biết Tool Registry hoặc MCP SDK.</p>
+        <dl class="mt-5 grid gap-4 md:grid-cols-2">
+          <div><dt class="font-semibold text-slate-200">Auth handoff</dt><dd class="mt-1 text-slate-400">SDK nhận clientId đã verify; token field để rỗng, không forward bearer plaintext.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Unknown pin</dt><dd class="mt-1 text-slate-400">MCP-owned map fallback tạo UnsupportedProtocolVersion; server không tự viết protocol error.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Boundary</dt><dd class="mt-1 text-slate-400">Import checker xác nhận server và mcp không phụ thuộc nhau.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Blocker</dt><dd class="mt-1 text-slate-400">Không có; chuyển N.7 credential matrix.</dd></div>
+        </dl>
+      </section>
+      <section class="mt-6 rounded-2xl border border-sky-500/30 bg-slate-900 p-6">
+        <div class="flex flex-wrap items-center justify-between gap-3">
+          <h2 class="text-2xl font-semibold">2026-08-02 · Phase N.7 · Credential test matrix</h2>
+          <span class="rounded-full bg-sky-400/10 px-3 py-1 text-sm text-sky-300">12/12 tests</span>
+        </div>
+        <p class="mt-4 text-slate-300">Hai lớp test khóa Core policy và SQLite transaction thật cho toàn bộ issuance, verify, rotate, revoke và disclosure contract.</p>
+        <dl class="mt-5 grid gap-4 md:grid-cols-2">
+          <div><dt class="font-semibold text-slate-200">Entropy</dt><dd class="mt-1 text-slate-400">Node CSPRNG tạo hai secret khác nhau; base64url decode đúng 32 byte.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Atomic rollback</dt><dd class="mt-1 text-slate-400">Replacement trùng digest làm transaction fail; old vẫn active và không có row mồ côi.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Clock</dt><dd class="mt-1 text-slate-400">Mọi expiry/overlap dùng ClockPort cố định, không sleep hay chờ thời gian thật.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Blocker</dt><dd class="mt-1 text-slate-400">Không có; chuyển N.8 full Hono request tests.</dd></div>
+        </dl>
+      </section>
+      <section class="mt-6 rounded-2xl border border-sky-500/30 bg-slate-900 p-6">
+        <div class="flex flex-wrap items-center justify-between gap-3">
+          <h2 class="text-2xl font-semibold">2026-08-02 · Phase N.8 · Hono request security</h2>
+          <span class="rounded-full bg-sky-400/10 px-3 py-1 text-sm text-sky-300">25/25 combined tests</span>
+        </div>
+        <p class="mt-4 text-slate-300">app.request evidence phủ toàn bộ auth rejection, dispatch, audit identity, middleware order và method semantics bằng handlers SDK thật.</p>
+        <dl class="mt-5 grid gap-4 md:grid-cols-2">
+          <div><dt class="font-semibold text-slate-200">Audit</dt><dd class="mt-1 text-slate-400">Raw tools/call đi qua Registry và tạo read audit có credential_http, không có bearer.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Methods</dt><dd class="mt-1 text-slate-400">GET/DELETE sau valid auth trả chính 405 của SDK handler.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Browser</dt><dd class="mt-1 text-slate-400">Existing security suite vẫn xanh, chứng minh session route không regress.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Blocker</dt><dd class="mt-1 text-slate-400">Không có; chuyển N.9 real socket listener.</dd></div>
+        </dl>
+      </section>
+      <section class="mt-6 rounded-2xl border border-emerald-500/30 bg-slate-900 p-6">
+        <div class="flex flex-wrap items-center justify-between gap-3">
+          <h2 class="text-2xl font-semibold">2026-08-02 · Phase N hoàn tất</h2>
+          <span class="rounded-full bg-emerald-400/10 px-3 py-1 text-sm text-emerald-300">60 files · 387 tests</span>
+        </div>
+        <p class="mt-4 text-slate-300">Credential lifecycle và Hono MCP mount đã hoàn chỉnh từ CSPRNG/SQLite tới socket thật, dual-era concurrency và clean shutdown.</p>
+        <dl class="mt-5 grid gap-4 md:grid-cols-2">
+          <div><dt class="font-semibold text-slate-200">Verification</dt><dd class="mt-1 text-slate-400">Focused 36 + 3 Core tests; full 387 tests; schema drift, typecheck, lint 0 errors, boundaries, build và diff đều exit 0.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Security</dt><dd class="mt-1 text-slate-400">Mọi MCP HTTP request cần bearer; cookie không thay thế; plaintext không vào DB, URL, log, workspace hay audit.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Compatibility</dt><dd class="mt-1 text-slate-400">Browser session suite giữ nguyên; legacy và modern SDK gọi tool đồng thời trên một listener.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Blocker</dt><dd class="mt-1 text-slate-400">Không có; chuyển Phase O CLI/admin/smoke.</dd></div>
+        </dl>
+      </section>
+      <section class="mt-6 rounded-2xl border border-sky-500/30 bg-slate-900 p-6">
+        <div class="flex flex-wrap items-center justify-between gap-3">
+          <h2 class="text-2xl font-semibold">2026-08-02 · Phase O.1 · CLI dispatch</h2>
+          <span class="rounded-full bg-sky-400/10 px-3 py-1 text-sm text-sky-300">17/17 combined tests</span>
+        </div>
+        <p class="mt-4 text-slate-300">CLI đã có command tree strict; bare invocation và app đều giữ UI launch, trong khi invalid args không chạm stdout.</p>
+        <dl class="mt-5 grid gap-4 md:grid-cols-2">
+          <div><dt class="font-semibold text-slate-200">Compatibility</dt><dd class="mt-1 text-slate-400">vidcom = vidcom app; workspace env fallback và browser nonce flow không đổi.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Strictness</dt><dd class="mt-1 text-slate-400">Unknown command/flag, duplicate, missing value và invalid port đều là input rejection.</dd></div>
+          <div><dt class="font-semibold text-slate-200">I/O</dt><dd class="mt-1 text-slate-400">runCliMain sở hữu stderr và exit code; dispatch không tự in lỗi.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Blocker</dt><dd class="mt-1 text-slate-400">Không có; chuyển O.2 MCP stdio runtime.</dd></div>
+        </dl>
+      </section>
+      <section class="mt-6 rounded-2xl border border-sky-500/30 bg-slate-900 p-6">
+        <div class="flex flex-wrap items-center justify-between gap-3">
+          <h2 class="text-2xl font-semibold">2026-08-02 · Phase O.2 · MCP stdio runtime</h2>
+          <span class="rounded-full bg-sky-400/10 px-3 py-1 text-sm text-sky-300">19/19 combined tests</span>
+        </div>
+        <p class="mt-4 text-slate-300">vidcom mcp dùng cùng workspace/startup/composition root với daemon và mở SDK stdio sau mọi prerequisite.</p>
+        <dl class="mt-5 grid gap-4 md:grid-cols-2">
+          <div><dt class="font-semibold text-slate-200">Workspace</dt><dd class="mt-1 text-slate-400">Explicit → active → marker-backed cwd; không tạo hay đoán folder.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Registry</dt><dd class="mt-1 text-slate-400">Production composition đăng ký đúng 10 tools qua một ToolRegistry và audit service thật.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Config</dt><dd class="mt-1 text-slate-400">Sáu TTL/retention default nằm trong một McpRuntimeConfig, truyền DI tới services/startup.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Blocker</dt><dd class="mt-1 text-slate-400">Không có; chuyển O.3 signal cleanup.</dd></div>
+        </dl>
+      </section>
+      <section class="mt-6 rounded-2xl border border-sky-500/30 bg-slate-900 p-6">
+        <div class="flex flex-wrap items-center justify-between gap-3">
+          <h2 class="text-2xl font-semibold">2026-08-02 · Phase O.3 · Signal cleanup</h2>
+          <span class="rounded-full bg-sky-400/10 px-3 py-1 text-sm text-sky-300">21/21 combined tests</span>
+        </div>
+        <p class="mt-4 text-slate-300">MCP process chờ SIGINT/SIGTERM và chạy đúng một ordered foundation stop, không in application message ra stdout.</p>
+        <dl class="mt-5 grid gap-4 md:grid-cols-2">
+          <div><dt class="font-semibold text-slate-200">Idempotence</dt><dd class="mt-1 text-slate-400">Hai signal gần nhau vẫn chỉ chạy stop một lần.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Order</dt><dd class="mt-1 text-slate-400">Transport trước, rồi background handles, lease release và database destroy.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Handlers</dt><dd class="mt-1 text-slate-400">SIGINT và SIGTERM listeners đều được remove trước khi cleanup bất đồng bộ.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Blocker</dt><dd class="mt-1 text-slate-400">Không có; chuyển O.4 approve.</dd></div>
+        </dl>
+      </section>
+      <section class="mt-6 rounded-2xl border border-sky-500/30 bg-slate-900 p-6">
+        <div class="flex flex-wrap items-center justify-between gap-3">
+          <h2 class="text-2xl font-semibold">2026-08-02 · Phase O.4 · Trusted approve</h2>
+          <span class="rounded-full bg-sky-400/10 px-3 py-1 text-sm text-sky-300">22/22 combined tests</span>
+        </div>
+        <p class="mt-4 text-slate-300">Local admin có thể issue request tường minh qua CLI; SQLite ghi approver cli và stdout chỉ có một JSON object.</p>
+        <dl class="mt-5 grid gap-4 md:grid-cols-2">
+          <div><dt class="font-semibold text-slate-200">Authority</dt><dd class="mt-1 text-slate-400">Command gọi ApprovalService và SqliteApprovalGrantStore, không sửa row trực tiếp.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Surface</dt><dd class="mt-1 text-slate-400">Tool Registry chỉ nhận Pick request; issue không tồn tại trong MCP capability.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Output</dt><dd class="mt-1 text-slate-400">Success là grantId JSON + newline; domain rejection dùng exit 2.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Blocker</dt><dd class="mt-1 text-slate-400">Không có; chuyển O.5 credential commands.</dd></div>
+        </dl>
+      </section>
+      <section class="mt-6 rounded-2xl border border-sky-500/30 bg-slate-900 p-6">
+        <div class="flex flex-wrap items-center justify-between gap-3">
+          <h2 class="text-2xl font-semibold">2026-08-02 · Phase O.5 · Credential admin CLI</h2>
+          <span class="rounded-full bg-sky-400/10 px-3 py-1 text-sm text-sky-300">23/23 combined tests</span>
+        </div>
+        <p class="mt-4 text-slate-300">Bốn credential actions dùng service/SQLite thật; plaintext chỉ xuất hiện trong success JSON của issue và rotate.</p>
+        <dl class="mt-5 grid gap-4 md:grid-cols-2">
+          <div><dt class="font-semibold text-slate-200">Disclosure</dt><dd class="mt-1 text-slate-400">List bỏ cả secret lẫn secretHash, chỉ giữ lifecycle metadata.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Rotation</dt><dd class="mt-1 text-slate-400">--overlap-ms chỉ nhận positive integer; SQLite row cũ có exact expiry.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Errors</dt><dd class="mt-1 text-slate-400">Unknown/revoked/replay đều credential_invalid exit 2, không lộ trạng thái.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Blocker</dt><dd class="mt-1 text-slate-400">Không có; chuyển O.6 backup admin.</dd></div>
+        </dl>
+      </section>
+      <section class="mt-6 rounded-2xl border border-sky-500/30 bg-slate-900 p-6">
+        <div class="flex flex-wrap items-center justify-between gap-3">
+          <h2 class="text-2xl font-semibold">2026-08-02 · Phase O.6 · Backup admin CLI</h2>
+          <span class="rounded-full bg-sky-400/10 px-3 py-1 text-sm text-sky-300">23/23 focused tests</span>
+        </div>
+        <p class="mt-4 text-slate-300">Backup CLI đọc metadata/integrity trực tiếp từ app-data, còn restore đi qua foundation, lease, Core restoreBackup và WriteAuthority.</p>
+        <dl class="mt-5 grid gap-4 md:grid-cols-2">
+          <div><dt class="font-semibold text-slate-200">List</dt><dd class="mt-1 text-slate-400">Có thể lọc projectId hoặc liệt kê toàn bộ metadata qua adapter-only trusted admin method.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Integrity</dt><dd class="mt-1 text-slate-400">Verify re-hash payload thật; test tamper trả valid false, không báo thành công giả.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Restore authority</dt><dd class="mt-1 text-slate-400">Không có filesystem write trong command; startup chạy recovery/scheduler thật và Core tạo cli-external revision/audit qua mutateComposite.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Blocker</dt><dd class="mt-1 text-slate-400">Không có; chuyển O.7 recovery admin.</dd></div>
+        </dl>
+      </section>
+      <section class="mt-6 rounded-2xl border border-sky-500/30 bg-slate-900 p-6">
+        <div class="flex flex-wrap items-center justify-between gap-3">
+          <h2 class="text-2xl font-semibold">2026-08-02 · Phase O.7 · Recovery admin CLI</h2>
+          <span class="rounded-full bg-sky-400/10 px-3 py-1 text-sm text-sky-300">34/34 focused tests</span>
+        </div>
+        <p class="mt-4 text-slate-300">Recovery CLI tách read-only inspection khỏi hai mutation có lease; reconcile dựa hoàn toàn trên durable hashes, còn orphan resolve yêu cầu đúng một quyết định admin.</p>
+        <dl class="mt-5 grid gap-4 md:grid-cols-2">
+          <div><dt class="font-semibold text-slate-200">Inspect</dt><dd class="mt-1 text-slate-400">Trả journal, steps, hash, grant, audit và backup nhưng không transition trạng thái hay lộ previous content.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Reconcile</dt><dd class="mt-1 text-slate-400">Chỉ xử lý journal được chỉ định; test real datastore chứng minh all-none đi tới aborted deterministic.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Resolve</dt><dd class="mt-1 text-slate-400">CLI từ chối missing/double choice; restore-previous gọi Core dưới lease, verify bytes rồi ghi cli-external audit.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Blocker</dt><dd class="mt-1 text-slate-400">Không có; chuyển O.8 CLI contract suite.</dd></div>
+        </dl>
+      </section>
+      <section class="mt-6 rounded-2xl border border-sky-500/30 bg-slate-900 p-6">
+        <div class="flex flex-wrap items-center justify-between gap-3">
+          <h2 class="text-2xl font-semibold">2026-08-02 · Phase O.8 · CLI contract suite</h2>
+          <span class="rounded-full bg-sky-400/10 px-3 py-1 text-sm text-sky-300">35/35 focused tests</span>
+        </div>
+        <p class="mt-4 text-slate-300">Public CLI contract đã có evidence từ parser tới resource cleanup thật, bao gồm hai exit class và workspace-selection failure không tạo marker giả.</p>
+        <dl class="mt-5 grid gap-4 md:grid-cols-2">
+          <div><dt class="font-semibold text-slate-200">Strict input</dt><dd class="mt-1 text-slate-400">App, MCP và mọi admin command từ chối unknown, duplicate, missing value hoặc invalid choice trước I/O.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Exit contract</dt><dd class="mt-1 text-slate-400">User/domain input là 2; unexpected infrastructure failure là 1; error chỉ đi stderr.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Cleanup</dt><dd class="mt-1 text-slate-400">Cross-signal chỉ stop một lần và real SQLite workspace_lease còn đúng 0 row sau shutdown.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Blocker</dt><dd class="mt-1 text-slate-400">Không có; chuyển O.9 AI-host stdio smoke.</dd></div>
+        </dl>
+      </section>
+      <section class="mt-6 rounded-2xl border border-emerald-500/30 bg-slate-900 p-6">
+        <div class="flex flex-wrap items-center justify-between gap-3">
+          <h2 class="text-2xl font-semibold">2026-08-02 · Phase O hoàn tất · AI-host smoke</h2>
+          <span class="rounded-full bg-emerald-400/10 px-3 py-1 text-sm text-emerald-300">36/36 phase tests</span>
+        </div>
+        <p class="mt-4 text-slate-300">Production vidcom bin đã được spawn bởi exact SDK 1.30.0 rồi client 2.0.0; cả hai negotiate, list/call thật và modern hoàn tất approval round-trip destructive.</p>
+        <dl class="mt-5 grid gap-4 md:grid-cols-2">
+          <div><dt class="font-semibold text-slate-200">Entrypoint</dt><dd class="mt-1 text-slate-400">Node wrapper đăng ký tsx ESM loader để giữ node:sqlite và resolve TypeScript workspace source; package bin/script cùng trỏ một entry.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Approval</dt><dd class="mt-1 text-slate-400">Modern elicitation lấy request ID, trusted CLI issue cùng SQLite, MRTR retry grant và xóa file với backup/audit thật.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Cleanliness</dt><dd class="mt-1 text-slate-400">Hai SDK parse toàn bộ stdout; stderr không có application log; child PID null và lease table 0 row sau close.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Verification</dt><dd class="mt-1 text-slate-400">Frozen install, 36 tests, typecheck, lint 0 errors, boundaries, build và diff đều exit 0; chuyển P.1.</dd></div>
+        </dl>
+      </section>
+      <section class="mt-6 rounded-2xl border border-violet-500/30 bg-slate-900 p-6">
+        <div class="flex flex-wrap items-center justify-between gap-3">
+          <h2 class="text-2xl font-semibold">2026-08-02 · Phase P.1 · 2×2 contract matrix</h2>
+          <span class="rounded-full bg-violet-400/10 px-3 py-1 text-sm text-violet-300">4 cells · 40 calls</span>
+        </div>
+        <p class="mt-4 text-slate-300">Mười production descriptors chạy qua exact SDK legacy/modern trên cả stdio và HTTP; không cell nào dùng server/client giả.</p>
+        <dl class="mt-5 grid gap-4 md:grid-cols-2">
+          <div><dt class="font-semibold text-slate-200">Coverage</dt><dd class="mt-1 text-slate-400">Mỗi cell list đủ 10 tên và gọi đủ read, write, destructive descriptors.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Isolation</dt><dd class="mt-1 text-slate-400">Deterministic missing-project harness khóa transport/result mapping; real datastore success nằm ở P.4/P.5.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Versions</dt><dd class="mt-1 text-slate-400">sdk 1.30.0 pin 2025-11-25; client 2.0.0 pin 2026-07-28.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Blocker</dt><dd class="mt-1 text-slate-400">Không có; chuyển P.2 committed goldens.</dd></div>
+        </dl>
+      </section>
+      <section class="mt-6 rounded-2xl border border-violet-500/30 bg-slate-900 p-6">
+        <div class="flex flex-wrap items-center justify-between gap-3">
+          <h2 class="text-2xl font-semibold">2026-08-02 · Phase P.2 · Wire goldens</h2>
+          <span class="rounded-full bg-violet-400/10 px-3 py-1 text-sm text-violet-300">6 files · 22 golden tests</span>
+        </div>
+        <p class="mt-4 text-slate-300">Committed JSON khóa toàn bộ tools/list schemas và complete result shape ở raw SDK wire level, không phụ thuộc normalization của client.</p>
+        <dl class="mt-5 grid gap-4 md:grid-cols-2">
+          <div><dt class="font-semibold text-slate-200">Determinism</dt><dd class="mt-1 text-slate-400">Ba response độc lập mỗi era có cùng order và cùng payload.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Modern</dt><dd class="mt-1 text-slate-400">tools/list có complete, ttl 0, cacheScope private; tool result có complete và server metadata.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Legacy</dt><dd class="mt-1 text-slate-400">Không resultType, ttlMs hay cacheScope trong cả list lẫn tool result.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Blocker</dt><dd class="mt-1 text-slate-400">Không có; chuyển P.3 negative contract matrix.</dd></div>
+        </dl>
+      </section>
+      <section class="mt-6 rounded-2xl border border-violet-500/30 bg-slate-900 p-6">
+        <div class="flex flex-wrap items-center justify-between gap-3">
+          <h2 class="text-2xl font-semibold">2026-08-02 · Phase P.3 · Negative matrix</h2>
+          <span class="rounded-full bg-violet-400/10 px-3 py-1 text-sm text-violet-300">7 files · 65 tests</span>
+        </div>
+        <p class="mt-4 text-slate-300">Negative evidence đi từ schema/precondition tới grant lifecycle và wire revision mapping, gồm cả khác biệt resource code giữa hai era.</p>
+        <dl class="mt-5 grid gap-4 md:grid-cols-2">
+          <div><dt class="font-semibold text-slate-200">Writes</dt><dd class="mt-1 text-slate-400">Missing precondition là schema_invalid; stale hash là write_conflict có field ổn định.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Grants</dt><dd class="mt-1 text-slate-400">Missing/replay là approval_invalid; exact expiry là approval_expired.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Wire</dt><dd class="mt-1 text-slate-400">Unknown revision trả full allowlist; no-header giữ legacy; resource miss là -32002 legacy và -32602 modern.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Blocker</dt><dd class="mt-1 text-slate-400">Không có; chuyển P.4 real datastore recovery.</dd></div>
+        </dl>
+      </section>
+      <section class="mt-6 rounded-2xl border border-violet-500/30 bg-slate-900 p-6">
+        <div class="flex flex-wrap items-center justify-between gap-3">
+          <h2 class="text-2xl font-semibold">2026-08-02 · Phase P.4 · Recovery datastore matrix</h2>
+          <span class="rounded-full bg-violet-400/10 px-3 py-1 text-sm text-violet-300">5 files · 38 tests</span>
+        </div>
+        <p class="mt-4 text-slate-300">Recovery evidence chạy trên SQLite và filesystem thật, bổ sung classifier table để chứng minh quyết định chỉ dựa vào immutable hashes.</p>
+        <dl class="mt-5 grid gap-4 md:grid-cols-2">
+          <div><dt class="font-semibold text-slate-200">Decision matrix</dt><dd class="mt-1 text-slate-400">All landed roll-forward, none abort, mixed rollback ngược ordinal, unknown orphan.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Failure seams</dt><dd class="mt-1 text-slate-400">Injected T2a/T2b/T2c giữ pending/orphan đúng contract và retry không ghi lại landed bytes.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Durability</dt><dd class="mt-1 text-slate-400">Exact grant release/consume/invalidate và audit context được settle atomically trong journal transaction.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Isolation</dt><dd class="mt-1 text-slate-400">Một project orphan không chặn recovery project khỏe; project gate chỉ mở sau khi journal được resolve.</dd></div>
+        </dl>
+      </section>
+      <section class="mt-6 rounded-2xl border border-violet-500/30 bg-slate-900 p-6">
+        <div class="flex flex-wrap items-center justify-between gap-3">
+          <h2 class="text-2xl font-semibold">2026-08-02 · Phase P.5 · Destructive datastore matrix</h2>
+          <span class="rounded-full bg-violet-400/10 px-3 py-1 text-sm text-violet-300">9 files · 73 tests</span>
+        </div>
+        <p class="mt-4 text-slate-300">Destructive contract được chứng minh xuyên Core, real adapters, Registry và production stdio host.</p>
+        <dl class="mt-5 grid gap-4 md:grid-cols-2">
+          <div><dt class="font-semibold text-slate-200">Approval</dt><dd class="mt-1 text-slate-400">Request, issue, exact reserve, expiry, replay, revoke và reserved-grant semantics đều có test.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Backup</dt><dd class="mt-1 text-slate-400">Atomic publish, manifest/payload tamper, attach revision, retention prune và restore revision mới đều chạy trên disk/SQLite.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Crash safety</dt><dd class="mt-1 text-slate-400">Mid-delete rollback release grant; T2 recovery giữ bytes, grant và audit relation chính xác.</dd></div>
+          <div><dt class="font-semibold text-slate-200">End to end</dt><dd class="mt-1 text-slate-400">Modern AI host elicitation gọi approve CLI, retry delete_file và nhận backup/audit-backed success.</dd></div>
+        </dl>
+      </section>
+      <section class="mt-6 rounded-2xl border border-violet-500/30 bg-slate-900 p-6">
+        <div class="flex flex-wrap items-center justify-between gap-3">
+          <h2 class="text-2xl font-semibold">2026-08-02 · Phase P.6 · CI contract guards</h2>
+          <span class="rounded-full bg-violet-400/10 px-3 py-1 text-sm text-violet-300">6 files · 51 tests</span>
+        </div>
+        <p class="mt-4 text-slate-300">Workflow hiện gọi tên riêng các invariants dễ drift thay vì chỉ dựa vào một lệnh test tổng quát.</p>
+        <dl class="mt-5 grid gap-4 md:grid-cols-2">
+          <div><dt class="font-semibold text-slate-200">Registry parity</dt><dd class="mt-1 text-slate-400">Set production tool names phải bằng chính xác set contract matrix cases.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Revisions</dt><dd class="mt-1 text-slate-400">Legacy list khớp SDK runtime; newest contract revision phải qua modern Client pin validator.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Runtime invariants</dt><dd class="mt-1 text-slate-400">Dedicated suite chạy one-step audit forwarding và protocol-only stdout trên cả hai SDK.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Artifacts</dt><dd class="mt-1 text-slate-400">CI chạy committed goldens và Drizzle schema drift trước production build.</dd></div>
+        </dl>
+      </section>
+      <section class="mt-6 rounded-2xl border border-emerald-500/30 bg-slate-900 p-6">
+        <div class="flex flex-wrap items-center justify-between gap-3">
+          <h2 class="text-2xl font-semibold">2026-08-02 · Phase P.7 · Verification Matrix</h2>
+          <span class="rounded-full bg-emerald-400/10 px-3 py-1 text-sm text-emerald-300">10 commands · all exit 0</span>
+        </div>
+        <p class="mt-4 text-slate-300">Exact matrix chạy trên baseline SHA f4c838b43744e676798c1fb2fc58a46cfecd1219; không có skipped test hoặc lockfile mutation.</p>
+        <dl class="mt-5 grid gap-4 md:grid-cols-2">
+          <div><dt class="font-semibold text-slate-200">Install/static</dt><dd class="mt-1 text-slate-400">Frozen install 870/1034 no changes; typecheck, boundaries và lint 0 errors (10 baseline warnings).</dd></div>
+          <div><dt class="font-semibold text-slate-200">Tests</dt><dd class="mt-1 text-slate-400">Full 66 files/425 tests; golden 6 files/22 tests; tất cả exit 0.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Runtime</dt><dd class="mt-1 text-slate-400">Production build exit 0; Next smoke xác nhận SSE 1→2.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Artifacts</dt><dd class="mt-1 text-slate-400">Schema drift 4 artifacts và git diff --check cùng exit 0.</dd></div>
+        </dl>
+      </section>
+    </main>
+  </body>
+</html>

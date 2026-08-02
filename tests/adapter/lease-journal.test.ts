@@ -106,6 +106,12 @@ describe("MutationJournal", () => {
       status: "committed",
     });
     expect(dbAll(database, "SELECT * FROM revision")).toHaveLength(1);
+    expect(dbOne(database, "SELECT ordinal, kind, status FROM mutation_step LIMIT 1"))
+      .toEqual({ ordinal: 0, kind: "write", status: "written" });
+    expect(dbOne(database, "SELECT kind, path FROM revision LIMIT 1"))
+      .toEqual({ kind: "file", path: "index.html" });
+    expect(dbOne(database, "SELECT ordinal, kind, path FROM revision_step LIMIT 1"))
+      .toEqual({ ordinal: 0, kind: "write", path: "index.html" });
     expect(dbOne(database, "SELECT byte_size FROM revision_blob LIMIT 1")).toEqual({ byte_size: 3 });
     expect(dbOne(database, "SELECT outcome FROM audit_entry LIMIT 1")).toEqual({ outcome: "ok" });
     expect(dbOne(database, "SELECT type FROM event_outbox LIMIT 1")).toEqual({ type: "file.changed" });
@@ -123,6 +129,7 @@ describe("MutationJournal", () => {
     expect(await journal.listPending()).toHaveLength(1);
     expect(dbAll(database, "SELECT * FROM revision")).toEqual([]);
     expect(dbAll(database, "SELECT * FROM revision_blob")).toEqual([]);
+    expect(dbAll(database, "SELECT * FROM revision_step")).toEqual([]);
     expect(dbAll(database, "SELECT * FROM audit_entry")).toEqual([]);
     expect(dbAll(database, "SELECT * FROM event_outbox")).toEqual([]);
   });

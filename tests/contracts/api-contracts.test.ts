@@ -140,9 +140,16 @@ describe("API request contracts", () => {
 describe("API response contracts", () => {
   it("locks the shared ErrorCode vocabulary", () => {
     expect(Object.values(ErrorCode).sort()).toEqual([
+      "approval_expired",
+      "approval_invalid",
+      "approval_required",
       "asset_not_allowed",
       "auth_nonce_invalid",
       "auth_required",
+      "backup_expired",
+      "backup_failed",
+      "credential_invalid",
+      "duplicate_mutation_target",
       "duration_overflow",
       "host_not_allowed",
       "idempotency_key_reused",
@@ -155,12 +162,15 @@ describe("API response contracts", () => {
       "path_required",
       "precondition_required",
       "project_not_found",
+      "recovery_required",
+      "referenced_by_composition",
       "scene_not_found",
       "schema_invalid",
       "sdk_rejected",
       "storage_unavailable",
       "timing_invalid",
       "too_large",
+      "tool_not_available_in_era",
       "unsupported_media",
       "version_format_legacy",
       "workspace_lease_denied",
@@ -180,6 +190,7 @@ describe("API response contracts", () => {
       command: "kokoro narration/scene-1.wav",
       revision: 1,
       updatedAt: now,
+      staleSince: null,
     };
 
     expect(ListProjectsResponseSchema.parse({ projects: [project] })).toEqual({ projects: [project] });
@@ -193,6 +204,10 @@ describe("API response contracts", () => {
         previewSettings,
         previewSettingsRevision: 2,
         revision: 3,
+        projectRevision: 3,
+        entityRevision: 2,
+        fileHashes: { "index.html": file.contentHash },
+        recovery: { writeStatus: "ready", unresolved: [] },
         diagnostics,
       }),
     ).toMatchObject({ project, revision: 3, diagnostics });

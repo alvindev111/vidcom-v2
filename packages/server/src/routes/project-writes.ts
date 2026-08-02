@@ -16,6 +16,7 @@ import {
   createScene,
   patchPreviewSettings,
   regenerateNarration,
+  readSourceFile,
   resolveProjectIdBySlug,
   saveSourceFile,
   setSceneScript,
@@ -89,12 +90,17 @@ export function createProjectWriteRoutes(dependencies: ProjectWriteRouteDependen
         message: oversized ? `source content exceeds ${MAX_SOURCE_BYTES} bytes` : "file write payload is invalid",
       });
     }
-    return c.json(valueOf(await saveSourceFile(dependencies, {
+    const saved = valueOf(await saveSourceFile(dependencies, {
       projectId: projectId(c),
       path: parsed.data.path as RelPath,
       content: parsed.data.content,
       expectedContentHash: parsed.data.expectedContentHash,
-    }, "user")));
+    }, "user"));
+    return c.json({
+      file: { ...saved.file, content: parsed.data.content },
+      revision: saved.envelope.projectRevision,
+      diagnostics: saved.envelope.diagnostics,
+    });
   });
   routes.patch("/v1/projects/:id/preview-settings", async (c) => {
     const parsed = PatchPreviewSettingsRequestSchema.safeParse(await json(c));
@@ -128,16 +134,22 @@ export function createProjectWriteRoutes(dependencies: ProjectWriteRouteDependen
   routes.patch("/v1/projects/:id/scenes/:sceneId", async (c) => {
     const parsed = PatchSceneTimingRequestSchema.safeParse(await json(c));
     if (!parsed.success) fail({ code: ErrorCode.SchemaInvalid, message: "scene timing payload is invalid" });
-    return c.json(valueOf(await setSceneTiming(dependencies, {
-      projectId: projectId(c), sceneId: c.req.param("sceneId"), ...parsed.data,
-    }, "user")));
+    const id = projectId(c);
+    const timed = valueOf(await setSceneTiming(dependencies, {
+      projectId: id, sceneId: c.req.param("sceneId"), ...parsed.data,
+    }, "user"));
+    const file = valueOf(await readSourceFile(dependencies.reads, id, "index.html" as RelPath));
+    return c.json({ file, revision: timed.envelope.projectRevision, diagnostics: timed.envelope.diagnostics });
   });
   routes.patch("/v1/projects/:id/scenes/:sceneId/script", async (c) => {
     const parsed = PatchSceneScriptRequestSchema.safeParse(await json(c));
     if (!parsed.success) fail({ code: ErrorCode.SchemaInvalid, message: "scene script payload is invalid" });
-    return c.json(valueOf(await setSceneScript(dependencies, {
-      projectId: projectId(c), sceneId: c.req.param("sceneId"), ...parsed.data, file: parsed.data.file as RelPath,
-    }, "user")));
+    const id = projectId(c);
+    const scripted = valueOf(await setSceneScript(dependencies, {
+      projectId: id, sceneId: c.req.param("sceneId"), ...parsed.data, file: parsed.data.file as RelPath,
+    }, "user"));
+    const file = valueOf(await readSourceFile(dependencies.reads, id, parsed.data.file as RelPath));
+    return c.json({ file, revision: scripted.envelope.projectRevision, diagnostics: scripted.envelope.diagnostics });
   });
   routes.patch("/hf/:slug/scene", async (c) => {
     const parsed = LegacySceneMutationRequestSchema.safeParse(await json(c));
@@ -150,8 +162,21 @@ export function createProjectWriteRoutes(dependencies: ProjectWriteRouteDependen
     }
     const prompt = parsed.data.prompt.trim();
     if (!prompt) fail({ code: ErrorCode.SchemaInvalid, message: "prompt is empty", field: "prompt" });
-    const result = valueOf(await createScene(dependencies, { projectId: id, title: prompt }, "agent"));
-    return c.json({ ok: true, sceneId: result.sceneId, transcript: transcript(c.req.param("slug"), prompt, result) });
+    const entry = valueOf(await readSourceFile(dependencies.reads, id, "index.html" as RelPath));
+    const result = valueOf(await createScene(dependencies, {
+      projectId: id,
+      title: prompt,
+      expectedContentHash: entry.contentHash,
+    }, "agent"));
+    return c.json({
+      ok: true,
+      sceneId: result.scene.id,
+      transcript: transcript(c.req.param("slug"), prompt, {
+        sceneId: result.scene.id,
+        start: result.scene.start,
+        duration: result.scene.duration,
+      }),
+    });
   });
   return routes;
 }

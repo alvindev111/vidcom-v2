@@ -18,7 +18,12 @@ function normalize(value: unknown, seen: Set<object>): unknown {
   return result;
 }
 
+/** Produces stable JSON for any JSON-compatible value regardless of object key order. */
+export function canonicalizeJson(input: unknown): string {
+  return JSON.stringify(normalize(input, new Set()));
+}
+
 /** Produces stable JSON for hashing job input regardless of object key order. */
 export function canonicalizeJobInput(input: unknown): string {
-  return JSON.stringify(normalize(input, new Set()));
+  return canonicalizeJson(input);
 }

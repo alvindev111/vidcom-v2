@@ -1,4 +1,5 @@
 import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { createHash } from "node:crypto";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
@@ -11,13 +12,14 @@ import type { AbsolutePath } from "@vidcom/core";
 const FIXTURE_ROOT = path.resolve(import.meta.dirname, "../../fixtures/parse");
 
 /** Read a minimal parse fixture committed as the source side of a golden pair. */
-async function parseFixture(name: string) {
+async function parseFixture(name: string, prepare?: (root: string) => Promise<void>) {
   const root = await mkdtemp(path.join(tmpdir(), `vidcom-parse-${name}-`));
   try {
     await mkdir(root, { recursive: true });
     await writeFile(path.join(root, "hyperframes.json"), "{}\n");
     await writeFile(path.join(root, "vidcom.json"), JSON.stringify({ id: name }));
     await writeFile(path.join(root, "index.html"), await readFile(path.join(FIXTURE_ROOT, `${name}.html`), "utf8"));
+    await prepare?.(root);
     return await new CompositionHf().parseProject({
       id: name as ProjectId,
       slug: name,
@@ -48,6 +50,57 @@ function golden(value: unknown): string {
 }
 
 describe("composition parse structure", () => {
+  it("reports the entry digest and byte size from the bytes already parsed", async () => {
+    const raw = await readFile(path.join(FIXTURE_ROOT, "inline-scene.html"), "utf8");
+    await expect(parseFixture("inline-scene")).resolves.toMatchObject({
+      sources: [{
+        path: "index.html",
+        contentHash: `sha256:${createHash("sha256").update(raw).digest("hex")}`,
+        byteSize: new TextEncoder().encode(raw).byteLength,
+      }],
+    });
+  });
+
+  it("normalizes a legacy narration without stale metadata as current", async () => {
+    const model = await parseFixture("inline-scene", async (root) => {
+      await mkdir(path.join(root, "narration"));
+      await writeFile(path.join(root, "narration/inline.json"), JSON.stringify({
+        sceneId: "inline",
+        text: "Legacy",
+        voice: "af_heart",
+        status: "mock",
+        audioPath: "narration/inline.wav",
+        command: "tts",
+        revision: 1,
+        updatedAt: "2026-08-01T00:00:00.000Z",
+      }));
+    });
+    expect((model.scenes as Scene[])[0]?.narration).toMatchObject({ staleSince: null, status: "mock" });
+  });
+
+  it("reports referenced sources once in deterministic first-reference order", async () => {
+    const entry = await readFile(path.join(FIXTURE_ROOT, "source-order.html"), "utf8");
+    const sourceA = "<div data-composition-id=\"a\">A</div>\n";
+    const sourceB = "<div data-composition-id=\"b\">B</div>\n";
+    const model = await parseFixture("source-order", async (root) => {
+      await mkdir(path.join(root, "compositions"));
+      await writeFile(path.join(root, "compositions/a.html"), sourceA);
+      await writeFile(path.join(root, "compositions/b.html"), sourceB);
+    });
+    expect(model.sources.map((source) => source.path)).toEqual([
+      "index.html",
+      "compositions/b.html",
+      "compositions/a.html",
+    ]);
+    expect(model.sources).toHaveLength(3);
+    expect(model.sources.map(({ contentHash, byteSize }) => ({ contentHash, byteSize }))).toEqual(
+      [entry, sourceB, sourceA].map((content) => ({
+        contentHash: `sha256:${createHash("sha256").update(content).digest("hex")}`,
+        byteSize: new TextEncoder().encode(content).byteLength,
+      })),
+    );
+  });
+
   it("reads children from a template wrapper", async () => {
     await expect(golden(await elements("template-wrap"))).toMatchFileSnapshot(
       "../../fixtures/parse/template-wrap-expected.json",

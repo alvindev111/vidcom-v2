@@ -114,6 +114,8 @@ export interface Narration {
   command: string;
   revision: number;
   updatedAt: string;
+  /** Time the script diverged from audio, or null when narration is current or legacy-unknown. */
+  staleSince: string | null;
 }
 
 export interface Scene {

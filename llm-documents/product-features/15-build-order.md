@@ -67,6 +67,8 @@ Không có tính năng mới cho người dùng. Đây là phần không thể t
 
 D1 là quyết định số một, nhưng nó cần nền móng ở giai đoạn 1.
 
+> **Hoàn tất implementation 2026-08-02.** Phase 2 ship một Registry gồm 10 tool (`list_projects`, `get_project_context`, `list_scenes`, `read_composition`, `create_scene`, `set_scene_timing`, `set_text`, `save_file`, `delete_file`, `delete_scene`) qua stdio và Streamable HTTP, phục vụ legacy `2025-11-25` lẫn modern `2026-07-28`. Destructive flow dùng daemon-issued grant + verified backup; CLI có approval, credential, backup và recovery admin. Full local matrix: 425 tests, 22 golden tests, build/runtime/schema drift đều exit 0. Đóng mốc chỉ sau remote CI trên ship commit.
+
 | # | Việc | ID |
 |---|---|---|
 | 2.1 | Tool Registry protocol-agnostic | MP-2 |
@@ -84,7 +86,7 @@ D1 là quyết định số một, nhưng nó cần nền móng ở giai đoạn
 | 2.8 | Contract test chạy **hai lần**, một lần mỗi thế hệ | — |
 | 2.9 | `vidcom mcp` mode, `stdout` sạch | PK-5 |
 
-**Mốc:** Claude Code / Codex kết nối được và sửa được một project thật qua tool, không đụng file trực tiếp.
+**Mốc:** **Đạt ở local demo** — exact SDK clients spawn production `vidcom mcp`, list/call đủ tool; modern host hoàn tất elicitation → trusted CLI approval → `delete_file` retry, nhả lease và giữ stdout protocol-only.
 
 ---
 

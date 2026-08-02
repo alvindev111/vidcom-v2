@@ -8,6 +8,22 @@ const contentHashSchema = z.string().regex(/^sha256:[0-9a-f]{64}$/);
 const isoTimestampSchema = z.iso.datetime({ offset: true });
 const hexColorSchema = z.string().regex(/^#[0-9a-fA-F]{6}$/);
 
+/** Shared identifier schema for HTTP and MCP contracts. */
+export const IdentifierSchema = identifierSchema;
+/** Shared project-relative path schema for HTTP and MCP contracts. */
+export const RelativePathSchema = relativePathSchema;
+/** Shared canonical SHA-256 schema for HTTP and MCP contracts. */
+export const ContentHashSchema = contentHashSchema;
+
+/** Project write-gate state shared by HTTP snapshots and MCP project reads. */
+export const ProjectRecoveryStatusSchema = z.strictObject({
+  writeStatus: z.enum(["ready", "recovery_required"]),
+  unresolved: z.array(z.strictObject({
+    journalId: z.number().int().positive(),
+    status: z.enum(["pending", "orphaned"]),
+  })),
+});
+
 export const MAX_SOURCE_BYTES = 2 * 1024 * 1024;
 export const MAX_BGM_BYTES = 20 * 1024 * 1024;
 
@@ -138,6 +154,7 @@ export const SceneSchema = z.strictObject({
       command: z.string(),
       revision: z.number().int().nonnegative(),
       updatedAt: isoTimestampSchema,
+      staleSince: isoTimestampSchema.nullable(),
     })
     .nullable(),
   elements: z.array(SceneElementSchema),
@@ -247,6 +264,7 @@ export const PreviewSettingsPatchSchema = z
     bgm: BgmSettingsSchema.partial().optional(),
     subtitles: SubtitleSettingsSchema.partial().optional(),
     scenes: z.record(z.string(), SceneSettingsSchema).optional(),
+    scenesRemove: z.array(identifierSchema).max(1_000).optional(),
   })
   .refine((patch) => Object.keys(patch).length > 0, "patch must not be empty");
 
@@ -281,6 +299,10 @@ export const StudioSnapshotResponseSchema = z.strictObject({
   previewSettings: PreviewSettingsSchema,
   previewSettingsRevision: z.number().int().nonnegative(),
   revision: z.number().int().nonnegative(),
+  projectRevision: z.number().int().nonnegative(),
+  entityRevision: z.number().int().nonnegative(),
+  fileHashes: z.record(z.string(), contentHashSchema),
+  recovery: ProjectRecoveryStatusSchema,
   diagnostics: z.array(DiagnosticSchema),
 });
 
@@ -394,6 +416,7 @@ export const LegacyGenerateResponseSchema = z.strictObject({
 });
 
 export type ProjectSummaryDto = z.infer<typeof ProjectSummarySchema>;
+export type SceneDto = z.infer<typeof SceneSchema>;
 export type StudioSnapshotResponse = z.infer<typeof StudioSnapshotResponseSchema>;
 export type PreviewSettingsDto = z.infer<typeof PreviewSettingsSchema>;
 export type PreviewSettingsPatchDto = z.infer<typeof PreviewSettingsPatchSchema>;

@@ -1,9 +1,12 @@
-import { spawn } from "node:child_process";
+import { execFile as execFileCallback, spawn } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import { cp, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import net from "node:net";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import { promisify } from "node:util";
+
+const execFile = promisify(execFileCallback);
 
 const root = process.cwd();
 const temporaryRoot = await mkdtemp(path.join(tmpdir(), "vidcom-next-smoke-"));
@@ -98,6 +101,27 @@ try {
   if (!projectsResponse.ok) throw new Error(`project list returned ${projectsResponse.status}`);
   const projects = await projectsResponse.json();
   if (!Array.isArray(projects.projects) || projects.projects.length !== 1) throw new Error("real Next route did not list the selected workspace");
+
+  const cli = path.join(root, "packages", "cli", "bin", "vidcom.mjs");
+  const issued = await execFile(process.execPath, [cli, "credential", "issue", "next-runtime-smoke"], {
+    cwd: root,
+    env: { ...process.env, VIDCOM_APP_DATA: appData },
+    encoding: "utf8",
+  });
+  const credential = JSON.parse(issued.stdout.trim());
+  const mcpResponse = await fetch(`${baseUrl}/api/mcp`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${credential.secret}`,
+      Accept: "application/json, text/event-stream",
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/list", params: {} }),
+  });
+  const mcpBody = await mcpResponse.text();
+  if (!mcpResponse.ok || !mcpBody.includes('"name":"list_projects"')) {
+    throw new Error(`production MCP route failed (${mcpResponse.status}): ${mcpBody}`);
+  }
 
   const entry = path.join(projectRoot, "index.html");
   const firstEvent = nextEvent(baseUrl, cookie, 0, "index.html");

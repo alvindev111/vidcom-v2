@@ -1,5 +1,7 @@
 # Spec MCP Server — Detailed Design
 
+> **Status**: Approved 2026-08-02 — người dùng xác nhận bản 6 cùng Implementation Checklist qua lệnh thực thi `/goal`.
+
 > **Reference**: [Detailed Goals](./spec-mcp-server-detailed-goal.md) — Approved, reconfirmed 2026-08-02
 > **Next**: [Implementation Checklist](./spec-mcp-server-implementation-checklist.md) — đã soạn, Pending Confirmation
 > **Main spec**: [spec-mcp-server-inprocess.md](./spec-mcp-server-inprocess.md)

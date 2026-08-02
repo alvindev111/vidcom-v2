@@ -1,4 +1,5 @@
 import { existsSync, readFileSync, statSync } from "node:fs";
+import { createHash } from "node:crypto";
 import { join, posix } from "node:path";
 
 import { parseNumeric, readClipTiming, resolveWithinProject } from "@hyperframes/core";
@@ -6,8 +7,8 @@ import { resolveBlockCategory } from "@hyperframes/core/registry";
 import { openComposition, type Composition, type HyperFramesElement } from "@hyperframes/sdk";
 import { parseHTML } from "linkedom";
 
-import { ErrorCode, type RelPath } from "@vidcom/contracts";
-import { err, ok, type CompositionModel, type CompositionPort, type ProjectRef } from "@vidcom/core";
+import { ErrorCode, type ContentHash, type RelPath } from "@vidcom/contracts";
+import { err, ok, type CompositionModel, type CompositionPort, type CompositionSource, type ProjectRef } from "@vidcom/core";
 
 import { authoredCompositionRoot, compositionRoot, nearestHost, rootHost } from "./dom";
 import { readSceneElements } from "./elements";
@@ -26,6 +27,14 @@ import type {
 const REGISTRY_MARKER = /<!--\s*hyperframes-registry-item:\s*([\w-]+)\s*-->/;
 const MEDIA_TAGS: Record<string, SceneMedia["kind"]> = { IMG: "image", VIDEO: "video", AUDIO: "audio" };
 const blockCache = new Map<string, SceneBlock | null>();
+
+function sourceFromRaw(path: RelPath, raw: string): CompositionSource {
+  return {
+    path,
+    contentHash: `sha256:${createHash("sha256").update(raw).digest("hex")}` as ContentHash,
+    byteSize: new TextEncoder().encode(raw).byteLength,
+  };
+}
 
 function readJson(filename: string): Record<string, unknown> | null {
   try { return JSON.parse(readFileSync(filename, "utf8")) as Record<string, unknown>; } catch { return null; }
@@ -124,6 +133,7 @@ function readNarration(ref: ProjectRef, sceneId: string): Narration | null {
     return {
       ...narration,
       status: safeProjectFile(ref, narration.audioPath) ? "generated" : "mock",
+      staleSince: typeof narration.staleSince === "string" ? narration.staleSince : null,
     };
   } catch {
     return null;
@@ -164,6 +174,7 @@ async function parseScenes(
   entryRaw: string,
   hosts: CompositionHost[],
   registryBaseUrl: string | null,
+  recordSource: (path: RelPath, raw: string) => void,
 ): Promise<Scene[]> {
   const compositions = new Map<string, Promise<Composition>>();
   const open = (file: string, raw: string) => {
@@ -181,6 +192,7 @@ async function parseScenes(
         if (filename) {
           hostFile = host.src as typeof ref.entry;
           raw = readFileSync(filename, "utf8");
+          recordSource(hostFile, raw);
           root = compositionRoot(raw);
         }
       }
@@ -255,6 +267,11 @@ export class CompositionHf implements CompositionPort {
     const entry = safeProjectFile(ref, ref.entry);
     if (!entry) throw new Error("project entry does not exist");
     const entryRaw = readFileSync(entry, "utf8");
+    const sources = new Map<RelPath, CompositionSource>();
+    const recordSource = (path: RelPath, raw: string) => {
+      if (!sources.has(path)) sources.set(path, sourceFromRaw(path, raw));
+    };
+    recordSource(ref.entry, entryRaw);
     const { document } = parseHTML(entryRaw);
     const authoredRoot = authoredCompositionRoot(document);
     const { root, hosts } = compositionHosts(authoredRoot);
@@ -268,6 +285,7 @@ export class CompositionHf implements CompositionPort {
       entryRaw,
       hosts,
       typeof config?.registry === "string" ? config.registry.replace(/\/$/, "") : null,
+      recordSource,
     );
     const stat = statSync(entry);
     return {
@@ -288,6 +306,7 @@ export class CompositionHf implements CompositionPort {
       scenes,
       rootTrack: parseRootTrack(authoredRoot, root),
       diagnostics: [],
+      sources: [...sources.values()],
     };
   }
 

@@ -1,7 +1,8 @@
+import { chmodSync } from "node:fs";
 import { chmod, mkdir, open, readFile, rename, rm } from "node:fs/promises";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
-import { execFile } from "node:child_process";
+import { execFile, execFileSync } from "node:child_process";
 import { promisify } from "node:util";
 
 const CREDENTIAL_FILENAME = "credentials";
@@ -11,6 +12,17 @@ export type CredentialCommandRunner = (
   executable: string,
   args: readonly string[],
 ) => Promise<{ stdout: string }>;
+
+export type SyncCredentialCommandRunner = (
+  executable: string,
+  args: readonly string[],
+) => { stdout: string };
+
+function windowsCredentialAcl(stdout: string): string {
+  const sid = stdout.match(/"(S-\d(?:-\d+)+)"/)?.[1];
+  if (!sid) throw new Error("could not determine current Windows user SID");
+  return `${sid}:(R,W)`;
+}
 
 /** Applies POSIX 0600 or a Windows ACL containing only the current user. */
 export async function secureCredentialFile(
@@ -24,9 +36,23 @@ export async function secureCredentialFile(
   }
 
   const { stdout } = await run("whoami", ["/user", "/fo", "csv", "/nh"]);
-  const sid = stdout.match(/"(S-\d(?:-\d+)+)"/)?.[1];
-  if (!sid) throw new Error("could not determine current Windows user SID");
-  await run("icacls", [pathname, "/inheritance:r", "/grant:r", `${sid}:(R,W)`]);
+  await run("icacls", [pathname, "/inheritance:r", "/grant:r", windowsCredentialAcl(stdout)]);
+}
+
+/** Synchronous variant for resources, such as SQLite, opened by synchronous Node APIs. */
+export function secureCredentialFileSync(
+  pathname: string,
+  platform: NodeJS.Platform = process.platform,
+  run: SyncCredentialCommandRunner = (executable, args) => ({
+    stdout: execFileSync(executable, [...args], { encoding: "utf8" }),
+  }),
+): void {
+  if (platform !== "win32") {
+    chmodSync(pathname, 0o600);
+    return;
+  }
+  const { stdout } = run("whoami", ["/user", "/fo", "csv", "/nh"]);
+  run("icacls", [pathname, "/inheritance:r", "/grant:r", windowsCredentialAcl(stdout)]);
 }
 
 /** Stores the future MCP bridge credential under app-data, never in a workspace. */

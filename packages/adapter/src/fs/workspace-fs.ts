@@ -19,6 +19,7 @@ import {
 } from "@vidcom/core";
 
 import { writeAtomic } from "./atomic-write";
+import { deleteAtomic } from "./atomic-delete";
 import { resolveProjectPath } from "./resolve";
 
 const IGNORED_TREE_ENTRIES = new Set(["node_modules", ".git", ".hyperframes"]);
@@ -143,6 +144,22 @@ export class WorkspaceFs implements WorkspacePort {
   /** Atomically replaces one resolved target without checking a write precondition. */
   writeAtomic(pathname: ResolvedPath, content: string | Uint8Array): Promise<void> {
     return writeAtomic(pathname, content);
+  }
+
+  /** Checks whether a resolved filesystem target currently exists. */
+  async exists(pathname: ResolvedPath): Promise<boolean> {
+    try {
+      await stat(pathname);
+      return true;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") return false;
+      throw error;
+    }
+  }
+
+  /** Atomically removes one resolved file and fsyncs its containing directory. */
+  deleteAtomic(pathname: ResolvedPath): Promise<void> {
+    return deleteAtomic(pathname);
   }
 
   /** Reads a deterministic project-relative tree without following directory symlinks. */

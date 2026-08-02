@@ -53,7 +53,11 @@ export function readLegacyNarration(ref: ProjectRef, sceneId: string): Narration
   if (!existsSync(filename)) return null;
   try {
     const narration = JSON.parse(readFileSync(filename, "utf8")) as Narration;
-    return { ...narration, status: existsSync(join(ref.root, narration.audioPath)) ? "generated" : "mock" };
+    return {
+      ...narration,
+      status: existsSync(join(ref.root, narration.audioPath)) ? "generated" : "mock",
+      staleSince: typeof narration.staleSince === "string" ? narration.staleSince : null,
+    };
   } catch { return null; }
 }
 
@@ -69,6 +73,7 @@ export function regenerateLegacyNarration(ref: ProjectRef, sceneId: string, text
     command: `hyperframes tts --text "${text.replace(/"/g, '\\"')}" --voice ${DEFAULT_VOICE} -o ${audioPath}`,
     revision: (previous?.revision ?? 0) + 1,
     updatedAt: new Date().toISOString(),
+    staleSince: null,
   };
   mkdirSync(join(ref.root, NARRATION_DIRECTORY), { recursive: true });
   writeFileSync(join(ref.root, NARRATION_DIRECTORY, `${sceneId}.json`), `${JSON.stringify(narration, null, 2)}\n`, "utf8");

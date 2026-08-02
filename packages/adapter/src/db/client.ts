@@ -5,6 +5,8 @@ import path from "node:path";
 import { sql } from "drizzle-orm";
 import { drizzle, type NodeSQLiteDatabase } from "drizzle-orm/node-sqlite";
 
+import { secureCredentialFileSync } from "../fs/credential-store";
+
 export type VidcomDatabase = NodeSQLiteDatabase & {
   $client: DatabaseSync;
   destroy(): Promise<void>;
@@ -13,6 +15,14 @@ export type VidcomDatabase = NodeSQLiteDatabase & {
 /** Opens Drizzle directly on Node's built-in SQLite driver and owns its lifecycle. */
 export function createSqliteClient(filename: string): VidcomDatabase {
   const client = new DatabaseSync(filename);
+  if (filename !== ":memory:") {
+    try {
+      secureCredentialFileSync(filename);
+    } catch (error) {
+      client.close();
+      throw error;
+    }
+  }
   const database = drizzle({ client }) as VidcomDatabase;
   database.run(sql`PRAGMA foreign_keys = ON`);
   database.run(sql`PRAGMA busy_timeout = 5000`);

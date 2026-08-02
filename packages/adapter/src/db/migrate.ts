@@ -1,16 +1,29 @@
 import { fileURLToPath } from "node:url";
 import { dirname, resolve } from "node:path";
 
+import { sql } from "drizzle-orm";
 import { migrate } from "drizzle-orm/node-sqlite/migrator";
 
 import { openVidcomDatabase, type VidcomDatabase } from "./client";
 
-const migrationsFolder = resolve(dirname(fileURLToPath(import.meta.url)), "../../drizzle");
+const defaultMigrationsFolder = resolve(dirname(fileURLToPath(import.meta.url)), "../../drizzle");
 
-/** Applies the forward-only Drizzle migration history. */
-export async function migrateDatabase(database: VidcomDatabase): Promise<void> {
-  const result = migrate(database, { migrationsFolder });
-  if (result && "exitCode" in result) throw new Error(`Drizzle migration failed: ${result.exitCode}`);
+/** Applies a forward-only Drizzle migration history, with an override for migration fixtures. */
+export async function migrateDatabase(
+  database: VidcomDatabase,
+  migrationsFolder = defaultMigrationsFolder,
+): Promise<void> {
+  database.run(sql`PRAGMA foreign_keys = OFF`);
+  try {
+    const result = migrate(database, { migrationsFolder });
+    if (result && "exitCode" in result) throw new Error(`Drizzle migration failed: ${result.exitCode}`);
+  } finally {
+    database.run(sql`PRAGMA foreign_keys = ON`);
+  }
+  const violation = database.get<{ count: number }>(sql`
+    SELECT count(*) AS count FROM pragma_foreign_key_check
+  `);
+  if (violation?.count) throw new Error(`Drizzle migration left ${violation.count} foreign-key violations`);
 }
 
 /** Opens the app-data database and completes migrations as one startup prerequisite. */

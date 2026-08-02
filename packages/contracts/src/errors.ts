@@ -26,6 +26,16 @@ export enum ErrorCode {
   Internal = "internal",
   StorageUnavailable = "storage_unavailable",
   WorkspaceLeaseDenied = "workspace_lease_denied",
+  ApprovalRequired = "approval_required",
+  ApprovalExpired = "approval_expired",
+  ApprovalInvalid = "approval_invalid",
+  CredentialInvalid = "credential_invalid",
+  ToolNotAvailableInEra = "tool_not_available_in_era",
+  ReferencedByComposition = "referenced_by_composition",
+  BackupFailed = "backup_failed",
+  BackupExpired = "backup_expired",
+  DuplicateMutationTarget = "duplicate_mutation_target",
+  RecoveryRequired = "recovery_required",
 }
 
 /** Structured error payload returned by HTTP and MCP adapters. */

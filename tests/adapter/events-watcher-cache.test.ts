@@ -174,7 +174,7 @@ describe("event outbox, watcher and project cache", () => {
 
       const journal = new MutationJournal(database, clock);
       const authority = new WriteAuthority({
-        workspace, journal,
+        workspace, journal, compositeJournal: journal,
         lease: { async acquire() { throw new Error("unused"); }, async renew() { return true; }, async release() {}, async assertHeld() { return true; } },
         leaseId: "lease_test",
         hashContent: hash,

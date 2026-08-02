@@ -1,11 +1,11 @@
 # Spec MCP Server
 
-> **Status**: In process — Detailed Goals đã duyệt; Detailed Design bản 6 và Implementation Checklist sau deep review đang chờ duyệt cùng nhau.
+> **Status**: In process — Detailed Goals, Detailed Design bản 6 và Implementation Checklist đã được duyệt; Code Execution bắt đầu 2026-08-02.
 
 > **Related Documents**:
 > - [Detailed Goals](./spec-mcp-server-detailed-goal.md) — **Approved**, reconfirmed 2026-08-02
-> - [Detailed Design](./spec-mcp-server-detailed-design.md) — **bản 6, Pending Confirmation**
-> - [Implementation Checklist](./spec-mcp-server-implementation-checklist.md) — **Pending Confirmation**
+> - [Detailed Design](./spec-mcp-server-detailed-design.md) — **bản 6, Approved 2026-08-02**
+> - [Implementation Checklist](./spec-mcp-server-implementation-checklist.md) — **Approved 2026-08-02**
 > - [Canonical build order](../../../product-features/15-build-order.md) — Giai đoạn 2
 > - [Steering 05 — MCP tool design](../../../steering/05-mcp-tool-design.md)
 > - [Steering 13 — MCP protocol compatibility](../../../steering/13-mcp-protocol-compatibility.md)
@@ -44,7 +44,7 @@ Cung cấp **bộ tool MCP của Phase 2** để Codex/Claude Code đọc và s�
   - [Detailed Design](./spec-mcp-server-detailed-design.md) — **bản 6, Pending Confirmation**
   - [Implementation Checklist](./spec-mcp-server-implementation-checklist.md) — **Pending Confirmation**
 - **Date**: chưa chốt theo lịch. Ước lượng build-order 2–3 tuần ban đầu không còn đáng tin sau khi scope mở rộng thêm composite recovery, grant, backup, credential và admin recovery; lịch thực tế cần velocity của đội.
-- **Capacity**: **132 SP** qua 16 phase A→P và 139 task; đây là estimate planning, không phải cam kết lịch. Task count tăng do deep review tách các mega-test thành logic / real datastore / failure injection / regression và bổ sung prepare-plan còn thiếu cho `delete_file`; scope và SP không tăng.
+- **Capacity**: **132 SP** qua 16 phase A→P và 140 task; đây là estimate planning, không phải cam kết lịch. Task count tăng do deep review tách các mega-test thành logic / real datastore / failure injection / regression và bổ sung prepare-plan còn thiếu cho `delete_file`; scope và SP không tăng.
 - **Testing**: Contract test **chạy hai lần**, một lần cho mỗi thế hệ protocol; unit test cho Tool Registry và mapping; integration test trên **SQLite + filesystem thật trong thư mục tạm** cho đường ghi và audit; golden file cho `tools/list` của cả hai thế hệ.
   > Datastore thật của spec này vẫn là SQLite trong app-data + filesystem trong temp directory, đúng runtime production. Không mock `node:fs`, không in-memory stand-in.
 - **Risks**:
@@ -92,29 +92,29 @@ Chi tiết và hệ quả: [Detailed Goals §Quyết định đã chốt](./spec
 ## Phase Approvals
 
 - **Detailed Goals**: **Approved** — người dùng tái xác nhận AC 2.11, 5b.3–4e và 7.4b–4c ngày 2026-08-02
-- **Detailed Design**: **Pending Confirmation** — bản 5 đã duyệt; bản 6 sửa blocker `PendingToolAudit` Registry→Core phát hiện khi deep-review checklist và cần tái xác nhận
-- **Implementation Checklist**: **Pending Confirmation** — deep-review ngày 2026-08-02; production code vẫn bị chặn cho tới khi Design v6 + checklist được duyệt cùng nhau
+- **Detailed Design**: **Approved 2026-08-02** — người dùng xác nhận cùng checklist qua lệnh thực thi `/goal`
+- **Implementation Checklist**: **Approved 2026-08-02** — Code Execution A→P được authorize, giữ nguyên Execution Contract
 
 ## During Spec
 
 - **Standups**: 2026-08-01 — Phase 1 xác minh xanh (typecheck sạch, boundaries pass, 180/180 test). Spike Q10 chạy và đóng. Detailed Goals duyệt sau một vòng review 7 finding.
-- **Impediments**: phase gate — Implementation Checklist đang chờ người dùng duyệt trước Code Execution
+- **Impediments**: không có tại thời điểm bắt đầu Code Execution
 - **Adjustments**: 2026-08-02 — journal persist `grant_id` + pending tool audit; T2 failure giữ pending và project gate; read surface công bố recovery status; approval threat boundary được ghi rõ. Deep review checklist bổ sung DR-20 để truyền durable audit context qua cả mutation one-step, khóa runtime defaults/artifact map/verify commands và tách mega-test thành task 1–4 giờ.
 
 ## Spec Review
 
-- **Completed**: chưa bắt đầu
-- **Demo**: dự kiến — spawn `vidcom mcp` từ một AI host thật, cho agent đọc project mẫu, tạo một scene, sửa text, thử xoá và bị chặn cho tới khi xác nhận, rồi xem audit log.
-- **Feedback**: chưa có
+- **Completed**: local implementation + Verification Matrix hoàn tất 2026-08-02; chờ ship commit và remote CI để đóng spec.
+- **Demo**: exact SDK legacy `1.30.0` và modern client `2.0.0` spawn production bin. Cả hai negotiate/list/call; modern host nhận elicitation, gọi trusted `vidcom approve`, retry `delete_file` thành công, có backup/audit, child đóng sạch và lease về 0. Rerun riêng: 1 file/1 test, exit 0.
+- **Feedback**: contract cần giữ protocol-only stdout và admin approval ngoài MCP capability; cả hai đã thành dedicated CI guards.
 
 ## Spec Retrospective
 
-- **Well**: chưa bắt đầu
-- **Not Well**: chưa bắt đầu
-- **Improvements**: chưa bắt đầu
+- **Well**: dependency order làm lộ và xử lý sớm migration/composite recovery trước transport; real datastore matrix bắt được đúng T2 failure semantics.
+- **Not Well**: raw TypeScript CLI không chạy trực tiếp ổn định dưới Node, còn Bun thiếu `node:sqlite`; cần wrapper Node + `tsx` loader thay vì một entry runtime duy nhất.
+- **Improvements**: giữ contract/golden/schema-drift gates có tên riêng trong CI; Phase 4 thay in-process stdio ownership bằng authenticated daemon IPC như kiến trúc đích.
 
 ## Next Spec Adjustments
 
-- **Changes**: chưa bắt đầu
-- **Carry-over**: chưa bắt đầu
-- **Lessons**: chưa bắt đầu
+- **Changes**: implementation dùng một server SDK, exact clients chỉ ở dev/test; `vidcom mcp` Phase 2 trực tiếp sở hữu lease/runtime thay vì IPC bridge chưa được xây.
+- **Carry-over**: tasks extension, OpenTelemetry, daemon IPC bridge, render/TTS/snapshot tools và packaged SEA artifact.
+- **Lessons**: destructive safety cần bind plan hash + target hashes + revision và settle grant/audit trong cùng journal transaction; MRTR chỉ là kênh nhập grant, không phải authority.

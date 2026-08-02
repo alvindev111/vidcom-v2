@@ -3,7 +3,9 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "bin": { "vidcom": "./src/main.ts" },
+  "bin": {
+    "vidcom": "./bin/vidcom.mjs"
+  },
   "exports": "./src/index.ts",
   "dependencies": {
     "@vidcom/adapter": "workspace:*",
@@ -11,6 +13,7 @@
     "@vidcom/core": "workspace:*",
     "@vidcom/mcp": "workspace:*",
     "@vidcom/server": "workspace:*",
-    "@vidcom/worker": "workspace:*"
+    "@vidcom/worker": "workspace:*",
+    "tsx": "4.23.1"
   }
 }

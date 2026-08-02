@@ -119,6 +119,10 @@ describe("allowlist and workspace I/O", () => {
     expect(await adapter.readTree(project)).toEqual(
       expect.arrayContaining([expect.objectContaining({ name: "compositions", kind: "folder" })]),
     );
+    expect(await adapter.exists(resolved.value)).toBe(true);
+    await adapter.deleteAtomic(resolved.value);
+    expect(await adapter.exists(resolved.value)).toBe(false);
+    await expect(adapter.deleteAtomic(resolved.value)).resolves.toBeUndefined();
   });
 
   it("preserves the old target when the process dies before rename", async () => {

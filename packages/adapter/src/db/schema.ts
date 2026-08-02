@@ -1,5 +1,6 @@
 import { sql } from "drizzle-orm";
 import {
+  type AnySQLiteColumn,
   blob,
   check,
   foreignKey,
@@ -38,7 +39,7 @@ export const workspaceLease = sqliteTable("workspace_lease", {
 export const mutationJournal = sqliteTable("mutation_journal", {
   id: integer().primaryKey({ autoIncrement: true }),
   projectId: text("project_id").notNull().references(() => projectRegistry.id),
-  kind: text({ enum: ["file", "entity"] }).notNull(),
+  kind: text({ enum: ["file", "entity", "composite"] }).notNull(),
   path: text(),
   entity: text(),
   fromHash: text("from_hash"),
@@ -47,16 +48,22 @@ export const mutationJournal = sqliteTable("mutation_journal", {
   stagedTmpPath: text("staged_tmp_path"),
   stagedTargetPath: text("staged_target_path"),
   stagedContentHash: text("staged_content_hash"),
-  toHash: text("to_hash").notNull(),
-  status: text({ enum: ["pending", "committed", "aborted", "recovered", "orphaned"] }).notNull().default("pending"),
+  toHash: text("to_hash"),
+  status: text({ enum: ["pending", "committed", "aborted", "recovered", "orphaned", "rolled_back"] }).notNull().default("pending"),
   actor: text({ enum: actors }).notNull(),
+  grantId: text("grant_id").references((): AnySQLiteColumn => approvalGrant.id, { onDelete: "set null" }),
+  backupId: text("backup_id").references((): AnySQLiteColumn => backupManifest.id),
+  toolAuditJson: text("tool_audit_json"),
   createdAt: text("created_at").notNull(),
   settledAt: text("settled_at"),
 }, (table) => [
   index("idx_journal_project").on(table.projectId),
   index("idx_journal_pending").on(table.status, table.createdAt),
-  check("ck_journal_kind", sql`${table.kind} IN ('file', 'entity')`),
-  check("ck_journal_status", sql`${table.status} IN ('pending', 'committed', 'aborted', 'recovered', 'orphaned')`),
+  uniqueIndex("uq_journal_grant_id").on(table.grantId).where(sql`${table.grantId} IS NOT NULL`),
+  index("idx_journal_project_unresolved").on(table.projectId, table.status),
+  check("ck_journal_kind", sql`${table.kind} IN ('file', 'entity', 'composite')`),
+  check("ck_journal_status", sql`${table.status} IN ('pending', 'committed', 'aborted', 'recovered', 'orphaned', 'rolled_back')`),
+  check("ck_journal_tool_audit_json", sql`${table.toolAuditJson} IS NULL OR json_valid(${table.toolAuditJson})`),
   check("ck_journal_actor", actorCheck(table.actor)),
   check("ck_journal_previous_size", sql`${table.previousByteSize} >= 0`),
 ]);
@@ -91,7 +98,7 @@ export const eventOutbox = sqliteTable("event_outbox", {
 export const revision = sqliteTable("revision", {
   id: integer().primaryKey({ autoIncrement: true }),
   projectId: text("project_id").notNull().references(() => projectRegistry.id),
-  kind: text({ enum: ["file", "entity"] }).notNull(),
+  kind: text({ enum: ["file", "entity", "composite"] }).notNull(),
   path: text(),
   entity: text(),
   contentHash: text("content_hash").notNull(),
@@ -102,8 +109,110 @@ export const revision = sqliteTable("revision", {
 }, (table) => [
   index("idx_revision_project_created").on(table.projectId, table.createdAt),
   foreignKey({ columns: [table.parentRevision], foreignColumns: [table.id] }),
-  check("ck_revision_kind", sql`${table.kind} IN ('file', 'entity')`),
+  check("ck_revision_kind", sql`${table.kind} IN ('file', 'entity', 'composite')`),
   check("ck_revision_actor", actorCheck(table.actor)),
+]);
+
+export const approvalGrant = sqliteTable("approval_grant", {
+  id: text().primaryKey(),
+  projectId: text("project_id").notNull().references(() => projectRegistry.id),
+  tool: text().notNull(),
+  target: text().notNull(),
+  expectedRevision: integer("expected_revision").notNull(),
+  planDigest: text("plan_digest").notNull(),
+  targetHashes: text("target_hashes").notNull(),
+  summary: text().notNull(),
+  status: text({
+    enum: ["requested", "issued", "reserved", "consumed", "expired", "revoked", "invalidated"],
+  }).notNull(),
+  approver: text({ enum: ["ui", "cli"] }),
+  createdAt: text("created_at").notNull(),
+  issuedAt: text("issued_at"),
+  reservedAt: text("reserved_at"),
+  consumedAt: text("consumed_at"),
+  invalidatedAt: text("invalidated_at"),
+  invalidatedReason: text("invalidated_reason", { enum: ["orphaned", "rollback_failed"] }),
+  expiresAt: text("expires_at").notNull(),
+}, (table) => [
+  index("idx_grant_project").on(table.projectId),
+  index("idx_grant_status").on(table.status),
+  index("idx_grant_expires").on(table.expiresAt),
+  check("ck_grant_expected_revision", sql`${table.expectedRevision} >= 0`),
+  check("ck_grant_target_hashes_json", sql`json_valid(${table.targetHashes})`),
+  check("ck_grant_status", sql`${table.status} IN ('requested', 'issued', 'reserved', 'consumed', 'expired', 'revoked', 'invalidated')`),
+  check("ck_grant_approver", sql`${table.approver} IS NULL OR ${table.approver} IN ('ui', 'cli')`),
+  check("ck_grant_invalidated_reason", sql`${table.invalidatedReason} IS NULL OR ${table.invalidatedReason} IN ('orphaned', 'rollback_failed')`),
+]);
+
+export const mcpCredential = sqliteTable("mcp_credential", {
+  id: text().primaryKey(),
+  label: text().notNull(),
+  secretHash: text("secret_hash").notNull(),
+  status: text({ enum: ["active", "rotating", "revoked"] }).notNull(),
+  createdAt: text("created_at").notNull(),
+  rotatedFrom: text("rotated_from").references((): AnySQLiteColumn => mcpCredential.id),
+  expiresAt: text("expires_at"),
+}, (table) => [
+  uniqueIndex("uq_credential_secret_hash").on(table.secretHash),
+  index("idx_credential_status").on(table.status),
+  check("ck_credential_secret_hash", sql`substr(${table.secretHash}, 1, 7) = 'sha256:' AND length(${table.secretHash}) = 71 AND substr(${table.secretHash}, 8) NOT GLOB '*[^0-9a-f]*'`),
+  check("ck_credential_status", sql`${table.status} IN ('active', 'rotating', 'revoked')`),
+]);
+
+export const backupManifest = sqliteTable("backup_manifest", {
+  id: text().primaryKey(),
+  projectId: text("project_id").notNull().references(() => projectRegistry.id),
+  revisionId: integer("revision_id").unique().references(() => revision.id),
+  reason: text().notNull(),
+  entries: text().notNull(),
+  manifestHash: text("manifest_hash").notNull(),
+  createdAt: text("created_at").notNull(),
+  payloadPrunedAt: text("payload_pruned_at"),
+}, (table) => [
+  index("idx_backup_project").on(table.projectId),
+  index("idx_backup_created").on(table.createdAt),
+  check("ck_backup_entries_json", sql`json_valid(${table.entries})`),
+]);
+
+export const mutationStep = sqliteTable("mutation_step", {
+  id: integer().primaryKey({ autoIncrement: true }),
+  journalId: integer("journal_id").notNull().references(() => mutationJournal.id),
+  ordinal: integer().notNull(),
+  kind: text({ enum: ["write", "delete", "entity"] }).notNull(),
+  path: text(),
+  entity: text(),
+  fromHash: text("from_hash"),
+  toHash: text("to_hash"),
+  previousContent: blob("previous_content", { mode: "buffer" }),
+  previousByteSize: integer("previous_byte_size").notNull().default(0),
+  status: text({ enum: ["pending", "written", "rolled_back"] }).notNull().default("pending"),
+}, (table) => [
+  uniqueIndex("uq_step_journal_ordinal").on(table.journalId, table.ordinal),
+  index("idx_step_journal").on(table.journalId, table.ordinal),
+  check("ck_step_kind", sql`${table.kind} IN ('write', 'delete', 'entity')`),
+  check("ck_step_status", sql`${table.status} IN ('pending', 'written', 'rolled_back')`),
+  check("ck_step_previous_size", sql`${table.previousByteSize} >= 0`),
+  check("ck_step_shape", sql`((${table.kind} = 'entity' AND ${table.path} IS NULL AND ${table.entity} IS NOT NULL) OR (${table.kind} IN ('write', 'delete') AND ${table.path} IS NOT NULL AND ${table.entity} IS NULL))`),
+]);
+
+export const revisionStep = sqliteTable("revision_step", {
+  id: integer().primaryKey({ autoIncrement: true }),
+  revisionId: integer("revision_id").notNull().references(() => revision.id, { onDelete: "cascade" }),
+  ordinal: integer().notNull(),
+  kind: text({ enum: ["write", "delete", "entity"] }).notNull(),
+  path: text(),
+  entity: text(),
+  fromHash: text("from_hash"),
+  toHash: text("to_hash"),
+  previousContent: blob("previous_content", { mode: "buffer" }),
+  byteSize: integer("byte_size").notNull().default(0),
+  backupId: text("backup_id").references(() => backupManifest.id),
+}, (table) => [
+  uniqueIndex("uq_revision_step_ordinal").on(table.revisionId, table.ordinal),
+  index("idx_revision_step").on(table.revisionId, table.ordinal),
+  check("ck_revision_step_kind", sql`${table.kind} IN ('write', 'delete', 'entity')`),
+  check("ck_revision_step_size", sql`${table.byteSize} >= 0`),
+  check("ck_revision_step_shape", sql`((${table.kind} = 'entity' AND ${table.path} IS NULL AND ${table.entity} IS NOT NULL) OR (${table.kind} IN ('write', 'delete') AND ${table.path} IS NOT NULL AND ${table.entity} IS NULL))`),
 ]);
 
 export const revisionBlob = sqliteTable("revision_blob", {
@@ -184,6 +293,11 @@ export const schema = {
   entityState,
   eventOutbox,
   revision,
+  approvalGrant,
+  mcpCredential,
+  backupManifest,
+  mutationStep,
+  revisionStep,
   revisionBlob,
   job,
   auditEntry,

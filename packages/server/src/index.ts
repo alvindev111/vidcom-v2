@@ -6,5 +6,6 @@ export * from "./middleware/error-mapper";
 export * from "./middleware/perimeter";
 export * from "./routes/project-reads";
 export * from "./routes/jobs";
+export * from "./routes/mcp";
 export * from "./routes/events";
 export * from "./routes/project-writes";

@@ -237,7 +237,7 @@ Trách nhiệm: khai báo tool/resource/prompt contract · validate input/output
 > | Package | `@modelcontextprotocol/sdk@1.30.0` | `@modelcontextprotocol/{server,core}@2.0.0` |
 > | Trạng thái | có session | stateless |
 >
-> Repo hiện chỉ có `@modelcontextprotocol/client@2.0.0` (package **client**, không dùng làm server). Cần thêm `@modelcontextprotocol/server@2.x` làm **runtime dependency duy nhất** cho MCP — spike Q10 (2026-08-01) chứng minh nó một mình phục vụ **cả hai era** trên **cả** HTTP lẫn stdio. `sdk@1.x` chỉ là **devDependency**, dùng làm client legacy trong contract test. Cần **một** Tool Registry protocol-agnostic, **không** phải hai transport adapter. Luật đầy đủ: [steering/13-mcp-protocol-compatibility](../steering/13-mcp-protocol-compatibility.md).
+> Implementation Phase 2 dùng `@modelcontextprotocol/server@2.0.0` làm **runtime dependency duy nhất** cho MCP và `@modelcontextprotocol/sdk@1.30.0` chỉ làm legacy test client. Một Tool Registry protocol-agnostic phục vụ cả hai era trên HTTP lẫn stdio; raw-wire goldens khóa era-specific result/cache fields. Luật đầy đủ: [steering/13-mcp-protocol-compatibility](../steering/13-mcp-protocol-compatibility.md).
 
 ### 6.3 Hono HTTP adapter — **toàn bộ** backend HTTP (D4)
 
@@ -267,6 +267,8 @@ vidcom version
 ```
 
 Với MCP stdio: **`stdout` chỉ chứa MCP protocol message**. Mọi log đi qua `stderr` hoặc structured log store — một dòng `console.log` lạc vào stdout sẽ làm hỏng handshake.
+
+**Runtime Phase 2 hiện tại:** production bin là Node wrapper đăng ký `tsx` loader rồi chạy source CLI để dùng `node:sqlite`; `vidcom mcp` resolve workspace, migrate app-data SQLite, lấy workspace lease, reconcile recovery, khởi động watcher/scheduler và serve stdio trong cùng subprocess. IPC bridge tới app daemon vẫn thuộc Phase 4; lease hiện bảo đảm không có hai VidCom writers sở hữu cùng workspace.
 
 ---
 

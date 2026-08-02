@@ -1,16 +1,20 @@
 import { describe, expect, it } from "vitest";
 
-import { ErrorCode, type ContentHash, type DomainError, type ProjectId, type RelPath } from "@vidcom/contracts";
+import { ErrorCode, MAX_SOURCE_BYTES, type ContentHash, type DomainError, type ProjectId, type RelPath } from "@vidcom/contracts";
 import {
   DEFAULT_PREVIEW_SETTINGS,
   err,
   getPreviewSettings,
+  getProjectContext,
   getStudioSnapshot,
+  listProjectContexts,
+  listSceneContexts,
   listProjects,
   mergePreviewSettings,
   ok,
   patchPreviewSettings,
   readAsset,
+  readComposition,
   readSourceFile,
   regenerateNarration,
   saveSourceFile,
@@ -28,8 +32,13 @@ import {
   type ProjectReadDependencies,
   type ProjectWriteDependencies,
   type CompositionOp,
+  type CompositeRequest,
   type ProjectRef,
+  type PendingToolAudit,
+  ProjectCache,
   type ResolvedPath,
+  type WriteEnvelope,
+  type WriteInvocation,
 } from "@vidcom/core";
 
 const projectId = "project-usecase" as ProjectId;
@@ -44,12 +53,31 @@ const hash = (value: string | Uint8Array): ContentHash => {
   return `sha256:${text.length.toString(16).padStart(64, "0")}` as ContentHash;
 };
 
-function setup(options: { missing?: boolean; failWrite?: boolean; failParse?: boolean } = {}) {
+function setup(options: {
+  missing?: boolean;
+  failWrite?: boolean;
+  failParse?: boolean;
+  tooLarge?: boolean;
+  recoveryRequired?: boolean;
+  withNarration?: boolean;
+} = {}) {
   const files = new Map<string, string>([
     ["index.html", "<main>old</main>"],
     ["preview-settings.json", `${JSON.stringify(DEFAULT_PREVIEW_SETTINGS)}\n`],
   ]);
   const binaries = new Map<string, Uint8Array>([["assets/poster.png", new Uint8Array([1, 2, 3])]]);
+  const narration = {
+    sceneId: "scene-1",
+    text: "Title",
+    voice: "af_heart",
+    status: "generated" as const,
+    audioPath: "narration/scene-1.wav",
+    command: "hyperframes tts",
+    revision: 1,
+    updatedAt: "2026-07-31T00:00:00.000Z",
+    staleSince: null,
+  };
+  if (options.withNarration) files.set("narration/scene-1.json", `${JSON.stringify(narration, null, 2)}\n`);
   let revision = 2;
   let entityState: EntityState = {
     revision: 1,
@@ -70,16 +98,27 @@ function setup(options: { missing?: boolean; failWrite?: boolean; failParse?: bo
     },
     scenes: [{
       id: "scene-1", start: 0, duration: 4, trackIndex: 1,
-      script: [{ id: "hf-title", file: "index.html" }],
+      src: null, block: null, isTransition: false, media: [],
+      script: [{ id: "hf-title", text: "Title", file: "index.html" }],
+      narration: options.withNarration ? narration : null, elements: [], unresolvedEffects: 0,
     }],
     rootTrack: null,
     diagnostics: [],
+    sources: [{ path: "index.html" as RelPath, contentHash: hash("entry"), byteSize: 5 }],
   };
+  const reads: string[] = [];
   const workspace = {
-    async resolve(_ref: ProjectRef, path: string) { return ok(path as ResolvedPath); },
+    async resolve(_ref: ProjectRef, path: string, purpose: string) {
+      if (path === "../secret.html") return err({ reason: "outside_project" as const });
+      if (path === "assets/poster.png" && purpose === "read-source") {
+        return err({ reason: "not_allowed_for_purpose" as const });
+      }
+      return ok(path as ResolvedPath);
+    },
     async listProjects() { return options.missing ? [] : [ref]; },
     async readProjectRef() { return options.missing ? null : ref; },
     async readFile(path: ResolvedPath) {
+      reads.push(path);
       const content = files.get(path);
       return content === undefined ? null : { content, contentHash: hash(content) };
     },
@@ -93,8 +132,14 @@ function setup(options: { missing?: boolean; failWrite?: boolean; failParse?: bo
       return content === undefined ? (bytes ? hash(bytes) : null) : hash(content);
     },
     async writeAtomic() {},
+    async exists(path: ResolvedPath) { return files.has(path) || binaries.has(path); },
+    async deleteAtomic(path: ResolvedPath) { files.delete(path); binaries.delete(path); },
     async readTree() { return [{ path: "index.html" as RelPath, name: "index.html", kind: "file" as const }]; },
-    async stat() { return null; },
+    async stat() {
+      return options.tooLarge
+        ? { size: 2 * 1024 * 1024 + 1, modifiedAt: new Date(0), kind: "file" as const }
+        : null;
+    },
   };
   const composition = {
     async parseProject() {
@@ -116,11 +161,22 @@ function setup(options: { missing?: boolean; failWrite?: boolean; failParse?: bo
     async readEntityState() { return entityState; },
     async findProjectRegistration() { return null; }, async registerProject() {},
     async beginBootstrap() { return 1 as JournalId; },
+    async readProjectRecoveryStatus() {
+      return options.recoveryRequired
+        ? { writeStatus: "recovery_required" as const, unresolved: [{ journalId: 9 as JournalId, status: "orphaned" as const }] }
+        : { writeStatus: "ready" as const, unresolved: [] };
+    },
   };
   const mutations: unknown[] = [];
+  const invocations: WriteInvocation[] = [];
   const authority = {
-    async mutate(request: MutationRequest): Promise<Result<WriteResult, DomainError>> {
+    async mutate(
+      request: MutationRequest,
+      _actor?: string,
+      invocation: WriteInvocation = { toolAudit: null },
+    ): Promise<Result<WriteResult, DomainError>> {
       mutations.push(request);
+      invocations.push(invocation);
       if (options.failWrite) return err({ code: ErrorCode.WorkspaceLeaseLost, message: "lost" });
       revision += 1;
       if (request.kind === "entity") {
@@ -134,6 +190,19 @@ function setup(options: { missing?: boolean; failWrite?: boolean; failParse?: bo
       if (typeof content === "string") files.set(request.path, content);
       else binaries.set(request.path, content);
       return ok({ path: request.path, contentHash: hash(content), revision, diagnostics: [] });
+    },
+    async mutateComposite(request: CompositeRequest): Promise<Result<WriteEnvelope, DomainError>> {
+      mutations.push(request);
+      if (options.failWrite) return err({ code: ErrorCode.WorkspaceLeaseLost, message: "lost" });
+      const fileHashes: Record<RelPath, ContentHash> = {};
+      for (const step of request.steps) {
+        if (step.kind !== "write") continue;
+        if (typeof step.content === "string") files.set(step.path, step.content);
+        else binaries.set(step.path, step.content);
+        fileHashes[step.path] = hash(step.content);
+      }
+      revision += 1;
+      return ok({ projectRevision: revision, entityRevision: null, fileHashes, diagnostics: [] });
     },
     async uploadBgm(request: { name: string; path: RelPath; bytes: Uint8Array }): Promise<Result<WriteResult, DomainError>> {
       mutations.push({ kind: "composite", ...request });
@@ -150,7 +219,7 @@ function setup(options: { missing?: boolean; failWrite?: boolean; failParse?: bo
     authority,
     clock: { now: () => new Date("2026-08-01T00:00:00.000Z") },
   };
-  return { deps, files, binaries, mutations };
+  return { deps, files, binaries, mutations, invocations, reads };
 }
 
 describe("project read use cases without HTTP", () => {
@@ -165,8 +234,71 @@ describe("project read use cases without HTTP", () => {
   it("builds one complete studio snapshot", async () => {
     expect(await getStudioSnapshot(setup().deps, projectId)).toMatchObject({
       ok: true,
-      value: { project: { revision: 2 }, entryFile: { path: "index.html" }, revision: 2 },
+      value: {
+        project: { revision: 2 },
+        entryFile: { path: "index.html" },
+        revision: 2,
+        projectRevision: 2,
+        entityRevision: 1,
+        fileHashes: { "index.html": hash("entry") },
+        recovery: { writeStatus: "ready", unresolved: [] },
+      },
     });
+  });
+  it("builds bounded project and scene contexts without absolute paths", async () => {
+    const { deps } = setup();
+    const projects = await listProjectContexts(deps);
+    expect(projects).toMatchObject({
+      ok: true,
+      value: [{ projectId, projectRevision: 2, recovery: { writeStatus: "ready" } }],
+    });
+    expect(JSON.stringify(projects)).not.toContain("/workspace/project");
+    await expect(getProjectContext(deps, projectId)).resolves.toMatchObject({
+      ok: true,
+      value: {
+        scenes: [{ id: "scene-1", elementCount: 0, fileContentHash: hash("entry"), narrationStale: false }],
+        projectRevision: 2,
+        entityRevision: 1,
+      },
+    });
+    await expect(listSceneContexts(deps, projectId)).resolves.toMatchObject({
+      ok: true,
+      value: { scenes: [{ id: "scene-1" }], projectRevision: 2 },
+    });
+  });
+  it("reads an allowlisted composition with recovery status", async () => {
+    await expect(readComposition(setup({ recoveryRequired: true }).deps, projectId, "index.html" as RelPath))
+      .resolves.toMatchObject({
+        ok: true,
+        value: { path: "index.html", recovery: { writeStatus: "recovery_required" } },
+      });
+  });
+  it("never caches a healthy recovery status while composition parsing is cached", async () => {
+    const { deps } = setup();
+    deps.cache = new ProjectCache();
+    let blocked = false;
+    deps.journal.readProjectRecoveryStatus = async () => blocked
+      ? { writeStatus: "recovery_required", unresolved: [{ journalId: 7 as JournalId, status: "pending" }] }
+      : { writeStatus: "ready", unresolved: [] };
+    await expect(getProjectContext(deps, projectId)).resolves.toMatchObject({
+      ok: true,
+      value: { recovery: { writeStatus: "ready" } },
+    });
+    blocked = true;
+    await expect(getProjectContext(deps, projectId)).resolves.toMatchObject({
+      ok: true,
+      value: { recovery: { writeStatus: "recovery_required", unresolved: [{ journalId: 7 }] } },
+    });
+  });
+  it("rejects outside, forbidden and oversized composition reads before content", async () => {
+    await expect(readComposition(setup().deps, projectId, "../secret.html" as RelPath))
+      .resolves.toMatchObject({ ok: false, error: { code: ErrorCode.PathOutsideProject } });
+    await expect(readComposition(setup().deps, projectId, "assets/poster.png" as RelPath))
+      .resolves.toMatchObject({ ok: false, error: { code: ErrorCode.AssetNotAllowed } });
+    const oversized = setup({ tooLarge: true });
+    await expect(readComposition(oversized.deps, projectId, "index.html" as RelPath))
+      .resolves.toMatchObject({ ok: false, error: { code: ErrorCode.TooLarge } });
+    expect(oversized.reads).toEqual([]);
   });
   it("reads source content and hash", async () => {
     expect(await readSourceFile(setup().deps, projectId, "index.html" as RelPath)).toMatchObject({
@@ -197,12 +329,43 @@ describe("project read use cases without HTTP", () => {
 });
 
 describe("project write and legacy use cases without HTTP", () => {
+  it("removes requested scene settings after applying the additive patch", () => {
+    const current = mergePreviewSettings(DEFAULT_PREVIEW_SETTINGS, {
+      scenes: {
+        "scene-1": { transitionSound: "gong", revealSound: "ping", hidden: false },
+        "scene-2": { transitionSound: "minimal", revealSound: "pop", hidden: true },
+      },
+    });
+    expect(mergePreviewSettings(current, { scenesRemove: ["scene-1"] }).scenes).toEqual({
+      "scene-2": current.scenes["scene-2"],
+    });
+  });
+
   it("saves source through the authority", async () => {
     const runtime = setup();
     expect(await saveSourceFile(runtime.deps, {
       projectId, path: "index.html" as RelPath, content: "new", expectedContentHash: hash("<main>old</main>"),
-    }, "user")).toMatchObject({ ok: true, value: { file: { content: "new" }, diagnostics: [] } });
+    }, "user")).toMatchObject({
+      ok: true,
+      value: { file: { path: "index.html", contentHash: hash("new") }, envelope: { projectRevision: 3 } },
+    });
     expect(runtime.mutations).toHaveLength(1);
+  });
+  it("rejects oversized and protected source writes before authority", async () => {
+    const runtime = setup();
+    await expect(saveSourceFile(runtime.deps, {
+      projectId,
+      path: "index.html" as RelPath,
+      content: "x".repeat(MAX_SOURCE_BYTES + 1),
+      expectedContentHash: hash("<main>old</main>"),
+    }, "user")).resolves.toMatchObject({ ok: false, error: { code: ErrorCode.TooLarge } });
+    await expect(saveSourceFile(runtime.deps, {
+      projectId,
+      path: "hyperframes.json" as RelPath,
+      content: "{}",
+      expectedContentHash: hash("x"),
+    }, "user")).resolves.toMatchObject({ ok: false, error: { code: ErrorCode.AssetNotAllowed } });
+    expect(runtime.mutations).toHaveLength(0);
   });
   it("patches preview settings through the authority", async () => {
     expect(await patchPreviewSettings(setup().deps, {
@@ -219,36 +382,110 @@ describe("project write and legacy use cases without HTTP", () => {
     ]);
   });
   it("sets scene timing by serializing then writing through authority", async () => {
-    expect(await setSceneTiming(setup().deps, {
+    const runtime = setup();
+    const toolAudit: PendingToolAudit = {
+      schemaVersion: 1, invocationId: "invocation-timing", tool: "set_scene_timing", level: "write",
+      projectId, era: "modern", protocolVersion: "2026-07-28", detail: {}, credentialId: null,
+      invokedAt: "2026-08-01T00:00:00.000Z",
+    };
+    expect(await setSceneTiming(runtime.deps, {
       projectId, sceneId: "scene-1", timing: { duration: 6 }, expectedContentHash: hash("<main>old</main>"),
-    }, "user")).toMatchObject({ ok: true, value: { file: { content: "serialized:setTiming" } } });
+    }, "user", { toolAudit })).toMatchObject({
+      ok: true,
+      value: {
+        scene: { id: "scene-1", duration: 6 },
+        project: { revision: 3 },
+        envelope: { projectRevision: 3, fileHashes: { "index.html": hash("serialized:setTiming") } },
+      },
+    });
+    expect(runtime.invocations).toEqual([{ toolAudit }]);
+  });
+  it.each([
+    [{ duration: 0 }, ErrorCode.TimingInvalid],
+    [{ duration: 9 }, ErrorCode.DurationOverflow],
+  ] as const)("rejects invalid scene timing %o before authority", async (timing, code) => {
+    const runtime = setup();
+    await expect(setSceneTiming(runtime.deps, {
+      projectId,
+      sceneId: "scene-1",
+      timing,
+      expectedContentHash: hash("<main>old</main>"),
+    }, "user")).resolves.toMatchObject({ ok: false, error: { code } });
+    expect(runtime.mutations).toHaveLength(0);
   });
   it("sets scene script by serializing then writing through authority", async () => {
-    expect(await setSceneScript(setup().deps, {
+    const runtime = setup({ withNarration: true });
+    const toolAudit: PendingToolAudit = {
+      schemaVersion: 1, invocationId: "invocation-text", tool: "set_text", level: "write",
+      projectId, era: "modern", protocolVersion: "2026-07-28", detail: {}, credentialId: null,
+      invokedAt: "2026-08-01T00:00:00.000Z",
+    };
+    expect(await setSceneScript(runtime.deps, {
       projectId, sceneId: "scene-1", file: "index.html" as RelPath, elementId: "hf-title", text: "new", expectedContentHash: hash("<main>old</main>"),
-    }, "user")).toMatchObject({ ok: true, value: { file: { content: "serialized:setText" } } });
+    }, "user", { toolAudit })).toMatchObject({
+      ok: true,
+      value: {
+        scene: { id: "scene-1", narrationStale: true },
+        project: { revision: 3 },
+        envelope: { projectRevision: 3 },
+        narrationStale: true,
+      },
+    });
+    expect(runtime.mutations).toMatchObject([{
+      toolAudit,
+      steps: [
+        { kind: "write", path: "index.html", expectedContentHash: hash("<main>old</main>") },
+        { kind: "write", path: "narration/scene-1.json", purpose: "system-write" },
+      ],
+    }]);
+    expect(JSON.parse(runtime.files.get("narration/scene-1.json") ?? "null"))
+      .toMatchObject({ staleSince: "2026-08-01T00:00:00.000Z", status: "generated" });
   });
   it("regenerates the legacy mock narration through authority", async () => {
     expect(await regenerateNarration(setup().deps, { projectId, sceneId: "scene-1", text: "Hello" }, "user")).toMatchObject({
-      ok: true, value: { status: "mock", revision: 1, updatedAt: "2026-08-01T00:00:00.000Z" },
+      ok: true, value: { status: "mock", revision: 1, updatedAt: "2026-08-01T00:00:00.000Z", staleSince: null },
     });
   });
-  it("creates the legacy scene with both files written through authority", async () => {
+  it("creates a scene, entry mount and narration sidecar in one composite", async () => {
     const runtime = setup();
-    expect(await createScene(runtime.deps, { projectId, title: "Next" }, "user")).toMatchObject({
-      ok: true, value: { sceneId: "scene-2", start: 4, duration: 4 },
+    const toolAudit: PendingToolAudit = {
+      schemaVersion: 1,
+      invocationId: "invocation-create",
+      tool: "create_scene",
+      level: "write",
+      projectId,
+      era: "modern",
+      protocolVersion: "2026-07-28",
+      detail: {},
+      credentialId: null,
+      invokedAt: "2026-08-01T00:00:00.000Z",
+    };
+    expect(await createScene(runtime.deps, {
+      projectId,
+      title: "Next",
+      expectedContentHash: hash("<main>old</main>"),
+    }, "user", { toolAudit })).toMatchObject({
+      ok: true,
+      value: {
+        scene: { id: "scene-2", start: 4, duration: 4, narrationStale: false },
+        project: { sceneCount: 2, revision: 3 },
+        envelope: { projectRevision: 3 },
+      },
     });
-    expect(runtime.mutations).toHaveLength(3);
+    expect(runtime.mutations).toHaveLength(1);
     expect(runtime.mutations[0]).toMatchObject({
-      kind: "file",
-      path: "compositions/scene-2.html",
-      expectedContentHash: null,
+      toolAudit,
+      steps: [
+        { kind: "write", path: "compositions/scene-2.html", expectedContentHash: null },
+        { kind: "write", path: "index.html", expectedContentHash: hash("<main>old</main>") },
+        { kind: "write", path: "narration/scene-2.json", expectedContentHash: null, purpose: "system-write" },
+      ],
     });
-    const scene = (runtime.mutations[0] as { content: string }).content;
-    expect(scene).toContain("<style>");
-    expect(scene).toContain("width:1920px;height:1080px");
-    expect(scene).toContain("<h2>Next</h2>");
-    expect(runtime.mutations[2]).toMatchObject({ kind: "file", path: "narration/scene-2.json" });
+    const scene = (runtime.mutations[0] as CompositeRequest).steps[0];
+    if (scene?.kind !== "write" || typeof scene.content !== "string") throw new Error("scene write was not captured");
+    expect(scene.content).toContain("<style>");
+    expect(scene.content).toContain("width:1920px;height:1080px");
+    expect(scene.content).toContain("<h2>Next</h2>");
   });
   const missingWrites: Array<[string, (deps: ProjectWriteDependencies) => Promise<unknown>]> = [
     ["save", (deps) => saveSourceFile(deps, { projectId, path: "index.html" as RelPath, content: "x", expectedContentHash: null }, "user")],
@@ -257,7 +494,7 @@ describe("project write and legacy use cases without HTTP", () => {
     ["timing", (deps) => setSceneTiming(deps, { projectId, sceneId: "s", timing: {}, expectedContentHash: hash("x") }, "user")],
     ["script", (deps) => setSceneScript(deps, { projectId, sceneId: "s", file: "index.html" as RelPath, elementId: "x", text: "x", expectedContentHash: hash("x") }, "user")],
     ["tts", (deps) => regenerateNarration(deps, { projectId, sceneId: "s", text: "x" }, "user")],
-    ["generate", (deps) => createScene(deps, { projectId, title: "x" }, "user")],
+    ["generate", (deps) => createScene(deps, { projectId, title: "x", expectedContentHash: hash("x") }, "user")],
   ];
   it.each(missingWrites)("returns project_not_found for %s failure", async (_name, invoke) => {
     expect(await invoke(setup({ missing: true }).deps)).toMatchObject({

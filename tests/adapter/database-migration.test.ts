@@ -28,7 +28,7 @@ const insertProject = (database: Awaited<ReturnType<typeof initializeDatabase>>,
   id, workspace, slug, "2026-08-01T00:00:00.000Z", "2026-08-01T00:00:00.000Z");
 
 describe("Drizzle migrations", () => {
-  it("creates eleven app tables plus the Drizzle journal and is idempotent", async () => {
+  it("creates the app tables plus the Drizzle journal and is idempotent", async () => {
     const database = await initializeDatabase(appData);
     try {
       expect(await inspectDatabase(database)).toEqual({
@@ -36,29 +36,43 @@ describe("Drizzle migrations", () => {
         journalMode: "wal",
         foreignKeyViolations: 0,
         foreignKeys: [
+          "approval_grant.project_id->project_registry.id",
           "audit_entry.job_id->job.id",
           "audit_entry.project_id->project_registry.id",
           "audit_entry.revision_id->revision.id",
+          "backup_manifest.project_id->project_registry.id",
+          "backup_manifest.revision_id->revision.id",
           "entity_state.project_id->project_registry.id",
           "event_outbox.project_id->project_registry.id",
           "job.project_id->project_registry.id",
+          "mcp_credential.rotated_from->mcp_credential.id",
+          "mutation_journal.backup_id->backup_manifest.id",
+          "mutation_journal.grant_id->approval_grant.id",
           "mutation_journal.project_id->project_registry.id",
+          "mutation_step.journal_id->mutation_journal.id",
           "revision.parent_revision->revision.id",
           "revision.project_id->project_registry.id",
           "revision_blob.revision_id->revision.id",
+          "revision_step.backup_id->backup_manifest.id",
+          "revision_step.revision_id->revision.id",
         ],
         tables: [
           "__drizzle_migrations",
           "app_settings",
+          "approval_grant",
           "audit_entry",
+          "backup_manifest",
           "entity_state",
           "event_outbox",
           "job",
+          "mcp_credential",
           "mutation_journal",
+          "mutation_step",
           "project_registry",
           "registry_cache",
           "revision",
           "revision_blob",
+          "revision_step",
           "sqlite_sequence",
           "workspace_lease",
         ],

@@ -14,7 +14,8 @@ export interface DatabaseHealth {
 const APPLICATION_TABLES = [
   "project_registry", "workspace_lease", "mutation_journal", "entity_state",
   "event_outbox", "revision", "revision_blob", "job", "audit_entry",
-  "app_settings", "registry_cache",
+  "app_settings", "registry_cache", "approval_grant", "backup_manifest",
+  "mcp_credential", "mutation_step", "revision_step",
 ] as const;
 
 /** Reads SQLite health through the native client owned by Drizzle. */

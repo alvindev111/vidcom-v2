@@ -140,12 +140,16 @@ export function mergePreviewSettings(
   current: PreviewSettingsDto,
   patch: PreviewSettingsPatchDto,
 ): PreviewSettingsDto {
+  const removedScenes = new Set(patch.scenesRemove ?? []);
   return normalizePreviewSettings({
     tone: { ...current.tone, ...patch.tone },
     theme: { variables: { ...current.theme.variables, ...patch.theme?.variables } },
     bgm: { ...current.bgm, ...patch.bgm },
     subtitles: { ...current.subtitles, ...patch.subtitles },
-    scenes: { ...current.scenes, ...patch.scenes },
+    scenes: Object.fromEntries(
+      Object.entries({ ...current.scenes, ...patch.scenes })
+        .filter(([sceneId]) => !removedScenes.has(sceneId)),
+    ),
   });
 }
 

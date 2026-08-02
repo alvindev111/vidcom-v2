@@ -28,6 +28,16 @@ const ERROR_STATUS = {
   [ErrorCode.Internal]: 500,
   [ErrorCode.StorageUnavailable]: 503,
   [ErrorCode.WorkspaceLeaseDenied]: 503,
+  [ErrorCode.ApprovalRequired]: 422,
+  [ErrorCode.ApprovalExpired]: 422,
+  [ErrorCode.ApprovalInvalid]: 422,
+  [ErrorCode.CredentialInvalid]: 401,
+  [ErrorCode.ToolNotAvailableInEra]: 422,
+  [ErrorCode.ReferencedByComposition]: 422,
+  [ErrorCode.BackupFailed]: 503,
+  [ErrorCode.BackupExpired]: 410,
+  [ErrorCode.DuplicateMutationTarget]: 422,
+  [ErrorCode.RecoveryRequired]: 503,
 } as const satisfies Record<ErrorCode, number>;
 
 export class HttpBoundaryError extends Error {

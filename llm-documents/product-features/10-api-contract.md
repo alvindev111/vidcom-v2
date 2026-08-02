@@ -1,8 +1,12 @@
 # 10 — Đặc tả HTTP API hiện tại
 
+> **Cập nhật backend Phase 2 (2026-08-02):** phần `/api/hf/*` bên dưới mô tả compatibility routes cũ. Backend Hono hiện còn phục vụ `/api/v1/*`, SSE và MCP. MCP có entry `/api/mcp`, exact revision `/api/mcp/<revision>` và moving alias `/api/mcp/latest`; tất cả `/api/mcp*` bắt buộc bearer credential, chạy sau Host/CORS perimeter và không chấp nhận browser session cookie thay thế.
+
+MCP HTTP dùng cùng Tool Registry 10 tool với stdio. Exact revisions hiện support: modern `2026-07-28` và legacy `2025-11-25`, `2025-06-18`, `2025-03-26`, `2024-11-05`, `2024-10-07`. Unknown pin trả MCP error `-32022` kèm allowlist; không header giữ legacy default. Credential chỉ được lưu dạng hash, có issue/list/rotate/revoke qua trusted CLI và `credentialId` được audit mà không log bearer plaintext.
+
 Tất cả route nằm dưới `/api/hf/`, đều `export const dynamic = "force-dynamic"`.
 
-**Không có auth, không có versioning, không có rate limit.**
+Các compatibility route `/api/hf/*` không có versioning riêng. Nhận định “không có auth” không áp dụng cho `/api/mcp*`; MCP luôn fail-closed nếu thiếu verifier/credential.
 
 Tổng: **6 route**, **9 method**.
 

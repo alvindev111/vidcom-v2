@@ -46,6 +46,7 @@ async function createRuntime() {
   const authority = new WriteAuthority({
     workspace,
     journal,
+    compositeJournal: journal,
     lease,
     leaseId: acquired.leaseId,
     hashContent: digest,

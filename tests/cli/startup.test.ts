@@ -1,12 +1,15 @@
-import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { access, mkdtemp, mkdir, readFile, rm, utimes, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
 import { describe, expect, it } from "vitest";
 
 import { createBootstrapNonce, runStartupSequence, startVidcomFoundation, StartupError, type StartupStepName } from "@vidcom/cli";
-import type { AbsolutePath } from "@vidcom/core";
+import { AppDataBackupStore, initializeDatabase } from "@vidcom/adapter";
+import type { ProjectId, RelPath } from "@vidcom/contracts";
+import type { AbsolutePath, ResolvedPath } from "@vidcom/core";
 import { createFixedClock, createSequentialIdPort } from "../support/deterministic";
+import { dbOne, dbRun } from "../support/database";
 
 const ordered = [
   "migration",
@@ -93,6 +96,63 @@ describe("startup order", () => {
     }
   });
 
+  it("prunes expired payloads and old orphan directories before opening the listener", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "vidcom-startup-backups-"));
+    const workspace = path.join(root, "workspace");
+    const project = path.join(workspace, "project");
+    const appData = path.join(root, "app-data");
+    const projectId = "project_retention" as ProjectId;
+    await mkdir(project, { recursive: true });
+    await writeFile(path.join(project, "hyperframes.json"), "{}\n");
+    await writeFile(path.join(project, "vidcom.json"), `${JSON.stringify({ id: projectId })}\n`);
+    await writeFile(path.join(project, "index.html"), '<main data-composition-id="root"></main>');
+    const setupDatabase = await initializeDatabase(appData);
+    dbRun(setupDatabase, `INSERT INTO project_registry
+      (id, workspace_root, slug, first_seen_at, last_seen_at) VALUES (?, ?, 'project', ?, ?)`,
+    projectId, workspace, "2026-06-01T00:00:00.000Z", "2026-06-01T00:00:00.000Z");
+    const backups = new AppDataBackupStore(
+      appData,
+      setupDatabase,
+      createFixedClock("2026-06-01T00:00:00.000Z"),
+      { newId: () => "backup_expired" },
+    );
+    await backups.create(projectId, "old", [{
+      path: "index.html" as RelPath,
+      resolved: path.join(project, "index.html") as ResolvedPath,
+    }]);
+    await setupDatabase.destroy();
+    const projectBackupRoot = path.join(appData, "backups", encodeURIComponent(projectId));
+    const orphan = path.join(projectBackupRoot, "backup_orphan");
+    await mkdir(orphan);
+    await utimes(orphan, new Date("2026-07-01T00:00:00.000Z"), new Date("2026-07-01T00:00:00.000Z"));
+    let listenerObservedRetention = false;
+    try {
+      const runtime = await startVidcomFoundation({
+        appDataRoot: appData,
+        workspaceRoot: workspace as AbsolutePath,
+        holderId: "test:retention",
+        clock: createFixedClock("2026-08-02T00:00:00.000Z"),
+        ids: createSequentialIdPort(),
+      }, {
+        async recoverJobs() {},
+        async startScheduler() {},
+        async startWatcher() {},
+        async openListener() {
+          await expect(access(path.join(projectBackupRoot, "backup_expired", "payload"))).rejects.toThrow();
+          await expect(access(orphan)).rejects.toThrow();
+          listenerObservedRetention = true;
+          return null;
+        },
+      });
+      expect(listenerObservedRetention).toBe(true);
+      await expect(runtime.infrastructure.backups.read("backup_expired"))
+        .resolves.toMatchObject({ payloadPrunedAt: "2026-08-02T00:00:00.000Z" });
+      await runtime.stop();
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
   it("unwinds scheduler and watcher when listener startup fails", async () => {
     const root = await mkdtemp(path.join(tmpdir(), "vidcom-startup-unwind-"));
     const workspace = path.join(root, "workspace");
@@ -143,6 +203,10 @@ describe("startup order", () => {
       });
       await runtime.stop();
       expect(lifecycle).toEqual(["listener.close", "scheduler.stop", "watcher.close"]);
+      const database = await initializeDatabase(path.join(root, "app-data"));
+      expect(dbOne(database, "SELECT COUNT(*) AS count FROM workspace_lease"))
+        .toEqual({ count: 0 });
+      await database.destroy();
     } finally {
       await rm(root, { recursive: true, force: true });
     }

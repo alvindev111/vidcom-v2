@@ -10,9 +10,10 @@ import {
 import { nodeSchedulerTimers } from "@vidcom/adapter";
 import type { AbsolutePath } from "@vidcom/core";
 import { JobScheduler } from "@vidcom/core";
+import { createMcpHttpHandlers } from "@vidcom/mcp";
 import { createNoopProbeJobType } from "@vidcom/worker";
 
-import { createSystemClock } from "./composition-root";
+import { createMcpRegistry, createSystemClock } from "./composition-root";
 import { startVidcomFoundation } from "./startup";
 import { selectWorkspace } from "./workspace-selection";
 
@@ -89,6 +90,10 @@ async function startNextHostedRuntime(port: number): Promise<NextHostedRuntime> 
     ...foundation.application.writeDependencies,
     reads: foundation.application.readDependencies,
   };
+  const mcp = createMcpHttpHandlers(createMcpRegistry(
+    foundation.infrastructure,
+    foundation.application,
+  ));
   return {
     foundation,
     nonces,
@@ -97,6 +102,8 @@ async function startNextHostedRuntime(port: number): Promise<NextHostedRuntime> 
       uiOrigins: origins,
       nonces,
       sessions,
+      mcpCredentials: foundation.infrastructure.credentials,
+      mcp,
       projectReads,
       projectWrites,
       jobs: foundation.infrastructure.jobs,

@@ -9,6 +9,14 @@ import { HttpBoundaryError } from "./error-mapper";
 
 export const SESSION_COOKIE = "vidcom_session";
 
+export interface McpCredentialVerifier {
+  verify(secret: string): Promise<{ id: string } | null>;
+}
+
+export type McpAuthEnv = {
+  Variables: { credentialId: string };
+};
+
 function reject(code: ErrorCode, message: string): never {
   throw new HttpBoundaryError({ code, message });
 }
@@ -69,6 +77,18 @@ export function sessionAuth(sessions: SessionPort): MiddlewareHandler {
         reject(ErrorCode.AuthRequired, "authentication required");
       }
     }
+    await next();
+  };
+}
+
+/** Requires one MCP bearer and exposes only its non-secret credential ID downstream. */
+export function mcpBearerAuth(credentials: McpCredentialVerifier): MiddlewareHandler<McpAuthEnv> {
+  return async (c, next) => {
+    const authorization = c.req.header("Authorization") ?? "";
+    const match = /^Bearer ([^\s]+)$/i.exec(authorization);
+    const verified = match ? await credentials.verify(match[1]!) : null;
+    if (!verified) reject(ErrorCode.CredentialInvalid, "credential_invalid");
+    c.set("credentialId", verified.id);
     await next();
   };
 }

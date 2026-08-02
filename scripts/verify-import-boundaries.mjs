@@ -24,6 +24,53 @@ for (const [source, label] of fixtures) {
   if (result.errorCount === 0) throw new Error(`Core accepted forbidden ${label}`);
 }
 
+function packageNameForImport(filename, specifier) {
+  if (specifier.startsWith("@vidcom/")) return specifier.split("/").slice(0, 2).join("/");
+  if (!specifier.startsWith(".")) return specifier;
+  const target = path.resolve(path.dirname(filename), specifier);
+  const relative = path.relative(path.join(repositoryRoot, "packages"), target);
+  const [packageName] = relative.split(path.sep);
+  return relative.startsWith("..") ? null : `@vidcom/${packageName}`;
+}
+
+function assertPackageImportAllowed(filename, specifier) {
+  const relative = path.relative(repositoryRoot, filename).split(path.sep).join("/");
+  const targetPackage = packageNameForImport(filename, specifier);
+  const usesMcpSdk = specifier === "@modelcontextprotocol/core"
+    || specifier === "@modelcontextprotocol/server"
+    || specifier.startsWith("@modelcontextprotocol/core/")
+    || specifier.startsWith("@modelcontextprotocol/server/");
+  if ((relative.startsWith("packages/core/") || relative.startsWith("packages/mcp/src/registry/")) && usesMcpSdk) {
+    throw new Error(`SDK type leaked into Core/Registry: ${relative} -> ${specifier}`);
+  }
+  if (relative.startsWith("packages/mcp/") && targetPackage === "@vidcom/server") {
+    throw new Error(`MCP must not import server: ${relative} -> ${specifier}`);
+  }
+  if (relative.startsWith("packages/server/") && targetPackage === "@vidcom/mcp") {
+    throw new Error(`Server must not import MCP: ${relative} -> ${specifier}`);
+  }
+  if (relative.startsWith("packages/mcp/") && targetPackage === "@vidcom/adapter") {
+    throw new Error(`MCP must not import sibling infrastructure: ${relative} -> ${specifier}`);
+  }
+}
+
+const packageBoundaryFixtures = [
+  ["packages/core/src/example.ts", "@modelcontextprotocol/server", "Core SDK import"],
+  ["packages/mcp/src/registry/example.ts", "@modelcontextprotocol/core", "Registry SDK import"],
+  ["packages/mcp/src/example.ts", "@vidcom/server", "MCP-to-server import"],
+  ["packages/server/src/example.ts", "@vidcom/mcp", "server-to-MCP import"],
+  ["packages/mcp/src/example.ts", "@vidcom/adapter", "MCP-to-adapter import"],
+];
+for (const [relative, specifier, label] of packageBoundaryFixtures) {
+  let rejected = false;
+  try {
+    assertPackageImportAllowed(path.join(repositoryRoot, relative), specifier);
+  } catch {
+    rejected = true;
+  }
+  if (!rejected) throw new Error(`Boundary fixture was not rejected: ${label}`);
+}
+
 async function productionSources(directory) {
   const result = [];
   for (const entry of await readdir(directory, { withFileTypes: true })) {
@@ -40,6 +87,9 @@ for (const filename of await productionSources(path.join(repositoryRoot, "packag
   if (/\bfrom\s+["']kysely(?:\/[^"']*)?["']|["']kysely["']\s*:/.test(source)) {
     throw new Error(`Production persistence must remain Drizzle-only: ${path.relative(repositoryRoot, filename)}`);
   }
+  for (const match of source.matchAll(/\b(?:from|import)\s*(?:\(\s*)?["']([^"']+)["']/g)) {
+    assertPackageImportAllowed(filename, match[1]);
+  }
 }
 
-process.stdout.write("Core boundaries and Drizzle-only production persistence were verified.\n");
+process.stdout.write("Core, package, MCP SDK, and Drizzle persistence boundaries were verified.\n");

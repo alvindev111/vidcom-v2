@@ -1,0 +1,18 @@
+{
+  "content": [
+    {
+      "type": "text",
+      "text": "{\"projects\":[]}"
+    }
+  ],
+  "structuredContent": {
+    "projects": []
+  },
+  "resultType": "complete",
+  "_meta": {
+    "io.modelcontextprotocol/serverInfo": {
+      "name": "vidcom-mcp-server",
+      "version": "0.1.0"
+    }
+  }
+}

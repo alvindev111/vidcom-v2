@@ -261,6 +261,8 @@ Luật chi tiết: [steering/13-mcp-protocol-compatibility](../steering/13-mcp-p
 | MP-12 | Audit ghi protocol version mỗi tool call | Cao |
 | MP-13 | OpenTelemetry trace context qua `_meta` | Thấp |
 
+**Trạng thái Phase 2 (2026-08-02):** MP-1–MP-7 và MP-9–MP-12 đã có production implementation + contract evidence. MP-8 (tasks extension) và MP-13 (OpenTelemetry) vẫn ngoài scope spec này. Registry thực tế có 10 tool giới hạn; mỗi tool đi qua Core, schema strict và audit. Cả 2 era × 2 transport được chạy bằng exact SDK clients, `tools/list` có committed goldens, và destructive operation yêu cầu grant do người dùng issue qua UI/CLI authority.
+
 ### 3.12 Agent kit — skill & instruction (D1)
 
 Luật chi tiết: [steering/14-agent-kit-and-skills](../steering/14-agent-kit-and-skills.md).

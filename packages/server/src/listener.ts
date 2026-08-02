@@ -1,5 +1,8 @@
 import { serve, type ServerType } from "@hono/node-server";
-import type { Hono } from "hono";
+
+export interface FetchApp {
+  fetch(request: Request): Response | Promise<Response>;
+}
 
 export class LoopbackBindError extends Error {
   constructor(readonly port: number, options?: ErrorOptions) {
@@ -16,9 +19,12 @@ export interface LoopbackListener {
 }
 
 /** Opens only IPv4 loopback; port zero delegates dynamic selection to the OS. */
-export function bindLoopback(appFactory: (port: number) => Hono, port?: number): Promise<LoopbackListener>;
-export function bindLoopback(app: Hono, port: number): Promise<LoopbackListener>;
-export function bindLoopback(appSource: Hono | ((port: number) => Hono), port = 0): Promise<LoopbackListener> {
+export function bindLoopback(appFactory: (port: number) => FetchApp, port?: number): Promise<LoopbackListener>;
+export function bindLoopback(app: FetchApp, port: number): Promise<LoopbackListener>;
+export function bindLoopback(
+  appSource: FetchApp | ((port: number) => FetchApp),
+  port = 0,
+): Promise<LoopbackListener> {
   return new Promise((resolve, reject) => {
     let app = typeof appSource === "function" ? undefined : appSource;
     const server = serve({

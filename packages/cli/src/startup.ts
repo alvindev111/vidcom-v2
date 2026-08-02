@@ -1,5 +1,3 @@
-import path from "node:path";
-
 import {
   migrateDatabase,
   projectRegistrationLocationExists,
@@ -8,9 +6,7 @@ import {
 } from "@vidcom/adapter";
 import {
   bootstrapProject,
-  reconcilePendingMutations,
-  type AbsolutePath,
-  type ProjectRef,
+  reconcileCompositeMutations,
 } from "@vidcom/core";
 
 import { createApplication, createInfrastructure, hashContent, type CompositionRootConfig } from "./composition-root";
@@ -71,7 +67,7 @@ export interface DaemonHooks<Listener> {
   recoverJobs(runtime: DaemonRuntime): Promise<void>;
   startScheduler(runtime: DaemonRuntime): Promise<{ stop(): Promise<void> | void } | void>;
   startWatcher(runtime: DaemonRuntime): Promise<{ close(): Promise<void> | void } | void>;
-  openListener(runtime: unknown): Promise<Listener>;
+  openListener(runtime: DaemonRuntime): Promise<Listener>;
   onLeaseLost?(runtime: DaemonRuntime): Promise<void> | void;
 }
 
@@ -124,22 +120,21 @@ export async function startVidcomFoundation<Listener>(
       },
       reconciliation: async () => {
         await reconcileStagedAssets(infrastructure.database, infrastructure.clock, config.appDataRoot);
-        await reconcilePendingMutations({
+        await infrastructure.backups.prunePayloads(new Date(
+          infrastructure.clock.now().getTime()
+            - infrastructure.runtimeConfig.backupPayloadRetentionMs,
+        ));
+        await infrastructure.backups.cleanupOrphanPayloads(new Date(
+          infrastructure.clock.now().getTime()
+            - infrastructure.runtimeConfig.backupOrphanGraceMs,
+        ));
+        await infrastructure.approvalAdmin.cleanupTerminal(
+          new Date(infrastructure.clock.now().getTime() - infrastructure.runtimeConfig.approvalRetentionMs),
+        );
+        await reconcileCompositeMutations({
           workspace: infrastructure.workspace,
           journal: infrastructure.journal,
-          resolveProjectRef: async (projectId): Promise<ProjectRef | null> => {
-            const live = await infrastructure.workspace.readProjectRef(projectId);
-            if (live) return live;
-            const registration = await infrastructure.journal.findProjectRegistration(projectId);
-            return registration
-              ? {
-                  id: projectId,
-                  slug: registration.slug,
-                  root: path.join(registration.workspaceRoot, registration.slug) as AbsolutePath,
-                  entry: "index.html" as ProjectRef["entry"],
-                }
-              : null;
-          },
+          resolveProjectRef: infrastructure.resolveProjectRef,
         });
       },
       jobRecovery: () => hooks.recoverJobs({ infrastructure, application }),

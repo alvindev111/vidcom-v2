@@ -55,6 +55,8 @@ function editOp(composition: Composition, operation: CompositionOp): EditOp {
         index: operation.value.index < 0 ? (parentElement?.children.length ?? 0) : operation.value.index,
       };
       }
+    case "removeElement":
+      return { type: "removeElement", target: target(composition, operation.target) };
   }
 }
 

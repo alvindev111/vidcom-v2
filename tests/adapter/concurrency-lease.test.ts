@@ -65,6 +65,7 @@ describe("real WriteAuthority concurrency and workspace lease", () => {
     const authorityA = new WriteAuthority({
       workspace,
       journal,
+      compositeJournal: journal,
       lease,
       leaseId: leaseA.leaseId,
       hashContent: digest,
@@ -90,6 +91,7 @@ describe("real WriteAuthority concurrency and workspace lease", () => {
     const authorityB = new WriteAuthority({
       workspace,
       journal,
+      compositeJournal: journal,
       lease,
       leaseId: leaseB.leaseId,
       hashContent: digest,

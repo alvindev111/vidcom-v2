@@ -5,8 +5,10 @@
   "type": "module",
   "exports": "./src/index.ts",
   "dependencies": {
-    "@vidcom/adapter": "workspace:*",
+    "@modelcontextprotocol/core": "2.0.0",
+    "@modelcontextprotocol/server": "2.0.0",
     "@vidcom/contracts": "workspace:*",
-    "@vidcom/core": "workspace:*"
+    "@vidcom/core": "workspace:*",
+    "zod": "4.4.3"
   }
 }

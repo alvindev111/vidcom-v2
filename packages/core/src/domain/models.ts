@@ -4,6 +4,7 @@ import type {
   ProjectId,
   ProjectSummaryDto,
   RelPath,
+  SceneDto,
 } from "@vidcom/contracts";
 
 /** Absolute workspace path derived by the composition root, never by Core. */
@@ -43,12 +44,21 @@ export interface FileNode {
   children?: FileNode[];
 }
 
+/** One composition source already read by the parser with its digest and UTF-8 byte size. */
+export interface CompositionSource {
+  path: RelPath;
+  contentHash: ContentHash;
+  byteSize: number;
+}
+
 /** Parsed composition model shared by all project snapshot views. */
 export interface CompositionModel {
   project: ProjectSummaryDto;
-  scenes: unknown[];
+  scenes: SceneDto[];
   rootTrack: unknown | null;
   diagnostics: Diagnostic[];
+  /** Entry and referenced sub-compositions in deterministic first-read order; no extra I/O is performed for hashing. */
+  sources: CompositionSource[];
 }
 
 /** SDK-neutral composition mutation operation. */
@@ -67,4 +77,8 @@ export type CompositionOp =
       kind: "addElement";
       target: string | null;
       value: { index: number; html: string };
+    }
+  | {
+      kind: "removeElement";
+      target: string;
     };

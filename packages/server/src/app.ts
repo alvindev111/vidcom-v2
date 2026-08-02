@@ -7,16 +7,20 @@ import type { EventOutboxPort, JobStorePort } from "@vidcom/core";
 import { mapHttpError, HttpBoundaryError } from "./middleware/error-mapper";
 import {
   hostCheck,
+  mcpBearerAuth,
   requestId,
   requestLogger,
   sessionAuth,
   strictCors,
+  type McpAuthEnv,
+  type McpCredentialVerifier,
 } from "./middleware/perimeter";
 import { createAuthRoutes } from "./routes/auth";
 import { createProjectReadRoutes, type ProjectReadRouteDependencies } from "./routes/project-reads";
 import { createJobRoutes } from "./routes/jobs";
 import { createEventRoutes } from "./routes/events";
 import { createProjectWriteRoutes, type ProjectWriteRouteDependencies } from "./routes/project-writes";
+import { createMcpRoutes, type McpRouteDependencies } from "./routes/mcp";
 import { ErrorCode, MAX_BGM_BYTES, MAX_SOURCE_BYTES } from "@vidcom/contracts";
 
 export interface ServerAppDependencies {
@@ -24,6 +28,8 @@ export interface ServerAppDependencies {
   uiOrigins: readonly string[];
   nonces: NonceSource;
   sessions: SessionPort;
+  mcpCredentials?: McpCredentialVerifier;
+  mcp?: McpRouteDependencies;
   log?: (line: string) => void;
   trace?: (step: string) => void;
   projectReads?: ProjectReadRouteDependencies;
@@ -43,8 +49,8 @@ function bodyTooLarge(): never {
   throw new HttpBoundaryError({ code: ErrorCode.TooLarge, message: "request body is too large" });
 }
 
-export function createServerApp(deps: ServerAppDependencies): Hono {
-  const app = new Hono().basePath("/api");
+export function createServerApp(deps: ServerAppDependencies) {
+  const app = new Hono<McpAuthEnv>().basePath("/api");
   const register = (step: string, middleware: ReturnType<typeof requestId>) =>
     app.use("*", observed(step, middleware, deps.trace));
 
@@ -52,7 +58,11 @@ export function createServerApp(deps: ServerAppDependencies): Hono {
   register("logger", requestLogger(deps.log ?? (() => {})));
   register("hostCheck", hostCheck(deps.port));
   register("cors", strictCors(deps.uiOrigins));
-  register("auth", sessionAuth(deps.sessions));
+  const browserAuth = sessionAuth(deps.sessions);
+  const mcpAuth = mcpBearerAuth(deps.mcpCredentials ?? { verify: async () => null });
+  app.use("*", observed("auth", (c, next) => c.req.path.startsWith("/api/mcp")
+    ? mcpAuth(c, next)
+    : browserAuth(c, next), deps.trace));
   const limits = {
     regular: bodyLimit({ maxSize: 1_048_576, onError: bodyTooLarge }),
     source: bodyLimit({ maxSize: MAX_SOURCE_BYTES + 65_536, onError: bodyTooLarge }),
@@ -69,6 +79,7 @@ export function createServerApp(deps: ServerAppDependencies): Hono {
   }, deps.trace));
 
   app.route("/v1", createAuthRoutes(deps.nonces, deps.sessions, deps.trace));
+  if (deps.mcp) app.route("/", createMcpRoutes(deps.mcp));
   if (deps.projectReads) app.route("/", createProjectReadRoutes(deps.projectReads));
   if (deps.jobs) app.route("/v1", createJobRoutes(deps.jobs));
   if (deps.events) app.route("/v1", createEventRoutes(deps.events));

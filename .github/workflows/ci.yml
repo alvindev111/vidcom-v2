@@ -44,6 +44,15 @@ jobs:
       - name: Test
         run: bun run test
 
+      - name: Verify MCP contracts, audit forwarding, and stdio cleanliness
+        run: bun run test:mcp-contract
+
+      - name: Verify committed golden contracts
+        run: bun run test:golden
+
+      - name: Verify database schema drift
+        run: bun run test:schema-drift
+
       - name: Production build
         run: bun run build
 

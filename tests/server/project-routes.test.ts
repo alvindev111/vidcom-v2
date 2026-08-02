@@ -71,6 +71,8 @@ function fixture() {
       },
       async readHash() { return null; },
       async writeAtomic() {},
+      async exists(path: ResolvedPath) { return files.has(path) || assets.has(path); },
+      async deleteAtomic(path: ResolvedPath) { files.delete(path); assets.delete(path); },
       async readTree() { return [{ path: "index.html" as RelPath, name: "index.html", kind: "file" as const }]; },
       async stat() { return null; },
     },
@@ -85,6 +87,7 @@ function fixture() {
           }],
           rootTrack: null,
           diagnostics: [],
+          sources: [{ path: "index.html" as RelPath, contentHash: contentHash("entry"), byteSize: 5 }],
         };
       },
       async buildDocument(
@@ -104,6 +107,7 @@ function fixture() {
       },
       async findProjectRegistration() { return null; }, async registerProject() {},
       async beginBootstrap() { return 1 as never; }, async recover() { return 1; }, async orphan() {},
+      async readProjectRecoveryStatus() { return { writeStatus: "ready" as const, unresolved: [] }; },
     },
     runtimeSource: () => "globalThis.Hyperframes = {};",
     mimeFromPath,

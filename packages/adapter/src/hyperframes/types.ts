@@ -55,6 +55,7 @@ export interface Narration {
   command: string;
   revision: number;
   updatedAt: string;
+  staleSince: string | null;
 }
 export interface Scene {
   id: string;

@@ -185,9 +185,9 @@ Bốn quyết định đã chốt (doc 14 §1): **D1** MCP hạng nhất · **D2
 
 ## 11. Trạng thái tổng quát
 
-Đây là **giai đoạn mock/prototype**. Xem chi tiết [12-mock-vs-real.md](12-mock-vs-real.md). Tóm tắt:
+Đây là **giai đoạn chuyển từ prototype sang backend thật**. Xem chi tiết [12-mock-vs-real.md](12-mock-vs-real.md). Tóm tắt:
 
-- **THẬT:** đọc project, parse scene/timeline, preview bằng player thật, sửa source file, sửa timing/text qua SDK, ghi `preview-settings.json`, upload BGM, tạo scene mới (file + mount thật), ghi sidecar narration.
-- **MOCK:** transcript agent (Claude/Codex), transcript MCP, TTS (chỉ ghi lệnh, không render wav), poster thumbnail ở Home, âm thanh scene (chỉ audition WebAudio, không đi vào render).
+- **THẬT:** đọc project, parse scene/timeline, preview bằng player thật; Hono/Core/Adapter backend có atomic write + revision/audit/recovery; MCP 10 tool chạy legacy/modern qua stdio/HTTP; create/edit/delete scene/file đi qua composite authority, approval grant và verified backup; ghi `preview-settings.json`, upload BGM, tạo scene và sidecar narration.
+- **MOCK:** transcript agent trong UI, TTS (chỉ ghi lệnh, không render wav), poster thumbnail ở Home, âm thanh scene (chỉ audition WebAudio, không đi vào render). MCP transport và AI-host subprocess không còn mock.
 - **NÚT CHẾT:** New file / New folder / New project / Pop out preview.
-- **CHƯA CÓ:** render/export MP4, tạo project, xoá/đổi tên file, xoá scene, kéo-thả timeline, undo/redo, lint/check, snapshot, cài block từ registry, multi-user.
+- **CHƯA CÓ:** render/export MP4, tạo project, đổi tên file, kéo-thả timeline, undo/redo, lint/check, snapshot, cài block từ registry, multi-user. Xoá scene và xoá source file an toàn đã có qua Core/MCP/CLI admin surfaces.

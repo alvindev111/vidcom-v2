@@ -79,6 +79,8 @@ function workspace(actualHashes: Map<string, ContentHash | null>): WorkspacePort
     async readBytes() { return null; },
     async readHash(path) { return actualHashes.get(path) ?? null; },
     async writeAtomic() {},
+    async exists(path) { return actualHashes.get(path) !== null && actualHashes.has(path); },
+    async deleteAtomic(path) { actualHashes.set(path, null); },
     async readTree() { return []; },
     async stat() { return null; },
   };
