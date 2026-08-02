@@ -103,7 +103,7 @@ Chi tiết và hệ quả: [Detailed Goals §Quyết định đã chốt](./spec
 
 ## Spec Review
 
-- **Completed**: 2026-08-02 — local Verification Matrix 10/10 exit 0; ship commit `db7fd685af37e8efcd0e6c09df92aa1865911414`; GitHub Actions CI #6 Success trong 2m54s trước closeout.
+- **Completed**: 2026-08-02 — local Verification Matrix 10/10 exit 0; ship commit `db7fd685af37e8efcd0e6c09df92aa1865911414` có CI #6 Success 2m54s; closeout candidate `f01d4b496126202d53ddeaf42dcea1606118b10a` có CI #7 Success 2m56s.
 - **Demo**: exact SDK legacy `1.30.0` và modern client `2.0.0` spawn production bin. Cả hai negotiate/list/call; modern host nhận elicitation, gọi trusted `vidcom approve`, retry `delete_file` thành công, có backup/audit, child đóng sạch và lease về 0. Rerun riêng: 1 file/1 test, exit 0.
 - **Feedback**: contract cần giữ protocol-only stdout và admin approval ngoài MCP capability; cả hai đã thành dedicated CI guards. Closeout audit còn phát hiện Next production host chưa inject MCP Registry/credential verifier; wiring đã được bổ sung và `test:runtime-smoke` nay cấp bearer bằng CLI thật rồi gọi `/api/mcp`.
 

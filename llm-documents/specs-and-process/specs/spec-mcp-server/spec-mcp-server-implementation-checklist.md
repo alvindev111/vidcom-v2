@@ -1345,7 +1345,7 @@ Mỗi phase chạy focused command dưới đây trước khi chạy `rtk bun ru
 2026-08-02 — Phase P complete; 140/140 tasks
   - Files: [`tests/e2e/mcp-stdio-host.test.ts`, `.github/workflows/ci.yml`, main spec, Detailed Design, build-order và product docs]
   - Summary: AI-host demo rerun xanh; behavior thật đã cập nhật vào main spec/build-order/product docs. Ship commit `db7fd685af37e8efcd0e6c09df92aa1865911414` được push và GitHub Actions CI #6 hoàn tất Success trước closeout.
-  - Verification: local exact Verification Matrix 10/10 exit 0; AI-host demo 1/1; remote CI run `30744778718` Success 2m54s, full 66 files/423 tests, MCP guard 6/51, golden 6/22, không skipped test. Một warning duy nhất là GitHub Actions Node 20 deprecation cho `actions/checkout@v4`/`setup-node@v4`, không phải product failure.
+  - Verification: local exact Verification Matrix 10/10 exit 0; AI-host demo 1/1; remote CI #6 run `30744778718` Success 2m54s trên `db7fd68`, CI #7 run `30744858938` Success 2m56s trên `f01d4b4`; full 66 files/423 tests, MCP guard 6/51, golden 6/22, không skipped test. Warning GitHub Actions Node 20 deprecation cho `actions/checkout@v4`/`setup-node@v4` không phải product failure.
   - Decisions: spec chuyển `inprocess` → `complete` chỉ sau remote ship CI xanh. Closeout commit chỉ đổi evidence/status docs và sẽ được push/xác minh CI riêng để bảo đảm remote main đúng trạng thái 140/140.
   - Blockers: không có.
 

@@ -644,17 +644,17 @@
           <div><dt class="font-semibold text-slate-200">Warning</dt><dd class="mt-1 text-slate-400">Chỉ còn GitHub-hosted actions v4 Node 20 deprecation; không ảnh hưởng product gates.</dd></div>
         </dl>
       </section>
-      <section class="mt-6 rounded-2xl border border-amber-500/30 bg-slate-900 p-6">
+      <section class="mt-6 rounded-2xl border border-emerald-500/30 bg-slate-900 p-6">
         <div class="flex flex-wrap items-center justify-between gap-3">
           <h2 class="text-2xl font-semibold">2026-08-02 · Phase P.8 · Ship candidate</h2>
-          <span class="rounded-full bg-amber-400/10 px-3 py-1 text-sm text-amber-300">remote CI pending</span>
+          <span class="rounded-full bg-emerald-400/10 px-3 py-1 text-sm text-emerald-300">140/140 · remote green</span>
         </div>
-        <p class="mt-4 text-slate-300">AI-host demo và product docs đã khớp behavior thật; task chỉ được đóng sau ship commit và remote CI trên đúng SHA.</p>
+        <p class="mt-4 text-slate-300">AI-host demo, production HTTP wiring và product docs khớp behavior thật; remote CI #7 xanh trên exact candidate f01d4b4 sau 2m56s.</p>
         <dl class="mt-5 grid gap-4 md:grid-cols-2">
           <div><dt class="font-semibold text-slate-200">Demo</dt><dd class="mt-1 text-slate-400">Legacy/modern exact clients spawn production bin; modern approval xóa file và audit row cùng revision được đọc lại từ SQLite.</dd></div>
           <div><dt class="font-semibold text-slate-200">Host wiring</dt><dd class="mt-1 text-slate-400">Next composition root inject cùng Registry HTTP handlers và credential verifier; runtime smoke gọi /api/mcp bằng credential CLI vừa issue.</dd></div>
           <div><dt class="font-semibold text-slate-200">Docs</dt><dd class="mt-1 text-slate-400">Main spec, architecture và canonical build-order phân biệt Phase 2 đã chạy với SEA/IPC còn deferred.</dd></div>
-          <div><dt class="font-semibold text-slate-200">Gate</dt><dd class="mt-1 text-slate-400">Giữ P.8 đang làm cho tới khi remote CI xanh trên final closeout SHA.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Gate</dt><dd class="mt-1 text-slate-400">Local Matrix exit 0; CI implementation db7fd68 và closeout candidate f01d4b4 đều xanh; P.8 đóng 140/140.</dd></div>
         </dl>
       </section>
     </main>
