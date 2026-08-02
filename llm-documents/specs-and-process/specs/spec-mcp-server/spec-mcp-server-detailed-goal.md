@@ -1,6 +1,6 @@
 # Spec MCP Server — Detailed Goals
 
-> **Reference**: [Main Spec File](./spec-mcp-server-inprocess.md)
+> **Reference**: [Main Spec File](./spec-mcp-server-complete.md)
 > **Sửa lớn 2026-08-02** sau audit Detailed Design: AC 2.11 công bố recovery status, AC 5b.3–4e chuyển sang invariant "chứng minh nhất quán hoặc quarantine", AC 7.4b–4c bổ sung outcome indeterminate khi T2 lỗi, và threat boundary của approval được ghi rõ. Deep review checklist đã đồng bộ lại Data and Persistence Scope vốn còn sót câu “không có migration”; không đổi acceptance criteria đã duyệt. Trạng thái: Approved — reconfirmed 2026-08-02.
 
 ## Spec Goal

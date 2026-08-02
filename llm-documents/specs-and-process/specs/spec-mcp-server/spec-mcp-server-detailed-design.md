@@ -3,8 +3,8 @@
 > **Status**: Approved 2026-08-02 — người dùng xác nhận bản 6 cùng Implementation Checklist qua lệnh thực thi `/goal`.
 
 > **Reference**: [Detailed Goals](./spec-mcp-server-detailed-goal.md) — Approved, reconfirmed 2026-08-02
-> **Next**: [Implementation Checklist](./spec-mcp-server-implementation-checklist.md) — đã soạn, Pending Confirmation
-> **Main spec**: [spec-mcp-server-inprocess.md](./spec-mcp-server-inprocess.md)
+> **Next**: [Implementation Checklist](./spec-mcp-server-implementation-checklist.md) — Approved và hoàn tất 140/140
+> **Main spec**: [spec-mcp-server-complete.md](./spec-mcp-server-complete.md)
 > **Bản 6, 2026-08-02** — sau audit Implementation Checklist. Bản này đóng đường truyền `PendingToolAudit` từ Registry tới mọi Core write use case, kể cả mutation một-step; đồng thời giữ source compatibility cho caller Phase 1. §16 đối chiếu mọi vòng review.
 
 ## 1. Overview
@@ -1467,9 +1467,9 @@ Không test: hiệu năng dưới tải, nhiều workspace đồng thời, nội
 
 ## 15. Approval Gate
 
-- **Status**: **Pending Confirmation**
-- **Confirmed by**: —
-- **Confirmation date**: —
+- **Status**: **Approved and implemented**
+- **Confirmed by**: user `/goal` execution authorization
+- **Confirmation date**: 2026-08-02
 - **Notes**: Bản 5 đã được người dùng duyệt ngày 2026-08-02. Bản 6 cần tái xác nhận vì audit checklist phát hiện và sửa một interface blocker vật chất: đường truyền `PendingToolAudit` Registry → Core (DR-20).
   - Detailed Goals AC 2.11, AC 5b.3–4e và AC 7.4b–4c đã được tái xác nhận cùng ngày.
   - Threat model approval đã được ghi rõ: chống destructive call/replay qua MCP, không tuyên bố sandbox trước process có quyền OS ngang user.

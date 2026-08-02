@@ -67,7 +67,7 @@ Không có tính năng mới cho người dùng. Đây là phần không thể t
 
 D1 là quyết định số một, nhưng nó cần nền móng ở giai đoạn 1.
 
-> **Hoàn tất implementation 2026-08-02.** Phase 2 ship một Registry gồm 10 tool (`list_projects`, `get_project_context`, `list_scenes`, `read_composition`, `create_scene`, `set_scene_timing`, `set_text`, `save_file`, `delete_file`, `delete_scene`) qua stdio và Streamable HTTP, phục vụ legacy `2025-11-25` lẫn modern `2026-07-28`. Destructive flow dùng daemon-issued grant + verified backup; CLI có approval, credential, backup và recovery admin. Full local matrix: 423 tests, 22 golden tests, build/runtime/schema drift đều exit 0. Đóng mốc chỉ sau remote CI trên ship commit.
+> **Hoàn tất 2026-08-02.** Phase 2 ship một Registry gồm 10 tool (`list_projects`, `get_project_context`, `list_scenes`, `read_composition`, `create_scene`, `set_scene_timing`, `set_text`, `save_file`, `delete_file`, `delete_scene`) qua stdio và Streamable HTTP, phục vụ legacy `2025-11-25` lẫn modern `2026-07-28`. Destructive flow dùng daemon-issued grant + verified backup; CLI có approval, credential, backup và recovery admin. Local matrix 423 tests + 22 golden tests và remote CI #6 trên ship commit đều xanh.
 
 | # | Việc | ID |
 |---|---|---|

@@ -1,6 +1,6 @@
 # Spec MCP Server
 
-> **Status**: In process — 139/140 task hoàn tất; local Verification Matrix xanh, đang chờ ship commit + remote CI cho P.8.
+> **Status**: Complete — 140/140 tasks, local Verification Matrix và remote CI xanh ngày 2026-08-02.
 
 > **Related Documents**:
 > - [Detailed Goals](./spec-mcp-server-detailed-goal.md) — **Approved**, reconfirmed 2026-08-02
@@ -41,8 +41,8 @@ Cung cấp **bộ tool MCP của Phase 2** để Codex/Claude Code đọc và s�
 
 - **Supplementary files**:
   - [Detailed Goals](./spec-mcp-server-detailed-goal.md) — **Approved**, reconfirmed 2026-08-02
-  - [Detailed Design](./spec-mcp-server-detailed-design.md) — **bản 6, Pending Confirmation**
-  - [Implementation Checklist](./spec-mcp-server-implementation-checklist.md) — **Pending Confirmation**
+  - [Detailed Design](./spec-mcp-server-detailed-design.md) — **bản 6, Approved và implemented**
+  - [Implementation Checklist](./spec-mcp-server-implementation-checklist.md) — **Complete, 140/140**
 - **Date**: chưa chốt theo lịch. Ước lượng build-order 2–3 tuần ban đầu không còn đáng tin sau khi scope mở rộng thêm composite recovery, grant, backup, credential và admin recovery; lịch thực tế cần velocity của đội.
 - **Capacity**: **132 SP** qua 16 phase A→P và 140 task; đây là estimate planning, không phải cam kết lịch. Task count tăng do deep review tách các mega-test thành logic / real datastore / failure injection / regression và bổ sung prepare-plan còn thiếu cho `delete_file`; scope và SP không tăng.
 - **Testing**: Contract test **chạy hai lần**, một lần cho mỗi thế hệ protocol; unit test cho Tool Registry và mapping; integration test trên **SQLite + filesystem thật trong thư mục tạm** cho đường ghi và audit; golden file cho `tools/list` của cả hai thế hệ.
@@ -103,7 +103,7 @@ Chi tiết và hệ quả: [Detailed Goals §Quyết định đã chốt](./spec
 
 ## Spec Review
 
-- **Completed**: local implementation + Verification Matrix hoàn tất 2026-08-02; chờ ship commit và remote CI để đóng spec.
+- **Completed**: 2026-08-02 — local Verification Matrix 10/10 exit 0; ship commit `db7fd685af37e8efcd0e6c09df92aa1865911414`; GitHub Actions CI #6 Success trong 2m54s trước closeout.
 - **Demo**: exact SDK legacy `1.30.0` và modern client `2.0.0` spawn production bin. Cả hai negotiate/list/call; modern host nhận elicitation, gọi trusted `vidcom approve`, retry `delete_file` thành công, có backup/audit, child đóng sạch và lease về 0. Rerun riêng: 1 file/1 test, exit 0.
 - **Feedback**: contract cần giữ protocol-only stdout và admin approval ngoài MCP capability; cả hai đã thành dedicated CI guards. Closeout audit còn phát hiện Next production host chưa inject MCP Registry/credential verifier; wiring đã được bổ sung và `test:runtime-smoke` nay cấp bearer bằng CLI thật rồi gọi `/api/mcp`.
 

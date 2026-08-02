@@ -2,8 +2,8 @@
 
 > **References**:
 > - [Detailed Goals](./spec-mcp-server-detailed-goal.md) — Approved, reconfirmed 2026-08-02
-> - [Detailed Design](./spec-mcp-server-detailed-design.md) — v6, Pending Confirmation
-> - [Main spec](./spec-mcp-server-inprocess.md)
+> - [Detailed Design](./spec-mcp-server-detailed-design.md) — v6, Approved 2026-08-02
+> - [Main spec](./spec-mcp-server-complete.md)
 > - [Canonical build order](../../../product-features/15-build-order.md) — Phase 2
 
 ## Context
@@ -657,12 +657,12 @@ Mỗi phase chạy focused command dưới đây trước khi chạy `rtk bun ru
 - [x] P.5 Real datastore destructive matrix: approval lifecycle, backup publish/attach/prune/restore, delete outcomes, crash boundaries và audit relation. _Requirements: R6, R6b, R7, R9.4–6_ — _Design: §11.2_
 - [x] P.6 Add CI guard “mọi registry tool có contract case”, revision constants match SDK, one-step audit forwarding, stdout cleanliness và schema drift. _Requirements: R7.4, R9.7–8, R8.1–2_ — _Design: §11, DR-6/20_
 - [x] P.7 Chạy đúng toàn bộ command trong Phase Verification Matrix, gồm `test:schema-drift` và `git diff --check`; ghi command, exit code, test count, commit SHA vào Execution Log/notes. _Requirements: Definition of Done 10–12_ — _Design: §11_
-- [/] P.8 Chạy AI-host demo end-to-end và cập nhật main spec/build-order/product docs bằng behavior thật; push và xác minh remote CI trước closeout. _Requirements: Definition of Done 1–12_ — _Design: §12_
+- [x] P.8 Chạy AI-host demo end-to-end và cập nhật main spec/build-order/product docs bằng behavior thật; push và xác minh remote CI trước closeout. _Requirements: Definition of Done 1–12_ — _Design: §12_
 
 **Acceptance Criteria**:
-- [ ] Mọi combination era×transport và mọi registry tool có automated contract evidence.
-- [ ] Full local gates + remote CI xanh trên đúng commit; không skipped test.
-- [ ] Detailed Design/checklist/implementation notes khớp code đã ship trước khi đổi spec thành complete.
+- [x] Mọi combination era×transport và mọi registry tool có automated contract evidence.
+- [x] Full local gates + remote CI xanh trên đúng commit; không skipped test.
+- [x] Detailed Design/checklist/implementation notes khớp code đã ship trước khi đổi spec thành complete.
 
 **Deliverables**: contract/golden/durability matrix, CI gates, verified demo và closeout evidence.
 
@@ -1340,6 +1340,13 @@ Mỗi phase chạy focused command dưới đây trước khi chạy `rtk bun ru
   - Summary: Chạy nguyên văn toàn bộ local Verification Matrix trên commit gốc `f4c838b43744e676798c1fb2fc58a46cfecd1219`; mọi command exit 0, không skipped test. Bắt đầu AI-host demo/docs/remote closeout.
   - Verification: `bun install --frozen-lockfile` exit 0 (870 installs/1034 packages, no changes); `typecheck` 0; `lint` 0 với baseline 10 warnings; `test:boundaries` 0; `test` 0 (66 files/423 tests); `test:golden` 0 (6 files/22 tests); `build` 0; `test:runtime-smoke` 0 (production MCP bearer route + SSE 1→2); `test:schema-drift` 0 (4 artifacts); `git diff --check` 0.
   - Decisions: ghi SHA pre-commit để liên kết exact working-tree baseline; closeout audit bổ sung MCP Registry/credential injection vào Next host và nâng runtime smoke thành bearer call thật. P.8 sẽ tạo ship commit mới rồi chạy/xác minh remote CI trên SHA đó trước closeout.
+  - Blockers: không có.
+
+2026-08-02 — Phase P complete; 140/140 tasks
+  - Files: [`tests/e2e/mcp-stdio-host.test.ts`, `.github/workflows/ci.yml`, main spec, Detailed Design, build-order và product docs]
+  - Summary: AI-host demo rerun xanh; behavior thật đã cập nhật vào main spec/build-order/product docs. Ship commit `db7fd685af37e8efcd0e6c09df92aa1865911414` được push và GitHub Actions CI #6 hoàn tất Success trước closeout.
+  - Verification: local exact Verification Matrix 10/10 exit 0; AI-host demo 1/1; remote CI run `30744778718` Success 2m54s, full 66 files/423 tests, MCP guard 6/51, golden 6/22, không skipped test. Một warning duy nhất là GitHub Actions Node 20 deprecation cho `actions/checkout@v4`/`setup-node@v4`, không phải product failure.
+  - Decisions: spec chuyển `inprocess` → `complete` chỉ sau remote ship CI xanh. Closeout commit chỉ đổi evidence/status docs và sẽ được push/xác minh CI riêng để bảo đảm remote main đúng trạng thái 140/140.
   - Blockers: không có.
 
 Format:
