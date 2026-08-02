@@ -38,6 +38,17 @@ describe("MCP domain error mapping", () => {
           guidance: expect.stringContaining("resolve"),
         },
       });
+    expect(mapMcpError(error(ErrorCode.CommittedResponseError, {
+      committed: true,
+      projectRevision: 7,
+    }), "modern")).toMatchObject({
+      code: MCP_INTERNAL_ERROR,
+      data: {
+        retryable: false,
+        error: { details: { committed: true, projectRevision: 7 } },
+        guidance: expect.stringMatching(/already committed.*Do not retry/i),
+      },
+    });
   });
 
   it("covers every domain code and emits one canonical tool-error shape", () => {

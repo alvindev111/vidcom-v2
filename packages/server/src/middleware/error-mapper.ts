@@ -38,6 +38,7 @@ const ERROR_STATUS = {
   [ErrorCode.BackupExpired]: 410,
   [ErrorCode.DuplicateMutationTarget]: 422,
   [ErrorCode.RecoveryRequired]: 503,
+  [ErrorCode.CommittedResponseError]: 500,
 } as const satisfies Record<ErrorCode, number>;
 
 export class HttpBoundaryError extends Error {

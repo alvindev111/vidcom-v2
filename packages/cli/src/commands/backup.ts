@@ -1,22 +1,25 @@
 import { randomUUID } from "node:crypto";
 
-import { AppDataBackupStore, initializeDatabase, nodeSchedulerTimers } from "@vidcom/adapter";
+import {
+  AppDataBackupStore,
+  initializeDatabase,
+  migrateDatabase,
+  MutationJournal,
+  WorkspaceFs,
+} from "@vidcom/adapter";
 import type { ProjectId } from "@vidcom/contracts";
-import { JobScheduler, restoreBackup, type AbsolutePath } from "@vidcom/core";
-import { createNoopProbeJobType } from "@vidcom/worker";
+import { restoreBackup, type AbsolutePath, type BackupManifest } from "@vidcom/core";
 
 import { CliInputError } from "../cli-error";
+import { createApplication, createInfrastructure } from "../composition-root";
 import { defaultAppDataRoot } from "../next-host";
 import { writeJson, type CliOutput } from "../output";
-import { startVidcomFoundation } from "../startup";
-import { selectWorkspace } from "../workspace-selection";
 
 export interface BackupCommandDependencies {
   appDataRoot(): string;
   stdout: CliOutput;
   now(): Date;
   newId(): string;
-  selectWorkspace: typeof selectWorkspace;
 }
 
 const defaultDependencies: BackupCommandDependencies = {
@@ -24,7 +27,6 @@ const defaultDependencies: BackupCommandDependencies = {
   stdout: process.stdout,
   now: () => new Date(),
   newId: () => `backup_admin_${randomUUID()}`,
-  selectWorkspace,
 };
 
 type BackupOperation =
@@ -77,6 +79,77 @@ async function runReadOperation(
   }
 }
 
+async function validateRestoreTarget(
+  id: string,
+  dependencies: BackupCommandDependencies,
+): Promise<{ manifest: BackupManifest; workspaceRoot: AbsolutePath }> {
+  const appDataRoot = dependencies.appDataRoot();
+  const database = await initializeDatabase(appDataRoot);
+  try {
+    const backups = new AppDataBackupStore(
+      appDataRoot,
+      database,
+      { now: dependencies.now },
+      { newId: () => dependencies.newId() },
+    );
+    const manifest = await backups.read(id);
+    if (!manifest) throw new CliInputError("backup_not_found");
+    if (manifest.payloadPrunedAt !== null) throw new CliInputError("backup_expired");
+    if (manifest.revisionId === null || !(await backups.verify(id))) {
+      throw new CliInputError("backup_failed");
+    }
+    const journal = new MutationJournal(database, { now: dependencies.now });
+    const registration = await journal.findProjectRegistration(manifest.projectId);
+    if (!registration) throw new CliInputError("project_not_found");
+    const workspaceRoot = registration.workspaceRoot as AbsolutePath;
+    if (!(await new WorkspaceFs(workspaceRoot).readProjectRef(manifest.projectId))) {
+      throw new CliInputError("project_not_found");
+    }
+    return { manifest, workspaceRoot };
+  } finally {
+    await database.destroy();
+  }
+}
+
+async function startBackupRestoreRuntime(
+  workspaceRoot: AbsolutePath,
+  dependencies: BackupCommandDependencies,
+) {
+  const appDataRoot = dependencies.appDataRoot();
+  const infrastructure = createInfrastructure({
+    appDataRoot,
+    workspaceRoot,
+    clock: { now: dependencies.now },
+    ids: { newId: () => dependencies.newId() },
+  });
+  let leaseId: string | null = null;
+  try {
+    await migrateDatabase(infrastructure.database);
+    const acquired = await infrastructure.lease.acquire(
+      workspaceRoot,
+      `backup:${process.pid}:${randomUUID()}`,
+    );
+    if (!acquired.ok) throw new CliInputError("workspace_lease_denied");
+    leaseId = acquired.leaseId;
+    return {
+      infrastructure,
+      application: createApplication(infrastructure, leaseId),
+      async stop() {
+        const errors: unknown[] = [];
+        try { await infrastructure.lease.release(leaseId!); }
+        catch (error) { errors.push(error); }
+        try { await infrastructure.database.destroy(); }
+        catch (error) { errors.push(error); }
+        if (errors.length > 0) throw new AggregateError(errors, "Backup restore shutdown failed");
+      },
+    };
+  } catch (error) {
+    if (leaseId) await infrastructure.lease.release(leaseId).catch(() => undefined);
+    await infrastructure.database.destroy();
+    throw error;
+  }
+}
+
 /** Executes trusted backup inspection and delegates every restore write to the Core use case. */
 export async function runBackupCommand(
   argv: readonly string[],
@@ -88,50 +161,16 @@ export async function runBackupCommand(
     return;
   }
 
-  const appDataRoot = dependencies.appDataRoot();
-  const workspaceRoot = await dependencies.selectWorkspace({
-    explicit: process.env.VIDCOM_WORKSPACE,
-    appDataRoot,
-  });
-  let scheduler: JobScheduler | null = null;
-  const runtime = await startVidcomFoundation({
-    appDataRoot,
-    workspaceRoot: workspaceRoot as AbsolutePath,
-    holderId: `backup:${process.pid}:${randomUUID()}`,
-    clock: { now: dependencies.now },
-    ids: { newId: () => dependencies.newId() },
-  }, {
-    async recoverJobs({ infrastructure }) {
-      scheduler = new JobScheduler(
-        infrastructure.jobs,
-        infrastructure.clock,
-        infrastructure.ids,
-        [createNoopProbeJobType()],
-        infrastructure.events,
-        nodeSchedulerTimers,
-      );
-      await scheduler.recoverStale();
-    },
-    async startScheduler() {
-      scheduler?.start();
-      return scheduler ? { stop: () => scheduler!.stop() } : undefined;
-    },
-    async startWatcher({ infrastructure }) {
-      await infrastructure.watcher.start();
-      return infrastructure.watcher;
-    },
-    async openListener() { return null; },
-  });
+  const target = await validateRestoreTarget(operation.id, dependencies);
+  const runtime = await startBackupRestoreRuntime(target.workspaceRoot, dependencies);
   try {
-    const manifest = await runtime.infrastructure.backups.read(operation.id);
-    if (!manifest) throw new CliInputError("backup_not_found");
     const result = await restoreBackup({
       backups: runtime.infrastructure.backups,
       journal: runtime.infrastructure.journal,
       workspace: runtime.infrastructure.workspace,
       writes: runtime.application.authority,
     }, {
-      projectId: manifest.projectId,
+      projectId: target.manifest.projectId,
       backupId: operation.id,
     }, "cli-external");
     if (!result.ok) throw new CliInputError(result.error.code);

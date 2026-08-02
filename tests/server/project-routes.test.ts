@@ -73,6 +73,10 @@ function fixture() {
       async writeAtomic() {},
       async exists(path: ResolvedPath) { return files.has(path) || assets.has(path); },
       async deleteAtomic(path: ResolvedPath) { files.delete(path); assets.delete(path); },
+      async captureForMutation() { throw new Error("unused"); },
+      async publishCaptured() { throw new Error("unused"); },
+      async restoreCaptured() { throw new Error("unused"); },
+      async discardCapture() {},
       async readTree() { return [{ path: "index.html" as RelPath, name: "index.html", kind: "file" as const }]; },
       async stat() { return null; },
     },
@@ -88,6 +92,7 @@ function fixture() {
           rootTrack: null,
           diagnostics: [],
           sources: [{ path: "index.html" as RelPath, contentHash: contentHash("entry"), byteSize: 5 }],
+          references: [],
         };
       },
       async buildDocument(

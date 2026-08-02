@@ -6,6 +6,7 @@ import {
   prepareFileDeletion,
   type AbsolutePath,
   type CompositionModel,
+  type CompositionReference,
   type CompositeRequest,
   type ProjectRef,
   type ResolvedPath,
@@ -20,7 +21,7 @@ const ref: ProjectRef = {
   entry: "index.html" as RelPath,
 };
 
-function model(reference: string | null = null): CompositionModel {
+function model(references: CompositionReference[] = []): CompositionModel {
   return {
     project: {
       id: projectId,
@@ -35,7 +36,7 @@ function model(reference: string | null = null): CompositionModel {
     },
     scenes: [{
       id: "scene-1",
-      src: reference,
+      src: null,
       start: 0,
       duration: 4,
       trackIndex: 1,
@@ -50,17 +51,21 @@ function model(reference: string | null = null): CompositionModel {
     rootTrack: null,
     diagnostics: [],
     sources: [{ path: "index.html" as RelPath, contentHash: hash("1"), byteSize: 100 }],
+    references,
   };
 }
 
-function dependencies(options: { currentHash?: ContentHash | null; reference?: string | null } = {}) {
+function dependencies(options: {
+  currentHash?: ContentHash | null;
+  references?: CompositionReference[];
+} = {}) {
   return {
     workspace: {
       async readProjectRef() { return ref; },
       async resolve(_ref: ProjectRef, path: string) { return { ok: true as const, value: path as ResolvedPath }; },
       async readHash() { return options.currentHash === undefined ? hash("2") : options.currentHash; },
     },
-    composition: { async parseProject() { return model(options.reference); } },
+    composition: { async parseProject() { return model(options.references); } },
     journal: { async latestRevision() { return 4; } },
     hashContent: () => hash("f"),
   };
@@ -114,11 +119,33 @@ describe("prepareFileDeletion", () => {
   });
 
   it("rejects files still referenced as composition sources", async () => {
-    await expect(prepareFileDeletion(dependencies({ reference: "notes.txt" }), {
+    await expect(prepareFileDeletion(dependencies({
+      references: [{ path: "notes.txt" as RelPath, owner: "index.html" as RelPath }],
+    }), {
       projectId,
       path: "notes.txt" as RelPath,
       expectedContentHash: hash("2"),
     })).resolves.toMatchObject({ ok: false, error: { code: ErrorCode.ReferencedByComposition } });
+  });
+
+  it("rejects nested and root-track references without confusing equal basenames", async () => {
+    const references: CompositionReference[] = [
+      { owner: "compositions/scene.html" as RelPath, path: "assets/logo.svg" as RelPath },
+      { owner: "index.html" as RelPath, path: "assets/root.svg" as RelPath },
+      { owner: "compositions/scene.html" as RelPath, path: "compositions/logo.svg" as RelPath },
+    ];
+    for (const referenced of ["assets/logo.svg", "assets/root.svg", "compositions/logo.svg"] as RelPath[]) {
+      await expect(prepareFileDeletion(dependencies({ references }), {
+        projectId,
+        path: referenced,
+        expectedContentHash: hash("2"),
+      })).resolves.toMatchObject({ ok: false, error: { code: ErrorCode.ReferencedByComposition } });
+    }
+    await expect(prepareFileDeletion(dependencies({ references }), {
+      projectId,
+      path: "other/logo.svg" as RelPath,
+      expectedContentHash: hash("2"),
+    })).resolves.toMatchObject({ ok: true });
   });
 });
 

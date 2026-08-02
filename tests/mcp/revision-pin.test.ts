@@ -95,17 +95,52 @@ describe("revision-pinned MCP HTTP", () => {
     }
   });
 
-  it("delegates invalid JSON to the SDK parse-error ladder", async () => {
+  it("preserves the SDK media-type and parse-error ladder before exact-pin comparison", async () => {
     const http = createMcpHttpHandlers(createTransportRegistry());
-    const pinned = http.handlers.get("2025-06-18");
-    if (!pinned) throw new TypeError("missing pinned handler");
-    try {
-      const response = await post(pinned, "{invalid", "2025-11-25");
-      expect(response.status).toBe(400);
-      expect(parseResponse(await response.text())).toMatchObject({
-        id: null,
-        error: { code: -32700 },
+    const entry = http.handlers.get("");
+    if (!entry) throw new TypeError("missing entry handler");
+    const request = (body: string, requestedRevision: string, contentType?: string) => {
+      const headers = new Headers({ accept: "application/json, text/event-stream" });
+      headers.set("MCP-Protocol-Version", requestedRevision);
+      if (contentType) headers.set("Content-Type", contentType);
+      return new Request("http://vidcom.test/api/mcp", {
+        method: "POST",
+        headers,
+        body: new TextEncoder().encode(body),
       });
+    };
+    const shape = async (response: Response) => ({
+      status: response.status,
+      message: parseResponse(await response.text()),
+    });
+    try {
+      for (const pinnedRevision of ["2025-06-18", "2026-07-28"]) {
+        const pinned = http.handlers.get(pinnedRevision);
+        if (!pinned) throw new TypeError(`missing ${pinnedRevision} handler`);
+        const mismatchRevision = pinnedRevision === "2026-07-28" ? "2025-11-25" : "2026-07-28";
+        for (const requestedRevision of [pinnedRevision, mismatchRevision]) {
+          for (const contentType of [undefined, "text/plain"] as const) {
+            const body = JSON.stringify({ jsonrpc: "2.0", id: 7, method: "tools/list", params: {} });
+            const entryShape = await shape(await entry(request(body, requestedRevision, contentType)));
+            const pinnedShape = await shape(await pinned(request(body, requestedRevision, contentType)));
+            const expected = {
+              status: 415,
+              message: { id: null, error: { code: -32000 } },
+            };
+            expect(entryShape).toMatchObject(expected);
+            expect(pinnedShape).toMatchObject(expected);
+          }
+
+          const entryShape = await shape(await entry(request("{invalid", requestedRevision, "application/json")));
+          const pinnedShape = await shape(await pinned(request("{invalid", requestedRevision, "application/json")));
+          const expected = {
+            status: 400,
+            message: { id: null, error: { code: -32700 } },
+          };
+          expect(entryShape).toMatchObject(expected);
+          expect(pinnedShape).toMatchObject(expected);
+        }
+      }
     } finally {
       await http.close();
     }

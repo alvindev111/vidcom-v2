@@ -1,8 +1,8 @@
 import { createHash, randomUUID } from "node:crypto";
-import path from "node:path";
 
 import {
   CompositionHf,
+  LargePreviousContentStore,
   LegacyHyperframesProjects,
   MutationJournal,
   SqliteJobStore,
@@ -97,7 +97,8 @@ export function createInfrastructure(config: CompositionRootConfig) {
   };
   const database = openVidcomDatabase(config.appDataRoot);
   const workspace = new WorkspaceFs(config.workspaceRoot);
-  const journal = new MutationJournal(database, clock);
+  const largeContent = new LargePreviousContentStore(config.appDataRoot);
+  const journal = new MutationJournal(database, clock, largeContent);
   const lease = new WorkspaceLease(database, clock, ids);
   const jobs = new SqliteJobStore(database, clock);
   const events = new SqliteEventOutbox(database, clock);
@@ -133,17 +134,7 @@ export function createInfrastructure(config: CompositionRootConfig) {
     journal,
   );
   const resolveProjectRef = async (projectId: ProjectId): Promise<ProjectRef | null> => {
-    const live = await workspace.readProjectRef(projectId);
-    if (live) return live;
-    const registration = await journal.findProjectRegistration(projectId);
-    return registration
-      ? {
-          id: projectId,
-          slug: registration.slug,
-          root: path.join(registration.workspaceRoot, registration.slug) as AbsolutePath,
-          entry: "index.html" as ProjectRef["entry"],
-        }
-      : null;
+    return workspace.readProjectRef(projectId);
   };
   return {
     ...config,
@@ -152,6 +143,7 @@ export function createInfrastructure(config: CompositionRootConfig) {
     ids,
     database,
     workspace,
+    largeContent,
     journal,
     lease,
     jobs,

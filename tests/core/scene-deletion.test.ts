@@ -57,6 +57,7 @@ function inputs(scenes: SceneDto[], overrides: Partial<DeletionInputs> = {}): De
       { path: "index.html" as RelPath, contentHash: hash("1"), byteSize: 100 },
       ...sourcePaths.map((path, index) => ({ path: path as RelPath, contentHash: hash(String(index + 2)), byteSize: 50 })),
     ],
+    references: [],
   };
   return {
     model,

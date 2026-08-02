@@ -148,6 +148,7 @@ describe("API response contracts", () => {
       "auth_required",
       "backup_expired",
       "backup_failed",
+      "committed_response_error",
       "credential_invalid",
       "duplicate_mutation_target",
       "duration_overflow",

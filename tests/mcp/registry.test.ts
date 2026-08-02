@@ -127,7 +127,7 @@ describe("ToolRegistry definitions", () => {
       annotations: annotationsForLevel("read"),
     });
     expect(tool.description).toContain("projectId");
-    expect(tool.projectIdOf({})).toBeNull();
+    expect(tool.projectIdOf({ limit: 20 })).toBeNull();
   });
 
   it.each([
@@ -204,20 +204,28 @@ const request = {
   requestInput: async (): Promise<never> => { throw new Error("input required"); },
 };
 
-function invokingRegistry(options: { owned?: boolean; records: ToolAuditEntry[] }): ToolRegistry {
+function invokingRegistry(options: {
+  owned?: boolean;
+  records: ToolAuditEntry[];
+  revision?: number;
+  now?: () => Date;
+}): ToolRegistry {
   const audit = new ToolAuditService(
     { record: async (entry) => { options.records.push(entry); } },
     { now: () => new Date("2026-08-02T00:00:00.000Z") },
     { warn: () => undefined, error: () => undefined },
     { increment: () => undefined, observeMilliseconds: () => undefined },
-    { isJournalOwned: async () => options.owned ?? false },
+    {
+      isJournalOwned: async () => options.owned ?? false,
+      latestRevision: async () => options.revision ?? null,
+    },
   );
   return new ToolRegistry({
     audit,
     approvals: { request: null as unknown as ApprovalService["request"] },
   }, {
     newInvocationId: () => "invocation-registry-1",
-    now: () => new Date("2026-08-02T00:00:00.000Z"),
+    now: options.now ?? (() => new Date("2026-08-02T00:00:00.000Z")),
   });
 }
 
@@ -235,7 +243,15 @@ describe("ToolRegistry invoke pipeline", () => {
       .resolves.toMatchObject({ ok: false, error: { code: "schema_invalid", field: "input" } });
     expect(handlerCalls).toBe(0);
     expect(records).toHaveLength(1);
-    expect(records[0]).toMatchObject({ tool: "save_file", outcome: "error", errorCode: "schema_invalid" });
+    expect(records[0]).toMatchObject({
+      tool: "save_file",
+      outcome: "error",
+      errorCode: "schema_invalid",
+      invokedAt: "2026-08-02T00:00:00.000Z",
+      durationMs: 0,
+      revisionBefore: null,
+      revisionAfter: null,
+    });
   });
 
   it("forwards the exact prepared WriteInvocation and requires durable ownership on success", async () => {
@@ -265,13 +281,19 @@ describe("ToolRegistry invoke pipeline", () => {
       projectId: "project-1",
       protocolVersion: "2025-06-18",
       credentialId: "credential-1",
+      revisionBefore: 0,
     });
     expect(records).toEqual([]);
   });
 
   it("records read success directly and rejects an invalid handler output", async () => {
     const records: ToolAuditEntry[] = [];
-    const tools = invokingRegistry({ records });
+    let nowCall = 0;
+    const tools = invokingRegistry({
+      records,
+      revision: 4,
+      now: () => new Date(`2026-08-02T00:00:00.${nowCall++ === 0 ? "000" : "025"}Z`),
+    });
     tools.register({
       ...definition("list_scenes", "read"),
       handler: async () => ({ ok: true, value: { value: 42 } as unknown as { value: string } }),
@@ -280,7 +302,45 @@ describe("ToolRegistry invoke pipeline", () => {
     await expect(tools.invoke("list_scenes", { projectId: "project-1" }, request))
       .resolves.toMatchObject({ ok: false, error: { code: "internal" } });
     expect(records).toHaveLength(1);
-    expect(records[0]).toMatchObject({ tool: "list_scenes", outcome: "error", errorCode: "internal" });
+    expect(records[0]).toMatchObject({
+      tool: "list_scenes",
+      outcome: "error",
+      errorCode: "internal",
+      invokedAt: "2026-08-02T00:00:00.000Z",
+      durationMs: 25,
+      revisionBefore: 4,
+      revisionAfter: 4,
+    });
+  });
+
+  it("reports malformed output as committed_response_error when the journal already owns success", async () => {
+    const records: ToolAuditEntry[] = [];
+    const tools = invokingRegistry({ owned: true, records });
+    tools.register({
+      ...definition("save_file", "write"),
+      handler: async () => ({
+        ok: true,
+        value: {
+          value: 42,
+          envelope: { projectRevision: 7, entityRevision: 3 },
+        } as unknown as { value: string },
+      }),
+    });
+
+    await expect(tools.invoke("save_file", { projectId: "project-1" }, request)).resolves.toMatchObject({
+      ok: false,
+      error: {
+        code: "committed_response_error",
+        message: expect.stringContaining("do not retry"),
+        details: {
+          committed: true,
+          invocationId: "invocation-registry-1",
+          projectRevision: 7,
+          entityRevision: 3,
+        },
+      },
+    });
+    expect(records).toHaveLength(0);
   });
 
   it("does not report write success when no journal owns its invocation", async () => {
@@ -291,6 +351,43 @@ describe("ToolRegistry invoke pipeline", () => {
     await expect(tools.invoke("save_file", { projectId: "project-1" }, request)).resolves.toMatchObject({
       ok: false,
       error: { code: "internal", message: expect.stringContaining("without durable journal audit ownership") },
+    });
+  });
+
+  it("records exactly one caller-owned terminal audit before rethrowing modern input-required", async () => {
+    const records: ToolAuditEntry[] = [];
+    const tools = invokingRegistry({ owned: false, records });
+    tools.register({
+      ...definition("delete_file", "destructive"),
+      handler: async (context) => context.requestInput({
+        message: "Approve deletion",
+        requestState: "approval-request-1",
+        schema: { type: "object", properties: {}, additionalProperties: false },
+      }),
+    });
+    const inputRequest = {
+      ...request,
+      requestInput: async (input: ConstructorParameters<typeof InputRequiredSignal>[0]): Promise<never> => {
+        throw new InputRequiredSignal(input);
+      },
+    };
+
+    await expect(tools.invoke("delete_file", { projectId: "project-1" }, inputRequest))
+      .rejects.toMatchObject({
+        name: "InputRequiredSignal",
+        request: { requestState: "approval-request-1" },
+      });
+    expect(records).toHaveLength(1);
+    expect(records[0]).toMatchObject({
+      tool: "delete_file",
+      level: "destructive",
+      outcome: "error",
+      errorCode: "approval_required",
+      credentialId: "credential-1",
+      detail: {
+        invocationId: "invocation-registry-1",
+        requestState: "approval-request-1",
+      },
     });
   });
 });
@@ -362,7 +459,7 @@ describe("complete tool descriptor contract", () => {
               "openWorldHint": false,
               "readOnlyHint": false,
             },
-            "description": "Create one scene source, mount it in the entry composition, and create its narration sidecar atomically. Requires the current entry-file expectedContentHash; stale or missing preconditions do not write.",
+            "description": "Use when adding one new mounted scene with a source file and narration sidecar. Do not use to edit an existing scene or save an arbitrary source file. Preconditions: entry-file expectedContentHash must be the current entry-composition hash from get_project_context or read_composition. Side effects: atomically creates the scene source and narration, updates the entry composition and root duration, and commits one revision. Errors/recovery: on write_conflict refresh context and re-plan; on recovery_required stop writes and recover; committed_response_error means the mutation committed, so do not retry it.",
             "level": "write",
             "name": "create_scene",
             "title": "Create a scene",
@@ -374,7 +471,7 @@ describe("complete tool descriptor contract", () => {
               "openWorldHint": false,
               "readOnlyHint": false,
             },
-            "description": "Delete one allowlisted, unreferenced project-relative source after exact content-hash planning and approval. Rejects protected or composition-referenced files; publishes a verified backup and returns deleted path, revision envelope, and backupId.",
+            "description": "Use when permanently removing one allowlisted, unreferenced project-relative source. Do not use for protected files, referenced sources, directories, or scene deletion. Preconditions: path and expectedContentHash come from read_composition or current project context; omit grantId to create an approval request, then retry once with the issued grantId. Side effects: after approval, atomically deletes the file, publishes a verified backup, consumes the grant, commits one destructive revision, and returns backupId with the revision envelope. Errors/recovery: keep the file on referenced_by_composition; re-read after write_conflict; request new approval after invalid or expired approval; recover on recovery_required; never retry committed_response_error.",
             "level": "destructive",
             "name": "delete_file",
             "title": "Delete an unreferenced source file",
@@ -386,7 +483,7 @@ describe("complete tool descriptor contract", () => {
               "openWorldHint": false,
               "readOnlyHint": false,
             },
-            "description": "Plan and delete one scene atomically, including its mount, unique source, narration, preview settings, verified backup, and root duration. Requires expectedRevision and an issued grantId; without one, creates an approval request and returns input-required/approval_required for retry.",
+            "description": "Use when permanently removing one scene, its mount, unique source, narration, and preview settings with a verified backup. Do not use to hide, reorder, or edit a scene, or when shared references must remain. Preconditions: sceneId and expectedRevision come from current project context; omit grantId to create an approval request, then retry once with the issued grantId. Side effects: after approval, atomically deletes owned scene artifacts, updates root duration, publishes a backup, consumes the grant, and commits one destructive revision. Errors/recovery: refresh context after write_conflict; request new approval after approval_invalid or approval_expired; on recovery_required stop and recover; never retry committed_response_error.",
             "level": "destructive",
             "name": "delete_scene",
             "title": "Delete a scene",
@@ -398,7 +495,7 @@ describe("complete tool descriptor contract", () => {
               "openWorldHint": false,
               "readOnlyHint": true,
             },
-            "description": "Read the bounded project, compact scenes, file hashes, entity/project revisions, diagnostics, preview settings, and recovery gate needed to plan a safe next edit.",
+            "description": "Use when planning an edit and you need compact scenes, canonical file hashes, revisions, diagnostics, preview settings, and the recovery gate. Do not use when you need full composition source; use read_composition instead. Preconditions: projectId comes from list_projects; this read has no mutation precondition. Side effects: read-only; no project files or revisions are changed. Errors/recovery: refresh list_projects after project_not_found; when recovery is blocked, stop mutations and complete the configured recovery flow before retrying.",
             "level": "read",
             "name": "get_project_context",
             "title": "Get project editing context",
@@ -410,7 +507,7 @@ describe("complete tool descriptor contract", () => {
               "openWorldHint": false,
               "readOnlyHint": true,
             },
-            "description": "List available VidCom projects with dimensions, duration, current project revision, and write-recovery status. Use projectId from this result for project-scoped tools.",
+            "description": "Use when you need to discover a VidCom projectId and its summary or write-recovery status. Do not use for scene details, source content, or mutation preconditions. Preconditions: none; use limit/cursor to page and a returned projectId for project-scoped tools. Side effects: read-only; no project files or revisions are changed. Errors/recovery: resolve workspace or project read errors before retrying; if recovery is blocked, complete the configured recovery flow before writes.",
             "level": "read",
             "name": "list_projects",
             "title": "List VidCom projects",
@@ -422,7 +519,7 @@ describe("complete tool descriptor contract", () => {
               "openWorldHint": false,
               "readOnlyHint": true,
             },
-            "description": "List compact scene timing, source hash, narration-stale state, current project revision, and recovery gate without loading the full project context.",
+            "description": "Use when you need compact scene timing, source hashes and availability diagnostics, narration state, project revision, and recovery status without full source content. Do not use for editing source text or reading complete composition markup. Preconditions: projectId comes from list_projects; this read has no mutation precondition. Side effects: read-only; no scene or revision is changed. Errors/recovery: refresh list_projects after project_not_found; when recovery is blocked, stop mutations and complete recovery before retrying.",
             "level": "read",
             "name": "list_scenes",
             "title": "List project scenes",
@@ -434,7 +531,7 @@ describe("complete tool descriptor contract", () => {
               "openWorldHint": false,
               "readOnlyHint": true,
             },
-            "description": "Read one allowlisted project-relative composition source with its content hash and recovery gate. Rejects paths outside the project, disallowed assets, and files over the source-size limit.",
+            "description": "Use when you need one allowlisted project-relative composition source and its current content hash before a source write. Do not use for binary assets, external paths, or project-wide context. Preconditions: projectId comes from list_projects and path comes from project context or another trusted project-relative reference; no expected hash is required. Side effects: read-only; no source file or revision is changed. Errors/recovery: correct path_invalid, path_outside_project, asset_not_allowed, not_found, or source-size limit errors; if recovery is blocked, recover the project before writing.",
             "level": "read",
             "name": "read_composition",
             "title": "Read composition source",
@@ -446,7 +543,7 @@ describe("complete tool descriptor contract", () => {
               "openWorldHint": false,
               "readOnlyHint": false,
             },
-            "description": "Save one allowlisted project-relative text/composition file with expectedContentHash. Protected project metadata and oversized source are rejected; returns the new content hash and write envelope.",
+            "description": "Use when replacing the complete content of one allowlisted project-relative text or composition source. Do not use for binary assets, oversized content, or targeted text edits better handled by set_text. Protected project metadata is rejected. Preconditions: path and expectedContentHash come from read_composition or current project context; the hash is for that exact file. Side effects: atomically replaces that source file, returns its new content hash, and commits one revision. Errors/recovery: correct path or size errors; on write_conflict re-read and re-plan; on recovery_required recover first; never retry a committed_response_error mutation.",
             "level": "write",
             "name": "save_file",
             "title": "Save composition source",
@@ -458,7 +555,7 @@ describe("complete tool descriptor contract", () => {
               "openWorldHint": false,
               "readOnlyHint": false,
             },
-            "description": "Update a scene start, duration, or track index using the current entry-file expectedContentHash. Returns the updated compact scene, project, hashes, revisions, and diagnostics; invalid timing or stale hashes do not write.",
+            "description": "Use when changing at least one existing scene start, duration, or track index. Do not use for source text, scene creation, or an empty timing patch. Preconditions: sceneId and expectedContentHash must come from current project context; the hash is for the entry composition. Side effects: atomically updates scene timing and root duration and commits one revision. Errors/recovery: fix schema_invalid timing; on write_conflict refresh context and re-plan; on recovery_required recover first; never retry a committed_response_error mutation.",
             "level": "write",
             "name": "set_scene_timing",
             "title": "Set scene timing",
@@ -470,7 +567,7 @@ describe("complete tool descriptor contract", () => {
               "openWorldHint": false,
               "readOnlyHint": false,
             },
-            "description": "Update one text element with the source file expectedContentHash. If the scene has narration, marks its sidecar stale in the same revision and returns narrationStale=true; it does not run TTS.",
+            "description": "Use when replacing the text of one existing script element in an allowlisted scene source. Do not use to replace arbitrary markup, create elements, or run TTS. Preconditions: file, elementId, and expectedContentHash come from current project context or read_composition; the hash is for that source file. Side effects: atomically updates the source and, only when narration exists, marks its sidecar stale and returns narrationStale=true in the same revision; it does not run TTS. Errors/recovery: on not_found or write_conflict refresh the source and re-plan; on recovery_required recover first; never retry a committed_response_error mutation.",
             "level": "write",
             "name": "set_text",
             "title": "Set scene text",

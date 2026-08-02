@@ -8,6 +8,8 @@ import {
   type FileContent,
   type FileNode,
   type FileStat,
+  type JournalId,
+  type MutationCapture,
   type PathPurpose,
   type PathRejection,
   type ProjectRef,
@@ -21,6 +23,12 @@ import {
 import { writeAtomic } from "./atomic-write";
 import { deleteAtomic } from "./atomic-delete";
 import { resolveProjectPath } from "./resolve";
+import {
+  captureForMutation,
+  discardCapture,
+  publishCaptured,
+  restoreCaptured,
+} from "./mutation-capture";
 
 const IGNORED_TREE_ENTRIES = new Set(["node_modules", ".git", ".hyperframes"]);
 
@@ -160,6 +168,31 @@ export class WorkspaceFs implements WorkspacePort {
   /** Atomically removes one resolved file and fsyncs its containing directory. */
   deleteAtomic(pathname: ResolvedPath): Promise<void> {
     return deleteAtomic(pathname);
+  }
+
+  /** Moves the live target into a journal-owned rollback slot and verifies its hash at that boundary. */
+  captureForMutation(
+    pathname: ResolvedPath,
+    expectedHash: ContentHash | null,
+    journalId: JournalId,
+    ordinal: number,
+  ) {
+    return captureForMutation(pathname, expectedHash, journalId, ordinal);
+  }
+
+  /** Publishes bytes without replacing a target created after capture. */
+  publishCaptured(capture: MutationCapture, content: string | Uint8Array | null): Promise<boolean> {
+    return publishCaptured(capture, content);
+  }
+
+  /** Restores captured bytes only while the live target still matches the landed mutation hash. */
+  restoreCaptured(capture: MutationCapture, landedHash: ContentHash | null): Promise<boolean> {
+    return restoreCaptured(capture, landedHash);
+  }
+
+  /** Removes a terminal mutation's rollback slot. */
+  discardCapture(capture: MutationCapture): Promise<void> {
+    return discardCapture(capture);
   }
 
   /** Reads a deterministic project-relative tree without following directory symlinks. */

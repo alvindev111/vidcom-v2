@@ -5,17 +5,25 @@ import path from "node:path";
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-import type { ContentHash, ProjectId, RelPath } from "@vidcom/contracts";
+import {
+  CreateSceneInputSchema,
+  ListProjectsInputSchema,
+  type ContentHash,
+  type ProjectId,
+  type RelPath,
+} from "@vidcom/contracts";
 import {
   ApprovalService,
   createScene,
   DEFAULT_PREVIEW_SETTINGS,
   deleteScene,
+  prepareFileDeletion,
   prepareSceneDeletion,
   reconcileCompositeMutation,
   restoreBackup,
   saveSourceFile,
   serializePreviewSettings,
+  ToolAuditService,
   WriteAuthority,
   type AbsolutePath,
   type PendingToolAudit,
@@ -28,9 +36,11 @@ import {
   initializeDatabase,
   MutationJournal,
   SqliteApprovalGrantStore,
+  SqliteToolAuditRepository,
   WorkspaceFs,
   WorkspaceLease,
 } from "@vidcom/adapter";
+import { ToolRegistry } from "@vidcom/mcp";
 
 import { createFixedClock, createSequentialIdPort } from "../support/deterministic";
 import { dbAll, dbOne, dbRun } from "../support/database";
@@ -72,6 +82,7 @@ function audit(tool: string, level: "write" | "destructive"): PendingToolAudit {
     detail: { sceneId: "scene-1" },
     credentialId: "credential-test",
     invokedAt: now,
+    revisionBefore: 0,
   };
 }
 
@@ -155,6 +166,18 @@ function authorityWithFailure(options: { writePath?: string; deletePath?: string
       if (options.deletePath && target.endsWith(options.deletePath)) throw new Error("injected delete failure");
       await workspace.deleteAtomic(target);
     },
+    captureForMutation: workspace.captureForMutation.bind(workspace),
+    async publishCaptured(capture, content) {
+      if (content === null && options.deletePath && capture.target.endsWith(options.deletePath)) {
+        throw new Error("injected delete failure");
+      }
+      if (content !== null && options.writePath && capture.target.endsWith(options.writePath)) {
+        throw new Error("injected write failure");
+      }
+      return workspace.publishCaptured(capture, content);
+    },
+    restoreCaptured: workspace.restoreCaptured.bind(workspace),
+    discardCapture: workspace.discardCapture.bind(workspace),
     readTree: workspace.readTree.bind(workspace),
     stat: workspace.stat.bind(workspace),
   };
@@ -177,6 +200,28 @@ afterEach(async () => {
 });
 
 describe("Phase J use cases with real SQLite and filesystem", () => {
+  it("denies deletion of a canonical asset referenced relatively by a nested scene", async () => {
+    await mkdir(path.join(projectRoot, "assets"));
+    await writeFile(path.join(projectRoot, "assets/logo.svg"), "<svg></svg>");
+    await writeFile(path.join(projectRoot, "compositions/scene-1.html"), `
+      <section data-composition-id="scene-1">
+        <img src="../assets/logo.svg" />
+      </section>
+    `);
+    const resolved = await workspace.resolve(ref, "assets/logo.svg" as RelPath, "write-source");
+    if (!resolved.ok) throw new Error("asset path did not resolve");
+    const expectedContentHash = await workspace.readHash(resolved.value);
+    if (!expectedContentHash) throw new Error("asset hash was missing");
+    await expect(prepareFileDeletion({ workspace, composition, journal, hashContent }, {
+      projectId,
+      path: "assets/logo.svg" as RelPath,
+      expectedContentHash,
+    })).resolves.toMatchObject({
+      ok: false,
+      error: { code: "referenced_by_composition" },
+    });
+  });
+
   it("commits create_scene atomically and forwards composite plus one-step tool audits", async () => {
     const created = await createScene({ workspace, composition, journal, authority, clock }, {
       projectId,
@@ -201,6 +246,99 @@ describe("Phase J use cases with real SQLite and filesystem", () => {
     expect(dbOne(database, `SELECT revision_id AS revisionId FROM audit_entry
       WHERE action = 'tool:save_file'`)).toEqual({ revisionId: 2 });
     expect(dbOne(database, "SELECT kind FROM revision WHERE id = 2")).toEqual({ kind: "file" });
+  });
+
+  it("rejects zero, negative and overflowing create_scene timing before filesystem or SQLite mutation", async () => {
+    for (const duration of [0, -1]) {
+      await expect(createScene({ workspace, composition, journal, authority, clock }, {
+        projectId,
+        title: "Invalid timing",
+        duration,
+        expectedContentHash: hashContent(indexSource),
+      }, "agent")).resolves.toMatchObject({ ok: false, error: { code: "timing_invalid" } });
+    }
+    const huge = Number.MAX_VALUE / 2;
+    const overflowSource = `
+      <main data-composition-id="root" data-duration="${Number.MAX_VALUE}">
+        <div data-composition-id="scene-1" data-start="${huge}" data-duration="${huge}" data-track-index="1"></div>
+      </main>
+    `;
+    await writeFile(path.join(projectRoot, "index.html"), overflowSource);
+    await expect(createScene({ workspace, composition, journal, authority, clock }, {
+      projectId,
+      title: "Overflow timing",
+      duration: Number.MAX_VALUE,
+      expectedContentHash: hashContent(overflowSource),
+    }, "agent")).resolves.toMatchObject({ ok: false, error: { code: "duration_overflow" } });
+
+    expect(await missing(path.join(projectRoot, "compositions/scene-2.html"))).toBe(true);
+    expect(await missing(path.join(projectRoot, "narration/scene-2.json"))).toBe(true);
+    expect(dbOne(database, "SELECT COUNT(*) AS count FROM mutation_journal")).toEqual({ count: 0 });
+    expect(dbOne(database, "SELECT COUNT(*) AS count FROM revision")).toEqual({ count: 0 });
+  });
+
+  it("reports committed_response_error without disguising a committed malformed write response", async () => {
+    const toolAudit = new ToolAuditService(
+      new SqliteToolAuditRepository(database),
+      clock,
+      { warn() {}, error() {} },
+      { increment() {}, observeMilliseconds() {} },
+      journal,
+    );
+    const registry = new ToolRegistry({
+      audit: toolAudit,
+      approvals: { request: async () => "unused" },
+    }, {
+      newInvocationId: () => "invocation-malformed-create",
+      now: () => new Date(now),
+    });
+    registry.register({
+      name: "malformed_create_scene",
+      title: "Malformed create scene",
+      level: "write",
+      description: "Test-only committed response finalization seam.",
+      input: CreateSceneInputSchema,
+      output: ListProjectsInputSchema,
+      annotations: {
+        readOnlyHint: false,
+        destructiveHint: false,
+        idempotentHint: false,
+        openWorldHint: false,
+      },
+      availableInLegacy: true,
+      projectIdOf: (input) => input.projectId as ProjectId,
+      handler: async (context, input) => {
+        const created = await createScene({ workspace, composition, journal, authority, clock }, {
+          projectId: input.projectId as ProjectId,
+          title: input.title,
+          expectedContentHash: input.expectedContentHash as ContentHash,
+        }, "agent", context.writeInvocation);
+        return created.ok
+          ? { ok: true as const, value: created.value as unknown as { limit: number; cursor?: string } }
+          : created;
+      },
+    });
+
+    await expect(registry.invoke("malformed_create_scene", {
+      projectId,
+      title: "Committed malformed response",
+      expectedContentHash: hashContent(indexSource),
+    }, {
+      era: "modern",
+      protocolVersion: "2026-07-28",
+      credentialId: "credential-test",
+      requestInput: async (): Promise<never> => { throw new Error("unused"); },
+    })).resolves.toMatchObject({
+      ok: false,
+      error: {
+        code: "committed_response_error",
+        details: { committed: true, projectRevision: 1, invocationId: "invocation-malformed-create" },
+      },
+    });
+    expect(await missing(path.join(projectRoot, "compositions/scene-2.html"))).toBe(false);
+    expect(dbOne(database, "SELECT status FROM mutation_journal WHERE id = 1")).toEqual({ status: "committed" });
+    expect(dbOne(database, `SELECT outcome, revision_id AS revisionId FROM audit_entry
+      WHERE action = 'tool:malformed_create_scene'`)).toEqual({ outcome: "ok", revisionId: 1 });
   });
 
   it("rolls create_scene back after a mid-step filesystem failure without revision or audit", async () => {

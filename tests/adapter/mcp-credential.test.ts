@@ -175,6 +175,7 @@ describe("McpCredentialService administration", () => {
     const summaries = await service.list();
     expect(summaries.map(({ id: credentialId }) => credentialId))
       .toEqual([original.id, replacement.id]);
+    expect(summaries.every((summary) => !("secretHash" in summary))).toBe(true);
     expect(JSON.stringify(summaries)).not.toContain(original.secret);
     expect(JSON.stringify(summaries)).not.toContain(replacement.secret);
   });

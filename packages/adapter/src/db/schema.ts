@@ -44,6 +44,7 @@ export const mutationJournal = sqliteTable("mutation_journal", {
   entity: text(),
   fromHash: text("from_hash"),
   previousContent: blob("previous_content", { mode: "buffer" }),
+  previousObjectHash: text("previous_object_hash"),
   previousByteSize: integer("previous_byte_size").notNull().default(0),
   stagedTmpPath: text("staged_tmp_path"),
   stagedTargetPath: text("staged_target_path"),
@@ -184,7 +185,11 @@ export const mutationStep = sqliteTable("mutation_step", {
   fromHash: text("from_hash"),
   toHash: text("to_hash"),
   previousContent: blob("previous_content", { mode: "buffer" }),
+  previousObjectHash: text("previous_object_hash"),
   previousByteSize: integer("previous_byte_size").notNull().default(0),
+  rollbackPath: text("rollback_path"),
+  capturedHash: text("captured_hash"),
+  captureState: text("capture_state", { enum: ["pending", "captured"] }).notNull().default("pending"),
   status: text({ enum: ["pending", "written", "rolled_back"] }).notNull().default("pending"),
 }, (table) => [
   uniqueIndex("uq_step_journal_ordinal").on(table.journalId, table.ordinal),
@@ -192,6 +197,8 @@ export const mutationStep = sqliteTable("mutation_step", {
   check("ck_step_kind", sql`${table.kind} IN ('write', 'delete', 'entity')`),
   check("ck_step_status", sql`${table.status} IN ('pending', 'written', 'rolled_back')`),
   check("ck_step_previous_size", sql`${table.previousByteSize} >= 0`),
+  check("ck_step_capture_state", sql`${table.captureState} IN ('pending', 'captured')`),
+  check("ck_step_capture_shape", sql`(${table.captureState} = 'pending' OR ((${table.previousContent} IS NULL AND ${table.previousObjectHash} IS NULL AND ${table.capturedHash} IS NULL) OR ((${table.previousContent} IS NOT NULL OR ${table.previousObjectHash} IS NOT NULL) AND ${table.capturedHash} IS ${table.fromHash})))`),
   check("ck_step_shape", sql`((${table.kind} = 'entity' AND ${table.path} IS NULL AND ${table.entity} IS NOT NULL) OR (${table.kind} IN ('write', 'delete') AND ${table.path} IS NOT NULL AND ${table.entity} IS NULL))`),
 ]);
 
@@ -205,6 +212,7 @@ export const revisionStep = sqliteTable("revision_step", {
   fromHash: text("from_hash"),
   toHash: text("to_hash"),
   previousContent: blob("previous_content", { mode: "buffer" }),
+  previousObjectHash: text("previous_object_hash"),
   byteSize: integer("byte_size").notNull().default(0),
   backupId: text("backup_id").references(() => backupManifest.id),
 }, (table) => [
@@ -218,6 +226,7 @@ export const revisionStep = sqliteTable("revision_step", {
 export const revisionBlob = sqliteTable("revision_blob", {
   revisionId: integer("revision_id").primaryKey().references(() => revision.id, { onDelete: "cascade" }),
   previousContent: blob("previous_content", { mode: "buffer" }),
+  previousObjectHash: text("previous_object_hash"),
   byteSize: integer("byte_size").notNull(),
 }, (table) => [check("ck_revision_blob_size", sql`${table.byteSize} >= 0`)]);
 

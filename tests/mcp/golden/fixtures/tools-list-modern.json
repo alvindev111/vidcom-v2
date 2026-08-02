@@ -3,7 +3,7 @@
     {
       "name": "create_scene",
       "title": "Create a scene",
-      "description": "Create one scene source, mount it in the entry composition, and create its narration sidecar atomically. Requires the current entry-file expectedContentHash; stale or missing preconditions do not write.",
+      "description": "Use when adding one new mounted scene with a source file and narration sidecar. Do not use to edit an existing scene or save an arbitrary source file. Preconditions: entry-file expectedContentHash must be the current entry-composition hash from get_project_context or read_composition. Side effects: atomically creates the scene source and narration, updates the entry composition and root duration, and commits one revision. Errors/recovery: on write_conflict refresh context and re-plan; on recovery_required stop writes and recover; committed_response_error means the mutation committed, so do not retry it.",
       "inputSchema": {
         "type": "object",
         "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -83,8 +83,15 @@
                 "maximum": 9007199254740991
               },
               "fileContentHash": {
-                "type": "string",
-                "pattern": "^sha256:[0-9a-f]{64}$"
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "pattern": "^sha256:[0-9a-f]{64}$"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
               },
               "narrationStale": {
                 "type": "boolean"
@@ -183,7 +190,10 @@
               "fileHashes": {
                 "type": "object",
                 "propertyNames": {
-                  "type": "string"
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 4096,
+                  "pattern": "^(?!\\/)(?![A-Za-z]:)(?!.*\\\\)(?!.*\\0)(?!.*\\/\\/)(?!\\.{1,2}(?:\\/|$))(?!.*\\/\\.{1,2}(?:\\/|$)).+$"
                 },
                 "additionalProperties": {
                   "type": "string",
@@ -293,7 +303,7 @@
     {
       "name": "delete_file",
       "title": "Delete an unreferenced source file",
-      "description": "Delete one allowlisted, unreferenced project-relative source after exact content-hash planning and approval. Rejects protected or composition-referenced files; publishes a verified backup and returns deleted path, revision envelope, and backupId.",
+      "description": "Use when permanently removing one allowlisted, unreferenced project-relative source. Do not use for protected files, referenced sources, directories, or scene deletion. Preconditions: path and expectedContentHash come from read_composition or current project context; omit grantId to create an approval request, then retry once with the issued grantId. Side effects: after approval, atomically deletes the file, publishes a verified backup, consumes the grant, commits one destructive revision, and returns backupId with the revision envelope. Errors/recovery: keep the file on referenced_by_composition; re-read after write_conflict; request new approval after invalid or expired approval; recover on recovery_required; never retry committed_response_error.",
       "inputSchema": {
         "type": "object",
         "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -363,7 +373,10 @@
               "fileHashes": {
                 "type": "object",
                 "propertyNames": {
-                  "type": "string"
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 4096,
+                  "pattern": "^(?!\\/)(?![A-Za-z]:)(?!.*\\\\)(?!.*\\0)(?!.*\\/\\/)(?!\\.{1,2}(?:\\/|$))(?!.*\\/\\.{1,2}(?:\\/|$)).+$"
                 },
                 "additionalProperties": {
                   "type": "string",
@@ -478,7 +491,7 @@
     {
       "name": "delete_scene",
       "title": "Delete a scene",
-      "description": "Plan and delete one scene atomically, including its mount, unique source, narration, preview settings, verified backup, and root duration. Requires expectedRevision and an issued grantId; without one, creates an approval request and returns input-required/approval_required for retry.",
+      "description": "Use when permanently removing one scene, its mount, unique source, narration, and preview settings with a verified backup. Do not use to hide, reorder, or edit a scene, or when shared references must remain. Preconditions: sceneId and expectedRevision come from current project context; omit grantId to create an approval request, then retry once with the issued grantId. Side effects: after approval, atomically deletes owned scene artifacts, updates root duration, publishes a backup, consumes the grant, and commits one destructive revision. Errors/recovery: refresh context after write_conflict; request new approval after approval_invalid or approval_expired; on recovery_required stop and recover; never retry committed_response_error.",
       "inputSchema": {
         "type": "object",
         "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -601,7 +614,10 @@
               "fileHashes": {
                 "type": "object",
                 "propertyNames": {
-                  "type": "string"
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 4096,
+                  "pattern": "^(?!\\/)(?![A-Za-z]:)(?!.*\\\\)(?!.*\\0)(?!.*\\/\\/)(?!\\.{1,2}(?:\\/|$))(?!.*\\/\\.{1,2}(?:\\/|$)).+$"
                 },
                 "additionalProperties": {
                   "type": "string",
@@ -740,7 +756,7 @@
     {
       "name": "get_project_context",
       "title": "Get project editing context",
-      "description": "Read the bounded project, compact scenes, file hashes, entity/project revisions, diagnostics, preview settings, and recovery gate needed to plan a safe next edit.",
+      "description": "Use when planning an edit and you need compact scenes, canonical file hashes, revisions, diagnostics, preview settings, and the recovery gate. Do not use when you need full composition source; use read_composition instead. Preconditions: projectId comes from list_projects; this read has no mutation precondition. Side effects: read-only; no project files or revisions are changed. Errors/recovery: refresh list_projects after project_not_found; when recovery is blocked, stop mutations and complete the configured recovery flow before retrying.",
       "inputSchema": {
         "type": "object",
         "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -865,8 +881,15 @@
                   "maximum": 9007199254740991
                 },
                 "fileContentHash": {
-                  "type": "string",
-                  "pattern": "^sha256:[0-9a-f]{64}$"
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "pattern": "^sha256:[0-9a-f]{64}$"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
                 },
                 "narrationStale": {
                   "type": "boolean"
@@ -1484,11 +1507,23 @@
     {
       "name": "list_projects",
       "title": "List VidCom projects",
-      "description": "List available VidCom projects with dimensions, duration, current project revision, and write-recovery status. Use projectId from this result for project-scoped tools.",
+      "description": "Use when you need to discover a VidCom projectId and its summary or write-recovery status. Do not use for scene details, source content, or mutation preconditions. Preconditions: none; use limit/cursor to page and a returned projectId for project-scoped tools. Side effects: read-only; no project files or revisions are changed. Errors/recovery: resolve workspace or project read errors before retrying; if recovery is blocked, complete the configured recovery flow before writes.",
       "inputSchema": {
         "type": "object",
         "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "properties": {},
+        "properties": {
+          "limit": {
+            "default": 20,
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "cursor": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 255
+          }
+        },
         "additionalProperties": false
       },
       "annotations": {
@@ -1588,10 +1623,106 @@
               ],
               "additionalProperties": false
             }
+          },
+          "diagnostics": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "severity": {
+                  "type": "string",
+                  "enum": [
+                    "error",
+                    "warning",
+                    "info"
+                  ]
+                },
+                "code": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "sceneId": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 255
+                },
+                "elementId": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 255
+                },
+                "effectId": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 255
+                },
+                "file": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 4096
+                },
+                "line": {
+                  "type": "integer",
+                  "exclusiveMinimum": 0,
+                  "maximum": 9007199254740991
+                },
+                "message": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "fix": {
+                  "type": "object",
+                  "properties": {
+                    "kind": {
+                      "type": "string",
+                      "const": "set-attribute"
+                    },
+                    "target": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "attribute": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "value": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "kind",
+                    "target",
+                    "attribute",
+                    "value"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "required": [
+                "severity",
+                "code",
+                "message"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "nextCursor": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 255
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "required": [
-          "projects"
+          "projects",
+          "diagnostics",
+          "nextCursor"
         ],
         "additionalProperties": false
       }
@@ -1599,7 +1730,7 @@
     {
       "name": "list_scenes",
       "title": "List project scenes",
-      "description": "List compact scene timing, source hash, narration-stale state, current project revision, and recovery gate without loading the full project context.",
+      "description": "Use when you need compact scene timing, source hashes and availability diagnostics, narration state, project revision, and recovery status without full source content. Do not use for editing source text or reading complete composition markup. Preconditions: projectId comes from list_projects; this read has no mutation precondition. Side effects: read-only; no scene or revision is changed. Errors/recovery: refresh list_projects after project_not_found; when recovery is blocked, stop mutations and complete recovery before retrying.",
       "inputSchema": {
         "type": "object",
         "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -1667,8 +1798,15 @@
                   "maximum": 9007199254740991
                 },
                 "fileContentHash": {
-                  "type": "string",
-                  "pattern": "^sha256:[0-9a-f]{64}$"
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "pattern": "^sha256:[0-9a-f]{64}$"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
                 },
                 "narrationStale": {
                   "type": "boolean"
@@ -1734,12 +1872,95 @@
               "unresolved"
             ],
             "additionalProperties": false
+          },
+          "diagnostics": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "severity": {
+                  "type": "string",
+                  "enum": [
+                    "error",
+                    "warning",
+                    "info"
+                  ]
+                },
+                "code": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "sceneId": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 255
+                },
+                "elementId": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 255
+                },
+                "effectId": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 255
+                },
+                "file": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 4096
+                },
+                "line": {
+                  "type": "integer",
+                  "exclusiveMinimum": 0,
+                  "maximum": 9007199254740991
+                },
+                "message": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "fix": {
+                  "type": "object",
+                  "properties": {
+                    "kind": {
+                      "type": "string",
+                      "const": "set-attribute"
+                    },
+                    "target": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "attribute": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "value": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "kind",
+                    "target",
+                    "attribute",
+                    "value"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "required": [
+                "severity",
+                "code",
+                "message"
+              ],
+              "additionalProperties": false
+            }
           }
         },
         "required": [
           "scenes",
           "projectRevision",
-          "recovery"
+          "recovery",
+          "diagnostics"
         ],
         "additionalProperties": false
       }
@@ -1747,7 +1968,7 @@
     {
       "name": "read_composition",
       "title": "Read composition source",
-      "description": "Read one allowlisted project-relative composition source with its content hash and recovery gate. Rejects paths outside the project, disallowed assets, and files over the source-size limit.",
+      "description": "Use when you need one allowlisted project-relative composition source and its current content hash before a source write. Do not use for binary assets, external paths, or project-wide context. Preconditions: projectId comes from list_projects and path comes from project context or another trusted project-relative reference; no expected hash is required. Side effects: read-only; no source file or revision is changed. Errors/recovery: correct path_invalid, path_outside_project, asset_not_allowed, not_found, or source-size limit errors; if recovery is blocked, recover the project before writing.",
       "inputSchema": {
         "type": "object",
         "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -1847,7 +2068,7 @@
     {
       "name": "save_file",
       "title": "Save composition source",
-      "description": "Save one allowlisted project-relative text/composition file with expectedContentHash. Protected project metadata and oversized source are rejected; returns the new content hash and write envelope.",
+      "description": "Use when replacing the complete content of one allowlisted project-relative text or composition source. Do not use for binary assets, oversized content, or targeted text edits better handled by set_text. Protected project metadata is rejected. Preconditions: path and expectedContentHash come from read_composition or current project context; the hash is for that exact file. Side effects: atomically replaces that source file, returns its new content hash, and commits one revision. Errors/recovery: correct path or size errors; on write_conflict re-read and re-plan; on recovery_required recover first; never retry a committed_response_error mutation.",
       "inputSchema": {
         "type": "object",
         "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -1931,7 +2152,10 @@
               "fileHashes": {
                 "type": "object",
                 "propertyNames": {
-                  "type": "string"
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 4096,
+                  "pattern": "^(?!\\/)(?![A-Za-z]:)(?!.*\\\\)(?!.*\\0)(?!.*\\/\\/)(?!\\.{1,2}(?:\\/|$))(?!.*\\/\\.{1,2}(?:\\/|$)).+$"
                 },
                 "additionalProperties": {
                   "type": "string",
@@ -2040,7 +2264,7 @@
     {
       "name": "set_scene_timing",
       "title": "Set scene timing",
-      "description": "Update a scene start, duration, or track index using the current entry-file expectedContentHash. Returns the updated compact scene, project, hashes, revisions, and diagnostics; invalid timing or stale hashes do not write.",
+      "description": "Use when changing at least one existing scene start, duration, or track index. Do not use for source text, scene creation, or an empty timing patch. Preconditions: sceneId and expectedContentHash must come from current project context; the hash is for the entry composition. Side effects: atomically updates scene timing and root duration and commits one revision. Errors/recovery: fix schema_invalid timing; on write_conflict refresh context and re-plan; on recovery_required recover first; never retry a committed_response_error mutation.",
       "inputSchema": {
         "type": "object",
         "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -2128,8 +2352,15 @@
                 "maximum": 9007199254740991
               },
               "fileContentHash": {
-                "type": "string",
-                "pattern": "^sha256:[0-9a-f]{64}$"
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "pattern": "^sha256:[0-9a-f]{64}$"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
               },
               "narrationStale": {
                 "type": "boolean"
@@ -2228,7 +2459,10 @@
               "fileHashes": {
                 "type": "object",
                 "propertyNames": {
-                  "type": "string"
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 4096,
+                  "pattern": "^(?!\\/)(?![A-Za-z]:)(?!.*\\\\)(?!.*\\0)(?!.*\\/\\/)(?!\\.{1,2}(?:\\/|$))(?!.*\\/\\.{1,2}(?:\\/|$)).+$"
                 },
                 "additionalProperties": {
                   "type": "string",
@@ -2338,7 +2572,7 @@
     {
       "name": "set_text",
       "title": "Set scene text",
-      "description": "Update one text element with the source file expectedContentHash. If the scene has narration, marks its sidecar stale in the same revision and returns narrationStale=true; it does not run TTS.",
+      "description": "Use when replacing the text of one existing script element in an allowlisted scene source. Do not use to replace arbitrary markup, create elements, or run TTS. Preconditions: file, elementId, and expectedContentHash come from current project context or read_composition; the hash is for that source file. Side effects: atomically updates the source and, only when narration exists, marks its sidecar stale and returns narrationStale=true in the same revision; it does not run TTS. Errors/recovery: on not_found or write_conflict refresh the source and re-plan; on recovery_required recover first; never retry a committed_response_error mutation.",
       "inputSchema": {
         "type": "object",
         "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -2431,8 +2665,15 @@
                 "maximum": 9007199254740991
               },
               "fileContentHash": {
-                "type": "string",
-                "pattern": "^sha256:[0-9a-f]{64}$"
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "pattern": "^sha256:[0-9a-f]{64}$"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
               },
               "narrationStale": {
                 "type": "boolean"
@@ -2531,7 +2772,10 @@
               "fileHashes": {
                 "type": "object",
                 "propertyNames": {
-                  "type": "string"
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 4096,
+                  "pattern": "^(?!\\/)(?![A-Za-z]:)(?!.*\\\\)(?!.*\\0)(?!.*\\/\\/)(?!\\.{1,2}(?:\\/|$))(?!.*\\/\\.{1,2}(?:\\/|$)).+$"
                 },
                 "additionalProperties": {
                   "type": "string",
@@ -2630,8 +2874,7 @@
             "additionalProperties": false
           },
           "narrationStale": {
-            "type": "boolean",
-            "const": true
+            "type": "boolean"
           }
         },
         "required": [

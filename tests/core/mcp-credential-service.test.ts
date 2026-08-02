@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import type { ContentHash } from "@vidcom/contracts";
 import {
   DEFAULT_CREDENTIAL_ROTATION_OVERLAP_MS,
+  MAX_CREDENTIAL_ROTATION_OVERLAP_MS,
   McpCredentialService,
   type McpCredentialCryptoPort,
   type McpCredentialPort,
@@ -11,6 +12,7 @@ import {
 
 const now = "2026-08-02T00:00:00.000Z";
 const digest = `sha256:${"a".repeat(64)}` as ContentHash;
+const ECMASCRIPT_DATE_MAX_MS = 8_640_000_000_000_000;
 
 class MemoryCredentialStore implements McpCredentialPort {
   readonly records = new Map<string, McpCredentialRecord>();
@@ -38,7 +40,7 @@ class MemoryCredentialStore implements McpCredentialPort {
   }
 }
 
-function fixture() {
+function fixture(options: { now?: Date; rotationOverlapMs?: number } = {}) {
   const credentials = new MemoryCredentialStore();
   const crypto: McpCredentialCryptoPort = {
     issue: vi.fn(() => ({ secret: "vcmcp_secret", secretHash: digest })),
@@ -49,8 +51,11 @@ function fixture() {
   const service = new McpCredentialService({
     credentials,
     crypto,
-    clock: { now: () => new Date(now) },
+    clock: { now: () => options.now ?? new Date(now) },
     ids: { newId: () => `credential_${++id}` },
+    ...(options.rotationOverlapMs === undefined
+      ? {}
+      : { config: { rotationOverlapMs: options.rotationOverlapMs } }),
   });
   return { credentials, crypto, service };
 }
@@ -83,5 +88,41 @@ describe("McpCredentialService", () => {
       replacement: expect.objectContaining({ id: replacement.id, rotatedFrom: original.id, status: "active" }),
       expiresAt: new Date(new Date(now).getTime() + DEFAULT_CREDENTIAL_ROTATION_OVERLAP_MS).toISOString(),
     }]);
+  });
+
+  it("lists public lifecycle summaries without verifier hashes", async () => {
+    const { service } = fixture();
+    await service.issue("host");
+    await expect(service.list()).resolves.toEqual([{
+      id: "credential_1",
+      label: "host",
+      status: "active",
+      createdAt: now,
+      rotatedFrom: null,
+      expiresAt: null,
+    }]);
+    expect(JSON.stringify(await service.list())).not.toContain(digest);
+  });
+
+  it("bounds configured and explicit overlap and rejects expiry outside the Date range", async () => {
+    expect(() => fixture({ rotationOverlapMs: MAX_CREDENTIAL_ROTATION_OVERLAP_MS + 1 }))
+      .toThrow(`credential rotation overlap must be an integer between 0 and ${MAX_CREDENTIAL_ROTATION_OVERLAP_MS}`);
+
+    const maximum = fixture({ rotationOverlapMs: MAX_CREDENTIAL_ROTATION_OVERLAP_MS });
+    const original = await maximum.service.issue("host");
+    await maximum.service.rotate(original.id);
+    expect(maximum.credentials.rotateCalls[0]?.expiresAt).toBe("2026-08-03T00:00:00.000Z");
+
+    const beyond = fixture();
+    const beyondOriginal = await beyond.service.issue("host");
+    await expect(beyond.service.rotate(beyondOriginal.id, MAX_CREDENTIAL_ROTATION_OVERLAP_MS + 1))
+      .rejects.toBeInstanceOf(TypeError);
+    expect(beyond.credentials.rotateCalls).toEqual([]);
+
+    const dateEdge = fixture({ now: new Date(ECMASCRIPT_DATE_MAX_MS - 1_000) });
+    const edgeOriginal = await dateEdge.service.issue("host");
+    await expect(dateEdge.service.rotate(edgeOriginal.id, 1_001))
+      .rejects.toThrow("credential rotation expiry is outside the ECMAScript Date range");
+    expect(dateEdge.credentials.rotateCalls).toEqual([]);
   });
 });

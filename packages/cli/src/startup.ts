@@ -40,7 +40,10 @@ export interface StartupSteps<Listener = unknown> {
 }
 
 /** Executes the reviewed startup DAG as a strict sequence; no listener is opened early. */
-export async function runStartupSequence<Listener>(steps: StartupSteps<Listener>): Promise<Listener> {
+export async function runStartupSequence<Listener>(
+  steps: StartupSteps<Listener>,
+  signal?: AbortSignal,
+): Promise<Listener> {
   const ordered: Array<[StartupStepName, () => Promise<unknown>]> = [
     ["migration", steps.migration],
     ["lease", steps.lease],
@@ -51,10 +54,17 @@ export async function runStartupSequence<Listener>(steps: StartupSteps<Listener>
     ["watcher", steps.watcher],
   ];
   for (const [name, step] of ordered) {
+    signal?.throwIfAborted();
     try { await step(); }
     catch (cause) { throw new StartupError(name, { cause }); }
+    signal?.throwIfAborted();
   }
-  try { return await steps.listener(); }
+  signal?.throwIfAborted();
+  try {
+    const listener = await steps.listener();
+    signal?.throwIfAborted();
+    return listener;
+  }
   catch (cause) { throw new StartupError("listener", { cause }); }
 }
 
@@ -77,9 +87,22 @@ async function closeListener(listener: unknown): Promise<void> {
   }
 }
 
+async function runCleanupActions(
+  actions: ReadonlyArray<() => Promise<void>>,
+  message: string,
+): Promise<void> {
+  const errors: unknown[] = [];
+  for (const action of actions) {
+    try { await action(); }
+    catch (error) { errors.push(error); }
+  }
+  if (errors.length > 0) throw new AggregateError(errors, message);
+}
+
 export async function startVidcomFoundation<Listener>(
   config: CompositionRootConfig & { holderId: string },
   hooks: DaemonHooks<Listener>,
+  options: { signal?: AbortSignal } = {},
 ) {
   const infrastructure = createInfrastructure(config);
   let leaseId: string | null = null;
@@ -89,10 +112,46 @@ export async function startVidcomFoundation<Listener>(
   let watcherHandle: { close(): Promise<void> | void } | null = null;
   let listenerHandle: Listener | null = null;
   let leaseLost = false;
-  const stopBackground = async () => {
-    await schedulerHandle?.stop();
-    await watcherHandle?.close();
+  let listenerClosePromise: Promise<void> | null = null;
+  let schedulerStopPromise: Promise<void> | null = null;
+  let watcherClosePromise: Promise<void> | null = null;
+  let leaseReleasePromise: Promise<void> | null = null;
+  let databaseDestroyPromise: Promise<void> | null = null;
+  let cleanupPromise: Promise<void> | null = null;
+  const closeListenerOnce = () => {
+    if (!listenerHandle) return Promise.resolve();
+    return listenerClosePromise ??= Promise.resolve().then(() => closeListener(listenerHandle));
   };
+  const stopSchedulerOnce = () => {
+    if (!schedulerHandle) return Promise.resolve();
+    return schedulerStopPromise ??= Promise.resolve().then(() => schedulerHandle!.stop());
+  };
+  const closeWatcherOnce = () => {
+    if (!watcherHandle) return Promise.resolve();
+    return watcherClosePromise ??= Promise.resolve().then(() => watcherHandle!.close());
+  };
+  const releaseLeaseOnce = () => {
+    if (!leaseId) return Promise.resolve();
+    return leaseReleasePromise ??= infrastructure.lease.release(leaseId);
+  };
+  const destroyDatabaseOnce = () => databaseDestroyPromise ??= infrastructure.database.destroy();
+  const stopBackground = () => runCleanupActions(
+    [stopSchedulerOnce, closeWatcherOnce],
+    "VidCom background shutdown failed",
+  );
+  const cleanup = () => cleanupPromise ??= (async () => {
+    if (leaseRenewal) {
+      clearInterval(leaseRenewal);
+      leaseRenewal = null;
+    }
+    await runCleanupActions([
+      closeListenerOnce,
+      stopSchedulerOnce,
+      closeWatcherOnce,
+      releaseLeaseOnce,
+      destroyDatabaseOnce,
+    ], "VidCom shutdown failed");
+  })();
   try {
     const listener = await runStartupSequence({
       migration: () => migrateDatabase(infrastructure.database),
@@ -120,6 +179,18 @@ export async function startVidcomFoundation<Listener>(
       },
       reconciliation: async () => {
         await reconcileStagedAssets(infrastructure.database, infrastructure.clock, config.appDataRoot);
+        await reconcileCompositeMutations({
+          workspace: infrastructure.workspace,
+          journal: infrastructure.journal,
+          workspaceRoot: config.workspaceRoot,
+          resolveProjectRef: infrastructure.resolveProjectRef,
+          recordFailure: (audit, reason) => infrastructure.toolAudit.recordPendingFailure(audit, reason),
+        });
+        await infrastructure.largeContent.cleanupUnreferenced(
+          await infrastructure.journal.listPreviousObjectHashes(),
+          new Date(infrastructure.clock.now().getTime()
+            - infrastructure.runtimeConfig.backupOrphanGraceMs),
+        );
         await infrastructure.backups.prunePayloads(new Date(
           infrastructure.clock.now().getTime()
             - infrastructure.runtimeConfig.backupPayloadRetentionMs,
@@ -131,11 +202,6 @@ export async function startVidcomFoundation<Listener>(
         await infrastructure.approvalAdmin.cleanupTerminal(
           new Date(infrastructure.clock.now().getTime() - infrastructure.runtimeConfig.approvalRetentionMs),
         );
-        await reconcileCompositeMutations({
-          workspace: infrastructure.workspace,
-          journal: infrastructure.journal,
-          resolveProjectRef: infrastructure.resolveProjectRef,
-        });
       },
       jobRecovery: () => hooks.recoverJobs({ infrastructure, application }),
       identityBackfill: async () => {
@@ -156,25 +222,23 @@ export async function startVidcomFoundation<Listener>(
       scheduler: async () => { schedulerHandle = await hooks.startScheduler({ infrastructure, application }) ?? null; },
       watcher: async () => { watcherHandle = await hooks.startWatcher({ infrastructure, application }) ?? null; },
       listener: async () => { listenerHandle = await hooks.openListener({ infrastructure, application }); return listenerHandle; },
-    });
+    }, options.signal);
     return {
       infrastructure,
       application: application!,
       listener,
-      async stop() {
-        if (leaseRenewal) clearInterval(leaseRenewal);
-        await closeListener(listenerHandle);
-        await stopBackground();
-        if (leaseId) await infrastructure.lease.release(leaseId);
-        await infrastructure.database.destroy();
-      },
+      stop: cleanup,
     };
   } catch (error) {
-    if (leaseRenewal) clearInterval(leaseRenewal);
-    await closeListener(listenerHandle).catch(() => {});
-    await stopBackground().catch(() => {});
-    if (leaseId) await infrastructure.lease.release(leaseId).catch(() => {});
-    await infrastructure.database.destroy();
+    try { await cleanup(); }
+    catch (cleanupError) {
+      const cleanupErrors = cleanupError instanceof AggregateError ? cleanupError.errors : [cleanupError];
+      throw new AggregateError(
+        [error, ...cleanupErrors],
+        "VidCom startup and cleanup failed",
+        { cause: error },
+      );
+    }
     throw error;
   }
 }

@@ -13,6 +13,11 @@
         <h1 class="mt-3 text-4xl font-bold">Ghi chú thực thi MCP Server</h1>
         <p class="mt-4 text-slate-300">Nhật ký quyết định, sai lệch thiết kế, đánh đổi, bất ngờ và blocker trong quá trình chạy Phase A→P.</p>
       </header>
+      <nav id="sequence-index" class="mt-10 rounded-2xl border border-cyan-500/30 bg-slate-900 p-6" aria-labelledby="sequence-index-title">
+        <h2 id="sequence-index-title" class="text-2xl font-semibold">Sequence index · A→P→R→V</h2>
+        <p class="mt-3 text-slate-400">Thứ tự đọc canonical là A→B→…→P, sau đó remediation R→S→T→U→V. Vị trí vật lý của section giữ append history; index dưới đây mới là thứ tự review và tự gắn sequence cho mọi entry.</p>
+        <ol class="mt-5 grid gap-2 text-sm text-slate-300 md:grid-cols-2" data-sequence-list></ol>
+      </nav>
       <section class="mt-10 rounded-2xl border border-slate-700 bg-slate-900 p-6">
         <div class="flex flex-wrap items-center justify-between gap-3">
           <h2 class="text-2xl font-semibold">2026-08-02 · Bắt đầu Phase A</h2>
@@ -44,6 +49,84 @@
           <div><dt class="font-semibold text-slate-200">Đánh đổi</dt><dd class="mt-1 text-slate-400">Source metadata giữ first-reference order và de-duplicate theo path; hash tính trực tiếp từ raw UTF-8 đã đọc, không thêm I/O.</dd></div>
           <div><dt class="font-semibold text-slate-200">Design drift</dt><dd class="mt-1 text-slate-400">Không có.</dd></div>
           <div><dt class="font-semibold text-slate-200">Blocker</dt><dd class="mt-1 text-slate-400">Không có; focused 60 tests và toàn bộ Phase C gates đều xanh.</dd></div>
+        </dl>
+      </section>
+      <section class="mt-6 rounded-2xl border border-emerald-500/30 bg-slate-900 p-6">
+        <div class="flex flex-wrap items-center justify-between gap-3">
+          <h2 class="text-2xl font-semibold">2026-08-02 · Phase R.7 hoàn tất · M-13</h2>
+          <span class="rounded-full bg-emerald-400/10 px-3 py-1 text-sm text-emerald-300">147/183 · full 434 tests</span>
+        </div>
+        <p class="mt-4 text-slate-300">Retention không còn chạy trước recovery hoặc xóa undo payload của một mutation chưa terminal.</p>
+        <dl class="mt-5 grid gap-4 md:grid-cols-2">
+          <div><dt class="font-semibold text-slate-200">Ordering</dt><dd class="mt-1 text-slate-400">Staged reconcile → composite recovery → backup prune/cleanup → approval cleanup.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Unresolved</dt><dd class="mt-1 text-slate-400">NOT EXISTS pending/orphaned journal guard giữ payload bất kể manifest age.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Retention clock</dt><dd class="mt-1 text-slate-400">Backup đã link revision lấy terminal revision.created_at, tránh prune ngay lần startup recovery đầu tiên.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Gate</dt><dd class="mt-1 text-slate-400">Full 66 files/434 tests và static/schema gates xanh; duy nhất R.8 chuyển sang đang làm.</dd></div>
+        </dl>
+      </section>
+      <section class="mt-6 rounded-2xl border border-emerald-500/30 bg-slate-900 p-6">
+        <div class="flex flex-wrap items-center justify-between gap-3">
+          <h2 class="text-2xl font-semibold">2026-08-02 · Phase R.6 hoàn tất · M-12</h2>
+          <span class="rounded-full bg-emerald-400/10 px-3 py-1 text-sm text-emerald-300">146/183 · full 433 tests</span>
+        </div>
+        <p class="mt-4 text-slate-300">Backup retention giờ có crash protocol rõ: tombstone filesystem trước, durable metadata sau, physical delete cuối.</p>
+        <dl class="mt-5 grid gap-4 md:grid-cols-2">
+          <div><dt class="font-semibold text-slate-200">Before DB</dt><dd class="mt-1 text-slate-400">Crash để lại tombstone nhưng metadata null; lần chạy sau restore payload rồi retry prune.</dd></div>
+          <div><dt class="font-semibold text-slate-200">After DB</dt><dd class="mt-1 text-slate-400">Crash để metadata marked và tombstone; lần chạy sau xóa residue trước selection.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Durability</dt><dd class="mt-1 text-slate-400">Rename và mỗi physical state transition đều fsync backup directory.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Gate</dt><dd class="mt-1 text-slate-400">Full 66 files/433 tests và static/schema gates xanh; duy nhất R.7 chuyển sang đang làm.</dd></div>
+        </dl>
+      </section>
+      <section class="mt-6 rounded-2xl border border-emerald-500/30 bg-slate-900 p-6">
+        <div class="flex flex-wrap items-center justify-between gap-3">
+          <h2 class="text-2xl font-semibold">2026-08-02 · Phase R.5 hoàn tất · H-04</h2>
+          <span class="rounded-full bg-emerald-400/10 px-3 py-1 text-sm text-emerald-300">145/183 · full 432 tests</span>
+        </div>
+        <p class="mt-4 text-slate-300">Backup failure không còn nuốt T2a: response code phản ánh chính xác journal đã terminal hay vẫn recovery-gated.</p>
+        <dl class="mt-5 grid gap-4 md:grid-cols-2">
+          <div><dt class="font-semibold text-slate-200">Terminal</dt><dd class="mt-1 text-slate-400">Abort hoặc inline reconcile xác nhận aborted/rolled_back thì trả backup_failed và cleanup captures.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Unresolved</dt><dd class="mt-1 text-slate-400">T2a fail và reconcile chưa terminal trả recovery_required với journalId + backup-abort.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Safety</dt><dd class="mt-1 text-slate-400">Original bytes đã restore nhưng rollback evidence vẫn giữ khi journal pending; grant không bị release giả.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Gate</dt><dd class="mt-1 text-slate-400">Full 66 files/432 tests và static/schema gates xanh; duy nhất R.6 chuyển sang đang làm.</dd></div>
+        </dl>
+      </section>
+      <section class="mt-6 rounded-2xl border border-emerald-500/30 bg-slate-900 p-6">
+        <div class="flex flex-wrap items-center justify-between gap-3">
+          <h2 class="text-2xl font-semibold">2026-08-02 · Phase R.4 hoàn tất · H-03</h2>
+          <span class="rounded-full bg-emerald-400/10 px-3 py-1 text-sm text-emerald-300">144/183 · full 430 tests</span>
+        </div>
+        <p class="mt-4 text-slate-300">Recovery filesystem access giờ bị khóa theo workspace ownership: startup chỉ xử lý scope đang lease, targeted command tự tìm root canonical từ journal.</p>
+        <dl class="mt-5 grid gap-4 md:grid-cols-2">
+          <div><dt class="font-semibold text-slate-200">Startup</dt><dd class="mt-1 text-slate-400">Pending query join registration.workspace_root; journal workspace B vẫn pending khi daemon chỉ giữ lease A.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Targeted CLI</dt><dd class="mt-1 text-slate-400">Journal→project registration→workspace root→lease; unrelated selector không thể đổi target.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Resolver</dt><dd class="mt-1 text-slate-400">Runtime-scoped resolver chỉ đọc WorkspaceFs đã inject, không dựng ProjectRef ngoài root từ registry fallback.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Gate</dt><dd class="mt-1 text-slate-400">Full 66 files/430 tests và static/schema gates xanh; duy nhất R.5 chuyển sang đang làm.</dd></div>
+        </dl>
+      </section>
+      <section class="mt-6 rounded-2xl border border-emerald-500/30 bg-slate-900 p-6">
+        <div class="flex flex-wrap items-center justify-between gap-3">
+          <h2 class="text-2xl font-semibold">2026-08-02 · Phase R.3 hoàn tất · H-02</h2>
+          <span class="rounded-full bg-emerald-400/10 px-3 py-1 text-sm text-emerald-300">143/183 · full 429 tests</span>
+        </div>
+        <p class="mt-4 text-slate-300">Recovery không còn settle SQLite từ một filesystem snapshot stale: mọi target được capture/CAS lại ngay settlement boundary.</p>
+        <dl class="mt-5 grid gap-4 md:grid-cols-2">
+          <div><dt class="font-semibold text-slate-200">Roll forward/abort</dt><dd class="mt-1 text-slate-400">Observed bytes được atomic capture rồi restore nguyên trạng trước T2; mismatch giữ pending gate.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Rollback</dt><dd class="mt-1 text-slate-400">Landed target được CAS-capture trước khi publish previous bytes; external target không bị overwrite.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Barrier</dt><dd class="mt-1 text-slate-400">Edit thật sau classification nhưng trước settlement trả recovery_required, file external còn nguyên, revision count vẫn 0.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Gate</dt><dd class="mt-1 text-slate-400">Full 66 files/429 tests và static/schema gates xanh; duy nhất R.4 chuyển sang đang làm.</dd></div>
+        </dl>
+      </section>
+      <section class="mt-6 rounded-2xl border border-emerald-500/30 bg-slate-900 p-6">
+        <div class="flex flex-wrap items-center justify-between gap-3">
+          <h2 class="text-2xl font-semibold">2026-08-02 · Phase R.2 hoàn tất · H-01</h2>
+          <span class="rounded-full bg-emerald-400/10 px-3 py-1 text-sm text-emerald-300">142/183 · full 428 tests</span>
+        </div>
+        <p class="mt-4 text-slate-300">Lease owner, expiry, project workspace và unresolved gate giờ là authority cuối trong chính transaction T1, không còn cửa handover giữa Core check và journal insert.</p>
+        <dl class="mt-5 grid gap-4 md:grid-cols-2">
+          <div><dt class="font-semibold text-slate-200">Serialization</dt><dd class="mt-1 text-slate-400">Guarded no-op update trên exact lease row lấy SQLite write lock trước khi đọc gate và insert journal.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Barrier</dt><dd class="mt-1 text-slate-400">Hai connection: A pass check, TTL hết, B steal + commit; T1 của A trả workspace_lease_lost, không có journal thứ hai.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Watcher</dt><dd class="mt-1 text-slate-400">CAS rollback/publish slots và root-self rename notifications được lọc, nên own write chỉ phát durable journal event.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Gate</dt><dd class="mt-1 text-slate-400">Full 66 files/428 tests cùng static/schema gates exit 0; duy nhất R.3 chuyển sang đang làm.</dd></div>
         </dl>
       </section>
       <section class="mt-6 rounded-2xl border border-emerald-500/30 bg-slate-900 p-6">
@@ -524,12 +607,12 @@
           <div><dt class="font-semibold text-slate-200">Strict input</dt><dd class="mt-1 text-slate-400">App, MCP và mọi admin command từ chối unknown, duplicate, missing value hoặc invalid choice trước I/O.</dd></div>
           <div><dt class="font-semibold text-slate-200">Exit contract</dt><dd class="mt-1 text-slate-400">User/domain input là 2; unexpected infrastructure failure là 1; error chỉ đi stderr.</dd></div>
           <div><dt class="font-semibold text-slate-200">Cleanup</dt><dd class="mt-1 text-slate-400">Cross-signal chỉ stop một lần và real SQLite workspace_lease còn đúng 0 row sau shutdown.</dd></div>
-          <div><dt class="font-semibold text-slate-200">Blocker</dt><dd class="mt-1 text-slate-400">Không có; chuyển O.9 AI-host stdio smoke.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Blocker</dt><dd class="mt-1 text-slate-400">Không có; chuyển O.9 exact SDK stdio smoke.</dd></div>
         </dl>
       </section>
       <section class="mt-6 rounded-2xl border border-emerald-500/30 bg-slate-900 p-6">
         <div class="flex flex-wrap items-center justify-between gap-3">
-          <h2 class="text-2xl font-semibold">2026-08-02 · Phase O hoàn tất · AI-host smoke</h2>
+          <h2 class="text-2xl font-semibold">2026-08-02 · Phase O hoàn tất · exact SDK-host smoke</h2>
           <span class="rounded-full bg-emerald-400/10 px-3 py-1 text-sm text-emerald-300">36/36 phase tests</span>
         </div>
         <p class="mt-4 text-slate-300">Production vidcom bin đã được spawn bởi exact SDK 1.30.0 rồi client 2.0.0; cả hai negotiate, list/call thật và modern hoàn tất approval round-trip destructive.</p>
@@ -602,7 +685,7 @@
           <div><dt class="font-semibold text-slate-200">Approval</dt><dd class="mt-1 text-slate-400">Request, issue, exact reserve, expiry, replay, revoke và reserved-grant semantics đều có test.</dd></div>
           <div><dt class="font-semibold text-slate-200">Backup</dt><dd class="mt-1 text-slate-400">Atomic publish, manifest/payload tamper, attach revision, retention prune và restore revision mới đều chạy trên disk/SQLite.</dd></div>
           <div><dt class="font-semibold text-slate-200">Crash safety</dt><dd class="mt-1 text-slate-400">Mid-delete rollback release grant; T2 recovery giữ bytes, grant và audit relation chính xác.</dd></div>
-          <div><dt class="font-semibold text-slate-200">End to end</dt><dd class="mt-1 text-slate-400">Modern AI host elicitation gọi approve CLI, retry delete_file và nhận backup/audit-backed success.</dd></div>
+          <div><dt class="font-semibold text-slate-200">End to end</dt><dd class="mt-1 text-slate-400">Modern MCP SDK elicitation gọi approve CLI, retry delete_file và nhận backup/audit-backed success.</dd></div>
         </dl>
       </section>
       <section class="mt-6 rounded-2xl border border-violet-500/30 bg-slate-900 p-6">
@@ -638,7 +721,7 @@
         </div>
         <p class="mt-4 text-slate-300">Ship commit db7fd685af37e8efcd0e6c09df92aa1865911414 đã qua GitHub Actions trước khi spec được đổi sang complete.</p>
         <dl class="mt-5 grid gap-4 md:grid-cols-2">
-          <div><dt class="font-semibold text-slate-200">Demo</dt><dd class="mt-1 text-slate-400">AI-host exact clients rerun xanh; modern approval CLI round-trip xóa file thật và nhả lease.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Demo</dt><dd class="mt-1 text-slate-400">Exact MCP SDK clients rerun xanh; modern approval CLI round-trip xóa file thật và nhả lease.</dd></div>
           <div><dt class="font-semibold text-slate-200">Remote</dt><dd class="mt-1 text-slate-400">Run 30744778718 Success trong 2m54s: full 66/423, MCP guard 6/51, golden 6/22, không skip.</dd></div>
           <div><dt class="font-semibold text-slate-200">Docs</dt><dd class="mt-1 text-slate-400">Main spec, Detailed Design, checklist, build-order và product docs phản ánh runtime đã ship.</dd></div>
           <div><dt class="font-semibold text-slate-200">Warning</dt><dd class="mt-1 text-slate-400">Chỉ còn GitHub-hosted actions v4 Node 20 deprecation; không ảnh hưởng product gates.</dd></div>
@@ -649,14 +732,527 @@
           <h2 class="text-2xl font-semibold">2026-08-02 · Phase P.8 · Ship candidate</h2>
           <span class="rounded-full bg-emerald-400/10 px-3 py-1 text-sm text-emerald-300">140/140 · remote green</span>
         </div>
-        <p class="mt-4 text-slate-300">AI-host demo, production HTTP wiring và product docs khớp behavior thật; remote CI #7 xanh trên exact candidate f01d4b4 sau 2m56s.</p>
+        <p class="mt-4 text-slate-300">Exact SDK-host demo, production HTTP wiring và product docs khớp behavior thật; remote CI #7 xanh trên exact candidate f01d4b4 sau 2m56s.</p>
         <dl class="mt-5 grid gap-4 md:grid-cols-2">
-          <div><dt class="font-semibold text-slate-200">Demo</dt><dd class="mt-1 text-slate-400">Legacy/modern exact clients spawn production bin; modern approval xóa file và audit row cùng revision được đọc lại từ SQLite.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Demo</dt><dd class="mt-1 text-slate-400">Legacy/modern exact clients spawn source-checkout launcher Phase 2; modern approval xóa file và audit row cùng revision được đọc lại từ SQLite. Packaged SEA vẫn thuộc Phase 4.</dd></div>
           <div><dt class="font-semibold text-slate-200">Host wiring</dt><dd class="mt-1 text-slate-400">Next composition root inject cùng Registry HTTP handlers và credential verifier; runtime smoke gọi /api/mcp bằng credential CLI vừa issue.</dd></div>
           <div><dt class="font-semibold text-slate-200">Docs</dt><dd class="mt-1 text-slate-400">Main spec, architecture và canonical build-order phân biệt Phase 2 đã chạy với SEA/IPC còn deferred.</dd></div>
           <div><dt class="font-semibold text-slate-200">Gate</dt><dd class="mt-1 text-slate-400">Local Matrix exit 0; CI implementation db7fd68 và closeout candidate f01d4b4 đều xanh; P.8 đóng 140/140.</dd></div>
         </dl>
       </section>
+      <section class="mt-6 rounded-2xl border border-amber-500/30 bg-slate-900 p-6">
+        <div class="flex flex-wrap items-center justify-between gap-3">
+          <h2 class="text-2xl font-semibold">2026-08-02 · Review remediation · Phase R.1</h2>
+          <span class="rounded-full bg-amber-400/10 px-3 py-1 text-sm text-amber-300">140/183 · đang xử lý C-01</span>
+        </div>
+        <p class="mt-4 text-slate-300">Spec được mở lại sau khi đọc đầy đủ 7 raw report. 43 finding được map một-một vào Phase R→V; claim release-ready tạm rút cho tới khi toàn bộ regression và Verification Matrix xanh lại.</p>
+        <dl class="mt-5 grid gap-4 md:grid-cols-2">
+          <div><dt class="font-semibold text-slate-200">Critical</dt><dd class="mt-1 text-slate-400">WriteAuthority phải capture actual target và CAS ngay publish boundary để external edit không bị overwrite hoặc backup sai bytes.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Design drift</dt><dd class="mt-1 text-slate-400">Detailed Design v7 thêm §17 và DR-21–DR-31 trước production edit.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Dependency order</dt><dd class="mt-1 text-slate-400">R consistency/recovery → S Core/audit + T transport/security + U CLI → V evidence/closeout.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Gate</dt><dd class="mt-1 text-slate-400">Chỉ đúng một task R.1 ở trạng thái đang làm; chưa finding nào được đóng bằng test cũ.</dd></div>
+        </dl>
+      </section>
+      <section class="mt-6 rounded-2xl border border-emerald-500/30 bg-slate-900 p-6">
+        <div class="flex flex-wrap items-center justify-between gap-3">
+          <h2 class="text-2xl font-semibold">2026-08-02 · Phase R.1 hoàn tất · C-01</h2>
+          <span class="rounded-full bg-emerald-400/10 px-3 py-1 text-sm text-emerald-300">141/183 · 51 tests xanh</span>
+        </div>
+        <p class="mt-4 text-slate-300">Publish boundary đã chuyển sang durable same-filesystem capture/CAS; external edit không còn bị overwrite và backup luôn đọc exact captured bytes.</p>
+        <dl class="mt-5 grid gap-4 md:grid-cols-2">
+          <div><dt class="font-semibold text-slate-200">Race barriers</dt><dd class="mt-1 text-slate-400">Regression thật phủ external edit trước T1, sau T1, trong backup và sau backup verify; mutation không commit và bytes ngoài được giữ.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Durability</dt><dd class="mt-1 text-slate-400">Rollback slot được journal persist trước publish; publish dùng create-if-absent, rollback chỉ restore khi landed hash còn đúng.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Virtual entity</dt><dd class="mt-1 text-slate-400">Logical default hash của preview-settings revision 0 được tách khỏi physical missing-file hash tại CAS boundary.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Gate</dt><dd class="mt-1 text-slate-400">Focused 5 files/51 tests, schema drift, typecheck, lint, boundaries và diff check đều exit 0; chuyển đúng một dấu đang làm sang R.2.</dd></div>
+        </dl>
+      </section>
+      <section class="mt-6 rounded-2xl border border-emerald-500/30 bg-slate-900 p-6">
+        <div class="flex flex-wrap items-center justify-between gap-3">
+          <h2 class="text-2xl font-semibold">2026-08-02 · Phase R.2–R.8 hoàn tất · consistency/recovery</h2>
+          <span class="rounded-full bg-emerald-400/10 px-3 py-1 text-sm text-emerald-300">148/183 · full 66/436</span>
+        </div>
+        <p class="mt-4 text-slate-300">Phase R đóng toàn bộ race lease/recovery, backup crash window và duplicate rollback payload trước khi chuyển sang correctness bề mặt Core.</p>
+        <dl class="mt-5 grid gap-4 md:grid-cols-2">
+          <div><dt class="font-semibold text-slate-200">R.2–R.4 · lease và settlement</dt><dd class="mt-1 text-slate-400">T1 kiểm exact lease + expiry + project gate trong cùng transaction; startup chỉ reconcile workspace đang giữ lease; recovery revalidate/capture tại settlement nên edit sau classify không tạo revision stale.</dd></div>
+          <div><dt class="font-semibold text-slate-200">R.5 · backup failure</dt><dd class="mt-1 text-slate-400">Backup lỗi chỉ trả backup_failed khi abort hoặc inline reconcile chứng minh terminal; journal còn pending trả recovery_required và giữ gate.</dd></div>
+          <div><dt class="font-semibold text-slate-200">R.6–R.7 · retention crash safety</dt><dd class="mt-1 text-slate-400">Prune dùng payload tombstone → durable DB mark → delete; recovery chạy trước retention và mọi manifest gắn pending/orphaned được exempt.</dd></div>
+          <div><dt class="font-semibold text-slate-200">R.8 · object store</dt><dd class="mt-1 text-slate-400">Payload trên 64 KiB được fsync vào immutable SHA-256 object; bốn journal/revision rows chỉ giữ một hash, inline bytes bằng 0. Object referenced được giữ vô hạn; orphan quá grace 24 giờ mới GC ở startup.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Failure injection</dt><dd class="mt-1 text-slate-400">ENOSPC trước T1 không để journal; object đã durable sau T1 được reuse, không ghi payload lần hai. Test 2 MiB xác nhận DB footprint không tăng theo payload.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Gate</dt><dd class="mt-1 text-slate-400">Focused, full suite 66 files/436 tests, typecheck, lint 0 lỗi và schema drift 8 artifacts đều exit 0; Phase S.1 là task duy nhất đang làm.</dd></div>
+        </dl>
+      </section>
+      <section class="mt-6 rounded-2xl border border-emerald-500/30 bg-slate-900 p-6">
+        <div class="flex flex-wrap items-center justify-between gap-3">
+          <h2 class="text-2xl font-semibold">2026-08-02 · Phase S.1 hoàn tất · reference safety</h2>
+          <span class="rounded-full bg-emerald-400/10 px-3 py-1 text-sm text-emerald-300">149/183 · full 66/439</span>
+        </div>
+        <p class="mt-4 text-slate-300">delete_file giờ dựa trên reference graph canonical có provenance, không còn so raw src nên nested relative asset và root track đều được bảo vệ.</p>
+        <dl class="mt-5 grid gap-4 md:grid-cols-2">
+          <div><dt class="font-semibold text-slate-200">Canonicalization</dt><dd class="mt-1 text-slate-400">Mỗi reference mang owner source và project-relative path; query/hash được tách, separator chuẩn hóa, path thoát root bị loại.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Coverage</dt><dd class="mt-1 text-slate-400">Direct scene source, nested ../assets, root media, narration và basename trùng được phủ; HTTP/data URL không bị coi là file local.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Repro thật</dt><dd class="mt-1 text-slate-400">Scene file thật tham chiếu ../assets/logo.svg; prepareFileDeletion assets/logo.svg trả referenced_by_composition trước approval/mutation.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Gate</dt><dd class="mt-1 text-slate-400">Focused 4/28, full 66/439, typecheck, lint 0 lỗi và import boundaries exit 0; chuyển sang S.2 timing invariant.</dd></div>
+        </dl>
+      </section>
+      <section class="mt-6 rounded-2xl border border-emerald-500/30 bg-slate-900 p-6">
+        <div class="flex flex-wrap items-center justify-between gap-3">
+          <h2 class="text-2xl font-semibold">2026-08-02 · Phase S.2 hoàn tất · create timing</h2>
+          <span class="rounded-full bg-emerald-400/10 px-3 py-1 text-sm text-emerald-300">150/183 · full 66/443</span>
+        </div>
+        <p class="mt-4 text-slate-300">create_scene chặn timing sai trước SDK serialization và T1, kể cả phép cộng hai số hữu hạn tạo Infinity.</p>
+        <dl class="mt-5 grid gap-4 md:grid-cols-2">
+          <div><dt class="font-semibold text-slate-200">Invariant</dt><dd class="mt-1 text-slate-400">duration dương, start không âm, track nguyên và end hữu hạn được kiểm bằng domain validator chung.</dd></div>
+          <div><dt class="font-semibold text-slate-200">No side effects</dt><dd class="mt-1 text-slate-400">0, âm và overflow đều để applyOps, mutation, journal, revision, scene file và narration sidecar ở trạng thái chưa tạo.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Root expansion</dt><dd class="mt-1 text-slate-400">Scene hợp lệ vẫn được phép nới root duration; chỉ end vượt miền số hữu hạn bị từ chối.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Gate</dt><dd class="mt-1 text-slate-400">Focused 2/43, full 66/443, typecheck và lint 0 lỗi exit 0; chuyển sang S.3 input_required audit.</dd></div>
+        </dl>
+      </section>
+      <section class="mt-6 rounded-2xl border border-emerald-500/30 bg-slate-900 p-6">
+        <div class="flex flex-wrap items-center justify-between gap-3">
+          <h2 class="text-2xl font-semibold">2026-08-02 · Phase S.3 hoàn tất · input-required audit</h2>
+          <span class="rounded-full bg-emerald-400/10 px-3 py-1 text-sm text-emerald-300">151/183 · full 66/444</span>
+        </div>
+        <p class="mt-4 text-slate-300">Modern approval elicitation giờ là terminal error audit của round hiện tại trước khi transport map InputRequiredSignal; retry thành công là round độc lập.</p>
+        <dl class="mt-5 grid gap-4 md:grid-cols-2">
+          <div><dt class="font-semibold text-slate-200">Ownership</dt><dd class="mt-1 text-slate-400">Registry dùng lookup caller/journal ownership; chỉ caller-owned round ghi approval_required, không đoán khi lookup lỗi.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Trace</dt><dd class="mt-1 text-slate-400">Audit giữ invocationId, credentialId, protocol và requestState; signal chỉ được rethrow sau record attempt.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Executable</dt><dd class="mt-1 text-slate-400">Real stdio host lưu chính xác error/no revision rồi success/revision 1 cho delete_file approval round-trip.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Gate</dt><dd class="mt-1 text-slate-400">Full 66/444, focused HTTP/stdio/registry và static checks exit 0; chuyển sang S.4 empty patch.</dd></div>
+        </dl>
+      </section>
+      <section class="mt-6 rounded-2xl border border-emerald-500/30 bg-slate-900 p-6">
+        <div class="flex flex-wrap items-center justify-between gap-3">
+          <h2 class="text-2xl font-semibold">2026-08-02 · Phase S.4 hoàn tất · non-empty timing patch</h2>
+          <span class="rounded-full bg-emerald-400/10 px-3 py-1 text-sm text-emerald-300">152/183 · full 66/446</span>
+        </div>
+        <p class="mt-4 text-slate-300">set_scene_timing không còn serialize lại cùng nội dung hoặc tăng revision khi request không hề chứa thay đổi.</p>
+        <dl class="mt-5 grid gap-4 md:grid-cols-2">
+          <div><dt class="font-semibold text-slate-200">Schema</dt><dd class="mt-1 text-slate-400">Strict input yêu cầu ít nhất một trong start, duration, trackIndex; mỗi field riêng vẫn hợp lệ.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Core</dt><dd class="mt-1 text-slate-400">Caller nội bộ empty patch nhận schema_invalid trước source read, SDK op và authority mutation.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Compatibility</dt><dd class="mt-1 text-slate-400">Project-not-found precedence được giữ; golden discovery không drift vì public fields không đổi.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Gate</dt><dd class="mt-1 text-slate-400">Full 66/446, contract/core/golden và static checks exit 0; chuyển sang S.5 narration stale.</dd></div>
+        </dl>
+      </section>
+      <section class="mt-6 rounded-2xl border border-emerald-500/30 bg-slate-900 p-6">
+        <div class="flex flex-wrap items-center justify-between gap-3">
+          <h2 class="text-2xl font-semibold">2026-08-02 · Phase S.5 hoàn tất · narration state</h2>
+          <span class="rounded-full bg-emerald-400/10 px-3 py-1 text-sm text-emerald-300">153/183 · full 66/448</span>
+        </div>
+        <p class="mt-4 text-slate-300">set_text trả trạng thái narration đúng với sidecar thật, nên response ghi và read kế tiếp không còn mâu thuẫn.</p>
+        <dl class="mt-5 grid gap-4 md:grid-cols-2">
+          <div><dt class="font-semibold text-slate-200">Present</dt><dd class="mt-1 text-slate-400">Narration hiện hữu tạo thêm system-write step, set staleSince và trả narrationStale true.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Absent</dt><dd class="mt-1 text-slate-400">Scene không narration chỉ ghi source, không dựng sidecar và trả false ở cả scene lẫn top-level.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Contract</dt><dd class="mt-1 text-slate-400">Detailed Design §7.7 và output schema dùng boolean; legacy/modern goldens bỏ const true.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Gate</dt><dd class="mt-1 text-slate-400">Full 66/448, focused contract/Core/golden và static checks exit 0; chuyển sang S.6 response finalization.</dd></div>
+        </dl>
+      </section>
+      <section class="mt-6 rounded-2xl border border-emerald-500/30 bg-slate-900 p-6">
+        <div class="flex flex-wrap items-center justify-between gap-3">
+          <h2 class="text-2xl font-semibold">2026-08-02 · Phase S.6 hoàn tất · committed response</h2>
+          <span class="rounded-full bg-emerald-400/10 px-3 py-1 text-sm text-emerald-300">154/183 · full 66/450</span>
+        </div>
+        <p class="mt-4 text-slate-300">Output schema lỗi sau T2 không còn được trình bày như mutation failure có thể retry; wire nói rõ mutation đã committed.</p>
+        <dl class="mt-5 grid gap-4 md:grid-cols-2">
+          <div><dt class="font-semibold text-slate-200">Outcome</dt><dd class="mt-1 text-slate-400">committed_response_error mang committed=true, invocationId và revision identity; MCP guidance cấm retry mù.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Audit</dt><dd class="mt-1 text-slate-400">Journal-owned tool audit vẫn outcome ok cùng revision vì mutation thật đã thành công; Registry không chèn caller failure kép.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Integration</dt><dd class="mt-1 text-slate-400">Malformed schema cố ý sau create_scene thật vẫn để scene file, journal committed và revision 1, trong khi response nêu đúng terminal state.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Gate</dt><dd class="mt-1 text-slate-400">Full 66/450, contract/error-map/SQLite integration và static checks exit 0; chuyển sang S.7 RelPath keys.</dd></div>
+        </dl>
+      </section>
+      <section class="mt-6 rounded-2xl border border-emerald-500/30 bg-slate-900 p-6">
+        <div class="flex flex-wrap items-center justify-between gap-3">
+          <h2 class="text-2xl font-semibold">2026-08-02 · Phase S.7 hoàn tất · canonical file hash paths</h2>
+          <span class="rounded-full bg-emerald-400/10 px-3 py-1 text-sm text-emerald-300">155/183 · full 66/451</span>
+        </div>
+        <p class="mt-4 text-slate-300">Write response không còn chấp nhận key đường dẫn tùy ý trong fileHashes; schema wire nay tự mô tả đầy đủ project-relative canonical path.</p>
+        <dl class="mt-5 grid gap-4 md:grid-cols-2">
+          <div><dt class="font-semibold text-slate-200">Contract</dt><dd class="mt-1 text-slate-400">Chặn absolute, Windows drive, traversal, backslash, dấu chấm segment, separator kép và key rỗng.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Phạm vi</dt><dd class="mt-1 text-slate-400">Chỉ siết WriteEnvelope; read DTO dùng RelativePath hiện hữu không bị đổi hành vi ngoài finding M-04.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Golden</dt><dd class="mt-1 text-slate-400">Cả modern và legacy tools/list phát hành cùng minLength, maxLength và regex propertyNames.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Gate</dt><dd class="mt-1 text-slate-400">Focused 34/34, full 66/451, typecheck và lint 0 errors exit 0; chuyển sang S.8 tool descriptions.</dd></div>
+        </dl>
+      </section>
+      <section class="mt-6 rounded-2xl border border-emerald-500/30 bg-slate-900 p-6">
+        <div class="flex flex-wrap items-center justify-between gap-3">
+          <h2 class="text-2xl font-semibold">2026-08-02 · Phase S.8 hoàn tất · agent-facing tool guidance</h2>
+          <span class="rounded-full bg-emerald-400/10 px-3 py-1 text-sm text-emerald-300">156/183 · full 66/451</span>
+        </div>
+        <p class="mt-4 text-slate-300">Discovery metadata của đủ 10 tool nay hướng dẫn agent chọn đúng tool, lấy đúng precondition và xử lý terminal outcome an toàn.</p>
+        <dl class="mt-5 grid gap-4 md:grid-cols-2">
+          <div><dt class="font-semibold text-slate-200">Cấu trúc</dt><dd class="mt-1 text-slate-400">Mỗi description có Use when, Do not use, Preconditions, Side effects và Errors/recovery.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Write safety</dt><dd class="mt-1 text-slate-400">Hash/revision source, write conflict refresh, recovery gate và committed-response do-not-retry đều được nêu rõ.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Destructive</dt><dd class="mt-1 text-slate-400">Hai vòng approval, grant retry một lần, verified backup và output identity được giữ trong discovery text.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Gate</dt><dd class="mt-1 text-slate-400">Focused 29/29, full 66/451 và static/diff gates exit 0; chuyển sang S.9 audit timing/revision.</dd></div>
+        </dl>
+      </section>
+      <section class="mt-6 rounded-2xl border border-emerald-500/30 bg-slate-900 p-6">
+        <div class="flex flex-wrap items-center justify-between gap-3">
+          <h2 class="text-2xl font-semibold">2026-08-02 · Phase S.9 hoàn tất · terminal audit identity</h2>
+          <span class="rounded-full bg-emerald-400/10 px-3 py-1 text-sm text-emerald-300">157/183 · full 66/453</span>
+        </div>
+        <p class="mt-4 text-slate-300">Audit tool nay trả lời được invocation bắt đầu lúc nào, mất bao lâu và project revision đổi từ đâu sang đâu ở mọi terminal path.</p>
+        <dl class="mt-5 grid gap-4 md:grid-cols-2">
+          <div><dt class="font-semibold text-slate-200">Registry</dt><dd class="mt-1 text-slate-400">Read, schema/pre-T1 error và caller-owned failure quan sát revision trước/sau; observation lỗi fail-open có metric/log.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Journal</dt><dd class="mt-1 text-slate-400">Commit, recovered commit và orphan tính duration/revision terminal ngay trong transaction audit.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Recovery</dt><dd class="mt-1 text-slate-400">Startup rollback sau T2a dùng pending context để ghi terminal failure; schema v1 cũ thiếu revisionBefore vẫn đọc được thành null.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Gate</dt><dd class="mt-1 text-slate-400">Focused 68/68, full 66/453 và static/diff gates exit 0; chuyển sang S.10 list_projects tolerance.</dd></div>
+        </dl>
+      </section>
+      <section class="mt-6 rounded-2xl border border-emerald-500/30 bg-slate-900 p-6">
+        <div class="flex flex-wrap items-center justify-between gap-3">
+          <h2 class="text-2xl font-semibold">2026-08-02 · Phase S.10 hoàn tất · bounded project discovery</h2>
+          <span class="rounded-full bg-emerald-400/10 px-3 py-1 text-sm text-emerald-300">158/183 · full 66/455</span>
+        </div>
+        <p class="mt-4 text-slate-300">Một project méo không còn làm list_projects mất toàn bộ workspace; agent nhận page hữu hạn, cursor và diagnostic ổn định.</p>
+        <dl class="mt-5 grid gap-4 md:grid-cols-2">
+          <div><dt class="font-semibold text-slate-200">Paging</dt><dd class="mt-1 text-slate-400">Default 20, max 100; sort projectId lexical và cursor cuối page, vẫn tiến nếu cursor item bị xóa.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Concurrency</dt><dd class="mt-1 text-slate-400">Parse/revision/recovery chạy batch tối đa 4 và chỉ trên selected page.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Isolation</dt><dd class="mt-1 text-slate-400">Project lỗi bị bỏ riêng với project_context_unavailable warning; enumerate workspace lỗi mới fail tool.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Gate</dt><dd class="mt-1 text-slate-400">Focused 76/76, matrix 4/4, full 66/455 và static gates exit 0; chuyển sang S.11 missing source.</dd></div>
+        </dl>
+      </section>
+      <section class="mt-6 rounded-2xl border border-emerald-500/30 bg-slate-900 p-6">
+        <div class="flex flex-wrap items-center justify-between gap-3">
+          <h2 class="text-2xl font-semibold">2026-08-02 · Phase S.11 hoàn tất · missing source state</h2>
+          <span class="rounded-full bg-emerald-400/10 px-3 py-1 text-sm text-emerald-300">159/183 · full 66/456</span>
+        </div>
+        <p class="mt-4 text-slate-300">Nested scene source bị xóa không còn làm context sập thành internal; agent vẫn thấy scene, path lỗi và trạng thái hash không khả dụng.</p>
+        <dl class="mt-5 grid gap-4 md:grid-cols-2">
+          <div><dt class="font-semibold text-slate-200">State</dt><dd class="mt-1 text-slate-400">fileContentHash nullable; null chỉ ra không có precondition hash hợp lệ, không dùng hash giả.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Diagnostic</dt><dd class="mt-1 text-slate-400">referenced_source_missing warning dedupe theo canonical path và giữ field file để agent sửa đúng nguồn.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Boundary</dt><dd class="mt-1 text-slate-400">get_project_context và list_scenes cùng trả state/diagnostics; entry source mất vẫn là hard read failure có kiểm soát.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Gate</dt><dd class="mt-1 text-slate-400">Focused 81/81, full 66/456 và static gates exit 0; chuyển sang S.12 grant expiry.</dd></div>
+        </dl>
+      </section>
+      <section class="mt-6 rounded-2xl border border-emerald-500/30 bg-slate-900 p-6">
+        <div class="flex flex-wrap items-center justify-between gap-3">
+          <h2 class="text-2xl font-semibold">2026-08-02 · Phase S.12 hoàn tất · grant expiry lifecycle</h2>
+          <span class="rounded-full bg-emerald-400/10 px-3 py-1 text-sm text-emerald-300">160/183 · full 66/458</span>
+        </div>
+        <p class="mt-4 text-slate-300">Grant quá TTL nay được chuyển trạng thái trước retention cleanup, trong khi reservation đang gắn mutation unresolved vẫn nguyên vẹn.</p>
+        <dl class="mt-5 grid gap-4 md:grid-cols-2">
+          <div><dt class="font-semibold text-slate-200">Transition</dt><dd class="mt-1 text-slate-400">Một datastore update chuyển requested và issued có expiresAt đến hạn sang expired theo clock của service.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Ordering</dt><dd class="mt-1 text-slate-400">cleanupTerminal luôn gọi expireDue trước, sau đó mới xóa terminal row cũ theo retention cutoff.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Reserved safety</dt><dd class="mt-1 text-slate-400">reserved không thuộc transition; regression SQLite giữ status và journal grant_id dù expiresAt đã cũ.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Gate</dt><dd class="mt-1 text-slate-400">Focused 40/40, full 66/458, typecheck và lint 0 errors exit 0; chuyển sang S.13 credential summaries.</dd></div>
+        </dl>
+      </section>
+      <section class="mt-6 rounded-2xl border border-emerald-500/30 bg-slate-900 p-6">
+        <div class="flex flex-wrap items-center justify-between gap-3">
+          <h2 class="text-2xl font-semibold">2026-08-02 · Phase S.13 hoàn tất · credential public summary</h2>
+          <span class="rounded-full bg-emerald-400/10 px-3 py-1 text-sm text-emerald-300">161/183 · full 66/459</span>
+        </div>
+        <p class="mt-4 text-slate-300">Danh sách credential từ Core không còn mang verifier hash ra ngoài persistence boundary.</p>
+        <dl class="mt-5 grid gap-4 md:grid-cols-2">
+          <div><dt class="font-semibold text-slate-200">Public DTO</dt><dd class="mt-1 text-slate-400">McpCredentialSummary chỉ chứa ID, label, lifecycle status, timestamps và rotation link.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Core boundary</dt><dd class="mt-1 text-slate-400">Service map full persistence record thành summary nên mọi caller đều được bảo vệ, không phụ thuộc CLI redaction.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Persistence</dt><dd class="mt-1 text-slate-400">Adapter vẫn giữ canonical digest nội bộ để lookup, timing-safe verify và atomic rotation.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Gate</dt><dd class="mt-1 text-slate-400">Focused 34/34, full 66/459 và static gates exit 0; chuyển sang S.14 canonical MCP text.</dd></div>
+        </dl>
+      </section>
+      <section class="mt-6 rounded-2xl border border-emerald-500/30 bg-slate-900 p-6">
+        <div class="flex flex-wrap items-center justify-between gap-3">
+          <h2 class="text-2xl font-semibold">2026-08-02 · Phase S.14 hoàn tất · canonical tool text</h2>
+          <span class="rounded-full bg-emerald-400/10 px-3 py-1 text-sm text-emerald-300">162/183 · full 66/459</span>
+        </div>
+        <p class="mt-4 text-slate-300">Tool text và structuredContent nay biểu diễn cùng một validated result theo canonical JSON bytes ở mọi MCP serving path.</p>
+        <dl class="mt-5 grid gap-4 md:grid-cols-2">
+          <div><dt class="font-semibold text-slate-200">Serialization</dt><dd class="mt-1 text-slate-400">Registry-to-SDK seam dùng canonicalizeJson thay cho insertion-order JSON.stringify.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Equivalence</dt><dd class="mt-1 text-slate-400">Test lấy text thật từ content và so trực tiếp với canonical JSON của structuredContent.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Coverage</dt><dd class="mt-1 text-slate-400">Legacy/modern qua stdio/HTTP cùng chạy assertion; hai golden khóa thứ tự key canonical.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Gate</dt><dd class="mt-1 text-slate-400">Focused 12/12, full 66/459 và static gates exit 0; chuyển sang S.15 overlap bounds.</dd></div>
+        </dl>
+      </section>
+      <section class="mt-6 rounded-2xl border border-emerald-500/30 bg-slate-900 p-6">
+        <div class="flex flex-wrap items-center justify-between gap-3">
+          <h2 class="text-2xl font-semibold">2026-08-02 · Phase S hoàn tất · bounded rotation overlap</h2>
+          <span class="rounded-full bg-emerald-400/10 px-3 py-1 text-sm text-emerald-300">163/183 · full 66/460</span>
+        </div>
+        <p class="mt-4 text-slate-300">Credential rotation không còn biến safe integer cực lớn thành RangeError hạ tầng; mọi override được chặn trước persistence.</p>
+        <dl class="mt-5 grid gap-4 md:grid-cols-2">
+          <div><dt class="font-semibold text-slate-200">Product bound</dt><dd class="mt-1 text-slate-400">Default 5 phút, maximum 24 giờ; Core constructor và per-call override dùng cùng invariant.</dd></div>
+          <div><dt class="font-semibold text-slate-200">CLI</dt><dd class="mt-1 text-slate-400">--overlap-ms chỉ nhận 1..86.400.000 và trả CliInputError exit 2 nếu vượt miền.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Date safety</dt><dd class="mt-1 text-slate-400">Expiry sát giới hạn ECMAScript Date được kiểm trước sinh replacement ID, secret hoặc gọi store.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Gate</dt><dd class="mt-1 text-slate-400">Focused 35/35, full 66/460 và static gates exit 0; Phase S hoàn tất, chuyển sang T.1 authInfo forwarding.</dd></div>
+        </dl>
+      </section>
+      <section class="mt-6 rounded-2xl border border-emerald-500/30 bg-slate-900 p-6">
+        <div class="flex flex-wrap items-center justify-between gap-3">
+          <h2 class="text-2xl font-semibold">2026-08-02 · Phase T.1 hoàn tất · authInfo forwarding</h2>
+          <span class="rounded-full bg-emerald-400/10 px-3 py-1 text-sm text-emerald-300">164/183 · full 66/460</span>
+        </div>
+        <p class="mt-4 text-slate-300">Verified credential identity không còn bị rơi khi request đi qua exact revision hoặc latest wrapper.</p>
+        <dl class="mt-5 grid gap-4 md:grid-cols-2">
+          <div><dt class="font-semibold text-slate-200">Root cause</dt><dd class="mt-1 text-slate-400">Revision-match branch gọi inner(request) và bỏ options; entry direct vì vậy vẫn xanh dù pinned paths mất authInfo.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Fix</dt><dd class="mt-1 text-slate-400">Pinned wrapper forward nguyên request và options cho SDK handler, kể cả latest alias.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Secret boundary</dt><dd class="mt-1 text-slate-400">Perimeter verify bearer rồi chỉ chuyển credential_http; audit và logger không chứa token thử nghiệm.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Gate</dt><dd class="mt-1 text-slate-400">Focused 22/22, full 66/460 và static gates exit 0; chuyển sang T.2 exact-pin validation ladder.</dd></div>
+        </dl>
+      </section>
+      <section class="mt-6 rounded-2xl border border-emerald-500/30 bg-slate-900 p-6">
+        <div class="flex flex-wrap items-center justify-between gap-3">
+          <h2 class="text-2xl font-semibold">2026-08-02 · Phase T.2 hoàn tất · SDK validation precedence</h2>
+          <span class="rounded-full bg-emerald-400/10 px-3 py-1 text-sm text-emerald-300">165/183 · full 66/460</span>
+        </div>
+        <p class="mt-4 text-slate-300">Exact revision không còn che lỗi HTTP cơ bản bằng protocol mismatch; SDK validation ladder luôn chạy trước pin comparison.</p>
+        <dl class="mt-5 grid gap-4 md:grid-cols-2">
+          <div><dt class="font-semibold text-slate-200">Media type</dt><dd class="mt-1 text-slate-400">Missing hoặc text/plain delegate thẳng cho SDK và trả 415, -32000, id null.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Parse</dt><dd class="mt-1 text-slate-400">JSON hỏng trả 400, -32700, id null trước mọi exact/mismatch decision.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Matrix</dt><dd class="mt-1 text-slate-400">Legacy/modern pin, exact/mismatch và hai media-type failure đều được table-test.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Gate</dt><dd class="mt-1 text-slate-400">Focused 15/15, full 66/460 và static gates exit 0; chuyển sang T.3 pathname-only logging.</dd></div>
+        </dl>
+      </section>
+      <section class="mt-6 rounded-2xl border border-emerald-500/30 bg-slate-900 p-6">
+        <div class="flex flex-wrap items-center justify-between gap-3">
+          <h2 class="text-2xl font-semibold">2026-08-02 · Phase T.3 hoàn tất · pathname-only logging</h2>
+          <span class="rounded-full bg-emerald-400/10 px-3 py-1 text-sm text-emerald-300">166/183 · full 66/460</span>
+        </div>
+        <p class="mt-4 text-slate-300">Logger chạy trước auth nay không còn ghi origin hoặc bất kỳ query material nào.</p>
+        <dl class="mt-5 grid gap-4 md:grid-cols-2">
+          <div><dt class="font-semibold text-slate-200">Output</dt><dd class="mt-1 text-slate-400">Mỗi dòng chỉ gồm method và pathname, ví dụ GET /api/v1/health.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Secrets</dt><dd class="mt-1 text-slate-400">api_key, bootstrap token và query key tương lai tự động bị loại vì toàn query bị bỏ.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Paths</dt><dd class="mt-1 text-slate-400">Encoded absolute workspace path trong query không được decode hoặc ghi lại.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Gate</dt><dd class="mt-1 text-slate-400">Focused 25/25, full 66/460 và static gates exit 0; chuyển sang T.4 canonical CORS.</dd></div>
+        </dl>
+      </section>
+      <section class="mt-6 rounded-2xl border border-emerald-500/30 bg-slate-900 p-6">
+        <div class="flex flex-wrap items-center justify-between gap-3">
+          <h2 class="text-2xl font-semibold">2026-08-02 · Phase T.4 hoàn tất · canonical credentialed CORS</h2>
+          <span class="rounded-full bg-emerald-400/10 px-3 py-1 text-sm text-emerald-300">167/183 · full 66/461</span>
+        </div>
+        <p class="mt-4 text-slate-300">Trusted UI origin nay nhận một CORS response cố định từ configuration, không phải bản sao raw Origin request.</p>
+        <dl class="mt-5 grid gap-4 md:grid-cols-2">
+          <div><dt class="font-semibold text-slate-200">Canonical origin</dt><dd class="mt-1 text-slate-400">Request HTTP viết hoa được match nhưng response phát configured lowercase origin.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Credentials</dt><dd class="mt-1 text-slate-400">Allow-Credentials true và preflight 204 trước session auth cho origin đã tin cậy.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Policy</dt><dd class="mt-1 text-slate-400">Methods và headers dùng fixed constants; origin, method hoặc header ngoài allowlist bị deny.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Gate</dt><dd class="mt-1 text-slate-400">Focused 26/26, full 66/461 và static gates exit 0; chuyển sang T.5 owner-only app-data/SQLite.</dd></div>
+        </dl>
+      </section>
+      <section class="mt-6 rounded-2xl border border-emerald-500/30 bg-slate-900 p-6">
+        <div class="flex flex-wrap items-center justify-between gap-3">
+          <h2 class="text-2xl font-semibold">2026-08-02 · Phase T hoàn tất · owner-only SQLite lifecycle</h2>
+          <span class="rounded-full bg-emerald-400/10 px-3 py-1 text-sm text-emerald-300">168/183 · full 66/462</span>
+        </div>
+        <p class="mt-4 text-slate-300">App-data và toàn bộ SQLite file được khóa owner-only trước khi credential, audit hoặc journal bytes xuất hiện.</p>
+        <dl class="mt-5 grid gap-4 md:grid-cols-2">
+          <div><dt class="font-semibold text-slate-200">Directory</dt><dd class="mt-1 text-slate-400">POSIX 0700; Windows bỏ inherited ACL và grant current SID trên directory cùng descendants.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Files</dt><dd class="mt-1 text-slate-400">Main, WAL và SHM precreate 0600/owner ACL trước DatabaseSync và được repair lại sau WAL mode.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Adversarial test</dt><dd class="mt-1 text-slate-400">Umask 000 vẫn tạo live app-data 0700 và cả ba SQLite files 0600.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Gate</dt><dd class="mt-1 text-slate-400">Focused 27/27, full 66/462 và static gates exit 0; Phase T hoàn tất, chuyển sang U.1 lifecycle unwind.</dd></div>
+        </dl>
+      </section>
+      <section class="mt-6 rounded-2xl border border-emerald-500/30 bg-slate-900 p-6">
+        <div class="flex flex-wrap items-center justify-between gap-3">
+          <h2 class="text-2xl font-semibold">2026-08-02 · Phase U.1 hoàn tất · exhaustive idempotent unwind</h2>
+          <span class="rounded-full bg-emerald-400/10 px-3 py-1 text-sm text-emerald-300">169/183 · full 66/467</span>
+        </div>
+        <p class="mt-4 text-slate-300">Một cleanup lỗi không còn giữ lại watcher, lease hoặc database; toàn bộ unwind luôn được thử trước khi báo lỗi.</p>
+        <dl class="mt-5 grid gap-4 md:grid-cols-2">
+          <div><dt class="font-semibold text-slate-200">Order</dt><dd class="mt-1 text-slate-400">Listener, scheduler, watcher, lease rồi database; mỗi action có once promise riêng.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Idempotency</dt><dd class="mt-1 text-slate-400">Concurrent và repeated stop nhận cùng cleanup promise, không gọi resource handle lần hai.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Failure evidence</dt><dd class="mt-1 text-slate-400">Năm injected failure cases đều chạy đủ năm action, release lease và trả AggregateError chứa đúng cause.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Gate</dt><dd class="mt-1 text-slate-400">Focused 41/41, full 66/467 và static gates exit 0; chuyển sang U.2 executable artifact.</dd></div>
+        </dl>
+      </section>
+      <section class="mt-6 rounded-2xl border border-emerald-500/30 bg-slate-900 p-6">
+        <div class="flex flex-wrap items-center justify-between gap-3">
+          <h2 class="text-2xl font-semibold">2026-08-02 · Phase U.2 hoàn tất · executable artifact contract</h2>
+          <span class="rounded-full bg-emerald-400/10 px-3 py-1 text-sm text-emerald-300">170/183 · focused 1/1</span>
+        </div>
+        <p class="mt-4 text-slate-300">CLI launcher được track executable và smoke không còn bypass package command bằng đường dẫn source tuyệt đối.</p>
+        <dl class="mt-5 grid gap-4 md:grid-cols-2">
+          <div><dt class="font-semibold text-slate-200">Artifact</dt><dd class="mt-1 text-slate-400">Test dùng npm pack, giải nén vào temp sạch và kiểm launcher trong tar giữ execute bit.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Resolution</dt><dd class="mt-1 text-slate-400">Host có node_modules/.bin riêng; legacy, modern và trusted approve đều spawn đúng tên vidcom qua PATH.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Boundary</dt><dd class="mt-1 text-slate-400">Artifact Phase 2 dùng dependency graph đã cài của source checkout; không được mô tả là self-contained Node SEA.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Gate</dt><dd class="mt-1 text-slate-400">Git index 100755; exact smoke 1/1, full 66/467 và static gates exit 0. Chuyển sang U.3 EOF/stdout lifecycle.</dd></div>
+        </dl>
+      </section>
+      <section class="mt-6 rounded-2xl border border-emerald-500/30 bg-slate-900 p-6">
+        <div class="flex flex-wrap items-center justify-between gap-3">
+          <h2 class="text-2xl font-semibold">2026-08-02 · Phase U.3 hoàn tất · stdio disconnect cleanup</h2>
+          <span class="rounded-full bg-emerald-400/10 px-3 py-1 text-sm text-emerald-300">171/183 · full 67/471</span>
+        </div>
+        <p class="mt-4 text-slate-300">Host đóng input hoặc output nay kết thúc subprocess qua cùng cleanup path với signal, không để lease hoặc watcher sống sót.</p>
+        <dl class="mt-5 grid gap-4 md:grid-cols-2">
+          <div><dt class="font-semibold text-slate-200">SDK boundary</dt><dd class="mt-1 text-slate-400">VidCom giữ SDK-owned wire, chỉ bọc handle bằng completion promise cho process lifecycle.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Disconnect</dt><dd class="mt-1 text-slate-400">stdin end và stdout close đều gọi close once; explicit close và repeated close dùng cùng promise.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Durability</dt><dd class="mt-1 text-slate-400">Integration dùng SQLite thật xác nhận host disconnect đóng listener và workspace_lease về 0.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Gate</dt><dd class="mt-1 text-slate-400">Focused 25/25, full 67/471 và static gates exit 0; chuyển sang U.4 pre-start signal gate.</dd></div>
+        </dl>
+      </section>
+      <section class="mt-6 rounded-2xl border border-emerald-500/30 bg-slate-900 p-6">
+        <div class="flex flex-wrap items-center justify-between gap-3">
+          <h2 class="text-2xl font-semibold">2026-08-02 · Phase U.4 hoàn tất · pre-start signal gate</h2>
+          <span class="rounded-full bg-emerald-400/10 px-3 py-1 text-sm text-emerald-300">172/183 · full 67/474</span>
+        </div>
+        <p class="mt-4 text-slate-300">Không còn cửa sổ signal trước khi listener được cài hoặc signal thứ hai giết process giữa lúc cleanup.</p>
+        <dl class="mt-5 grid gap-4 md:grid-cols-2">
+          <div><dt class="font-semibold text-slate-200">Gate</dt><dd class="mt-1 text-slate-400">SIGINT/SIGTERM handlers được gắn trước startVidcomMcp và chỉ gỡ trong finally sau cleanup.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Abort</dt><dd class="mt-1 text-slate-400">Startup kiểm AbortSignal trước/sau từng phase; signal sau acquire lease làm unwind và lease về 0.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Double signal</dt><dd class="mt-1 text-slate-400">Signal lặp không hard-exit; listener giữ nguyên trong delayed cleanup và runtime stop chỉ chạy một lần.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Verification</dt><dd class="mt-1 text-slate-400">Focused 47/47, full 67/474, boundaries và static gates exit 0; chuyển sang U.5.</dd></div>
+        </dl>
+      </section>
+      <section class="mt-6 rounded-2xl border border-emerald-500/30 bg-slate-900 p-6">
+        <div class="flex flex-wrap items-center justify-between gap-3">
+          <h2 class="text-2xl font-semibold">2026-08-02 · Phase U.5 hoàn tất · explicit workspace fail-fast</h2>
+          <span class="rounded-full bg-emerald-400/10 px-3 py-1 text-sm text-emerald-300">173/183 · full 67/475</span>
+        </div>
+        <p class="mt-4 text-slate-300">Một typo trong --workspace hoặc VIDCOM_WORKSPACE không còn âm thầm chạy trên active workspace khác.</p>
+        <dl class="mt-5 grid gap-4 md:grid-cols-2">
+          <div><dt class="font-semibold text-slate-200">Core</dt><dd class="mt-1 text-slate-400">Explicit candidate tồn tại nhưng invalid trả selection_required ngay, không xét active/cwd.</dd></div>
+          <div><dt class="font-semibold text-slate-200">CLI</dt><dd class="mt-1 text-slate-400">Validate explicit trước khi mở settings DB; message ổn định không chứa absolute path.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Lease</dt><dd class="mt-1 text-slate-400">Integration giữ một active workspace hợp lệ nhưng invalid explicit vẫn reject và workspace_lease bằng 0.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Gate</dt><dd class="mt-1 text-slate-400">Focused 42/42, full 67/475 và static gates exit 0; chuyển sang U.6 targeted backup runtime.</dd></div>
+        </dl>
+      </section>
+      <section class="mt-6 rounded-2xl border border-emerald-500/30 bg-slate-900 p-6">
+        <div class="flex flex-wrap items-center justify-between gap-3">
+          <h2 class="text-2xl font-semibold">2026-08-02 · Phase U.6 hoàn tất · targeted backup restore</h2>
+          <span class="rounded-full bg-emerald-400/10 px-3 py-1 text-sm text-emerald-300">174/183 · full 67/475</span>
+        </div>
+        <p class="mt-4 text-slate-300">Backup admin không còn khởi động cả daemon hoặc chọn nhầm active workspace trước khi biết backup có hợp lệ hay không.</p>
+        <dl class="mt-5 grid gap-4 md:grid-cols-2">
+          <div><dt class="font-semibold text-slate-200">Preflight</dt><dd class="mt-1 text-slate-400">Manifest, payload, retention, revision link, project registration và marker-backed target được kiểm trước lease.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Target</dt><dd class="mt-1 text-slate-400">Workspace lấy từ project_registry của manifest project, không từ active/cwd/VIDCOM_WORKSPACE.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Minimal runtime</dt><dd class="mt-1 text-slate-400">Chỉ migrate DB, acquire exact workspace lease và tạo Core application; không daemon side effects.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Gate</dt><dd class="mt-1 text-slate-400">Focused 33/33, full 67/475 và static gates exit 0; chuyển sang U.7 stderr contract.</dd></div>
+        </dl>
+      </section>
+      <section class="mt-6 rounded-2xl border border-emerald-500/30 bg-slate-900 p-6">
+        <div class="flex flex-wrap items-center justify-between gap-3">
+          <h2 class="text-2xl font-semibold">2026-08-02 · Phase U hoàn tất · redacted launcher stderr</h2>
+          <span class="rounded-full bg-emerald-400/10 px-3 py-1 text-sm text-emerald-300">175/183 · full 67/476</span>
+        </div>
+        <p class="mt-4 text-slate-300">CLI infrastructure failures không còn phát path/SQL/token, và launcher MCP không còn dựa vào test filter để có stderr sạch.</p>
+        <dl class="mt-5 grid gap-4 md:grid-cols-2">
+          <div><dt class="font-semibold text-slate-200">Error map</dt><dd class="mt-1 text-slate-400">Non-input exception luôn internal_error newline, exit 1 và không đụng stdout.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Warning policy</dt><dd class="mt-1 text-slate-400">Chỉ exact SQLite ExperimentalWarning bị suppress; mọi warning khác delegate nguyên vẹn.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Real artifact</dt><dd class="mt-1 text-slate-400">Packed resolved vidcom command gặp ENOTDIR trả đúng một redacted stderr line; MCP success stderr raw rỗng.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Gate</dt><dd class="mt-1 text-slate-400">Focused 28/28, full 67/476 và static gates exit 0; Phase U đóng, chuyển sang V.1.</dd></div>
+        </dl>
+      </section>
+      <section class="mt-6 rounded-2xl border border-emerald-500/30 bg-slate-900 p-6">
+        <div class="flex flex-wrap items-center justify-between gap-3">
+          <h2 class="text-2xl font-semibold">2026-08-02 · Phase V.1 hoàn tất · 10-tool success matrix</h2>
+          <span class="rounded-full bg-emerald-400/10 px-3 py-1 text-sm text-emerald-300">176/183 · focused 8/8</span>
+        </div>
+        <p class="mt-4 text-slate-300">Contract Matrix không còn dùng chín lỗi project-missing để giả coverage: mọi production tool đều hoàn tất qua bốn era/transport cells.</p>
+        <dl class="mt-5 grid gap-4 md:grid-cols-2">
+          <div><dt class="font-semibold text-slate-200">Registry</dt><dd class="mt-1 text-slate-400">Fixture đăng ký đúng registerVidcomTools và chạy Core read/write/destructive use cases, không thay production handler bằng probe.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Success contract</dt><dd class="mt-1 text-slate-400">Cả 10 tool khóa structured output, project/hash/revision/backup facts và canonical text serialization.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Approval</dt><dd class="mt-1 text-slate-400">Hai destructive cells dùng deterministic bound grant để đi hết mutation success path; approval/negative behavior vẫn được test riêng.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Gate</dt><dd class="mt-1 text-slate-400">Positive 2×2 matrix cùng negative matrix đạt 8/8 và typecheck exit 0; chuyển sang V.2 actual-host wording.</dd></div>
+        </dl>
+      </section>
+      <section class="mt-6 rounded-2xl border border-emerald-500/30 bg-slate-900 p-6">
+        <div class="flex flex-wrap items-center justify-between gap-3">
+          <h2 class="text-2xl font-semibold">2026-08-02 · Phase V.2 hoàn tất · evidence wording trung thực</h2>
+          <span class="rounded-full bg-emerald-400/10 px-3 py-1 text-sm text-emerald-300">177/183 · SDK smoke 2/2</span>
+        </div>
+        <p class="mt-4 text-slate-300">DoD và lịch sử closeout nay chỉ claim boundary đã chạy thật: exact MCP SDK clients spawn resolved vidcom command, không phải Claude Code/Codex binary.</p>
+        <dl class="mt-5 grid gap-4 md:grid-cols-2">
+          <div><dt class="font-semibold text-slate-200">Harness</dt><dd class="mt-1 text-slate-400">Legacy SDK 1.30.0 và modern client 2.0.0 chạy trên temp home/workspace, list/call, approval, audit, clean shutdown.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Boundary</dt><dd class="mt-1 text-slate-400">Actual Claude Code/Codex phụ thuộc config, auth và state ngoài repo nên không được gọi là hermetic CI evidence.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Release gate</dt><dd class="mt-1 text-slate-400">Host-binary validation được giữ cho packaged release artifact; Phase 2 không claim kết quả chưa chạy.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Gate</dt><dd class="mt-1 text-slate-400">SDK smoke 2/2, typecheck và diff check exit 0; chuyển sang V.3 Verification Matrix paths.</dd></div>
+        </dl>
+      </section>
+      <section class="mt-6 rounded-2xl border border-emerald-500/30 bg-slate-900 p-6">
+        <div class="flex flex-wrap items-center justify-between gap-3">
+          <h2 class="text-2xl font-semibold">2026-08-02 · Phase V.3 hoàn tất · Verification Matrix executable</h2>
+          <span class="rounded-full bg-emerald-400/10 px-3 py-1 text-sm text-emerald-300">178/183 · A→O exit 0</span>
+        </div>
+        <p class="mt-4 text-slate-300">Focused matrix không còn trỏ vào planned filenames chưa từng tồn tại; CI có guard tự động khóa đủ 16 phase rows và mọi test path.</p>
+        <dl class="mt-5 grid gap-4 md:grid-cols-2">
+          <div><dt class="font-semibold text-slate-200">Path repair</dt><dd class="mt-1 text-slate-400">C/D/E/G/H/J dùng đúng workspace, journal, authority, read-model, approval và destructive owner suites hiện tại.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Existence guard</dt><dd class="mt-1 text-slate-400">test:spec-paths parse canonical matrix, bắt đúng A→P order và xác minh 37 test paths tồn tại.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Golden drift</dt><dd class="mt-1 text-slate-400">M gate bắt result fixture cũ projects rỗng; hai era goldens được cập nhật sang deterministic success result của V.1.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Gate</dt><dd class="mt-1 text-slate-400">Từng focused row A→O, golden 23/23, typecheck và diff check đều exit 0; chuyển sang V.4 approval fact.</dd></div>
+        </dl>
+      </section>
+      <section class="mt-6 rounded-2xl border border-emerald-500/30 bg-slate-900 p-6">
+        <div class="flex flex-wrap items-center justify-between gap-3">
+          <h2 class="text-2xl font-semibold">2026-08-02 · Phase V.4 hoàn tất · canonical approval fact</h2>
+          <span class="rounded-full bg-emerald-400/10 px-3 py-1 text-sm text-emerald-300">179/183 · 4 surfaces aligned</span>
+        </div>
+        <p class="mt-4 text-slate-300">Goals, Design, Checklist và main spec không còn kể hai lịch sử approval khác nhau cho Design v6.</p>
+        <dl class="mt-5 grid gap-4 md:grid-cols-2">
+          <div><dt class="font-semibold text-slate-200">Canonical fact</dt><dd class="mt-1 text-slate-400">/goal ngày 2026-08-02 duyệt Design v6 cùng checklist và authorize Code Execution A→P.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Goals gate</dt><dd class="mt-1 text-slate-400">Goals reconfirmation vẫn ghi riêng AC recovery/audit đã duyệt; không còn nói v6 đang chờ.</dd></div>
+          <div><dt class="font-semibold text-slate-200">History</dt><dd class="mt-1 text-slate-400">Design v7 chỉ ghi remediation sau independent review, không phủ nhận approval history của v6.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Gate</dt><dd class="mt-1 text-slate-400">Cross-doc contradiction scan sạch và diff check exit 0; chuyển sang V.5 script matrix trước final SHA.</dd></div>
+        </dl>
+      </section>
+      <section class="mt-6 rounded-2xl border border-emerald-500/30 bg-slate-900 p-6">
+        <div class="flex flex-wrap items-center justify-between gap-3">
+          <h2 class="text-2xl font-semibold">2026-08-02 · Phase V.5 hoàn tất · named MCP contract gate</h2>
+          <span class="rounded-full bg-emerald-400/10 px-3 py-1 text-sm text-emerald-300">180/183 · 9 files / 71 tests</span>
+        </div>
+        <p class="mt-4 text-slate-300">CI contract script không còn bỏ ngoài success matrix, negative matrix hoặc exact revision-pin suite.</p>
+        <dl class="mt-5 grid gap-4 md:grid-cols-2">
+          <div><dt class="font-semibold text-slate-200">Success</dt><dd class="mt-1 text-slate-400">10 production tools chạy legacy/modern × stdio/HTTP qua deterministic success fixture.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Negative</dt><dd class="mt-1 text-slate-400">Schema, resource, approval và era-specific error behavior giữ suite riêng trong cùng named gate.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Revision</dt><dd class="mt-1 text-slate-400">Exact/latest/no-header/content-type pinning được chạy trực tiếp thay vì chỉ suy ra từ transport tests.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Gate</dt><dd class="mt-1 text-slate-400">test:mcp-contract 71/71, typecheck và diff check exit 0; chuyển sang V.6 notes ordering.</dd></div>
+        </dl>
+      </section>
+      <section class="mt-6 rounded-2xl border border-emerald-500/30 bg-slate-900 p-6">
+        <div class="flex flex-wrap items-center justify-between gap-3">
+          <h2 class="text-2xl font-semibold">2026-08-02 · Phase V.6 hoàn tất · canonical sequence index</h2>
+          <span class="rounded-full bg-emerald-400/10 px-3 py-1 text-sm text-emerald-300">181/183 · 91/91 indexed</span>
+        </div>
+        <p class="mt-4 text-slate-300">Reviewer có một thứ tự đọc rõ A→P→R→V dù file vẫn giữ append history của các remediation entries.</p>
+        <dl class="mt-5 grid gap-4 md:grid-cols-2">
+          <div><dt class="font-semibold text-slate-200">Index</dt><dd class="mt-1 text-slate-400">Visible navigation tạo sequence ba chữ số và anchor cho từng Phase/task section.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Ordering</dt><dd class="mt-1 text-slate-400">Phase rank trước, task number sau; source order chỉ làm stable tie-break cho begin/complete cùng phase.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Provenance</dt><dd class="mt-1 text-slate-400">Không di chuyển historical blocks nên append chronology và nội dung review cũ được bảo toàn.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Gate</dt><dd class="mt-1 text-slate-400">91/91 headings indexed đúng head/tail và diff check exit 0; chuyển sang V.7 runtime smoke hardening.</dd></div>
+        </dl>
+      </section>
+      <section class="mt-6 rounded-2xl border border-emerald-500/30 bg-slate-900 p-6">
+        <div class="flex flex-wrap items-center justify-between gap-3">
+          <h2 class="text-2xl font-semibold">2026-08-02 · Phase V.7 hoàn tất · production runtime matrix</h2>
+          <span class="rounded-full bg-emerald-400/10 px-3 py-1 text-sm text-emerald-300">182/183 · build/runtime exit 0</span>
+        </div>
+        <p class="mt-4 text-slate-300">Next production smoke nay chứng minh cả ba MCP route classes và credential attribution, đồng thời không thể pass khi child shutdown treo.</p>
+        <dl class="mt-5 grid gap-4 md:grid-cols-2">
+          <div><dt class="font-semibold text-slate-200">Routes</dt><dd class="mt-1 text-slate-400">Legacy SDK dùng /api/mcp; modern client pin 2026-07-28 dùng exact route và /latest.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Audit</dt><dd class="mt-1 text-slate-400">Ba list_projects rows giữ credentialId vừa issue và protocol_version đúng legacy/modern negotiation.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Shutdown</dt><dd class="mt-1 text-slate-400">SIGTERM timeout dẫn tới SIGKILL nhưng helper vẫn throw; actual ignoring-child regression xác nhận signalCode SIGKILL.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Gate</dt><dd class="mt-1 text-slate-400">Build/runtime, hard-kill 1/1, typecheck, focused lint và diff check exit 0; chuyển final SHA/remote CI.</dd></div>
+        </dl>
+      </section>
     </main>
+    <script>
+      (() => {
+        const phaseOrder = "ABCDEFGHIJKLMNOPRSTUV";
+        const entries = [...document.querySelectorAll("main > section")].flatMap((section, sourceIndex) => {
+          const heading = section.querySelector("h2");
+          const match = heading?.textContent?.match(/Phase ([A-V])(?:\.(\d+))?/);
+          if (!heading || !match) return [];
+          const phase = match[1];
+          const task = match[2] === undefined
+            ? (heading.textContent.includes("Bắt đầu") ? -1 : 999)
+            : Number(match[2]);
+          return [{ section, heading, phase, task, sourceIndex }];
+        }).sort((left, right) => phaseOrder.indexOf(left.phase) - phaseOrder.indexOf(right.phase)
+          || left.task - right.task
+          || left.sourceIndex - right.sourceIndex);
+        const list = document.querySelector("[data-sequence-list]");
+        entries.forEach((entry, index) => {
+          const sequence = String(index + 1).padStart(3, "0");
+          entry.section.dataset.sequence = sequence;
+          entry.section.id = `sequence-${sequence}`;
+          const item = document.createElement("li");
+          const link = document.createElement("a");
+          link.className = "block rounded-lg border border-slate-800 px-3 py-2 hover:border-cyan-500 hover:text-cyan-300";
+          link.href = `#${entry.section.id}`;
+          link.textContent = `${sequence} · ${entry.heading.textContent}`;
+          item.append(link);
+          list?.append(item);
+        });
+      })();
+    </script>
   </body>
 </html>

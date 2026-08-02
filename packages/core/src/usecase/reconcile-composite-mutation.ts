@@ -91,9 +91,31 @@ async function observeSteps(
     const resolved = await dependencies.workspace.resolve(ref, path, purposeForStep(step));
     if (!resolved.ok) return null;
     const actualHash = await dependencies.workspace.readHash(resolved.value);
-    observations.push({ step, target: resolved.value, classification: classifyCompositeStep(step, actualHash) });
+    observations.push({ step, target: resolved.value, actualHash, classification: classifyCompositeStep(step, actualHash) });
   }
   return observations;
+}
+
+async function captureSettlementBoundary(
+  workspace: WorkspacePort,
+  observations: readonly ObservedCompositeStep[],
+  journalId: JournalId,
+): Promise<boolean> {
+  for (const observation of observations) {
+    const captured = await workspace.captureForMutation(
+      observation.target,
+      observation.actualHash,
+      journalId,
+      observation.step.ordinal + 2_000_000,
+    );
+    if (!captured.ok) return false;
+    if (!(await workspace.restoreCaptured(captured.value, null))) {
+      await workspace.discardCapture(captured.value).catch(() => {});
+      return false;
+    }
+    await workspace.discardCapture(captured.value);
+  }
+  return true;
 }
 
 /** Reconciles one pending composite strictly from durable context and current filesystem hashes. */
@@ -116,6 +138,16 @@ export async function reconcileCompositeMutation(
 
   const decision = decideCompositeRecovery(observations.map(({ classification }) => classification));
   if (decision === "orphan") return orphan(dependencies, mutation, "orphaned");
+  try {
+    if (!(await captureSettlementBoundary(dependencies.workspace, observations, mutation.id))) {
+      return err({
+        code: ErrorCode.RecoveryRequired,
+        message: "the mutation targets changed during recovery settlement",
+      });
+    }
+  } catch {
+    return err({ code: ErrorCode.StorageUnavailable, message: "the mutation targets could not be revalidated" });
+  }
   if (decision === "roll_forward") {
     try {
       const envelope = await dependencies.journal.commitComposite(
@@ -151,7 +183,7 @@ export async function reconcileCompositeMutation(
     }
   }
 
-  if (!(await rollbackObservedCompositeSteps(dependencies.workspace, observations))) {
+  if (!(await rollbackObservedCompositeSteps(dependencies.workspace, observations, mutation.id))) {
     return orphan(dependencies, mutation, "rollback_failed");
   }
   try {
@@ -169,7 +201,7 @@ export async function reconcileCompositeMutation(
 
 /** Reconciles unresolved journals independently so one quarantined project cannot block healthy projects. */
 export async function reconcileCompositeMutations(
-  dependencies: CompositeReconciliationDependencies,
+  dependencies: CompositeReconciliationDependencies & { workspaceRoot: string },
 ): Promise<CompositeReconciliationReport> {
   const report: CompositeReconciliationReport = {
     pending: [],
@@ -177,7 +209,7 @@ export async function reconcileCompositeMutations(
     rolledBack: [],
     orphaned: [],
   };
-  for (const mutation of await dependencies.journal.listPendingComposites()) {
+  for (const mutation of await dependencies.journal.listPendingComposites(dependencies.workspaceRoot)) {
     let result: Awaited<ReturnType<typeof reconcileCompositeMutation>>;
     try {
       result = await reconcileCompositeMutation(dependencies, mutation.id);

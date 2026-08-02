@@ -17,6 +17,10 @@ export type McpAuthEnv = {
   Variables: { credentialId: string };
 };
 
+const CORS_METHODS = ["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"] as const;
+const CORS_HEADERS = ["Authorization", "Content-Type", "MCP-Protocol-Version", "Mcp-Method", "Mcp-Name"] as const;
+const CORS_HEADER_NAMES = new Set(CORS_HEADERS.map((header) => header.toLowerCase()));
+
 function reject(code: ErrorCode, message: string): never {
   throw new HttpBoundaryError({ code, message });
 }
@@ -31,9 +35,7 @@ export function requestId(): MiddlewareHandler {
 }
 
 export function redactRequestUrl(rawUrl: string): string {
-  const url = new URL(rawUrl);
-  url.searchParams.delete("t");
-  return url.toString();
+  return new URL(rawUrl).pathname;
 }
 
 export function requestLogger(write: (line: string) => void): MiddlewareHandler {
@@ -54,15 +56,39 @@ export function hostCheck(port: number): MiddlewareHandler {
 }
 
 export function strictCors(allowedOrigins: readonly string[]): MiddlewareHandler {
-  const allowed = new Set(allowedOrigins);
+  const allowed = new Map<string, string>();
+  for (const configured of allowedOrigins) {
+    const canonical = new URL(configured).origin;
+    allowed.set(canonical, canonical);
+  }
   return async (c, next) => {
     const origin = c.req.header("Origin");
-    if (origin && !allowed.has(origin)) {
-      reject(ErrorCode.OriginNotAllowed, "request origin is not allowed");
-    }
     if (origin) {
-      c.header("Access-Control-Allow-Origin", origin);
+      let canonical: string;
+      try { canonical = new URL(origin).origin; }
+      catch { return reject(ErrorCode.OriginNotAllowed, "request origin is not allowed"); }
+      const configured = allowed.get(canonical);
+      if (!configured) reject(ErrorCode.OriginNotAllowed, "request origin is not allowed");
+      c.header("Access-Control-Allow-Origin", configured);
+      c.header("Access-Control-Allow-Credentials", "true");
       c.header("Vary", "Origin");
+      const requestedMethod = c.req.header("Access-Control-Request-Method")?.toUpperCase();
+      if (c.req.method === "OPTIONS" && requestedMethod) {
+        if (!CORS_METHODS.includes(requestedMethod as (typeof CORS_METHODS)[number])) {
+          reject(ErrorCode.OriginNotAllowed, "CORS preflight method is not allowed");
+        }
+        const requestedHeaders = (c.req.header("Access-Control-Request-Headers") ?? "")
+          .split(",")
+          .map((header) => header.trim().toLowerCase())
+          .filter(Boolean);
+        if (requestedHeaders.some((header) => !CORS_HEADER_NAMES.has(header))) {
+          reject(ErrorCode.OriginNotAllowed, "CORS preflight header is not allowed");
+        }
+        c.header("Access-Control-Allow-Methods", CORS_METHODS.join(", "));
+        c.header("Access-Control-Allow-Headers", CORS_HEADERS.join(", "));
+        c.header("Vary", "Origin, Access-Control-Request-Method, Access-Control-Request-Headers");
+        return c.body(null, 204);
+      }
     }
     await next();
   };

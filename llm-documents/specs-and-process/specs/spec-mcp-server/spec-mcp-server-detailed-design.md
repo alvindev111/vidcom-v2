@@ -3,8 +3,9 @@
 > **Status**: Approved 2026-08-02 — người dùng xác nhận bản 6 cùng Implementation Checklist qua lệnh thực thi `/goal`.
 
 > **Reference**: [Detailed Goals](./spec-mcp-server-detailed-goal.md) — Approved, reconfirmed 2026-08-02
-> **Next**: [Implementation Checklist](./spec-mcp-server-implementation-checklist.md) — Approved và hoàn tất 140/140
-> **Main spec**: [spec-mcp-server-complete.md](./spec-mcp-server-complete.md)
+> **Next**: [Implementation Checklist](./spec-mcp-server-implementation-checklist.md) — Review remediation Phase R→V đang thực thi
+> **Main spec**: [spec-mcp-server-inprocess.md](./spec-mcp-server-inprocess.md)
+> **Bản 7, 2026-08-02** — mở lại sau raw implementation review; §17 khóa remediation design cho filesystem CAS, lease-scoped recovery, audit/response finalization, retention và operability.
 > **Bản 6, 2026-08-02** — sau audit Implementation Checklist. Bản này đóng đường truyền `PendingToolAudit` từ Registry tới mọi Core write use case, kể cả mutation một-step; đồng thời giữ source compatibility cho caller Phase 1. §16 đối chiếu mọi vòng review.
 
 ## 1. Overview
@@ -313,7 +314,7 @@ Annotation được dẫn xuất cố định từ level: `read` → read-only/i
 
 | Tool | Use case | Thay đổi Core |
 |---|---|---|
-| `list_projects` | `listProjects` | không |
+| `list_projects` | `listProjectContexts({ limit, cursor })` | page tối đa 100, parse concurrency 4, per-project diagnostic |
 | `get_project_context` | `getStudioSnapshot` | thêm `sources` (§5.5) |
 | `list_scenes` | `getStudioSnapshot` | dùng `sources` |
 | `read_composition` | `readSourceFile` | không |
@@ -711,6 +712,8 @@ export interface ToolAuditEntry {
   outcome: "ok" | "error"; errorCode: ErrorCode | null;
   detail: Record<string, unknown>;    // đã redact
   credentialId: string | null;
+  invokedAt: string; durationMs: number;
+  revisionBefore: number | null; revisionAfter: number | null;
 }
 
 /** Durable trước filesystem write; outcome/revision được quyết ở T2 hoặc recovery. */
@@ -722,6 +725,7 @@ export interface PendingToolAudit {
   detail: Record<string, unknown>;    // đã redact trước khi persist
   credentialId: string | null;
   invokedAt: string;
+  revisionBefore: number | null;
 }
 
 export class ToolAuditService {
@@ -747,6 +751,8 @@ Chính sách, đối chiếu R7.4/R7.5:
 | Tool ghi all-landed, T2 thất bại | durable T1, chưa có T2 | **indeterminate** — giữ pending audit + journal, gate project; recovery retry T2 | Không được ghi error rồi bỏ context vì outcome cuối có thể là roll-forward thành công |
 | Tool ghi orphaned | có (2c hoặc recovery) | ghi error audit từ durable context cùng orphan/invalidate; nếu transaction lỗi thì giữ pending + gate | Destructive attempt đã chạm đĩa phải còn truy vết được |
 | Tool đọc | không | best-effort + log cảnh báo | như trên |
+
+`audit_entry.created_at` là thời điểm invocation bắt đầu. `durationMs`, `revisionBefore` và `revisionAfter` nằm trong JSON `detail` đã redact; mutation thành công tiếp tục dùng cột `revision_id` làm revision sau. Vì `audit_entry` đã có `detail` và `revision_id`, thay đổi M-06 không tạo migration. Pending schema v1 cũ thiếu `revisionBefore` được đọc thành `null` để startup recovery không mắc kẹt.
 
 > Đây là **làm rõ** R7.4, không phải nới. Goals đã đồng bộ thành AC 7.4/7.4b/7.4c: fail-closed áp cho terminal commit; failure đã chứng minh không đổi là best-effort; all-landed/T2-failed là indeterminate và phải giữ durable context.
 
@@ -1172,7 +1178,7 @@ Từ chối: `path_outside_project`, `asset_not_allowed`, `too_large`.
 `{ projectId, sceneId, start?, duration?, trackIndex?, expectedContentHash }` → `{ scene, project, envelope }`
 
 ### 7.7 `set_text` — write
-`{ projectId, sceneId, file, elementId, text, expectedContentHash }` → `{ scene, project, envelope, narrationStale: true }`
+`{ projectId, sceneId, file, elementId, text, expectedContentHash }` → `{ scene, project, envelope, narrationStale: boolean }`; giá trị chỉ `true` khi narration sidecar tồn tại và vừa được đánh dấu stale, còn scene không có narration trả `false`.
 
 ### 7.8 `save_file` — write
 `{ projectId, path, content, expectedContentHash }` → `{ file: { path, contentHash }, envelope }`
@@ -1470,7 +1476,7 @@ Không test: hiệu năng dưới tải, nhiều workspace đồng thời, nội
 - **Status**: **Approved and implemented**
 - **Confirmed by**: user `/goal` execution authorization
 - **Confirmation date**: 2026-08-02
-- **Notes**: Bản 5 đã được người dùng duyệt ngày 2026-08-02. Bản 6 cần tái xác nhận vì audit checklist phát hiện và sửa một interface blocker vật chất: đường truyền `PendingToolAudit` Registry → Core (DR-20).
+- **Notes**: Bản 5 đã được người dùng duyệt trước đó; bản 6 cùng Implementation Checklist được duyệt qua `/goal` ngày 2026-08-02, đồng thời authorize Code Execution A→P. Bản 6 sửa interface blocker vật chất về đường truyền `PendingToolAudit` Registry → Core (DR-20).
   - Detailed Goals AC 2.11, AC 5b.3–4e và AC 7.4b–4c đã được tái xác nhận cùng ngày.
   - Threat model approval đã được ghi rõ: chống destructive call/replay qua MCP, không tuyên bố sandbox trước process có quyền OS ngang user.
   - Rủi ro lớn nhất là DR-2 + DR-5 + DR-12 + DR-18/19: chúng chạm journal/revision/recovery của Phase 1. Giảm thiểu bằng giữ `mutate()` làm mặt tiền, phân nhánh commit theo số step, durable recovery context, project gate cho mọi unresolved journal và failure-injection tests ở từng transaction.
@@ -1541,3 +1547,138 @@ Skill `mcp-builder` cũng làm rõ `ToolDefinition.title` + MCP annotations. Ann
 | I1 | Registry chuẩn bị `PendingToolAudit` nhưng `ToolContext` không có field để đưa nó tới Core | §5.1–5.2 + DR-20: `projectIdOf`, `invocationId`, `writeInvocation` |
 | I2 | `mutate()` một-step cố định `toolAudit=null`, khiến `save_file`/`set_scene_timing` không thể audit fail-closed cùng T2 | §5.6 + DR-20: optional `WriteInvocation`, source-compatible với caller Phase 1; integration test one-step audit |
 | I3 | `delete_file` có grant contract nhưng không có Core prepare-plan để dựng binding/reference safety | §5.9b: `prepareFileDeletion` + immutable approved plan; Registry không tự scan hoặc dựng binding |
+
+---
+
+## 17. Bản 7 — Remediation sau implementation review
+
+### 17.1 Durable filesystem capture/CAS
+
+`WorkspacePort.writeAtomic()`/`deleteAtomic()` không còn là primitive publish của `WriteAuthority`. Mỗi file step dùng một transaction slot deterministic theo `{journalId, ordinal}` trên cùng filesystem với target:
+
+```text
+stage intended bytes
+  → rename target → rollback slot
+  → hash rollback slot và so `fromHash`
+  → persist captured slot/hash trong mutation_step
+  → backup đọc từ rollback slot
+  → publish bằng create-if-absent, không overwrite target mới xuất hiện
+  → fsync directory
+```
+
+- Target không tồn tại được biểu diễn bằng `captured_hash = null`; publish vẫn phải fail nếu external editor tạo target trước create-if-absent.
+- Hash mismatch sau capture phải restore slot khi target còn trống. Nếu target đã bị external editor tạo lại, giữ external bytes, giữ slot và chuyển journal sang recovery thay vì overwrite.
+- Delete kết thúc sau capture; file mới xuất hiện ở path sau capture không được xoá.
+- Rollback và recovery dùng cùng primitive với expected hash đảo chiều. Không có đường `rename`/`unlink` không điều kiện trong composite flow.
+- `mutation_step` persist `rollback_path`, `captured_hash`, `capture_state`; tên slot deterministic cho phép startup tìm lại cả crash xảy ra giữa filesystem rename và DB marker.
+- Backup destructive chỉ đọc captured slot và verify hash bằng `StepIntent.fromHash`; không đọc lại live target.
+
+### 17.2 Lease-scoped T1 và recovery settlement
+
+`beginComposite()` nhận `WriteAuthorityProof { leaseId, workspaceRoot }`. Trong cùng SQLite transaction với T1, adapter phải:
+
+1. kiểm `workspace_lease.id`, owner root và `expires_at > transactionNow`;
+2. kiểm project registry thuộc đúng workspace root;
+3. kiểm không có journal `pending|orphaned` khác cho project;
+4. mới insert journal/steps và reserve grant.
+
+Recovery settlement cũng nhận authority proof và revalidate lease trong transaction terminal. Startup chỉ query journal thuộc workspace đang lease; runtime-scoped resolver không fallback sang registry root khác. Targeted admin recovery đọc journal metadata trước, acquire đúng workspace lease, rồi mới inspect filesystem.
+
+### 17.3 Abort-or-reconcile contract
+
+Mọi failure sau T1 đi qua một helper duy nhất. `backup_failed` chỉ hợp lệ khi `abortComposite` đã terminal và grant/audit đã settle. Nếu abort lỗi hoặc journal vẫn unresolved, response là `recovery_required` với `journalId` và phase machine-readable. Không catch-and-discard transaction failure.
+
+### 17.4 Retention và rollback payload
+
+- Startup reconcile unresolved journals trước mọi retention.
+- Backup linked từ journal unresolved không được prune.
+- Prune dùng atomic rename sang tombstone, persist `payload_pruned_at`, rồi mới physical delete; startup reconcile tombstone ở cả hai crash direction.
+- Approval cleanup gọi `expireDue(now)` trước khi xoá terminal row.
+- Rollback bytes lớn chuyển sang content-addressed app-data payload store; `mutation_step`/`revision_step` giữ digest/reference, không copy cùng bytes vào nhiều bảng. `revision_blob` chỉ còn compatibility metadata và được migration/reader xử lý có chủ đích.
+
+### 17.5 Core contract và reference safety
+
+- Parser trả canonical project-relative reference cùng owner source cho nested scenes và root track. External/data URL không trở thành project reference.
+- `createScene` kiểm `duration > 0`, `start >= 0`, integer track và finite `start + duration` trước SDK ops/T1.
+- Empty timing patch bị schema và Core từ chối.
+- `setText.narrationStale` là boolean thật: `false` khi scene không có narration.
+- `WriteEnvelope.fileHashes` dùng canonical `RelPath` key schema.
+- Tool descriptions phải chứa use/don't-use, nguồn precondition, side effect và recovery/error guidance.
+
+### 17.6 Audit và response finalization
+
+`input_required` là terminal outcome của một invocation round và ghi đúng một caller-owned audit trước khi Registry rethrow control signal. Audit thêm `invokedAt`, `durationMs`, `revisionBefore` và `revisionAfter`: Registry quan sát revision trước/sau cho read và pre-T1 terminal outcome; pending journal giữ start/before, rồi commit/orphan/recovery tính duration/after tại terminal transition. Observation lỗi là fail-open và ghi metric/log, không được làm tool call thất bại.
+
+Write handler phải tạo public output qua một Core-owned validated result trước T2. Registry vẫn validate defense-in-depth; nếu serialization sau commit lỗi, wire result dùng outcome riêng `committed_response_error` kèm revision/journal identity, không giả thành mutation failure có thể retry mù. Text content dùng canonical JSON của đúng `structuredContent`.
+
+### 17.7 Read tolerance
+
+`list_projects` nhận strict `{ limit?: 1..100 = 20, cursor?: string }`, sort project theo `projectId`, chỉ parse page kế tiếp và trả `{ projects, diagnostics, nextCursor }`; `nextCursor` là `projectId` cuối page khi còn dữ liệu, `null` ở page cuối. Parse/revision/recovery chạy theo batch tối đa 4 project đồng thời. Lỗi một project tạo warning diagnostic `project_context_unavailable` có stable project ID trong message và bỏ riêng item đó; lỗi enumerate workspace mới fail toàn tool. Cursor dùng lexical `projectId > cursor`, nên vẫn tiến được nếu project ở cursor đã bị xóa.
+
+Scene tham chiếu source canonical nhưng source metadata không tồn tại vẫn được trả trong `get_project_context`/`list_scenes` với `fileContentHash: null`; output thêm warning diagnostic duy nhất cho mỗi path với code `referenced_source_missing` và field `file`. Không tạo hash giả và không throw `internal`. Entry source vẫn là hard read dependency của snapshot, nên entry mất tiếp tục trả bounded storage/not-found error thay vì scene state giả.
+
+### 17.8 Credential/grant boundary
+
+Credential service `list()` trả `CredentialSummary[]` không có verifier hash. Rotation overlap mặc định 5 phút, product maximum 24 giờ (`86_400_000 ms`); CLI chỉ nhận positive integer không vượt maximum, Core constructor/override nhận `0..maximum` và từ chối expiry vượt miền ECMAScript Date trước persistence. Grant requested/issued quá TTL được transition terminal trước retention.
+
+### 17.9 HTTP/security boundary
+
+- Pinned/latest handler luôn forward SDK options, gồm `authInfo`.
+- SDK media-type/invalid-body ladder chạy trước pin mismatch.
+- Logger chỉ ghi method + pathname.
+- CORS trả canonical configured origin, không echo raw request value.
+- App-data directory/file được precreate owner-only trước SQLite open; WAL/SHM được kiểm sau enable WAL.
+
+### 17.10 CLI lifecycle và executable
+
+Runtime dùng idempotent unwind stack: mọi cleanup hook được thử, lỗi gom thành `AggregateError` sau cùng. Signal gate được cài trước startup và giữ đến cleanup settle. Stdio expose closed lifecycle; EOF/EPIPE đi qua cùng shutdown path. Explicit workspace invalid fail fast. Backup restore validate ID/workspace trước khi dựng targeted writer runtime. CLI unexpected error chỉ phát một dòng stable đã redact.
+
+Source-checkout bin được track executable và smoke qua resolved `vidcom` command; packaged SEA vẫn thuộc Phase 4 và không được overclaim.
+
+### 17.11 Evidence contract
+
+Contract matrix phải có success path đặc trưng cho đủ 10 tool, tách khỏi negative matrix. `test:mcp-contract` chứa matrix/negative/revision pin. Runtime smoke chạy legacy entry và modern exact/latest, kiểm credential audit, và fail nếu child không exit đúng deadline. Phase path existence có CI guard. Spec chỉ đóng lại sau final local matrix và remote CI trên exact HEAD.
+
+### DR-21 — Capture/CAS thay cho validate-rồi-rename
+
+**Decision**: filesystem publish giữ actual previous bytes trong deterministic rollback slot và dùng create-if-absent. **Reason**: double-read không đóng được race cuối; rename overwrite phá P7. **Implication**: migration step metadata và recovery algorithm cùng đổi.
+
+### DR-22 — Lease proof là input transaction của journal
+
+**Decision**: lease/gate check thuộc T1/T2 transaction, không chỉ Core mutex. **Reason**: mutex không cross-process và lease có thể handover sau check.
+
+### DR-23 — Failure sau T1 chỉ có terminal hoặc recovery-required
+
+**Decision**: mọi branch dùng abort-or-reconcile và không nuốt abort failure. **Reason**: caller phải biết project đã bị gate.
+
+### DR-24 — Retention không phá recovery
+
+**Decision**: unresolved data được pin; prune crash-consistent; large payload content-addressed. **Reason**: recovery/restore quan trọng hơn tuổi retention và SQLite không được phình theo asset bytes duplicate.
+
+### DR-25 — Canonical reference graph thuộc read model
+
+**Decision**: deletion safety dùng reference canonical có owner, không raw attribute. **Reason**: relative nested/root references không thể so chuỗi trực tiếp.
+
+### DR-26 — Audit phản ánh wire outcome và mutation outcome
+
+**Decision**: input-required được audit; response-finalization không biến commit thành ordinary error. **Reason**: retry dựa trên false-negative có thể gây mutation thứ hai.
+
+### DR-27 — Read surface tolerant và bounded
+
+**Decision**: project/source hỏng trở thành diagnostics per item và list có pagination/bounded concurrency. **Reason**: một artifact đang author dở không được làm mất discovery của workspace.
+
+### DR-28 — Admin service trả least-privilege projection
+
+**Decision**: credential summaries không mang verifier; time range validate ở cả CLI/Core.
+
+### DR-29 — HTTP wrapper không làm mất perimeter context
+
+**Decision**: exact pin chỉ thêm pinning sau SDK transport validation và luôn forward options.
+
+### DR-30 — Cleanup là unwind, không phải chuỗi short-circuit
+
+**Decision**: startup/stdio/signal/admin one-shot cùng dùng lifecycle idempotent có aggregate failure.
+
+### DR-31 — Evidence phải đi qua boundary được claim
+
+**Decision**: success contract, resolved executable, runtime route và exact final SHA đều có automated/live evidence; wording hạ xuống nếu actual host không hermetic.

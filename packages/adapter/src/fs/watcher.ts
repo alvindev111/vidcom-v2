@@ -42,6 +42,11 @@ function digest(bytes: Uint8Array): ContentHash {
   return `sha256:${createHash("sha256").update(bytes).digest("hex")}` as ContentHash;
 }
 
+function isMutationArtifact(basename: string): boolean {
+  return basename.includes(".vidcom-")
+    && [".rollback", ".publish", ".landed"].some((suffix) => basename.endsWith(suffix));
+}
+
 /** Debounced workspace watcher that emits only external logical file changes. */
 export class WorkspaceWatcher {
   private readonly watchers: FSWatcher[] = [];
@@ -132,9 +137,11 @@ export class WorkspaceWatcher {
       watcher = this.watchFactory(ref.root, { recursive: true }, (_event, filename) => {
         if (!filename) return;
         const relative = String(filename).split(path.sep).join("/") as RelPath;
+        if (relative === path.basename(ref.root)) return;
         if (relative.split("/").some((part) => [".git", ".hyperframes", "node_modules"].includes(part))) return;
         const basename = path.posix.basename(relative);
         if (basename.startsWith(".") && basename.endsWith(".tmp")) return;
+        if (isMutationArtifact(basename)) return;
         this.debounce(ref, relative);
       });
     } catch {

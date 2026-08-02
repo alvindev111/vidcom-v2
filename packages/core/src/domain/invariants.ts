@@ -31,7 +31,8 @@ export function validateSceneTiming(input: SceneTimingInput): DomainError | null
       field: "trackIndex",
     };
   }
-  if (input.start + input.duration > input.rootDuration) {
+  const end = input.start + input.duration;
+  if (!Number.isFinite(end) || end > input.rootDuration) {
     return {
       code: ErrorCode.DurationOverflow,
       message: "scene timing exceeds the root duration",

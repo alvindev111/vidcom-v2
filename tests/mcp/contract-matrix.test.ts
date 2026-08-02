@@ -7,25 +7,74 @@ import { StdioClientTransport as LegacyStdio } from "@modelcontextprotocol/sdk/c
 import { StreamableHTTPClientTransport as LegacyHttp } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { describe, expect, it } from "vitest";
 
+import { canonicalizeJson } from "@vidcom/core";
 import { createMcpHttpHandlers } from "@vidcom/mcp";
 
-import { CONTRACT_MATRIX_CASES, createContractMatrixRegistry } from "./support";
+import {
+  CONTRACT_MATRIX_CASES,
+  createContractMatrixRegistry,
+  matrixHash,
+  matrixNewHash,
+} from "./support";
 
 const fixture = fileURLToPath(new URL("./fixtures/contract-matrix-server.ts", import.meta.url));
 const modernRevision = "2026-07-28";
 const legacyRevision = "2025-11-25";
 const expectedTools = Object.keys(CONTRACT_MATRIX_CASES).sort();
+const projectId = "project-contract-matrix";
+const expectedSuccess: Record<string, object> = {
+  list_projects: {
+    projects: [{ projectId, projectRevision: 2 }],
+    diagnostics: [],
+    nextCursor: null,
+  },
+  get_project_context: {
+    project: { id: projectId, revision: 2 },
+    scenes: [{ id: "scene-1" }],
+    projectRevision: 2,
+  },
+  list_scenes: { scenes: [{ id: "scene-1" }], projectRevision: 2 },
+  read_composition: { path: "index.html", contentHash: matrixHash },
+  create_scene: {
+    scene: { id: "scene-2", fileContentHash: matrixNewHash },
+    envelope: { projectRevision: 3 },
+  },
+  set_scene_timing: {
+    scene: { id: "scene-1", duration: 4, fileContentHash: matrixNewHash },
+    envelope: { projectRevision: 3 },
+  },
+  set_text: {
+    scene: { id: "scene-1", fileContentHash: matrixNewHash },
+    narrationStale: false,
+    envelope: { projectRevision: 3 },
+  },
+  save_file: {
+    file: { path: "compositions/scene-1.html", contentHash: matrixNewHash },
+    envelope: { projectRevision: 3 },
+  },
+  delete_file: {
+    deleted: "compositions/unused.html",
+    backupId: "backup-contract-matrix",
+    envelope: { projectRevision: 3 },
+  },
+  delete_scene: {
+    deletedFile: "compositions/scene-1.html",
+    backupId: "backup-contract-matrix",
+    envelope: { projectRevision: 3 },
+  },
+};
 
 async function exercise(client: LegacyClient | ModernClient): Promise<void> {
   const listed = await client.listTools();
   expect(listed.tools.map((tool) => tool.name)).toEqual(expectedTools);
   for (const [name, arguments_] of Object.entries(CONTRACT_MATRIX_CASES)) {
     const result = await client.callTool({ name, arguments: arguments_ });
-    if (name === "list_projects") {
-      expect((result as { structuredContent?: unknown }).structuredContent).toEqual({ projects: [] });
-    } else {
-      expect((result as { isError?: boolean }).isError, name).toBe(true);
-    }
+    expect((result as { isError?: boolean }).isError, name).not.toBe(true);
+    const structuredContent = (result as { structuredContent?: unknown }).structuredContent;
+    expect(structuredContent, name).toMatchObject(expectedSuccess[name]!);
+    const text = (result as { content?: Array<{ type: string; text?: string }> })
+      .content?.find((item) => item.type === "text")?.text;
+    expect(text, name).toBe(canonicalizeJson(structuredContent));
   }
 }
 

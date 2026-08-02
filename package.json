@@ -15,9 +15,10 @@
     "test": "vitest run",
     "test:boundaries": "node scripts/verify-import-boundaries.mjs",
     "test:golden": "vitest run tests/golden tests/mcp/golden",
-    "test:mcp-contract": "vitest run tests/mcp/ci-guards.test.ts tests/core/write-authority.test.ts tests/mcp/registry.test.ts tests/mcp/legacy-transport.test.ts tests/mcp/modern-transport.test.ts tests/e2e/mcp-stdio-host.test.ts",
+    "test:mcp-contract": "vitest run tests/mcp/ci-guards.test.ts tests/mcp/contract-matrix.test.ts tests/mcp/negative-contract-matrix.test.ts tests/mcp/revision-pin.test.ts tests/core/write-authority.test.ts tests/mcp/registry.test.ts tests/mcp/legacy-transport.test.ts tests/mcp/modern-transport.test.ts tests/e2e/mcp-stdio-host.test.ts",
     "test:runtime-smoke": "node scripts/verify-next-runtime.mjs",
     "test:schema-drift": "node scripts/verify-schema-drift.mjs",
+    "test:spec-paths": "node scripts/verify-spec-test-paths.mjs",
     "db:generate": "drizzle-kit generate",
     "typecheck": "tsc --noEmit"
   },

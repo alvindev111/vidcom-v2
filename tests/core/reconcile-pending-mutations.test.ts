@@ -81,6 +81,10 @@ function workspace(actualHashes: Map<string, ContentHash | null>): WorkspacePort
     async writeAtomic() {},
     async exists(path) { return actualHashes.get(path) !== null && actualHashes.has(path); },
     async deleteAtomic(path) { actualHashes.set(path, null); },
+    async captureForMutation() { throw new Error("unused"); },
+    async publishCaptured() { throw new Error("unused"); },
+    async restoreCaptured() { throw new Error("unused"); },
+    async discardCapture() {},
     async readTree() { return []; },
     async stat() { return null; },
   };

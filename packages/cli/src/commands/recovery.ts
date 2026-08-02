@@ -1,6 +1,11 @@
 import { randomUUID } from "node:crypto";
 
-import { initializeDatabase, migrateDatabase, MutationJournal } from "@vidcom/adapter";
+import {
+  initializeDatabase,
+  LargePreviousContentStore,
+  migrateDatabase,
+  MutationJournal,
+} from "@vidcom/adapter";
 import {
   reconcileCompositeMutation,
   resolveOrphanedMutation,
@@ -68,7 +73,12 @@ async function inspectRecovery(
 ): Promise<void> {
   const database = await initializeDatabase(dependencies.appDataRoot());
   try {
-    const mutation = await new MutationJournal(database, { now: dependencies.now }).readPendingComposite(id);
+    const largeContent = new LargePreviousContentStore(dependencies.appDataRoot());
+    const mutation = await new MutationJournal(
+      database,
+      { now: dependencies.now },
+      largeContent,
+    ).readPendingComposite(id);
     if (!mutation) throw new CliInputError("recovery_required");
     writeJson(dependencies.stdout, {
       journal: {
@@ -95,12 +105,30 @@ async function inspectRecovery(
   }
 }
 
-async function startRecoveryRuntime(dependencies: RecoveryCommandDependencies) {
+async function recoveryWorkspaceRoot(
+  dependencies: RecoveryCommandDependencies,
+  journalId: JournalId,
+): Promise<AbsolutePath> {
+  const database = await initializeDatabase(dependencies.appDataRoot());
+  try {
+    const journal = new MutationJournal(
+      database,
+      { now: dependencies.now },
+      new LargePreviousContentStore(dependencies.appDataRoot()),
+    );
+    const mutation = await journal.readPendingComposite(journalId);
+    if (!mutation) throw new CliInputError("recovery_required");
+    const registration = await journal.findProjectRegistration(mutation.projectId);
+    if (!registration) throw new CliInputError("project_not_found");
+    return registration.workspaceRoot as AbsolutePath;
+  } finally {
+    await database.destroy();
+  }
+}
+
+async function startRecoveryRuntime(dependencies: RecoveryCommandDependencies, journalId: JournalId) {
   const appDataRoot = dependencies.appDataRoot();
-  const workspaceRoot = await dependencies.selectWorkspace({
-    explicit: process.env.VIDCOM_WORKSPACE,
-    appDataRoot,
-  });
+  const workspaceRoot = await recoveryWorkspaceRoot(dependencies, journalId);
   const infrastructure = createInfrastructure({
     appDataRoot,
     workspaceRoot: workspaceRoot as AbsolutePath,
@@ -143,7 +171,7 @@ export async function runRecoveryCommand(
     return;
   }
 
-  const runtime = await startRecoveryRuntime(dependencies);
+  const runtime = await startRecoveryRuntime(dependencies, operation.id);
   try {
     const result = operation.kind === "reconcile"
       ? await reconcileCompositeMutation({

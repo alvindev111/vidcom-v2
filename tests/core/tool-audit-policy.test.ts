@@ -24,6 +24,7 @@ const pending = (detail: Record<string, unknown> = {}): PendingToolAudit => ({
   detail,
   credentialId: "credential-1",
   invokedAt: "2026-08-02T00:00:00.000Z",
+  revisionBefore: 0,
 });
 
 describe("tool audit redaction and serialization", () => {
@@ -66,6 +67,12 @@ describe("tool audit redaction and serialization", () => {
     circular.self = circular;
     expect(() => serializePendingToolAudit(pending(circular))).toThrow("circular");
   });
+
+  it("reads pre-M-06 pending schema v1 rows with an unknown prior revision", () => {
+    const legacy = { ...pending() } as Record<string, unknown>;
+    delete legacy.revisionBefore;
+    expect(normalizePendingToolAudit(legacy).revisionBefore).toBeNull();
+  });
 });
 
 const terminal = (outcome: "ok" | "error" = "ok"): ToolAuditEntry => ({
@@ -78,6 +85,10 @@ const terminal = (outcome: "ok" | "error" = "ok"): ToolAuditEntry => ({
   errorCode: outcome === "error" ? ErrorCode.Internal : null,
   detail: { token: "private", count: 2 },
   credentialId: "credential-1",
+  invokedAt: "2026-08-02T00:00:00.000Z",
+  durationMs: 25,
+  revisionBefore: null,
+  revisionAfter: null,
 });
 
 describe("ToolAuditService", () => {
@@ -97,7 +108,29 @@ describe("ToolAuditService", () => {
       projectId: "project-1" as PendingToolAudit["projectId"],
       invocationId: "invoke-1",
       invokedAt: "2026-08-02T00:00:00.000Z",
+      revisionBefore: 0,
     })).toEqual(pending({ count: 2, token: AUDIT_REDACTED }));
+  });
+
+  it("finalizes a recovered pending failure with elapsed time and revision identity", async () => {
+    const records: ToolAuditEntry[] = [];
+    const service = new ToolAuditService(
+      { record: async (entry) => { records.push(entry); } },
+      { now: () => new Date("2026-08-02T00:00:00.025Z") },
+      { warn: () => undefined, error: () => undefined },
+      { increment: () => undefined, observeMilliseconds: () => undefined },
+      { isJournalOwned: async () => false, latestRevision: async () => 2 },
+    );
+
+    await service.recordPendingFailure(pending(), ErrorCode.StorageUnavailable);
+    expect(records).toEqual([expect.objectContaining({
+      invokedAt: "2026-08-02T00:00:00.000Z",
+      durationMs: 25,
+      revisionBefore: 0,
+      revisionAfter: 2,
+      outcome: "error",
+      errorCode: ErrorCode.StorageUnavailable,
+    })]);
   });
 
   it("retries a read exactly once and succeeds without escalation", async () => {

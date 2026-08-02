@@ -81,6 +81,8 @@ interface BackupStoreOperations {
   beforeVerify(directory: string): Promise<void>;
   syncDirectory(directory: string): Promise<void>;
   rename(source: string, target: string): Promise<void>;
+  beforePruneCommit?(directory: string): Promise<void>;
+  beforePruneDelete?(directory: string): Promise<void>;
 }
 
 const defaultOperations: BackupStoreOperations = {
@@ -274,26 +276,65 @@ export class AppDataBackupStore implements BackupPort {
     return rows.map(storedManifest);
   }
 
+  private async reconcilePruneTombstones(): Promise<void> {
+    for (const manifest of await this.listAll()) {
+      const directory = this.backupDirectory(manifest.projectId, manifest.id);
+      const payload = path.join(directory, "payload");
+      const tombstone = path.join(directory, ".payload.pruning");
+      const present = async (target: string) => {
+        try { await stat(target); return true; }
+        catch (error) {
+          if ((error as NodeJS.ErrnoException).code === "ENOENT") return false;
+          throw error;
+        }
+      };
+      const [hasPayload, hasTombstone] = await Promise.all([present(payload), present(tombstone)]);
+      if (manifest.payloadPrunedAt === null && hasTombstone) {
+        if (hasPayload) await rm(tombstone, { recursive: true, force: true });
+        else await this.operations.rename(tombstone, payload);
+        await this.operations.syncDirectory(directory);
+      } else if (manifest.payloadPrunedAt !== null) {
+        if (hasPayload && !hasTombstone) await this.operations.rename(payload, tombstone);
+        await rm(tombstone, { recursive: true, force: true });
+        await this.operations.syncDirectory(directory);
+      }
+    }
+  }
+
   async prunePayloads(olderThan: Date): Promise<number> {
+    await this.reconcilePruneTombstones();
     const rows = this.database.all<StoredBackup>(sql`
-      SELECT id, project_id AS projectId, revision_id AS revisionId, reason, entries,
-        manifest_hash AS manifestHash, created_at AS createdAt,
-        payload_pruned_at AS payloadPrunedAt
+      SELECT backup_manifest.id AS id, backup_manifest.project_id AS projectId,
+        backup_manifest.revision_id AS revisionId, backup_manifest.reason AS reason,
+        backup_manifest.entries AS entries, backup_manifest.manifest_hash AS manifestHash,
+        backup_manifest.created_at AS createdAt, backup_manifest.payload_pruned_at AS payloadPrunedAt
       FROM backup_manifest
-      WHERE payload_pruned_at IS NULL AND created_at < ${olderThan.toISOString()}
-      ORDER BY created_at, id
+      LEFT JOIN revision ON revision.id = backup_manifest.revision_id
+      WHERE payload_pruned_at IS NULL
+        AND COALESCE(revision.created_at, backup_manifest.created_at) < ${olderThan.toISOString()}
+        AND NOT EXISTS (
+          SELECT 1 FROM mutation_journal
+          WHERE mutation_journal.backup_id = backup_manifest.id
+            AND mutation_journal.status IN ('pending', 'orphaned')
+        )
+      ORDER BY backup_manifest.created_at, backup_manifest.id
     `);
     let pruned = 0;
     for (const row of rows) {
       const manifest = storedManifest(row);
-      await rm(path.join(this.backupDirectory(manifest.projectId, manifest.id), "payload"), {
-        recursive: true,
-        force: true,
-      });
-      this.database.run(sql`
+      const directory = this.backupDirectory(manifest.projectId, manifest.id);
+      const tombstone = path.join(directory, ".payload.pruning");
+      await this.operations.rename(path.join(directory, "payload"), tombstone);
+      await this.operations.syncDirectory(directory);
+      await this.operations.beforePruneCommit?.(directory);
+      const updated = this.database.run(sql`
         UPDATE backup_manifest SET payload_pruned_at = ${this.clock.now().toISOString()}
         WHERE id = ${manifest.id} AND payload_pruned_at IS NULL
       `);
+      if (updated.changes !== 1) throw new Error("backup payload prune lost its durable transition");
+      await this.operations.beforePruneDelete?.(directory);
+      await rm(tombstone, { recursive: true, force: true });
+      await this.operations.syncDirectory(directory);
       pruned += 1;
     }
     return pruned;

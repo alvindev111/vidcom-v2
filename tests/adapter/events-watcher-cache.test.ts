@@ -12,6 +12,7 @@ import {
   SqliteEventOutbox,
   WATCH_DEBOUNCE_MS,
   WorkspaceFs,
+  WorkspaceLease,
   WorkspaceWatcher,
   WrittenHashTracker,
 } from "@vidcom/adapter";
@@ -153,6 +154,10 @@ describe("event outbox, watcher and project cache", () => {
       (project_id, entity, revision, content_hash, backing_path, last_actor, updated_at)
       VALUES (?, ?, ?, ?, ?, ?, ?)`, projectId, "preview-settings", 1, hash(initial),
     "preview-settings.json", "system", clock.now().toISOString());
+    dbRun(database, `INSERT INTO workspace_lease
+      (workspace_root, lease_id, holder_id, acquired_at, expires_at)
+      VALUES (?, 'lease_test', 'watcher-test', ?, '2026-08-01T01:00:00.000Z')`,
+    workspaceRoot, clock.now().toISOString());
     const workspace = new WorkspaceFs(workspaceRoot as AbsolutePath);
     const outbox = new SqliteEventOutbox(database, clock);
     const cache = new ProjectCache();
@@ -175,7 +180,7 @@ describe("event outbox, watcher and project cache", () => {
       const journal = new MutationJournal(database, clock);
       const authority = new WriteAuthority({
         workspace, journal, compositeJournal: journal,
-        lease: { async acquire() { throw new Error("unused"); }, async renew() { return true; }, async release() {}, async assertHeld() { return true; } },
+        lease: new WorkspaceLease(database, clock, { newId: () => "unused" }),
         leaseId: "lease_test",
         hashContent: hash,
         invalidate(id) { cache.invalidate(id); },

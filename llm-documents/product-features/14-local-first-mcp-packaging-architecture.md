@@ -274,7 +274,7 @@ vidcom version
 
 Với MCP stdio: **`stdout` chỉ chứa MCP protocol message**. Mọi log đi qua `stderr` hoặc structured log store — một dòng `console.log` lạc vào stdout sẽ làm hỏng handshake.
 
-**Runtime Phase 2 hiện tại:** production bin là Node wrapper đăng ký `tsx` loader rồi chạy source CLI để dùng `node:sqlite`; `vidcom mcp` resolve workspace, migrate app-data SQLite, lấy workspace lease, reconcile recovery, khởi động watcher/scheduler và serve stdio trong cùng subprocess. IPC bridge tới app daemon vẫn thuộc Phase 4; lease hiện bảo đảm không có hai VidCom writers sở hữu cùng workspace.
+**Runtime Phase 2 hiện tại:** source-checkout launcher là executable Node wrapper đăng ký `tsx` loader rồi chạy source CLI để dùng `node:sqlite`; clean-artifact smoke pack CLI và resolve đúng tên lệnh `vidcom`, nhưng đây chưa phải artifact phát hành tự chứa. `vidcom mcp` resolve workspace, migrate app-data SQLite, lấy workspace lease, reconcile recovery, khởi động watcher/scheduler và serve stdio trong cùng subprocess. Packaged Node SEA và IPC bridge tới app daemon vẫn thuộc Phase 4; lease hiện bảo đảm không có hai VidCom writers sở hữu cùng workspace.
 
 ---
 

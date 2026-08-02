@@ -71,6 +71,65 @@ describe("MCP contracts", () => {
     }
   });
 
+  it("bounds list_projects pages and applies its deterministic default", () => {
+    expect(ListProjectsInputSchema.parse({})).toEqual({ limit: 20 });
+    expect(ListProjectsInputSchema.safeParse({ limit: 0 }).success).toBe(false);
+    expect(ListProjectsInputSchema.safeParse({ limit: 101 }).success).toBe(false);
+    expect(ListProjectsInputSchema.safeParse({ limit: 10, cursor: "project-10" }).success).toBe(true);
+  });
+
+  it("rejects an empty set_scene_timing patch but accepts each timing field", () => {
+    const base = {
+      projectId: "project-1",
+      sceneId: "scene-1",
+      expectedContentHash: `sha256:${"1".repeat(64)}`,
+    };
+    expect(SetSceneTimingInputSchema.safeParse(base).success).toBe(false);
+    for (const timing of [{ start: 0 }, { duration: 1 }, { trackIndex: 0 }]) {
+      expect(SetSceneTimingInputSchema.safeParse({ ...base, ...timing }).success).toBe(true);
+    }
+  });
+
+  it("allows set_text to report narration present-stale or absent-not-stale", () => {
+    const base = {
+      scene: {
+        id: "scene-1", src: null, start: 0, duration: 1, trackIndex: 0,
+        isTransition: false, elementCount: 1,
+        fileContentHash: `sha256:${"1".repeat(64)}`,
+        narrationStale: false,
+      },
+      project: {
+        id: "project-1", slug: "project-1", title: "Project", width: 1920, height: 1080,
+        duration: 1, updatedAt: "2026-08-02T00:00:00.000Z", sceneCount: 1, revision: 1,
+      },
+      envelope: { projectRevision: 1, entityRevision: null, fileHashes: {}, diagnostics: [] },
+    };
+    expect(SetTextOutputSchema.safeParse({ ...base, narrationStale: false }).success).toBe(true);
+    expect(SetTextOutputSchema.safeParse({ ...base, narrationStale: true }).success).toBe(true);
+  });
+
+  it("rejects non-canonical fileHashes keys in write envelopes", () => {
+    const hash = `sha256:${"1".repeat(64)}`;
+    const envelope = (path: string) => ({
+      projectRevision: 1,
+      entityRevision: null,
+      fileHashes: { [path]: hash },
+      diagnostics: [],
+    });
+    for (const path of [
+      "/absolute.html",
+      "../escape.html",
+      "a/../escape.html",
+      "a\\file.html",
+      "a//file.html",
+      "C:/file.html",
+      ".",
+    ]) {
+      expect(SetTextOutputSchema.shape.envelope.safeParse(envelope(path)).success).toBe(false);
+    }
+    expect(SetTextOutputSchema.shape.envelope.safeParse(envelope("compositions/scene.html")).success).toBe(true);
+  });
+
   it("locks the Phase 2 error vocabulary", () => {
     expect(Object.values(ErrorCode)).toEqual(expect.arrayContaining([
       "approval_required",

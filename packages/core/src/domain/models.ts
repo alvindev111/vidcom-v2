@@ -51,6 +51,12 @@ export interface CompositionSource {
   byteSize: number;
 }
 
+/** One local authored file reference resolved against the project-relative source that owns it. */
+export interface CompositionReference {
+  path: RelPath;
+  owner: RelPath;
+}
+
 /** Parsed composition model shared by all project snapshot views. */
 export interface CompositionModel {
   project: ProjectSummaryDto;
@@ -59,6 +65,8 @@ export interface CompositionModel {
   diagnostics: Diagnostic[];
   /** Entry and referenced sub-compositions in deterministic first-read order; no extra I/O is performed for hashing. */
   sources: CompositionSource[];
+  /** Canonical local references only; external, data and project-escaping URLs are excluded. */
+  references: CompositionReference[];
 }
 
 /** SDK-neutral composition mutation operation. */

@@ -42,6 +42,9 @@ import type {
   BackupSource,
   GrantBinding,
   McpCredentialRecord,
+  MutationCapture,
+  MutationCaptureConflict,
+  MutationAuthority,
 } from "./types";
 
 /** Filesystem access for the selected workspace; every method performs I/O. */
@@ -64,6 +67,19 @@ export interface WorkspacePort {
   exists(path: ResolvedPath): Promise<boolean>;
   /** Atomically removes one resolved file and fsyncs its directory; an absent target is a no-op. */
   deleteAtomic(path: ResolvedPath): Promise<void>;
+  /** Moves the live target into a journal-owned rollback slot and verifies its hash at that exact boundary. */
+  captureForMutation(
+    path: ResolvedPath,
+    expectedHash: ContentHash | null,
+    journalId: JournalId,
+    ordinal: number,
+  ): Promise<Result<MutationCapture, MutationCaptureConflict>>;
+  /** Publishes staged bytes without replacing a target created after capture; `null` verifies a delete remains absent. */
+  publishCaptured(capture: MutationCapture, content: string | Uint8Array | null): Promise<boolean>;
+  /** Restores captured bytes only while the live target still matches the supplied landed hash. */
+  restoreCaptured(capture: MutationCapture, landedHash: ContentHash | null): Promise<boolean>;
+  /** Removes a terminal mutation's rollback slot after SQLite commit or verified abort. */
+  discardCapture(capture: MutationCapture): Promise<void>;
   /** Reads the complete project tree and may be expensive for large projects. */
   readTree(ref: ProjectRef): Promise<FileNode[]>;
   /** Reads metadata for a resolved path; `null` means the path does not exist. */
@@ -137,8 +153,16 @@ export interface CompositeMutationJournalPort extends MutationJournalPort {
     intent: CompositeIntent,
     steps: StepIntent[],
     context: PendingMutationContext,
+    authority: MutationAuthority,
     grant?: Extract<GrantTransition, { kind: "reserve" }>,
   ): Promise<JournalId>;
+  /** Persists the exact rollback slot and captured hash before a step can publish. */
+  markStepCaptured(
+    id: JournalId,
+    ordinal: number,
+    rollbackPath: ResolvedPath | null,
+    capturedHash: ContentHash | null,
+  ): Promise<void>;
   /** Durably links a verified backup and enriches pending audit context before filesystem I/O. */
   attachBackup(id: JournalId, backupId: string): Promise<void>;
   /** Atomically commits revision steps, mutation/tool audits, event and optional grant consumption. */
@@ -175,8 +199,8 @@ export interface CompositeMutationJournalPort extends MutationJournalPort {
   readBackupRevisionSteps(backupId: string, revisionId: number): Promise<StepIntent[]>;
   /** Reads one unresolved composite and its exact durable context, or `null` when absent or terminal. */
   readPendingComposite(id: JournalId): Promise<PendingCompositeMutation | null>;
-  /** Lists unresolved composite journals in deterministic creation order. */
-  listPendingComposites(): Promise<PendingCompositeMutation[]>;
+  /** Lists unresolved journals registered inside one exact leased workspace root. */
+  listPendingComposites(workspaceRoot: string): Promise<PendingCompositeMutation[]>;
   /** Returns whether an unresolved journal owns the invocation, without exposing its redacted audit payload. */
   isJournalOwned(invocationId: string): Promise<boolean>;
   /** Reads all unresolved journal IDs for a project; an empty list means writes are ready. */
@@ -215,6 +239,8 @@ export interface ApprovalGrantPort {
   revoke(id: string): Promise<boolean>;
   /** Validates the current durable row against a canonical binding without changing grant state. */
   matches(id: string, binding: GrantBinding, now: string): Promise<boolean>;
+  /** Transitions due requested/issued rows to expired while leaving journal-owned reserved rows untouched. */
+  expireDue(now: string): Promise<number>;
   /** Deletes terminal grants older than the cutoff while preserving every unresolved journal link. */
   cleanupTerminal(expiresBefore: string): Promise<number>;
 }

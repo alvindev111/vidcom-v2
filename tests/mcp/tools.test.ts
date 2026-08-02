@@ -95,7 +95,9 @@ describe("all registered tool handlers", () => {
 
     for (const [name, input] of Object.entries(cases)) {
       const result = await tools.invoke(name, input, request);
-      if (name === "list_projects") expect(result).toEqual({ ok: true, value: { projects: [] } });
+      if (name === "list_projects") {
+        expect(result).toEqual({ ok: true, value: { projects: [], diagnostics: [], nextCursor: null } });
+      }
       else expect(result).toMatchObject({ ok: false, error: { code: "project_not_found" } });
     }
     expect(records).toHaveLength(10);
@@ -133,6 +135,7 @@ function writeDependencies(captured: Array<{ tool: string; invocation: WriteInvo
     rootTrack: null,
     diagnostics: [],
     sources: [{ path: "index.html" as RelPath, contentHash: digest("1"), byteSize: 16 }],
+    references: [],
   };
   const mutate = async (mutation: MutationRequest, _actor: Actor, invocation?: WriteInvocation) => {
     captured.push({

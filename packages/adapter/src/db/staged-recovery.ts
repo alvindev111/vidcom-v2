@@ -7,6 +7,7 @@ import { ErrorCode, type ContentHash, type ProjectId } from "@vidcom/contracts";
 import type { AbsolutePath, ClockPort, JournalId, ResolvedPath } from "@vidcom/core";
 
 import { writeAtomic } from "../fs/atomic-write";
+import { LargePreviousContentStore } from "../fs/large-content-store";
 import { WorkspaceFs } from "../fs/workspace-fs";
 import { MutationJournal } from "./journal";
 import type { VidcomDatabase } from "./client";
@@ -47,18 +48,21 @@ export async function reconcileStagedAssets(
 ): Promise<void> {
   const rows = database.all<{
     id: number; projectId: string; toHash: string; previousContent: Uint8Array | null;
+    previousObjectHash: string | null;
     stagedTmpPath: string | null; stagedTargetPath: string | null; stagedContentHash: string | null;
     workspaceRoot: string; slug: string;
   }>(sql`
     SELECT journal.id, journal.project_id AS projectId, journal.to_hash AS toHash,
-      journal.previous_content AS previousContent, journal.staged_tmp_path AS stagedTmpPath,
+      journal.previous_content AS previousContent, journal.previous_object_hash AS previousObjectHash,
+      journal.staged_tmp_path AS stagedTmpPath,
       journal.staged_target_path AS stagedTargetPath, journal.staged_content_hash AS stagedContentHash,
       project.workspace_root AS workspaceRoot, project.slug
     FROM mutation_journal AS journal
     INNER JOIN project_registry AS project ON project.id = journal.project_id
     WHERE journal.status = 'pending' AND journal.staged_tmp_path IS NOT NULL
   `);
-  const journal = new MutationJournal(database, clock);
+  const largeContent = new LargePreviousContentStore(appDataRoot);
+  const journal = new MutationJournal(database, clock, largeContent);
   const tempRoot = path.resolve(appDataRoot, "tmp");
   for (const row of rows) {
     if (!row.stagedTmpPath || !row.stagedTargetPath) continue;
@@ -87,7 +91,11 @@ export async function reconcileStagedAssets(
     }
     if (targetHash === row.stagedContentHash) await rm(target, { force: true });
     if (settingsHash === row.toHash) {
-      if (row.previousContent) await writeAtomic(settings as ResolvedPath, row.previousContent);
+      const previousContent = row.previousContent
+        ?? (row.previousObjectHash
+          ? await largeContent.read(row.previousObjectHash as ContentHash)
+          : null);
+      if (previousContent) await writeAtomic(settings as ResolvedPath, previousContent);
       else await rm(settings, { force: true });
     }
     await journal.abort(row.id as JournalId, ErrorCode.StorageUnavailable);

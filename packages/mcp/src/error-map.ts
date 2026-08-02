@@ -28,6 +28,7 @@ function protocolCode(error: DomainError, era: Era): number {
     case ErrorCode.BackupFailed:
     case ErrorCode.BackupExpired:
     case ErrorCode.RecoveryRequired:
+    case ErrorCode.CommittedResponseError:
       return MCP_INTERNAL_ERROR;
     case ErrorCode.SchemaInvalid:
     case ErrorCode.PathRequired:
@@ -69,7 +70,9 @@ export function mapMcpError(error: DomainError, era: Era): MappedMcpError {
       retryable: false,
       ...(error.code === ErrorCode.RecoveryRequired
         ? { guidance: "Inspect and resolve the reported journal before retrying this write." }
-        : {}),
+        : error.code === ErrorCode.CommittedResponseError
+          ? { guidance: "The mutation is already committed. Do not retry; inspect the reported revision identity." }
+          : {}),
     },
   };
 }

@@ -47,6 +47,7 @@ export interface PendingToolAudit {
   detail: Record<string, unknown>;
   credentialId: string | null;
   invokedAt: string;
+  revisionBefore: number | null;
 }
 
 /** Terminal MCP invocation data written to the app-data audit repository. */
@@ -60,6 +61,10 @@ export interface ToolAuditEntry {
   errorCode: ErrorCode | null;
   detail: Record<string, unknown>;
   credentialId: string | null;
+  invokedAt: string;
+  durationMs: number;
+  revisionBefore: number | null;
+  revisionAfter: number | null;
 }
 
 /** Redacted CLI command context durably owned by a composite journal. */
@@ -185,6 +190,25 @@ export interface PendingCompositeMutation extends CompositeIntent {
   backupId: string | null;
 }
 
+/** Durable filesystem capture owned by one journal step at the publish boundary. */
+export interface MutationCapture {
+  journalId: JournalId;
+  ordinal: number;
+  target: ResolvedPath;
+  rollbackPath: ResolvedPath | null;
+  capturedHash: ContentHash | null;
+}
+
+/** Precondition mismatch observed while atomically capturing the live target. */
+export interface MutationCaptureConflict {
+  actualHash: ContentHash | null;
+}
+
+/** Exact durable lease identity that T1 must validate before opening a mutation journal. */
+export interface MutationAuthority {
+  leaseId: string;
+}
+
 /** Terminal decision returned by one deterministic journal reconciliation attempt. */
 export type CompositeReconcileOutcome =
   | { terminal: "committed"; envelope: WriteEnvelope }
@@ -243,6 +267,9 @@ export interface McpCredentialRecord {
   rotatedFrom: string | null;
   expiresAt: string | null;
 }
+
+/** Public credential lifecycle metadata; verifier material never crosses this boundary. */
+export type McpCredentialSummary = Omit<McpCredentialRecord, "secretHash">;
 
 /** Optional SDK-neutral context forwarded from a tool registry into write authority. */
 export interface WriteInvocation {

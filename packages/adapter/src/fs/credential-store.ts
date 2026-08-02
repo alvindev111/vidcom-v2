@@ -18,10 +18,14 @@ export type SyncCredentialCommandRunner = (
   args: readonly string[],
 ) => { stdout: string };
 
-function windowsCredentialAcl(stdout: string): string {
+function windowsCurrentUserSid(stdout: string): string {
   const sid = stdout.match(/"(S-\d(?:-\d+)+)"/)?.[1];
   if (!sid) throw new Error("could not determine current Windows user SID");
-  return `${sid}:(R,W)`;
+  return sid;
+}
+
+function windowsCredentialAcl(stdout: string): string {
+  return `${windowsCurrentUserSid(stdout)}:(R,W)`;
 }
 
 /** Applies POSIX 0600 or a Windows ACL containing only the current user. */
@@ -53,6 +57,27 @@ export function secureCredentialFileSync(
   }
   const { stdout } = run("whoami", ["/user", "/fo", "csv", "/nh"]);
   run("icacls", [pathname, "/inheritance:r", "/grant:r", windowsCredentialAcl(stdout)]);
+}
+
+/** Restricts an app-data directory before any credential, database or audit bytes are created. */
+export function secureAppDataDirectorySync(
+  pathname: string,
+  platform: NodeJS.Platform = process.platform,
+  run: SyncCredentialCommandRunner = (executable, args) => ({
+    stdout: execFileSync(executable, [...args], { encoding: "utf8" }),
+  }),
+): void {
+  if (platform !== "win32") {
+    chmodSync(pathname, 0o700);
+    return;
+  }
+  const { stdout } = run("whoami", ["/user", "/fo", "csv", "/nh"]);
+  run("icacls", [
+    pathname,
+    "/inheritance:r",
+    "/grant:r",
+    `${windowsCurrentUserSid(stdout)}:(OI)(CI)(F)`,
+  ]);
 }
 
 /** Stores the future MCP bridge credential under app-data, never in a workspace. */

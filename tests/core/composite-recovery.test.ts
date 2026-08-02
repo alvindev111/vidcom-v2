@@ -99,6 +99,10 @@ describe("classifyCompositeStep", () => {
       },
       async exists() { return false; },
       async deleteAtomic() {},
+      async captureForMutation() { throw new Error("unused"); },
+      async publishCaptured() { throw new Error("unused"); },
+      async restoreCaptured() { throw new Error("unused"); },
+      async discardCapture() {},
       async readTree() { return []; },
       async stat() { return null; },
     };
@@ -113,8 +117,8 @@ describe("classifyCompositeStep", () => {
     });
 
     await expect(rollbackObservedCompositeSteps(workspace, [
-      { step: makeStep(0, "first.html" as RelPath), target: first, classification: "landed" },
-      { step: makeStep(1, "second.html" as RelPath), target: second, classification: "landed" },
+      { step: makeStep(0, "first.html" as RelPath), target: first, actualHash: next, classification: "landed" },
+      { step: makeStep(1, "second.html" as RelPath), target: second, actualHash: next, classification: "landed" },
     ])).resolves.toBe(true);
     expect(operations).toEqual([
       `write:${second}:old-1`, `verify:${second}`,
@@ -134,6 +138,10 @@ describe("classifyCompositeStep", () => {
       async writeAtomic() {},
       async exists() { return true; },
       async deleteAtomic() {},
+      async captureForMutation() { throw new Error("unused"); },
+      async publishCaptured() { throw new Error("unused"); },
+      async restoreCaptured() { throw new Error("unused"); },
+      async discardCapture() {},
       async readTree() { return []; },
       async stat() { return null; },
     };
@@ -147,7 +155,7 @@ describe("classifyCompositeStep", () => {
       previousContent: "old",
     };
     await expect(rollbackObservedCompositeSteps(workspace, [
-      { step, target, classification: "landed" },
+      { step, target, actualHash: next, classification: "landed" },
     ])).resolves.toBe(false);
   });
 });

@@ -1,7 +1,7 @@
 import type { ContentHash } from "@vidcom/contracts";
 
 import type { WorkspacePort } from "../port/ports";
-import type { ResolvedPath, StepIntent } from "../port/types";
+import type { JournalId, ResolvedPath, StepIntent } from "../port/types";
 
 /** Filesystem truth for one durable step; persisted step status is intentionally excluded. */
 export type CompositeStepClassification = "landed" | "not_applied" | "unknown";
@@ -11,6 +11,7 @@ export type CompositeRecoveryDecision = "roll_forward" | "abort" | "rollback" | 
 export interface ObservedCompositeStep {
   step: StepIntent;
   target: ResolvedPath;
+  actualHash: ContentHash | null;
   classification: CompositeStepClassification;
 }
 
@@ -42,6 +43,7 @@ export function decideCompositeRecovery(
 export async function rollbackObservedCompositeSteps(
   workspace: WorkspacePort,
   observations: readonly ObservedCompositeStep[],
+  journalId?: JournalId,
 ): Promise<boolean> {
   const landed = observations
     .filter((observation) => observation.classification === "landed")
@@ -49,6 +51,26 @@ export async function rollbackObservedCompositeSteps(
   for (const observation of landed) {
     const { step, target } = observation;
     try {
+      if (journalId !== undefined) {
+        if (step.fromHash !== null && step.previousContent === null) return false;
+        const captured = await workspace.captureForMutation(
+          target,
+          observation.actualHash,
+          journalId,
+          step.ordinal + 1_000_000,
+        );
+        if (!captured.ok) return false;
+        const restored = await workspace.publishCaptured(
+          captured.value,
+          step.fromHash === null ? null : step.previousContent,
+        );
+        if (!restored || await workspace.readHash(target) !== step.fromHash) {
+          await workspace.restoreCaptured(captured.value, null).catch(() => false);
+          return false;
+        }
+        await workspace.discardCapture(captured.value);
+        continue;
+      }
       if (step.fromHash === null) {
         await workspace.deleteAtomic(target);
       } else {

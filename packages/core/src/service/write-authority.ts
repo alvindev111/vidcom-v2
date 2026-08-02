@@ -20,6 +20,7 @@ import type {
   CompositeReconcileOutcome,
   CompositeStep,
   EntityState,
+  MutationCapture,
   PathPurpose,
   PathRejection,
   ResolvedPath,
@@ -371,36 +372,93 @@ export class WriteAuthority {
       : undefined;
     let journalId: JournalId;
     let backupId: string | null = null;
+    const captures: MutationCapture[] = [];
     try {
       journalId = await this.dependencies.compositeJournal.beginComposite(
         { projectId: request.ref.id, actor },
         steps.map(({ intent }) => intent),
         { toolAudit: request.toolAudit, ...(request.commandAudit ? { commandAudit: request.commandAudit } : {}) },
+        { leaseId: this.dependencies.leaseId },
         grantReserve,
       );
     } catch (error) {
       return err(this.compositeStorageError(error, "composite mutation could not begin"));
     }
 
+    for (const item of steps) {
+      try {
+        const captured = await this.dependencies.workspace.captureForMutation(
+          item.target,
+          item.intent.previousContent === null ? null : item.intent.fromHash,
+          journalId,
+          item.intent.ordinal,
+        );
+        if (!captured.ok) {
+          const restored = await this.restoreCapturedSteps(steps, captures, new Set());
+          if (!restored) {
+            return this.orphanCapturedMutation(request, journalId, captures, "capture_conflict");
+          }
+          await this.dependencies.compositeJournal.abortComposite(
+            journalId,
+            ErrorCode.WriteConflict,
+            request.grant ? { kind: "release", grantId: request.grant.id } : undefined,
+          );
+          await this.discardCaptures(captures);
+          return err(conflict({ currentHash: captured.error.actualHash }, "expectedContentHash"));
+        }
+        captures.push(captured.value);
+        await this.dependencies.compositeJournal.markStepCaptured(
+          journalId,
+          item.intent.ordinal,
+          captured.value.rollbackPath,
+          captured.value.capturedHash,
+        );
+      } catch {
+        const restored = await this.restoreCapturedSteps(steps, captures, new Set());
+        if (!restored) return this.orphanCapturedMutation(request, journalId, captures, "capture");
+        try {
+          await this.dependencies.compositeJournal.abortComposite(
+            journalId,
+            ErrorCode.StorageUnavailable,
+            request.grant ? { kind: "release", grantId: request.grant.id } : undefined,
+          );
+          await this.discardCaptures(captures);
+          return err({ code: ErrorCode.StorageUnavailable, message: "the mutation target could not be captured safely" });
+        } catch {
+          return err({
+            code: ErrorCode.RecoveryRequired,
+            message: "the filesystem was restored but the capture journal remains pending",
+            details: { journalId, phase: "capture-abort" },
+          });
+        }
+      }
+    }
+
     if (request.backup) {
       const backups = this.dependencies.backups;
       if (!backups) {
-        await this.dependencies.compositeJournal.abortComposite(
+        const restored = await this.restoreCapturedSteps(steps, captures, new Set());
+        if (!restored) return this.orphanCapturedMutation(request, journalId, captures, "backup_unavailable");
+        return this.abortRestoredMutation(
+          request,
           journalId,
-          ErrorCode.BackupFailed,
-          request.grant ? { kind: "release", grantId: request.grant.id } : undefined,
-        ).catch(() => {});
-        return err({ code: ErrorCode.BackupFailed, message: "backup storage is unavailable" });
+          captures,
+          { code: ErrorCode.BackupFailed, message: "backup storage is unavailable" },
+          "backup-abort",
+        );
       }
       try {
-        const sources = steps.flatMap((item) => item.intent.fromHash === null
-          ? []
-          : [{
+        const sources = steps.flatMap((item) => {
+          const capture = captures[item.intent.ordinal];
+          return item.intent.fromHash === null || !capture?.rollbackPath
+            ? []
+            : [{
               path: item.step.kind === "entity"
                 ? item.entityState?.backingPath ?? "preview-settings.json" as RelPath
                 : item.step.path,
-              resolved: item.target,
-            }]);
+              resolved: capture.rollbackPath,
+            }];
+        });
         const manifest = await backups.create(
           request.ref.id,
           `tool:${request.toolAudit?.tool ?? "composite"}`,
@@ -410,22 +468,44 @@ export class WriteAuthority {
         if (!(await backups.verify(manifest.id))) throw new Error("backup verification failed");
         await this.dependencies.compositeJournal.attachBackup(journalId, manifest.id);
       } catch {
-        await this.dependencies.compositeJournal.abortComposite(
+        const restored = await this.restoreCapturedSteps(steps, captures, new Set());
+        if (!restored) return this.orphanCapturedMutation(request, journalId, captures, "backup");
+        return this.abortRestoredMutation(
+          request,
           journalId,
-          ErrorCode.BackupFailed,
-          request.grant ? { kind: "release", grantId: request.grant.id } : undefined,
-        ).catch(() => {});
-        return err({ code: ErrorCode.BackupFailed, message: "the mutation backup could not be verified" });
+          captures,
+          { code: ErrorCode.BackupFailed, message: "the mutation backup could not be verified" },
+          "backup-abort",
+        );
       }
     }
 
+    const published = new Set<number>();
     try {
       for (const item of steps) {
-        if (item.step.kind === "delete") await this.dependencies.workspace.deleteAtomic(item.target);
-        else if (item.content !== null) await this.dependencies.workspace.writeAtomic(item.target, item.content);
+        const capture = captures[item.intent.ordinal];
+        if (!capture) throw new Error("a mutation capture was lost before publish");
+        const landed = await this.dependencies.workspace.publishCaptured(
+          capture,
+          item.step.kind === "delete" ? null : item.content,
+        );
+        if (!landed) {
+          const restored = await this.restoreCapturedSteps(steps, captures, published);
+          if (!restored) {
+            return this.orphanCapturedMutation(request, journalId, captures, "publish_conflict");
+          }
+          await this.dependencies.compositeJournal.abortComposite(
+            journalId,
+            ErrorCode.WriteConflict,
+            request.grant ? { kind: "release", grantId: request.grant.id } : undefined,
+          );
+          await this.discardCaptures(captures);
+          return err(conflict({}, "expectedContentHash"));
+        }
+        published.add(item.intent.ordinal);
       }
     } catch {
-      const rolledBack = await this.rollbackCompositeSteps(steps);
+      const rolledBack = await this.restoreCapturedSteps(steps, captures, published);
       if (rolledBack) {
         try {
           await this.dependencies.compositeJournal.abortComposite(
@@ -433,6 +513,7 @@ export class WriteAuthority {
             ErrorCode.StorageUnavailable,
             request.grant ? { kind: "release", grantId: request.grant.id } : undefined,
           );
+          await this.discardCaptures(captures);
           return err({ code: ErrorCode.StorageUnavailable, message: "a composite filesystem step failed" });
         } catch {
           const reconciled = await this.reconcileCompositeOnce(journalId);
@@ -487,6 +568,7 @@ export class WriteAuthority {
       }
       this.dependencies.invalidate(request.ref.id);
       this.dependencies.notifyEvents();
+      await this.discardCaptures(captures);
       return ok({ ...envelope, ...(backupId ? { backupId } : {}) });
     } catch {
       const reconciled = await this.reconcileCompositeOnce(journalId);
@@ -497,6 +579,7 @@ export class WriteAuthority {
         }
         this.dependencies.invalidate(request.ref.id);
         this.dependencies.notifyEvents();
+        await this.discardCaptures(captures);
         return ok({ ...envelope, ...(backupId ? { backupId } : {}) });
       }
       return err({
@@ -507,42 +590,88 @@ export class WriteAuthority {
     }
   }
 
-  private async rollbackCompositeSteps(steps: ValidatedCompositeStep[]): Promise<boolean> {
-    const landed: ValidatedCompositeStep[] = [];
-    for (const item of steps) {
-      let actual: ContentHash | null;
+  private async restoreCapturedSteps(
+    steps: ValidatedCompositeStep[],
+    captures: MutationCapture[],
+    published: ReadonlySet<number>,
+  ): Promise<boolean> {
+    for (const capture of [...captures].reverse()) {
+      const item = steps[capture.ordinal];
+      if (!item) return false;
       try {
-        actual = await this.dependencies.workspace.readHash(item.target);
-      } catch {
-        return false;
-      }
-      const isLanded = item.intent.kind === "delete"
-        ? actual === null
-        : actual === item.intent.toHash;
-      const isOriginal = item.intent.fromHash === null
-        ? actual === null
-        : actual === item.intent.fromHash
-          || (item.intent.kind === "entity" && item.intent.previousContent === null && actual === null);
-      if (isLanded) landed.push(item);
-      else if (!isOriginal) return false;
-    }
-
-    for (const item of landed.reverse()) {
-      try {
-        if (item.intent.fromHash === null) {
-          await this.dependencies.workspace.deleteAtomic(item.target);
-        } else {
-          const previous = item.intent.previousContent;
-          if (previous === null) return false;
-          await this.dependencies.workspace.writeAtomic(item.target, previous);
+        const actual = await this.dependencies.workspace.readHash(capture.target);
+        const landedHash = published.has(capture.ordinal) ? item.intent.toHash : null;
+        if (actual !== landedHash) {
+          // Atomic publish yields only `toHash`; any other complete value belongs to an external editor.
+          await this.dependencies.workspace.discardCapture(capture);
+          continue;
         }
-        const restored = await this.dependencies.workspace.readHash(item.target);
-        if (restored !== item.intent.fromHash) return false;
+        if (!(await this.dependencies.workspace.restoreCaptured(capture, landedHash))) return false;
       } catch {
         return false;
       }
     }
     return true;
+  }
+
+  private async discardCaptures(captures: MutationCapture[]): Promise<void> {
+    for (const capture of captures) await this.dependencies.workspace.discardCapture(capture);
+  }
+
+  private async abortRestoredMutation(
+    request: CompositeRequest,
+    journalId: JournalId,
+    captures: MutationCapture[],
+    failure: DomainError,
+    phase: string,
+  ): Promise<Result<WriteEnvelope, DomainError>> {
+    try {
+      const settled = await this.dependencies.compositeJournal.abortComposite(
+        journalId,
+        failure.code,
+        request.grant ? { kind: "release", grantId: request.grant.id } : undefined,
+      );
+      if (settled !== null) {
+        await this.discardCaptures(captures);
+        return err(failure);
+      }
+    } catch {
+      // Inline reconciliation below is the durable authority when T2a fails.
+    }
+    const reconciled = await this.reconcileCompositeOnce(journalId);
+    if (reconciled?.ok && ["aborted", "rolled_back"].includes(reconciled.value.terminal)) {
+      await this.discardCaptures(captures);
+      return err(failure);
+    }
+    return err({
+      code: ErrorCode.RecoveryRequired,
+      message: "the filesystem was restored but the backup journal remains unresolved",
+      details: { journalId, phase },
+    });
+  }
+
+  private async orphanCapturedMutation(
+    request: CompositeRequest,
+    journalId: JournalId,
+    captures: MutationCapture[],
+    phase: string,
+  ): Promise<Result<WriteEnvelope, DomainError>> {
+    try {
+      await this.dependencies.compositeJournal.orphanComposite(
+        journalId,
+        ErrorCode.RecoveryRequired,
+        request.grant
+          ? { kind: "invalidate", grantId: request.grant.id, reason: "rollback_failed" }
+          : undefined,
+      );
+    } catch {
+      await this.reconcileCompositeOnce(journalId);
+    }
+    return err({
+      code: ErrorCode.RecoveryRequired,
+      message: "the mutation capture could not be settled without overwriting external changes",
+      details: { journalId, phase, captures: captures.length },
+    });
   }
 
   private compositeStorageError(error: unknown, message: string): DomainError {

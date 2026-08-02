@@ -20,7 +20,7 @@ describe("workspace resolution", () => {
         active: { root: root("/active"), valid: true },
         cwd: { root: root("/cwd"), valid: true },
       }),
-    ).toEqual({ status: "resolved", root: "/active", source: "active" });
+    ).toEqual({ status: "selection_required" });
     expect(
       resolveWorkspace({ cwd: { root: root("/cwd"), valid: true } }),
     ).toEqual({ status: "resolved", root: "/cwd", source: "cwd" });

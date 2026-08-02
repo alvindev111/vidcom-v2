@@ -5,7 +5,7 @@ import {
   NodeMcpCredentialCrypto,
   SqliteMcpCredentialStore,
 } from "@vidcom/adapter";
-import { McpCredentialService } from "@vidcom/core";
+import { MAX_CREDENTIAL_ROTATION_OVERLAP_MS, McpCredentialService } from "@vidcom/core";
 
 import { CliInputError } from "../cli-error";
 import { DEFAULT_MCP_RUNTIME_CONFIG } from "../composition-root";
@@ -45,8 +45,11 @@ function parseCredentialOperation(argv: readonly string[]): CredentialOperation 
     if (args.length === 1) return { kind: "rotate", id: args[0] };
     if (args.length === 3 && args[1] === "--overlap-ms") {
       const overlapMs = Number(args[2]);
-      if (!Number.isSafeInteger(overlapMs) || overlapMs <= 0) {
-        throw new CliInputError("--overlap-ms must be a positive integer");
+      if (!Number.isSafeInteger(overlapMs) || overlapMs <= 0
+        || overlapMs > MAX_CREDENTIAL_ROTATION_OVERLAP_MS) {
+        throw new CliInputError(
+          `--overlap-ms must be a positive integer no greater than ${MAX_CREDENTIAL_ROTATION_OVERLAP_MS}`,
+        );
       }
       return { kind: "rotate", id: args[0], overlapMs };
     }
@@ -76,15 +79,7 @@ export async function runCredentialCommand(
       return;
     }
     if (operation.kind === "list") {
-      const credentials = (await service.list()).map((record) => ({
-        id: record.id,
-        label: record.label,
-        status: record.status,
-        createdAt: record.createdAt,
-        rotatedFrom: record.rotatedFrom,
-        expiresAt: record.expiresAt,
-      }));
-      writeJson(dependencies.stdout, { credentials });
+      writeJson(dependencies.stdout, { credentials: await service.list() });
       return;
     }
     if (operation.kind === "rotate") {

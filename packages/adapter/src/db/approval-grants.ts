@@ -116,6 +116,14 @@ export class SqliteApprovalGrantStore implements ApprovalGrantPort {
     `) !== undefined;
   }
 
+  async expireDue(now: string): Promise<number> {
+    const result = this.database.run(sql`
+      UPDATE approval_grant SET status = 'expired'
+      WHERE status IN ('requested', 'issued') AND expires_at <= ${now}
+    `);
+    return Number(result.changes);
+  }
+
   async cleanupTerminal(expiresBefore: string): Promise<number> {
     const result = this.database.run(sql`
       DELETE FROM approval_grant

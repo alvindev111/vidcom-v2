@@ -17,6 +17,7 @@ import {
   type EntityState,
   type JournalId,
   type MutationIntent,
+  type MutationCapture,
   type MutationResult,
   type PendingMutation,
   type PendingMutationContext,
@@ -39,6 +40,7 @@ const project: ProjectRef = {
 
 class FakeWorkspace {
   readonly files = new Map<string, string>();
+  readonly captures = new Map<string, string | null>();
   writeDelayMs = 0;
   writeError: Error | null = null;
   writeFailure: ((path: ResolvedPath, content: string | Uint8Array) => boolean) | null = null;
@@ -77,6 +79,53 @@ class FakeWorkspace {
   }
   async exists(path: ResolvedPath) { return this.files.has(path); }
   async deleteAtomic(path: ResolvedPath) { this.files.delete(path); }
+  async captureForMutation(
+    target: ResolvedPath,
+    expectedHash: ContentHash | null,
+    journalId: JournalId,
+    ordinal: number,
+  ) {
+    const current = this.files.get(target) ?? null;
+    const actualHash = current === null ? null : digest(current);
+    if (actualHash !== expectedHash) return { ok: false as const, error: { actualHash } };
+    const rollbackPath = current === null
+      ? null
+      : `${target}.rollback-${journalId}-${ordinal}` as ResolvedPath;
+    if (rollbackPath !== null) this.captures.set(rollbackPath, current);
+    this.files.delete(target);
+    return {
+      ok: true as const,
+      value: { journalId, ordinal, target, rollbackPath, capturedHash: actualHash },
+    };
+  }
+  async publishCaptured(capture: MutationCapture, content: string | Uint8Array | null) {
+    if (this.files.has(capture.target)) return false;
+    if (content === null) return true;
+    this.writes += 1;
+    if (this.writeDelayMs) await new Promise((resolve) => setTimeout(resolve, this.writeDelayMs));
+    if (this.writeError) throw this.writeError;
+    if (this.writeFailure?.(capture.target, content)) throw new Error("injected write failure");
+    this.files.set(capture.target, typeof content === "string" ? content : new TextDecoder().decode(content));
+    return true;
+  }
+  async restoreCaptured(capture: MutationCapture, landedHash: ContentHash | null) {
+    const current = this.files.get(capture.target) ?? null;
+    const currentHash = current === null ? null : digest(current);
+    if (currentHash !== landedHash) return false;
+    if (capture.rollbackPath === null) {
+      this.files.delete(capture.target);
+      return true;
+    }
+    const previous = this.captures.get(capture.rollbackPath);
+    if (previous === undefined || previous === null) return false;
+    if (this.writeFailure?.(capture.target, previous)) throw new Error("injected restore failure");
+    this.files.set(capture.target, previous);
+    this.captures.delete(capture.rollbackPath);
+    return true;
+  }
+  async discardCapture(capture: MutationCapture) {
+    if (capture.rollbackPath !== null) this.captures.delete(capture.rollbackPath);
+  }
   async readTree() { return []; }
   async stat(path: ResolvedPath) {
     const content = this.files.get(path);
@@ -156,6 +205,7 @@ class FakeJournal {
     }
     return id;
   }
+  async markStepCaptured() {}
   async attachBackup(id: JournalId, backupId: string) { this.attachedBackups.push({ id, backupId }); }
   async commitComposite(id: JournalId, result: CompositeResult): Promise<WriteEnvelope> {
     if (this.compositeCommitError || this.commitError) throw this.compositeCommitError ?? this.commitError;
@@ -184,7 +234,7 @@ class FakeJournal {
     this.pending = this.pending.filter((entry) => entry.id !== id);
     this.compositeAborted.push(id);
     this.aborted.push({ id, reason });
-    return null;
+    return { toolAudit: null };
   }
   async rollbackComposite(id: JournalId, reason: ErrorCode) {
     return this.abortComposite(id, reason);
@@ -215,8 +265,10 @@ class FakeJournal {
 class FakeBackups {
   readonly creates: Array<{ projectId: ProjectId; reason: string; files: BackupSource[] }> = [];
   verified = true;
+  createError: Error | null = null;
 
   async create(projectId: ProjectId, reason: string, files: BackupSource[]): Promise<BackupManifest> {
+    if (this.createError) throw this.createError;
     this.creates.push({ projectId, reason, files });
     return {
       id: "backup-1",
@@ -382,6 +434,49 @@ describe("WriteAuthority composite gate", () => {
     expect(workspace.files.has("compositions/scene.html")).toBe(false);
   });
 
+  it("returns recovery_required when backup failure cannot prove the journal terminal", async () => {
+    const { authority, backups, journal, reconciliation, workspace } = setup();
+    workspace.files.set("index.html", "old");
+    backups.createError = new Error("backup unavailable");
+    journal.compositeAbortError = new Error("T2a unavailable");
+
+    await expect(authority.mutateComposite({
+      ref: project,
+      steps: [{ kind: "delete", path: "index.html" as RelPath, expectedContentHash: digest("old") }],
+      toolAudit: null,
+      backup: true,
+    }, "agent")).resolves.toMatchObject({
+      ok: false,
+      error: {
+        code: ErrorCode.RecoveryRequired,
+        details: { journalId: 1, phase: "backup-abort" },
+      },
+    });
+    expect(reconciliation.calls).toEqual([1]);
+    expect(journal.compositePending.has(1 as JournalId)).toBe(true);
+    expect(workspace.files.get("index.html")).toBe("old");
+  });
+
+  it("returns backup_failed after inline reconciliation proves a failed backup aborted", async () => {
+    const { authority, backups, journal, reconciliation, workspace } = setup();
+    workspace.files.set("index.html", "old");
+    backups.verified = false;
+    journal.compositeAbortError = new Error("T2a unavailable");
+    reconciliation.outcome = { terminal: "aborted" };
+
+    await expect(authority.mutateComposite({
+      ref: project,
+      steps: [{ kind: "delete", path: "index.html" as RelPath, expectedContentHash: digest("old") }],
+      toolAudit: null,
+      backup: true,
+    }, "agent")).resolves.toMatchObject({
+      ok: false,
+      error: { code: ErrorCode.BackupFailed },
+    });
+    expect(reconciliation.calls).toEqual([1]);
+    expect(workspace.files.get("index.html")).toBe("old");
+  });
+
   it("rolls landed steps back in reverse and aborts only after every original hash verifies", async () => {
     const { authority, journal, workspace } = setup();
     workspace.files.set("one.html", "one-old");
@@ -521,6 +616,7 @@ describe("WriteAuthority file mutations", () => {
       detail: { path: "new.html" },
       credentialId: null,
       invokedAt: "2026-08-02T00:00:00.000Z",
+      revisionBefore: 0,
     };
     await expect(authority.mutate({
       kind: "file",

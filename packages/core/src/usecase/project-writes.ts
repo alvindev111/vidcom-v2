@@ -140,6 +140,11 @@ export async function setSceneTiming(
 ) {
   const ref = await findRef(dependencies, input.projectId);
   if (!ref.ok) return ref;
+  if (input.timing.start === undefined
+    && input.timing.duration === undefined
+    && input.timing.trackIndex === undefined) {
+    return err({ code: ErrorCode.SchemaInvalid, message: "at least one scene timing field is required", field: "timing" });
+  }
   const model = await dependencies.composition.parseProject(ref.value);
   const scene = model.scenes.find((candidate) => candidate.id === input.sceneId);
   if (!scene) return err({ code: ErrorCode.NotFound, message: "scene was not found" });
@@ -229,6 +234,7 @@ export async function setSceneScript(
     expectedContentHash: input.expectedContentHash as ContentHash,
   }];
   const staleSince = dependencies.clock.now().toISOString();
+  const narrationStale = scene.narration !== null;
   if (scene.narration !== null) {
     const narrationPath = `narration/${scene.id}.json` as RelPath;
     const resolved = await dependencies.workspace.resolve(ref.value, narrationPath, "system-write");
@@ -263,7 +269,7 @@ export async function setSceneScript(
       isTransition: scene.isTransition,
       elementCount: scene.elements.length,
       fileContentHash: written.value.fileHashes[input.file],
-      narrationStale: true,
+      narrationStale,
     },
     project: {
       ...model.project,
@@ -271,7 +277,7 @@ export async function setSceneScript(
       revision: written.value.projectRevision,
     },
     envelope: written.value,
-    narrationStale: true as const,
+    narrationStale,
   });
 }
 
@@ -352,6 +358,13 @@ export async function createScene(
   const start = Math.max(0, ...scenes.map((scene) => scene.start + scene.duration));
   const duration = input.duration ?? 4;
   const trackIndex = Math.max(0, ...scenes.map((scene) => scene.trackIndex)) + 1;
+  const timingError = validateSceneTiming({
+    start,
+    duration,
+    trackIndex,
+    rootDuration: Number.MAX_VALUE,
+  });
+  if (timingError) return err(timingError);
   const scenePath = `compositions/${sceneId}.html` as RelPath;
   const html = `<div id="${sceneId}-layer" class="comp-layer clip" data-composition-id="${sceneId}" data-composition-src="${scenePath}" data-start="${start}" data-duration="${duration}" data-track-index="${trackIndex}"></div>`;
   const applied = await dependencies.composition.applyOps(ref.value, ref.value.entry, [

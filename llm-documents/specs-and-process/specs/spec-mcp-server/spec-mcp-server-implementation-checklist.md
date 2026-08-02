@@ -3,7 +3,7 @@
 > **References**:
 > - [Detailed Goals](./spec-mcp-server-detailed-goal.md) — Approved, reconfirmed 2026-08-02
 > - [Detailed Design](./spec-mcp-server-detailed-design.md) — v6, Approved 2026-08-02
-> - [Main spec](./spec-mcp-server-complete.md)
+> - [Main spec](./spec-mcp-server-inprocess.md)
 > - [Canonical build order](../../../product-features/15-build-order.md) — Phase 2
 
 ## Context
@@ -21,7 +21,7 @@ Checklist chuyển Detailed Goals và Detailed Design v6 thành các task 1–4 
 - **Status**: **Approved — Code Execution authorized**
 - **Confirmed by**: Người dùng qua lệnh `/goal` thực thi toàn bộ checklist A→P
 - **Confirmation date**: 2026-08-02
-- **Notes / required revisions before code execution**: Checklist được audit sâu ngày 2026-08-02. Detailed Design v6 và checklist này phải được duyệt cùng nhau; sau đó thực thi theo Dependency Order. Phase B là migration gate, Phase E–F là durability gate, Phase P là release gate.
+- **Notes / required revisions before code execution**: Checklist được audit sâu ngày 2026-08-02. Detailed Design v6 và checklist này đã được duyệt cùng nhau qua `/goal`; Code Execution sau đó thực thi theo Dependency Order. Phase B là migration gate, Phase E–F là durability gate, Phase P là release gate.
 - **Vá executability 2026-08-02** (6 điểm, sau khi đối chiếu checklist với repo thật):
   1. `get_project_context.scenes` từng có hai cách đọc — Design §7 nay khai `SceneContextSchema` dùng chung với `list_scenes`, và tách rõ khỏi `SceneSchema` đầy đủ của studio snapshot HTTP.
   2. Design §7 thêm bảng ký hiệu rút gọn: shape lồng nhau lấy từ schema có sẵn ở `contracts/src/dto.ts`, không khai lại.
@@ -65,7 +65,7 @@ G…O ─→ P Contract matrix + milestone verification
 **Hard gates**:
 - B phải xanh, gồm fresh DB + legacy-data rebuild + unresolved backfill, trước D.
 - E và F phải xanh trên failure injection trước bất kỳ destructive tool nào ở L.
-- Không mount `/api/mcp*` trước N; không chạy AI-host smoke trước O.
+- Không mount `/api/mcp*` trước N; không chạy exact SDK-host smoke trước O.
 - Không đánh dấu spec complete trước P, full local gates và remote CI.
 
 ## Capacity Breakdown
@@ -181,26 +181,26 @@ Các giá trị và convention dưới đây là quyết định thực thi, kh�
 
 ## Phase Verification Matrix
 
-Mỗi phase chạy focused command dưới đây trước khi chạy `rtk bun run typecheck`, `rtk bun run lint` và `rtk git diff --check`. Phase chạm boundary chạy thêm `rtk bun run test:boundaries`. Không mark phase `[x]` nếu command chưa có exit code 0 trong Execution Log.
+Mỗi phase chạy `rtk bun run test:spec-paths` rồi focused command dưới đây trước khi chạy `rtk bun run typecheck`, `rtk bun run lint` và `rtk git diff --check`. Phase chạm boundary chạy thêm `rtk bun run test:boundaries`. Không mark phase `[x]` nếu command chưa có exit code 0 trong Execution Log.
 
 | Phase | Focused verification command |
 |---|---|
 | A | `rtk bun install --frozen-lockfile` rồi `rtk bun run test -- tests/contracts/mcp-contracts.test.ts` và full baseline gates |
 | B | `rtk bun run test -- tests/adapter/mcp-database-migration.test.ts` |
-| C | `rtk bun run test -- tests/core/mcp-domain-contracts.test.ts tests/adapter/mcp-port-adapters.test.ts` |
-| D | `rtk bun run test -- tests/adapter/mcp-journal-transactions.test.ts` |
-| E | `rtk bun run test -- tests/core/composite-write-authority.test.ts tests/adapter/composite-write-persistence.test.ts tests/core/write-authority.test.ts` |
+| C | `rtk bun run test -- tests/core/workspace-and-path-policy.test.ts tests/adapter/composition-hf.test.ts tests/contracts/api-contracts.test.ts` |
+| D | `rtk bun run test -- tests/adapter/composite-journal.test.ts tests/adapter/lease-journal.test.ts` |
+| E | `rtk bun run test -- tests/core/write-authority.test.ts tests/adapter/composite-write-authority.test.ts tests/e2e/foundation-milestone.test.ts` |
 | F | `rtk bun run test -- tests/core/composite-recovery.test.ts tests/adapter/composite-recovery-persistence.test.ts tests/core/reconcile-pending-mutations.test.ts` |
-| G | `rtk bun run test -- tests/core/mcp-project-reads.test.ts tests/adapter/mcp-read-model.test.ts` |
-| H | `rtk bun run test -- tests/core/approval-service.test.ts tests/adapter/approval-grant-persistence.test.ts` |
+| G | `rtk bun run test -- tests/core/project-usecases.test.ts tests/golden/parse.test.ts tests/adapter/composition-hf.test.ts` |
+| H | `rtk bun run test -- tests/core/approval-service.test.ts tests/adapter/approval-grants.test.ts` |
 | I | `rtk bun run test -- tests/adapter/backup-store.test.ts tests/core/restore-backup.test.ts` |
-| J | `rtk bun run test -- tests/core/mcp-project-writes.test.ts tests/adapter/destructive-usecases.test.ts tests/core/project-usecases.test.ts` |
+| J | `rtk bun run test -- tests/core/project-usecases.test.ts tests/core/scene-deletion.test.ts tests/core/file-deletion.test.ts tests/adapter/project-destructive-usecases.test.ts` |
 | K | `rtk bun run test -- tests/core/tool-audit-policy.test.ts tests/adapter/tool-audit-persistence.test.ts` |
 | L | `rtk bun run test -- tests/mcp/registry.test.ts tests/mcp/tools.test.ts` |
 | M | `rtk bun run test -- tests/mcp/legacy-transport.test.ts tests/mcp/modern-transport.test.ts tests/mcp/revision-pin.test.ts` rồi `rtk bun run test:golden` (phải bao gồm `tests/mcp/golden` sau M.11) |
 | N | `rtk bun run test -- tests/adapter/mcp-credential.test.ts tests/server/mcp-security.test.ts tests/server/mcp-listener.test.ts tests/server/security.test.ts` |
 | O | `rtk bun run test -- tests/cli/mcp-commands.test.ts tests/e2e/mcp-stdio-host.test.ts tests/cli/startup.test.ts` |
-| P | `rtk bun install --frozen-lockfile`; `rtk bun run typecheck`; `rtk bun run lint`; `rtk bun run test:boundaries`; `rtk bun run test`; `rtk bun run test:golden`; `rtk bun run build`; `rtk bun run test:runtime-smoke`; `rtk bun run test:schema-drift`; `rtk git diff --check` |
+| P | `rtk bun install --frozen-lockfile`; `rtk bun run test:spec-paths`; `rtk bun run typecheck`; `rtk bun run lint`; `rtk bun run test:boundaries`; `rtk bun run test`; `rtk bun run test:golden`; `rtk bun run build`; `rtk bun run test:runtime-smoke`; `rtk bun run test:schema-drift`; `rtk git diff --check` |
 
 ## Task Status Legend
 
@@ -611,7 +611,7 @@ Mỗi phase chạy focused command dưới đây trước khi chạy `rtk bun ru
 
 ---
 
-## Phase O: CLI/admin surfaces và AI-host smoke
+## Phase O: CLI/admin surfaces và exact SDK-host smoke
 
 **Addresses**: R6, R6b.9, R6c.7, R6d.2/4–5/7, R8
 **Design reference**: §5.7, §5.11, §5.15
@@ -629,10 +629,10 @@ Mỗi phase chạy focused command dưới đây trước khi chạy `rtk bun ru
 - [x] O.6 Implement `backup list|verify|restore`; restore gọi Core, không ghi filesystem trực tiếp. _Requirements: R6b.9, R7.8_ — _Design: §5.11, §5.15_
 - [x] O.7 Implement `recovery inspect|reconcile|resolve`; inspect read-only, reconcile deterministic, resolve bắt buộc choice exact. _Requirements: R5b.4d–4e_ — _Design: §5.7, §5.15_
 - [x] O.8 CLI tests cho strict dispatch/args, JSON admin output, exit codes, missing workspace, protocol pin error, signal cleanup và lease release. _Requirements: R6, R8.1–5_ — _Design: §5.15, §11.1–11.3_
-- [x] O.9 AI-host smoke: client thật spawn stdio legacy rồi modern, list/call tool, approval round-trip, clean shutdown và stdout chỉ protocol frames. _Requirements: R3, R4, R6, R8, R9.1–2_ — _Design: §11.1–11.3_
+- [x] O.9 Exact SDK-host smoke: installed legacy/modern MCP clients spawn stdio, list/call tool, approval round-trip, clean shutdown và stdout chỉ protocol frames. _Requirements: R3, R4, R6, R8, R9.1–2_ — _Design: §11.1–11.3_
 
 **Acceptance Criteria**:
-- [x] AI host thật spawn `vidcom mcp` và bắt tay cả hai era.
+- [x] Exact installed MCP SDK clients spawn resolved `vidcom mcp` và bắt tay cả hai era; không claim actual Claude Code/Codex binary.
 - [x] Missing workspace không đoán/tạo folder; pin lạ báo revision hỗ trợ.
 - [x] Admin commands audit actor đúng và không bypass Core/write authority.
 
@@ -657,7 +657,7 @@ Mỗi phase chạy focused command dưới đây trước khi chạy `rtk bun ru
 - [x] P.5 Real datastore destructive matrix: approval lifecycle, backup publish/attach/prune/restore, delete outcomes, crash boundaries và audit relation. _Requirements: R6, R6b, R7, R9.4–6_ — _Design: §11.2_
 - [x] P.6 Add CI guard “mọi registry tool có contract case”, revision constants match SDK, one-step audit forwarding, stdout cleanliness và schema drift. _Requirements: R7.4, R9.7–8, R8.1–2_ — _Design: §11, DR-6/20_
 - [x] P.7 Chạy đúng toàn bộ command trong Phase Verification Matrix, gồm `test:schema-drift` và `git diff --check`; ghi command, exit code, test count, commit SHA vào Execution Log/notes. _Requirements: Definition of Done 10–12_ — _Design: §11_
-- [x] P.8 Chạy AI-host demo end-to-end và cập nhật main spec/build-order/product docs bằng behavior thật; push và xác minh remote CI trước closeout. _Requirements: Definition of Done 1–12_ — _Design: §12_
+- [x] P.8 Chạy exact SDK-host demo end-to-end và cập nhật main spec/build-order/product docs bằng behavior thật; push và xác minh remote CI trước closeout. _Requirements: Definition of Done 1–12_ — _Design: §12_
 
 **Acceptance Criteria**:
 - [x] Mọi combination era×transport và mọi registry tool có automated contract evidence.
@@ -665,6 +665,131 @@ Mỗi phase chạy focused command dưới đây trước khi chạy `rtk bun ru
 - [x] Detailed Design/checklist/implementation notes khớp code đã ship trước khi đổi spec thành complete.
 
 **Deliverables**: contract/golden/durability matrix, CI gates, verified demo và closeout evidence.
+
+---
+
+## Review Remediation Dependency Order
+
+```text
+R Filesystem consistency + recovery
+├─→ S Core contracts, reads, tools và audit
+├─→ T HTTP transport + security
+└─→ U CLI lifecycle + operability
+R + S + T + U ─→ V Evidence, process và closeout
+```
+
+Nguồn finding canonical: `mcp-server-review.md` và 7 raw report trong `mcp-server-review-raw/`. Mỗi task dưới đây đóng đúng một finding hợp nhất; không được mark `[x]` chỉ bằng việc test cũ vẫn xanh.
+
+## Phase R: Filesystem consistency, recovery và retention — REVIEW GATE
+
+**Addresses**: C-01, H-01–H-04, M-12–M-14
+**Design reference**: §17.1–17.4, DR-21–DR-24
+**Files affected**: Core write/recovery ports và services, filesystem/SQLite adapters, startup ordering, real race/crash tests
+**Prerequisite**: Phase P complete; raw review đã đọc đầy đủ; main spec đã reopen
+**Skill**: `.agents/skills/bun/SKILL.md`, `.agents/skills/mcp-builder/SKILL.md`
+
+**Tasks**:
+- [x] R.1 **C-01** — thay primitive publish bằng durable capture/CAS: external edit tại validation→T1, T1→backup hoặc backup→publish phải còn nguyên và mutation không commit; backup lấy đúng captured bytes. _Requirements: R5, R5b, R6b_ — _Design: §17.1, DR-21_
+- [x] R.2 **H-01** — đưa exact lease owner/expiry và unresolved project gate vào cùng transaction T1; thêm two-connection handover barrier test. _Requirements: R5b, R7_ — _Design: §17.2, DR-22_
+- [x] R.3 **H-02** — recovery revalidate/capture filesystem tại settlement boundary; edit giữa classify và T2 giữ gate thay vì công bố revision stale. _Requirements: R5b, R7_ — _Design: §17.1–17.2, DR-21/22_
+- [x] R.4 **H-03** — scope startup recovery theo workspace đang lease; targeted recovery acquire lease của workspace chứa journal trước mọi read/write. _Requirements: R5b, R8_ — _Design: §17.2, DR-22_
+- [x] R.5 **H-04** — backup failure dùng `abortOrReconcile`; chỉ trả `backup_failed` khi terminal, nếu không trả `recovery_required` với journal/phase. _Requirements: R5b, R6b, R7_ — _Design: §17.3, DR-23_
+- [x] R.6 **M-12** — prune backup theo tombstone/rename → durable state → physical delete và reconcile crash residue. _Requirements: R6b_ — _Design: §17.4, DR-24_
+- [x] R.7 **M-13** — recovery chạy trước retention; backup gắn unresolved journal không được prune. _Requirements: R5b, R6b_ — _Design: §17.4, DR-24_
+- [x] R.8 **M-14** — bỏ duplicate rollback bytes khỏi hot SQLite path bằng content-addressed payload reference/retention policy; test asset lớn và DB growth. _Requirements: R5b, R6b_ — _Design: §17.4, DR-24_
+
+**Acceptance Criteria**:
+- [x] Barrier tests real filesystem/SQLite chứng minh external bytes không mất ở mọi review window.
+- [x] Không process nào inspect/write workspace không giữ lease.
+- [x] Pending/orphaned journal giữ đủ backup/rollback payload để reconcile hoặc admin resolve.
+
+---
+
+## Phase S: Core contracts, read model, tool safety và audit
+
+**Addresses**: H-05–H-07, M-01–M-08, M-11, L-03–L-04, L-07
+**Design reference**: §17.5–17.8, DR-25–DR-28
+**Files affected**: contracts, parser/models, Core reads/writes/deletion, Registry/audit, credential/grant services, golden tests
+**Prerequisite**: R complete
+**Skill**: `.agents/skills/bun/SKILL.md`, `.agents/skills/mcp-builder/SKILL.md`
+
+**Tasks**:
+- [x] S.1 **H-05** — canonical project-relative reference set gồm nested scene, root track và relative media owner; `delete_file` deny mọi referenced target. _Requirements: R6b_ — _Design: §17.5, DR-25_
+- [x] S.2 **H-06** — `create_scene` enforce duration/start/sum invariant trước apply/T1; 0, âm, overflow không tạo file/journal/revision. _Requirements: R5_ — _Design: §17.5_
+- [x] S.3 **H-07** — modern `input_required` ghi đúng một terminal caller-owned audit trước transport mapping. _Requirements: R7_ — _Design: §17.6, DR-26_
+- [x] S.4 **M-01** — reject empty timing patch ở schema và Core, không serialize/churn revision. _Requirements: R5_ — _Design: §17.5_
+- [x] S.5 **M-02** — `set_text` trả narration stale đúng khi sidecar tồn tại; cập nhật schema/design và test absent/present. _Requirements: R5_ — _Design: §17.5_
+- [x] S.6 **M-03** — khóa response-finalization semantics để mutation committed không bị báo ordinary failure do output validation hậu commit. _Requirements: R5, R7_ — _Design: §17.6, DR-26_
+- [x] S.7 **M-04** — `WriteEnvelope.fileHashes` chỉ nhận canonical `RelPath` key. _Requirements: R5_ — _Design: §17.5_
+- [x] S.8 **M-05** — rewrite đủ 10 tool descriptions: use/don't-use, precondition source, side effect, errors/recovery; cập nhật goldens. _Requirements: R1–R6_ — _Design: §17.5_
+- [x] S.9 **M-06** — audit persist duration và revision before/after cho read/error/pre-T1/commit/recovery. _Requirements: R7_ — _Design: §17.6, DR-26_
+- [x] S.10 **M-07** — `list_projects` isolate malformed project và bound concurrency/pagination theo contract cập nhật. _Requirements: R2_ — _Design: §17.7, DR-27_
+- [x] S.11 **M-08** — missing referenced source trả bounded diagnostic/state, không throw `internal`. _Requirements: R2_ — _Design: §17.7, DR-27_
+- [x] S.12 **M-11** — transition requested/issued grant quá TTL sang expired trước retention cleanup; giữ unresolved reserved rows. _Requirements: R6_ — _Design: §17.4_
+- [x] S.13 **L-03** — Core credential `list()` trả summary không có `secretHash`. _Requirements: R6d_ — _Design: §17.8, DR-28_
+- [x] S.14 **L-04** — MCP text content dùng canonical JSON byte-equivalent với `structuredContent`. _Requirements: R1, R3, R4_ — _Design: §17.6_
+- [x] S.15 **L-07** — bound `--overlap-ms` trong product maximum và ECMAScript Date range ở CLI + Core. _Requirements: R6d, R8_ — _Design: §17.8_
+
+---
+
+## Phase T: HTTP transport và security hardening
+
+**Addresses**: H-08, M-09–M-10, L-01–L-02
+**Design reference**: §17.9, DR-29
+**Files affected**: MCP HTTP wrapper, Hono perimeter/routes, DB initialization, security/transport tests
+**Prerequisite**: R complete; có thể triển khai sau S nhưng Verification Matrix chỉ chạy khi cả hai complete
+**Skill**: `.agents/skills/hono/SKILL.md`, `.agents/skills/mcp-builder/SKILL.md`, `.agents/skills/bun/SKILL.md`
+
+**Tasks**:
+- [x] T.1 **H-08** — forward `options.authInfo` qua entry, mọi exact pin và `latest`; Hono→real SDK→Registry audit giữ credential ID, không giữ bearer. _Requirements: R6c, R6d, R7_ — _Design: §17.9, DR-29_
+- [x] T.2 **M-09** — exact-pin wrapper giữ SDK `Content-Type`/invalid-body validation ladder trước revision mismatch. _Requirements: R3, R4, R6c_ — _Design: §17.9_
+- [x] T.3 **M-10** — request logger chỉ ghi method + pathname, không query secret/absolute path trước auth. _Requirements: R6d_ — _Design: §17.9_
+- [x] T.4 **L-01** — CORS phát canonical configured origin, không reflect request value; khóa credentialed preflight. _Requirements: R6d_ — _Design: §17.9_
+- [x] T.5 **L-02** — precreate app-data `0700`, SQLite/main-WAL-SHM owner-only trước sensitive write. _Requirements: R6d_ — _Design: §17.9_
+
+---
+
+## Phase U: CLI lifecycle, workspace isolation và executable contract
+
+**Addresses**: H-09–H-10, M-15–M-19
+**Design reference**: §17.10, DR-30
+**Files affected**: startup/composition root, MCP stdio lifecycle, workspace selection, admin commands, CLI error mapping, bin artifact/tests
+**Prerequisite**: R complete
+**Skill**: `.agents/skills/bun/SKILL.md`, `.agents/skills/mcp-builder/SKILL.md`
+
+**Tasks**:
+- [x] U.1 **H-09** — idempotent unwind luôn thử listener/scheduler/watcher/lease/DB và ném `AggregateError` sau cùng. _Requirements: R8_ — _Design: §17.10, DR-30_
+- [x] U.2 **H-10** — track bin `100755`, tạo resolved `vidcom` command trong clean artifact test và spawn đúng command; docs không overclaim SEA. _Requirements: R8, R9_ — _Design: §17.10_
+- [x] U.3 **M-15** — stdin EOF/stdout close dừng MCP, cleanup và nhả lease. _Requirements: R8_ — _Design: §17.10_
+- [x] U.4 **M-16** — cài signal abort gate trước startup và giữ handler tới cleanup settled; test signal giữa startup/double signal. _Requirements: R8_ — _Design: §17.10_
+- [x] U.5 **M-17** — explicit workspace invalid fail fast, không fallback active/cwd và không acquire lease. _Requirements: R8_ — _Design: §17.10_
+- [x] U.6 **M-18** — validate backup ID/target trước full writer runtime; restore dùng targeted minimal runtime đúng workspace. _Requirements: R6b, R8_ — _Design: §17.10_
+- [x] U.7 **M-19** — unexpected CLI error thành một dòng stable/redacted; production launcher không phát experimental warning vào contract stderr. _Requirements: R8_ — _Design: §17.10_
+
+---
+
+## Phase V: Contract evidence, process truth và release closeout
+
+**Addresses**: M-20–M-24, L-05–L-06, L-08
+**Design reference**: §17.11, DR-31
+**Files affected**: contract/golden/E2E/runtime tests, scripts/CI, checklist/spec/design/notes/product docs
+**Prerequisite**: R–U complete
+**Skill**: `.agents/skills/mcp-builder/SKILL.md`, `.agents/skills/bun/SKILL.md`
+
+**Tasks**:
+- [x] V.1 **M-20** — success-path Registry/transport matrix cho đủ 10 tool qua representative 2×2 cells; negative matrix giữ riêng. _Requirements: R9_ — _Design: §17.11, DR-31_
+- [x] V.2 **M-21** — chạy actual Claude Code/Codex host smoke hermetic hoặc hạ wording DoD về exact SDK harness với evidence trung thực. _Requirements: R8, R9_ — _Design: §17.11_
+- [x] V.3 **M-22** — sửa mọi stale Phase Verification Matrix path, thêm existence guard và rerun từng focused gate. _Requirements: R9_ — _Design: §17.11_
+- [x] V.4 **M-23** — canonicalize approval fact v6 trong Goals/Design/Checklist/Main spec. _Requirements: R9_ — _Design: §17.11_
+- [x] V.5 **L-05** — `test:mcp-contract` chứa matrix, negative và revision-pin suites thật. _Requirements: R9_ — _Design: §17.11_
+- [x] V.6 **L-06** — sắp `implementation-notes.html` theo B→P→R→V hoặc đánh sequence index rõ ràng. _Requirements: R9_ — _Design: §17.11_
+- [x] V.7 **L-08** — runtime smoke chạy legacy entry + modern exact/latest, audit credential; child timeout phải fail và kill cứng. _Requirements: R6c, R6d, R8, R9_ — _Design: §17.11_
+- [/] V.8 **M-24** — push final remediation SHA và lưu remote CI evidence trên exact HEAD. _Requirements: R9_ — _Design: §17.11, DR-31_
+
+**Acceptance Criteria**:
+- [ ] 43/43 review findings có task `[x]`, regression evidence và raw-to-fix traceability.
+- [ ] Full local Verification Matrix exit 0, không skip/todo/only.
+- [ ] Remote CI xanh trên exact remediation HEAD trước khi đổi spec về `complete`.
 
 ---
 
@@ -686,7 +811,7 @@ Mỗi phase chạy focused command dưới đây trước khi chạy `rtk bun ru
 | `tests/**` | A–P | unit, real SQLite/fs, contract, golden, smoke |
 | `llm-documents/**` | P + design drift | execution log, notes, behavior/build-order closeout |
 
-**Estimated scope**: 16 phases, 140 numbered implementation tasks, 132 SP. Line/file count chưa ước lượng vì migration SQL và failure-injection fixtures phụ thuộc generated output; không dùng line count làm completion gate.
+**Estimated scope**: 21 phases, 183 numbered implementation tasks. 43 remediation task Phase R→V được thêm sau implementation review; completion gate mới là 183/183 và 43/43 finding có regression evidence.
 
 ## Requirements Coverage Matrix
 
@@ -728,7 +853,7 @@ Mỗi phase chạy focused command dưới đây trước khi chạy `rtk bun ru
 - [x] Mọi component/interface/data model của Design v6 có task, gồm DR-20 audit forwarding.
 - [x] Mọi requirement R1–R9 có task và test trong coverage matrix.
 - [x] Mọi phase có test task; phase persistence có SQLite/filesystem thật.
-- [x] Integration nối Core → Registry → transport → server/CLI → host thật.
+- [x] Integration nối Core → Registry → transport → server/CLI → exact installed SDK-host harness.
 
 **Clarity**:
 - [x] Mỗi task nêu artifact/behavior cụ thể và Requirements/Design reference.
@@ -748,7 +873,7 @@ Mỗi phase chạy focused command dưới đây trước khi chạy `rtk bun ru
 **Project-specific**:
 - [x] Mỗi phase có Skill/Read-first annotations.
 - [x] Workspace isolation, path containment, SQLite transaction và real filesystem được phủ.
-- [x] Approval Gate giữ `Pending Confirmation`; production code vẫn bị chặn.
+- [x] Approval Gate ghi **Approved — Code Execution authorized**; `/goal` duyệt Design v6 + checklist trước production code A→P.
 
 ## Execution Log
 
@@ -1281,16 +1406,16 @@ Mỗi phase chạy focused command dưới đây trước khi chạy `rtk bun ru
 
 2026-08-02 — Phase O, Task O.8 complete; Task O.9
   - Files: [`packages/cli/src/main.ts`, `tests/cli/{mcp-commands,startup}.test.ts`]
-  - Summary: CLI contract suite phủ strict dispatch/admin args, JSON outputs, input/infrastructure exit codes, missing workspace, protocol pin, signal idempotence và real SQLite lease release. Bắt đầu AI-host stdio smoke.
+  - Summary: CLI contract suite phủ strict dispatch/admin args, JSON outputs, input/infrastructure exit codes, missing workspace, protocol pin, signal idempotence và real SQLite lease release. Bắt đầu exact SDK stdio smoke.
   - Verification: CLI command + startup 2 files/35 tests; typecheck, lint giữ baseline 10 warnings (0 errors), boundaries và diff check exit 0.
   - Decisions: `runCliMain` nhận injectable execute seam chỉ để chứng minh unexpected failure exit 1 mà không đụng môi trường thật; missing workspace test kiểm marker không được tự tạo; runtime stop được xác nhận bằng workspace_lease row count 0.
   - Blockers: không có.
 
 2026-08-02 — Phase O complete; Phase P, Task P.1
   - Files: [`packages/cli/{bin/vidcom.mjs,package.json}`, root `package.json`, `bun.lock`, `tests/e2e/mcp-stdio-host.test.ts`]
-  - Summary: AI host dùng exact legacy/modern clients spawn chính production bin, negotiate từng revision, list/call 10 tools, modern elicitation gọi trusted approve CLI rồi retry destructive delete thành công; cả hai child đóng sạch và nhả lease. Bắt đầu 2×2 contract matrix.
+  - Summary: Exact installed legacy/modern MCP clients spawn source-checkout launcher Phase 2, negotiate từng revision, list/call 10 tools, modern elicitation gọi trusted approve CLI rồi retry destructive delete thành công; cả hai child đóng sạch và nhả lease. Đây không phải actual Claude Code/Codex binary evidence. Bắt đầu 2×2 contract matrix.
   - Verification: exact Phase O matrix 3 files/36 tests; frozen install, typecheck, lint baseline 10 warnings (0 errors), boundaries, production build và diff check exit 0.
-  - Decisions: production bin dùng Node + `tsx/esm/api` wrapper vì Node raw TS không resolve extensionless workspace imports còn Bun 1.3.14 thiếu `node:sqlite`; smoke coi hai SDK parser thành công trên toàn stream là protocol-only stdout evidence và kiểm stderr ngoài Node experimental warning bằng rỗng.
+  - Decisions: source-checkout launcher Phase 2 dùng Node + `tsx/esm/api` wrapper vì Node raw TS không resolve extensionless workspace imports còn Bun 1.3.14 thiếu `node:sqlite`; đây không phải packaged SEA Phase 4. Smoke coi hai SDK parser thành công trên toàn stream là protocol-only stdout evidence và kiểm stderr ngoài Node experimental warning bằng rỗng.
   - Blockers: không có.
 
 2026-08-02 — Phase P, Task P.1 complete; Task P.2
@@ -1337,16 +1462,324 @@ Mỗi phase chạy focused command dưới đây trước khi chạy `rtk bun ru
 
 2026-08-02 — Phase P, Task P.7 complete; Task P.8
   - Files: [Phase Verification Matrix và generated build artifacts không tracked]
-  - Summary: Chạy nguyên văn toàn bộ local Verification Matrix trên commit gốc `f4c838b43744e676798c1fb2fc58a46cfecd1219`; mọi command exit 0, không skipped test. Bắt đầu AI-host demo/docs/remote closeout.
+  - Summary: Chạy nguyên văn toàn bộ local Verification Matrix trên commit gốc `f4c838b43744e676798c1fb2fc58a46cfecd1219`; mọi command exit 0, không skipped test. Bắt đầu exact SDK-host demo/docs/remote closeout.
   - Verification: `bun install --frozen-lockfile` exit 0 (870 installs/1034 packages, no changes); `typecheck` 0; `lint` 0 với baseline 10 warnings; `test:boundaries` 0; `test` 0 (66 files/423 tests); `test:golden` 0 (6 files/22 tests); `build` 0; `test:runtime-smoke` 0 (production MCP bearer route + SSE 1→2); `test:schema-drift` 0 (4 artifacts); `git diff --check` 0.
   - Decisions: ghi SHA pre-commit để liên kết exact working-tree baseline; closeout audit bổ sung MCP Registry/credential injection vào Next host và nâng runtime smoke thành bearer call thật. P.8 sẽ tạo ship commit mới rồi chạy/xác minh remote CI trên SHA đó trước closeout.
   - Blockers: không có.
 
 2026-08-02 — Phase P complete; 140/140 tasks
   - Files: [`tests/e2e/mcp-stdio-host.test.ts`, `.github/workflows/ci.yml`, main spec, Detailed Design, build-order và product docs]
-  - Summary: AI-host demo rerun xanh; behavior thật đã cập nhật vào main spec/build-order/product docs. Ship commit `db7fd685af37e8efcd0e6c09df92aa1865911414` được push và GitHub Actions CI #6 hoàn tất Success trước closeout.
-  - Verification: local exact Verification Matrix 10/10 exit 0; AI-host demo 1/1; remote CI #6 run `30744778718` Success 2m54s trên `db7fd68`, CI #7 run `30744858938` Success 2m56s trên `f01d4b4`; full 66 files/423 tests, MCP guard 6/51, golden 6/22, không skipped test. Warning GitHub Actions Node 20 deprecation cho `actions/checkout@v4`/`setup-node@v4` không phải product failure.
+  - Summary: Exact SDK-host demo rerun xanh; behavior thật đã cập nhật vào main spec/build-order/product docs. Ship commit `db7fd685af37e8efcd0e6c09df92aa1865911414` được push và GitHub Actions CI #6 hoàn tất Success trước closeout.
+  - Verification: local exact Verification Matrix 10/10 exit 0; exact SDK-host demo 1/1; remote CI #6 run `30744778718` Success 2m54s trên `db7fd68`, CI #7 run `30744858938` Success 2m56s trên `f01d4b4`; full 66 files/423 tests, MCP guard 6/51, golden 6/22, không skipped test. Warning GitHub Actions Node 20 deprecation cho `actions/checkout@v4`/`setup-node@v4` không phải product failure.
   - Decisions: spec chuyển `inprocess` → `complete` chỉ sau remote ship CI xanh. Closeout commit chỉ đổi evidence/status docs và sẽ được push/xác minh CI riêng để bảo đảm remote main đúng trạng thái 140/140.
+  - Blockers: không có.
+
+2026-08-02 — Review remediation, Phase R Task R.1
+  - Files: [`mcp-server-review.md`, `mcp-server-review-raw/*.md`, main spec, Detailed Design v7, checklist, `implementation-notes.html`]
+  - Summary: Đọc đầy đủ 7 raw report, hợp nhất 43 finding thành Phase R→V và reopen spec từ Complete sang In Process. Bắt đầu C-01 bằng durable capture/CAS thay cho validate-rồi-rename.
+  - Verification: task audit có 43 finding mapping; main spec/checklist/design links chuyển sang `inprocess`; chưa mark finding nào complete trước regression test.
+  - Decisions: §17 và DR-21–DR-31 khóa filesystem CAS, lease-scoped recovery, response finalization, retention, HTTP context và CLI lifecycle trước production edit.
+  - Blockers: không có.
+
+2026-08-02 — Phase R, Task R.1 complete; Task R.2
+  - Files: [`packages/core/src/{port,service}/**`, `packages/adapter/src/{fs,db}/**`, `packages/adapter/drizzle/20260802120436_late_sheva_callister/**`, `tests/{core,adapter}/**`]
+  - Summary: Durable same-filesystem capture/CAS thay thế publish overwrite; journal persist rollback slot trước publish, backup đọc captured bytes, external target tạo ở bốn race window được giữ nguyên và mutation không commit. Bắt đầu transactional lease/recovery gate H-01.
+  - Verification: focused 5 files/51 tests pass gồm 4 real-filesystem barrier regression; schema drift 6 artifacts, typecheck, lint 0 errors, boundaries và `git diff --check` đều exit 0.
+  - Decisions: entity revision 0 giữ logical default `fromHash` trong journal nhưng CAS filesystem dùng physical `null`; DB capture invariant liên kết `previous_content` với `captured_hash` để phân biệt đúng virtual default và file thật.
+  - Blockers: không có.
+
+2026-08-02 — Phase R, Task R.2 complete; Task R.3
+  - Files: [`packages/core/src/port/{ports,types}.ts`, `packages/core/src/service/write-authority.ts`, `packages/adapter/src/db/journal.ts`, `packages/adapter/src/fs/{mutation-capture,watcher}.ts`, `tests/{adapter,cli}/**`]
+  - Summary: T1 nhận exact lease ID, lấy SQLite write lock bằng guarded update, kiểm expiry + project workspace + unresolved gate trong cùng transaction trước journal insert. Two-connection handover chứng minh stale daemon không tạo journal/chạm disk. Bắt đầu recovery settlement CAS H-02.
+  - Verification: two-connection regression 1/1; focused affected 7 files/60 tests; full 66 files/428 tests; typecheck, lint 0 errors, boundaries, schema drift 6 artifacts và `git diff --check` đều exit 0.
+  - Decisions: `project_registry.workspace_root` là binding lease→project; legacy multi-unresolved fixtures seed terminal status tạm thời thay vì mở bypass production. Watcher bỏ qua durable mutation artifacts và root-self notifications để CAS rename không giả external event.
+  - Blockers: không có.
+
+2026-08-02 — Phase R, Task R.3 complete; Task R.4
+  - Files: [`packages/core/src/{service/composite-recovery,usecase/reconcile-composite-mutation}.ts`, `tests/{core,adapter}/composite-recovery*.test.ts`]
+  - Summary: Recovery capture/revalidate mọi observed target bằng same-filesystem CAS ngay settlement boundary; mixed rollback dùng CAS capture thay cho write/delete overwrite. External edit classify→T2 giữ journal pending và không tạo revision stale. Bắt đầu workspace-scoped recovery lease H-03.
+  - Verification: new real SQLite/filesystem barrier 1/1; focused 4 files/35 tests; full 66 files/429 tests; typecheck, lint 0 errors, boundaries, schema drift và `git diff --check` exit 0.
+  - Decisions: settlement slot dùng namespace ordinal riêng nhưng cùng primitive; CAS conflict trả `recovery_required` và bảo toàn external bytes, còn unknown observation tiếp tục chuyển orphan để giữ project gate.
+  - Blockers: không có.
+
+2026-08-02 — Phase R, Task R.4 complete; Task R.5
+  - Files: [`packages/core/src/{port/ports,usecase/reconcile-composite-mutation}.ts`, `packages/adapter/src/db/journal.ts`, `packages/cli/src/{startup,composition-root,commands/recovery}.ts`, `tests/{cli,adapter}/**`]
+  - Summary: Startup list/reconcile chỉ journal có registration thuộc exact leased workspace; runtime resolver không fallback ra root khác. Targeted recovery đọc journal registration trước, tạo workspace adapter và acquire đúng lease rồi mới inspect/write filesystem. Bắt đầu backup abort-or-reconcile H-04.
+  - Verification: cross-workspace startup regression 1/1 và wrong-selector targeted recovery regression xanh; CLI focused 2 files/36 tests; full 66 files/430 tests; typecheck, boundaries, schema drift và `git diff --check` exit 0.
+  - Decisions: global reconciliation bắt buộc `workspaceRoot`; journal query join `project_registry`; selector UI/env không được override workspace sở hữu targeted journal. Xóa import phát sinh để lint trở lại đúng 10 baseline warnings.
+  - Blockers: không có.
+
+2026-08-02 — Phase R, Task R.5 complete; Task R.6
+  - Files: [`packages/core/src/service/write-authority.ts`, `tests/core/write-authority.test.ts`]
+  - Summary: Hai nhánh backup unavailable/create/verify dùng chung abort-restored-or-inline-reconcile; chỉ trả backup_failed khi T2a hoặc reconcile chứng minh aborted/rolled_back, còn pending trả recovery_required kèm journalId/phase. Bắt đầu crash-safe backup prune M-12.
+  - Verification: failure injection abort fail + reconcile pending/terminal 2/2; focused 3 files/38 tests; full 66 files/432 tests; typecheck, lint 0 errors, boundaries, schema drift và `git diff --check` exit 0.
+  - Decisions: captures chỉ discard sau terminal proof; null abort context buộc reconcile thay vì giả định đã đóng; grant release tiếp tục nằm trong same T2a adapter transaction.
+  - Blockers: không có.
+
+2026-08-02 — Phase R, Task R.6 complete; Task R.7
+  - Files: [`packages/adapter/src/fs/backup-store.ts`, `tests/adapter/backup-store.test.ts`]
+  - Summary: Payload prune đổi sang atomic payload→.payload.pruning, fsync directory, durable payload_pruned_at, rồi physical delete; mỗi lần prune reconcile residue trước/after DB crash. Bắt đầu recovery-before-retention M-13.
+  - Verification: two crash-boundary regressions pass; backup/startup focused 3 files/28 tests; full 66 files/433 tests; typecheck, lint 0 errors, boundaries, schema drift và `git diff --check` exit 0.
+  - Decisions: tombstone với DB null được restore trước retry; DB đã marked thì tombstone/payload residue bị xóa; metadata không bao giờ nói payload còn khả dụng sau physical delete.
+  - Blockers: không có.
+
+2026-08-02 — Phase R, Task R.7 complete; Task R.8
+  - Files: [`packages/cli/src/startup.ts`, `packages/adapter/src/fs/backup-store.ts`, `tests/{adapter,cli}/**`]
+  - Summary: Startup reconcile scoped journals trước backup retention; prune loại backup còn gắn pending/orphaned và tính tuổi linked backup từ terminal revision.created_at thay vì manifest tuổi cũ. Bắt đầu content-addressed large rollback payload M-14.
+  - Verification: unresolved/terminal-age regression pass; focused 3 files/36 tests; full 66 files/434 tests; typecheck, lint 0 errors, boundaries, schema drift và `git diff --check` exit 0.
+  - Decisions: backup recovery vừa terminal không bị prune ngay dù manifest đã quá tuổi; unattached terminal metadata vẫn dùng created_at; unresolved luôn exempt bất kể cutoff.
+  - Blockers: không có.
+
+2026-08-02 — Phase R complete, Task R.8 complete; Phase S, Task S.1
+  - Files: [`packages/adapter/src/{db/journal.ts,db/schema.ts,fs/large-content-store.ts}`, `packages/adapter/drizzle/20260802123804_lumpy_old_lace/`, `packages/cli/src/{composition-root.ts,startup.ts,commands/recovery.ts}`, `tests/adapter/{composite-journal,mcp-database-migration}.test.ts`]
+  - Summary: Rollback payload trên 64 KiB được fsync vào immutable SHA-256 object store; journal/revision rows chỉ giữ hash + byte size, startup GC chỉ xóa object quá grace và không còn reference durable. Cả composite lẫn legacy/staged recovery hydrate cùng object. Bắt đầu canonical reference graph H-05.
+  - Verification: 2 MiB regression chứng minh 4 metadata rows cùng một object, SQLite inline bytes bằng 0 và page footprint nhỏ hơn payload; ENOSPC trước T1 không để journal, T2 không rewrite object đã durable. Focused 5 files/40 tests và full 66 files/436 tests; typecheck, lint 0 errors, schema drift 8 artifacts exit 0.
+  - Decisions: ngưỡng inline 64 KiB; referenced object giữ vô hạn để recovery/restore không mất bytes; orphan object chỉ compact ở startup sau grace 24 giờ và sau recovery, không chạy trong request.
+  - Blockers: không có.
+
+2026-08-02 — Phase S, Task S.1 complete; Task S.2
+  - Files: [`packages/core/src/domain/models.ts`, `packages/core/src/usecase/file-deletion.ts`, `packages/adapter/src/hyperframes/parse.ts`, `fixtures/parse/project-references.html`, `tests/{core,adapter,golden}/**`]
+  - Summary: Parser expose tập `{owner,path}` canonical project-relative cho direct scene source, nested media/narration và root-track media; URL/data/absolute/project-escaping bị loại. delete_file chỉ quyết định theo tập canonical, không so raw src/API URL. Bắt đầu timing invariants create_scene H-06.
+  - Verification: real repro nested `../assets/logo.svg` bị deny; unit phủ root/nested/same-basename; parser phủ external/data/escape. Focused 4 files/28 tests; full 66 files/439 tests; typecheck, lint 0 errors và boundary gate exit 0.
+  - Decisions: reference resolution lấy owner source đã thực sự parse; scene source thiếu/unreadable vẫn là reference từ entry nhưng media fallback giữ owner entry; dedupe theo owner+path để không mất provenance.
+  - Blockers: không có.
+
+2026-08-02 — Phase S, Task S.2 complete; Task S.3
+  - Files: [`packages/core/src/domain/invariants.ts`, `packages/core/src/usecase/project-writes.ts`, `tests/core/project-usecases.test.ts`, `tests/adapter/project-destructive-usecases.test.ts`]
+  - Summary: createScene dùng timing invariant chung trước applyOps/T1; end time bắt buộc hữu hạn ngoài duration/start/track rules. Bắt đầu terminal audit cho modern input_required H-07.
+  - Verification: Core regression khẳng định applyOps/mutation đều 0; real SQLite/filesystem test khẳng định duration 0/âm/overflow không tạo scene/narration, journal hoặc revision. Focused 2 files/43 tests; full 66 files/443 tests; typecheck và lint 0 errors exit 0.
+  - Decisions: create_scene được phép mở rộng root duration nên validate với Number.MAX_VALUE; riêng non-finite start+duration trả duration_overflow trước serialization.
+  - Blockers: không có.
+
+2026-08-02 — Phase S, Task S.3 complete; Task S.4
+  - Files: [`packages/mcp/src/registry/registry.ts`, `tests/mcp/{registry,modern-transport}.test.ts`, `tests/e2e/mcp-stdio-host.test.ts`]
+  - Summary: Registry persist terminal approval_required audit trước khi rethrow InputRequiredSignal; ownership lookup ngăn caller ghi đè journal-owned context. Modern transport và real stdio smoke khóa một error round trước một retry-success round. Bắt đầu reject empty timing patch M-01.
+  - Verification: focused policy/registry/HTTP/SQLite 4 files/42 tests; executable stdio focused 3 files/25 tests; full 66 files/444 tests; typecheck và lint 0 errors exit 0.
+  - Decisions: input_required là terminal outcome của invocation round hiện tại, không phải success; requestState được audit nhưng schema/message không được copy dư; MRTR retry là invocation mới và có audit riêng.
+  - Blockers: không có.
+
+2026-08-02 — Phase S, Task S.4 complete; Task S.5
+  - Files: [`packages/contracts/src/mcp.ts`, `packages/core/src/usecase/project-writes.ts`, `tests/contracts/mcp-contracts.test.ts`, `tests/core/project-usecases.test.ts`]
+  - Summary: SetSceneTiming schema yêu cầu ít nhất một field; Core duplicate guard trả schema_invalid trước parse/source/SDK/T1. Bắt đầu sửa narrationStale absent/present M-02.
+  - Verification: contract chấp nhận riêng start/duration/trackIndex và reject empty; Core chứng minh 0 source read/applyOps/mutation; golden 1 file/4 tests, focused 3 files/64 tests, full 66 files/446 tests; typecheck và lint 0 errors exit 0.
+  - Decisions: refine giữ strict object/schema surface hiện tại; Core guard sau project lookup để không đổi precedence project_not_found của caller nội bộ.
+  - Blockers: không có.
+
+2026-08-02 — Phase S, Task S.5 complete; Task S.6
+  - Files: [`packages/contracts/src/mcp.ts`, `packages/core/src/usecase/project-writes.ts`, `llm-documents/.../spec-mcp-server-detailed-design.md`, `tests/{contracts,core,mcp}/**`]
+  - Summary: SetText output đổi narrationStale literal thành boolean; Core chỉ stale sidecar và trả true khi narration hiện hữu, scene absent trả false với đúng một source step. Bắt đầu response-finalization M-03.
+  - Verification: present/absent Core regressions, contract true/false và golden legacy/modern pass; focused 4 files/50 tests; full 66 files/448 tests; typecheck và lint 0 errors exit 0.
+  - Decisions: giữ boolean thay vì thêm enum để không mở rộng surface ngoài finding; scene.narration là nguồn quyết định, missing sidecar khi model nói present vẫn fail storage như trước.
+  - Blockers: không có.
+
+2026-08-02 — Phase S, Task S.6 complete; Task S.7
+  - Files: [`packages/contracts/src/errors.ts`, `packages/mcp/src/{registry/registry.ts,error-map.ts}`, `packages/server/src/middleware/error-mapper.ts`, `tests/{adapter,contracts,mcp}/**`]
+  - Summary: Post-commit output validation failure dùng committed_response_error riêng với committed flag/invocation/revision và do-not-retry guidance; journal-owned success audit không bị ghi đè thành ordinary failure. Bắt đầu canonical fileHashes key M-04.
+  - Verification: real SQLite/filesystem malformed create_scene chứng minh file+journal+revision committed, audit ok và wire special outcome; focused 3 files/34 tests + contract 2/9; full 66 files/450 tests; typecheck/lint 0 errors exit 0.
+  - Decisions: không giả rollback sau T2; distinct error code là machine-readable terminal outcome, MCP internal category giữ retryable=false; revision identity lấy từ raw envelope khi an toàn.
+  - Blockers: không có.
+
+2026-08-02 — Phase S, Task S.7 complete; Task S.8
+  - Files: [`packages/contracts/src/mcp.ts`, `tests/contracts/mcp-contracts.test.ts`, `tests/mcp/golden/fixtures/tools-list-{legacy,modern}.json`]
+  - Summary: `WriteEnvelope.fileHashes` dùng key schema project-relative canonical; absolute, drive-qualified, traversal segment, backslash, duplicate separator, dot segment và empty key đều bị từ chối. Bắt đầu rewrite mô tả đủ 10 tool M-05.
+  - Verification: contract/golden/registry focused 3 files/34 tests; full 66 files/451 tests; typecheck và lint 0 errors exit 0.
+  - Decisions: giữ validation ở WriteEnvelope thay vì siết mọi `RelativePathSchema` reader để thay đổi chỉ tác động write response contract; JSON Schema phát hành cùng min/max/pattern trong cả hai era golden.
+  - Blockers: không có.
+
+2026-08-02 — Phase S, Task S.8 complete; Task S.9
+  - Files: [`packages/mcp/src/registry/{read-tools,write-tools,destructive-tools}.ts`, `tests/mcp/{registry.test.ts,golden/**}`]
+  - Summary: Cả 10 tool description dùng cùng contract ngôn ngữ gồm use when, do not use, nguồn precondition, side effects và errors/recovery; giữ nguyên các chi tiết source-size, narration/TTS, approval, backup và output identity. Bắt đầu audit timing/revision M-06.
+  - Verification: registry/tools/golden focused 3 files/29 tests; full 66 files/451 tests; typecheck, lint 0 errors và git diff --check exit 0.
+  - Decisions: khóa năm marker bằng automated assertion cho cả hai era và giữ full text trong golden/inline snapshot; không tạo metadata field mới vì finding chỉ yêu cầu discovery description.
+  - Blockers: không có.
+
+2026-08-02 — Phase S, Task S.9 complete; Task S.10
+  - Files: [`packages/{core,adapter,mcp,cli}/**/{tool-audit-service,types,tool-audit,journal,registry,startup}.ts`, `llm-documents/.../spec-mcp-server-detailed-design.md`, `tests/{core,adapter,mcp,cli}/**`]
+  - Summary: Mọi terminal tool audit persist invocation time, durationMs, revisionBefore và revisionAfter; Registry phủ read/pre-T1/caller error, journal phủ commit/orphan/recovered commit, startup phủ recovered abort. Bắt đầu list_projects tolerance/pagination M-07.
+  - Verification: focused 5 files/68 tests; full 66 files/453 tests; typecheck, lint 0 errors và git diff --check exit 0.
+  - Decisions: metadata mới nằm trong audit detail, mutation success vẫn dùng revision_id làm after identity nên không cần migration; pending schema v1 cũ thiếu revisionBefore normalize thành null; revision observation fail-open có metric/log.
+  - Blockers: không có.
+
+2026-08-02 — Phase S, Task S.10 complete; Task S.11
+  - Files: [`packages/contracts/src/mcp.ts`, `packages/core/src/usecase/project-reads.ts`, `packages/mcp/src/registry/read-tools.ts`, `llm-documents/.../spec-mcp-server-detailed-design.md`, `tests/{contracts,core,mcp}/**`]
+  - Summary: list_projects có default limit 20/max 100, lexical cursor ổn định, page parse batch tối đa 4 và per-project warning diagnostic; output thêm diagnostics/nextCursor trong cả hai era. Bắt đầu missing referenced source M-08.
+  - Verification: focused 5 files/76 tests + contract matrix 2 era × 2 transport/4 tests; full 66 files/455 tests; typecheck, lint 0 errors và git diff --check exit 0.
+  - Decisions: cursor là projectId cuối page và filter lexical lớn hơn nên cursor bị xóa vẫn tiến; nextCursor dựa trên selected refs kể cả item malformed để không lặp; enumerate workspace failure vẫn terminal storage error.
+  - Blockers: không có.
+
+2026-08-02 — Phase S, Task S.11 complete; Task S.12
+  - Files: [`packages/contracts/src/mcp.ts`, `packages/core/src/usecase/project-reads.ts`, `packages/mcp/src/registry/read-tools.ts`, `llm-documents/.../spec-mcp-server-detailed-design.md`, `tests/{core,mcp}/**`]
+  - Summary: Scene reference thiếu source trả fileContentHash=null và một warning referenced_source_missing theo unique path trong get_project_context/list_scenes; không throw internal hay tạo hash giả. Bắt đầu grant expiry M-11.
+  - Verification: focused 6 files/81 tests gồm matrix 2 era × 2 transport; full 66 files/456 tests; typecheck, lint 0 errors và git diff --check exit 0.
+  - Decisions: nested source missing là nullable scene state; entry source vẫn hard dependency; list_scenes thêm diagnostics, SceneContext hash nullable đồng bộ mọi write/read output và golden.
+  - Blockers: không có.
+
+2026-08-02 — Phase S, Task S.12 complete; Task S.13
+  - Files: [`packages/core/src/{port/ports.ts,service/approval-service.ts}`, `packages/adapter/src/db/approval-grants.ts`, `tests/{core,adapter,mcp}/**`]
+  - Summary: Retention entrypoint chuyển mọi requested/issued quá TTL sang expired trước khi xóa terminal row; reserved không nằm trong expiry transition và unresolved journal link vẫn chặn cleanup. Bắt đầu credential summary L-03.
+  - Verification: focused 4 files/40 tests; full 66 files/458 tests; typecheck, lint 0 errors và git diff --check exit 0.
+  - Decisions: thêm `expireDue(now)` vào grant port để lifecycle nằm trong datastore atomic update; cleanup service gọi transition theo clock rồi mới áp retention cutoff; không đổi schema hay expiry semantics của reserved.
+  - Blockers: không có.
+
+2026-08-02 — Phase S, Task S.13 complete; Task S.14
+  - Files: [`packages/core/src/{port/types.ts,service/mcp-credential-service.ts}`, `packages/cli/src/commands/credential.ts`, `tests/{core,adapter}/mcp-credential*.test.ts`]
+  - Summary: Core `list()` trả DTO `McpCredentialSummary` không có `secretHash`; CLI tiêu thụ trực tiếp public DTO thay vì tự lọc persistence record. Bắt đầu canonical MCP text content L-04.
+  - Verification: focused 3 files/34 tests; full 66 files/459 tests; typecheck, lint 0 errors và git diff --check exit 0.
+  - Decisions: port persistence tiếp tục dùng full record để verify/rotate; redaction thuộc Core service boundary để mọi caller nhận cùng non-secret contract, không chỉ CLI.
+  - Blockers: không có.
+
+2026-08-02 — Phase S, Task S.14 complete; Task S.15
+  - Files: [`packages/mcp/src/server.ts`, `tests/mcp/{contract-matrix.test.ts,golden/fixtures/result-*.json}`]
+  - Summary: Thành công tools/call serialize text bằng canonical JSON của đúng validated structuredContent; byte ordering được khóa trên cả hai era và hai transport. Bắt đầu overlap bound L-07.
+  - Verification: focused 4 files/12 tests gồm matrix 2 era × 2 transport; full 66 files/459 tests; typecheck, lint 0 errors và git diff --check exit 0.
+  - Decisions: tái sử dụng Core canonicalizeJson thay vì thêm serializer MCP thứ hai; structuredContent giữ object validated, text là canonical byte representation của chính object đó.
+  - Blockers: không có.
+
+2026-08-02 — Phase S complete; Phase T, Task T.1
+  - Files: [`packages/core/src/service/mcp-credential-service.ts`, `packages/cli/src/commands/credential.ts`, `llm-documents/.../spec-mcp-server-detailed-design.md`, `tests/{core,cli}/**`]
+  - Summary: Rotation overlap có default 5 phút và product cap 24 giờ; CLI chặn ngoài `1..86_400_000`, Core chặn config/override ngoài `0..cap` và expiry ngoài ECMAScript Date trước persistence. Bắt đầu authInfo forwarding H-08.
+  - Verification: focused 3 files/35 tests; full 66 files/460 tests; typecheck, lint 0 errors và git diff --check exit 0.
+  - Decisions: 24 giờ là product maximum mới của §17.8; Core vẫn cho 0 để cấu hình overlap tức thời, CLI override tiếp tục positive như contract; Date edge dùng giới hạn ±8.64e15 ms.
+  - Blockers: không có.
+
+2026-08-02 — Phase T, Task T.1 complete; Task T.2
+  - Files: [`packages/mcp/src/http.ts`, `tests/server/mcp-security.test.ts`]
+  - Summary: Pinned wrapper forward nguyên handler options khi revision match; real Hono bearer path qua SDK đến Registry audit hoạt động cho entry, mọi exact pin và latest, chỉ persist credential ID. Bắt đầu exact-pin validation ladder M-09.
+  - Verification: focused 4 files/22 tests; full 66 files/460 tests; typecheck, lint 0 errors và git diff --check exit 0.
+  - Decisions: bearer chỉ tồn tại ở perimeter verifier; downstream AuthInfo dùng token rỗng và verified clientId; test iterate canonical SUPPORTED_REVISIONS để revision mới không tái tạo lỗ hổng.
+  - Blockers: không có.
+
+2026-08-02 — Phase T, Task T.2 complete; Task T.3
+  - Files: [`packages/mcp/src/http.ts`, `tests/mcp/revision-pin.test.ts`]
+  - Summary: Exact-pin wrapper delegate POST thiếu/sai JSON Content-Type cho SDK trước clone/classify; invalid JSON tiếp tục đi qua SDK parse ladder trước pin mismatch. Bắt đầu pathname-only logger M-10.
+  - Verification: focused 3 files/15 tests; full 66 files/460 tests; typecheck, lint 0 errors và git diff --check exit 0.
+  - Decisions: dùng official `isJsonContentType` của exact server SDK; test khóa status/code/id vì entry và pinned SDK configuration có thể dùng wording parse error khác nhau nhưng cùng canonical rung.
+  - Blockers: không có.
+
+2026-08-02 — Phase T, Task T.3 complete; Task T.4
+  - Files: [`packages/server/src/middleware/perimeter.ts`, `tests/server/security.test.ts`]
+  - Summary: Pre-auth request logger chỉ ghi HTTP method và URL pathname; origin, mọi query key/value và encoded absolute path không còn đi vào log. Bắt đầu canonical CORS L-01.
+  - Verification: focused 2 files/25 tests; full 66 files/460 tests; typecheck, lint 0 errors và git diff --check exit 0.
+  - Decisions: giữ exported helper để không break server surface nhưng đổi semantic thành pathname-only; test assert exact log line thay vì blacklist từng secret key.
+  - Blockers: không có.
+
+2026-08-02 — Phase T, Task T.4 complete; Task T.5
+  - Files: [`packages/server/src/middleware/perimeter.ts`, `tests/server/security.test.ts`]
+  - Summary: CORS canonicalize configured/request origin rồi phát configured constant; trusted credentialed OPTIONS preflight kết thúc 204 trước auth với fixed methods/headers và credentials policy. Bắt đầu app-data/SQLite permission L-02.
+  - Verification: focused 2 files/26 tests; full 66 files/461 tests; typecheck, lint 0 errors và git diff --check exit 0.
+  - Decisions: chỉ HTTP(S) origins do URL canonicalizer chấp nhận được map; preflight method/header ngoài fixed allowlist bị từ chối, response không echo raw Origin hay requested headers.
+  - Blockers: không có.
+
+2026-08-02 — Phase T complete; Phase U, Task U.1
+  - Files: [`packages/adapter/src/{db/client.ts,fs/credential-store.ts}`, `tests/{adapter/node-sqlite,server/security}.test.ts`]
+  - Summary: App-data được tạo/repair 0700 trước file nhạy cảm; SQLite main/WAL/SHM precreate 0600 và owner-only ACL trước open/WAL writes, rồi resecure sau bật WAL. Bắt đầu idempotent unwind H-09.
+  - Verification: focused 3 files/27 tests; full 66 files/462 tests; typecheck, lint 0 errors và git diff --check exit 0.
+  - Decisions: POSIX test chạy dưới umask 0 và stat live sidecars; Windows directory ACL bỏ inheritance và grant current SID OI/CI full control trước khi tạo file; file ACL giữ current SID read/write.
+  - Blockers: không có.
+
+2026-08-02 — Phase U, Task U.1 complete; Task U.2
+  - Files: [`packages/cli/src/startup.ts`, `tests/cli/startup.test.ts`]
+  - Summary: Shutdown dùng một concurrency-safe promise và independent cleanup actions theo listener→scheduler→watcher→lease→DB; mọi lỗi được gom AggregateError sau khi đủ bước đã chạy. Bắt đầu executable artifact H-10.
+  - Verification: focused 2 files/41 tests; full 66 files/467 tests; typecheck, lint 0 errors và git diff --check exit 0.
+  - Decisions: repeated/concurrent stop trả cùng promise và không gọi handle lần hai; startup error giữ nguyên nếu cleanup sạch, nếu cleanup lỗi thì AggregateError giữ startup cause cùng mọi unwind error.
+  - Blockers: không có.
+
+2026-08-02 — Phase U, Task U.2 complete; Task U.3
+  - Files: [`packages/cli/bin/vidcom.mjs`, `tests/e2e/mcp-stdio-host.test.ts`, `llm-documents/{product-features,specs-and-process}/**`]
+  - Summary: Launcher được track `100755`; e2e pack CLI vào temp sạch, kiểm execute bit, tạo host-local resolved `vidcom` command rồi dùng đúng command đó cho legacy/modern MCP và trusted approval. Bắt đầu EOF/stdout lifecycle M-15.
+  - Verification: `git ls-files -s` trả `100755`; exact SDK-host smoke 1 file/1 test, full suite 66/467, typecheck, lint 0 errors và diff check đều exit 0.
+  - Decisions: Phase 2 artifact chỉ đóng gói source CLI và dùng dependency graph đã cài của checkout; docs gọi đúng source-checkout launcher và giữ self-contained Node SEA ở Phase 4.
+  - Blockers: không có.
+
+2026-08-02 — Phase U, Task U.3 complete; Task U.4
+  - Files: [`packages/mcp/src/stdio.ts`, `packages/cli/src/commands/mcp.ts`, `tests/{mcp/stdio-lifecycle,cli/mcp-commands}.test.ts`]
+  - Summary: Stdio handle nay phát completion sau stdin EOF/stdout close/explicit close; CLI dùng cùng idempotent shutdown path cho host disconnect và signal, nên toàn bộ foundation cleanup và lease release vẫn chạy. Bắt đầu pre-start signal gate M-16.
+  - Verification: focused 2 files/25 tests; full suite 67/471; typecheck, lint 0 errors và diff check exit 0.
+  - Decisions: SDK transport vẫn sở hữu protocol wire; VidCom chỉ bọc process lifecycle quanh handle và không sửa dependency. Disconnect close listener trước, rồi composition root gọi exhaustive runtime stop idempotently.
+  - Blockers: không có.
+
+2026-08-02 — Phase U, Task U.4 complete; Task U.5
+  - Files: [`packages/cli/src/{commands/mcp,startup}.ts`, `tests/cli/{mcp-commands,startup}.test.ts`]
+  - Summary: Signal gate được cài trước startup; abort checkpoint giữa mỗi phase làm foundation unwind phần đã dựng. Repeated signals bị hấp thụ cho đến khi cleanup settle rồi mới gỡ handlers. Bắt đầu explicit-workspace fail-fast M-17.
+  - Verification: focused 3 files/47 tests; full suite 67/474; typecheck, lint 0 errors, boundaries và diff check exit 0.
+  - Decisions: không có hard-exit signal thứ hai; cả SIGINT/SIGTERM dùng một AbortController và một idempotent cleanup path. Cleanup failure vẫn propagate, chỉ exact abort reason sau cleanup sạch mới là normal shutdown.
+  - Blockers: không có.
+
+2026-08-02 — Phase U, Task U.5 complete; Task U.6
+  - Files: [`packages/{core/src/domain/workspace-resolver,cli/src/workspace-selection}.ts`, `tests/{core/workspace-and-path-policy,cli/mcp-commands}.test.ts`]
+  - Summary: Explicit candidate invalid nay là terminal selection error ở cả Core và CLI; CLI validate trước active/cwd/settings/foundation nên không fallback và không acquire lease. Bắt đầu targeted backup restore M-18.
+  - Verification: focused 2 files/42 tests; full suite 67/475; typecheck, lint 0 errors, boundaries và diff check exit 0.
+  - Decisions: explicit hợp lệ cũng bỏ đọc active/cwd; chỉ mode không explicit mới dùng saved active rồi marker-backed cwd. Error không echo absolute path.
+  - Blockers: không có.
+
+2026-08-02 — Phase U, Task U.6 complete; Task U.7
+  - Files: [`packages/cli/src/commands/backup.ts`, `tests/cli/mcp-commands.test.ts`]
+  - Summary: Restore preflight đọc/verify manifest, retention/revision link và registered marker-backed target trước writer runtime; valid restore mở đúng registration workspace với DB+lease+Core application tối thiểu. Bắt đầu stable/redacted stderr M-19.
+  - Verification: focused 3 files/33 tests; full suite 67/475; typecheck, lint 0 errors, boundaries và diff check exit 0.
+  - Decisions: backup restore không còn gọi active workspace resolver; không chạy bootstrap/reconcile/retention/jobs/scheduler/watcher/listener. Core restore vẫn verify lại sau lease để giữ defense-in-depth.
+  - Blockers: không có.
+
+2026-08-02 — Phase U complete; Phase V, Task V.1
+  - Files: [`packages/cli/{bin/vidcom.mjs,src/main.ts}`, `tests/{cli/mcp-commands,e2e/mcp-stdio-host}.test.ts`]
+  - Summary: Unexpected CLI failure luôn trả `internal_error` một dòng; source launcher suppress duy nhất exact SQLite ExperimentalWarning. E2E bỏ filter và khóa raw stderr cho MCP success lẫn real ENOTDIR failure. Bắt đầu 10-tool success matrix M-20.
+  - Verification: focused 2 files/28 tests; full suite 67/476; typecheck, lint 0 errors, boundaries và diff check exit 0.
+  - Decisions: CliInputError giữ stable public message sau newline folding; mọi non-input exception không công bố message/path/token/SQL. Warning khác vẫn đi qua original emitWarning.
+  - Blockers: không có.
+
+2026-08-02 — Phase V, Task V.1 complete; Task V.2
+  - Files: [`tests/mcp/support.ts`, `tests/mcp/{contract-matrix,negative-contract-matrix}.test.ts`]
+  - Summary: Production Registry matrix nay chạy success-path cho đủ 10 tool qua legacy/modern × stdio/HTTP; destructive cells dùng grant deterministic và negative contract vẫn ở suite riêng. Bắt đầu đối chiếu actual-host wording M-21.
+  - Verification: focused positive + negative matrix 2 files/8 tests và typecheck exit 0.
+  - Decisions: fixture dùng production `registerVidcomTools` cùng Core use cases với project/read/write/approval state deterministic; mỗi cell khóa structured output và canonical text thay vì chấp nhận error như coverage giả.
+  - Blockers: không có.
+
+2026-08-02 — Phase V, Task V.2 complete; Task V.3
+  - Files: [`tests/e2e/mcp-stdio-host.test.ts`, Detailed Goals, checklist, `implementation-notes.html`]
+  - Summary: Evidence được gọi đúng là exact installed MCP SDK-host harness; DoD/O.9/P.8 không còn claim actual Claude Code/Codex binary. Actual-host validation được ghi rõ là release-artifact gate chưa được Phase 2 chứng minh. Bắt đầu sửa stale Verification Matrix M-22.
+  - Verification: exact SDK CLI smoke 1 file/2 tests, typecheck và git diff --check exit 0; wording scan không còn `real AI-host`/`AI host thật` trong spec evidence.
+  - Decisions: không chạy user-installed Claude/Codex CLI vì config/auth/plugin state không hermetic; giữ bằng chứng mạnh nhất có thể tái hiện trong CI là SDK 1.30.0/client 2.0.0 spawn resolved command trên temp workspace/app-data.
+  - Blockers: không có.
+
+2026-08-02 — Phase V, Task V.3 complete; Task V.4
+  - Files: [`scripts/verify-spec-test-paths.mjs`, `package.json`, Phase Verification Matrix, MCP result goldens]
+  - Summary: Thay toàn bộ stale focused paths ở C/D/E/G/H/J bằng owner tests hiện hữu; guard parse đủ A→P và fail nếu bất kỳ test path biến mất. Rerun từng focused row A→O; cập nhật result goldens từ missing-project sang V.1 success fixture. Bắt đầu approval fact v6 M-23.
+  - Verification: existence guard 37 paths/16 phases; A→O lần lượt 8, 5, 27, 17, 34, 25, 58, 21, 15, 65, 20, 25, 11+23 golden, 37, 49 tests — mọi gate exit 0; typecheck và diff check exit 0.
+  - Decisions: guard chỉ đọc canonical Phase Verification Matrix, không cố validate lịch sử Execution Log; P chạy guard trước static/full/runtime gates để file rename làm CI đỏ ngay.
+  - Blockers: không có.
+
+2026-08-02 — Phase V, Task V.4 complete; Task V.5
+  - Files: [Detailed Goals, Detailed Design, Implementation Checklist, main in-process spec]
+  - Summary: Bốn canonical spec surfaces nay cùng một fact: người dùng duyệt Design v6 + checklist bằng `/goal` ngày 2026-08-02 và chính lệnh đó authorize Code Execution A→P. Xóa mọi câu v6 “chờ tái xác nhận”/`Pending Confirmation`. Bắt đầu script matrix L-05.
+  - Verification: cross-document approval wording scan không còn trạng thái mâu thuẫn; git diff --check exit 0.
+  - Decisions: phân biệt Goals reconfirmation với Design v6/checklist execution authorization nhưng cùng khóa một ngày và một user action; Design v7 là remediation record sau review, không viết lại approval history v6.
+  - Blockers: không có.
+
+2026-08-02 — Phase V dependency-order correction
+  - Files: [Phase V task order]
+  - Summary: Chuyển M-24 exact-final-SHA/remote-CI xuống sau L-05/L-06/L-08; push trước ba local mutations còn lại sẽ làm HEAD evidence stale ngay lập tức.
+  - Verification: Phase V vẫn có đúng một task `[/]`; task count và finding mapping không đổi.
+  - Decisions: giữ nguyên finding IDs và scope, chỉ sửa closeout dependency order thành local scripts/docs/runtime → final commit/push/remote CI.
+  - Blockers: không có.
+
+2026-08-02 — Phase V, Task V.5 complete; Task V.6
+  - Files: [`package.json`]
+  - Summary: Named `test:mcp-contract` gate nay chạy thật success 2×2 matrix, negative matrix và revision-pin bên cạnh Registry/transports/audit/executable smoke. Bắt đầu notes ordering L-06.
+  - Verification: dedicated MCP contract gate 9 files/71 tests, typecheck và git diff --check exit 0.
+  - Decisions: giữ focused gate explicit thay vì gọi toàn bộ test để CI failure nêu đúng contract surface bị drift.
+  - Blockers: không có.
+
+2026-08-02 — Phase V, Task V.6 complete; Task V.7
+  - Files: [`implementation-notes.html`]
+  - Summary: Thêm visible sequence index canonical A→P→R→V, tự gắn sequence/anchor cho mọi section trong khi giữ physical append history nguyên vẹn. Bắt đầu runtime smoke L-08.
+  - Verification: index parser nhận đủ 91/91 headings; first order A-start/A-complete/B/C/D và tail V.1→V.5; git diff --check exit 0.
+  - Decisions: không di chuyển 91 historical sections vì dễ tạo diff/noise và làm mất append provenance; deterministic index dựa phase/task number, stable tie-break theo source order.
+  - Blockers: không có.
+
+2026-08-02 — Phase V, Task V.7 complete; Task V.8
+  - Files: [`scripts/{verify-next-runtime,runtime-smoke-process}.mjs`, `tests/e2e/runtime-smoke-process.test.ts`]
+  - Summary: Production Next smoke dùng exact legacy client tại entry và modern client tại exact/latest, gọi list_projects bằng bearer rồi đọc SQLite xác nhận ba audit rows giữ đúng credential/protocol. Shutdown timeout nay SIGKILL nhưng vẫn fail. Bắt đầu final SHA/remote CI M-24.
+  - Verification: production build + runtime smoke exit 0 (`legacy + modern exact/latest`, audit credential, SSE 1→2); hard-kill regression 1/1; typecheck, focused lint và diff check exit 0.
+  - Decisions: dùng official installed clients thay raw JSON request để chứng minh negotiation; read-only DatabaseSync chỉ quan sát audit sau tool calls; graceful-timeout luôn là smoke failure kể cả hard kill thành công.
   - Blockers: không có.
 
 Format:

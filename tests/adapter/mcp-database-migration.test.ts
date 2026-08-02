@@ -56,7 +56,7 @@ describe("MCP database migration", () => {
     const reopened = await initializeDatabase(appData);
     expect(dbOne<{ count: number }>(reopened,
       "SELECT count(*) AS count FROM __drizzle_migrations",
-    )).toEqual({ count: 2 });
+    )).toEqual({ count: 4 });
     await reopened.destroy();
   });
 

@@ -75,7 +75,8 @@ describe("modern MCP transport", () => {
   });
 
   it("stamps modern HTTP results, uses private cache and rejects header mismatch", async () => {
-    const http = createMcpHttpHandlers(createTransportRegistry());
+    const auditEntries: import("@vidcom/core").ToolAuditEntry[] = [];
+    const http = createMcpHttpHandlers(createTransportRegistry(auditEntries));
     const entry = http.handlers.get("");
     if (!entry) throw new TypeError("missing default MCP entry handler");
     const exchanges: Array<{ request: Request; body: string; responseBody: string }> = [];
@@ -128,6 +129,10 @@ describe("modern MCP transport", () => {
         return result?.resultType === "complete"
           && (result.structuredContent as Record<string, unknown> | undefined)?.projectId === "project-modern";
       })).toBe(true);
+      expect(auditEntries.filter((entry) => entry.tool === "approval_probe")).toEqual([
+        expect.objectContaining({ outcome: "error", errorCode: "approval_required" }),
+        expect.objectContaining({ outcome: "ok", errorCode: null }),
+      ]);
 
       const listExchange = exchanges.find((exchange) => {
         try { return (JSON.parse(exchange.body) as { method?: string }).method === "tools/list"; }

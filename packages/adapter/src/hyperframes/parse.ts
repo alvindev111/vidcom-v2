@@ -8,7 +8,15 @@ import { openComposition, type Composition, type HyperFramesElement } from "@hyp
 import { parseHTML } from "linkedom";
 
 import { ErrorCode, type ContentHash, type RelPath } from "@vidcom/contracts";
-import { err, ok, type CompositionModel, type CompositionPort, type CompositionSource, type ProjectRef } from "@vidcom/core";
+import {
+  err,
+  ok,
+  type CompositionModel,
+  type CompositionPort,
+  type CompositionReference,
+  type CompositionSource,
+  type ProjectRef,
+} from "@vidcom/core";
 
 import { authoredCompositionRoot, compositionRoot, nearestHost, rootHost } from "./dom";
 import { readSceneElements } from "./elements";
@@ -34,6 +42,41 @@ function sourceFromRaw(path: RelPath, raw: string): CompositionSource {
     contentHash: `sha256:${createHash("sha256").update(raw).digest("hex")}` as ContentHash,
     byteSize: new TextEncoder().encode(raw).byteLength,
   };
+}
+
+function canonicalProjectReference(owner: RelPath, raw: string | null): RelPath | null {
+  if (!raw) return null;
+  const value = raw.trim().split(/[?#]/, 1)[0]?.split("\\").join("/") ?? "";
+  if (!value || value.startsWith("/") || value.startsWith("//")
+    || value.startsWith("#") || /^[a-z][a-z0-9+.-]*:/i.test(value)) return null;
+  const resolved = posix.normalize(posix.join(posix.dirname(owner), value)).replace(/^\.\//, "");
+  return resolved === ".." || resolved.startsWith("../") ? null : resolved as RelPath;
+}
+
+function collectProjectReferences(
+  entry: RelPath,
+  scenes: Scene[],
+  rootTrack: RootTrack | null,
+  entryMedia: readonly SceneMedia[],
+  sources: readonly CompositionSource[],
+): CompositionReference[] {
+  const availableSources = new Set(sources.map(({ path }) => path));
+  const references = new Map<string, CompositionReference>();
+  const add = (owner: RelPath, raw: string | null) => {
+    const referenced = canonicalProjectReference(owner, raw);
+    if (referenced) references.set(`${owner}\0${referenced}`, { owner, path: referenced });
+    return referenced;
+  };
+  for (const scene of scenes) {
+    const source = add(entry, scene.src);
+    const owner = source && availableSources.has(source) ? source : entry;
+    for (const media of scene.media) add(owner, media.src);
+    for (const element of scene.elements) add(owner, element.src);
+    if (scene.narration) add(owner, scene.narration.audioPath);
+  }
+  for (const media of entryMedia) add(entry, media.src);
+  for (const element of rootTrack?.elements ?? []) add(entry, element.src);
+  return [...references.values()];
 }
 
 function readJson(filename: string): Record<string, unknown> | null {
@@ -287,6 +330,9 @@ export class CompositionHf implements CompositionPort {
       typeof config?.registry === "string" ? config.registry.replace(/\/$/, "") : null,
       recordSource,
     );
+    const rootTrack = parseRootTrack(authoredRoot, root);
+    const entryMedia = collectMedia(ref.slug, ref.entry, authoredRoot);
+    const sourceList = [...sources.values()];
     const stat = statSync(entry);
     return {
       project: {
@@ -304,9 +350,10 @@ export class CompositionHf implements CompositionPort {
         revision: 0,
       },
       scenes,
-      rootTrack: parseRootTrack(authoredRoot, root),
+      rootTrack,
       diagnostics: [],
-      sources: [...sources.values()],
+      sources: sourceList,
+      references: collectProjectReferences(ref.entry, scenes, rootTrack, entryMedia, sourceList),
     };
   }
 

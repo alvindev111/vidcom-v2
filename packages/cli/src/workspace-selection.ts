@@ -4,6 +4,8 @@ import path from "node:path";
 import { AppSettingsStore, migrateDatabase, openVidcomDatabase } from "@vidcom/adapter";
 import { resolveWorkspace, type AbsolutePath, type WorkspaceCandidate } from "@vidcom/core";
 
+import { CliInputError } from "./cli-error";
+
 async function candidate(raw: string | null | undefined): Promise<WorkspaceCandidate | null> {
   if (!raw) return null;
   const root = path.resolve(raw) as AbsolutePath;
@@ -38,11 +40,15 @@ export async function selectWorkspace(options: {
   appDataRoot: string;
   cwd?: string;
 }): Promise<AbsolutePath> {
-  const active = await activeWorkspace(options.appDataRoot);
+  const explicit = await candidate(options.explicit);
+  if (explicit && !explicit.valid) {
+    throw new CliInputError("explicit workspace is invalid or contains no valid project");
+  }
+  const active = explicit ? null : await activeWorkspace(options.appDataRoot);
   const resolution = resolveWorkspace({
-    explicit: await candidate(options.explicit),
+    explicit,
     active: await candidate(active),
-    cwd: await candidate(options.cwd ?? process.cwd()),
+    cwd: explicit ? null : await candidate(options.cwd ?? process.cwd()),
   });
   if (resolution.status === "selection_required") {
     throw new Error("workspace selection required; pass --workspace or VIDCOM_WORKSPACE");

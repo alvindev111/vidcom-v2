@@ -60,6 +60,7 @@ function setup(options: {
   tooLarge?: boolean;
   recoveryRequired?: boolean;
   withNarration?: boolean;
+  sceneTiming?: { start: number; duration: number; trackIndex: number };
 } = {}) {
   const files = new Map<string, string>([
     ["index.html", "<main>old</main>"],
@@ -97,7 +98,10 @@ function setup(options: {
       revision: 0,
     },
     scenes: [{
-      id: "scene-1", start: 0, duration: 4, trackIndex: 1,
+      id: "scene-1",
+      start: options.sceneTiming?.start ?? 0,
+      duration: options.sceneTiming?.duration ?? 4,
+      trackIndex: options.sceneTiming?.trackIndex ?? 1,
       src: null, block: null, isTransition: false, media: [],
       script: [{ id: "hf-title", text: "Title", file: "index.html" }],
       narration: options.withNarration ? narration : null, elements: [], unresolvedEffects: 0,
@@ -105,6 +109,7 @@ function setup(options: {
     rootTrack: null,
     diagnostics: [],
     sources: [{ path: "index.html" as RelPath, contentHash: hash("entry"), byteSize: 5 }],
+    references: [],
   };
   const reads: string[] = [];
   const workspace = {
@@ -134,6 +139,10 @@ function setup(options: {
     async writeAtomic() {},
     async exists(path: ResolvedPath) { return files.has(path) || binaries.has(path); },
     async deleteAtomic(path: ResolvedPath) { files.delete(path); binaries.delete(path); },
+    async captureForMutation() { throw new Error("unused"); },
+    async publishCaptured() { throw new Error("unused"); },
+    async restoreCaptured() { throw new Error("unused"); },
+    async discardCapture() {},
     async readTree() { return [{ path: "index.html" as RelPath, name: "index.html", kind: "file" as const }]; },
     async stat() {
       return options.tooLarge
@@ -141,6 +150,7 @@ function setup(options: {
         : null;
     },
   };
+  const appliedOps: CompositionOp[][] = [];
   const composition = {
     async parseProject() {
       if (options.failParse) throw new Error("parse failed");
@@ -148,6 +158,7 @@ function setup(options: {
     },
     async buildDocument() { return "document"; },
     async applyOps(_ref: ProjectRef, _file: RelPath, operations: CompositionOp[]) {
+      appliedOps.push(operations);
       return options.failParse
         ? err({ code: ErrorCode.SdkRejected, message: "rejected" } as DomainError)
         : ok(`serialized:${operations[0]?.kind}`);
@@ -219,7 +230,7 @@ function setup(options: {
     authority,
     clock: { now: () => new Date("2026-08-01T00:00:00.000Z") },
   };
-  return { deps, files, binaries, mutations, invocations, reads };
+  return { deps, files, binaries, mutations, invocations, reads, appliedOps };
 }
 
 describe("project read use cases without HTTP", () => {
@@ -247,10 +258,14 @@ describe("project read use cases without HTTP", () => {
   });
   it("builds bounded project and scene contexts without absolute paths", async () => {
     const { deps } = setup();
-    const projects = await listProjectContexts(deps);
+    const projects = await listProjectContexts(deps, { limit: 20 });
     expect(projects).toMatchObject({
       ok: true,
-      value: [{ projectId, projectRevision: 2, recovery: { writeStatus: "ready" } }],
+      value: {
+        projects: [{ projectId, projectRevision: 2, recovery: { writeStatus: "ready" } }],
+        diagnostics: [],
+        nextCursor: null,
+      },
     });
     expect(JSON.stringify(projects)).not.toContain("/workspace/project");
     await expect(getProjectContext(deps, projectId)).resolves.toMatchObject({
@@ -265,6 +280,86 @@ describe("project read use cases without HTTP", () => {
       ok: true,
       value: { scenes: [{ id: "scene-1" }], projectRevision: 2 },
     });
+  });
+
+  it("paginates deterministically, caps parse concurrency at four, and isolates one malformed project", async () => {
+    const { deps } = setup();
+    const refs = Array.from({ length: 7 }, (_, index): ProjectRef => ({
+      id: `project-${index + 1}` as ProjectId,
+      slug: `project-${index + 1}`,
+      root: `/workspace/project-${index + 1}` as AbsolutePath,
+      entry: "index.html" as RelPath,
+    })).reverse();
+    deps.workspace.listProjects = async () => refs;
+    const parse = deps.composition.parseProject.bind(deps.composition);
+    let active = 0;
+    let maxActive = 0;
+    deps.composition.parseProject = async (projectRef) => {
+      active += 1;
+      maxActive = Math.max(maxActive, active);
+      await Promise.resolve();
+      try {
+        if (projectRef.id === "project-3") throw new Error("malformed project");
+        return await parse(projectRef);
+      } finally {
+        active -= 1;
+      }
+    };
+
+    await expect(listProjectContexts(deps, { limit: 6 })).resolves.toMatchObject({
+      ok: true,
+      value: {
+        projects: [
+          { projectId: "project-1" },
+          { projectId: "project-2" },
+          { projectId: "project-4" },
+          { projectId: "project-5" },
+          { projectId: "project-6" },
+        ],
+        diagnostics: [{
+          severity: "warning",
+          code: "project_context_unavailable",
+          message: "Project project-3 could not be read.",
+        }],
+        nextCursor: "project-6",
+      },
+    });
+    expect(maxActive).toBe(4);
+    await expect(listProjectContexts(deps, { limit: 6, cursor: "project-6" })).resolves.toMatchObject({
+      ok: true,
+      value: { projects: [{ projectId: "project-7" }], diagnostics: [], nextCursor: null },
+    });
+  });
+
+  it("returns missing referenced scene sources as nullable state with one bounded diagnostic per path", async () => {
+    const { deps } = setup();
+    const parse = deps.composition.parseProject.bind(deps.composition);
+    deps.composition.parseProject = async (projectRef) => {
+      const model = await parse(projectRef);
+      const missing = "compositions/missing.html" as RelPath;
+      return {
+        ...model,
+        scenes: [
+          { ...model.scenes[0]!, id: "scene-1", src: missing },
+          { ...model.scenes[0]!, id: "scene-2", src: missing },
+        ],
+      };
+    };
+
+    const expected = {
+      scenes: [
+        { id: "scene-1", src: "compositions/missing.html", fileContentHash: null },
+        { id: "scene-2", src: "compositions/missing.html", fileContentHash: null },
+      ],
+      diagnostics: [{
+        severity: "warning",
+        code: "referenced_source_missing",
+        file: "compositions/missing.html",
+        message: "Referenced scene source compositions/missing.html is missing.",
+      }],
+    };
+    await expect(getProjectContext(deps, projectId)).resolves.toMatchObject({ ok: true, value: expected });
+    await expect(listSceneContexts(deps, projectId)).resolves.toMatchObject({ ok: true, value: expected });
   });
   it("reads an allowlisted composition with recovery status", async () => {
     await expect(readComposition(setup({ recoveryRequired: true }).deps, projectId, "index.html" as RelPath))
@@ -387,6 +482,7 @@ describe("project write and legacy use cases without HTTP", () => {
       schemaVersion: 1, invocationId: "invocation-timing", tool: "set_scene_timing", level: "write",
       projectId, era: "modern", protocolVersion: "2026-07-28", detail: {}, credentialId: null,
       invokedAt: "2026-08-01T00:00:00.000Z",
+      revisionBefore: 0,
     };
     expect(await setSceneTiming(runtime.deps, {
       projectId, sceneId: "scene-1", timing: { duration: 6 }, expectedContentHash: hash("<main>old</main>"),
@@ -419,6 +515,7 @@ describe("project write and legacy use cases without HTTP", () => {
       schemaVersion: 1, invocationId: "invocation-text", tool: "set_text", level: "write",
       projectId, era: "modern", protocolVersion: "2026-07-28", detail: {}, credentialId: null,
       invokedAt: "2026-08-01T00:00:00.000Z",
+      revisionBefore: 0,
     };
     expect(await setSceneScript(runtime.deps, {
       projectId, sceneId: "scene-1", file: "index.html" as RelPath, elementId: "hf-title", text: "new", expectedContentHash: hash("<main>old</main>"),
@@ -441,6 +538,28 @@ describe("project write and legacy use cases without HTTP", () => {
     expect(JSON.parse(runtime.files.get("narration/scene-1.json") ?? "null"))
       .toMatchObject({ staleSince: "2026-08-01T00:00:00.000Z", status: "generated" });
   });
+  it("returns narrationStale false and writes no sidecar when narration is absent", async () => {
+    const runtime = setup();
+    await expect(setSceneScript(runtime.deps, {
+      projectId,
+      sceneId: "scene-1",
+      file: "index.html" as RelPath,
+      elementId: "hf-title",
+      text: "new",
+      expectedContentHash: hash("<main>old</main>"),
+    }, "user")).resolves.toMatchObject({
+      ok: true,
+      value: {
+        scene: { narrationStale: false },
+        narrationStale: false,
+      },
+    });
+    expect(runtime.mutations).toMatchObject([{
+      steps: [{ kind: "write", path: "index.html" }],
+    }]);
+    expect((runtime.mutations[0] as CompositeRequest).steps).toHaveLength(1);
+    expect(runtime.files.has("narration/scene-1.json")).toBe(false);
+  });
   it("regenerates the legacy mock narration through authority", async () => {
     expect(await regenerateNarration(setup().deps, { projectId, sceneId: "scene-1", text: "Hello" }, "user")).toMatchObject({
       ok: true, value: { status: "mock", revision: 1, updatedAt: "2026-08-01T00:00:00.000Z", staleSince: null },
@@ -459,6 +578,7 @@ describe("project write and legacy use cases without HTTP", () => {
       detail: {},
       credentialId: null,
       invokedAt: "2026-08-01T00:00:00.000Z",
+      revisionBefore: 0,
     };
     expect(await createScene(runtime.deps, {
       projectId,
@@ -486,6 +606,42 @@ describe("project write and legacy use cases without HTTP", () => {
     expect(scene.content).toContain("<style>");
     expect(scene.content).toContain("width:1920px;height:1080px");
     expect(scene.content).toContain("<h2>Next</h2>");
+  });
+  it("rejects an empty scene timing patch before source read, SDK ops or mutation", async () => {
+    const runtime = setup();
+    await expect(setSceneTiming(runtime.deps, {
+      projectId,
+      sceneId: "scene-1",
+      timing: {},
+      expectedContentHash: hash("<main>old</main>"),
+    }, "user")).resolves.toMatchObject({
+      ok: false,
+      error: { code: ErrorCode.SchemaInvalid, field: "timing" },
+    });
+    expect(runtime.reads).toHaveLength(0);
+    expect(runtime.appliedOps).toHaveLength(0);
+    expect(runtime.mutations).toHaveLength(0);
+  });
+  it.each([
+    ["zero duration", 0, undefined],
+    ["negative duration", -1, undefined],
+    ["overflowing end", Number.MAX_VALUE, {
+      start: Number.MAX_VALUE / 2,
+      duration: Number.MAX_VALUE / 2,
+      trackIndex: 1,
+    }],
+  ] as const)("rejects create_scene with %s before SDK ops or T1", async (_case, duration, sceneTiming) => {
+    const runtime = setup({ ...(sceneTiming ? { sceneTiming } : {}) });
+    await expect(createScene(runtime.deps, {
+      projectId,
+      title: "Invalid",
+      duration,
+      expectedContentHash: hash("<main>old</main>"),
+    }, "user")).resolves.toMatchObject({ ok: false, error: { code: expect.stringMatching(/timing_invalid|duration_overflow/) } });
+    expect(runtime.appliedOps).toHaveLength(0);
+    expect(runtime.mutations).toHaveLength(0);
+    expect(runtime.files.has("compositions/scene-2.html")).toBe(false);
+    expect(runtime.files.has("narration/scene-2.json")).toBe(false);
   });
   const missingWrites: Array<[string, (deps: ProjectWriteDependencies) => Promise<unknown>]> = [
     ["save", (deps) => saveSourceFile(deps, { projectId, path: "index.html" as RelPath, content: "x", expectedContentHash: null }, "user")],

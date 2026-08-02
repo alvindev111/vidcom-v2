@@ -21,8 +21,11 @@ export class SqliteToolAuditRepository implements ToolAuditPort {
       detail: canonicalizeJson({
         ...redactAuditDetail(entry.detail),
         credentialId: entry.credentialId,
+        durationMs: entry.durationMs,
         era: entry.era,
         level: entry.level,
+        revisionAfter: entry.revisionAfter,
+        revisionBefore: entry.revisionBefore,
       }),
       createdAt,
     }).run();

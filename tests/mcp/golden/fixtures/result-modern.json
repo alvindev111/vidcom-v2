@@ -2,11 +2,27 @@
   "content": [
     {
       "type": "text",
-      "text": "{\"projects\":[]}"
+      "text": "{\"diagnostics\":[],\"nextCursor\":null,\"projects\":[{\"duration\":8,\"height\":1080,\"projectId\":\"project-contract-matrix\",\"projectRevision\":2,\"recovery\":{\"unresolved\":[],\"writeStatus\":\"ready\"},\"slug\":\"contract-matrix\",\"title\":\"Contract Matrix\",\"width\":1920}]}"
     }
   ],
   "structuredContent": {
-    "projects": []
+    "projects": [
+      {
+        "projectId": "project-contract-matrix",
+        "slug": "contract-matrix",
+        "title": "Contract Matrix",
+        "width": 1920,
+        "height": 1080,
+        "duration": 8,
+        "projectRevision": 2,
+        "recovery": {
+          "writeStatus": "ready",
+          "unresolved": []
+        }
+      }
+    ],
+    "diagnostics": [],
+    "nextCursor": null
   },
   "resultType": "complete",
   "_meta": {

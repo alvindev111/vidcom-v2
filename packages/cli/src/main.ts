@@ -187,8 +187,12 @@ export async function runCliMain(
     await execute(argv);
     return 0;
   } catch (error) {
-    io.stderr.write(`${error instanceof Error ? error.message : String(error)}\n`);
-    return error instanceof CliInputError ? error.exitCode : 1;
+    if (error instanceof CliInputError) {
+      io.stderr.write(`${error.message.replace(/[\r\n]+/g, " ").trim()}\n`);
+      return error.exitCode;
+    }
+    io.stderr.write("internal_error\n");
+    return 1;
   }
 }
 

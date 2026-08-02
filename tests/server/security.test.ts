@@ -3,7 +3,11 @@ import { mkdtemp, rm, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
-import { BridgeCredentialStore, secureCredentialFile } from "@vidcom/adapter";
+import {
+  BridgeCredentialStore,
+  secureAppDataDirectorySync,
+  secureCredentialFile,
+} from "@vidcom/adapter";
 import {
   bindLoopback,
   createServerApp,
@@ -106,6 +110,28 @@ describe("Hono security perimeter", () => {
     expect(await response.json()).toMatchObject({ error: { code: "origin_not_allowed" } });
   });
 
+  it("emits the canonical configured origin for credentialed preflight", async () => {
+    const fixture = appFixture();
+    const response = await localRequest(fixture, "/api/v1/health", {
+      method: "OPTIONS",
+      headers: {
+        Origin: "HTTP://127.0.0.1:3000",
+        "Access-Control-Request-Method": "POST",
+        "Access-Control-Request-Headers": "content-type, authorization",
+      },
+    });
+    expect(response.status).toBe(204);
+    expect(response.headers.get("access-control-allow-origin")).toBe("http://127.0.0.1:3000");
+    expect(response.headers.get("access-control-allow-origin")).not.toBe("HTTP://127.0.0.1:3000");
+    expect(response.headers.get("access-control-allow-credentials")).toBe("true");
+    expect(response.headers.get("access-control-allow-methods"))
+      .toBe("GET, HEAD, POST, PUT, PATCH, DELETE, OPTIONS");
+    expect(response.headers.get("access-control-allow-headers"))
+      .toBe("Authorization, Content-Type, MCP-Protocol-Version, Mcp-Method, Mcp-Name");
+    expect(response.headers.get("vary"))
+      .toBe("Origin, Access-Control-Request-Method, Access-Control-Request-Headers");
+  });
+
   it("requires a session even for localhost and every non-exchange path", async () => {
     const fixture = appFixture();
     for (const pathname of ["/api/v1/health", "/api/v1/does-not-exist"]) {
@@ -197,12 +223,14 @@ describe("Hono security perimeter", () => {
     expect(response.status).toBe(401);
   });
 
-  it("removes the bootstrap query token from logs", async () => {
+  it("logs only method and pathname before authentication", async () => {
     const logs: string[] = [];
     const fixture = appFixture({ logs });
-    await localRequest(fixture, "/api/v1/health?t=top-secret");
-    expect(logs.join("\n")).not.toContain("top-secret");
-    expect(logs.join("\n")).not.toContain("?t=");
+    await localRequest(
+      fixture,
+      "/api/v1/health?api_key=top-secret&workspace=%2FUsers%2Fprivate%2Fproject&t=legacy-secret",
+    );
+    expect(logs).toEqual(["GET /api/v1/health"]);
   });
 });
 
@@ -283,6 +311,19 @@ describe("bridge credential file", () => {
       {
         executable: "icacls",
         args: ["C:\\VidCom Data\\credentials", "/inheritance:r", "/grant:r", "S-1-5-21-42:(R,W)"],
+      },
+    ]);
+
+    const directoryCalls: Array<{ executable: string; args: readonly string[] }> = [];
+    secureAppDataDirectorySync("C:\\VidCom Data", "win32", (executable, args) => {
+      directoryCalls.push({ executable, args });
+      return { stdout: executable === "whoami" ? '"DESKTOP\\user","S-1-5-21-42"\r\n' : "" };
+    });
+    expect(directoryCalls).toEqual([
+      { executable: "whoami", args: ["/user", "/fo", "csv", "/nh"] },
+      {
+        executable: "icacls",
+        args: ["C:\\VidCom Data", "/inheritance:r", "/grant:r", "S-1-5-21-42:(OI)(CI)(F)"],
       },
     ]);
   });

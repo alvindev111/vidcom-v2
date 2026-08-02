@@ -1,6 +1,6 @@
 # Spec MCP Server — Detailed Goals
 
-> **Reference**: [Main Spec File](./spec-mcp-server-complete.md)
+> **Reference**: [Main Spec File](./spec-mcp-server-inprocess.md)
 > **Sửa lớn 2026-08-02** sau audit Detailed Design: AC 2.11 công bố recovery status, AC 5b.3–4e chuyển sang invariant "chứng minh nhất quán hoặc quarantine", AC 7.4b–4c bổ sung outcome indeterminate khi T2 lỗi, và threat boundary của approval được ghi rõ. Deep review checklist đã đồng bộ lại Data and Persistence Scope vốn còn sót câu “không có migration”; không đổi acceptance criteria đã duyệt. Trạng thái: Approved — reconfirmed 2026-08-02.
 
 ## Spec Goal
@@ -403,9 +403,9 @@ Hiện `journal.commit()` ghi một audit row với `action` là `"file.write"` 
 
 ## Định nghĩa hoàn thành
 
-1. Một AI host thật spawn được `vidcom mcp`, bắt tay thành công, `stdout` sạch.
+1. Exact installed MCP SDK legacy/modern clients spawn được resolved `vidcom mcp`, bắt tay thành công, `stdout` sạch.
 2. Cùng bộ tool gọi được qua Streamable HTTP có xác thực, cho kết quả giống stdio, cả khi client tự negotiate lẫn khi pin `/api/mcp/<revision>`.
-3. Claude Code (legacy) và một client modern **cùng** dùng được bộ tool đó.
+3. Exact legacy SDK `1.30.0` và modern client `2.0.0` **cùng** dùng được bộ tool đó; actual Claude Code/Codex binary validation thuộc release-artifact gate, chưa được claim bởi Phase 2.
 4. Khi `recovery.writeStatus = "ready"`, agent đọc project rồi sửa scene ngay, không cần gọi thêm tool đọc để lấy `contentHash`.
 5. `create_scene` sinh **một** revision; crash giữa chừng được reconcile về trạng thái nhất quán hoặc project bị quarantine và chặn write cho tới khi recovery được resolve.
 6. `set_text` đánh dấu narration stale và nói ra điều đó.
@@ -420,10 +420,10 @@ Hiện `journal.commit()` ghi một audit row với `action` là `"file.write"` 
 
 ## Approval Gate
 
-> Gate Goals đã được tái xác nhận tường minh ngày 2026-08-02. Detailed Design bản 5 từng được duyệt và phase checklist được mở; bản 6 hiện chờ tái xác nhận do sửa bridge audit, không thay đổi acceptance criteria trong tài liệu Goals này.
+> Gate Goals đã được tái xác nhận tường minh ngày 2026-08-02. Detailed Design bản 6 và Implementation Checklist được người dùng duyệt cùng nhau qua lệnh `/goal` ngày 2026-08-02; lệnh đó đồng thời authorize Code Execution A→P. DR-20 sửa bridge audit nhưng không thay đổi acceptance criteria trong tài liệu Goals này.
 
 - **Status**: **Approved**
 - **Confirmed by**: người dùng (chủ dự án)
 - **Original confirmation date**: 2026-08-01
 - **Reconfirmation date**: 2026-08-02
-- **Notes**: Người dùng đã tái xác nhận AC 2.11, AC 5b.3–4e và AC 7.4b–4c sau audit recovery durability. Các quyết định còn lại của lần duyệt 2026-08-01 được giữ nguyên.
+- **Notes**: Người dùng đã tái xác nhận AC 2.11, AC 5b.3–4e và AC 7.4b–4c sau audit recovery durability; sau đó `/goal` duyệt Design v6 + checklist và mở Code Execution A→P. Các quyết định còn lại của lần duyệt 2026-08-01 được giữ nguyên.

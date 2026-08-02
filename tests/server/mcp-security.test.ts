@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { Hono } from "hono";
 
-import { ErrorCode } from "@vidcom/contracts";
+import { ErrorCode, SUPPORTED_REVISIONS } from "@vidcom/contracts";
 import { createMcpHttpHandlers } from "@vidcom/mcp";
 import {
   createServerApp,
@@ -184,7 +184,7 @@ describe("Hono MCP SDK boundary", () => {
     }
   });
 
-  it("propagates credentialId into Registry audit and never the bearer", async () => {
+  it("propagates credentialId through entry, every exact pin and latest without retaining the bearer", async () => {
     const audits: ToolAuditEntry[] = [];
     const mcp = createMcpHttpHandlers(createTransportRegistry(audits));
     const logs: string[] = [];
@@ -199,23 +199,46 @@ describe("Hono MCP SDK boundary", () => {
       log: (line) => logs.push(line),
     });
     try {
-      const response = await request(app, "/api/mcp", {
-        method: "POST",
-        headers: {
-          Authorization: "Bearer vcmcp_top_secret",
-          Accept: "application/json, text/event-stream",
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          jsonrpc: "2.0",
-          id: 1,
-          method: "tools/call",
-          params: { name: "echo_project", arguments: { projectId: "project-audit" } },
-        }),
-      });
-      expect(response.status).toBe(200);
-      expect(audits).toHaveLength(1);
-      expect(audits[0]).toMatchObject({ credentialId: "credential_http", tool: "echo_project" });
+      const targets = [
+        { pathname: "/api/mcp", revision: null },
+        ...SUPPORTED_REVISIONS.map((revision) => ({ pathname: `/api/mcp/${revision}`, revision })),
+        { pathname: "/api/mcp/latest", revision: SUPPORTED_REVISIONS[0] },
+      ];
+      for (const [index, target] of targets.entries()) {
+        const modern = target.revision === "2026-07-28";
+        const response = await request(app, target.pathname, {
+          method: "POST",
+          headers: {
+            Authorization: "Bearer vcmcp_top_secret",
+            Accept: "application/json, text/event-stream",
+            "Content-Type": "application/json",
+            ...(target.revision ? { "MCP-Protocol-Version": target.revision } : {}),
+            ...(modern ? { "Mcp-Method": "tools/call", "Mcp-Name": "echo_project" } : {}),
+          },
+          body: JSON.stringify({
+            jsonrpc: "2.0",
+            id: index + 1,
+            method: "tools/call",
+            params: {
+              name: "echo_project",
+              arguments: { projectId: `project-audit-${index}` },
+              ...(modern ? {
+                _meta: {
+                  "io.modelcontextprotocol/protocolVersion": target.revision,
+                  "io.modelcontextprotocol/clientInfo": { name: "auth-forwarding-test", version: "1.0.0" },
+                  "io.modelcontextprotocol/clientCapabilities": {},
+                },
+              } : {}),
+            },
+          }),
+        });
+        expect(response.status, target.pathname).toBe(200);
+      }
+      expect(audits).toHaveLength(targets.length);
+      expect(audits).toEqual(targets.map(() => expect.objectContaining({
+        credentialId: "credential_http",
+        tool: "echo_project",
+      })));
       expect(JSON.stringify(audits)).not.toContain("vcmcp_top_secret");
       expect(logs.join("\n")).not.toContain("vcmcp_top_secret");
     } finally {

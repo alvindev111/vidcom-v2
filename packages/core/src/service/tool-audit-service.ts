@@ -1,4 +1,4 @@
-import type { Era, ProjectId, ToolLevel } from "@vidcom/contracts";
+import { ErrorCode, type Era, type ProjectId, type ToolLevel } from "@vidcom/contracts";
 
 import type { ClockPort, CompositeMutationJournalPort, LogPort, MetricPort, ToolAuditPort } from "../port/ports";
 import type { PendingToolAudit, ToolAuditEntry } from "../port/types";
@@ -83,6 +83,19 @@ function requiredString(value: unknown, field: string): string {
   return value;
 }
 
+function nullableRevision(value: unknown, field: string): number | null {
+  if (value === undefined || value === null) return null;
+  if (!Number.isSafeInteger(value) || (value as number) < 0) {
+    throw new TypeError(`${field} must be a non-negative safe integer or null`);
+  }
+  return value as number;
+}
+
+function durationMs(invokedAt: string, endedAt: Date): number {
+  const started = Date.parse(invokedAt);
+  return Number.isFinite(started) ? Math.max(0, endedAt.getTime() - started) : 0;
+}
+
 /** Validates a versioned pending audit and reapplies redaction at its persistence boundary. */
 export function normalizePendingToolAudit(value: unknown): PendingToolAudit {
   if (value === null || typeof value !== "object" || Array.isArray(value)) {
@@ -113,6 +126,7 @@ export function normalizePendingToolAudit(value: unknown): PendingToolAudit {
     detail: redactAuditDetail(input.detail as Record<string, unknown>),
     credentialId: input.credentialId as string | null,
     invokedAt: requiredString(input.invokedAt, "invokedAt"),
+    revisionBefore: nullableRevision(input.revisionBefore, "revisionBefore"),
   };
 }
 
@@ -126,9 +140,11 @@ export function parsePendingToolAudit(serialized: string): PendingToolAudit {
   return normalizePendingToolAudit(JSON.parse(serialized) as unknown);
 }
 
-type PendingAuditInput = Omit<ToolAuditEntry, "outcome" | "errorCode"> & {
+type PendingAuditInput = Omit<
+  ToolAuditEntry,
+  "outcome" | "errorCode" | "durationMs" | "revisionAfter"
+> & {
   invocationId: string;
-  invokedAt: string;
 };
 
 export type AuditFailureOwnership = "journal_owned" | "caller_recorded" | "unknown";
@@ -141,8 +157,24 @@ export class ToolAuditService {
     private readonly clock: ClockPort,
     private readonly logger: LogPort,
     private readonly metrics: MetricPort,
-    private readonly ownership: Pick<CompositeMutationJournalPort, "isJournalOwned">,
+    private readonly ownership: Pick<CompositeMutationJournalPort, "isJournalOwned">
+      & Partial<Pick<CompositeMutationJournalPort, "latestRevision">>,
   ) {}
+
+  /** Reads the current project revision for audit metadata without making audit observation a request blocker. */
+  async currentRevision(projectId: ProjectId | null): Promise<number | null> {
+    if (projectId === null || !this.ownership.latestRevision) return null;
+    try {
+      return (await this.ownership.latestRevision(projectId)) ?? 0;
+    } catch (error) {
+      this.metrics.increment("audit_revision_observation_failure");
+      this.logger.warn("tool audit revision observation failed", {
+        projectId,
+        error: error instanceof Error ? error.message : "unknown",
+      });
+      return null;
+    }
+  }
 
   /** Creates the exact redacted, schema-versioned context to persist at T1. */
   prepareWrite(entry: PendingAuditInput): PendingToolAudit {
@@ -161,6 +193,26 @@ export class ToolAuditService {
   /** Records a proven non-mutating write failure best-effort, escalating after exactly one retry. */
   async recordFailure(entry: ToolAuditEntry): Promise<void> {
     await this.recordBestEffort({ ...entry, outcome: "error" }, "write_failure");
+  }
+
+  /** Finalizes a durable pending invocation after startup recovery proves it did not commit. */
+  async recordPendingFailure(entry: PendingToolAudit, errorCode: ErrorCode): Promise<void> {
+    const endedAt = this.clock.now();
+    await this.recordFailure({
+      tool: entry.tool,
+      level: entry.level,
+      projectId: entry.projectId,
+      era: entry.era,
+      protocolVersion: entry.protocolVersion,
+      outcome: "error",
+      errorCode,
+      detail: entry.detail,
+      credentialId: entry.credentialId,
+      invokedAt: entry.invokedAt,
+      durationMs: durationMs(entry.invokedAt, endedAt),
+      revisionBefore: entry.revisionBefore,
+      revisionAfter: await this.currentRevision(entry.projectId),
+    });
   }
 
   /** Records only caller-owned failures; an ownership lookup fault never guesses by inserting a row. */
@@ -195,7 +247,7 @@ export class ToolAuditService {
     let lastError: unknown;
     for (let attempt = 1; attempt <= 2; attempt += 1) {
       try {
-        await this.repository.record(redacted, this.clock.now().toISOString());
+        await this.repository.record(redacted, entry.invokedAt);
         if (attempt === 2) this.metrics.increment("audit_record_retry_success", { operation });
         return;
       } catch (error) {

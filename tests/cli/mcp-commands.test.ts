@@ -15,7 +15,12 @@ import {
   WorkspaceLease,
 } from "@vidcom/adapter";
 import { ErrorCode, type ContentHash, type ProjectId, type RelPath } from "@vidcom/contracts";
-import { WriteAuthority, type ApprovalGrantRecord, type ProjectRef } from "@vidcom/core";
+import {
+  MAX_CREDENTIAL_ROTATION_OVERLAP_MS,
+  WriteAuthority,
+  type ApprovalGrantRecord,
+  type ProjectRef,
+} from "@vidcom/core";
 import {
   CliInputError,
   parseAppCommandArgs,
@@ -25,6 +30,7 @@ import {
   runApproveCommand,
   runBackupCommand,
   runCredentialCommand,
+  runMcpLifecycle,
   runRecoveryCommand,
   selectWorkspace,
   startVidcomMcp,
@@ -74,9 +80,9 @@ describe("VidCom CLI dispatch", () => {
     let stderr = "";
     const exitCode = await runCliMain([], {
       stderr: { write: (chunk) => { stderr += String(chunk); return true; } },
-    }, async () => { throw new Error("infrastructure failed"); });
+    }, async () => { throw new Error("/private/workspace infrastructure\nfailed token=secret"); });
     expect(exitCode).toBe(1);
-    expect(stderr).toBe("infrastructure failed\n");
+    expect(stderr).toBe("internal_error\n");
   });
 
   it("requires an explicit, saved or marker-backed workspace without creating a guess", async () => {
@@ -131,6 +137,33 @@ describe("VidCom CLI dispatch", () => {
     }
   });
 
+  it("rejects an invalid explicit workspace without falling back or acquiring a lease", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "vidcom-invalid-explicit-workspace-"));
+    const active = path.join(root, "active");
+    const project = path.join(active, "project");
+    const invalid = path.join(root, "typo");
+    const appData = path.join(root, "app-data");
+    await mkdir(project, { recursive: true });
+    await mkdir(invalid);
+    await writeFile(path.join(project, "hyperframes.json"), "{}\n");
+    await writeFile(path.join(project, "index.html"), '<main data-composition-id="root"></main>');
+    try {
+      await expect(selectWorkspace({ explicit: active, appDataRoot: appData })).resolves.toBe(active);
+      await expect(startVidcomMcp({ workspace: invalid }, {
+        appDataRoot: () => appData,
+        selectWorkspace,
+        startStdio: async () => { throw new Error("listener must not open"); },
+        writeError: () => { throw new Error("stderr must not be used"); },
+      })).rejects.toBeInstanceOf(CliInputError);
+      const database = await initializeDatabase(appData);
+      expect(dbOne(database, "SELECT COUNT(*) AS count FROM workspace_lease"))
+        .toEqual({ count: 0 });
+      await database.destroy();
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
   it("strictly parses MCP workspace and exact protocol pin", () => {
     expect(parseMcpCommandArgs(["--workspace", "/work", "--protocol", "2026-07-28"]))
       .toEqual({ workspace: "/work", protocol: "2026-07-28" });
@@ -157,7 +190,10 @@ describe("VidCom CLI dispatch", () => {
         startStdio: async (registry, _dependencies, options) => {
           expect(options).toEqual({ pinnedRevision: "2025-11-25" });
           expect(registry.list("legacy").map((tool) => tool.name)).toHaveLength(10);
-          return { close: async () => { stdioClosed = true; } };
+          return {
+            close: async () => { stdioClosed = true; },
+            closed: new Promise<void>(() => undefined),
+          };
         },
         writeError: () => { throw new Error("unexpected stdio error"); },
       });
@@ -184,6 +220,116 @@ describe("VidCom CLI dispatch", () => {
     expect(lifecycle).toEqual(["transport-watcher-lease-db"]);
     expect(signals.listenerCount("SIGINT")).toBe(0);
     expect(signals.listenerCount("SIGTERM")).toBe(0);
+  });
+
+  it("installs the signal gate before startup and absorbs repeated signals until cleanup settles", async () => {
+    const signals = new EventEmitter();
+    const lifecycle: string[] = [];
+    let startupEntered!: () => void;
+    const entered = new Promise<void>((resolve) => { startupEntered = resolve; });
+    let continueStartup!: () => void;
+    const startupGate = new Promise<void>((resolve) => { continueStartup = resolve; });
+    const running = runMcpLifecycle(async (signal) => {
+      startupEntered();
+      await startupGate;
+      signal.throwIfAborted();
+      throw new Error("startup should have aborted");
+    }, signals).finally(() => { lifecycle.push("startup-unwound"); });
+
+    await entered;
+    signals.emit("SIGTERM");
+    signals.emit("SIGTERM");
+    expect(signals.listenerCount("SIGINT")).toBe(1);
+    expect(signals.listenerCount("SIGTERM")).toBe(1);
+    continueStartup();
+    await running;
+    expect(lifecycle).toEqual(["startup-unwound"]);
+    expect(signals.listenerCount("SIGINT")).toBe(0);
+    expect(signals.listenerCount("SIGTERM")).toBe(0);
+  });
+
+  it("keeps repeated-signal handlers installed until delayed cleanup settles", async () => {
+    const signals = new EventEmitter();
+    const lifecycle: string[] = [];
+    let runtimeReady!: () => void;
+    const ready = new Promise<void>((resolve) => { runtimeReady = resolve; });
+    let cleanupStarted!: () => void;
+    const started = new Promise<void>((resolve) => { cleanupStarted = resolve; });
+    let finishCleanup!: () => void;
+    const cleanupGate = new Promise<void>((resolve) => { finishCleanup = resolve; });
+    const running = runMcpLifecycle(async () => {
+      runtimeReady();
+      return {
+        async stop() {
+          lifecycle.push("cleanup-started");
+          cleanupStarted();
+          await cleanupGate;
+          lifecycle.push("cleanup-settled");
+        },
+      };
+    }, signals);
+    await ready;
+    signals.emit("SIGINT");
+    await started;
+    signals.emit("SIGTERM");
+    expect(lifecycle).toEqual(["cleanup-started"]);
+    expect(signals.listenerCount("SIGINT")).toBe(1);
+    expect(signals.listenerCount("SIGTERM")).toBe(1);
+    finishCleanup();
+    await running;
+    expect(lifecycle).toEqual(["cleanup-started", "cleanup-settled"]);
+    expect(signals.listenerCount("SIGINT")).toBe(0);
+    expect(signals.listenerCount("SIGTERM")).toBe(0);
+  });
+
+  it("runs the same exhaustive cleanup when the stdio host disconnects", async () => {
+    const signals = new EventEmitter();
+    const lifecycle: string[] = [];
+    let disconnect!: () => void;
+    const stopped = waitForMcpShutdown({
+      listener: { closed: new Promise<void>((resolve) => { disconnect = resolve; }) },
+      async stop() { lifecycle.push("transport-watcher-lease-db"); },
+    }, signals);
+    disconnect();
+    signals.emit("SIGTERM");
+    await stopped;
+    expect(lifecycle).toEqual(["transport-watcher-lease-db"]);
+    expect(signals.listenerCount("SIGINT")).toBe(0);
+    expect(signals.listenerCount("SIGTERM")).toBe(0);
+  });
+
+  it("releases the real workspace lease after a stdio host disconnect", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "vidcom-mcp-disconnect-"));
+    const workspace = path.join(root, "workspace");
+    const project = path.join(workspace, "project");
+    const appData = path.join(root, "app-data");
+    const signals = new EventEmitter();
+    let disconnect!: () => void;
+    let listenerClosed = false;
+    await mkdir(project, { recursive: true });
+    await writeFile(path.join(project, "hyperframes.json"), "{}\n");
+    await writeFile(path.join(project, "index.html"), '<main data-composition-id="root"></main>');
+    try {
+      const runtime = await startVidcomMcp({ workspace }, {
+        appDataRoot: () => appData,
+        selectWorkspace: async () => workspace as AbsolutePath,
+        startStdio: async () => ({
+          closed: new Promise<void>((resolve) => { disconnect = resolve; }),
+          close: async () => { listenerClosed = true; },
+        }),
+        writeError: () => { throw new Error("unexpected stdio error"); },
+      });
+      const stopped = waitForMcpShutdown(runtime, signals);
+      disconnect();
+      await stopped;
+      expect(listenerClosed).toBe(true);
+      const database = await initializeDatabase(appData);
+      expect(dbOne(database, "SELECT COUNT(*) AS count FROM workspace_lease"))
+        .toEqual({ count: 0 });
+      await database.destroy();
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
   });
 
   it("issues a trusted CLI approval in real SQLite and writes one JSON object", async () => {
@@ -262,7 +408,9 @@ describe("VidCom CLI dispatch", () => {
       expect(stdout).not.toContain("sha256:");
 
       stdout = "";
-      await runCredentialCommand(["rotate", issued.id, "--overlap-ms", "1000"], dependencies);
+      await runCredentialCommand([
+        "rotate", issued.id, "--overlap-ms", String(MAX_CREDENTIAL_ROTATION_OVERLAP_MS),
+      ], dependencies);
       const rotated = JSON.parse(stdout.trim()) as { id: string; secret: string };
       expect(rotated.id).toBe("credential_cli_2");
       expect(rotated.secret).not.toBe(issued.secret);
@@ -274,12 +422,18 @@ describe("VidCom CLI dispatch", () => {
         .rejects.toMatchObject({ name: "CliInputError", message: "credential_invalid", exitCode: 2 });
       await expect(runCredentialCommand(["rotate", issued.id, "--overlap-ms", "0"], dependencies))
         .rejects.toBeInstanceOf(CliInputError);
+      await expect(runCredentialCommand([
+        "rotate", issued.id, "--overlap-ms", String(MAX_CREDENTIAL_ROTATION_OVERLAP_MS + 1),
+      ], dependencies)).rejects.toMatchObject({
+        name: "CliInputError",
+        exitCode: 2,
+      });
 
       stdout = "";
       await runCredentialCommand(["list"], dependencies);
       expect(JSON.parse(stdout.trim())).toMatchObject({
         credentials: [
-          { id: issued.id, status: "rotating", expiresAt: "2026-08-02T00:00:01.000Z" },
+          { id: issued.id, status: "rotating", expiresAt: "2026-08-03T00:00:00.000Z" },
           { id: rotated.id, status: "revoked" },
         ],
       });
@@ -337,6 +491,12 @@ describe("VidCom CLI dispatch", () => {
       stdout = "";
       await runBackupCommand(["verify", "backup_cli"], dependencies);
       expect(JSON.parse(stdout.trim())).toEqual({ backupId: "backup_cli", valid: false });
+      await expect(runBackupCommand(["restore", "missing_backup"], dependencies))
+        .rejects.toThrow("backup_not_found");
+      const database = await initializeDatabase(appData);
+      expect(dbOne(database, "SELECT COUNT(*) AS count FROM workspace_lease"))
+        .toEqual({ count: 0 });
+      await database.destroy();
       await expect(runBackupCommand(["restore"], dependencies)).rejects.toBeInstanceOf(CliInputError);
     } finally {
       await rm(root, { recursive: true, force: true });
@@ -359,7 +519,7 @@ describe("VidCom CLI dispatch", () => {
       stdout: { write: (chunk: string) => { stdout += chunk; } },
       now: () => new Date(now),
       newId: () => `cli_backup_id_${++nextId}`,
-      selectWorkspace: async () => workspaceRoot as AbsolutePath,
+      selectWorkspace: async () => { throw new Error("restore must use the backup registration"); },
     };
     await mkdir(projectRoot, { recursive: true });
     await writeFile(path.join(projectRoot, "hyperframes.json"), "{}\n");
@@ -418,6 +578,7 @@ describe("VidCom CLI dispatch", () => {
           detail: {},
           credentialId: null,
           invokedAt: now,
+          revisionBefore: 0,
         },
         backup: true,
       }, "agent");
@@ -441,6 +602,7 @@ describe("VidCom CLI dispatch", () => {
     const root = await mkdtemp(path.join(tmpdir(), "vidcom-recovery-command-"));
     const appData = path.join(root, "app-data");
     const workspaceRoot = path.join(root, "workspace");
+    const unrelatedWorkspace = path.join(root, "unrelated-workspace");
     const projectRoot = path.join(workspaceRoot, "project");
     const projectId = "project_recovery_cli" as ProjectId;
     const now = "2026-08-02T00:00:00.000Z";
@@ -453,8 +615,9 @@ describe("VidCom CLI dispatch", () => {
       stdout: { write: (chunk: string) => { stdout += chunk; } },
       now: () => new Date(now),
       newId: (prefix: string) => `${prefix}_cli_${++nextId}`,
-      selectWorkspace: async () => workspaceRoot as AbsolutePath,
+      selectWorkspace: async () => unrelatedWorkspace as AbsolutePath,
     };
+    await mkdir(unrelatedWorkspace, { recursive: true });
     await mkdir(projectRoot, { recursive: true });
     await writeFile(path.join(projectRoot, "hyperframes.json"), "{}\n");
     await writeFile(path.join(projectRoot, "vidcom.json"), JSON.stringify({ id: projectId }));
@@ -466,6 +629,10 @@ describe("VidCom CLI dispatch", () => {
       dbRun(database, `INSERT INTO project_registry
         (id, workspace_root, slug, first_seen_at, last_seen_at) VALUES (?, ?, 'project', ?, ?)`,
       projectId, workspaceRoot, now, now);
+      const beginAuthority = { leaseId: "lease-recovery-cli" };
+      dbRun(database, `INSERT INTO workspace_lease
+        (workspace_root, lease_id, holder_id, acquired_at, expires_at)
+        VALUES (?, ?, 'test', ?, '2026-08-02T01:00:00.000Z')`, workspaceRoot, beginAuthority.leaseId, now);
       const journal = new MutationJournal(database, { now: dependencies.now });
       const pending = await journal.beginComposite(
         { projectId, actor: "agent" },
@@ -479,7 +646,10 @@ describe("VidCom CLI dispatch", () => {
           previousContent: "before",
         }],
         { toolAudit: null },
+        beginAuthority,
       );
+      // Seed a legacy/multi-crash state without weakening the production T1 unresolved gate.
+      dbRun(database, "UPDATE mutation_journal SET status = 'aborted' WHERE id = ?", pending);
       const orphan = await journal.beginComposite(
         { projectId, actor: "agent" },
         [{
@@ -492,8 +662,11 @@ describe("VidCom CLI dispatch", () => {
           previousContent: "previous",
         }],
         { toolAudit: null },
+        beginAuthority,
       );
       await journal.orphanComposite(orphan, ErrorCode.RecoveryRequired);
+      dbRun(database, "UPDATE mutation_journal SET status = 'pending' WHERE id = ?", pending);
+      dbRun(database, "DELETE FROM workspace_lease WHERE lease_id = ?", beginAuthority.leaseId);
       await database.destroy();
 
       await runRecoveryCommand(["inspect", String(pending)], dependencies);

@@ -2,6 +2,7 @@ import {
   ErrorCode,
   MAX_SOURCE_BYTES,
   type ContentHash,
+  type Diagnostic,
   type DomainError,
   type ProjectId,
   type RelPath,
@@ -30,7 +31,7 @@ export interface SceneContext {
   trackIndex: number;
   isTransition: boolean;
   elementCount: number;
-  fileContentHash: ContentHash;
+  fileContentHash: ContentHash | null;
   narrationStale: boolean;
 }
 
@@ -62,11 +63,21 @@ function sceneContexts(
   scenes: SceneDto[],
   entry: RelPath,
   fileHashes: Record<string, ContentHash>,
-): SceneContext[] {
-  return scenes.map((scene: SceneDto) => {
+): { scenes: SceneContext[]; diagnostics: Diagnostic[] } {
+  const missing = new Set<string>();
+  const diagnostics: Diagnostic[] = [];
+  const contexts = scenes.map((scene: SceneDto) => {
     const source = scene.src ?? entry;
-    const fileContentHash = fileHashes[source];
-    if (!fileContentHash) throw new Error(`parsed scene source has no hash: ${source}`);
+    const fileContentHash = fileHashes[source] ?? null;
+    if (fileContentHash === null && !missing.has(source)) {
+      missing.add(source);
+      diagnostics.push({
+        severity: "warning",
+        code: "referenced_source_missing",
+        file: source,
+        message: `Referenced scene source ${source} is missing.`,
+      });
+    }
     return {
       id: scene.id,
       src: scene.src,
@@ -79,6 +90,7 @@ function sceneContexts(
       narrationStale: scene.narration !== null && scene.narration.staleSince !== null,
     };
   });
+  return { scenes: contexts, diagnostics };
 }
 
 function storageError(message: string): Result<never, DomainError> {
@@ -103,28 +115,62 @@ export async function listProjects(
   }
 }
 
-/** Lists bounded MCP project summaries with revision and recovery visibility, never filesystem roots. */
-export async function listProjectContexts(dependencies: ProjectReadDependencies) {
+/** Lists one deterministic MCP project page while isolating malformed projects and bounding parse concurrency. */
+export async function listProjectContexts(
+  dependencies: ProjectReadDependencies,
+  options: { limit: number; cursor?: string },
+) {
   try {
-    const refs = await dependencies.workspace.listProjects();
-    const projects = await Promise.all(refs.map(async (ref) => {
-      const [model, projectRevision, recovery] = await Promise.all([
-        parseProject(dependencies, ref),
-        dependencies.journal.latestRevision(ref.id),
-        dependencies.journal.readProjectRecoveryStatus(ref.id),
-      ]);
-      return {
-        projectId: ref.id,
-        slug: ref.slug,
-        title: model.project.title,
-        width: model.project.width,
-        height: model.project.height,
-        duration: model.project.duration,
-        projectRevision: projectRevision ?? 0,
-        recovery,
-      };
-    }));
-    return ok(projects);
+    const ordered = [...await dependencies.workspace.listProjects()]
+      .sort((left, right) => left.id.localeCompare(right.id));
+    const remaining = options.cursor
+      ? ordered.filter((ref) => ref.id.localeCompare(options.cursor!) > 0)
+      : ordered;
+    const selected = remaining.slice(0, options.limit);
+    const projects = [];
+    const diagnostics = [];
+    for (let offset = 0; offset < selected.length; offset += 4) {
+      const batch = await Promise.all(selected.slice(offset, offset + 4).map(async (ref) => {
+        try {
+          const [model, projectRevision, recovery] = await Promise.all([
+            parseProject(dependencies, ref),
+            dependencies.journal.latestRevision(ref.id),
+            dependencies.journal.readProjectRecoveryStatus(ref.id),
+          ]);
+          return {
+            ok: true as const,
+            value: {
+              projectId: ref.id,
+              slug: ref.slug,
+              title: model.project.title,
+              width: model.project.width,
+              height: model.project.height,
+              duration: model.project.duration,
+              projectRevision: projectRevision ?? 0,
+              recovery,
+            },
+          };
+        } catch {
+          return {
+            ok: false as const,
+            diagnostic: {
+              severity: "warning" as const,
+              code: "project_context_unavailable",
+              message: `Project ${ref.id} could not be read.`,
+            },
+          };
+        }
+      }));
+      for (const item of batch) {
+        if (item.ok) projects.push(item.value);
+        else diagnostics.push(item.diagnostic);
+      }
+    }
+    return ok({
+      projects,
+      diagnostics,
+      nextCursor: remaining.length > options.limit ? selected.at(-1)?.id ?? null : null,
+    });
   } catch {
     return storageError("project contexts could not be read");
   }
@@ -157,14 +203,15 @@ export async function readSourceFile(
 export async function getProjectContext(dependencies: ProjectReadDependencies, projectId: ProjectId) {
   const snapshot = await getStudioSnapshot(dependencies, projectId);
   if (!snapshot.ok) return snapshot;
+  const sceneState = sceneContexts(snapshot.value.scenes, snapshot.value.entryFile.path, snapshot.value.fileHashes);
   return ok({
     project: snapshot.value.project,
-    scenes: sceneContexts(snapshot.value.scenes, snapshot.value.entryFile.path, snapshot.value.fileHashes),
+    scenes: sceneState.scenes,
     rootTrack: snapshot.value.rootTrack,
     previewSettings: snapshot.value.previewSettings,
     entityRevision: snapshot.value.entityRevision,
     projectRevision: snapshot.value.projectRevision,
-    diagnostics: snapshot.value.diagnostics,
+    diagnostics: [...snapshot.value.diagnostics, ...sceneState.diagnostics],
     fileHashes: snapshot.value.fileHashes,
     recovery: snapshot.value.recovery,
   });
@@ -174,7 +221,12 @@ export async function getProjectContext(dependencies: ProjectReadDependencies, p
 export async function listSceneContexts(dependencies: ProjectReadDependencies, projectId: ProjectId) {
   const context = await getProjectContext(dependencies, projectId);
   return context.ok
-    ? ok({ scenes: context.value.scenes, projectRevision: context.value.projectRevision, recovery: context.value.recovery })
+    ? ok({
+        scenes: context.value.scenes,
+        projectRevision: context.value.projectRevision,
+        recovery: context.value.recovery,
+        diagnostics: context.value.diagnostics,
+      })
     : context;
 }
 

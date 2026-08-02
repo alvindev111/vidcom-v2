@@ -124,7 +124,8 @@ export class ApprovalService {
       : err({ code: ErrorCode.ApprovalInvalid, message: "only an issued grant can be revoked" });
   }
 
-  cleanupTerminal(olderThan: Date): Promise<number> {
+  async cleanupTerminal(olderThan: Date): Promise<number> {
+    await this.dependencies.grants.expireDue(this.dependencies.clock.now().toISOString());
     return this.dependencies.grants.cleanupTerminal(olderThan.toISOString());
   }
 }

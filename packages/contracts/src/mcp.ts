@@ -12,6 +12,11 @@ import {
   RootTrackSchema,
 } from "./dto";
 
+const CanonicalRelativePathSchema = RelativePathSchema.regex(
+  /^(?!\/)(?![A-Za-z]:)(?!.*\\)(?!.*\0)(?!.*\/\/)(?!\.{1,2}(?:\/|$))(?!.*\/\.{1,2}(?:\/|$)).+$/,
+  "path must be canonical and project-relative",
+);
+
 /** MCP revisions served by VidCom, ordered from newest to oldest. */
 export const SUPPORTED_REVISIONS = [
   "2026-07-28",
@@ -35,7 +40,7 @@ export type ToolLevel = "read" | "write" | "job" | "destructive";
 export const WriteEnvelopeSchema = z.strictObject({
   projectRevision: z.number().int().nonnegative(),
   entityRevision: z.number().int().nonnegative().nullable(),
-  fileHashes: z.record(z.string(), ContentHashSchema),
+  fileHashes: z.record(CanonicalRelativePathSchema, ContentHashSchema),
   diagnostics: z.array(DiagnosticSchema),
 });
 
@@ -48,7 +53,7 @@ export const SceneContextSchema = z.strictObject({
   trackIndex: z.number().int(),
   isTransition: z.boolean(),
   elementCount: z.number().int().nonnegative(),
-  fileContentHash: ContentHashSchema,
+  fileContentHash: ContentHashSchema.nullable(),
   narrationStale: z.boolean(),
 });
 
@@ -56,7 +61,12 @@ const projectIdInput = { projectId: IdentifierSchema } as const;
 const grantId = IdentifierSchema.optional();
 
 /** Input for `list_projects`. */
-export const ListProjectsInputSchema = z.strictObject({});
+export const LIST_PROJECTS_DEFAULT_LIMIT = 20;
+export const LIST_PROJECTS_MAX_LIMIT = 100;
+export const ListProjectsInputSchema = z.strictObject({
+  limit: z.number().int().min(1).max(LIST_PROJECTS_MAX_LIMIT).default(LIST_PROJECTS_DEFAULT_LIMIT),
+  cursor: z.string().min(1).max(255).optional(),
+});
 /** Output for `list_projects`. */
 export const ListProjectsOutputSchema = z.strictObject({
   projects: z.array(z.strictObject({
@@ -69,6 +79,8 @@ export const ListProjectsOutputSchema = z.strictObject({
     projectRevision: z.number().int().nonnegative(),
     recovery: ProjectRecoveryStatusSchema,
   })),
+  diagnostics: z.array(DiagnosticSchema),
+  nextCursor: z.string().min(1).max(255).nullable(),
 });
 
 /** Input for `get_project_context`. */
@@ -93,6 +105,7 @@ export const ListScenesOutputSchema = z.strictObject({
   scenes: z.array(SceneContextSchema),
   projectRevision: z.number().int().nonnegative(),
   recovery: ProjectRecoveryStatusSchema,
+  diagnostics: z.array(DiagnosticSchema),
 });
 
 /** Input for `read_composition`. */
@@ -130,7 +143,10 @@ export const SetSceneTimingInputSchema = z.strictObject({
   duration: z.number().finite().optional(),
   trackIndex: z.number().int().optional(),
   expectedContentHash: ContentHashSchema,
-});
+}).refine(
+  (input) => input.start !== undefined || input.duration !== undefined || input.trackIndex !== undefined,
+  { message: "at least one timing field is required", path: ["start"] },
+);
 /** Output for `set_scene_timing`. */
 export const SetSceneTimingOutputSchema = z.strictObject({
   scene: SceneContextSchema,
@@ -152,7 +168,7 @@ export const SetTextOutputSchema = z.strictObject({
   scene: SceneContextSchema,
   project: ProjectSummarySchema,
   envelope: WriteEnvelopeSchema,
-  narrationStale: z.literal(true),
+  narrationStale: z.boolean(),
 });
 
 /** Input for `save_file`. */

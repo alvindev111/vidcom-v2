@@ -36,6 +36,7 @@ export enum ErrorCode {
   BackupExpired = "backup_expired",
   DuplicateMutationTarget = "duplicate_mutation_target",
   RecoveryRequired = "recovery_required",
+  CommittedResponseError = "committed_response_error",
 }
 
 /** Structured error payload returned by HTTP and MCP adapters. */

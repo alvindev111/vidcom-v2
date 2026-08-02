@@ -4,7 +4,14 @@ import { cp, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import net from "node:net";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import { DatabaseSync } from "node:sqlite";
 import { promisify } from "node:util";
+
+import { Client as ModernClient, StreamableHTTPClientTransport as ModernHttp } from "@modelcontextprotocol/client";
+import { Client as LegacyClient } from "@modelcontextprotocol/sdk/client/index.js";
+import { StreamableHTTPClientTransport as LegacyHttp } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
+
+import { stopRuntimeChild } from "./runtime-smoke-process.mjs";
 
 const execFile = promisify(execFileCallback);
 
@@ -14,6 +21,7 @@ const workspace = path.join(temporaryRoot, "workspace");
 const projectRoot = path.join(workspace, "swiss-grid");
 const appData = path.join(temporaryRoot, "app-data");
 const nonce = randomBytes(32).toString("base64url");
+const modernRevision = "2026-07-28";
 
 function freePort() {
   return new Promise((resolve, reject) => {
@@ -72,6 +80,71 @@ async function nextEvent(baseUrl, cookie, afterId, expectedPath) {
   }
 }
 
+function authorizedFetch(secret) {
+  return (input, init) => {
+    const headers = new Headers(init?.headers);
+    headers.set("Authorization", `Bearer ${secret}`);
+    return fetch(input, { ...init, headers });
+  };
+}
+
+async function exerciseMcpClients(baseUrl, credential) {
+  const legacy = new LegacyClient({ name: "next-runtime-legacy", version: "1.0.0" });
+  const legacyTransport = new LegacyHttp(new URL(`${baseUrl}/api/mcp`), {
+    fetch: authorizedFetch(credential.secret),
+  });
+  try {
+    await legacy.connect(legacyTransport);
+    if ((await legacy.listTools()).tools.length !== 10) throw new Error("legacy entry did not list 10 tools");
+    const result = await legacy.callTool({ name: "list_projects", arguments: {} });
+    if (result.isError) throw new Error("legacy entry list_projects failed");
+  } finally {
+    await legacy.close();
+  }
+
+  for (const route of [modernRevision, "latest"]) {
+    const modern = new ModernClient(
+      { name: `next-runtime-modern-${route}`, version: "1.0.0" },
+      { versionNegotiation: { mode: { pin: modernRevision } } },
+    );
+    const transport = new ModernHttp(new URL(`${baseUrl}/api/mcp/${route}`), {
+      fetch: authorizedFetch(credential.secret),
+    });
+    try {
+      await modern.connect(transport);
+      if (modern.getProtocolEra() !== "modern") throw new Error(`modern ${route} negotiated the wrong era`);
+      if ((await modern.listTools()).tools.length !== 10) throw new Error(`modern ${route} did not list 10 tools`);
+      const result = await modern.callTool({ name: "list_projects", arguments: {} });
+      if (result.isError) throw new Error(`modern ${route} list_projects failed`);
+    } finally {
+      await modern.close();
+    }
+  }
+}
+
+function verifyCredentialAudit(appData, credentialId) {
+  const database = new DatabaseSync(path.join(appData, "vidcom.sqlite"), { readOnly: true });
+  try {
+    const rows = database.prepare(`
+      SELECT protocol_version AS protocolVersion, detail
+      FROM audit_entry
+      WHERE action = 'tool:list_projects'
+      ORDER BY id
+    `).all();
+    if (rows.length !== 3) throw new Error(`expected 3 credential-attributed MCP audits, got ${rows.length}`);
+    const versions = rows.map((row) => row.protocolVersion);
+    if (versions[0] === modernRevision || versions[1] !== modernRevision || versions[2] !== modernRevision) {
+      throw new Error(`runtime audit protocol versions are wrong: ${versions.join(",")}`);
+    }
+    for (const row of rows) {
+      const detail = JSON.parse(row.detail);
+      if (detail.credentialId !== credentialId) throw new Error("runtime MCP audit lost credential attribution");
+    }
+  } finally {
+    database.close();
+  }
+}
+
 await cp(path.join(root, "projects", "swiss-grid"), projectRoot, { recursive: true });
 const port = await freePort();
 const baseUrl = `http://127.0.0.1:${port}`;
@@ -109,19 +182,8 @@ try {
     encoding: "utf8",
   });
   const credential = JSON.parse(issued.stdout.trim());
-  const mcpResponse = await fetch(`${baseUrl}/api/mcp`, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${credential.secret}`,
-      Accept: "application/json, text/event-stream",
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/list", params: {} }),
-  });
-  const mcpBody = await mcpResponse.text();
-  if (!mcpResponse.ok || !mcpBody.includes('"name":"list_projects"')) {
-    throw new Error(`production MCP route failed (${mcpResponse.status}): ${mcpBody}`);
-  }
+  await exerciseMcpClients(baseUrl, credential);
+  verifyCredentialAudit(appData, credential.id);
 
   const entry = path.join(projectRoot, "index.html");
   const firstEvent = nextEvent(baseUrl, cookie, 0, "index.html");
@@ -131,12 +193,11 @@ try {
   await writeFile(entry, `${await readFile(entry, "utf8")}\n<!-- runtime-smoke-2 -->\n`);
   const secondId = await resumedEvent;
   if (!(secondId > firstId)) throw new Error("Last-Event-ID did not resume after the prior durable event");
-  process.stdout.write(`Next runtime smoke passed on port ${port}; MCP bearer route ok; SSE ${firstId} -> ${secondId}\n`);
+  process.stdout.write(`Next runtime smoke passed on port ${port}; MCP legacy + modern exact/latest and credential audit ok; SSE ${firstId} -> ${secondId}\n`);
 } finally {
-  child.kill("SIGTERM");
-  await Promise.race([
-    new Promise((resolve) => child.once("exit", resolve)),
-    new Promise((resolve) => setTimeout(resolve, 5_000)),
-  ]);
-  await rm(temporaryRoot, { recursive: true, force: true });
+  try {
+    await stopRuntimeChild(child);
+  } finally {
+    await rm(temporaryRoot, { recursive: true, force: true });
+  }
 }

@@ -86,7 +86,7 @@ D1 là quyết định số một, nhưng nó cần nền móng ở giai đoạn
 | 2.8 | Contract test chạy **hai lần**, một lần mỗi thế hệ | — |
 | 2.9 | `vidcom mcp` mode, `stdout` sạch | PK-5 |
 
-**Mốc:** **Đạt ở local demo** — exact SDK clients spawn production `vidcom mcp`, list/call đủ tool; modern host hoàn tất elicitation → trusted CLI approval → `delete_file` retry, nhả lease và giữ stdout protocol-only.
+**Mốc:** **Đạt ở local demo** — exact SDK clients resolve source-checkout Phase 2 command `vidcom mcp` từ clean packed CLI artifact, list/call đủ tool; modern host hoàn tất elicitation → trusted CLI approval → `delete_file` retry, nhả lease và giữ stdout protocol-only. Đây chưa phải packaged Node SEA của Phase 4.
 
 ---
 

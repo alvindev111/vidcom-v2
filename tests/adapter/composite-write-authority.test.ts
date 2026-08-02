@@ -7,6 +7,8 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import type { ContentHash, ProjectId, RelPath } from "@vidcom/contracts";
 import {
+  type BackupPort,
+  type CompositeMutationJournalPort,
   DEFAULT_PREVIEW_SETTINGS,
   serializePreviewSettings,
   WriteAuthority,
@@ -14,7 +16,13 @@ import {
   type ClockPort,
   type ProjectRef,
 } from "@vidcom/core";
-import { initializeDatabase, MutationJournal, WorkspaceFs, WorkspaceLease } from "@vidcom/adapter";
+import {
+  AppDataBackupStore,
+  initializeDatabase,
+  MutationJournal,
+  WorkspaceFs,
+  WorkspaceLease,
+} from "@vidcom/adapter";
 
 import { createSequentialIdPort } from "../support/deterministic";
 import { dbAll, dbOne, dbRun } from "../support/database";
@@ -24,6 +32,11 @@ let projectRoot: string;
 let database: Awaited<ReturnType<typeof initializeDatabase>>;
 let authority: WriteAuthority;
 let ref: ProjectRef;
+let workspace: WorkspaceFs;
+let journal: MutationJournal;
+let lease: WorkspaceLease;
+let leaseId: string;
+let backups: AppDataBackupStore;
 
 const now = "2026-08-02T00:00:00.000Z";
 const clock: ClockPort = { now: () => new Date(now) };
@@ -57,22 +70,57 @@ beforeEach(async () => {
     root: projectRoot as AbsolutePath,
     entry: "index.html" as RelPath,
   };
-  const workspace = new WorkspaceFs(workspaceRoot as AbsolutePath);
-  const journal = new MutationJournal(database, clock);
-  const lease = new WorkspaceLease(database, clock, createSequentialIdPort());
+  workspace = new WorkspaceFs(workspaceRoot as AbsolutePath);
+  journal = new MutationJournal(database, clock);
+  lease = new WorkspaceLease(database, clock, createSequentialIdPort());
   const acquired = await lease.acquire(workspaceRoot as AbsolutePath, "test:composite");
   if (!acquired.ok) throw new Error("test lease was denied");
-  authority = new WriteAuthority({
+  leaseId = acquired.leaseId;
+  backups = new AppDataBackupStore(
+    path.join(root, "app-data"),
+    database,
+    clock,
+    createSequentialIdPort(),
+  );
+  authority = createAuthority();
+});
+
+function createAuthority(overrides: {
+  compositeJournal?: CompositeMutationJournalPort;
+  backups?: BackupPort;
+} = {}): WriteAuthority {
+  return new WriteAuthority({
     workspace,
     journal,
-    compositeJournal: journal,
+    compositeJournal: overrides.compositeJournal ?? journal,
     lease,
-    leaseId: acquired.leaseId,
+    leaseId,
     hashContent: hash,
     invalidate() {},
     notifyEvents() {},
+    backups: overrides.backups ?? backups,
   });
-});
+}
+
+function journalBarrier(
+  phase: "before-t1" | "after-t1",
+  action: () => Promise<void>,
+): CompositeMutationJournalPort {
+  return new Proxy(journal, {
+    get(target, property) {
+      if (property === "beginComposite") {
+        return async (...args: Parameters<MutationJournal["beginComposite"]>) => {
+          if (phase === "before-t1") await action();
+          const id = await target.beginComposite(...args);
+          if (phase === "after-t1") await action();
+          return id;
+        };
+      }
+      const value = Reflect.get(target, property, target) as unknown;
+      return typeof value === "function" ? value.bind(target) : value;
+    },
+  });
+}
 
 afterEach(async () => {
   await database.destroy();
@@ -133,6 +181,80 @@ describe("Composite WriteAuthority with real SQLite and filesystem", () => {
     expect(dbOne(database, "SELECT COUNT(*) AS count FROM revision")).toEqual({ count: 1 });
     expect(["winner-a", "winner-b"]).toContain(await readFile(path.join(projectRoot, "index.html"), "utf8"));
   });
+
+  it.each(["before-t1", "after-t1"] as const)(
+    "preserves an external edit injected %s and aborts without a revision",
+    async (phase) => {
+      const target = path.join(projectRoot, "index.html");
+      authority = createAuthority({
+        compositeJournal: journalBarrier(phase, () => writeFile(target, "external-edit")),
+      });
+
+      const result = await authority.mutateComposite({
+        ref,
+        steps: [{
+          kind: "write",
+          path: "index.html" as RelPath,
+          content: "daemon-write",
+          expectedContentHash: hash("entry-old"),
+        }],
+        toolAudit: null,
+        backup: false,
+      }, "agent");
+
+      expect(result).toMatchObject({ ok: false, error: { code: "write_conflict" } });
+      expect(await readFile(target, "utf8")).toBe("external-edit");
+      expect(dbOne(database, "SELECT COUNT(*) AS count FROM revision")).toEqual({ count: 0 });
+      expect(dbOne(database, "SELECT status FROM mutation_journal WHERE id = 1")).toEqual({ status: "aborted" });
+    },
+  );
+
+  it.each(["during-backup", "after-backup-verify"] as const)(
+    "backs up captured bytes, preserves an external edit %s, and never commits the delete",
+    async (phase) => {
+      const target = path.join(projectRoot, "compositions/a.html");
+      const barrierBackups: BackupPort = new Proxy(backups, {
+        get(store, property) {
+          if (property === "create") {
+            return async (...args: Parameters<AppDataBackupStore["create"]>) => {
+              if (phase === "during-backup") await writeFile(target, "external-edit");
+              return store.create(...args);
+            };
+          }
+          if (property === "verify") {
+            return async (...args: Parameters<AppDataBackupStore["verify"]>) => {
+              const valid = await store.verify(...args);
+              if (phase === "after-backup-verify") await writeFile(target, "external-edit");
+              return valid;
+            };
+          }
+          const value = Reflect.get(store, property, store) as unknown;
+          return typeof value === "function" ? value.bind(store) : value;
+        },
+      });
+      authority = createAuthority({ backups: barrierBackups });
+
+      const result = await authority.mutateComposite({
+        ref,
+        steps: [{
+          kind: "delete",
+          path: "compositions/a.html" as RelPath,
+          expectedContentHash: hash("a-old"),
+        }],
+        toolAudit: null,
+        backup: true,
+      }, "agent");
+
+      expect(result).toMatchObject({ ok: false, error: { code: "write_conflict" } });
+      expect(await readFile(target, "utf8")).toBe("external-edit");
+      expect(dbOne(database, "SELECT COUNT(*) AS count FROM revision")).toEqual({ count: 0 });
+      const manifest = (await backups.list(projectId))[0];
+      expect(manifest).toBeDefined();
+      await expect(backups.readPayloads(manifest!.id)).resolves.toMatchObject([
+        { path: "compositions/a.html", contentHash: hash("a-old") },
+      ]);
+    },
+  );
 
   it("keeps landed bytes and gates the next write when T2 cannot commit", async () => {
     dbRun(database, `CREATE TRIGGER fail_composite_commit

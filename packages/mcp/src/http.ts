@@ -2,6 +2,7 @@ import {
   classifyInboundRequest,
   createMcpHandler,
   DEFAULT_NEGOTIATED_PROTOCOL_VERSION,
+  isJsonContentType,
   isJSONRPCNotification,
   isJSONRPCRequest,
   UnsupportedProtocolVersionError,
@@ -47,6 +48,9 @@ function pinnedHandler(
   unsupportedRequested?: string,
 ): McpFetchHandler {
   return async (request, options) => {
+    if (request.method === "POST" && !isJsonContentType(request.headers.get("content-type"))) {
+      return inner(request, options);
+    }
     let body: unknown;
     try {
       body = request.method === "POST" ? await request.clone().json() : undefined;
@@ -65,7 +69,7 @@ function pinnedHandler(
       ? outcome.classification.revision
       : outcome.requestedVersion ?? DEFAULT_NEGOTIATED_PROTOCOL_VERSION;
     return actualRevision === pinnedRevision
-      ? inner(request)
+      ? inner(request, options)
       : unsupportedRevisionResponse(unsupportedRequested ?? actualRevision ?? "unknown", body);
   };
 }

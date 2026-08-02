@@ -11,6 +11,7 @@ import {
 } from "@modelcontextprotocol/server";
 
 import packageMetadata from "../package.json";
+import { canonicalizeJson } from "@vidcom/core";
 import { mcpToolError } from "./error-map";
 import type { ToolRegistry } from "./registry/registry";
 import { InputRequiredSignal } from "./registry/types";
@@ -75,7 +76,7 @@ export function registerRegistryTools(
         if (!result.ok) return mcpToolError(result.error, factoryContext.era);
         const output = result.value as Record<string, unknown>;
         return {
-          content: [{ type: "text" as const, text: JSON.stringify(output) }],
+          content: [{ type: "text" as const, text: canonicalizeJson(output) }],
           structuredContent: output,
         };
       } catch (error) {

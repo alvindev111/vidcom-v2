@@ -45,6 +45,16 @@ class FakeGrants implements ApprovalGrantPort {
     return Boolean(record && record.status === "issued" && record.expiresAt > now
       && JSON.stringify(record.binding) === JSON.stringify(expected));
   }
+  async expireDue(now: string) {
+    let changed = 0;
+    for (const record of this.records) {
+      if (["requested", "issued"].includes(record.status) && record.expiresAt <= now) {
+        record.status = "expired";
+        changed += 1;
+      }
+    }
+    return changed;
+  }
   async cleanupTerminal(expiresBefore: string) {
     const before = this.records.length;
     this.records = this.records.filter((record) =>
@@ -220,6 +230,33 @@ describe("ApprovalService request", () => {
     });
     await expect(service.cleanupTerminal(new Date("2026-08-02T00:00:00.000Z"))).resolves.toBe(1);
     expect(grants.records).toEqual([]);
+  });
+
+  it("expires due requested and issued grants before retention while preserving reserved rows", async () => {
+    const grants = new FakeGrants();
+    for (const status of ["requested", "issued", "reserved"] as const) {
+      grants.records.push({
+        id: `grant_${status}`,
+        binding,
+        summary: status,
+        status,
+        approver: status === "requested" ? null : "cli",
+        createdAt: "2026-08-01T00:00:00.000Z",
+        expiresAt: "2026-08-01T00:05:00.000Z",
+      });
+    }
+    const service = new ApprovalService({
+      grants,
+      clock: { now: () => new Date("2026-08-02T00:00:00.000Z") },
+      ids: { newId: () => "unused" },
+    });
+
+    await expect(service.cleanupTerminal(new Date("2026-07-01T00:00:00.000Z"))).resolves.toBe(0);
+    expect(grants.records.map(({ id, status }) => ({ id, status }))).toEqual([
+      { id: "grant_requested", status: "expired" },
+      { id: "grant_issued", status: "expired" },
+      { id: "grant_reserved", status: "reserved" },
+    ]);
   });
 
   it.each([

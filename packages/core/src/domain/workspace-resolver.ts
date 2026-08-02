@@ -20,6 +20,7 @@ export type WorkspaceResolution =
 
 /** Resolves explicit, saved-active and marker-backed cwd candidates in strict priority order. */
 export function resolveWorkspace(input: WorkspaceResolutionInput): WorkspaceResolution {
+  if (input.explicit && !input.explicit.valid) return { status: "selection_required" };
   const candidates = [
     ["explicit", input.explicit],
     ["active", input.active],

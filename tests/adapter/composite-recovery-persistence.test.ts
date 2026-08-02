@@ -18,6 +18,7 @@ import {
   type GrantBinding,
   type PendingMutationContext,
   type StepIntent,
+  type WorkspacePort,
 } from "@vidcom/core";
 import { CompositionHf, initializeDatabase, MutationJournal, WorkspaceFs } from "@vidcom/adapter";
 
@@ -29,6 +30,7 @@ let database: Awaited<ReturnType<typeof initializeDatabase>>;
 
 const now = "2026-08-02T00:00:00.000Z";
 const clock: ClockPort = { now: () => new Date(now) };
+const authority = { leaseId: "lease-recovery" };
 const hash = (content: string): ContentHash =>
   `sha256:${createHash("sha256").update(content).digest("hex")}` as ContentHash;
 
@@ -37,6 +39,9 @@ beforeEach(async () => {
   workspaceRoot = path.join(root, "workspace");
   await mkdir(workspaceRoot, { recursive: true });
   database = await initializeDatabase(path.join(root, "app-data"));
+  dbRun(database, `INSERT INTO workspace_lease
+    (workspace_root, lease_id, holder_id, acquired_at, expires_at)
+    VALUES (?, ?, 'test', ?, '2026-08-02T01:00:00.000Z')`, workspaceRoot, authority.leaseId, now);
 });
 
 afterEach(async () => {
@@ -94,17 +99,20 @@ describe("composite recovery persistence", () => {
       { projectId: missingId, actor: "agent" },
       [step("index.html", "missing-old", "missing-new")],
       { toolAudit: null },
+      authority,
     );
     const healthyJournal = await journal.beginComposite(
       { projectId: healthyId, actor: "agent" },
       [step("index.html", "healthy-old", "healthy-new")],
       { toolAudit: null },
+      authority,
     );
     const workspace = new WorkspaceFs(workspaceRoot as AbsolutePath);
 
     const report = await reconcileCompositeMutations({
       workspace,
       journal,
+      workspaceRoot,
       async resolveProjectRef(projectId): Promise<ProjectRef | null> {
         return projectId === healthyId
           ? {
@@ -149,6 +157,7 @@ describe("composite recovery persistence", () => {
       { projectId, actor: "agent" },
       [step("index.html", "before", "intended")],
       { toolAudit: null },
+      authority,
     );
     await journal.orphanComposite(id, ErrorCode.RecoveryRequired);
     const workspace = new WorkspaceFs(workspaceRoot as AbsolutePath);
@@ -197,6 +206,7 @@ describe("composite recovery persistence", () => {
       { projectId, actor: "agent" },
       [step("index.html", "before", "intended")],
       { toolAudit: null },
+      authority,
     );
     await journal.orphanComposite(id, ErrorCode.RecoveryRequired);
     const workspace = new WorkspaceFs(workspaceRoot as AbsolutePath);
@@ -247,14 +257,19 @@ describe("composite recovery persistence", () => {
       { projectId, actor: "agent" },
       [step("index.html", "before-a", "intended-a")],
       { toolAudit: null },
+      authority,
     );
     await journal.orphanComposite(first, ErrorCode.RecoveryRequired);
+    // Seed a legacy/multi-crash state without weakening the production T1 unresolved gate.
+    dbRun(database, "UPDATE mutation_journal SET status = 'rolled_back' WHERE id = ?", first);
     const second = await journal.beginComposite(
       { projectId, actor: "agent" },
       [step("other.html", "before-b", "intended-b")],
       { toolAudit: null },
+      authority,
     );
     await journal.orphanComposite(second, ErrorCode.RecoveryRequired);
+    dbRun(database, "UPDATE mutation_journal SET status = 'orphaned' WHERE id = ?", first);
     const workspace = new WorkspaceFs(workspaceRoot as AbsolutePath);
     const lease: LeasePort = {
       async acquire() { throw new Error("unused"); },
@@ -290,10 +305,12 @@ describe("composite recovery persistence", () => {
       { projectId, actor: "agent" },
       [step("index.html", "before", "after")],
       { toolAudit: null },
+      authority,
     );
     const dependencies = {
       workspace: new WorkspaceFs(workspaceRoot as AbsolutePath),
       journal,
+      workspaceRoot,
       async resolveProjectRef() { return ref; },
     };
     dbRun(database, `CREATE TRIGGER fail_recovery_t2a BEFORE UPDATE OF status ON mutation_journal
@@ -308,6 +325,45 @@ describe("composite recovery persistence", () => {
     await expect(reconcileCompositeMutations(dependencies)).resolves.toEqual({
       pending: [], recovered: [], rolledBack: [], orphaned: [],
     });
+  });
+
+  it("keeps the recovery gate when an external edit lands between classification and T2", async () => {
+    const { projectId, projectRoot, ref } = await liveProject("t2_race", "after");
+    const journal = new MutationJournal(database, clock);
+    const id = await journal.beginComposite(
+      { projectId, actor: "agent" },
+      [step("index.html", "before", "after")],
+      { toolAudit: null },
+      authority,
+    );
+    const realWorkspace = new WorkspaceFs(workspaceRoot as AbsolutePath);
+    let hashReads = 0;
+    const workspace = new Proxy(realWorkspace, {
+      get(target, property) {
+        if (property === "readHash") {
+          return async (...args: Parameters<WorkspaceFs["readHash"]>) => {
+            const observed = await target.readHash(...args);
+            if (++hashReads === 1) await writeFile(path.join(projectRoot, "index.html"), "external");
+            return observed;
+          };
+        }
+        const value = Reflect.get(target, property, target) as unknown;
+        return typeof value === "function" ? value.bind(target) : value;
+      },
+    }) as WorkspacePort;
+
+    await expect(reconcileCompositeMutation({
+      workspace,
+      journal,
+      async resolveProjectRef() { return ref; },
+    }, id)).resolves.toMatchObject({
+      ok: false,
+      error: { code: ErrorCode.RecoveryRequired },
+    });
+    expect(await readFile(path.join(projectRoot, "index.html"), "utf8")).toBe("external");
+    expect(dbOne(database, "SELECT status FROM mutation_journal WHERE id = ?", id)).toEqual({ status: "pending" });
+    expect(dbOne(database, "SELECT COUNT(*) AS count FROM revision WHERE project_id = ?", projectId))
+      .toEqual({ count: 0 });
   });
 
   it("retries T2b with the exact grant and audit without rewriting landed bytes", async () => {
@@ -339,6 +395,7 @@ describe("composite recovery persistence", () => {
         detail: { sceneId: "scene-1" },
         credentialId: "credential-recovery",
         invokedAt: now,
+        revisionBefore: 0,
       },
     };
     const journal = new MutationJournal(database, clock);
@@ -346,11 +403,13 @@ describe("composite recovery persistence", () => {
       { projectId, actor: "agent" },
       [step("index.html", "before", current)],
       context,
+      authority,
       { kind: "reserve", grantId: "grant-recovery", binding },
     );
     const dependencies = {
       workspace: new WorkspaceFs(workspaceRoot as AbsolutePath),
       journal,
+      workspaceRoot,
       async resolveProjectRef() { return ref; },
     };
     const modifiedBefore = (await stat(path.join(projectRoot, "index.html"))).mtimeMs;
@@ -373,6 +432,9 @@ describe("composite recovery persistence", () => {
       recovered: true,
       invocationId: "invocation-recovery",
       credentialId: "credential-recovery",
+      durationMs: 0,
+      revisionBefore: 0,
+      revisionAfter: 1,
     });
     await expect(reconcileCompositeMutations(dependencies)).resolves.toEqual({
       pending: [], recovered: [], rolledBack: [], orphaned: [],
@@ -393,6 +455,7 @@ describe("composite recovery persistence", () => {
         { ...step("other.html", "before-b", "after-b"), ordinal: 1 },
       ],
       { toolAudit: null },
+      authority,
     );
     const dependencies = {
       workspace: new WorkspaceFs(workspaceRoot as AbsolutePath),
@@ -420,6 +483,7 @@ describe("composite recovery persistence", () => {
       { projectId, actor: "agent" },
       [step("index.html", "before", "intended")],
       { toolAudit: null },
+      authority,
     );
     await journal.orphanComposite(id, ErrorCode.RecoveryRequired);
     const lease: LeasePort = {
@@ -450,6 +514,7 @@ describe("composite recovery persistence", () => {
       { projectId, actor: "agent" },
       [step("index.html", "before", "intended")],
       { toolAudit: null },
+      authority,
     );
     await journal.orphanComposite(id, ErrorCode.RecoveryRequired);
     const lease: LeasePort = {

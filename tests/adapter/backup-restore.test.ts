@@ -50,6 +50,7 @@ const toolAudit: PendingToolAudit = {
   detail: { sceneId: "scene-1" },
   credentialId: "credential-1",
   invokedAt: now,
+  revisionBefore: 0,
 };
 
 beforeEach(async () => {

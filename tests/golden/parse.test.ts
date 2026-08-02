@@ -101,6 +101,27 @@ describe("composition parse structure", () => {
     );
   });
 
+  it("canonicalizes nested and root-track references while excluding external URLs", async () => {
+    const model = await parseFixture("project-references", async (root) => {
+      await mkdir(path.join(root, "compositions"));
+      await writeFile(path.join(root, "compositions/nested.html"), `
+        <section data-composition-id="nested">
+          <img src="../assets/logo.svg" />
+          <img src="logo.svg" />
+          <img src="https://example.com/external.svg" />
+          <img src="data:image/svg+xml;base64,AA==" />
+          <img src="../../outside.svg" />
+        </section>
+      `);
+    });
+    expect(model.references).toEqual([
+      { owner: "index.html", path: "compositions/nested.html" },
+      { owner: "compositions/nested.html", path: "assets/logo.svg" },
+      { owner: "compositions/nested.html", path: "compositions/logo.svg" },
+      { owner: "index.html", path: "assets/root.svg" },
+    ]);
+  });
+
   it("reads children from a template wrapper", async () => {
     await expect(golden(await elements("template-wrap"))).toMatchFileSnapshot(
       "../../fixtures/parse/template-wrap-expected.json",

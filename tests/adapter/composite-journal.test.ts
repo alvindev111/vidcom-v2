@@ -13,7 +13,13 @@ import {
   type StepResult,
   type StepIntent,
 } from "@vidcom/core";
-import { initializeDatabase, JournalTransactionError, MutationJournal } from "@vidcom/adapter";
+import {
+  initializeDatabase,
+  JournalTransactionError,
+  LargePreviousContentStore,
+  MutationJournal,
+  type PreviousContentStore,
+} from "@vidcom/adapter";
 
 import { dbAll, dbOne, dbRun } from "../support/database";
 
@@ -23,6 +29,7 @@ const now = "2026-08-02T00:00:00.000Z";
 const projectId = "project_composite" as ProjectId;
 const hash = (digit: string) => `sha256:${digit.repeat(64)}` as ContentHash;
 const clock: ClockPort = { now: () => new Date(now) };
+const authority = { leaseId: "lease-composite" };
 
 const binding: GrantBinding = {
   tool: "delete_scene",
@@ -45,6 +52,7 @@ const context: PendingMutationContext = {
     detail: { sceneId: "scene-1" },
     credentialId: "credential-1",
     invokedAt: now,
+    revisionBefore: 0,
   },
 };
 
@@ -92,6 +100,7 @@ async function beginReserved(journal: MutationJournal) {
     { projectId, actor: "agent" },
     steps,
     context,
+    authority,
     { kind: "reserve", grantId: "grant-1", binding },
   );
 }
@@ -102,6 +111,9 @@ beforeEach(async () => {
   dbRun(database, `INSERT INTO project_registry
     (id, workspace_root, slug, first_seen_at, last_seen_at) VALUES (?, ?, ?, ?, ?)`,
   projectId, "/workspace", "project", now, now);
+  dbRun(database, `INSERT INTO workspace_lease
+    (workspace_root, lease_id, holder_id, acquired_at, expires_at)
+    VALUES ('/workspace', ?, 'test', ?, '2026-08-02T01:00:00.000Z')`, authority.leaseId, now);
   dbRun(database, `INSERT INTO approval_grant
     (id, project_id, tool, target, expected_revision, plan_digest, target_hashes,
      summary, status, created_at, expires_at)
@@ -122,6 +134,7 @@ describe("MutationJournal composite transaction primitives", () => {
       { projectId, actor: "agent" },
       steps,
       context,
+      authority,
       { kind: "reserve", grantId: "grant-1", binding },
     );
 
@@ -189,12 +202,123 @@ describe("MutationJournal composite transaction primitives", () => {
     await expect(journal.isJournalOwned("invocation-1")).resolves.toBe(true);
   });
 
+  it("deduplicates large rollback bytes outside SQLite and compacts only unreferenced objects", async () => {
+    const largeContent = new LargePreviousContentStore(root);
+    const journal = new MutationJournal(database, clock, largeContent);
+    const previousContent = new Uint8Array(2 * 1024 * 1024).fill(97);
+    const largeStep: StepIntent = {
+      ordinal: 0,
+      kind: "write",
+      path: "narration/large.wav" as RelPath,
+      entity: null,
+      fromHash: hash("4"),
+      toHash: hash("5"),
+      previousContent,
+    };
+    const id = await journal.beginComposite(
+      { projectId, actor: "agent" },
+      [largeStep],
+      { toolAudit: null },
+      authority,
+    );
+    const hydrated = await journal.readSteps(id);
+    expect(hydrated).toMatchObject([{ ...largeStep, previousContent: expect.any(Uint8Array) }]);
+    expect(Buffer.from(hydrated[0]!.previousContent as Uint8Array).equals(Buffer.from(previousContent))).toBe(true);
+    await journal.commitComposite(id, {
+      projectId,
+      actor: "agent",
+      steps: [{ ...largeStep, status: "written" }],
+      diagnostics: [],
+      event: { type: "project.changed", projectId, payload: { source: "large-content-test" } },
+    });
+
+    const references = dbAll<{ hash: string }>(database, `
+      SELECT previous_object_hash AS hash FROM mutation_journal WHERE id = ?
+      UNION ALL SELECT previous_object_hash AS hash FROM mutation_step WHERE journal_id = ?
+      UNION ALL SELECT previous_object_hash AS hash FROM revision_step WHERE revision_id = 1
+      UNION ALL SELECT previous_object_hash AS hash FROM revision_blob WHERE revision_id = 1
+    `, id, id);
+    expect(references).toHaveLength(4);
+    expect(new Set(references.map(({ hash: objectHash }) => objectHash)).size).toBe(1);
+    expect(references[0]?.hash).toMatch(/^sha256:[a-f0-9]{64}$/);
+    expect(dbOne(database, `SELECT
+      COALESCE(length(mutation_journal.previous_content), 0)
+        + COALESCE(length(mutation_step.previous_content), 0)
+        + COALESCE(length(revision_step.previous_content), 0)
+        + COALESCE(length(revision_blob.previous_content), 0) AS inlineBytes
+      FROM mutation_journal
+      JOIN mutation_step ON mutation_step.journal_id = mutation_journal.id
+      JOIN revision_step ON revision_step.revision_id = 1
+      JOIN revision_blob ON revision_blob.revision_id = 1
+      WHERE mutation_journal.id = ?`, id)).toEqual({ inlineBytes: 0 });
+    const page = dbOne<{ pageCount: number; pageSize: number }>(database,
+      "SELECT (SELECT page_count FROM pragma_page_count) AS pageCount, (SELECT page_size FROM pragma_page_size) AS pageSize");
+    expect((page?.pageCount ?? 0) * (page?.pageSize ?? 0)).toBeLessThan(previousContent.byteLength);
+
+    const liveReferences = await journal.listPreviousObjectHashes();
+    await expect(largeContent.cleanupUnreferenced(liveReferences, new Date("2100-01-01"))).resolves.toBe(0);
+    dbRun(database, "UPDATE mutation_journal SET previous_object_hash = NULL WHERE id = ?", id);
+    dbRun(database, "UPDATE mutation_step SET previous_object_hash = NULL WHERE journal_id = ?", id);
+    dbRun(database, "UPDATE revision_step SET previous_object_hash = NULL WHERE revision_id = 1");
+    dbRun(database, "UPDATE revision_blob SET previous_object_hash = NULL WHERE revision_id = 1");
+    await expect(largeContent.cleanupUnreferenced(
+      await journal.listPreviousObjectHashes(),
+      new Date("2100-01-01"),
+    )).resolves.toBe(1);
+    await expect(largeContent.read(references[0]!.hash as ContentHash)).rejects.toMatchObject({ code: "ENOENT" });
+  });
+
+  it("fails before T1 on initial object ENOSPC but does not rewrite an object after T1", async () => {
+    const previousContent = new Uint8Array(128 * 1024).fill(98);
+    let persisted = false;
+    let rejectNewWrites = true;
+    const objectHash = hash("6");
+    const store: PreviousContentStore = {
+      async put() {
+        if (!persisted && rejectNewWrites) {
+          throw Object.assign(new Error("disk full"), { code: "ENOSPC" });
+        }
+        persisted = true;
+        return objectHash;
+      },
+      async read() { return previousContent; },
+    };
+    const journal = new MutationJournal(database, clock, store);
+    const largeStep: StepIntent = {
+      ordinal: 0,
+      kind: "delete",
+      path: "narration/large.wav" as RelPath,
+      entity: null,
+      fromHash: hash("7"),
+      toHash: null,
+      previousContent,
+    };
+    await expect(journal.beginComposite(
+      { projectId, actor: "agent" }, [largeStep], { toolAudit: null }, authority,
+    )).rejects.toMatchObject({ code: "ENOSPC" });
+    expect(dbOne(database, "SELECT COUNT(*) AS count FROM mutation_journal")).toEqual({ count: 0 });
+
+    rejectNewWrites = false;
+    const id = await journal.beginComposite(
+      { projectId, actor: "agent" }, [largeStep], { toolAudit: null }, authority,
+    );
+    rejectNewWrites = true;
+    await expect(journal.commitComposite(id, {
+      projectId,
+      actor: "agent",
+      steps: [{ ...largeStep, status: "written" }],
+      diagnostics: [],
+      event: { type: "project.changed", projectId, payload: { source: "large-content-test" } },
+    })).resolves.toMatchObject({ projectRevision: 1 });
+  });
+
   it("rolls back every T1 row when the grant binding differs", async () => {
     const journal = new MutationJournal(database, clock);
     await expect(journal.beginComposite(
       { projectId, actor: "agent" },
       steps,
       context,
+      authority,
       { kind: "reserve", grantId: "grant-1", binding: { ...binding, target: "scene-2" } },
     )).rejects.toMatchObject({ name: "JournalTransactionError", code: ErrorCode.ApprovalInvalid } satisfies Partial<JournalTransactionError>);
     expect(dbOne(database, "SELECT COUNT(*) AS count FROM mutation_journal")).toEqual({ count: 0 });
@@ -208,6 +332,7 @@ describe("MutationJournal composite transaction primitives", () => {
       { projectId, actor: "agent" },
       steps,
       context,
+      authority,
       { kind: "reserve", grantId: "grant-1", binding },
     );
     await expect(journal.abortComposite(id, ErrorCode.WriteConflict, {
@@ -276,6 +401,7 @@ describe("MutationJournal composite transaction primitives", () => {
       { projectId, actor: "agent" },
       steps,
       context,
+      authority,
       { kind: "reserve", grantId: "grant-1", binding },
     );
     await journal.orphanComposite(id, ErrorCode.RecoveryRequired, {
@@ -314,7 +440,7 @@ describe("MutationJournal composite transaction primitives", () => {
       steps: [{ ordinal: 0, kind: "write" }, { ordinal: 1, kind: "delete" }],
       context,
     });
-    await expect(journal.listPendingComposites()).resolves.toHaveLength(1);
+    await expect(journal.listPendingComposites("/workspace")).resolves.toHaveLength(1);
     await expect(journal.isJournalOwned("invocation-1")).resolves.toBe(true);
     await expect(journal.readProjectRecoveryStatus(projectId)).resolves.toEqual({
       writeStatus: "recovery_required",

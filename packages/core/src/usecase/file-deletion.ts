@@ -30,9 +30,7 @@ export interface PrepareFileDeletionDependencies {
 }
 
 function referencedByComposition(model: Awaited<ReturnType<CompositionPort["parseProject"]>>, path: RelPath): boolean {
-  return model.scenes.some((scene) => scene.src === path
-    || scene.media.some((media) => media.src === path || media.url === path)
-    || scene.elements.some((element) => element.src === path));
+  return model.references.some((reference) => reference.path === path);
 }
 
 /** Plans one file deletion without writing or reserving a grant. */

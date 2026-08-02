@@ -4,9 +4,20 @@ import type {
   McpCredentialCryptoPort,
   McpCredentialPort,
 } from "../port/ports";
-import type { McpCredentialRecord } from "../port/types";
+import type { McpCredentialRecord, McpCredentialSummary } from "../port/types";
 
 export const DEFAULT_CREDENTIAL_ROTATION_OVERLAP_MS = 5 * 60 * 1_000;
+export const MAX_CREDENTIAL_ROTATION_OVERLAP_MS = 24 * 60 * 60 * 1_000;
+const ECMASCRIPT_DATE_MAX_MS = 8_640_000_000_000_000;
+
+function validateRotationOverlap(overlapMs: number): void {
+  if (!Number.isSafeInteger(overlapMs) || overlapMs < 0
+    || overlapMs > MAX_CREDENTIAL_ROTATION_OVERLAP_MS) {
+    throw new TypeError(
+      `credential rotation overlap must be an integer between 0 and ${MAX_CREDENTIAL_ROTATION_OVERLAP_MS}`,
+    );
+  }
+}
 
 export interface McpCredentialServiceConfig {
   rotationOverlapMs: number;
@@ -25,9 +36,11 @@ export class McpCredentialService {
   private readonly config: McpCredentialServiceConfig;
 
   constructor(private readonly dependencies: McpCredentialServiceDependencies) {
+    const rotationOverlapMs = dependencies.config?.rotationOverlapMs
+      ?? DEFAULT_CREDENTIAL_ROTATION_OVERLAP_MS;
+    validateRotationOverlap(rotationOverlapMs);
     this.config = {
-      rotationOverlapMs: dependencies.config?.rotationOverlapMs
-        ?? DEFAULT_CREDENTIAL_ROTATION_OVERLAP_MS,
+      rotationOverlapMs,
     };
   }
 
@@ -66,13 +79,15 @@ export class McpCredentialService {
     id: string,
     overlapMs = this.config.rotationOverlapMs,
   ): Promise<{ id: string; secret: string }> {
-    if (!Number.isSafeInteger(overlapMs) || overlapMs < 0) {
-      throw new TypeError("credential rotation overlap must be a non-negative integer");
-    }
+    validateRotationOverlap(overlapMs);
     const current = await this.dependencies.credentials.read(id);
     if (!current || current.status !== "active") throw new Error("credential_invalid");
 
     const createdAt = this.dependencies.clock.now();
+    const expiresAtMs = createdAt.getTime() + overlapMs;
+    if (!Number.isFinite(expiresAtMs) || Math.abs(expiresAtMs) > ECMASCRIPT_DATE_MAX_MS) {
+      throw new TypeError("credential rotation expiry is outside the ECMAScript Date range");
+    }
     const replacementId = this.dependencies.ids.newId("credential");
     const issued = this.dependencies.crypto.issue();
     const replacement: McpCredentialRecord = {
@@ -87,7 +102,7 @@ export class McpCredentialService {
     const rotated = await this.dependencies.credentials.rotate(
       current.id,
       replacement,
-      new Date(createdAt.getTime() + overlapMs).toISOString(),
+      new Date(expiresAtMs).toISOString(),
     );
     if (!rotated) throw new Error("credential_invalid");
     return { id: replacement.id, secret: issued.secret };
@@ -97,7 +112,14 @@ export class McpCredentialService {
     if (!(await this.dependencies.credentials.revoke(id))) throw new Error("credential_invalid");
   }
 
-  list(): Promise<McpCredentialRecord[]> {
-    return this.dependencies.credentials.list();
+  async list(): Promise<McpCredentialSummary[]> {
+    return (await this.dependencies.credentials.list()).map((record) => ({
+      id: record.id,
+      label: record.label,
+      status: record.status,
+      createdAt: record.createdAt,
+      rotatedFrom: record.rotatedFrom,
+      expiresAt: record.expiresAt,
+    }));
   }
 }

@@ -1,6 +1,6 @@
 # Spec MCP Server
 
-> **Status**: Complete — 140/140 tasks, local Verification Matrix và remote CI xanh ngày 2026-08-02.
+> **Status**: In Process — remediation review 2026-08-02; 182/183 task hoàn tất, Phase R→V đang xử lý 43 finding trong `mcp-server-review.md`.
 
 > **Related Documents**:
 > - [Detailed Goals](./spec-mcp-server-detailed-goal.md) — **Approved**, reconfirmed 2026-08-02
@@ -42,7 +42,7 @@ Cung cấp **bộ tool MCP của Phase 2** để Codex/Claude Code đọc và s�
 - **Supplementary files**:
   - [Detailed Goals](./spec-mcp-server-detailed-goal.md) — **Approved**, reconfirmed 2026-08-02
   - [Detailed Design](./spec-mcp-server-detailed-design.md) — **bản 6, Approved và implemented**
-  - [Implementation Checklist](./spec-mcp-server-implementation-checklist.md) — **Complete, 140/140**
+  - [Implementation Checklist](./spec-mcp-server-implementation-checklist.md) — **In Process, 182/183**
 - **Date**: chưa chốt theo lịch. Ước lượng build-order 2–3 tuần ban đầu không còn đáng tin sau khi scope mở rộng thêm composite recovery, grant, backup, credential và admin recovery; lịch thực tế cần velocity của đội.
 - **Capacity**: **132 SP** qua 16 phase A→P và 140 task; đây là estimate planning, không phải cam kết lịch. Task count tăng do deep review tách các mega-test thành logic / real datastore / failure injection / regression và bổ sung prepare-plan còn thiếu cho `delete_file`; scope và SP không tăng.
 - **Testing**: Contract test **chạy hai lần**, một lần cho mỗi thế hệ protocol; unit test cho Tool Registry và mapping; integration test trên **SQLite + filesystem thật trong thư mục tạm** cho đường ghi và audit; golden file cho `tools/list` của cả hai thế hệ.
@@ -92,8 +92,8 @@ Chi tiết và hệ quả: [Detailed Goals §Quyết định đã chốt](./spec
 ## Phase Approvals
 
 - **Detailed Goals**: **Approved** — người dùng tái xác nhận AC 2.11, 5b.3–4e và 7.4b–4c ngày 2026-08-02
-- **Detailed Design**: **Approved 2026-08-02** — người dùng xác nhận cùng checklist qua lệnh thực thi `/goal`
-- **Implementation Checklist**: **Approved 2026-08-02** — Code Execution A→P được authorize, giữ nguyên Execution Contract
+- **Detailed Design**: **bản 6 Approved 2026-08-02** — người dùng xác nhận cùng checklist qua lệnh thực thi `/goal`
+- **Implementation Checklist**: **Approved 2026-08-02** — cùng lệnh `/goal` authorize Code Execution A→P, giữ nguyên Execution Contract
 
 ## During Spec
 
@@ -104,7 +104,8 @@ Chi tiết và hệ quả: [Detailed Goals §Quyết định đã chốt](./spec
 ## Spec Review
 
 - **Completed**: 2026-08-02 — local Verification Matrix 10/10 exit 0; ship commit `db7fd685af37e8efcd0e6c09df92aa1865911414` có CI #6 Success 2m54s; closeout candidate `f01d4b496126202d53ddeaf42dcea1606118b10a` có CI #7 Success 2m56s.
-- **Demo**: exact SDK legacy `1.30.0` và modern client `2.0.0` spawn production bin. Cả hai negotiate/list/call; modern host nhận elicitation, gọi trusted `vidcom approve`, retry `delete_file` thành công, có backup/audit, child đóng sạch và lease về 0. Rerun riêng: 1 file/1 test, exit 0.
+- **Reopened**: 2026-08-02 — review độc lập tại `mcp-server-review.md` hợp nhất 43 finding (1 Critical, 10 High, 24 Medium, 8 Low). Claim release-ready bị rút lại cho tới khi Phase R→V hoàn tất và Verification Matrix xanh lại.
+- **Demo**: exact SDK legacy `1.30.0` và modern client `2.0.0` resolve tên lệnh `vidcom` từ CLI Phase 2 đã pack trong artifact tạm. Cả hai negotiate/list/call; modern host nhận elicitation, gọi trusted `vidcom approve`, retry `delete_file` thành công, có backup/audit, child đóng sạch và lease về 0. Đây là source-checkout launcher; packaged SEA vẫn là carry-over Phase 4. Rerun riêng: 1 file/1 test, exit 0.
 - **Feedback**: contract cần giữ protocol-only stdout và admin approval ngoài MCP capability; cả hai đã thành dedicated CI guards. Closeout audit còn phát hiện Next production host chưa inject MCP Registry/credential verifier; wiring đã được bổ sung và `test:runtime-smoke` nay cấp bearer bằng CLI thật rồi gọi `/api/mcp`.
 
 ## Spec Retrospective

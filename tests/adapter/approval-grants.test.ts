@@ -21,6 +21,7 @@ let database: Awaited<ReturnType<typeof initializeDatabase>>;
 const projectId = "project_approval_sqlite" as ProjectId;
 const now = "2026-08-02T00:00:00.000Z";
 const clock: ClockPort = { now: () => new Date(now) };
+const authority = { leaseId: "lease-approval" };
 const hash = (digit: string): ContentHash => `sha256:${digit.repeat(64)}` as ContentHash;
 const binding: GrantBinding = {
   tool: "delete_file",
@@ -46,6 +47,9 @@ beforeEach(async () => {
   dbRun(database, `INSERT INTO project_registry
     (id, workspace_root, slug, first_seen_at, last_seen_at) VALUES (?, '/workspace', 'project', ?, ?)`,
   projectId, now, now);
+  dbRun(database, `INSERT INTO workspace_lease
+    (workspace_root, lease_id, holder_id, acquired_at, expires_at)
+    VALUES ('/workspace', ?, 'test', ?, '2026-08-02T01:00:00.000Z')`, authority.leaseId, now);
 });
 
 afterEach(async () => {
@@ -96,6 +100,7 @@ describe("SqliteApprovalGrantStore", () => {
         { projectId, actor: "agent" },
         steps,
         { toolAudit: null },
+        authority,
         { kind: "reserve", grantId: "grant_race", binding },
       ),
       store.revoke("grant_race"),
@@ -118,6 +123,7 @@ describe("SqliteApprovalGrantStore", () => {
     const journal = new MutationJournal(database, clock);
     const first = await journal.beginComposite(
       { projectId, actor: "agent" }, steps, { toolAudit: null },
+      authority,
       { kind: "reserve", grantId: "grant_reuse", binding },
     );
     await journal.abortComposite(first, ErrorCode.StorageUnavailable, {
@@ -125,6 +131,7 @@ describe("SqliteApprovalGrantStore", () => {
     });
     await expect(journal.beginComposite(
       { projectId, actor: "agent" }, steps, { toolAudit: null },
+      authority,
       { kind: "reserve", grantId: "grant_reuse", binding },
     )).resolves.toEqual(2);
     expect((await store.read("grant_reuse"))?.status).toBe("reserved");
@@ -137,10 +144,12 @@ describe("SqliteApprovalGrantStore", () => {
     const journal = new MutationJournal(database, clock);
     await expect(journal.beginComposite(
       { projectId, actor: "agent" }, steps, { toolAudit: null },
+      authority,
       { kind: "reserve", grantId: "grant_binding", binding: { ...binding, target: "other.html" } },
     )).rejects.toMatchObject({ code: ErrorCode.ApprovalInvalid });
     await expect(journal.beginComposite(
       { projectId, actor: "agent" }, steps, { toolAudit: null },
+      authority,
       {
         kind: "reserve",
         grantId: "grant_binding",
@@ -152,6 +161,7 @@ describe("SqliteApprovalGrantStore", () => {
       VALUES (?, 'file', 'index.html', NULL, ?, NULL, 'user', NULL, ?)`, projectId, hash("2"), now);
     await expect(journal.beginComposite(
       { projectId, actor: "agent" }, steps, { toolAudit: null },
+      authority,
       { kind: "reserve", grantId: "grant_binding", binding },
     )).rejects.toMatchObject({ code: ErrorCode.WriteConflict });
   });
@@ -163,6 +173,7 @@ describe("SqliteApprovalGrantStore", () => {
     const journal = new MutationJournal(database, clock);
     const id = await journal.beginComposite(
       { projectId, actor: "agent" }, steps, { toolAudit: null },
+      authority,
       { kind: "reserve", grantId: "grant_keep", binding },
     );
     await journal.orphanComposite(id, ErrorCode.RecoveryRequired, {
@@ -173,5 +184,42 @@ describe("SqliteApprovalGrantStore", () => {
     expect((await store.read("grant_keep"))?.status).toBe("invalidated");
     expect(dbOne(database, "SELECT grant_id AS grantId FROM mutation_journal WHERE id = ?", id))
       .toEqual({ grantId: "grant_keep" });
+  });
+
+  it("expires due requested and issued grants before cleanup without touching reserved grants", async () => {
+    const store = new SqliteApprovalGrantStore(database);
+    const service = new ApprovalService({
+      grants: store,
+      clock,
+      ids: { newId: () => "unused" },
+    });
+    const dueAt = "2026-08-01T00:05:00.000Z";
+
+    await store.create(requested("grant_due_requested", dueAt));
+    await store.create(requested("grant_due_issued"));
+    await store.issue("grant_due_issued", "cli", now, "2026-08-02T00:10:00.000Z");
+    dbRun(database, "UPDATE approval_grant SET expires_at = ? WHERE id = 'grant_due_issued'", dueAt);
+
+    await store.create(requested("grant_due_reserved"));
+    await store.issue("grant_due_reserved", "cli", now, "2026-08-02T00:10:00.000Z");
+    const journal = new MutationJournal(database, clock);
+    const journalId = await journal.beginComposite(
+      { projectId, actor: "agent" }, steps, { toolAudit: null },
+      authority,
+      { kind: "reserve", grantId: "grant_due_reserved", binding },
+    );
+    dbRun(database, "UPDATE approval_grant SET expires_at = ? WHERE id = 'grant_due_reserved'", dueAt);
+
+    await expect(service.cleanupTerminal(new Date("2026-07-01T00:00:00.000Z"))).resolves.toBe(0);
+    expect((await store.read("grant_due_requested"))?.status).toBe("expired");
+    expect((await store.read("grant_due_issued"))?.status).toBe("expired");
+    expect((await store.read("grant_due_reserved"))?.status).toBe("reserved");
+
+    await expect(service.cleanupTerminal(new Date("2026-08-01T01:00:00.000Z"))).resolves.toBe(2);
+    await expect(store.read("grant_due_requested")).resolves.toBeNull();
+    await expect(store.read("grant_due_issued")).resolves.toBeNull();
+    expect((await store.read("grant_due_reserved"))?.status).toBe("reserved");
+    expect(dbOne(database, "SELECT grant_id AS grantId FROM mutation_journal WHERE id = ?", journalId))
+      .toEqual({ grantId: "grant_due_reserved" });
   });
 });

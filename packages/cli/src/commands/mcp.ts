@@ -25,8 +25,13 @@ export interface McpCommandDependencies {
 }
 
 export interface ShutdownSignalSource {
-  once(signal: "SIGINT" | "SIGTERM", listener: () => void): unknown;
+  on(signal: "SIGINT" | "SIGTERM", listener: () => void): unknown;
   removeListener(signal: "SIGINT" | "SIGTERM", listener: () => void): unknown;
+}
+
+interface McpShutdownRuntime {
+  stop(): Promise<void>;
+  listener?: { closed?: Promise<void> };
 }
 
 const defaultDependencies: McpCommandDependencies = {
@@ -65,6 +70,7 @@ export function parseMcpCommandArgs(argv: readonly string[]): McpCommandOptions 
 export async function startVidcomMcp(
   options: McpCommandOptions,
   dependencies: McpCommandDependencies = defaultDependencies,
+  signal?: AbortSignal,
 ) {
   const appDataRoot = dependencies.appDataRoot();
   const workspaceRoot = await dependencies.selectWorkspace({
@@ -103,30 +109,51 @@ export async function startVidcomMcp(
         onerror: (error) => dependencies.writeError(error.message),
       }, options.protocol ? { pinnedRevision: options.protocol } : {});
     },
-  });
+  }, { signal });
 }
 
-/** Waits for one termination signal and closes every foundation resource exactly once. */
-export function waitForMcpShutdown(
-  runtime: { stop(): Promise<void> },
+/** Installs the signal gate before startup and retains it until cleanup settles. */
+export async function runMcpLifecycle(
+  start: (signal: AbortSignal) => Promise<McpShutdownRuntime>,
   signals: ShutdownSignalSource = process,
 ): Promise<void> {
-  return new Promise((resolve, reject) => {
-    let stopping = false;
-    const shutdown = () => {
-      if (stopping) return;
-      stopping = true;
-      signals.removeListener("SIGINT", shutdown);
-      signals.removeListener("SIGTERM", shutdown);
-      void runtime.stop().then(resolve, reject);
-    };
-    signals.once("SIGINT", shutdown);
-    signals.once("SIGTERM", shutdown);
-  });
+  const controller = new AbortController();
+  let requestShutdown!: () => void;
+  const shutdownRequested = new Promise<void>((resolve) => { requestShutdown = resolve; });
+  const shutdown = () => {
+    if (!controller.signal.aborted) controller.abort();
+    requestShutdown();
+  };
+  signals.on("SIGINT", shutdown);
+  signals.on("SIGTERM", shutdown);
+  try {
+    let runtime: McpShutdownRuntime;
+    try { runtime = await start(controller.signal); }
+    catch (error) {
+      if (controller.signal.aborted && error === controller.signal.reason) return;
+      throw error;
+    }
+    await Promise.race([
+      shutdownRequested,
+      runtime.listener?.closed ?? new Promise<void>(() => undefined),
+    ]);
+    await runtime.stop();
+  } finally {
+    signals.removeListener("SIGINT", shutdown);
+    signals.removeListener("SIGTERM", shutdown);
+  }
 }
 
-/** Starts stdio and retains the process until SIGINT/SIGTERM completes ordered cleanup. */
+/** Waits for signal/disconnect and closes every foundation resource exactly once. */
+export function waitForMcpShutdown(
+  runtime: McpShutdownRuntime,
+  signals: ShutdownSignalSource = process,
+): Promise<void> {
+  return runMcpLifecycle(async () => runtime, signals);
+}
+
+/** Retains stdio until a signal or host disconnect completes ordered cleanup. */
 export async function runMcpCommand(argv: readonly string[]): Promise<void> {
-  const runtime = await startVidcomMcp(parseMcpCommandArgs(argv));
-  await waitForMcpShutdown(runtime);
+  const options = parseMcpCommandArgs(argv);
+  await runMcpLifecycle((signal) => startVidcomMcp(options, defaultDependencies, signal));
 }

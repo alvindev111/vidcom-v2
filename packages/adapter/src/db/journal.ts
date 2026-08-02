@@ -16,6 +16,7 @@ import {
   type MutationIntent,
   type MutationJournalPort,
   type MutationResult,
+  type MutationAuthority,
   type PendingMutation,
   type ProjectRegistration,
   type GrantTransition,
@@ -25,10 +26,15 @@ import {
   type PendingCommandAudit,
   type StepIntent,
   type ProjectRecoveryStatus,
+  type ResolvedPath,
   type WriteEnvelope,
 } from "@vidcom/core";
 
 import type { VidcomDatabase } from "./client";
+import {
+  LARGE_PREVIOUS_CONTENT_THRESHOLD,
+  type PreviousContentStore,
+} from "../fs/large-content-store";
 
 function contentBytes(content: string | Uint8Array | null): Uint8Array | null {
   return typeof content === "string" ? new TextEncoder().encode(content) : content;
@@ -67,13 +73,14 @@ interface StoredStepRow {
   fromHash: string | null;
   toHash: string | null;
   previousContent: Uint8Array | null;
+  previousObjectHash: string | null;
 }
 
-function storedStepIntent(row: StoredStepRow): StepIntent {
+function storedStepIntent(row: StoredStepRow, previousContent: Uint8Array | null): StepIntent {
   const common = {
     ordinal: row.ordinal,
     fromHash: row.fromHash as ContentHash | null,
-    previousContent: row.previousContent,
+    previousContent,
   };
   if (row.kind === "entity" && row.entity && row.toHash) {
     return {
@@ -113,18 +120,75 @@ function storedMutationContext(value: string | null): PendingMutationContext {
     : { toolAudit: parsePendingToolAudit(value) };
 }
 
+function terminalToolAuditDetail(
+  audit: PendingToolAudit | null,
+  settledAt: string,
+  revisionAfter: number | null,
+  extra: Record<string, unknown> = {},
+): Record<string, unknown> {
+  if (!audit) return extra;
+  const invokedAt = Date.parse(audit.invokedAt);
+  const terminalAt = Date.parse(settledAt);
+  return {
+    ...audit.detail,
+    ...extra,
+    credentialId: audit.credentialId,
+    durationMs: Number.isFinite(invokedAt) && Number.isFinite(terminalAt)
+      ? Math.max(0, terminalAt - invokedAt)
+      : 0,
+    era: audit.era,
+    invocationId: audit.invocationId,
+    level: audit.level,
+    revisionAfter,
+    revisionBefore: audit.revisionBefore,
+  };
+}
+
 /** Drizzle-backed mutation unit-of-work spanning journal, revision, audit and event rows. */
 export class MutationJournal implements MutationJournalPort, CompositeMutationJournalPort {
-  constructor(private readonly database: VidcomDatabase, private readonly clock: ClockPort) {}
+  constructor(
+    private readonly database: VidcomDatabase,
+    private readonly clock: ClockPort,
+    private readonly largeContent?: PreviousContentStore,
+  ) {}
+
+  private async preparePrevious(content: string | Uint8Array | null) {
+    const bytes = contentBytes(content);
+    if (bytes === null) return { inline: null, objectHash: null, byteSize: 0 };
+    if (!this.largeContent || bytes.byteLength <= LARGE_PREVIOUS_CONTENT_THRESHOLD) {
+      return { inline: bytes, objectHash: null, byteSize: bytes.byteLength };
+    }
+    return {
+      inline: null,
+      objectHash: await this.largeContent.put(bytes),
+      byteSize: bytes.byteLength,
+    };
+  }
+
+  private async hydratePrevious(row: StoredStepRow): Promise<Uint8Array | null> {
+    return this.hydrateContent(row.previousContent, row.previousObjectHash);
+  }
+
+  private async hydrateContent(
+    previousContent: Uint8Array | null,
+    previousObjectHash: string | null,
+  ): Promise<Uint8Array | null> {
+    if (previousContent !== null) return previousContent;
+    if (previousObjectHash === null) return null;
+    if (!this.largeContent) throw new Error("large previous-content storage is unavailable");
+    return this.largeContent.read(previousObjectHash as ContentHash);
+  }
 
   /** Persists the composite journal, ordered steps, durable audit context and optional grant reserve atomically. */
   async beginComposite(
     intent: CompositeIntent,
     steps: StepIntent[],
     context: PendingMutationContext,
+    authority: MutationAuthority,
     grant?: Extract<GrantTransition, { kind: "reserve" }>,
   ): Promise<JournalId> {
     assertOrderedSteps(steps);
+    const preparedSteps = await Promise.all(steps.map((step) => this.preparePrevious(step.previousContent)));
     const now = this.clock.now().toISOString();
     if (context.toolAudit && context.commandAudit) {
       throw new TypeError("a composite mutation cannot own both tool and command audit context");
@@ -141,6 +205,31 @@ export class MutationJournal implements MutationJournalPort, CompositeMutationJo
       ? canonicalizeJson(context.commandAudit)
       : durableToolAudit === null ? null : serializePendingToolAudit(durableToolAudit);
     const outcome = this.database.transaction((transaction): JournalId | { error: JournalTransactionError } => {
+      const lease = transaction.get<{ leaseId: string }>(sql`
+        UPDATE workspace_lease SET expires_at = expires_at
+        WHERE lease_id = ${authority.leaseId} AND expires_at >= ${now}
+          AND workspace_root = (
+            SELECT workspace_root FROM project_registry WHERE id = ${intent.projectId}
+          )
+        RETURNING lease_id AS leaseId
+      `);
+      if (!lease) {
+        throw new JournalTransactionError(
+          ErrorCode.WorkspaceLeaseLost,
+          "workspace lease was lost before the mutation journal transaction",
+        );
+      }
+      const unresolved = transaction.get<{ id: number }>(sql`
+        SELECT id FROM mutation_journal
+        WHERE project_id = ${intent.projectId} AND status IN ('pending', 'orphaned')
+        ORDER BY id LIMIT 1
+      `);
+      if (unresolved) {
+        throw new JournalTransactionError(
+          ErrorCode.RecoveryRequired,
+          "the project has an unresolved mutation at journal begin",
+        );
+      }
       if (grant) {
         const row = transaction.get<{
           status: string;
@@ -195,29 +284,29 @@ export class MutationJournal implements MutationJournalPort, CompositeMutationJo
 
       const single = steps.length === 1 ? steps[0] : null;
       const kind = single?.kind === "entity" ? "entity" : single ? "file" : "composite";
-      const previous = single ? contentBytes(single.previousContent) : null;
+      const previous = single ? preparedSteps[single.ordinal]! : null;
       const journal = transaction.get<{ id: number }>(sql`
         INSERT INTO mutation_journal (
-          project_id, kind, path, entity, from_hash, previous_content, previous_byte_size,
+          project_id, kind, path, entity, from_hash, previous_content, previous_object_hash, previous_byte_size,
           staged_tmp_path, staged_target_path, staged_content_hash, to_hash, status, actor,
           grant_id, backup_id, tool_audit_json, created_at, settled_at
         ) VALUES (
           ${intent.projectId}, ${kind}, ${single?.path ?? null}, ${single?.entity ?? null},
-          ${single?.fromHash ?? null}, ${previous}, ${previous?.byteLength ?? 0},
+          ${single?.fromHash ?? null}, ${previous?.inline ?? null}, ${previous?.objectHash ?? null}, ${previous?.byteSize ?? 0},
           NULL, NULL, NULL, ${single?.toHash ?? null}, 'pending', ${intent.actor},
           ${grant?.grantId ?? null}, NULL, ${auditJson}, ${now}, NULL
         ) RETURNING id
       `);
       if (!journal) throw new Error("composite mutation journal insert returned no id");
       for (const step of steps) {
-        const stepPrevious = contentBytes(step.previousContent);
+        const stepPrevious = preparedSteps[step.ordinal]!;
         transaction.run(sql`
           INSERT INTO mutation_step (
             journal_id, ordinal, kind, path, entity, from_hash, to_hash,
-            previous_content, previous_byte_size, status
+            previous_content, previous_object_hash, previous_byte_size, status
           ) VALUES (
             ${journal.id}, ${step.ordinal}, ${step.kind}, ${step.path}, ${step.entity},
-            ${step.fromHash}, ${step.toHash}, ${stepPrevious}, ${stepPrevious?.byteLength ?? 0}, 'pending'
+            ${step.fromHash}, ${step.toHash}, ${stepPrevious.inline}, ${stepPrevious.objectHash}, ${stepPrevious.byteSize}, 'pending'
           )
         `);
       }
@@ -225,6 +314,33 @@ export class MutationJournal implements MutationJournalPort, CompositeMutationJo
     });
     if (typeof outcome !== "number") throw outcome.error;
     return outcome;
+  }
+
+  /** Persists a verified filesystem capture before the corresponding target can publish. */
+  async markStepCaptured(
+    id: JournalId,
+    ordinal: number,
+    rollbackPath: ResolvedPath | null,
+    capturedHash: ContentHash | null,
+  ): Promise<void> {
+    const result = this.database.run(sql`
+      UPDATE mutation_step
+      SET rollback_path = ${rollbackPath}, captured_hash = ${capturedHash}, capture_state = 'captured'
+      WHERE journal_id = ${id} AND ordinal = ${ordinal} AND capture_state = 'pending'
+        AND ((previous_content IS NULL AND previous_object_hash IS NULL AND ${capturedHash} IS NULL)
+          OR ((previous_content IS NOT NULL OR previous_object_hash IS NOT NULL) AND from_hash IS ${capturedHash}))
+        AND EXISTS (
+          SELECT 1 FROM mutation_journal
+          WHERE mutation_journal.id = mutation_step.journal_id
+            AND mutation_journal.status = 'pending'
+        )
+    `);
+    if (result.changes !== 1) {
+      throw new JournalTransactionError(
+        ErrorCode.WriteConflict,
+        "captured mutation step no longer matches its durable intent",
+      );
+    }
   }
 
   /** Links a verified backup to a pending journal and enriches its durable audit context atomically. */
@@ -272,14 +388,15 @@ export class MutationJournal implements MutationJournalPort, CompositeMutationJo
     return this.settleCompositeCommit(id, result, "orphaned", "recovered");
   }
 
-  private settleCompositeCommit(
+  private async settleCompositeCommit(
     id: JournalId,
     result: CompositeResult,
     sourceStatus: "pending" | "orphaned",
     terminalStatus: "committed" | "recovered",
     grant?: Extract<GrantTransition, { kind: "consume" }>,
-  ): WriteEnvelope {
+  ): Promise<WriteEnvelope> {
     assertOrderedSteps(result.steps);
+    const preparedSteps = await Promise.all(result.steps.map((step) => this.preparePrevious(step.previousContent)));
     const now = this.clock.now().toISOString();
     return this.database.transaction((transaction) => {
       const journal = transaction.get<{
@@ -320,14 +437,14 @@ export class MutationJournal implements MutationJournalPort, CompositeMutationJo
       let entityRevision: number | null = null;
       const fileHashes: Record<RelPath, ContentHash> = {};
       for (const step of result.steps) {
-        const previous = contentBytes(step.previousContent);
+        const previous = preparedSteps[step.ordinal]!;
         transaction.run(sql`
           INSERT INTO revision_step (
             revision_id, ordinal, kind, path, entity, from_hash, to_hash,
-            previous_content, byte_size, backup_id
+            previous_content, previous_object_hash, byte_size, backup_id
           ) VALUES (
             ${revision.id}, ${step.ordinal}, ${step.kind}, ${step.path}, ${step.entity},
-            ${step.fromHash}, ${step.toHash}, ${previous}, ${previous?.byteLength ?? 0}, ${journal.backupId}
+            ${step.fromHash}, ${step.toHash}, ${previous.inline}, ${previous.objectHash}, ${previous.byteSize}, ${journal.backupId}
           )
         `);
         transaction.run(sql`
@@ -350,10 +467,10 @@ export class MutationJournal implements MutationJournalPort, CompositeMutationJo
       }
 
       if (single) {
-        const previous = contentBytes(single.previousContent);
+        const previous = preparedSteps[single.ordinal]!;
         transaction.run(sql`
-          INSERT INTO revision_blob (revision_id, previous_content, byte_size)
-          VALUES (${revision.id}, ${previous}, ${previous?.byteLength ?? 0})
+          INSERT INTO revision_blob (revision_id, previous_content, previous_object_hash, byte_size)
+          VALUES (${revision.id}, ${previous.inline}, ${previous.objectHash}, ${previous.byteSize})
         `);
       }
       if (journal.backupId) {
@@ -393,14 +510,12 @@ export class MutationJournal implements MutationJournalPort, CompositeMutationJo
             ${result.projectId}, ${command?.action ?? `tool:${audit?.tool}`}, ${result.actor}, ${revision.id}, NULL,
             ${audit?.protocolVersion ?? null}, 'ok', NULL, ${canonicalizeJson(command
               ? { ...command.detail, ...(result.recovered ? { recovered: true } : {}) }
-              : {
-                  ...audit?.detail,
-                  ...(result.recovered ? { recovered: true } : {}),
-                  credentialId: audit?.credentialId,
-                  era: audit?.era,
-                  invocationId: audit?.invocationId,
-                  level: audit?.level,
-                })}, ${audit?.invokedAt ?? now}
+              : terminalToolAuditDetail(
+                  audit,
+                  now,
+                  revision.id,
+                  result.recovered ? { recovered: true } : {},
+                ))}, ${audit?.invokedAt ?? now}
           )
         `);
       }
@@ -560,6 +675,9 @@ export class MutationJournal implements MutationJournalPort, CompositeMutationJo
         const context = storedMutationContext(journal.auditJson);
         const audit = context.toolAudit;
         const command = context.commandAudit;
+        const revisionAfter = transaction.get<{ id: number }>(sql`
+          SELECT id FROM revision WHERE project_id = ${journal.projectId} ORDER BY id DESC LIMIT 1
+        `)?.id ?? 0;
         transaction.run(sql`
           INSERT INTO audit_entry (
             project_id, action, actor, revision_id, job_id, protocol_version,
@@ -568,13 +686,7 @@ export class MutationJournal implements MutationJournalPort, CompositeMutationJo
             ${journal.projectId}, ${command?.action ?? `tool:${audit?.tool}`}, ${journal.actor}, NULL, NULL,
             ${audit?.protocolVersion ?? null}, 'error', ${reason}, ${canonicalizeJson(command
               ? command.detail
-              : {
-                  ...audit?.detail,
-                  credentialId: audit?.credentialId,
-                  era: audit?.era,
-                  invocationId: audit?.invocationId,
-                  level: audit?.level,
-                })}, ${audit?.invokedAt ?? now}
+              : terminalToolAuditDetail(audit, now, revisionAfter))}, ${audit?.invokedAt ?? now}
           )
         `);
       }
@@ -590,22 +702,33 @@ export class MutationJournal implements MutationJournalPort, CompositeMutationJo
   async readSteps(id: JournalId): Promise<StepIntent[]> {
     const rows = this.database.all<StoredStepRow>(sql`
       SELECT ordinal, kind, path, entity, from_hash AS fromHash, to_hash AS toHash,
-        previous_content AS previousContent
+        previous_content AS previousContent, previous_object_hash AS previousObjectHash
       FROM mutation_step WHERE journal_id = ${id} ORDER BY ordinal
     `);
-    return rows.map(storedStepIntent);
+    return Promise.all(rows.map(async (row) => storedStepIntent(row, await this.hydratePrevious(row))));
   }
 
   /** Reads only revision steps durably linked to the exact backup and destructive revision. */
   async readBackupRevisionSteps(backupId: string, revisionId: number): Promise<StepIntent[]> {
     const rows = this.database.all<StoredStepRow>(sql`
       SELECT ordinal, kind, path, entity, from_hash AS fromHash, to_hash AS toHash,
-        previous_content AS previousContent
+        previous_content AS previousContent, previous_object_hash AS previousObjectHash
       FROM revision_step
       WHERE backup_id = ${backupId} AND revision_id = ${revisionId}
       ORDER BY ordinal
     `);
-    return rows.map(storedStepIntent);
+    return Promise.all(rows.map(async (row) => storedStepIntent(row, await this.hydratePrevious(row))));
+  }
+
+  /** Returns the live content-addressed rollback references used by safe startup compaction. */
+  async listPreviousObjectHashes(): Promise<Set<string>> {
+    const rows = this.database.all<{ hash: string }>(sql`
+      SELECT previous_object_hash AS hash FROM mutation_journal WHERE previous_object_hash IS NOT NULL
+      UNION SELECT previous_object_hash AS hash FROM mutation_step WHERE previous_object_hash IS NOT NULL
+      UNION SELECT previous_object_hash AS hash FROM revision_step WHERE previous_object_hash IS NOT NULL
+      UNION SELECT previous_object_hash AS hash FROM revision_blob WHERE previous_object_hash IS NOT NULL
+    `);
+    return new Set(rows.map(({ hash }) => hash));
   }
 
   /** Reads one unresolved journal with its exact grant, backup, context and ordered steps. */
@@ -635,11 +758,14 @@ export class MutationJournal implements MutationJournalPort, CompositeMutationJo
     };
   }
 
-  /** Lists unresolved composite journals in deterministic creation and ID order. */
-  async listPendingComposites(): Promise<PendingCompositeMutation[]> {
+  /** Lists unresolved journals scoped to one exact workspace registration root. */
+  async listPendingComposites(workspaceRoot: string): Promise<PendingCompositeMutation[]> {
     const ids = this.database.all<{ id: number }>(sql`
-      SELECT id FROM mutation_journal
-      WHERE status IN ('pending', 'orphaned') ORDER BY created_at, id
+      SELECT mutation_journal.id AS id FROM mutation_journal
+      INNER JOIN project_registry ON project_registry.id = mutation_journal.project_id
+      WHERE mutation_journal.status IN ('pending', 'orphaned')
+        AND project_registry.workspace_root = ${workspaceRoot}
+      ORDER BY mutation_journal.created_at, mutation_journal.id
     `);
     const pending = await Promise.all(ids.map(({ id }) => this.readPendingComposite(id as JournalId)));
     return pending.filter((row): row is PendingCompositeMutation => row !== null);
@@ -677,15 +803,15 @@ export class MutationJournal implements MutationJournalPort, CompositeMutationJo
   }
 
   async begin(intent: MutationIntent): Promise<JournalId> {
-    const previous = contentBytes(intent.previousContent);
+    const previous = await this.preparePrevious(intent.previousContent);
     return this.database.transaction((transaction) => {
       const row = transaction.get<{ id: number }>(sql`
         INSERT INTO mutation_journal (
-          project_id, kind, path, entity, from_hash, previous_content, previous_byte_size,
+          project_id, kind, path, entity, from_hash, previous_content, previous_object_hash, previous_byte_size,
           staged_tmp_path, staged_target_path, staged_content_hash, to_hash, actor, created_at, settled_at
         ) VALUES (
           ${intent.projectId}, ${intent.kind}, ${intent.path}, ${intent.entity}, ${intent.fromHash},
-          ${previous}, ${previous?.byteLength ?? 0}, ${intent.stagedAsset?.temporaryPath ?? null},
+          ${previous.inline}, ${previous.objectHash}, ${previous.byteSize}, ${intent.stagedAsset?.temporaryPath ?? null},
           ${intent.stagedAsset?.targetPath ?? null}, ${intent.stagedAsset?.contentHash ?? null},
           ${intent.toHash}, ${intent.actor}, ${this.clock.now().toISOString()}, NULL
         ) RETURNING id
@@ -694,10 +820,10 @@ export class MutationJournal implements MutationJournalPort, CompositeMutationJo
       transaction.run(sql`
         INSERT INTO mutation_step (
           journal_id, ordinal, kind, path, entity, from_hash, to_hash,
-          previous_content, previous_byte_size, status
+          previous_content, previous_object_hash, previous_byte_size, status
         ) VALUES (
           ${row.id}, 0, ${intent.kind === "entity" ? "entity" : "write"}, ${intent.path}, ${intent.entity},
-          ${intent.fromHash}, ${intent.toHash}, ${previous}, ${previous?.byteLength ?? 0}, 'pending'
+          ${intent.fromHash}, ${intent.toHash}, ${previous.inline}, ${previous.objectHash}, ${previous.byteSize}, 'pending'
         )
       `);
       return row.id as JournalId;
@@ -729,16 +855,17 @@ export class MutationJournal implements MutationJournalPort, CompositeMutationJo
     const rows = this.database.all<{
       id: number; projectId: string; kind: "file" | "entity"; path: string | null;
       entity: "preview-settings" | null; fromHash: string | null; toHash: string;
-      actor: Actor; previousContent: Uint8Array | null; stagedTmpPath: string | null;
+      actor: Actor; previousContent: Uint8Array | null; previousObjectHash: string | null; stagedTmpPath: string | null;
       stagedTargetPath: string | null; stagedContentHash: string | null;
     }>(sql`
       SELECT id, project_id AS projectId, kind, path, entity, from_hash AS fromHash,
         to_hash AS toHash, actor, previous_content AS previousContent,
+        previous_object_hash AS previousObjectHash,
         staged_tmp_path AS stagedTmpPath, staged_target_path AS stagedTargetPath,
         staged_content_hash AS stagedContentHash
       FROM mutation_journal WHERE status = 'pending' ORDER BY created_at, id
     `);
-    return rows.map((row) => ({
+    return Promise.all(rows.map(async (row) => ({
       id: row.id as JournalId,
       projectId: row.projectId as ProjectId,
       kind: row.kind,
@@ -747,7 +874,7 @@ export class MutationJournal implements MutationJournalPort, CompositeMutationJo
       fromHash: row.fromHash as ContentHash | null,
       toHash: row.toHash as ContentHash,
       actor: row.actor,
-      previousContent: row.previousContent,
+      previousContent: await this.hydrateContent(row.previousContent, row.previousObjectHash),
       stagedAsset: row.stagedTmpPath && row.stagedTargetPath && row.stagedContentHash
         ? {
             temporaryPath: row.stagedTmpPath,
@@ -755,7 +882,7 @@ export class MutationJournal implements MutationJournalPort, CompositeMutationJo
             contentHash: row.stagedContentHash as ContentHash,
           }
         : null,
-    }));
+    })));
   }
 
   async latestRevision(projectId: ProjectId): Promise<number | null> {
@@ -812,6 +939,7 @@ export class MutationJournal implements MutationJournalPort, CompositeMutationJo
     intent: MutationIntent,
     duplicateFrom: ProjectId | null,
   ): Promise<JournalId> {
+    const previous = await this.preparePrevious(intent.previousContent);
     return this.database.transaction((transaction) => {
       transaction.run(sql`
         INSERT INTO project_registry (id, workspace_root, slug, first_seen_at, last_seen_at)
@@ -834,14 +962,13 @@ export class MutationJournal implements MutationJournalPort, CompositeMutationJo
           'ok', NULL, ${JSON.stringify({ duplicateFrom })}, ${registration.lastSeenAt}
         )
       `);
-      const previous = contentBytes(intent.previousContent);
       const row = transaction.get<{ id: number }>(sql`
         INSERT INTO mutation_journal (
-          project_id, kind, path, entity, from_hash, previous_content, previous_byte_size,
+          project_id, kind, path, entity, from_hash, previous_content, previous_object_hash, previous_byte_size,
           staged_tmp_path, staged_target_path, staged_content_hash, to_hash, actor, created_at, settled_at
         ) VALUES (
           ${intent.projectId}, ${intent.kind}, ${intent.path}, ${intent.entity}, ${intent.fromHash},
-          ${previous}, ${previous?.byteLength ?? 0}, ${intent.stagedAsset?.temporaryPath ?? null},
+          ${previous.inline}, ${previous.objectHash}, ${previous.byteSize}, ${intent.stagedAsset?.temporaryPath ?? null},
           ${intent.stagedAsset?.targetPath ?? null}, ${intent.stagedAsset?.contentHash ?? null},
           ${intent.toHash}, ${intent.actor}, ${registration.lastSeenAt}, NULL
         ) RETURNING id
@@ -850,10 +977,10 @@ export class MutationJournal implements MutationJournalPort, CompositeMutationJo
       transaction.run(sql`
         INSERT INTO mutation_step (
           journal_id, ordinal, kind, path, entity, from_hash, to_hash,
-          previous_content, previous_byte_size, status
+          previous_content, previous_object_hash, previous_byte_size, status
         ) VALUES (
           ${row.id}, 0, ${intent.kind === "entity" ? "entity" : "write"}, ${intent.path}, ${intent.entity},
-          ${intent.fromHash}, ${intent.toHash}, ${previous}, ${previous?.byteLength ?? 0}, 'pending'
+          ${intent.fromHash}, ${intent.toHash}, ${previous.inline}, ${previous.objectHash}, ${previous.byteSize}, 'pending'
         )
       `);
       return row.id as JournalId;
@@ -873,6 +1000,7 @@ export class MutationJournal implements MutationJournalPort, CompositeMutationJo
     result: MutationResult,
     status: "committed" | "recovered",
   ): Promise<number> {
+    const previous = await this.preparePrevious(result.previousContent);
     const now = this.clock.now().toISOString();
     return this.database.transaction((transaction) => {
       const pending = transaction.get<{ status: string }>(sql`
@@ -891,18 +1019,17 @@ export class MutationJournal implements MutationJournalPort, CompositeMutationJo
         ) RETURNING id
       `);
       if (!revision) throw new Error("revision insert returned no id");
-      const previous = contentBytes(result.previousContent);
       transaction.run(sql`
-        INSERT INTO revision_blob (revision_id, previous_content, byte_size)
-        VALUES (${revision.id}, ${previous}, ${previous?.byteLength ?? 0})
+        INSERT INTO revision_blob (revision_id, previous_content, previous_object_hash, byte_size)
+        VALUES (${revision.id}, ${previous.inline}, ${previous.objectHash}, ${previous.byteSize})
       `);
       transaction.run(sql`
         INSERT INTO revision_step (
           revision_id, ordinal, kind, path, entity, from_hash, to_hash,
-          previous_content, byte_size, backup_id
+          previous_content, previous_object_hash, byte_size, backup_id
         ) VALUES (
           ${revision.id}, 0, ${result.kind === "entity" ? "entity" : "write"}, ${result.path}, ${result.entity},
-          ${result.fromHash}, ${result.toHash}, ${previous}, ${previous?.byteLength ?? 0}, NULL
+          ${result.fromHash}, ${result.toHash}, ${previous.inline}, ${previous.objectHash}, ${previous.byteSize}, NULL
         )
       `);
       transaction.run(sql`

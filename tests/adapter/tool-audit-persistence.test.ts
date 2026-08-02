@@ -5,7 +5,7 @@ import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { ErrorCode, type ContentHash, type ProjectId, type RelPath } from "@vidcom/contracts";
-import type { ClockPort, PendingMutationContext, StepIntent } from "@vidcom/core";
+import { ToolAuditService, type ClockPort, type PendingMutationContext, type StepIntent } from "@vidcom/core";
 import { initializeDatabase, MutationJournal, SqliteToolAuditRepository } from "@vidcom/adapter";
 
 import { dbAll, dbOne, dbRun } from "../support/database";
@@ -16,6 +16,7 @@ const now = "2026-08-02T00:00:00.000Z";
 const projectId = "project_audit" as ProjectId;
 const hash = (digit: string) => `sha256:${digit.repeat(64)}` as ContentHash;
 const clock: ClockPort = { now: () => new Date(now) };
+const authority = { leaseId: "lease-audit" };
 const context: PendingMutationContext = {
   toolAudit: {
     schemaVersion: 1,
@@ -28,6 +29,7 @@ const context: PendingMutationContext = {
     detail: { path: "compositions/scene-1.html" },
     credentialId: "credential-1",
     invokedAt: now,
+    revisionBefore: 0,
   },
 };
 const steps: StepIntent[] = [{
@@ -46,10 +48,13 @@ beforeEach(async () => {
   dbRun(database, `INSERT INTO project_registry
     (id, workspace_root, slug, first_seen_at, last_seen_at) VALUES (?, ?, ?, ?, ?)`,
   projectId, "/workspace", "project-audit", now, now);
+  dbRun(database, `INSERT INTO workspace_lease
+    (workspace_root, lease_id, holder_id, acquired_at, expires_at)
+    VALUES ('/workspace', ?, 'test', ?, '2026-08-02T01:00:00.000Z')`, authority.leaseId, now);
 });
 
 async function begin(journal: MutationJournal) {
-  return journal.beginComposite({ projectId, actor: "agent" }, steps, context);
+  return journal.beginComposite({ projectId, actor: "agent" }, steps, context, authority);
 }
 
 function result() {
@@ -80,6 +85,10 @@ describe("SqliteToolAuditRepository", () => {
       errorCode: null,
       detail: { token: "secret", count: 2, workspace: "/Users/person/project" },
       credentialId: "credential-1",
+      invokedAt: "2026-08-02T00:00:00.000Z",
+      durationMs: 12,
+      revisionBefore: null,
+      revisionAfter: null,
     }, "2026-08-02T00:00:00.000Z");
     await repository.record({
       tool: "save_file",
@@ -91,6 +100,10 @@ describe("SqliteToolAuditRepository", () => {
       errorCode: ErrorCode.SchemaInvalid,
       detail: { content: "raw file" },
       credentialId: null,
+      invokedAt: "2026-08-02T00:00:01.000Z",
+      durationMs: 8,
+      revisionBefore: 3,
+      revisionAfter: 3,
     }, "2026-08-02T00:00:01.000Z");
 
     const rows = dbAll<{
@@ -103,14 +116,18 @@ describe("SqliteToolAuditRepository", () => {
         action: "tool:list_projects", actor: "agent", revisionId: null, protocolVersion: "2025-06-18",
         outcome: "ok", errorCode: null, createdAt: "2026-08-02T00:00:00.000Z",
         detail: {
-          count: 2, credentialId: "credential-1", era: "modern", level: "read",
+          count: 2, credentialId: "credential-1", durationMs: 12, era: "modern", level: "read",
+          revisionAfter: null, revisionBefore: null,
           token: "[REDACTED]", workspace: "[REDACTED_ABSOLUTE_PATH]",
         },
       },
       {
         action: "tool:save_file", actor: "agent", revisionId: null, protocolVersion: "2024-11-05",
         outcome: "error", errorCode: ErrorCode.SchemaInvalid, createdAt: "2026-08-02T00:00:01.000Z",
-        detail: { content: "[REDACTED]", credentialId: null, era: "legacy", level: "write" },
+        detail: {
+          content: "[REDACTED]", credentialId: null, durationMs: 8, era: "legacy", level: "write",
+          revisionAfter: 3, revisionBefore: 3,
+        },
       },
     ]);
   });
@@ -137,6 +154,13 @@ describe("journal-owned tool audit persistence", () => {
       { action: "file.write", revisionId: envelope.projectRevision },
       { action: "tool:save_file", revisionId: envelope.projectRevision },
     ]);
+    const toolDetail = dbOne<{ detail: string }>(database,
+      "SELECT detail FROM audit_entry WHERE action = 'tool:save_file'");
+    expect(JSON.parse(toolDetail?.detail ?? "null")).toMatchObject({
+      durationMs: 0,
+      revisionBefore: 0,
+      revisionAfter: envelope.projectRevision,
+    });
     expect(dbOne(database, `SELECT tool.revision_id AS revisionId, mutation.action AS mutationAction
       FROM audit_entry tool JOIN audit_entry mutation ON mutation.revision_id = tool.revision_id
       WHERE tool.action = 'tool:save_file' AND mutation.action = 'file.write'`)).toEqual({
@@ -156,14 +180,33 @@ describe("journal-owned tool audit persistence", () => {
     expect(plan.some((row) => row.detail.includes("idx_audit_action"))).toBe(true);
   });
 
-  it("hands ownership to the caller only after T2a clears durable context", async () => {
+  it("persists recovered abort timing and revisions after T2a hands ownership to startup", async () => {
     const journal = new MutationJournal(database, clock);
     const id = await begin(journal);
     await expect(journal.isJournalOwned("invocation-audit-1")).resolves.toBe(true);
-    await expect(journal.abortComposite(id, ErrorCode.WriteConflict)).resolves.toEqual(context);
+    const recovered = await journal.abortComposite(id, ErrorCode.WriteConflict);
+    expect(recovered).toEqual(context);
     await expect(journal.isJournalOwned("invocation-audit-1")).resolves.toBe(false);
     expect(dbOne(database, "SELECT tool_audit_json AS audit FROM mutation_journal WHERE id = ?", id))
       .toEqual({ audit: null });
+    const service = new ToolAuditService(
+      new SqliteToolAuditRepository(database),
+      clock,
+      { warn: () => undefined, error: () => undefined },
+      { increment: () => undefined, observeMilliseconds: () => undefined },
+      journal,
+    );
+    await service.recordPendingFailure(recovered!.toolAudit!, ErrorCode.WriteConflict);
+    const audit = dbOne<{ errorCode: string; detail: string }>(database,
+      "SELECT error_code AS errorCode, detail FROM audit_entry WHERE action = 'tool:save_file'");
+    expect({ ...audit, detail: JSON.parse(audit?.detail ?? "null") }).toEqual({
+      errorCode: ErrorCode.WriteConflict,
+      detail: expect.objectContaining({
+        durationMs: 0,
+        revisionBefore: 0,
+        revisionAfter: 0,
+      }),
+    });
   });
 
   it("writes one orphan terminal error and retains journal ownership", async () => {
@@ -178,6 +221,12 @@ describe("journal-owned tool audit persistence", () => {
       outcome: "error",
       errorCode: ErrorCode.RecoveryRequired,
       revisionId: null,
+    });
+    const detail = dbOne<{ detail: string }>(database, "SELECT detail FROM audit_entry");
+    expect(JSON.parse(detail?.detail ?? "null")).toMatchObject({
+      durationMs: 0,
+      revisionBefore: 0,
+      revisionAfter: 0,
     });
     expect(dbOne(database, "SELECT COUNT(*) AS count FROM audit_entry")).toEqual({ count: 1 });
     await expect(journal.isJournalOwned("invocation-audit-1")).resolves.toBe(true);

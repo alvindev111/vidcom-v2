@@ -1,4 +1,4 @@
-import { access, mkdir, mkdtemp, readFile, rm, utimes, writeFile } from "node:fs/promises";
+import { access, mkdir, mkdtemp, readFile, rename, rm, utimes, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
@@ -173,6 +173,67 @@ describe("AppDataBackupStore", () => {
     await expect(pruner.read(old.id)).resolves.toMatchObject({ id: old.id, payloadPrunedAt: now });
     await expect(pruner.readPayloads(old.id)).resolves.toEqual([]);
     expect(dbOne<{ id: string }>(database, "SELECT id FROM backup_manifest WHERE id = ?", old.id)).toEqual({ id: old.id });
+  });
+
+  it("reconciles prune crashes before and after the durable metadata transition", async () => {
+    const file = await source("index.html", "hello");
+    const cutoff = new Date("2026-07-03T00:00:00.000Z");
+    const beforeDb = await store("backup_prune_before_db", "2026-06-01T00:00:00.000Z")
+      .create(projectId, "before-db", [file]);
+    const beforeDirectory = backupDirectory(projectId, beforeDb.id);
+    const crashBeforeDb = new AppDataBackupStore(root, database, fixedClock(), fixedId("unused"), {
+      async beforeVerify() {},
+      async syncDirectory() {},
+      rename,
+      async beforePruneCommit() { throw new Error("crash before prune commit"); },
+    });
+    await expect(crashBeforeDb.prunePayloads(cutoff)).rejects.toThrow("before prune commit");
+    expect(await exists(path.join(beforeDirectory, "payload"))).toBe(false);
+    expect(await exists(path.join(beforeDirectory, ".payload.pruning"))).toBe(true);
+    expect(dbOne(database, "SELECT payload_pruned_at AS prunedAt FROM backup_manifest WHERE id = ?", beforeDb.id))
+      .toEqual({ prunedAt: null });
+    await expect(store("unused").prunePayloads(cutoff)).resolves.toBe(1);
+    expect(await exists(path.join(beforeDirectory, ".payload.pruning"))).toBe(false);
+
+    const afterDb = await store("backup_prune_after_db", "2026-06-01T00:00:00.000Z")
+      .create(projectId, "after-db", [file]);
+    const afterDirectory = backupDirectory(projectId, afterDb.id);
+    const crashAfterDb = new AppDataBackupStore(root, database, fixedClock(), fixedId("unused"), {
+      async beforeVerify() {},
+      async syncDirectory() {},
+      rename,
+      async beforePruneDelete() { throw new Error("crash before physical delete"); },
+    });
+    await expect(crashAfterDb.prunePayloads(cutoff)).rejects.toThrow("before physical delete");
+    expect(dbOne(database, "SELECT payload_pruned_at AS prunedAt FROM backup_manifest WHERE id = ?", afterDb.id))
+      .toEqual({ prunedAt: now });
+    expect(await exists(path.join(afterDirectory, ".payload.pruning"))).toBe(true);
+    await expect(store("unused").prunePayloads(cutoff)).resolves.toBe(0);
+    expect(await exists(path.join(afterDirectory, ".payload.pruning"))).toBe(false);
+  });
+
+  it("retains payloads owned by unresolved journals and ages linked backups from terminal revision time", async () => {
+    const file = await source("index.html", "hello");
+    const manifest = await store("backup_unresolved", "2026-06-01T00:00:00.000Z")
+      .create(projectId, "unresolved", [file]);
+    dbRun(database, `INSERT INTO mutation_journal
+      (project_id, kind, path, entity, from_hash, previous_content, previous_byte_size,
+       to_hash, status, actor, backup_id, created_at)
+      VALUES (?, 'file', 'index.html', NULL, NULL, NULL, 0, NULL, 'pending', 'agent', ?, ?)`,
+    projectId, manifest.id, "2026-06-01T00:00:00.000Z");
+    const cutoff = new Date("2026-07-03T00:00:00.000Z");
+    await expect(store("unused").prunePayloads(cutoff)).resolves.toBe(0);
+    expect(await exists(path.join(backupDirectory(projectId, manifest.id), "payload"))).toBe(true);
+
+    dbRun(database, `INSERT INTO revision
+      (project_id, kind, path, entity, content_hash, parent_revision, actor, summary, created_at)
+      VALUES (?, 'file', 'index.html', NULL, ?, NULL, 'agent', NULL, ?)`,
+    projectId, manifest.entries[0]!.contentHash, "2026-08-02T12:00:00.000Z");
+    const revisionId = dbOne<{ id: number }>(database, "SELECT id FROM revision ORDER BY id DESC LIMIT 1")!.id;
+    dbRun(database, "UPDATE backup_manifest SET revision_id = ? WHERE id = ?", revisionId, manifest.id);
+    dbRun(database, "UPDATE mutation_journal SET status = 'committed', settled_at = ? WHERE backup_id = ?", now, manifest.id);
+    await expect(store("unused").prunePayloads(cutoff)).resolves.toBe(0);
+    expect(await exists(path.join(backupDirectory(projectId, manifest.id), "payload"))).toBe(true);
   });
 
   it("removes unreferenced payload directories only after the 24-hour grace boundary", async () => {

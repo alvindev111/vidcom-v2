@@ -63,6 +63,7 @@ class Grants implements ApprovalGrantPort {
     return Boolean(record?.status === "issued" && record.expiresAt > now
       && JSON.stringify(record.binding) === JSON.stringify(expected));
   }
+  async expireDue() { return 0; }
   async cleanupTerminal() { return 0; }
 }
 

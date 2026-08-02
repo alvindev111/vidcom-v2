@@ -31,6 +31,29 @@ function grantIdOf(input: unknown): string | null {
   return typeof grantId === "string" && grantId.length > 0 ? grantId : null;
 }
 
+function committedResponseDetails(raw: unknown, invocationId: string): Record<string, unknown> {
+  const value = raw && typeof raw === "object" && !Array.isArray(raw)
+    ? raw as Record<string, unknown>
+    : {};
+  const envelope = value.envelope && typeof value.envelope === "object" && !Array.isArray(value.envelope)
+    ? value.envelope as Record<string, unknown>
+    : {};
+  return {
+    committed: true,
+    invocationId,
+    ...(Number.isSafeInteger(envelope.projectRevision)
+      ? { projectRevision: envelope.projectRevision }
+      : {}),
+    ...(Number.isSafeInteger(envelope.entityRevision)
+      ? { entityRevision: envelope.entityRevision }
+      : {}),
+  };
+}
+
+function elapsedMilliseconds(startedAt: Date, endedAt: Date): number {
+  return Math.max(0, endedAt.getTime() - startedAt.getTime());
+}
+
 /** Derives host hints from authorization level; callers cannot override safety metadata. */
 export function annotationsForLevel(level: ToolLevel): ToolAnnotations {
   if (level === "read") {
@@ -87,18 +110,19 @@ export class ToolRegistry {
     const definition = this.definitions.get(name);
     if (!definition) return failure(ErrorCode.NotFound, `tool is not registered: ${name}`);
     const invocationId = this.runtime.newInvocationId();
-    const invokedAt = this.runtime.now().toISOString();
+    const startedAt = this.runtime.now();
+    const invokedAt = startedAt.toISOString();
     let input: unknown;
     try {
       input = definition.input.parse(raw);
     } catch {
       const result = failure(ErrorCode.SchemaInvalid, "tool input does not match its strict schema", "input");
-      await this.recordPreHandlerFailure(definition, request, invocationId, invokedAt, null, raw, result.error);
+      await this.recordPreHandlerFailure(definition, request, invocationId, startedAt, null, raw, result.error);
       return result;
     }
     if (request.era === "legacy" && !definition.availableInLegacy) {
       const result = failure(ErrorCode.ToolNotAvailableInEra, "tool is not available for the negotiated protocol era");
-      await this.recordPreHandlerFailure(definition, request, invocationId, invokedAt, null, input, result.error);
+      await this.recordPreHandlerFailure(definition, request, invocationId, startedAt, null, input, result.error);
       return result;
     }
 
@@ -107,9 +131,10 @@ export class ToolRegistry {
       projectId = definition.projectIdOf(input);
     } catch {
       const result = failure(ErrorCode.SchemaInvalid, "tool project scope could not be derived", "projectId");
-      await this.recordPreHandlerFailure(definition, request, invocationId, invokedAt, null, input, result.error);
+      await this.recordPreHandlerFailure(definition, request, invocationId, startedAt, null, input, result.error);
       return result;
     }
+    const revisionBefore = await this.dependencies.audit.currentRevision(projectId);
     const detail = { input, invocationId };
     const journalOwned = definition.level === "write" || definition.level === "destructive";
     const pending = journalOwned
@@ -123,6 +148,7 @@ export class ToolRegistry {
           protocolVersion: request.protocolVersion,
           detail,
           credentialId: request.credentialId,
+          revisionBefore,
         })
       : null;
     const context = {
@@ -140,18 +166,58 @@ export class ToolRegistry {
     try {
       result = await definition.handler(context, input);
     } catch (error) {
-      if (error instanceof InputRequiredSignal) throw error;
+      if (error instanceof InputRequiredSignal) {
+        const inputRequired = failure(
+          ErrorCode.ApprovalRequired,
+          "tool invocation requires approved input before it can continue",
+        );
+        const terminal = await this.terminalEntry(definition, request, projectId, {
+          ...detail,
+          requestState: error.request.requestState,
+        }, inputRequired, startedAt, revisionBefore);
+        if (!journalOwned) await this.dependencies.audit.recordRead(terminal);
+        else await this.dependencies.audit.recordFailureIfCallerOwned(invocationId, terminal);
+        throw error;
+      }
       result = failure(ErrorCode.Internal, "tool handler failed unexpectedly");
     }
     if (result.ok) {
+      const rawOutput = result.value;
       try {
-        result = { ok: true, value: definition.output.parse(result.value) };
+        result = { ok: true, value: definition.output.parse(rawOutput) };
       } catch {
+        if (journalOwned) {
+          const ownership = await this.dependencies.audit.ownershipOf(invocationId, definition.name);
+          if (ownership === "journal_owned") {
+            const committed = failure(
+              ErrorCode.CommittedResponseError,
+              "mutation committed but response finalization failed; do not retry the mutation",
+            );
+            return {
+              ...committed,
+              error: {
+                ...committed.error,
+                details: committedResponseDetails(rawOutput, invocationId),
+              },
+            };
+          }
+          if (ownership === "unknown") {
+            return failure(ErrorCode.Internal, "tool audit ownership could not be determined");
+          }
+        }
         result = failure(ErrorCode.Internal, "tool handler returned an invalid output");
       }
     }
 
-    const terminal = this.terminalEntry(definition, request, projectId, detail, result);
+    const terminal = await this.terminalEntry(
+      definition,
+      request,
+      projectId,
+      detail,
+      result,
+      startedAt,
+      revisionBefore,
+    );
     if (!journalOwned) {
       await this.dependencies.audit.recordRead(terminal);
     } else if (!result.ok) {
@@ -167,13 +233,16 @@ export class ToolRegistry {
     return result;
   }
 
-  private terminalEntry(
+  private async terminalEntry(
     definition: ToolDefinition<unknown, unknown>,
     request: ToolRequestContext,
     projectId: ProjectId | null,
     detail: Record<string, unknown>,
     result: ToolInvocation,
-  ): ToolAuditEntry {
+    startedAt: Date,
+    revisionBefore: number | null,
+  ): Promise<ToolAuditEntry> {
+    const endedAt = this.runtime.now();
     return {
       tool: definition.name,
       level: definition.level,
@@ -184,6 +253,10 @@ export class ToolRegistry {
       errorCode: result.ok ? null : result.error.code,
       detail,
       credentialId: request.credentialId,
+      invokedAt: startedAt.toISOString(),
+      durationMs: elapsedMilliseconds(startedAt, endedAt),
+      revisionBefore,
+      revisionAfter: await this.dependencies.audit.currentRevision(projectId),
     };
   }
 
@@ -191,11 +264,12 @@ export class ToolRegistry {
     definition: ToolDefinition<unknown, unknown>,
     request: ToolRequestContext,
     invocationId: string,
-    _invokedAt: string,
+    startedAt: Date,
     projectId: ProjectId | null,
     input: unknown,
     error: DomainError,
   ): Promise<void> {
+    const endedAt = this.runtime.now();
     const entry: ToolAuditEntry = {
       tool: definition.name,
       level: definition.level,
@@ -206,6 +280,10 @@ export class ToolRegistry {
       errorCode: error.code,
       detail: { input, invocationId },
       credentialId: request.credentialId,
+      invokedAt: startedAt.toISOString(),
+      durationMs: elapsedMilliseconds(startedAt, endedAt),
+      revisionBefore: null,
+      revisionAfter: null,
     };
     if (definition.level === "read" || definition.level === "job") await this.dependencies.audit.recordRead(entry);
     else await this.dependencies.audit.recordFailure(entry);
