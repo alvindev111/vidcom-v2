@@ -1,5 +1,5 @@
 import { existsSync } from "node:fs";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 /** Sidecar assets sit one directory per sidecar, both in the repo and after extraction. */
@@ -23,7 +23,11 @@ const WORKER_SCRIPT = "worker.py";
  * Touches the filesystem (one `existsSync`).
  */
 export function vieneuSidecarRoot(extractionRoot?: string): string {
-  const checkout = fileURLToPath(new URL(`../../sidecars/${SIDECAR_DIRECTORY}/`, import.meta.url));
+  // Joined from this module's own directory rather than written as
+  // `new URL("../../sidecars/…", import.meta.url)`: Turbopack resolves that form
+  // statically at build time and fails the Next production build, because the
+  // target is a runtime asset directory and not a module it can bundle.
+  const checkout = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "sidecars", SIDECAR_DIRECTORY);
   if (!extractionRoot) return checkout;
   const extracted = join(extractionRoot, SIDECAR_DIRECTORY);
   return existsSync(join(extracted, WORKER_SCRIPT)) ? extracted : checkout;
