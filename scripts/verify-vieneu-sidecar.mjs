@@ -67,6 +67,9 @@ const probe = await run([worker, "--probe"], { env: { HF_HOME: cacheRoot } });
 assert(probe.code === 0, `--probe exited ${probe.code}: ${probe.stderr.trim()}`);
 let reported;
 try {
+  // Parsing the WHOLE stream, not a line out of it: JSON.parse rejects trailing
+  // content, so a successful parse here already proves stdout holds exactly one
+  // document and no stray print alongside it.
   reported = JSON.parse(probe.stdout);
 } catch {
   throw new Error(`--probe did not write JSON to stdout: ${JSON.stringify(probe.stdout)}`);
@@ -75,8 +78,11 @@ assert(reported.schemaVersion === 1, "--probe reported an unexpected schema vers
 assert(reported.ready === false, "--probe claimed the engine is ready without it installed");
 assert(reported.gpu === false, "--probe claimed a GPU without torch installed");
 assert(Array.isArray(reported.voices) && reported.voices.length === 0, "--probe reported voices with no engine");
-// Exactly one JSON document and nothing else: a diagnostic belongs on stderr.
-assert(probe.stdout.trim() === JSON.stringify(reported), "--probe wrote extra output to stdout");
+// One line, so a diagnostic cannot ride along on stdout. Comparing against a
+// re-serialised object instead is what CI caught: Python's json.dump puts a space
+// after every colon and JSON.stringify does not, so the check failed on
+// formatting while the worker was behaving correctly.
+assert(probe.stdout.trim().split("\n").length === 1, "--probe wrote more than one line to stdout");
 assert(probe.stderr.includes("not ready"), "--probe did not explain the missing engine on stderr");
 
 const requestPath = path.join(cacheRoot, "request.json");
