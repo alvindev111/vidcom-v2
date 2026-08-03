@@ -1,6 +1,6 @@
 import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
-import { access, mkdir, mkdtemp, rm, stat, symlink, writeFile } from "node:fs/promises";
+import { access, mkdir, mkdtemp, stat, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
@@ -15,10 +15,13 @@ import { initializeDatabase } from "@vidcom/adapter";
 import type { ContentHash, ProjectId } from "@vidcom/contracts";
 
 import { dbAll, dbOne } from "../support/database";
+import { heavyE2eTimeout, removeTree } from "../support/platform";
 
 const executeFile = promisify(execFile);
 const modernRevision = "2026-07-28";
 const legacyRevision = "2025-11-25";
+
+const onWindows = process.platform === "win32";
 
 async function createResolvedCliArtifact(root: string): Promise<{ cwd: string; envPath: string }> {
   const artifactRoot = path.join(root, "cli-artifact");
@@ -27,26 +30,43 @@ async function createResolvedCliArtifact(root: string): Promise<{ cwd: string; e
   await mkdir(artifactRoot, { recursive: true });
   await mkdir(hostBin, { recursive: true });
 
+  // npm ships as npm.cmd on Windows, which cannot be spawned without a shell
+  // since the CVE-2024-27980 fix. Quote the one interpolated path so a shell
+  // command line survives a directory containing spaces.
+  const packDestination = onWindows ? `"${artifactRoot}"` : artifactRoot;
   const packed = await executeFile(
-    "npm",
-    ["pack", "--pack-destination", artifactRoot, "--json", "--ignore-scripts"],
-    { cwd: path.resolve("packages/cli"), encoding: "utf8" },
+    onWindows ? "npm.cmd" : "npm",
+    ["pack", "--pack-destination", packDestination, "--json", "--ignore-scripts"],
+    { cwd: path.resolve("packages/cli"), encoding: "utf8", shell: onWindows },
   );
   const [{ filename }] = JSON.parse(packed.stdout) as Array<{ filename: string }>;
   await executeFile("tar", ["-xzf", path.join(artifactRoot, filename), "-C", artifactRoot]);
 
   const unpackedPackage = path.join(artifactRoot, "package");
   const launcher = path.join(unpackedPackage, "bin", "vidcom.mjs");
-  expect((await stat(launcher)).mode & 0o111).not.toBe(0);
+  // Windows carries no executable bit; there the launcher is reached through the
+  // .cmd shim written below, exactly as an npm install would provide it.
+  if (!onWindows) expect((await stat(launcher)).mode & 0o111).not.toBe(0);
 
   // Phase 2 is a source-checkout package, so the clean packed CLI reuses the
   // checkout's installed dependency graph. Phase 4 owns a self-contained SEA.
+  // A junction is used on Windows because a directory symlink needs Developer
+  // Mode or elevation, while a junction needs neither.
   await symlink(
     path.resolve("packages/cli/node_modules"),
     path.join(unpackedPackage, "node_modules"),
-    "dir",
+    onWindows ? "junction" : "dir",
   );
-  await symlink(launcher, path.join(hostBin, "vidcom"), "file");
+  if (onWindows) {
+    // PATH lookup on Windows goes through PATHEXT, so the host resolves the
+    // `vidcom` command name via this shim — the same shape npm generates.
+    await writeFile(
+      path.join(hostBin, "vidcom.cmd"),
+      `@node "${launcher}" %*\r\n`,
+    );
+  } else {
+    await symlink(launcher, path.join(hostBin, "vidcom"), "file");
+  }
   return { cwd: hostRoot, envPath: `${hostBin}${path.delimiter}${process.env.PATH ?? ""}` };
 }
 
@@ -166,6 +186,7 @@ describe("exact MCP SDK CLI smoke", () => {
           cwd: artifact.cwd,
           env,
           encoding: "utf8",
+          shell: onWindows,
         });
         approvalStdout = approved.stdout;
         return { action: "accept" as const, content: { grantId: requestId } };
@@ -185,9 +206,9 @@ describe("exact MCP SDK CLI smoke", () => {
       await expectLeaseReleased(appData);
       await expectDestructiveAudit(appData);
     } finally {
-      await rm(root, { recursive: true, force: true });
+      await removeTree(root);
     }
-  }, 30_000);
+  }, heavyE2eTimeout);
 
   it("returns one redacted stderr line for a real launcher infrastructure failure", async () => {
     const root = await mkdtemp(path.join(tmpdir(), "vidcom-cli-error-smoke-"));
@@ -204,6 +225,8 @@ describe("exact MCP SDK CLI smoke", () => {
           cwd: artifact.cwd,
           env,
           encoding: "utf8",
+          // The Windows entry point is a .cmd shim, which needs a shell.
+          shell: onWindows,
         });
       } catch (error) {
         failure = error as ExecFailure;
@@ -211,7 +234,7 @@ describe("exact MCP SDK CLI smoke", () => {
       expect(failure).toMatchObject({ code: 1, stdout: "", stderr: "internal_error\n" });
       expect(failure?.stderr).not.toContain(root);
     } finally {
-      await rm(root, { recursive: true, force: true });
+      await removeTree(root);
     }
-  }, 30_000);
+  }, heavyE2eTimeout);
 });

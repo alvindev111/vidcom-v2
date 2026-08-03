@@ -1,5 +1,9 @@
 {
   "compilerOptions": {
+    // Modules that tests load directly under raw Node must spell the extension,
+    // because Node resolves relative specifiers verbatim. Safe here: every
+    // tsconfig in the repo is noEmit, so no output path is affected.
+    "allowImportingTsExtensions": true,
     "esModuleInterop": true,
     "isolatedModules": true,
     "module": "ESNext",

@@ -12,6 +12,7 @@ import {
   rollbackMcpMigration,
 } from "@vidcom/adapter";
 import { dbAll, dbOne, dbRun } from "../support/database";
+import { hasPosixFileModes } from "../support/platform";
 
 let root: string;
 
@@ -127,7 +128,9 @@ describe("MCP database migration", () => {
     const database = await initializeDatabase(appData);
     const now = "2026-08-02T00:00:00.000Z";
     const hash = `sha256:${"a".repeat(64)}`;
-    expect((await stat(pathname)).mode & 0o777).toBe(0o600);
+    // Windows reports 0o666 regardless of the ACL; owner-only access there is
+    // asserted against the real ACL in the credential-store suite.
+    if (hasPosixFileModes) expect((await stat(pathname)).mode & 0o777).toBe(0o600);
     dbRun(database, `INSERT INTO project_registry
       (id, workspace_root, slug, first_seen_at, last_seen_at)
       VALUES ('p1', '/workspace', 'p1', ?, ?)`, now, now);
@@ -191,10 +194,14 @@ describe("MCP database migration", () => {
     )).toEqual({ violations: 0 });
     await database.destroy();
 
-    await chmod(pathname, 0o644);
-    const reopened = await initializeDatabase(appData);
-    expect((await stat(pathname)).mode & 0o777).toBe(0o600);
-    await reopened.destroy();
+    // Reopening must repair a loosened mode. Windows has no group/other bit for
+    // chmod to loosen, so there is nothing to repair and nothing to assert.
+    if (hasPosixFileModes) {
+      await chmod(pathname, 0o644);
+      const reopened = await initializeDatabase(appData);
+      expect((await stat(pathname)).mode & 0o777).toBe(0o600);
+      await reopened.destroy();
+    }
   });
 
   it("refuses rollback with Phase 2 history or unresolved context", async () => {

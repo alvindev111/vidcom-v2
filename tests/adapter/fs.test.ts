@@ -9,6 +9,13 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { ProjectId, RelPath } from "@vidcom/contracts";
 import type { AbsolutePath, PathPurpose, ProjectRef, ResolvedPath } from "@vidcom/core";
 import { mimeFromPath, PATH_REJECTION_MAP, resolveProjectPath, WorkspaceFs } from "@vidcom/adapter";
+import { canCreateSymlinks } from "../support/platform";
+
+// Creating a symlink needs Developer Mode or elevation on Windows. The escape
+// rules themselves are platform-independent, so these cases are skipped only
+// where the fixture cannot be built — a Windows host with Developer Mode on
+// still runs them.
+const itWithSymlinks = canCreateSymlinks ? it : it.skip;
 
 let temporaryRoot: string;
 let workspace: string;
@@ -55,7 +62,7 @@ describe("filesystem containment", () => {
     });
   });
 
-  it.each([
+  itWithSymlinks.each([
     ["read-source", "escape/scene.html", "escape"],
     ["write-source", "escape/scene.html", "escape"],
     ["read-asset", "assets/poster.png", "assets"],
@@ -78,7 +85,7 @@ describe("filesystem containment", () => {
 });
 
 describe("allowlist and workspace I/O", () => {
-  it.each(["package.json", "AGENTS.md", ".env"])(
+  itWithSymlinks.each(["package.json", "AGENTS.md", ".env"])(
     "rejects an allowed-looking asset symlink whose canonical target is protected: %s",
     async (protectedName) => {
       await mkdir(path.join(projectRoot, "assets"));

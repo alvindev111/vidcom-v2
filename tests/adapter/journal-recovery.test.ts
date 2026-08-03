@@ -47,7 +47,8 @@ function crashProgram(stage: CrashStage): string {
     const stage = ${JSON.stringify(stage)};
     if (stage !== "after-journal") {
       writeFileSync(${JSON.stringify(temporary)}, ${JSON.stringify(newContent)});
-      const fd = openSync(${JSON.stringify(temporary)}, "r"); fsyncSync(fd); closeSync(fd);
+      // "r+" not "r": Windows refuses FlushFileBuffers on a read-only handle.
+      const fd = openSync(${JSON.stringify(temporary)}, "r+"); fsyncSync(fd); closeSync(fd);
     }
     if (stage === "after-rename" || stage === "mid-commit") {
       renameSync(${JSON.stringify(temporary)}, ${JSON.stringify(target)});

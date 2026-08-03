@@ -11,6 +11,8 @@ import type {
   Result,
 } from "@vidcom/core";
 
+import { syncDirectory } from "./durability";
+
 function sha256(content: Uint8Array): ContentHash {
   return `sha256:${createHash("sha256").update(content).digest("hex")}` as ContentHash;
 }
@@ -22,15 +24,6 @@ async function exists(pathname: string): Promise<boolean> {
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === "ENOENT") return false;
     throw error;
-  }
-}
-
-async function syncDirectory(directory: string): Promise<void> {
-  const handle = await open(directory, "r");
-  try {
-    await handle.sync();
-  } finally {
-    await handle.close();
   }
 }
 

@@ -11,9 +11,22 @@ permissions:
 
 jobs:
   static-checks:
-    name: Typecheck and lint
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 40
+
+    strategy:
+      # Report every platform on a failure: a defect is usually specific to one
+      # of them, and cancelling the others hides whether it is.
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            name: Linux x64
+          - os: macos-latest
+            name: macOS arm64
+          - os: windows-latest
+            name: Windows x64
 
     steps:
       - name: Check out repository
@@ -29,32 +42,41 @@ jobs:
         with:
           bun-version: 1.3.14
 
+      # Bun resolves the lockfile, but every script runs under Node. Node is the
+      # runtime the product ships on (the Phase 0 gate chose Node SEA), and Bun
+      # on Windows cannot resolve `node:sqlite`, which the datastore needs.
       - name: Install dependencies
         run: bun install --frozen-lockfile
 
+      - name: Report toolchain
+        run: node --version && npm --version && bun --version
+
       - name: Typecheck
-        run: bun run typecheck
+        run: npm run typecheck
 
       - name: Lint
-        run: bun run lint
+        run: npm run lint
 
       - name: Verify import boundaries reject an invalid dependency
-        run: bun run test:boundaries
+        run: npm run test:boundaries
 
       - name: Test
-        run: bun run test
+        run: npm run test
 
       - name: Verify MCP contracts, audit forwarding, and stdio cleanliness
-        run: bun run test:mcp-contract
+        run: npm run test:mcp-contract
 
       - name: Verify committed golden contracts
-        run: bun run test:golden
+        run: npm run test:golden
 
       - name: Verify database schema drift
-        run: bun run test:schema-drift
+        run: npm run test:schema-drift
+
+      - name: Verify Verification Matrix test paths
+        run: npm run test:spec-paths
 
       - name: Production build
-        run: bun run build
+        run: npm run build
 
       - name: Real Next runtime and SSE smoke
-        run: bun run test:runtime-smoke
+        run: npm run test:runtime-smoke

@@ -4,6 +4,11 @@ import { randomUUID } from "node:crypto";
 
 import type { ResolvedPath } from "@vidcom/core";
 
+// Explicit extension: the crash-boundary test loads this module directly under
+// raw Node, which resolves relative specifiers verbatim rather than through the
+// bundler's extension search.
+import { syncDirectory } from "./durability.ts";
+
 /** Optional test seam used to stop a child process at the pre-rename crash boundary. */
 export interface AtomicWriteHooks {
   beforeRename?(): Promise<void>;
@@ -33,10 +38,5 @@ export async function writeAtomic(
   } finally {
     if (!renamed) await rm(temporary, { force: true });
   }
-  const directoryHandle = await open(directory, "r");
-  try {
-    await directoryHandle.sync();
-  } finally {
-    await directoryHandle.close();
-  }
+  await syncDirectory(directory);
 }

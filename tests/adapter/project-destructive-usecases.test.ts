@@ -149,6 +149,13 @@ beforeEach(async () => {
   });
 });
 
+// Injection targets are written with forward slashes, but a resolved path uses
+// the platform separator, so the suffix has to be matched separator-agnostically
+// or the failure silently never fires on Windows.
+function targetMatches(target: string, suffix: string | undefined): boolean {
+  return suffix !== undefined && target.split(path.sep).join("/").endsWith(suffix);
+}
+
 function authorityWithFailure(options: { writePath?: string; deletePath?: string }): WriteAuthority {
   const proxy: WorkspacePort = {
     resolve: workspace.resolve.bind(workspace),
@@ -158,20 +165,20 @@ function authorityWithFailure(options: { writePath?: string; deletePath?: string
     readBytes: workspace.readBytes.bind(workspace),
     readHash: workspace.readHash.bind(workspace),
     async writeAtomic(target, content) {
-      if (options.writePath && target.endsWith(options.writePath)) throw new Error("injected write failure");
+      if (targetMatches(target, options.writePath)) throw new Error("injected write failure");
       await workspace.writeAtomic(target, content);
     },
     exists: workspace.exists.bind(workspace),
     async deleteAtomic(target) {
-      if (options.deletePath && target.endsWith(options.deletePath)) throw new Error("injected delete failure");
+      if (targetMatches(target, options.deletePath)) throw new Error("injected delete failure");
       await workspace.deleteAtomic(target);
     },
     captureForMutation: workspace.captureForMutation.bind(workspace),
     async publishCaptured(capture, content) {
-      if (content === null && options.deletePath && capture.target.endsWith(options.deletePath)) {
+      if (content === null && targetMatches(capture.target, options.deletePath)) {
         throw new Error("injected delete failure");
       }
-      if (content !== null && options.writePath && capture.target.endsWith(options.writePath)) {
+      if (content !== null && targetMatches(capture.target, options.writePath)) {
         throw new Error("injected write failure");
       }
       return workspace.publishCaptured(capture, content);
