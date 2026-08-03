@@ -1,11 +1,14 @@
 name: CI
 
+# Platform coverage differs by event, deliberately — see the matrix comment below.
+# Pull requests run Linux and Windows; pushes to main and manual dispatches run
+# macOS as well.
 on:
   pull_request:
   push:
     branches:
       - main
-  # Lets the matrix be run against any branch on demand, which is how a
+  # Lets the full matrix be run against any branch on demand, which is how a
   # platform-specific change gets verified before it reaches main.
   workflow_dispatch:
 
@@ -31,14 +34,13 @@ jobs:
       # Report every platform on a failure: a defect is usually specific to one
       # of them, and cancelling the others hides whether it is.
       fail-fast: false
-      matrix:
-        include:
-          - os: ubuntu-latest
-            name: Linux x64
-          - os: macos-latest
-            name: macOS arm64
-          - os: windows-latest
-            name: Windows x64
+      # macOS is left off pull requests. On a private repo it bills at ten times
+      # the wall clock, which made it 40 of the 63 minutes a full run costs for
+      # 3 of its 15 real minutes — more than half the quota for the platform least
+      # likely to be the one that breaks. It still runs on every push to main and
+      # on demand, so nothing reaches the default branch unverified there, and a
+      # macOS-specific suspicion on a branch is one workflow_dispatch away.
+      matrix: ${{ fromJSON(github.event_name == 'pull_request' && '{"include":[{"os":"ubuntu-latest","name":"Linux x64"},{"os":"windows-latest","name":"Windows x64"}]}' || '{"include":[{"os":"ubuntu-latest","name":"Linux x64"},{"os":"macos-latest","name":"macOS arm64"},{"os":"windows-latest","name":"Windows x64"}]}') }}
 
     steps:
       - name: Check out repository
