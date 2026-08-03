@@ -9,5 +9,8 @@ vieneu==3.2.4
 # given WAV is traceable even when VIDCOM_VIENEU_REVISION is not pinned.
 huggingface-hub>=0.24
 
-# GPU is opt-in and NOT installed here. `pip install "vieneu[gpu]"` pulls the
-# torch stack; without it the sidecar reports no GPU and VidCom offers CPU only.
+# GPU is opt-in and NOT installed here. The torch stack comes from the `legacy`
+# extra — `pip install "vieneu[legacy]"` — which is what upstream 3.2.4 actually
+# publishes; there is no `gpu` extra, and asking for one only makes pip warn and
+# install the CPU base. Without torch the sidecar reports no GPU and VidCom
+# offers CPU only.

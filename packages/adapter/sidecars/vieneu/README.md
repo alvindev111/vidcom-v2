@@ -30,6 +30,29 @@ Sau đó trỏ VidCom tới interpreter đó trong `~/.vidcom/setting.json`:
 
 Không khai `command` thì VidCom dùng `python`/`python3` trên PATH với worker đã ship — thường không phải venv có torch, nên hãy khai.
 
+## Chạy thật để kiểm
+
+Test bình thường dùng `ProcessPort` giả — **giả process không bắt được lời gọi SDK sai**, và đó đúng là lỗi đã lọt lần đầu viết provider này. Muốn kiểm thật:
+
+```bash
+# 1. cài engine (torch-free, ONNX)
+python -m venv .venv
+.venv/Scripts/pip install -r packages/adapter/sidecars/vieneu/requirements.txt   # Windows
+# .venv/bin/pip install -r ...                                                    # macOS/Linux
+
+# 2. chạy — model tải một lần vào cache tạm, hoặc trỏ VIDCOM_VIENEU_MODEL_CACHE để tái dùng
+VIDCOM_VIENEU_REAL=1 \
+VIDCOM_VIENEU_COMMAND='["/abs/path/.venv/bin/python","/abs/path/packages/adapter/sidecars/vieneu/worker.py"]' \
+VIDCOM_VIENEU_MODEL_CACHE="$HOME/.vidcom/models" \
+bun run test:vieneu-real
+```
+
+Không đặt `VIDCOM_VIENEU_COMMAND` thì nó lấy `tts.vieneu.command` trong `~/.vidcom/setting.json`, rồi mới đến worker mặc định. Không đặt `VIDCOM_VIENEU_REAL=1` thì cả file bị skip kèm thông báo.
+
+Nó kiểm: catalog voice lấy từ engine thật; đọc một câu tiếng Việt rồi chuẩn hoá ra WAV 44.1k mono với duration hợp lý và `modelRevision` truy được; và xin GPU trên máy CPU-only phải **lỗi** chứ không âm thầm chạy CPU.
+
+Cần **truy cập được huggingface.co**. Mạng có TLS-intercept sẽ làm `huggingface_hub` hỏng ở bước tải — trỏ `SSL_CERT_FILE`/`REQUESTS_CA_BUNDLE` tới CA root của tổ chức, hoặc dùng `HF_ENDPOINT` mirror.
+
 ## Voice
 
 Catalog do engine quyết: `--probe` gọi `list_preset_voices()` và VidCom suy id từ tên
@@ -52,7 +75,9 @@ Muốn dồn hết vào một chỗ thì khai `appDataRoot` trong `~/.vidcom/set
 
 CPU là mặc định và luôn khả dụng. GPU chỉ xuất hiện trong catalog voice sau khi `worker.py --probe` **cấp phát thật** được một tensor trên CUDA — driver có mặt là chưa đủ, vì một driver không dùng được sẽ chỉ lộ ra khi batch đầu tiên hỏng.
 
-`requirements.txt` cài bản torch CPU. Muốn mở GPU thì tự cài wheel CUDA tương ứng với máy, rồi khởi động lại VidCom (catalog được cache trong một vòng đời process).
+`requirements.txt` cài bản **torch-free** (ONNX Runtime). Muốn mở GPU thì cài thêm extra `legacy` — `pip install "vieneu[legacy]"` — nó kéo torch/torchaudio/transformers, rồi khởi động lại VidCom (catalog được cache trong một vòng đời process).
+
+> Upstream 3.2.4 chỉ publish hai extra: `legacy` và `pdf`. **Không có `vieneu[gpu]`** — gõ vậy pip chỉ cảnh báo "does not provide the extra" rồi cài bản base CPU, tức đúng kiểu âm thầm rơi về CPU mà chính sách device này muốn chặn.
 
 Xin GPU trên máy không có → job hỏng kèm thông báo rõ, **không** âm thầm chạy CPU. Đây là chủ ý: một job chậm gấp mười lần mà không ai biết vì sao là thứ khó chẩn đoán hơn nhiều so với một lỗi thẳng thắn.
 

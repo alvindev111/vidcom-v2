@@ -20,6 +20,7 @@
     "test:schema-drift": "node scripts/verify-schema-drift.mjs",
     "test:spec-paths": "node scripts/verify-spec-test-paths.mjs",
     "test:vieneu-sidecar": "node scripts/verify-vieneu-sidecar.mjs",
+    "test:vieneu-real": "vitest run tests/adapter/tts-vieneu.integration.test.ts",
     "db:generate": "drizzle-kit generate",
     "typecheck": "tsc --noEmit"
   },
