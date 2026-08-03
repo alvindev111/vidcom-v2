@@ -56,6 +56,11 @@ export interface Narration {
   revision: number;
   updatedAt: string;
   staleSince: string | null;
+  provider?: string;
+  durationSeconds?: number;
+  words?: { text: string; startSeconds: number; endSeconds: number }[];
+  wordTimingSource?: "engine" | "estimated";
+  engine?: Record<string, string | number | boolean>;
 }
 export interface Scene {
   id: string;

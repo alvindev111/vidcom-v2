@@ -5,6 +5,10 @@ import {
   type DestructiveToolDependencies,
 } from "./destructive-tools";
 import {
+  registerJobTools,
+  type JobToolDependencies,
+} from "./job-tools";
+import {
   registerListProjects,
   registerProjectContextTools,
   registerReadComposition,
@@ -16,9 +20,10 @@ import {
   type WriteToolDependencies,
 } from "./write-tools";
 
-export type VidcomToolDependencies = ReadToolDependencies & WriteToolDependencies & DestructiveToolDependencies;
+export type VidcomToolDependencies =
+  ReadToolDependencies & WriteToolDependencies & DestructiveToolDependencies & JobToolDependencies;
 
-/** Registers the complete public Phase-2 tool surface exactly once. */
+/** Registers the complete public tool surface exactly once. */
 export function registerVidcomTools(registry: ToolRegistry, dependencies: VidcomToolDependencies): void {
   registerListProjects(registry, dependencies);
   registerProjectContextTools(registry, dependencies);
@@ -27,4 +32,5 @@ export function registerVidcomTools(registry: ToolRegistry, dependencies: Vidcom
   registerSourceWriteTools(registry, dependencies);
   registerDeleteScene(registry, dependencies);
   registerDeleteFile(registry, dependencies);
+  registerJobTools(registry, dependencies);
 }

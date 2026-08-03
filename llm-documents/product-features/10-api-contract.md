@@ -217,6 +217,61 @@ Không validate `text` rỗng.
 
 ---
 
+## v1 — Narration / TTS (2026-08-03)
+
+Hai endpoint mới trên `packages/server`, **không** thuộc API mock `/api/hf/*` ở trên.
+Contract nguồn: `packages/contracts/src/tts.ts`. Cùng use case được expose qua MCP
+(`list_tts_voices`, `start_tts`, `get_job_status`) — D1.
+
+### `GET /api/v1/projects/:id/tts/voices`
+
+- **200:** `{ "providers": [ { "id", "label", "available", "unavailableReason", "voices": [ { "id", "providerId", "label", "language", "modelId", "supportsEmotionCues", "computeDevices", "recommended" } ], "allowsCustomVoiceId", "customVoiceDefaults" } ] }`
+- **404** `project_not_found`
+
+Provider không chạy được **vẫn có trong danh sách** với `available: false` và
+`unavailableReason` ∈ `credential_missing | sidecar_missing | audio_toolchain_missing`
+— UI nói được phải làm gì thay vì im lặng bớt lựa chọn. `computeDevices` chỉ chứa
+`"gpu"` khi máy có GPU dùng được thật.
+
+`recommended: true` là shortlist VidCom đề xuất, **không** phải đánh giá chất lượng
+— `false` nghĩa là "không nằm trong shortlist", không phải "nên tránh". Voice
+recommended được **xếp trước** trong mảng, nên UI render tuần tự là đã đúng thứ tự.
+
+| Provider | Recommended |
+|---|---|
+| `vieneu` | `vieneu-v3-doan-trang`, `vieneu-v3-minh-duc`, `vieneu-v3-ngoc-linh`, `vieneu-v3-pham-tuyen` — nhưng **chỉ khi** engine đã cài thật sự có preset đó; catalog vẫn do `list_preset_voices()` của engine quyết |
+| `elevenlabs` | cả 4 stock voice, vì danh sách đó tự nó đã là shortlist. Cloned voice → `false` |
+
+### `POST /api/v1/projects/:id/narration/synthesize`
+
+```json
+{ "sceneIds": ["scene-1"], "providerId": "vieneu", "voiceId": "vieneu-v3-pham-tuyen",
+  "modelId": null, "ratePercent": 0, "computeDevice": "cpu" }
+```
+
+- **202:** `{ "jobId": "job_…", "status": "queued" }` — poll `GET /api/v1/jobs/:jobId`
+- Header `Idempotency-Key` tuỳ chọn: trim, rỗng/whitespace coi như không gửi, tối đa 255 ký tự
+- **400** `schema_invalid` (kèm `field`) — body sai, `ratePercent` ngoài `-10..20`, `sceneIds` rỗng hoặc > 50, `computeDevice` không thuộc `cpu|gpu`, `Idempotency-Key` quá dài
+- **404** `project_not_found` | `not_found` (scene chưa có narration text)
+- **409** `idempotency_key_reused`
+- **422** `tts_voice_not_supported` (`field: voiceId|modelId`) | `tts_credential_missing` | `scene_not_found` | `duplicate_mutation_target`
+- **503** `tts_provider_unavailable` (`field: providerId|computeDevice`, hoặc không field khi thiếu FFmpeg)
+
+**Validate hết trước khi enqueue.** Provider/voice/device/scene/narration-text đều
+được kiểm ở route (và ở tool MCP) — job không thể thành công thì không được vào
+queue, và lỗi phải chỉ đúng field thay vì hiện ra sau vài phút dưới dạng job failed.
+
+### Job `tts`
+
+`GET /api/v1/jobs/:jobId` trả `error.code` là **mã TTS thật** (`tts_quota_exceeded`,
+`tts_credential_missing`, …), không phải `internal`. Job này `idempotent: false`,
+`maxAttempts: 1` — xem [07-feature-narration-tts](07-feature-narration-tts.md#cost-và-idempotency).
+
+`POST /api/v1/jobs/:jobId/cancel` dừng engine thật (kill cả cây process) và **không
+publish gì** nếu batch chưa ghi.
+
+---
+
 ## Tổng hợp vấn đề của API hiện tại (cần khắc phục khi viết lại)
 
 | # | Vấn đề | Ảnh hưởng |

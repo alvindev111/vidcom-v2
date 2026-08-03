@@ -39,6 +39,11 @@ const ERROR_STATUS = {
   [ErrorCode.DuplicateMutationTarget]: 422,
   [ErrorCode.RecoveryRequired]: 503,
   [ErrorCode.CommittedResponseError]: 500,
+  [ErrorCode.TtsProviderUnavailable]: 503,
+  [ErrorCode.TtsCredentialMissing]: 422,
+  [ErrorCode.TtsVoiceNotSupported]: 422,
+  [ErrorCode.TtsQuotaExceeded]: 429,
+  [ErrorCode.TtsSynthesisFailed]: 502,
 } as const satisfies Record<ErrorCode, number>;
 
 export class HttpBoundaryError extends Error {

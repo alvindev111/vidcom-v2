@@ -435,7 +435,7 @@ describe("delete_scene approval flow", () => {
 });
 
 describe("complete tool descriptor contract", () => {
-  it("locks all ten descriptors, legacy visibility, schema identity and deterministic order", () => {
+  it("locks every descriptor, legacy visibility, schema identity and deterministic order", () => {
     const tools = registry();
     registerVidcomTools(tools, null as unknown as VidcomToolDependencies);
     const modern = tools.list("modern");
@@ -495,6 +495,18 @@ describe("complete tool descriptor contract", () => {
               "openWorldHint": false,
               "readOnlyHint": true,
             },
+            "description": "Use when you need to poll a jobId returned by start_tts until its status is succeeded, failed or cancelled. Do not use to list jobs or to cancel one. Preconditions: jobId comes from the tool that queued the work. Side effects: read-only. Errors/recovery: on failed, error.code names the cause — tts_credential_missing, tts_quota_exceeded, tts_provider_unavailable and tts_voice_not_supported are all fixed by the user or by changing the request, not by retrying unchanged.",
+            "level": "read",
+            "name": "get_job_status",
+            "title": "Get background job status",
+          },
+          {
+            "annotations": {
+              "destructiveHint": false,
+              "idempotentHint": true,
+              "openWorldHint": false,
+              "readOnlyHint": true,
+            },
             "description": "Use when planning an edit and you need compact scenes, canonical file hashes, revisions, diagnostics, preview settings, and the recovery gate. Do not use when you need full composition source; use read_composition instead. Preconditions: projectId comes from list_projects; this read has no mutation precondition. Side effects: read-only; no project files or revisions are changed. Errors/recovery: refresh list_projects after project_not_found; when recovery is blocked, stop mutations and complete the configured recovery flow before retrying.",
             "level": "read",
             "name": "get_project_context",
@@ -523,6 +535,18 @@ describe("complete tool descriptor contract", () => {
             "level": "read",
             "name": "list_scenes",
             "title": "List project scenes",
+          },
+          {
+            "annotations": {
+              "destructiveHint": false,
+              "idempotentHint": true,
+              "openWorldHint": false,
+              "readOnlyHint": true,
+            },
+            "description": "Use when you need to discover which speech engines are installed on this machine and which voices each offers, before calling start_tts. Do not use to read a scene's existing narration text; use get_project_context. Preconditions: projectId comes from list_projects. Side effects: read-only; no project files, revisions or jobs are created. Errors/recovery: a provider with available=false reports why in unavailableReason — add an API key, install the sidecar, or install FFmpeg — and cannot be passed to start_tts until fixed. A voice offering only cpu in computeDevices means this machine has no usable GPU.",
+            "level": "read",
+            "name": "list_tts_voices",
+            "title": "List narration voices",
           },
           {
             "annotations": {
@@ -571,6 +595,18 @@ describe("complete tool descriptor contract", () => {
             "level": "write",
             "name": "set_text",
             "title": "Set scene text",
+          },
+          {
+            "annotations": {
+              "destructiveHint": false,
+              "idempotentHint": false,
+              "openWorldHint": false,
+              "readOnlyHint": false,
+            },
+            "description": "Use when you need to turn the narration text already written on one or more scenes into audio files in the project. Do not use to write or change narration text, and do not use to render video. Preconditions: every scene must already have narration text; providerId and voiceId come from list_tts_voices; leave computeDevice unset for CPU and only pass gpu when the voice lists it. Side effects: enqueues one job, then writes narration/<sceneId>.wav plus its JSON sidecar and commits one project revision when the job succeeds. Cloud engines bill the account. Errors/recovery: this job is never retried automatically because synthesis costs money and its output is not reproducible — read the failed job's error code and resubmit deliberately. Poll with get_job_status; cancel through the job API stops the engine before anything is written.",
+            "level": "job",
+            "name": "start_tts",
+            "title": "Generate scene narration audio",
           },
         ]
       `);

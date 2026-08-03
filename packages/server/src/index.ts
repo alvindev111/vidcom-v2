@@ -9,3 +9,4 @@ export * from "./routes/jobs";
 export * from "./routes/mcp";
 export * from "./routes/events";
 export * from "./routes/project-writes";
+export * from "./routes/narration";

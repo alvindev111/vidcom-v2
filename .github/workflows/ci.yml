@@ -45,6 +45,33 @@ jobs:
         with:
           bun-version: 1.3.14
 
+      # The VieNeu sidecar is Python. The speech engine itself is a large
+      # download and is NOT installed here; the interpreter is enough to compile
+      # the worker and prove it degrades correctly without the engine.
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      # Narration audio from every engine is normalised through FFmpeg, so
+      # without it the audio pipeline suite can only skip — which is how it went
+      # unverified for several rounds. Installed from each platform's own package
+      # manager rather than a third-party action.
+      - name: Install FFmpeg (Linux)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y ffmpeg
+
+      - name: Install FFmpeg (macOS)
+        if: runner.os == 'macOS'
+        run: brew install ffmpeg
+
+      - name: Install FFmpeg (Windows)
+        if: runner.os == 'Windows'
+        run: choco install ffmpeg --no-progress --yes
+
+      - name: Report media toolchain
+        run: ffmpeg -version && ffprobe -version && python --version
+
       # Bun resolves the lockfile, but every script runs under Node. Node is the
       # runtime the product ships on (the Phase 0 gate chose Node SEA), and Bun
       # on Windows cannot resolve `node:sqlite`, which the datastore needs.
@@ -63,8 +90,15 @@ jobs:
       - name: Verify import boundaries reject an invalid dependency
         run: npm run test:boundaries
 
+      # The flag turns a missing FFmpeg into a failure instead of a skip, so this
+      # job cannot report green while the narration audio pipeline goes unrun.
       - name: Test
         run: npm run test
+        env:
+          VIDCOM_REQUIRE_FFMPEG: "1"
+
+      - name: Verify the VieNeu sidecar contract without its speech engine
+        run: npm run test:vieneu-sidecar
 
       - name: Verify MCP contracts, audit forwarding, and stdio cleanliness
         run: npm run test:mcp-contract

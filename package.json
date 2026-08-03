@@ -19,6 +19,7 @@
     "test:runtime-smoke": "node scripts/verify-next-runtime.mjs",
     "test:schema-drift": "node scripts/verify-schema-drift.mjs",
     "test:spec-paths": "node scripts/verify-spec-test-paths.mjs",
+    "test:vieneu-sidecar": "node scripts/verify-vieneu-sidecar.mjs",
     "db:generate": "drizzle-kit generate",
     "typecheck": "tsc --noEmit"
   },

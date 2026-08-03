@@ -4,6 +4,7 @@ export * from "./registry/registry";
 export * from "./registry/read-tools";
 export * from "./registry/write-tools";
 export * from "./registry/destructive-tools";
+export * from "./registry/job-tools";
 export * from "./registry/all-tools";
 export * from "./server";
 export * from "./stdio";

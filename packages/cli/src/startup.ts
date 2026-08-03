@@ -2,6 +2,7 @@ import {
   migrateDatabase,
   projectRegistrationLocationExists,
   reconcileStagedAssets,
+  scavengeTtsScratch,
   WORKSPACE_LEASE_RENEW_MS,
 } from "@vidcom/adapter";
 import {
@@ -10,6 +11,13 @@ import {
 } from "@vidcom/core";
 
 import { createApplication, createInfrastructure, hashContent, type CompositionRootConfig } from "./composition-root";
+
+/**
+ * 1 hour. Long enough that a legitimately slow batch in another daemon is never
+ * swept out from under it, short enough that a crash's leftovers do not survive
+ * a working day.
+ */
+const TTS_SCRATCH_GRACE_MS = 60 * 60 * 1_000;
 
 export type StartupStepName =
   | "migration"
@@ -201,6 +209,13 @@ export async function startVidcomFoundation<Listener>(
         ));
         await infrastructure.approvalAdmin.cleanupTerminal(
           new Date(infrastructure.clock.now().getTime() - infrastructure.runtimeConfig.approvalRetentionMs),
+        );
+        // A killed daemon skips the scratch cleanup in `withTtsScratch`, leaving
+        // the user's narration text and its raw audio in app-data forever. The
+        // grace window keeps this from deleting a batch a second daemon owns.
+        await scavengeTtsScratch(
+          infrastructure.ttsScratchRoot,
+          new Date(infrastructure.clock.now().getTime() - TTS_SCRATCH_GRACE_MS),
         );
       },
       jobRecovery: () => hooks.recoverJobs({ infrastructure, application }),

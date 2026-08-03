@@ -1,4 +1,4 @@
-import { ErrorCode } from "@vidcom/contracts";
+import { ErrorCode, type DomainError } from "@vidcom/contracts";
 
 import type { ClockPort, EventOutboxPort, IdPort, JobStorePort } from "../port/ports";
 import type { Job, JobId } from "../port/types";
@@ -43,6 +43,21 @@ export class JobRetryableError extends Error {
   constructor(message: string, options?: ErrorOptions) {
     super(message, options);
     this.name = "JobRetryableError";
+  }
+}
+
+/**
+ * Job failure that carries the domain error the client should actually see.
+ *
+ * Without it every failure is persisted as `internal`, and a UI reading
+ * `GET /jobs/:id` cannot tell "add an API key" from "out of quota" from "that
+ * voice does not exist" — the three things a user is most likely to be able to
+ * fix themselves.
+ */
+export class JobFailureError extends Error {
+  constructor(readonly error: DomainError, options?: ErrorOptions) {
+    super(error.message, options);
+    this.name = "JobFailureError";
   }
 }
 
@@ -235,10 +250,12 @@ export class JobScheduler {
         }
         await this.store.finish(job.id as JobId, {
           status: "failed",
-          error: {
-            code: ErrorCode.Internal,
-            message: error instanceof Error ? error.message : "job failed",
-          },
+          error: error instanceof JobFailureError
+            ? { code: error.error.code, message: error.error.message }
+            : {
+                code: ErrorCode.Internal,
+                message: error instanceof Error ? error.message : "job failed",
+              },
         });
         await this.emit({
           type: "job.done", projectId: job.projectId, payload: { jobId: job.id, status: "failed" },

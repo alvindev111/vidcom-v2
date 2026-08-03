@@ -1,6 +1,12 @@
 import { createHash, randomUUID } from "node:crypto";
+import { join } from "node:path";
 
 import {
+  defaultVieNeuCommand,
+  ElevenLabsTtsProvider,
+  NodeProcessRunner,
+  TtsRegistry,
+  VieNeuTtsProvider,
   CompositionHf,
   LargePreviousContentStore,
   LegacyHyperframesProjects,
@@ -21,7 +27,7 @@ import {
   mimeFromPath,
   openVidcomDatabase,
 } from "@vidcom/adapter";
-import type { ContentHash, ProjectId } from "@vidcom/contracts";
+import { DEFAULT_VIDCOM_SETTINGS, type ContentHash, type ProjectId, type ResolvedVidcomSettings } from "@vidcom/contracts";
 import {
   reconcileCompositeMutation,
   ApprovalService,
@@ -34,9 +40,11 @@ import {
   type IdPort,
   type LogPort,
   type MetricPort,
+  type JobTypeDefinition,
   type ProjectRef,
 } from "@vidcom/core";
 import { registerVidcomTools, ToolRegistry } from "@vidcom/mcp";
+import { createNoopProbeJobType, createTtsJobType } from "@vidcom/worker";
 
 export interface McpRuntimeConfig {
   approvalRequestTtlMs: number;
@@ -61,6 +69,14 @@ export interface CompositionRootConfig {
   workspaceRoot: AbsolutePath;
   /** Phase 4 extraction root for native sidecars; never inferred from the source checkout. */
   nativeDependenciesRoot?: AbsolutePath;
+  /**
+   * User configuration from `~/.vidcom/setting.json`, already resolved.
+   *
+   * Passed in rather than read here: the file may declare `appDataRoot`, so
+   * whoever computes that has to have read it first. Omitting it runs on
+   * defaults, which is what the tests that do not care about configuration want.
+   */
+  settings?: ResolvedVidcomSettings;
   clock?: ClockPort;
   ids?: IdPort;
   runtimeConfig?: Partial<McpRuntimeConfig>;
@@ -78,6 +94,30 @@ export function createRuntimeIds(): IdPort {
 
 export function hashContent(content: string | Uint8Array): ContentHash {
   return `sha256:${createHash("sha256").update(content).digest("hex")}` as ContentHash;
+}
+
+/**
+ * How to invoke the VieNeu sidecar: the command from `~/.vidcom/setting.json`, or
+ * the shipped worker under the ambient interpreter.
+ *
+ * Configurable because the sidecar needs a virtualenv with torch in it, and the
+ * `python` on PATH is rarely that one.
+ */
+function vieneuCommand(
+  settings: ResolvedVidcomSettings,
+  extractionRoot?: string,
+): readonly string[] {
+  return settings.tts.vieneu.command ?? defaultVieNeuCommand(extractionRoot);
+}
+
+/**
+ * The ElevenLabs key, from the environment first and the settings file second.
+ *
+ * Environment wins so CI and a one-off run never have to write the key to disk,
+ * and so an operator can override a stale file without editing it.
+ */
+function elevenLabsApiKey(settings: ResolvedVidcomSettings): string | null {
+  return process.env.ELEVENLABS_API_KEY?.trim() || settings.tts.elevenlabs.apiKey || null;
 }
 
 /** The sole production wiring point for concrete filesystem, SQLite and HyperFrames adapters. */
@@ -126,6 +166,25 @@ export function createInfrastructure(config: CompositionRootConfig) {
     ids,
     config: { rotationOverlapMs: runtimeConfig.credentialRotationOverlapMs },
   });
+  const settings = config.settings ?? DEFAULT_VIDCOM_SETTINGS;
+  const processes = new NodeProcessRunner();
+  // App-data, never the workspace or the checkout: these are engine
+  // intermediates and model weights, and a project directory is watched, backed
+  // up and committed by its owner.
+  const ttsScratchRoot = join(config.appDataRoot, "tts-scratch");
+  const tts = new TtsRegistry({
+    processes,
+    scratchRoot: ttsScratchRoot,
+    providers: [
+      new ElevenLabsTtsProvider({ apiKey: elevenLabsApiKey(settings) }),
+      new VieNeuTtsProvider({
+        processes,
+        command: () => vieneuCommand(settings, config.nativeDependenciesRoot),
+        modelCacheRoot: join(config.appDataRoot, "models"),
+        modelRevision: settings.tts.vieneu.modelRevision,
+      }),
+    ],
+  });
   const toolAudit = new ToolAuditService(
     new SqliteToolAuditRepository(database),
     clock,
@@ -157,6 +216,10 @@ export function createInfrastructure(config: CompositionRootConfig) {
     grants,
     credentialStore,
     credentials,
+    settings,
+    processes,
+    tts,
+    ttsScratchRoot,
     toolAudit,
     approvalRequests: { request: approvals.request.bind(approvals) },
     approvalAdmin: {
@@ -184,6 +247,10 @@ export function createMcpRegistry(
     ...application.writeDependencies,
     approvals: infrastructure.approvalRequests,
     hashContent,
+    reads: application.readDependencies,
+    jobs: infrastructure.jobs,
+    tts: infrastructure.tts,
+    ids: infrastructure.ids,
   });
   return registry;
 }
@@ -229,6 +296,26 @@ export function createApplication(
     clock: infrastructure.clock,
   };
   return { authority, readDependencies, writeDependencies };
+}
+
+/**
+ * Every job type this runtime can execute, bound to live application dependencies.
+ *
+ * One place, so the daemon and `vidcom mcp` cannot drift into supporting
+ * different job types — a job enqueued by one and picked up by the other would
+ * otherwise sit in the queue forever.
+ */
+export function createJobTypes(
+  infrastructure: ReturnType<typeof createInfrastructure>,
+  application: ReturnType<typeof createApplication>,
+): JobTypeDefinition[] {
+  return [
+    createNoopProbeJobType(),
+    createTtsJobType({
+      dependencies: { ...application.writeDependencies, tts: infrastructure.tts },
+      actor: "user",
+    }),
+  ];
 }
 
 /** Temporary Next compatibility wiring; removed with the legacy modules in Phase N. */

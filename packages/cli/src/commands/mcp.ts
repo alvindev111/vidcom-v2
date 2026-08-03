@@ -1,14 +1,13 @@
 import { randomUUID } from "node:crypto";
 
-import { nodeSchedulerTimers } from "@vidcom/adapter";
-import { SUPPORTED_REVISIONS } from "@vidcom/contracts";
+import { nodeSchedulerTimers, readVidcomSettings } from "@vidcom/adapter";
+import { SUPPORTED_REVISIONS, type ResolvedVidcomSettings } from "@vidcom/contracts";
 import { JobScheduler, type AbsolutePath } from "@vidcom/core";
 import { startMcpStdio } from "@vidcom/mcp";
-import { createNoopProbeJobType } from "@vidcom/worker";
 
 import { CliInputError } from "../cli-error";
-import { createMcpRegistry } from "../composition-root";
-import { defaultAppDataRoot } from "../next-host";
+import { createJobTypes, createMcpRegistry } from "../composition-root";
+import { defaultAppDataRoot, defaultNativeDependenciesRoot } from "../next-host";
 import { startVidcomFoundation } from "../startup";
 import { selectWorkspace } from "../workspace-selection";
 
@@ -18,7 +17,13 @@ export interface McpCommandOptions {
 }
 
 export interface McpCommandDependencies {
-  appDataRoot(): string;
+  appDataRoot(settings?: ResolvedVidcomSettings): string;
+  /**
+   * Reads `~/.vidcom/setting.json`. Unlike the app entry point this does NOT
+   * create a template: `vidcom mcp` is spawned by an AI host, and writing to the
+   * user's home as a side effect of a tool handshake is not this command's call.
+   */
+  readSettings(): Promise<ResolvedVidcomSettings>;
   selectWorkspace: typeof selectWorkspace;
   startStdio: typeof startMcpStdio;
   writeError(message: string): void;
@@ -36,6 +41,7 @@ interface McpShutdownRuntime {
 
 const defaultDependencies: McpCommandDependencies = {
   appDataRoot: defaultAppDataRoot,
+  readSettings: () => readVidcomSettings(),
   selectWorkspace,
   startStdio: startMcpStdio,
   writeError: (message) => process.stderr.write(`${message}\n`),
@@ -72,23 +78,29 @@ export async function startVidcomMcp(
   dependencies: McpCommandDependencies = defaultDependencies,
   signal?: AbortSignal,
 ) {
-  const appDataRoot = dependencies.appDataRoot();
+  // Settings first: the file is allowed to say where application data lives, so
+  // nothing that depends on that path can be computed before it is read.
+  const settings = await dependencies.readSettings();
+  const appDataRoot = dependencies.appDataRoot(settings);
   const workspaceRoot = await dependencies.selectWorkspace({
-    explicit: options.workspace ?? process.env.VIDCOM_WORKSPACE,
+    explicit: options.workspace ?? process.env.VIDCOM_WORKSPACE ?? settings.workspaceRoot,
     appDataRoot,
   });
   let scheduler: JobScheduler | null = null;
   return startVidcomFoundation({
     appDataRoot,
     workspaceRoot: workspaceRoot as AbsolutePath,
+    nativeDependenciesRoot: defaultNativeDependenciesRoot(appDataRoot) as AbsolutePath,
+    settings,
     holderId: `mcp:${process.pid}:${randomUUID()}`,
   }, {
-    async recoverJobs({ infrastructure }) {
+    async recoverJobs({ infrastructure, application }) {
+      if (!application) throw new Error("application was not initialized before job recovery");
       scheduler = new JobScheduler(
         infrastructure.jobs,
         infrastructure.clock,
         infrastructure.ids,
-        [createNoopProbeJobType()],
+        createJobTypes(infrastructure, application),
         infrastructure.events,
         nodeSchedulerTimers,
       );
