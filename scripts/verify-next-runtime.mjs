@@ -88,14 +88,28 @@ function authorizedFetch(secret) {
   };
 }
 
+// Tools this smoke insists on seeing, one per level, rather than a total count.
+// The exact roster is locked by the tools/list goldens and the registry snapshot;
+// a count here only meant every tool addition broke an unrelated script, which is
+// how it came to disagree with the registry.
+const REQUIRED_TOOLS = ["list_projects", "save_file", "delete_file", "start_tts"];
+
+function assertServesTools(label, tools) {
+  const names = tools.map((tool) => tool.name).sort();
+  const missing = REQUIRED_TOOLS.filter((name) => !names.includes(name));
+  if (missing.length > 0) throw new Error(`${label} did not serve ${missing.join(", ")}`);
+  return names;
+}
+
 async function exerciseMcpClients(baseUrl, credential) {
+  let legacyTools;
   const legacy = new LegacyClient({ name: "next-runtime-legacy", version: "1.0.0" });
   const legacyTransport = new LegacyHttp(new URL(`${baseUrl}/api/mcp`), {
     fetch: authorizedFetch(credential.secret),
   });
   try {
     await legacy.connect(legacyTransport);
-    if ((await legacy.listTools()).tools.length !== 10) throw new Error("legacy entry did not list 10 tools");
+    legacyTools = assertServesTools("legacy entry", (await legacy.listTools()).tools);
     const result = await legacy.callTool({ name: "list_projects", arguments: {} });
     if (result.isError) throw new Error("legacy entry list_projects failed");
   } finally {
@@ -113,7 +127,12 @@ async function exerciseMcpClients(baseUrl, credential) {
     try {
       await modern.connect(transport);
       if (modern.getProtocolEra() !== "modern") throw new Error(`modern ${route} negotiated the wrong era`);
-      if ((await modern.listTools()).tools.length !== 10) throw new Error(`modern ${route} did not list 10 tools`);
+      const modernTools = assertServesTools(`modern ${route}`, (await modern.listTools()).tools);
+      // Both eras are served by one Tool Registry, so a route that answers with a
+      // different roster means the era split leaked into the tool surface.
+      if (modernTools.join(",") !== legacyTools.join(",")) {
+        throw new Error(`modern ${route} served a different tool roster than the legacy entry`);
+      }
       const result = await modern.callTool({ name: "list_projects", arguments: {} });
       if (result.isError) throw new Error(`modern ${route} list_projects failed`);
     } finally {
@@ -167,7 +186,14 @@ try {
   const exchange = await fetch(`${baseUrl}/api/v1/auth/exchange`, {
     method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ nonce }),
   });
-  if (exchange.status !== 204) throw new Error(`nonce exchange returned ${exchange.status}: ${await exchange.text()}`);
+  if (exchange.status !== 204) {
+    // The captured server output is the only place the cause appears: a 500 here
+    // means startup threw inside the route, and the response body is the generic
+    // "Internal Server Error" by design.
+    throw new Error(
+      `nonce exchange returned ${exchange.status}: ${await exchange.text()}\n--- next output ---\n${output}`,
+    );
+  }
   const cookie = exchange.headers.get("set-cookie")?.split(";", 1)[0];
   if (!cookie) throw new Error("nonce exchange omitted the session cookie");
   const projectsResponse = await fetch(`${baseUrl}/api/v1/projects`, { headers: { Cookie: cookie } });
