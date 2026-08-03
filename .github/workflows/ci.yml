@@ -5,6 +5,9 @@ on:
   push:
     branches:
       - main
+  # Lets the matrix be run against any branch on demand, which is how a
+  # platform-specific change gets verified before it reaches main.
+  workflow_dispatch:
 
 permissions:
   contents: read
