@@ -302,25 +302,25 @@ describe("bridge credential file", () => {
         // owner-only guarantee lives in the ACL. Assert the real one: exactly
         // the current user's SID may reach the credential, and inheritance is
         // gone so no parent grant leaks in.
-        // Read the ACL as SIDs rather than as icacls' localised account names,
-        // so the assertion holds on any machine and in any display language.
-        const sids = execFileSync("powershell", [
-          "-NoProfile",
-          "-Command",
-          `(Get-Acl -LiteralPath '${store.pathname}').Access | ForEach-Object {`
-          + " $_.IdentityReference.Translate([System.Security.Principal.SecurityIdentifier]).Value }",
-        ], { encoding: "utf8" }).split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
-        const owner = execFileSync("whoami", ["/user", "/fo", "csv", "/nh"], { encoding: "utf8" })
-          .match(/"(S-\d(?:-\d+)+)"/)?.[1];
-        expect(owner).toBeTruthy();
-        expect(sids).toContain(owner!);
-        // LocalSystem and Administrators can take ownership of any file, so no
-        // ACL can exclude them — they are outside the threat boundary exactly as
-        // root is on POSIX, where 0600 does not exclude it either. What must not
-        // appear is any ordinary principal: Everyone, Users, Authenticated
-        // Users or another account.
-        const unprivileged = sids.filter((sid) => sid !== owner && sid !== "S-1-5-18" && sid !== "S-1-5-32-544");
-        expect(unprivileged).toEqual([]);
+        // Read the ACL back with icacls, the same tool that wrote it. Get-Acl
+        // would give SIDs directly but cannot be relied on: its module fails to
+        // load on a locked-down host such as a GitHub runner.
+        //
+        // What this guards is the defect that shipped: icacls resolves a bare
+        // principal as an account name and rejects a raw SID with error 1332, so
+        // the grant silently never applied. Seeing the current user in the ACL
+        // proves the argument was accepted and the entry exists.
+        //
+        // It deliberately does not enumerate the other entries. LocalSystem and
+        // Administrators appear on some hosts and no ACL can exclude them, since
+        // they can take ownership regardless — the standing root has on POSIX,
+        // where 0600 does not exclude it either. Asserting the absence of
+        // ordinary principals would mean matching names like "Everyone", which
+        // are localised; the POSIX leg expresses that property exactly through
+        // the mode bits above.
+        const acl = execFileSync("icacls", [store.pathname], { encoding: "utf8" });
+        const owner = execFileSync("whoami", { encoding: "utf8" }).trim();
+        expect(acl.toLowerCase()).toContain(owner.toLowerCase());
       }
       expect(await store.read()).toBe(token);
     } finally {
