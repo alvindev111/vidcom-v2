@@ -12,6 +12,15 @@ on:
 permissions:
   contents: read
 
+# Supersede rather than pile up. A private repo bills macOS at ten times the wall
+# clock, so one full run costs about 63 minutes of quota for four minutes of real
+# work — and pushing a fix while the previous run is still going used to pay for
+# both. Grouping by workflow and ref means the newest push on a branch is the only
+# one still spending.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   static-checks:
     name: ${{ matrix.name }}

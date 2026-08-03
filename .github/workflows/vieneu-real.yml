@@ -28,12 +28,19 @@ on:
 permissions:
   contents: read
 
+# A double dispatch supersedes rather than paying for two model downloads.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   real-engine:
     name: Linux x64 CPU
     runs-on: ubuntu-latest
-    # The model download dominates a cold run.
-    timeout-minutes: 60
+    # A cold run is dominated by the model download, and a download that stalls
+    # must not sit here burning quota — the fetch is bounded on its own step below,
+    # so this ceiling only has to cover the work either side of it.
+    timeout-minutes: 35
 
     steps:
       - name: Check out repository
@@ -80,14 +87,49 @@ jobs:
           restore-keys: |
             vieneu-model-${{ hashFiles('packages/adapter/sidecars/vieneu/requirements.txt') }}-
 
+      # hf_transfer is CI-only and not in requirements.txt: it fetches shards in
+      # parallel, which is the difference between a tolerable cold run and sitting
+      # on a single-stream download.
       - name: Install the speech engine
-        run: python -m pip install --disable-pip-version-check -r packages/adapter/sidecars/vieneu/requirements.txt
+        run: |
+          python -m pip install --disable-pip-version-check -r packages/adapter/sidecars/vieneu/requirements.txt
+          python -m pip install --disable-pip-version-check hf_transfer
+
+      # Bounded on its own step so a stalled or blocked fetch fails in fifteen
+      # minutes instead of holding the job to its ceiling. Also the only place the
+      # weights are measured and the resolved commit recorded, which is what makes
+      # a given WAV traceable to what produced it.
+      - name: Warm the model cache
+        timeout-minutes: 15
+        env:
+          HF_HOME: ${{ env.VIENEU_MODEL_CACHE }}
+          HF_HUB_ENABLE_HF_TRANSFER: "1"
+          HF_HUB_DISABLE_TELEMETRY: "1"
+          MODEL_REVISION: ${{ inputs.model_revision }}
+        run: |
+          python - <<'PY'
+          import os, pathlib
+          from huggingface_hub import snapshot_download
+          revision = os.environ.get("MODEL_REVISION") or None
+          path = snapshot_download(repo_id="pnnbao-ump/VieNeu-TTS-v3-Turbo", revision=revision)
+          root = pathlib.Path(path)
+          total = sum(f.stat().st_size for f in root.rglob("*") if f.is_file())
+          print(f"resolved revision: {root.name}")
+          print(f"weights on disk:   {total / 1024 / 1024:.1f} MiB")
+          PY
+          du -sh "$HF_HOME" || true
 
       - name: Install dependencies
         run: bun install --frozen-lockfile
 
       - name: Report toolchain
-        run: node --version && python --version && ffmpeg -version | head -1 && python -c "import vieneu; print('vieneu', vieneu.__version__)"
+        run: |
+          node --version
+          python --version
+          ffmpeg -version | head -1
+          # getattr, not attribute access: a missing __version__ is not a reason to
+          # fail the run before the engine has been asked to do anything.
+          python -c "import vieneu; print('vieneu', getattr(vieneu, '__version__', 'unknown'))"
 
       # Standalone so the engine's own voice list lands in the log even if the
       # suite below fails: it is the answer to whether the ids VidCom recommends
@@ -98,7 +140,10 @@ jobs:
           VIDCOM_VIENEU_REVISION: ${{ inputs.model_revision }}
         run: python packages/adapter/sidecars/vieneu/worker.py --probe
 
+      # The weights are already local by now, so this is bounded to the synthesis
+      # itself rather than to a possible download.
       - name: Synthesize Vietnamese narration with the real engine
+        timeout-minutes: 12
         env:
           VIDCOM_VIENEU_REAL: "1"
           VIDCOM_VIENEU_COMMAND: '["python", "${{ github.workspace }}/packages/adapter/sidecars/vieneu/worker.py"]'
