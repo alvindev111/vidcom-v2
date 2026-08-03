@@ -1,6 +1,7 @@
 import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
 import { access, mkdir, mkdtemp, stat, symlink, writeFile } from "node:fs/promises";
+import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
@@ -23,8 +24,22 @@ const legacyRevision = "2025-11-25";
 
 const onWindows = process.platform === "win32";
 
-async function createResolvedCliArtifact(root: string): Promise<{ cwd: string; envPath: string }> {
-  const artifactRoot = path.join(root, "cli-artifact");
+interface CliArtifact {
+  cwd: string;
+  envPath: string;
+  /** Removes the staging directory this artifact placed inside the checkout. */
+  cleanup(): Promise<void>;
+}
+
+async function createResolvedCliArtifact(root: string): Promise<CliArtifact> {
+  // Phase 2 is a source-checkout package, so the clean packed CLI has to reuse
+  // the checkout's installed dependency graph; Phase 4 owns a self-contained
+  // SEA. Staging the artifact *inside* packages/cli means Node's ordinary
+  // upward node_modules walk finds `tsx` and the workspace packages, with no
+  // symlink or junction to resolve. Linking a node_modules into a temp
+  // directory instead is what broke on Windows: the link resolved locally but
+  // not on a GitHub runner, whose package layout and 8.3 temp paths differ.
+  const artifactRoot = path.join(path.resolve("packages/cli"), `.artifact-${path.basename(root)}`);
   const hostRoot = path.join(root, "host");
   const hostBin = path.join(hostRoot, "node_modules", ".bin");
   await mkdir(artifactRoot, { recursive: true });
@@ -48,15 +63,11 @@ async function createResolvedCliArtifact(root: string): Promise<{ cwd: string; e
   // .cmd shim written below, exactly as an npm install would provide it.
   if (!onWindows) expect((await stat(launcher)).mode & 0o111).not.toBe(0);
 
-  // Phase 2 is a source-checkout package, so the clean packed CLI reuses the
-  // checkout's installed dependency graph. Phase 4 owns a self-contained SEA.
-  // A junction is used on Windows because a directory symlink needs Developer
-  // Mode or elevation, while a junction needs neither.
-  await symlink(
-    path.resolve("packages/cli/node_modules"),
-    path.join(unpackedPackage, "node_modules"),
-    onWindows ? "junction" : "dir",
-  );
+  // Fail with the cause rather than as a downstream "connection closed" if the
+  // dependency graph the launcher needs is not reachable from where it sits.
+  const require = createRequire(path.join(unpackedPackage, "bin", "vidcom.mjs"));
+  expect(() => require.resolve("tsx/esm/api")).not.toThrow();
+
   if (onWindows) {
     // PATH lookup on Windows goes through PATHEXT, so the host resolves the
     // `vidcom` command name via this shim — the same shape npm generates.
@@ -67,7 +78,11 @@ async function createResolvedCliArtifact(root: string): Promise<{ cwd: string; e
   } else {
     await symlink(launcher, path.join(hostBin, "vidcom"), "file");
   }
-  return { cwd: hostRoot, envPath: `${hostBin}${path.delimiter}${process.env.PATH ?? ""}` };
+  return {
+    cwd: hostRoot,
+    envPath: `${hostBin}${path.delimiter}${process.env.PATH ?? ""}`,
+    cleanup: () => removeTree(artifactRoot),
+  };
 }
 
 function environment(appData: string): NodeJS.ProcessEnv & Record<string, string> {
@@ -206,6 +221,7 @@ describe("exact MCP SDK CLI smoke", () => {
       await expectLeaseReleased(appData);
       await expectDestructiveAudit(appData);
     } finally {
+      await artifact.cleanup();
       await removeTree(root);
     }
   }, heavyE2eTimeout);
@@ -213,8 +229,8 @@ describe("exact MCP SDK CLI smoke", () => {
   it("returns one redacted stderr line for a real launcher infrastructure failure", async () => {
     const root = await mkdtemp(path.join(tmpdir(), "vidcom-cli-error-smoke-"));
     const notDirectory = path.join(root, "not-a-directory");
+    const artifact = await createResolvedCliArtifact(root);
     try {
-      const artifact = await createResolvedCliArtifact(root);
       await writeFile(notDirectory, "blocking file");
       const env = environment(path.join(notDirectory, "child"));
       env.PATH = artifact.envPath;
@@ -234,6 +250,7 @@ describe("exact MCP SDK CLI smoke", () => {
       expect(failure).toMatchObject({ code: 1, stdout: "", stderr: "internal_error\n" });
       expect(failure?.stderr).not.toContain(root);
     } finally {
+      await artifact.cleanup();
       await removeTree(root);
     }
   }, heavyE2eTimeout);

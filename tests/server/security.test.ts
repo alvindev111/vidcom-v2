@@ -302,15 +302,25 @@ describe("bridge credential file", () => {
         // owner-only guarantee lives in the ACL. Assert the real one: exactly
         // the current user's SID may reach the credential, and inheritance is
         // gone so no parent grant leaks in.
-        // icacls prints the first ACE on the same line as the path, then one
-        // ACE per line, then a blank line and a summary.
-        const grants = execFileSync("icacls", [store.pathname], { encoding: "utf8" })
-          .split(/\r?\n/)
-          .map((line, index) => (index === 0 ? line.replace(store.pathname, "") : line).trim())
-          .filter((line) => /:\(/.test(line));
-        const owner = execFileSync("whoami", { encoding: "utf8" }).trim();
-        expect(grants).toHaveLength(1);
-        expect(grants[0]!.toLowerCase()).toContain(owner.toLowerCase());
+        // Read the ACL as SIDs rather than as icacls' localised account names,
+        // so the assertion holds on any machine and in any display language.
+        const sids = execFileSync("powershell", [
+          "-NoProfile",
+          "-Command",
+          `(Get-Acl -LiteralPath '${store.pathname}').Access | ForEach-Object {`
+          + " $_.IdentityReference.Translate([System.Security.Principal.SecurityIdentifier]).Value }",
+        ], { encoding: "utf8" }).split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+        const owner = execFileSync("whoami", ["/user", "/fo", "csv", "/nh"], { encoding: "utf8" })
+          .match(/"(S-\d(?:-\d+)+)"/)?.[1];
+        expect(owner).toBeTruthy();
+        expect(sids).toContain(owner!);
+        // LocalSystem and Administrators can take ownership of any file, so no
+        // ACL can exclude them — they are outside the threat boundary exactly as
+        // root is on POSIX, where 0600 does not exclude it either. What must not
+        // appear is any ordinary principal: Everyone, Users, Authenticated
+        // Users or another account.
+        const unprivileged = sids.filter((sid) => sid !== owner && sid !== "S-1-5-18" && sid !== "S-1-5-32-544");
+        expect(unprivileged).toEqual([]);
       }
       expect(await store.read()).toBe(token);
     } finally {
