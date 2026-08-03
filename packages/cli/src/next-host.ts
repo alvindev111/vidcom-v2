@@ -7,13 +7,13 @@ import {
   InMemorySessionStore,
   type ServerAppDependencies,
 } from "@vidcom/server";
-import { nodeSchedulerTimers } from "@vidcom/adapter";
+import { ensureVidcomSettingsFile, nodeSchedulerTimers, readVidcomSettings } from "@vidcom/adapter";
+import type { ResolvedVidcomSettings } from "@vidcom/contracts";
 import type { AbsolutePath } from "@vidcom/core";
 import { JobScheduler } from "@vidcom/core";
 import { createMcpHttpHandlers } from "@vidcom/mcp";
-import { createNoopProbeJobType } from "@vidcom/worker";
 
-import { createMcpRegistry, createSystemClock } from "./composition-root";
+import { createJobTypes, createMcpRegistry, createSystemClock, hashContent } from "./composition-root";
 import { startVidcomFoundation } from "./startup";
 import { selectWorkspace } from "./workspace-selection";
 
@@ -27,11 +27,39 @@ interface RuntimeGlobal {
   __vidcomNextRuntimes?: Map<number, Promise<NextHostedRuntime>>;
 }
 
-export function defaultAppDataRoot(): string {
+/**
+ * Where the database, model cache and backups live.
+ *
+ * `VIDCOM_APP_DATA` wins, then `appDataRoot` from `~/.vidcom/setting.json`, then
+ * the platform convention. Settings come last of the three so an operator can
+ * redirect one run without editing a file, and so an existing install keeps its
+ * database when a settings file appears.
+ */
+export function defaultAppDataRoot(settings?: ResolvedVidcomSettings): string {
   if (process.env.VIDCOM_APP_DATA) return path.resolve(process.env.VIDCOM_APP_DATA);
+  if (settings?.appDataRoot) return path.resolve(settings.appDataRoot);
   if (process.platform === "darwin") return path.join(os.homedir(), "Library", "Application Support", "VidCom");
   if (process.platform === "win32") return path.join(process.env.APPDATA ?? os.homedir(), "VidCom");
   return path.join(process.env.XDG_DATA_HOME ?? path.join(os.homedir(), ".local", "share"), "vidcom");
+}
+
+/**
+ * Directory a packaged build unpacked its native sidecars into, or `undefined`
+ * in a source checkout where they sit beside the code.
+ *
+ * Every production entry point MUST pass this through to the composition root.
+ * A SEA binary has no `packages/adapter/sidecars` on disk, so a runtime that
+ * omits it falls back to a path relative to the bundle and reports the VieNeu
+ * sidecar as missing on exactly the artifact the project ships.
+ *
+ * `VIDCOM_NATIVE_DEPS` lets the packaging step name the extraction directory;
+ * otherwise it is a stable subdirectory of app-data, which is where the
+ * extractor writes by default.
+ */
+export function defaultNativeDependenciesRoot(appDataRoot: string): string {
+  return process.env.VIDCOM_NATIVE_DEPS
+    ? path.resolve(process.env.VIDCOM_NATIVE_DEPS)
+    : path.join(appDataRoot, "native");
 }
 
 function runtimeMap(): Map<number, Promise<NextHostedRuntime>> {
@@ -46,24 +74,31 @@ async function startNextHostedRuntime(port: number): Promise<NextHostedRuntime> 
   delete process.env.VIDCOM_BOOTSTRAP_NONCE;
   if (bootstrapNonce) nonces.register(bootstrapNonce);
   const sessions = new InMemorySessionStore(clock);
-  const appDataRoot = defaultAppDataRoot();
+  // Settings first: the file is allowed to say where application data lives, so
+  // nothing that depends on that path can be computed before it is read.
+  const settings = await readVidcomSettings();
+  const appDataRoot = defaultAppDataRoot(settings);
+  await ensureVidcomSettingsFile();
   const workspaceRoot = await selectWorkspace({
-    explicit: process.env.VIDCOM_WORKSPACE,
+    explicit: process.env.VIDCOM_WORKSPACE ?? settings.workspaceRoot,
     appDataRoot,
   });
   let scheduler: JobScheduler | null = null;
   const foundation = await startVidcomFoundation({
     appDataRoot,
     workspaceRoot: workspaceRoot as AbsolutePath,
+    nativeDependenciesRoot: defaultNativeDependenciesRoot(appDataRoot) as AbsolutePath,
+    settings,
     holderId: `next:${process.pid}:${crypto.randomUUID()}`,
     clock,
   }, {
-    async recoverJobs({ infrastructure }) {
+    async recoverJobs({ infrastructure, application }) {
+      if (!application) throw new Error("application was not initialized before job recovery");
       scheduler = new JobScheduler(
         infrastructure.jobs,
         infrastructure.clock,
         infrastructure.ids,
-        [createNoopProbeJobType()],
+        createJobTypes(infrastructure, application),
         infrastructure.events,
         nodeSchedulerTimers,
       );
@@ -106,6 +141,14 @@ async function startNextHostedRuntime(port: number): Promise<NextHostedRuntime> 
       mcp,
       projectReads,
       projectWrites,
+      narration: {
+        workspace: foundation.infrastructure.workspace,
+        reads: foundation.application.readDependencies,
+        jobs: foundation.infrastructure.jobs,
+        tts: foundation.infrastructure.tts,
+        ids: foundation.infrastructure.ids,
+        hashContent,
+      },
       jobs: foundation.infrastructure.jobs,
       events: foundation.infrastructure.events,
     }),

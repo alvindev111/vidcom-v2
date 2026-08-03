@@ -18,6 +18,7 @@ import {
 import { createAuthRoutes } from "./routes/auth";
 import { createProjectReadRoutes, type ProjectReadRouteDependencies } from "./routes/project-reads";
 import { createJobRoutes } from "./routes/jobs";
+import { createNarrationRoutes, type NarrationRouteDependencies } from "./routes/narration";
 import { createEventRoutes } from "./routes/events";
 import { createProjectWriteRoutes, type ProjectWriteRouteDependencies } from "./routes/project-writes";
 import { createMcpRoutes, type McpRouteDependencies } from "./routes/mcp";
@@ -36,6 +37,7 @@ export interface ServerAppDependencies {
   jobs?: JobStorePort;
   events?: EventOutboxPort;
   projectWrites?: ProjectWriteRouteDependencies;
+  narration?: NarrationRouteDependencies;
 }
 
 function observed(step: string, middleware: ReturnType<typeof requestId>, trace?: (step: string) => void) {
@@ -84,6 +86,7 @@ export function createServerApp(deps: ServerAppDependencies) {
   if (deps.jobs) app.route("/v1", createJobRoutes(deps.jobs));
   if (deps.events) app.route("/v1", createEventRoutes(deps.events));
   if (deps.projectWrites) app.route("/", createProjectWriteRoutes(deps.projectWrites));
+  if (deps.narration) app.route("/", createNarrationRoutes(deps.narration));
   app.get("/v1/health", (c) => c.json({ ok: true }));
   app.notFound((c) => mapHttpError(
     new HttpBoundaryError({ code: ErrorCode.NotFound, message: "endpoint not found" }),

@@ -29,6 +29,11 @@ function protocolCode(error: DomainError, era: Era): number {
     case ErrorCode.BackupExpired:
     case ErrorCode.RecoveryRequired:
     case ErrorCode.CommittedResponseError:
+    // Machine state, not a bad call: the engine is missing, out of credit or
+    // simply failed. Retrying with different arguments will not help.
+    case ErrorCode.TtsProviderUnavailable:
+    case ErrorCode.TtsQuotaExceeded:
+    case ErrorCode.TtsSynthesisFailed:
       return MCP_INTERNAL_ERROR;
     case ErrorCode.SchemaInvalid:
     case ErrorCode.PathRequired:
@@ -56,6 +61,8 @@ function protocolCode(error: DomainError, era: Era): number {
     case ErrorCode.ToolNotAvailableInEra:
     case ErrorCode.ReferencedByComposition:
     case ErrorCode.DuplicateMutationTarget:
+    case ErrorCode.TtsCredentialMissing:
+    case ErrorCode.TtsVoiceNotSupported:
       return MCP_INVALID_PARAMS;
   }
 }

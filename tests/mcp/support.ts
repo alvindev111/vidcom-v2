@@ -63,6 +63,14 @@ export const CONTRACT_MATRIX_CASES: Record<string, Record<string, unknown>> = {
     expectedRevision: 2,
     grantId: "grant-contract-matrix",
   },
+  list_tts_voices: { projectId: matrixProjectId },
+  start_tts: {
+    projectId: matrixProjectId,
+    sceneIds: ["scene-1"],
+    providerId: "matrix-tts",
+    voiceId: "matrix-voice",
+  },
+  get_job_status: { jobId: "job_matrix" },
 };
 
 function createBaseRegistry(auditEntries: ToolAuditEntry[] = [], journalOwned = false): ToolRegistry {
@@ -96,6 +104,9 @@ export function createContractMatrixRegistry(): ToolRegistry {
     ["compositions/scene-1.html", sceneSource],
     ["compositions/unused.html", "<aside>unused</aside>"],
     ["preview-settings.json", previewSettings],
+    // The scene has narration, so its sidecar must exist: set_text marks that
+    // sidecar stale and fails outright if it cannot read it.
+    ["narration/scene-1.json", `${JSON.stringify({ sceneId: "scene-1", text: "Xin chào" })}\n`],
   ]);
   const model: CompositionModel = {
     project: {
@@ -119,7 +130,19 @@ export function createContractMatrixRegistry(): ToolRegistry {
       isTransition: false,
       media: [],
       script: [{ id: "title", text: "Title", file: "index.html" as RelPath }],
-      narration: null,
+      // start_tts requires narration text to exist, so the matrix scene carries
+      // one; without it the tool would only ever exercise its rejection path.
+      narration: {
+        sceneId: "scene-1",
+        text: "Xin chào",
+        voice: "matrix-voice",
+        status: "mock" as const,
+        audioPath: "narration/scene-1.wav" as RelPath,
+        command: "",
+        revision: 0,
+        updatedAt: "2026-08-02T00:00:00.000Z",
+        staleSince: null,
+      },
       elements: [],
       unresolvedEffects: 0,
     }],
@@ -191,7 +214,62 @@ export function createContractMatrixRegistry(): ToolRegistry {
     clock: { now: () => new Date("2026-08-02T00:00:00.000Z") },
     hashContent: () => matrixHash,
     approvals: { request: async () => "unused-approval" },
+    tts: {
+      listProviders: async () => [{
+        id: "matrix-tts",
+        label: "Matrix TTS",
+        available: true,
+        unavailableReason: null,
+        voices: [{
+          id: "matrix-voice",
+          providerId: "matrix-tts",
+          label: "Matrix voice",
+          language: "vi",
+          modelId: "matrix-1",
+          supportsEmotionCues: false,
+          computeDevices: ["cpu"],
+          recommended: true,
+        }],
+        allowsCustomVoiceId: false,
+        customVoiceDefaults: null,
+      }],
+      synthesize: async () => ok([]),
+    },
+    jobs: {
+      enqueue: async (job: { id: string }) => ({
+        job: {
+          ...job,
+          status: "queued",
+          progress: 0,
+          stage: null,
+          result: null,
+          error: null,
+          attempt: 0,
+          createdAt: "2026-08-02T00:00:00.000Z",
+          startedAt: null,
+          finishedAt: null,
+        },
+        reused: false,
+      }),
+      get: async () => ({
+        id: "job_matrix",
+        type: "tts",
+        status: "succeeded" as const,
+        progress: 1,
+        stage: null,
+        result: { assets: [], revision: 3 },
+        error: null,
+        attempt: 1,
+        createdAt: "2026-08-02T00:00:00.000Z",
+        startedAt: "2026-08-02T00:00:01.000Z",
+        finishedAt: "2026-08-02T00:00:02.000Z",
+      }),
+    },
+    ids: { newId: (prefix: string) => `${prefix}_matrix` },
   } as unknown as VidcomToolDependencies;
+  // The read dependencies are the same fakes the write tools use, so the job
+  // tools see the identical project rather than a second, divergent harness.
+  dependencies.reads = dependencies;
   registerVidcomTools(registry, dependencies);
   return registry;
 }

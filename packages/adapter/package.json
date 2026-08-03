@@ -5,6 +5,7 @@
   "type": "module",
   "exports": "./src/index.ts",
   "dependencies": {
+    "@elevenlabs/elevenlabs-js": "2.59.0",
     "@hyperframes/core": "0.7.86",
     "@hyperframes/parsers": "0.7.86",
     "@hyperframes/sdk": "0.7.86",

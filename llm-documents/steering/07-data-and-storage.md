@@ -1,5 +1,41 @@
 # 07 — Data & storage
 
+## 0. Cấu hình người dùng — `~/.vidcom/setting.json`
+
+Vùng thứ ba, nhỏ nhưng đứng **trước** hai vùng kia trong thứ tự khởi động: nó có quyền khai app-data nằm ở đâu, nên phải đọc được trước khi biết app-data là gì. Vì thế nó ở đường dẫn cố định theo home, không theo convention app-data của OS.
+
+```text
+~/.vidcom/
+└── setting.json     (0600 / Windows ACL chỉ current user)
+```
+
+```json
+{
+  "appDataRoot": null,
+  "workspaceRoot": null,
+  "tts": {
+    "defaultProviderId": "vieneu",
+    "defaultVoiceId": "vieneu-v3-pham-tuyen",
+    "defaultRatePercent": 0,
+    "defaultComputeDevice": "cpu",
+    "elevenlabs": { "apiKey": null },
+    "vieneu": { "command": null, "modelRevision": null }
+  }
+}
+```
+
+Luật:
+
+- **Schema strict.** Key sai chính tả → **lỗi khởi động** nêu tên field, MUST NOT bỏ qua. Một setting bị âm thầm phớt lờ là loại misconfiguration khó tìm nhất: API key nằm đó mà daemon vẫn báo healthy.
+- **File không có = mặc định.** File rỗng cũng vậy. Chỉ file *sai* mới là lỗi.
+- **Env thắng file.** `VIDCOM_APP_DATA`, `VIDCOM_WORKSPACE`, `ELEVENLABS_API_KEY` override, để CI và một lần chạy lẻ không phải ghi secret xuống đĩa, và để operator sửa được mà không cần mở file.
+- **Quyền `0600`** và directory `0700` — file này chứa API key dịch vụ trả phí, cùng mức bảo vệ như `<app-data>/credentials` ([09-security](09-security.md) §2).
+- MUST NOT log nội dung file, kể cả trong message lỗi parse. Lỗi nêu **tên field và luật bị vi phạm**, không nêu giá trị.
+- `VIDCOM_HOME` đổi thư mục, `VIDCOM_SETTINGS` chỉ thẳng file — cho test và bản portable.
+- Entry point app tạo sẵn file template lúc khởi động (để người dùng không phải đoán schema); `vidcom mcp` **không** tạo — nó do AI host spawn, ghi vào home như tác dụng phụ của một handshake là không phải việc của nó.
+
+Ranh giới với `app_settings` trong SQLite: file này là **cấu hình người dùng khai**; bảng SQLite là **state vận hành** (`active_workspace`…). Cùng một thứ MUST NOT nằm ở cả hai chỗ.
+
 ## 1. Hai vùng lưu trữ — không được lẫn
 
 ### Workspace người dùng chọn — PUBLIC

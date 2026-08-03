@@ -37,6 +37,11 @@ export enum ErrorCode {
   DuplicateMutationTarget = "duplicate_mutation_target",
   RecoveryRequired = "recovery_required",
   CommittedResponseError = "committed_response_error",
+  TtsProviderUnavailable = "tts_provider_unavailable",
+  TtsCredentialMissing = "tts_credential_missing",
+  TtsVoiceNotSupported = "tts_voice_not_supported",
+  TtsQuotaExceeded = "tts_quota_exceeded",
+  TtsSynthesisFailed = "tts_synthesis_failed",
 }
 
 /** Structured error payload returned by HTTP and MCP adapters. */

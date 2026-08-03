@@ -2,6 +2,10 @@
 
 File liên quan: [tts.server.ts](../../src/lib/hyperframes/tts.server.ts), [scene-narration.tsx](../../src/components/studio/scene-narration.tsx), [api/hf/[slug]/scene/route.ts](../../src/app/api/hf/[slug]/scene/route.ts)
 
+> **Cập nhật 2026-08-03 — TTS thật đã có.** Phần "Logic hiện tại" bên dưới mô tả
+> đường mock cũ (`src/lib/hyperframes/tts.server.ts`), vẫn còn cho scene mới tạo.
+> Đường sinh audio thật nằm ở [§ TTS thật](#tts-thật-2026-08-03) cuối tài liệu.
+
 ---
 
 ## F-7.1 — Lưu trữ narration
@@ -119,3 +123,132 @@ File liên quan: [tts.server.ts](../../src/lib/hyperframes/tts.server.ts), [scen
 - Xoá narration.
 - Nút preview audio trong UI.
 - Tách rời: sửa script **không** tự động regenerate TTS, thay vào đó đánh dấu narration là `stale` và để người dùng bấm regenerate (hoặc bật autoregenerate).
+
+---
+
+## TTS thật (2026-08-03)
+
+Đã làm được phần **Bắt buộc** ở trên, trừ mục "chọn voice từ UI" (vẫn là API-only).
+
+### Kiến trúc
+
+```
+HTTP  POST /api/v1/projects/:id/narration/synthesize ─┐
+MCP   start_tts ──────────────────────────────────────┴─▶ job "tts"
+                                                            │
+                        synthesizeNarration() ◀─────────────┘
+                                │
+                        TtsPort.synthesize()  →  TtsRegistry
+                                │                    ├── ElevenLabsTtsProvider (cloud, có word timing)
+                                │                    └── VieNeuTtsProvider (local, sidecar Python)
+                                │                         └── FFmpeg normalize → WAV 44.1k mono
+                                ▼
+                        WriteAuthority.mutateComposite()
+                        → narration/<sceneId>.wav + narration/<sceneId>.json (một revision)
+```
+
+`TtsPort` **trả bytes**, không tự ghi vào workspace — `WriteAuthority` vẫn là cửa duy nhất chạm đĩa của project (03-architecture-ddd §3.5).
+
+### Sidecar JSON sau khi sinh thật
+
+`status` vẫn được suy ra lúc đọc từ sự tồn tại của wav (F-7.2 không đổi). Thêm ba field:
+
+```json
+{
+  "sceneId": "scene-1",
+  "text": "Xin chào các bạn",
+  "voice": "vieneu-v3-pham-tuyen",
+  "status": "generated",
+  "audioPath": "narration/scene-1.wav",
+  "command": "vidcom tts --scene scene-1 --provider vieneu --voice vieneu-v3-pham-tuyen --rate 0",
+  "revision": 7,
+  "updatedAt": "2026-08-03T10:00:00.000Z",
+  "staleSince": null,
+  "provider": "vieneu",
+  "durationSeconds": 4.52,
+  "words": [{ "text": "Xin", "startSeconds": 0, "endSeconds": 0.31 }],
+  "wordTimingSource": "estimated",
+  "engine": { "modelId": "vieneu-v3-turbo", "modelRevision": "…", "effectiveDevice": "cpu", "sampleRate": 44100 }
+}
+```
+
+`engine` là provenance — model, revision, device, rate thực tế.
+
+### Word timing — highlight transcript từng từ
+
+`words` **luôn có** khi cue có từ để đọc, với mọi engine. `wordTimingSource` nói nó đến từ đâu, và consumer buộc phải phân biệt được hai loại:
+
+| `wordTimingSource` | Nguồn | Dùng được cho |
+|---|---|---|
+| `engine` | Alignment engine đo trên audio thật (ElevenLabs trả character alignment) | Highlight từng từ đúng tới âm tiết; alignment thật |
+| `estimated` | Chia thời lượng cue theo **số ký tự** từng từ (VieNeu không có alignment) | Highlight chạy theo lời; **không** phải alignment — nó lệch dần trong một câu |
+
+Chia theo số ký tự chứ không chia đều: "chuyển" đọc lâu hơn "và" thấy rõ, chia đều thì tới cuối câu dài highlight đã đi trước giọng. Từ cuối lấy đúng mốc `endSeconds` của cue nên không hở/không tràn ở biên — đúng chỗ dễ bị bắt lỗi nhất.
+
+Cue điều khiển trong ngoặc (`[ngắt vừa]`, `[cười]`) **không** được tính timing: chúng không được đọc ra.
+
+Timing với engine trả theo **cụm** cũng được tách thành từng từ, nên consumer chỉ phải xử lý một contract.
+
+`checkWordTimings()` chặn trước khi publish: đúng thứ tự, không chồng nhau, không vượt thời lượng audio (dung sai 1ms cho sai số làm tròn). Caption dựng từ boundary sai lệch trôi rất rõ mà nhìn triệu chứng thì cực khó ra nguyên nhân.
+
+`words` đi tới client qua `SceneDto.narration` trong studio snapshot sẵn có — không cần endpoint mới.
+
+**Chưa có:** phần *render* highlight (nhóm từ thành cụm caption, đánh dấu từ đang đọc). Đó là Giai đoạn 5; dữ liệu thì đã đủ và đã được validate.
+
+### Mount vào preview/render — đã xong
+
+`buildCompositionDocument()` (đường dựng document **duy nhất**, P3) gọi `readNarrationClips()` rồi
+`buildNarrationHtml()` sinh `<audio class="clip hf-narration" data-start="…" data-duration="…">`,
+cùng cơ chế `buildBgmHtml()` đã dùng. Start time lấy từ `data-*` của document, không lấy từ sidecar (P1).
+Chỉ inject ở root document. Điều này giải quyết **Vấn đề đã biết #6**.
+
+### Cấu hình
+
+`~/.vidcom/setting.json` (xem [steering/07-data-and-storage](../steering/07-data-and-storage.md#0-cấu-hình-người-dùng--vidcomsettingjson)):
+
+```json
+{
+  "tts": {
+    "defaultProviderId": "vieneu",
+    "defaultVoiceId": "vieneu-v3-pham-tuyen",
+    "defaultRatePercent": 0,
+    "defaultComputeDevice": "cpu",
+    "elevenlabs": { "apiKey": "sk-…" },
+    "vieneu": {
+      "command": ["C:/path/.venv/Scripts/python.exe", "C:/path/sidecars/vieneu/worker.py"],
+      "modelRevision": null
+    }
+  }
+}
+```
+
+`ELEVENLABS_API_KEY` trong env thắng `tts.elevenlabs.apiKey`. `tts.vieneu.modelRevision` được truyền xuống sidecar thành `VIDCOM_VIENEU_REVISION` để pin weights.
+
+### Voice recommended
+
+`TtsVoiceDto.recommended` là shortlist VidCom đề xuất, xếp trước trong catalog. Với VieNeu là 4 giọng:
+
+```
+vieneu-v3-doan-trang    Đoan Trang
+vieneu-v3-minh-duc      Minh Đức
+vieneu-v3-ngoc-linh     Ngọc Linh
+vieneu-v3-pham-tuyen    Phạm Tuyên
+```
+
+Engine v3 Turbo ship 14 preset; đây là 4 cái được đưa lên đầu để lần narration đầu tiên là **một lựa chọn**, không phải một cuộc khảo sát. Quan trọng: id trong shortlist chỉ xuất hiện khi `list_preset_voices()` của engine **thật sự** báo giọng đó — VidCom không bao giờ tự dựng ra một voice mà engine sẽ từ chối. Cài bản engine không có một trong 4 giọng thì giọng đó đơn giản là vắng mặt.
+
+### Chính sách CPU/GPU
+
+- Enum device chỉ có `cpu | gpu`, **không có `auto`** — mặc định `cpu`.
+- GPU chỉ xuất hiện trong catalog sau khi sidecar **cấp phát thật** được một tensor CUDA.
+- Xin GPU trên máy không có → lỗi rõ ràng, **không** âm thầm chạy CPU.
+
+### Cost và idempotency
+
+Job `tts` **không idempotent, không retry** (`maxAttempts: 1`). Synthesis tính phí và output không byte-deterministic, nên requeue sau crash sẽ tính phí lần hai và commit revision thứ hai cho một yêu cầu duy nhất. Job hỏng thì đứng hỏng; người dùng quyết định có chi tiếp không.
+
+### Còn thiếu
+
+- UI chọn provider/voice (đợt này dừng ở API).
+- Render caption/highlight từ `words` — Giai đoạn 5. Dữ liệu đã đủ.
+- Vấn đề đã biết #1, #2, #3, #4, #7 vẫn còn. **#5 đã giải quyết một nửa**: giờ biết audio dài bao lâu (`durationSeconds`) và từng từ nằm ở giây nào; còn thiếu phần cảnh báo khi `durationSeconds > scene.duration`.

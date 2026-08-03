@@ -14,7 +14,13 @@ import {
   WorkspaceFs,
   WorkspaceLease,
 } from "@vidcom/adapter";
-import { ErrorCode, type ContentHash, type ProjectId, type RelPath } from "@vidcom/contracts";
+import {
+  DEFAULT_VIDCOM_SETTINGS,
+  ErrorCode,
+  type ContentHash,
+  type ProjectId,
+  type RelPath,
+} from "@vidcom/contracts";
 import {
   MAX_CREDENTIAL_ROTATION_OVERLAP_MS,
   WriteAuthority,
@@ -151,6 +157,7 @@ describe("VidCom CLI dispatch", () => {
       await expect(selectWorkspace({ explicit: active, appDataRoot: appData })).resolves.toBe(active);
       await expect(startVidcomMcp({ workspace: invalid }, {
         appDataRoot: () => appData,
+        readSettings: async () => DEFAULT_VIDCOM_SETTINGS,
         selectWorkspace,
         startStdio: async () => { throw new Error("listener must not open"); },
         writeError: () => { throw new Error("stderr must not be used"); },
@@ -186,10 +193,11 @@ describe("VidCom CLI dispatch", () => {
     try {
       const runtime = await startVidcomMcp({ workspace, protocol: "2025-11-25" }, {
         appDataRoot: () => appData,
+        readSettings: async () => DEFAULT_VIDCOM_SETTINGS,
         selectWorkspace: async () => workspace as AbsolutePath,
         startStdio: async (registry, _dependencies, options) => {
           expect(options).toEqual({ pinnedRevision: "2025-11-25" });
-          expect(registry.list("legacy").map((tool) => tool.name)).toHaveLength(10);
+          expect(registry.list("legacy").map((tool) => tool.name)).toHaveLength(13);
           return {
             close: async () => { stdioClosed = true; },
             closed: new Promise<void>(() => undefined),
@@ -312,6 +320,7 @@ describe("VidCom CLI dispatch", () => {
     try {
       const runtime = await startVidcomMcp({ workspace }, {
         appDataRoot: () => appData,
+        readSettings: async () => DEFAULT_VIDCOM_SETTINGS,
         selectWorkspace: async () => workspace as AbsolutePath,
         startStdio: async () => ({
           closed: new Promise<void>((resolve) => { disconnect = resolve; }),

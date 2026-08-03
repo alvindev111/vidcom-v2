@@ -1,0 +1,16 @@
+# The CPU install is torch-free: upstream v3 Turbo runs on ONNX Runtime and
+# never imports PyTorch. Pinned exactly, because the sidecar calls a specific
+# API surface (Vieneu.infer / .save / .list_preset_voices) and a minor release
+# that renames any of it turns into a runtime failure with no compile step to
+# catch it.
+vieneu==3.2.4
+
+# Used to resolve and report the exact model commit the weights came from, so a
+# given WAV is traceable even when VIDCOM_VIENEU_REVISION is not pinned.
+huggingface-hub>=0.24
+
+# GPU is opt-in and NOT installed here. The torch stack comes from the `legacy`
+# extra — `pip install "vieneu[legacy]"` — which is what upstream 3.2.4 actually
+# publishes; there is no `gpu` extra, and asking for one only makes pip warn and
+# install the CPU base. Without torch the sidecar reports no GPU and VidCom
+# offers CPU only.

@@ -155,6 +155,23 @@ export const SceneSchema = z.strictObject({
       revision: z.number().int().nonnegative(),
       updatedAt: isoTimestampSchema,
       staleSince: isoTimestampSchema.nullable(),
+      /** Absent on sidecars written before real TTS existed, and on mock records. */
+      provider: identifierSchema.optional(),
+      durationSeconds: z.number().positive().optional(),
+      /** Word boundaries against the published audio, for word-level transcript highlighting. */
+      words: z.array(z.strictObject({
+        text: z.string().min(1),
+        startSeconds: z.number().nonnegative(),
+        endSeconds: z.number().nonnegative(),
+      })).optional(),
+      /**
+       * `engine` = measured against the audio, safe for per-word highlighting.
+       * `estimated` = apportioned from the text by word length, so it drifts within
+       * a sentence — good enough for a moving highlight, not an alignment.
+       */
+      wordTimingSource: z.enum(["engine", "estimated"]).optional(),
+      /** Engine provenance: model, revision, device, effective rate. */
+      engine: z.record(z.string(), z.union([z.string(), z.number(), z.boolean()])).optional(),
     })
     .nullable(),
   elements: z.array(SceneElementSchema),

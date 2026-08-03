@@ -4,6 +4,7 @@ import {
   ContentHashSchema,
   DiagnosticSchema,
   IdentifierSchema,
+  JobSchema,
   MAX_SOURCE_BYTES,
   PreviewSettingsSchema,
   ProjectSummarySchema,
@@ -11,6 +12,13 @@ import {
   RelativePathSchema,
   RootTrackSchema,
 } from "./dto";
+import {
+  MAX_TTS_BATCH_CUES,
+  MAX_TTS_RATE_PERCENT,
+  MIN_TTS_RATE_PERCENT,
+  TtsComputeDeviceSchema,
+  TtsProviderSchema,
+} from "./tts";
 
 const CanonicalRelativePathSchema = RelativePathSchema.regex(
   /^(?!\/)(?![A-Za-z]:)(?!.*\\)(?!.*\0)(?!.*\/\/)(?!\.{1,2}(?:\/|$))(?!.*\/\.{1,2}(?:\/|$)).+$/,
@@ -213,5 +221,34 @@ export const DeleteSceneOutputSchema = z.strictObject({
   keptFileReason: z.string().nullable(),
   backupId: IdentifierSchema,
 });
+
+/** Input for `list_tts_voices`. */
+export const ListTtsVoicesInputSchema = z.strictObject({ ...projectIdInput });
+/** Output for `list_tts_voices`. */
+export const ListTtsVoicesOutputSchema = z.strictObject({
+  providers: z.array(TtsProviderSchema),
+});
+
+/** Input for `start_tts`. */
+export const StartTtsInputSchema = z.strictObject({
+  ...projectIdInput,
+  sceneIds: z.array(IdentifierSchema).min(1).max(MAX_TTS_BATCH_CUES),
+  providerId: IdentifierSchema,
+  voiceId: IdentifierSchema,
+  modelId: IdentifierSchema.nullish(),
+  ratePercent: z.number().int().min(MIN_TTS_RATE_PERCENT).max(MAX_TTS_RATE_PERCENT).nullish(),
+  computeDevice: TtsComputeDeviceSchema.nullish(),
+});
+/** Output for `start_tts`; the audio itself arrives through the job. */
+export const StartTtsOutputSchema = z.strictObject({
+  jobId: IdentifierSchema,
+  status: z.literal("queued"),
+  pollWith: z.literal("get_job_status"),
+});
+
+/** Input for `get_job_status`. */
+export const GetJobStatusInputSchema = z.strictObject({ jobId: IdentifierSchema });
+/** Output for `get_job_status`. */
+export const GetJobStatusOutputSchema = JobSchema;
 
 export type SceneContext = z.infer<typeof SceneContextSchema>;

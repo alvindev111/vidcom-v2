@@ -56,6 +56,10 @@ export const heavyE2eTimeout: number = process.platform === "win32" ? 180_000 : 
  * A directory that is any live process's current directory cannot be removed on
  * Windows, and the handle outlives the exit notification, so a first attempt can
  * lose a race that no amount of awaiting the child prevents.
+ *
+ * Keep the budget short. A persistent EBUSY here means a child is still running,
+ * usually because an assertion threw before its `close()` — raising the ceiling
+ * only turns that into a slower failure with a more misleading message.
  */
 export async function removeTree(root: string, budgetMs = 10_000): Promise<void> {
   const { rm } = await import("node:fs/promises");

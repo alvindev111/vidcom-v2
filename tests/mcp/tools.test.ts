@@ -73,7 +73,11 @@ describe("all registered tool handlers", () => {
       clock: { now: () => new Date("2026-08-02T00:00:00.000Z") },
       hashContent: () => digest("f"),
       approvals: { request: async () => "request-1" },
+      tts: { listProviders: async () => [] },
+      jobs: { enqueue: async () => ({ conflict: "idempotency_key_reused" }), get: async () => null },
+      ids: { newId: (prefix: string) => `${prefix}-1` },
     } as unknown as VidcomToolDependencies;
+    dependencies.reads = dependencies;
     registerVidcomTools(tools, dependencies);
 
     const cases: Record<string, unknown> = {
@@ -90,6 +94,9 @@ describe("all registered tool handlers", () => {
       save_file: { projectId, path: "compositions/scene-1.html", content: "<main />", expectedContentHash: digest("1") },
       delete_file: { projectId, path: "compositions/unused.html", expectedContentHash: digest("1") },
       delete_scene: { projectId, sceneId: "scene-1", expectedRevision: 0 },
+      list_tts_voices: { projectId },
+      start_tts: { projectId, sceneIds: ["scene-1"], providerId: "nobody", voiceId: "nobody" },
+      get_job_status: { jobId: "job-1" },
     };
     expect(Object.keys(cases).sort()).toEqual(tools.list("modern").map((tool) => tool.name));
 
@@ -98,9 +105,18 @@ describe("all registered tool handlers", () => {
       if (name === "list_projects") {
         expect(result).toEqual({ ok: true, value: { projects: [], diagnostics: [], nextCursor: null } });
       }
+      // No provider is registered in this harness, so start_tts rejects on the
+      // engine before it ever looks the project up.
+      else if (name === "start_tts") {
+        expect(result).toMatchObject({ ok: false, error: { code: "tts_provider_unavailable" } });
+      }
+      // get_job_status is not project-scoped; an absent job is a plain not_found.
+      else if (name === "get_job_status") {
+        expect(result).toMatchObject({ ok: false, error: { code: "not_found" } });
+      }
       else expect(result).toMatchObject({ ok: false, error: { code: "project_not_found" } });
     }
-    expect(records).toHaveLength(10);
+    expect(records).toHaveLength(Object.keys(cases).length);
     expect(new Set(records.map((entry) => entry.tool))).toEqual(new Set(Object.keys(cases)));
   });
 });

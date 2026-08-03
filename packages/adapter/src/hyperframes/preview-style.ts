@@ -200,6 +200,37 @@ export function buildFxPauseScript(settings: RenderablePreviewSettings): string 
 })();</script>`;
 }
 
+/**
+ * Narration `<audio class="clip">` elements for the root document.
+ *
+ * The runtime schedules anything carrying `clip` plus `data-start`, which is the
+ * same mechanism the BGM bed uses — so preview and render pick narration up
+ * through one code path (P3) instead of each learning about audio separately.
+ *
+ * Emitted only when the sidecar reports generated audio, so a project mid-way
+ * through narration plays the scenes that have it and stays silent on the rest
+ * rather than failing to build.
+ */
+export function buildNarrationHtml(
+  clips: readonly {
+    sceneId: string;
+    path: string;
+    startSeconds: number;
+    durationSeconds: number | null;
+  }[],
+  fileBaseUrl: string,
+): string {
+  return clips.map((clip) => {
+    const source = htmlAttribute(`${fileBaseUrl}${encodedProjectPath(clip.path)}`);
+    // data-duration is the measured length, not the scene's: a narration line
+    // shorter than its scene must stop when it stops, and one that overruns is
+    // a timing problem the author needs to see rather than have trimmed away.
+    const duration = clip.durationSeconds === null ? "" : ` data-duration="${clip.durationSeconds}"`;
+    return `<audio class="clip hf-narration" data-narration-scene="${htmlAttribute(clip.sceneId)}"`
+      + ` src="${source}" data-start="${clip.startSeconds}"${duration}></audio>`;
+  }).join("");
+}
+
 export function buildBgmHtml(settings: RenderablePreviewSettings, fileBaseUrl: string): string {
   const { bgm } = settings;
   if (!bgm.enabled || !bgm.track) return "";

@@ -13,6 +13,8 @@
 | Composition engine | `@hyperframes/{core,sdk,studio-server,parsers,lint}` | Node-only |
 | Validation | Một thư viện schema duy nhất cho cả HTTP và MCP | Xem [06-validation](06-validation.md) |
 | DB vận hành | SQLite | File trong app-data, không phải trong workspace |
+| TTS cloud | `@elevenlabs/elevenlabs-js` (pin `2.59.0`) | Chỉ dùng trong `packages/adapter/src/tts/tts-elevenlabs.ts`. Nằm sau `TtsProviderAdapter`, nên thay bằng `fetch` thuần là sửa đúng một file nếu SEA bundle không chịu |
+| TTS local | Sidecar Python `vieneu` (pin `3.2.4`) | **Không** phải dependency npm — asset trong `packages/adapter/sidecars/vieneu/`, spawn qua `ProcessPort`. CPU chạy ONNX torch-free; GPU là `vieneu[gpu]`, opt-in |
 
 MUST NOT thêm HTTP framework thứ hai. MUST NOT thêm ORM nặng — truy vấn SQLite viết tay hoặc query builder mỏng.
 
@@ -52,7 +54,8 @@ Những thứ sau **không nhúng được** vào JS bundle và ảnh hưởng t
 | `onnxruntime-node` | `.node` addon (TTS) |
 | `sharp` + libvips | `.node` addon |
 | `puppeteer-core` + Chromium | browser runtime, tải lúc chạy |
-| FFmpeg / FFprobe | binary ngoài |
+| FFmpeg / FFprobe | binary ngoài. **Bắt buộc cho mọi TTS** — `TtsRegistry` chuẩn hoá audio của mọi engine qua nó, và preflight sẽ báo `audio_toolchain_missing` thay vì để engine cloud tính phí rồi mới hỏng |
+| Sidecar Python VieNeu + weights | script + model tải lúc chạy. Weights vào `<app-data>/models` qua `HF_HOME`, **không bao giờ** vào source tree hay workspace. Sidecar phải được giải nén ra `nativeDependenciesRoot` khi đóng gói SEA |
 
 Kết quả spike Phase 0: executable Bun trực tiếp không load được `onnxruntime-node` và `sharp`; Bun native-loader rewrite vẫn không resolve dependency filesystem động. Node SEA nhúng archive native có manifest/checksum đã chạy được ONNX + Sharp ở cold extraction và warm cache. D2 MUST dùng Node SEA và build artifact riêng theo OS × kiến trúc; không được quay lại Bun loader nếu chưa có spike mới phủ đúng probe. Xem [kết quả spike](../../spikes/phase-0/README.md).
 

@@ -45,7 +45,9 @@ const expectedSuccess: Record<string, object> = {
   },
   set_text: {
     scene: { id: "scene-1", fileContentHash: matrixNewHash },
-    narrationStale: false,
+    // The matrix scene now carries narration, so editing its text marks that
+    // narration stale — which is the point of the flag.
+    narrationStale: true,
     envelope: { projectRevision: 3 },
   },
   save_file: {
@@ -62,6 +64,9 @@ const expectedSuccess: Record<string, object> = {
     backupId: "backup-contract-matrix",
     envelope: { projectRevision: 3 },
   },
+  list_tts_voices: { providers: [{ id: "matrix-tts", available: true }] },
+  start_tts: { jobId: "job_matrix", status: "queued", pollWith: "get_job_status" },
+  get_job_status: { id: "job_matrix", type: "tts", status: "succeeded" },
 };
 
 async function exercise(client: LegacyClient | ModernClient): Promise<void> {
