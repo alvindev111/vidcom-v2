@@ -10,6 +10,9 @@ test-results/
 .DS_Store
 Thumbs.db
 .temp-documents/
+# The CLI end-to-end test stages a packed artifact here so it resolves the
+# checkout's dependencies; it cleans up after itself unless a run is killed.
+packages/cli/.artifact-*/
 # Runtime state
 config/*.json
 !config/*.example.json

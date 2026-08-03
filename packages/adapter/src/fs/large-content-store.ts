@@ -4,6 +4,8 @@ import path from "node:path";
 
 import type { ContentHash } from "@vidcom/contracts";
 
+import { syncDirectory } from "./durability";
+
 export const LARGE_PREVIOUS_CONTENT_THRESHOLD = 64 * 1024;
 
 export interface PreviousContentStore {
@@ -58,8 +60,7 @@ export class LargePreviousContentStore implements PreviousContentStore {
     } finally {
       await rm(temporary, { force: true });
     }
-    const directoryHandle = await open(directory, "r");
-    try { await directoryHandle.sync(); } finally { await directoryHandle.close(); }
+    await syncDirectory(directory);
     return hash;
   }
 

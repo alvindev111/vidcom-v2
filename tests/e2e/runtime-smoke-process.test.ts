@@ -4,9 +4,14 @@ import { once } from "node:events";
 import { describe, expect, it } from "vitest";
 
 import { stopRuntimeChild } from "../../scripts/runtime-smoke-process.mjs";
+import { hasPosixSignals } from "../support/platform";
+
+// Windows maps kill("SIGTERM") to TerminateProcess, so a child cannot trap the
+// graceful stop and the SIGKILL escalation branch is unreachable there.
+const itWithSignals = hasPosixSignals ? it : it.skip;
 
 describe("runtime smoke child cleanup", () => {
-  it("fails the smoke and kills hard when the child ignores SIGTERM", async () => {
+  itWithSignals("fails the smoke and kills hard when the child ignores SIGTERM", async () => {
     const child = spawn(process.execPath, [
       "-e",
       "process.on('SIGTERM',()=>{});process.stdout.write('ready\\n');setInterval(()=>{},1000)",

@@ -6,6 +6,8 @@ import { createHash, randomUUID } from "node:crypto";
 import type { ContentHash, RelPath } from "@vidcom/contracts";
 import type { ResolvedPath, StagedAsset, StagedAssetPort } from "@vidcom/core";
 
+import { syncDirectory } from "./durability";
+
 /** Stages bytes in app-data and installs them with no-overwrite hard-link semantics. */
 export class AppDataAssetStager implements StagedAssetPort {
   constructor(private readonly appDataRoot: string) {}
@@ -38,11 +40,11 @@ export class AppDataAssetStager implements StagedAssetPort {
           await copyFile(temporaryPath, target, constants.COPYFILE_EXCL);
         }
         installed = true;
-        const targetHandle = await open(target, "r");
+        // "r+" not "r": Windows refuses FlushFileBuffers on a read-only handle.
+        const targetHandle = await open(target, "r+");
         try { await targetHandle.sync(); } finally { await targetHandle.close(); }
         await unlink(temporaryPath);
-        const directoryHandle = await open(targetDirectory, "r");
-        try { await directoryHandle.sync(); } finally { await directoryHandle.close(); }
+        await syncDirectory(targetDirectory);
       },
       cleanup: async () => {
         await rm(temporaryPath, { force: true });

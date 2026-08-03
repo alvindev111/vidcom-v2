@@ -1,7 +1,9 @@
-import { open, unlink } from "node:fs/promises";
+import { unlink } from "node:fs/promises";
 import path from "node:path";
 
 import type { ResolvedPath } from "@vidcom/core";
+
+import { syncDirectory } from "./durability";
 
 /** Unlinks one resolved file atomically and fsyncs its directory; an absent target is already deleted. */
 export async function deleteAtomic(pathname: ResolvedPath): Promise<void> {
@@ -12,10 +14,5 @@ export async function deleteAtomic(pathname: ResolvedPath): Promise<void> {
     throw error;
   }
 
-  const directoryHandle = await open(path.dirname(pathname), "r");
-  try {
-    await directoryHandle.sync();
-  } finally {
-    await directoryHandle.close();
-  }
+  await syncDirectory(path.dirname(pathname));
 }

@@ -1,3 +1,18 @@
-# SKILL.md and every other Markdown document is imported as text and hashed, so
-# a Windows checkout must not rewrite it to CRLF.
-*.md text eol=lf
+# Golden files are compared byte-for-byte and project content is hashed, so a
+# checkout must produce identical bytes on every platform. Without this a
+# Windows checkout rewrites text to CRLF and the golden/hash gates fail there
+# while staying green on macOS and Linux.
+* text=auto eol=lf
+
+# Binary payloads must never be line-ending converted.
+*.png binary
+*.ico binary
+*.jpg binary
+*.jpeg binary
+*.webp binary
+*.woff binary
+*.woff2 binary
+*.mp4 binary
+*.wav binary
+*.mp3 binary
+*.sqlite binary

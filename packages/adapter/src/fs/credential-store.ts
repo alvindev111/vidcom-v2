@@ -21,7 +21,9 @@ export type SyncCredentialCommandRunner = (
 function windowsCurrentUserSid(stdout: string): string {
   const sid = stdout.match(/"(S-\d(?:-\d+)+)"/)?.[1];
   if (!sid) throw new Error("could not determine current Windows user SID");
-  return sid;
+  // icacls resolves a bare principal as an account name; the `*` prefix is what
+  // makes it read the value as a SID.
+  return `*${sid}`;
 }
 
 function windowsCredentialAcl(stdout: string): string {

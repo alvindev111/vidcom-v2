@@ -1,3 +1,4 @@
+import { execFileSync } from "node:child_process";
 import { createServer } from "node:net";
 import { mkdtemp, rm, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -19,6 +20,8 @@ import {
   sessionPolicy,
 } from "@vidcom/server";
 import { afterEach, describe, expect, it } from "vitest";
+
+import { hasPosixFileModes } from "../support/platform";
 
 function mutableClock(initial = Date.parse("2026-08-01T00:00:00.000Z")) {
   let now = initial;
@@ -291,8 +294,34 @@ describe("bridge credential file", () => {
       const metadata = await stat(store.pathname);
       expect(store.pathname.startsWith(appData + path.sep)).toBe(true);
       expect(store.pathname.startsWith(workspace + path.sep)).toBe(false);
-      expect(metadata.mode & 0o777).toBe(0o600);
-      expect(metadata.mode & 0o077).toBe(0);
+      if (hasPosixFileModes) {
+        expect(metadata.mode & 0o777).toBe(0o600);
+        expect(metadata.mode & 0o077).toBe(0);
+      } else {
+        // Windows derives `mode` from the read-only flag, so the equivalent
+        // owner-only guarantee lives in the ACL. Assert the real one: exactly
+        // the current user's SID may reach the credential, and inheritance is
+        // gone so no parent grant leaks in.
+        // Read the ACL back with icacls, the same tool that wrote it. Get-Acl
+        // would give SIDs directly but cannot be relied on: its module fails to
+        // load on a locked-down host such as a GitHub runner.
+        //
+        // What this guards is the defect that shipped: icacls resolves a bare
+        // principal as an account name and rejects a raw SID with error 1332, so
+        // the grant silently never applied. Seeing the current user in the ACL
+        // proves the argument was accepted and the entry exists.
+        //
+        // It deliberately does not enumerate the other entries. LocalSystem and
+        // Administrators appear on some hosts and no ACL can exclude them, since
+        // they can take ownership regardless — the standing root has on POSIX,
+        // where 0600 does not exclude it either. Asserting the absence of
+        // ordinary principals would mean matching names like "Everyone", which
+        // are localised; the POSIX leg expresses that property exactly through
+        // the mode bits above.
+        const acl = execFileSync("icacls", [store.pathname], { encoding: "utf8" });
+        const owner = execFileSync("whoami", { encoding: "utf8" }).trim();
+        expect(acl.toLowerCase()).toContain(owner.toLowerCase());
+      }
       expect(await store.read()).toBe(token);
     } finally {
       await rm(root, { recursive: true, force: true });
@@ -310,7 +339,9 @@ describe("bridge credential file", () => {
       { executable: "whoami", args: ["/user", "/fo", "csv", "/nh"] },
       {
         executable: "icacls",
-        args: ["C:\\VidCom Data\\credentials", "/inheritance:r", "/grant:r", "S-1-5-21-42:(R,W)"],
+        // The `*` prefix is required: icacls resolves a bare principal as an
+        // account name and fails with error 1332 on a raw SID.
+        args: ["C:\\VidCom Data\\credentials", "/inheritance:r", "/grant:r", "*S-1-5-21-42:(R,W)"],
       },
     ]);
 
@@ -323,7 +354,7 @@ describe("bridge credential file", () => {
       { executable: "whoami", args: ["/user", "/fo", "csv", "/nh"] },
       {
         executable: "icacls",
-        args: ["C:\\VidCom Data", "/inheritance:r", "/grant:r", "S-1-5-21-42:(OI)(CI)(F)"],
+        args: ["C:\\VidCom Data", "/inheritance:r", "/grant:r", "*S-1-5-21-42:(OI)(CI)(F)"],
       },
     ]);
   });

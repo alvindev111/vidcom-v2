@@ -18,6 +18,8 @@ import {
   type IdPort,
 } from "@vidcom/core";
 
+import { syncDirectory } from "./durability";
+
 import type { VidcomDatabase } from "../db/client";
 
 interface StoredBackup {
@@ -69,12 +71,6 @@ async function writeSynced(filename: string, bytes: string | Uint8Array): Promis
   } finally {
     await handle.close();
   }
-}
-
-async function syncDirectory(directory: string): Promise<void> {
-  const handle = await open(directory, "r");
-  try { await handle.sync(); }
-  finally { await handle.close(); }
 }
 
 interface BackupStoreOperations {

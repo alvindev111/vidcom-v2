@@ -2,6 +2,14 @@ import path from "node:path";
 
 import { defineConfig } from "vitest/config";
 
+// These suites drive a real SQLite file and a real temp-directory workspace.
+// Windows pays for an ACL subprocess per protected file plus far slower
+// filesystem metadata and recursive removal, so the identical work needs a
+// larger budget there. Keeping macOS/Linux tight preserves the hang signal.
+const slowPlatform = process.platform === "win32";
+const testTimeout = slowPlatform ? 30_000 : 5_000;
+const hookTimeout = slowPlatform ? 60_000 : 10_000;
+
 export default defineConfig({
   resolve: {
     alias: {
@@ -25,5 +33,7 @@ export default defineConfig({
   test: {
     environment: "node",
     include: ["tests/**/*.test.ts"],
+    testTimeout,
+    hookTimeout,
   },
 });
