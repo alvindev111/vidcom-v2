@@ -51,7 +51,17 @@ Không đặt `VIDCOM_VIENEU_COMMAND` thì nó lấy `tts.vieneu.command` trong 
 
 Nó kiểm: catalog voice lấy từ engine thật; đọc một câu tiếng Việt rồi chuẩn hoá ra WAV 44.1k mono với duration hợp lý và `modelRevision` truy được; và xin GPU trên máy CPU-only phải **lỗi** chứ không âm thầm chạy CPU.
 
+Đặt thêm `VIDCOM_VIENEU_OUTPUT_DIR` thì WAV được giữ lại ở đó để nghe — assertion không bắt được "đúng định dạng nhưng nghe sai".
+
 Cần **truy cập được huggingface.co**. Mạng có TLS-intercept sẽ làm `huggingface_hub` hỏng ở bước tải — trỏ `SSL_CERT_FILE`/`REQUESTS_CA_BUNDLE` tới CA root của tổ chức, hoặc dùng `HF_ENDPOINT` mirror.
+
+### Trên CI
+
+Workflow `VieNeu real engine` (`.github/workflows/vieneu-real.yml`) chạy đúng bài trên đây, **chỉ khi dispatch tay** — nó cài engine và tải weights, không PR nào nên phải chờ. Linux CPU/ONNX, vì bề mặt cross-OS đã do `ci.yml` phủ; thêm ba OS chỉ nhân ba lần tải mà không nói thêm điều gì về lời gọi SDK.
+
+Input `model_revision` để pin weights khi cần tái lập. Model cache nằm ở `~/.cache/vidcom-vieneu` và được `actions/cache` giữ lại, nên chỉ lần đầu (hoặc khi đổi revision) mới tải. WAV sinh ra được upload thành artifact `vieneu-narration`.
+
+Bước `--probe` chạy riêng trước suite để **danh sách voice thật của engine luôn có trong log**, kể cả khi suite sau đó đỏ.
 
 ## Voice
 

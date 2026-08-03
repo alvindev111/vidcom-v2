@@ -1,4 +1,4 @@
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -106,6 +106,23 @@ describe.skipIf(!enabled)("VieNeu against the real engine", () => {
       expect(voice.computeDevices).toContain("cpu");
     }
     process.stderr.write(`engine voices: ${described.voices.map((v) => v.id).join(", ")}\n`);
+
+    // The shortlist was taken from another project's integration and has never
+    // been checked against an installed engine. If none of it exists the
+    // recommendation is entirely fictional, which is a defect; a subset missing
+    // just means this engine build ships different presets, so it is reported.
+    const recommended = described.voices.filter((voice) => voice.recommended).map((voice) => voice.id);
+    const shortlist = [
+      "vieneu-v3-doan-trang",
+      "vieneu-v3-minh-duc",
+      "vieneu-v3-ngoc-linh",
+      "vieneu-v3-pham-tuyen",
+    ];
+    const missing = shortlist.filter((id) => !recommended.includes(id));
+    if (missing.length > 0) {
+      process.stderr.write(`recommended voices this engine does not offer: ${missing.join(", ")}\n`);
+    }
+    expect(recommended.length, "no recommended voice exists in the installed engine").toBeGreaterThan(0);
   }, REAL_RUN_TIMEOUT_MS);
 
   it("speaks a Vietnamese cue and normalises it to 44.1 kHz mono WAV", async () => {
@@ -136,7 +153,14 @@ describe.skipIf(!enabled)("VieNeu against the real engine", () => {
     // VieNeu reports no alignment; the estimate is applied by the use case, not here.
     expect(cue!.words).toEqual([]);
 
-    const audioPath = join(await temporary("vidcom-real-audio-"), "intro.wav");
+    // Kept rather than cleaned when an output directory is named: a WAV that
+    // decodes and measures correctly can still sound wrong, and no assertion
+    // catches that — someone has to be able to listen to it.
+    const outputDirectory = process.env.VIDCOM_VIENEU_OUTPUT_DIR;
+    const audioPath = outputDirectory
+      ? join(outputDirectory, "intro.wav")
+      : join(await temporary("vidcom-real-audio-"), "intro.wav");
+    if (outputDirectory) await mkdir(outputDirectory, { recursive: true });
     await writeFile(audioPath, cue!.audio);
     expect(await probeDuration(processes, audioPath)).toBeCloseTo(cue!.durationSeconds, 1);
     process.stderr.write(
