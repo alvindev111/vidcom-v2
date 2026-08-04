@@ -2,6 +2,11 @@
 
 > **Reference**: [Detailed Goals](./spec-project-delivery-loop-detailed-goal.md) — **Approved 2026-08-04**
 > **Next**: `spec-project-delivery-loop-implementation-checklist.md` — chưa tạo, bị Phase Gate `Design → Implement` chặn
+> **Bản 7 — 2026-08-04.** Vá executability sau khi đối chiếu tài liệu với repo thật lúc lập Checklist. Bốn chỗ Design **mô tả sai code hiện có**, đều sẽ chặn giữa chừng: (1) `JobStorePort.complete()` **không tồn tại** — bề mặt thật là `finish(id, outcome)`, nên `partial` là **thêm nhánh vào `JobOutcome`**, kèm hai lỗi câm phải sửa trong adapter (`result` và `progress` chỉ được set khi `succeeded`); (2) bốn lint VD-3 **không** ở `src/lib` — hai trong bốn chỉ tồn tại dưới dạng số học trong JSX, nên đây là *trích luật*, không phải *di chuyển module*; (3) Decision 1 Context bỏ sót — định nghĩa project hôm nay đã đòi `vidcom.json` hợp lệ, nên thay đổi thật là **bỏ** hai điều kiện kia; (4) §5.14 khai file mới cho timing, nhưng `validateSceneTiming` (kèm `trackIndex`) và `createScene`/`setSceneTiming` **đã tồn tại** — đây là *mở rộng*, không phải *tạo mới*. Chi tiết và bốn điểm còn lại ở §Vá executability của [Checklist](./spec-project-delivery-loop-implementation-checklist.md).
+> **Bản 6 — 2026-08-04.** Kiểm dữ kiện nền tảng và **thu hẹp một lệnh cấm của chính bản 5**. `wmic` đã bị gỡ khỏi Windows Server 2025 / Windows 11 24H2 và khỏi ảnh `windows-latest` từ 9/2025; `tasklist` không có `ppid`. Nên lệnh cấm PowerShell tuyệt đối làm pha capture **chết** trên Windows hiện đại — hỏng bằng thiết kế, không phải bằng thiếu số liệu. Sửa: cấm ở **hot path**, cho phép **một lần ở đường cancel**. Kèm luật cho trạng thái thoái hoá (**trung thực** thay vì zero survivor: proof MUST NOT báo sạch khi process còn sống) và ba tầng gate CI, trong đó một tầng **ép** chạy nhánh thoái hoá và một tầng chạy **render thật trên Windows** để đóng khoảng trống fixture tổng hợp không thấy.
+> **Bản 5 — 2026-08-04.** Đóng đường đa nền tảng của §5.9 thành **hợp đồng chạy được**, không phải mô tả. Khác biệt OS gói vào đúng ba primitive (`enumerate`/`kill`/`isAlive`), thuật toán ba pha phía trên không rẽ nhánh theo OS; contract test dùng fixture tổng hợp bốn process — một cái tự tách group đúng như Chromium — nên chạy được ở mọi OS không cần Chromium hay mạng, và [`process-supervision.yml`](../../../../.github/workflows/process-supervision.yml) chạy nó trên Linux + macOS + Windows. Kèm hai bẫy primitive đã bịt: `isAlive` trên Windows phải so theo **cột** PID của `tasklist` (cột `Session#` khớp nhầm), `isAlive` trên POSIX phải coi `EPERM` là **còn sống**. Rủi ro Windows chưa đóng được nêu tường minh: `wmic` đã bị gỡ, PowerShell bị cấm ở runtime, `tasklist` không có `ppid`.
+> **Bản 4 — 2026-08-04.** Đóng ba số chưa đo bằng [spike checklist-gate](../../../../spikes/phase-3-checklist-gate/README.md). Scan và `--at` PASS. Số thứ ba **bác bỏ giả định POSIX của bản 3**: `chrome-headless-shell` tự tách process group nên `kill(-pgid)` để sót 5 process, và sweep theo quan hệ cha-con báo *sạch* trong đúng lúc leak (con bị reparent sang `pid 1`). §5.9 viết lại thành thuật toán ba pha capture→kill→probe-theo-PID, đo PASS 3/3, p95 = 2 sweep; Goals bản 12 thêm R6.6b-ii. Kèm ba sửa §5.11 do spike `--at`: map theo timestamp không theo ordinal, validate range, dedupe. Còn mở đúng một việc: nửa Windows (W1/W2, cần Windows CI).
+> **Bản 3 — 2026-08-04.** Đóng review bản 2 bằng ba quyết định người dùng và tám sửa do design tự mâu thuẫn với code hiện tại. **DG-1 đã đóng**: không duyệt native sidecar — Windows dùng awaited `taskkill /T /F` + verify sweep, guarantee hạ theo R6.6b/R6.6b-i bản 11 của Goals, zero-survivor chuyển Giai đoạn 4 (Decision 12, D7). **B3 đã đóng**: scan chấp nhận parse `index.html`, §9.1 đổi target. **M1 đã đóng**: derived blob giữ capture + prune K generation (Decision 14). Sửa thêm: exception dotfile tường minh cho hai purpose mới (§5.19) · signature `mutateSource`/`mutateDerived` và bỏ `purpose` do caller truyền (§5.18) · `JobScheduler` có mục riêng (§5.20) · resolve binary `hyperframes` (§4.6) · khai lỗ `blob:`/`connect-src` của CSP guard (§5.10, Decision 11) · snapshot dùng một invocation nhiều `--at` (Decision 13).
 > **Bản 2 — 2026-08-04.** Deep review trên code thật + 8 spike contract: sửa cancel từ `ProcessTreeInspector` không khả thi sang `ProcessSupervisorPort` với Windows Job Object sidecar đã chạy thật; thêm runtime media guard CSP + loopback report + external-dependency observer; đổi migration `job` sang table-rebuild để có terminal `partial`; đổi journal workspace từ per-file sang operation + step; cô lập snapshot theo scene; bổ sung directory lifecycle và API recovery còn thiếu. Evidence: [spike Detailed Design](../../../../spikes/phase-3-detailed-design/README.md).
 > **Bản 1 — 2026-08-04.** Viết sau khi Goals được duyệt và **cả hai spike gate PASS**: [render](../../../../spikes/phase-3-render/README.md), [ma trận host](../../../../spikes/phase-3-agent-kit-host/README.md).
 
@@ -26,10 +31,10 @@ Cách tiếp cận xuyên suốt: giữ nguyên journal project của Phase 2, n
 | R1 workspace & marker | §5.1 `WorkspaceResolver` · §5.2 `WorkspaceScanner` · §5.3 `EntryRegistry` · §4.3.1 flow |
 | R2 preset platform | §5.4 `PlatformPresetCatalog` · §6.2 `PlatformConfig` |
 | R3 `vidcom.json` | §5.5 `ProjectIdentityService` · §6.2 · §6.4 (không có bảng — file) |
-| R4 `.vidcom/` | §5.6 `ProjectStateStore` · §6.3 · Decision 5 |
+| R4 `.vidcom/` | §5.6 `ProjectStateStore` · §5.18 `mutateDerived` · §6.3 · Decision 5, 14 |
 | R5 project CRUD | §5.7 `ProjectLifecycle` + `ProjectDirectoryPort` · §4.4.1 state diagram |
-| R6 render MP4 | §5.8 `RenderJobRunner` · §5.9 `RenderRootPort`/`ProcessSupervisorPort` · §5.10 `RemoteAssetGuard` · §4.3.2 · Decision 6, 7, 8 |
-| R7 snapshot | §5.11 `SnapshotJobRunner` · §6.3.2 `SnapshotState` |
+| R6 render MP4 | §5.8 `RenderJobRunner` · §5.9 `RenderRootPort`/`ProcessSupervisorPort` · §5.10 `RemoteAssetGuard` · §5.20 `JobScheduler` · §4.3.2 · §4.6 · Decision 6, 7, 8, 12 |
+| R7 snapshot | §5.11 `SnapshotJobRunner` · §6.3.2 `SnapshotState` · Decision 13 |
 | R8 thumbnail | §5.12 `ThumbnailResolver` |
 | R9 diagnostics | §5.13 `DiagnosticsService` |
 | R10 scene insert/ripple | §5.14 `SceneTimingService` · Decision 9 |
@@ -54,7 +59,19 @@ Cách tiếp cận xuyên suốt: giữ nguyên journal project của Phase 2, n
 - Narration nhiều cue mỗi scene, đọc ngược được sidecar một-cue.
 - Bốn MCP tool mới + mở rộng `get_job_status` hiện có; không register trùng tên.
 - Agent-kit: nội dung, build, hai manifest theo host, ba operation `install`/`link`/`replace`, scope ghi workspace.
-- Ba deliverable sửa steering (07 §2/§6, 07 §3, 14 §8).
+- Bốn deliverable sửa steering: 07 §2/§6 · 07 §3 · 14 §8 · **08 §2/§3/§6 (mới, bản 6)** — xem §2.1.
+
+### 2.1 Xung đột với `steering/08` — phát hiện bản 6, cần sửa steering
+
+[AGENTS.md](../../../../AGENTS.md) đòi surface xung đột với steering thay vì lặng lẽ lệch. Bản 2–5 liệt ba deliverable steering và **bỏ sót `08-jobs-and-queue.md`**, trong khi spec này lệch khỏi nó ở ba chỗ, một chỗ là luật tuyệt đối:
+
+| # | [steering/08](../../../steering/08-jobs-and-queue.md) nói | Spec này làm | Nguồn hợp lệ hoá |
+|---|---|---|---|
+| 1 | §2: "Chỉ **ba** trạng thái cuối là terminal. Không có state nào khác"; `Job.status` union không có `partial` | thêm terminal thứ tư `partial` | R7.9b — **Goals đã duyệt** (bản 10) |
+| 2 | §3: bản ghi `Job` không có `cleanupPending`, không có `warnings` | thêm cả hai, và **trả tới client** chứ không chỉ log | R6.6b, R6.14 — Goals đã duyệt |
+| 3 | §6: "**MUST NOT** để process con sống sót. Kill cả cây process" — luật tuyệt đối | proof là bounded best-effort; `exhaustive: false` được phép, nền tảng thoái hoá có thể còn sót và dựa vào containment R6.7b | R6.6b/R6.6b-i/R6.6b-ii — **Goals bản 11–12**, theo quyết định người dùng ở DG-1 |
+
+Cả ba lệch đều đã được duyệt ở tầng Goals, nên đây **không** phải xin phép lệch — mà là **steering chưa được cập nhật theo**. Rủi ro nếu bỏ qua là loại đắt nhất: steering là source of truth cho mọi task sau, nên một luật tuyệt đối đã hết hiệu lực nằm lại đó sẽ được một task tương lai đọc là còn hiệu lực. Xung đột #3 nguy hiểm nhất vì nó đọc như một bảo đảm mà hệ thống không còn cung cấp.
 
 ### Out of Scope
 
@@ -72,14 +89,16 @@ Cách tiếp cận xuyên suốt: giữ nguyên journal project của Phase 2, n
 
 ## 3. Research Summary
 
-> Chỉ ghi phát hiện **thật sự đổi thiết kế**. Mười finding dưới đây đến từ code hiện tại hoặc bằng chứng chạy thật, không từ suy đoán.
+> Chỉ ghi phát hiện **thật sự đổi thiết kế**. Mười hai finding dưới đây đến từ code hiện tại hoặc bằng chứng chạy thật, không từ suy đoán. Finding 11 và 12 đến sau và **bác bỏ giả định của chính tài liệu này** — giữ nguyên thứ tự để đọc được vết sửa.
 
 ### Finding 1: Contract tree-kill đã có, nhưng implementation không cung cấp bằng chứng hoàn tất
 
 - **Context**: R6.6b đòi kill cả cây tường minh. Câu hỏi là cần port mới hay không.
 - **Key insight**: Hợp đồng [`process-port.ts:31-41`](../../../../packages/core/src/port/process-port.ts#L31-L41) nói abort kill cả cây, nhưng Windows implementation [`node-process-runner.ts:87-99`](../../../../packages/adapter/src/runtime/node-process-runner.ts#L87-L99) gọi `taskkill` bằng `spawn(...).unref()` rồi chỉ đợi direct child `close`. `ProcessRunOutput` không có PID/termination report; caller không thể thực hiện sequence của Design v1.
 - **Remediation verified**: [`job-object-contract.ps1`](../../../../spikes/phase-3-detailed-design/job-object-contract.ps1) dùng Win32 `CreateProcess(CREATE_SUSPENDED)` → assign Job Object có `KILL_ON_JOB_CLOSE` → resume. Đóng handle giết đủ root/child/grandchild, survivors `[]`; việc assign xảy ra trước byte code của root nên không có race spawn-con trước-assign.
-- **Impact on design**: Không thêm inspector chỉ đọc ở Core. Thay bằng `ProcessSupervisorPort`: Windows adapter gọi sidecar supervisor bundled theo từng process run; sidecar sở hữu trọn lifecycle create-suspended → assign → resume → terminate/verify. Proof fail là `process_termination_unverified`, không phải `cancelled`. → §5.9.
+- **Stack gate đã đóng (DG-1, quyết định người dùng 2026-08-04)**: **không** duyệt native sidecar. Job Object đòi Win32 API mà Node không expose, nên cơ chế đã PASS ở trên **không** vào Phase 3. Goals bản 11 hạ R6.6b và thêm R6.6b-i để ghi lại giới hạn.
+- **Impact on design**: Không thêm inspector chỉ đọc ở Core, cũng không thêm sidecar. `ProcessSupervisorPort` giữ nguyên vai trò *sở hữu cả kill lẫn verify*, và cơ chế là **ba pha capture → kill → probe**, giống nhau trên mọi nền tảng (§5.9). Cụ thể hoá theo nền tảng chỉ nằm ở ba primitive. Proof là *bounded best-effort*, không phải zero-survivor: sweep cạn mà còn survivor → `process_termination_unverified`, MUST NOT ghi `cancelled`. Process sinh sau lượt capture cuối là lỗ đã biết, được containment R6.7b gánh. → §5.9, Decision 12, D7.
+- **Sửa bản 4**: mô tả ban đầu ở đây là "awaited `taskkill` + verify sweep", tức chỉ hai pha và chỉ cho Windows. Spike bác bỏ cả hai giới hạn đó — pha **capture** là bắt buộc, và POSIX cần nó y như Windows. Xem Finding 11.
 
 ### Finding 2: `job.type` không có check, nhưng `job.status` và `revision.kind` đều có check
 
@@ -126,13 +145,29 @@ Cách tiếp cận xuyên suốt: giữ nguyên journal project của Phase 2, n
 ### Finding 9: `hyperframes snapshot` luôn sinh contact sheet cho mỗi invocation
 
 - **Evidence**: [`snapshot-cli-contract.mjs`](../../../../spikes/phase-3-detailed-design/snapshot-cli-contract.mjs) capture đúng midpoint `1.5s`, exit 0, nhưng output gồm cả `frame-00-at-1.5s.png` **và** `contact-sheet.jpg`.
-- **Impact on design**: Chạy một invocation/output staging riêng cho từng scene cần retry; chỉ lấy PNG, bỏ contact sheet do CLI sinh. VidCom chỉ ghép contact sheet cuối sau khi mọi scene của generation hiện tại đủ. Như vậy một scene fail không thể công bố sheet thiếu.
+- **Impact on design**: Chỉ lấy PNG, bỏ contact sheet do CLI sinh; VidCom tự ghép sheet sau khi mọi scene của generation hiện tại đủ. Như vậy một scene fail không thể công bố sheet thiếu.
+- **Sửa bản 3**: bản 2 suy từ finding này ra "một invocation cho mỗi scene", nhưng finding chỉ nói về contact sheet, không nói gì về số lần gọi. `hyperframes snapshot --help` (0.7.86) cho thấy `--at` nhận **comma-separated timestamps**, nên cả tập scene chạy được trong một invocation. → Decision 13, §5.11.
 
 ### Finding 10: Journal per-file không đủ thông tin để rollback một operation nhiều file
 
 - **Context**: `install` có thể ghi manifest + router + sáu skill trong một request; R12.10b bắt mutation fail → composite rollback.
 - **Key insight**: Bảng v1 có một row/path, không có operation id, ordinal, rollback path hay previous payload. Cùng một tập row không phân biệt được “hai operation độc lập” với “một batch hai file”, nên recovery không thể biết phải rollback cùng nhau.
 - **Impact on design**: `workspace_operation` là header batch; `workspace_operation_step` giữ ordinal, from/to hash, rollback path/captured hash và trạng thái. Authority dùng cùng protocol capture → publish → settle như composite project, nhưng không tạo revision/backup.
+
+### Finding 11: Process group không phải bao đóng, và hai cách đo phổ biến đều báo sạch trong lúc đang rò
+
+- **Context**: Bản 3 giả định vấn đề tree-kill chỉ nằm ở Windows, còn POSIX đã sạch nhờ process group.
+- **Evidence**: [spike checklist-gate](../../../../spikes/phase-3-checklist-gate/README.md) trên darwin, render thật. `chrome-headless-shell` **tự đặt mình vào process group riêng** (`pgid` = chính `pid` của nó), nên `kill(-rootPid)` — đúng thứ [`node-process-runner.ts:137`](../../../../packages/adapter/src/runtime/node-process-runner.ts#L137) làm hôm nay — để lại **5 process Chromium còn sống**.
+- **Bẫy đo lường, nguy hiểm hơn chính cái leak**: sau khi cha chết, con được reparent sang `pid 1`, nên duyệt theo quan hệ cha-con từ `rootPid` trả về **rỗng** đúng lúc leak xảy ra (`ppidWalkAfterKillCount: 0` trong khi 5 process còn sống). Và sweep theo *thành viên process group* cũng không bao giờ thấy leak, vì leak theo định nghĩa đã rời group. Spike đầu tiên vì thế báo `PASS` mà sai.
+- **Remediation verified**: ba pha capture → kill → probe-theo-PID, 3/3 lần cancel cho survivors `[]`, p95 = 2 sweep, ~170 ms. Fixture tổng hợp tái hiện đúng cả leak lẫn bẫy đo, nên contract test chạy được mọi nền tảng mà không cần Chromium.
+- **Impact on design**: §5.9 viết lại thành ba pha cho **mọi** nền tảng; Goals bản 12 thêm R6.6b-ii ghi hai điều cấm (MUST NOT suy survivor từ quan hệ cha-con, MUST NOT suy từ thành viên group). Đây cũng là **bug thật đang nằm trong repo**, không chỉ chuyện tài liệu — comment ở `killProcessTree` nói về sidecar VieNeu/Python, đúng cho ca đó, hỏng cho render.
+
+### Finding 12: `wmic` đã biến mất khỏi Windows hiện đại, và điều đó phủ quyết một lệnh cấm của Design
+
+- **Context**: Bản 4 cấm PowerShell làm dependency runtime, giả định vẫn còn nguồn khác cho quan hệ cha-con trên Windows.
+- **Key insight**: `wmic` đã bị gỡ khỏi Windows Server 2025 và Windows 11 24H2, và khỏi ảnh `windows-latest` của GitHub từ 9/2025 ([runner-images #11228](https://github.com/actions/runner-images/issues/11228)); lỗi này đã đập vào thư viện process-tree của Node ngoài đời thật ([ps-tree #69](https://github.com/indexzero/ps-tree/issues/69)). `tasklist` **không** có `ppid`. Nên trên Windows hiện đại, PowerShell CIM là **nguồn duy nhất còn lại**.
+- **Impact on design**: Cấm tuyệt đối = pha capture chết trên Windows, tức §5.9 không thực hiện được. Thu hẹp thành **cấm ở hot path, cho phép một lần ở đường cancel** (§5.9), cộng luật cho trạng thái thoái hoá: **trung thực thay vì zero survivor**. Đây là ca mà một ràng buộc tự đặt ra lại phủ quyết chính thiết kế của mình, và nó chỉ lộ ra khi đi kiểm dữ kiện nền tảng thay vì tin trí nhớ.
+- **Hệ quả thứ hai — bỏ hẳn `wmic`** (D10): giữ nó làm fast path nghĩa là giữ một nhánh **không nền tảng CI nào còn chạy**, phục vụ Windows cũ, và tin là đúng mà không có bằng chứng. Finding 11 và 12 đều là đúng loại lỗi đó, nên lần này chọn một đường duy nhất được test mọi lần.
 
 ---
 
@@ -232,7 +267,7 @@ Ranh giới **không** hiển nhiên, nên nói rõ:
 
 - `WriteAuthority` là **facade ghi duy nhất** mà usecase được inject. `mutateWorkspace()` delegate vào `WorkspaceMutationCoordinator` nội bộ với journal operation/step riêng: vẫn composite + recoverable, nhưng không revision/backup và không bịa `projectId`. Coordinator MUST NOT được inject thẳng vào installer/route/MCP.
 - `EntryRegistry` sống **trong bộ nhớ daemon**, không có bảng. R1.2c-iii yêu cầu `entryId` chỉ sống trong phiên; persist nó là tạo một định danh thứ hai bền song song với `ProjectId`.
-- Kill và verify **không tách thành hai port**: nếu caller chỉ nhận `rootPid` sau spawn hoặc query sau khi parent chết, nó không còn snapshot đáng tin của cây. `ProcessSupervisorPort` sở hữu cả hai và chỉ trả terminal proof khi các PID đã capture đều không còn sống.
+- Kill và verify **không tách thành hai port**: nếu caller chỉ nhận `rootPid` sau spawn hoặc query sau khi parent chết, nó không còn snapshot đáng tin của cây. `ProcessSupervisorPort` sở hữu cả hai và chỉ trả terminal proof khi các PID đã capture đều không còn sống. Proof này **bounded best-effort trên Windows** (R6.6b-i) — nó không nói "không còn descendant nào", nó nói "mọi PID đã quan sát đều đã chết và hai lượt sweep liên tiếp không thấy thêm".
 - `RenderRootPort` và `ProjectDirectoryPort` là port Core; mkdir/rename/remove/marker nằm ở adapter. Core MUST NOT import `node:fs` chỉ vì class có chữ “Manager”.
 
 ### 4.3 Data Flow
@@ -288,7 +323,7 @@ sequenceDiagram
 
     C->>U: POST /renders { bestEffort? }
     U->>U: gate state: empty→no-composition<br/>0 scene→no-scenes<br/>invalid→project_invalid
-    U->>U: probe binary: Chromium, FFmpeg, FFprobe<br/>thiếu → nêu TỪNG binary (R6.12)
+    U->>U: probe binary: hyperframes, Chromium, FFmpeg, FFprobe<br/>thiếu → nêu TỪNG binary (R6.12)
     U->>RAG: quét remote media tĩnh HTML/CSS
     RAG-->>U: vi phạm → remote_asset_not_local (R6.15)
     U->>JS: enqueue job type=render, maxAttempts=1
@@ -329,9 +364,11 @@ sequenceDiagram
     JS->>JS: requestCancel — cờ bền trong SQLite
     JS->>JS: poll thấy cờ → abort(context.signal)
     JS->>P: signal abort
-    P->>P: sidecar đóng Job Object/process group<br/>await termination → verify captured PID=0
-    P-->>JS: { kind:"terminated", proof:{survivors:[]} }
-    Note over JS,P: proof fail → process_termination_unverified,<br/>MUST NOT ghi cancelled (R6.6b)
+    Note over P: pha CAPTURE đã chạy từ lúc spawn,<br/>mỗi 250 ms: tích luỹ PID + pgid phân biệt
+    P->>P: kill mọi pgid đã ghi, rồi mọi PID đã ghi<br/>(Win: taskkill /T /F được AWAIT)
+    P->>P: probe TỪNG PID đã ghi tới 2 lượt rỗng liên tiếp<br/>MUST NOT suy từ ppid hay group (R6.6b-ii)
+    P-->>JS: { kind:"terminated", proof:{survivors:[], exhaustive} }
+    Note over JS,P: survivor sau MAX_SWEEPS → process_termination_unverified,<br/>MUST NOT ghi cancelled (R6.6b)<br/>exhaustive=false → vẫn cancelled nhưng kèm warning (R6.6b-i)
     JS->>RRP: release(jobId)
     alt xoá thành công
         RRP-->>JS: ok
@@ -405,12 +442,20 @@ Recovery lúc khởi động chạy **hai** việc độc lập: requeue/finaliz
 
 | Layer | Technology | Rationale |
 |---|---|---|
-| Render / snapshot engine | `hyperframes` CLI 0.7.86 qua `ProcessPort` | Spike PASS đầu-cuối; tree-kill và `artifact validated` đã có. Decision 6 |
+| Render / snapshot engine | `hyperframes` CLI 0.7.86 qua `ProcessSupervisorPort` | Spike PASS đầu-cuối; `artifact validated` đã có. Decision 6 |
 | Job queue | `JobScheduler` + `JobStorePort` đã có | Thêm hai type là **không migration** (Finding 2) |
 | Persistence vận hành | SQLite + Drizzle, một file `vidcom.sqlite` | [steering/07 §9](../../../steering/07-data-and-storage.md); authority theo OQ-1 |
 | Ghi workspace | `WorkspaceOperationJournalPort` + header/step tables | Decision 4 — batch recoverable, không nới journal project |
 | Validation biên | zod strict trong `packages/contracts` | SE-4 đã có; preset và `vidcom.json` dùng cùng khuôn |
 | Agent-kit bundle | asset nhúng lúc build + manifest hash trong binary | §4.6 Goals Luật 2 — không lock file trong workspace |
+
+**Resolve binary `hyperframes` — bản 2 không nói, và nó là điều kiện của Decision 6.** Hôm nay `hyperframes` nằm ở **`devDependencies`** của [`package.json`](../../../../package.json); render là tính năng runtime nên nó **phải chuyển sang `dependencies`**. Cách resolve, theo thứ tự và không có bước nào là "tìm trong PATH":
+
+1. `require.resolve("hyperframes/package.json")` → đọc `bin` → đường dẫn tuyệt đối tới `bin/hyperframes.mjs` (hôm nay: `node_modules/.bin/hyperframes` symlink tới file đó).
+2. Spawn `[process.execPath, <đường dẫn .mjs>, "render" | "snapshot" | "check", …]` — chạy bằng đúng Node đang chạy daemon, không phụ thuộc shebang, không phụ thuộc PATH, không phụ thuộc shell.
+3. So `version` đọc từ `package.json` với hằng số `HYPERFRAMES_EXPECTED_VERSION` được pin lúc build. Lệch minor+ → warning `engine_version_drift`; resolve thất bại → `render_binary_missing` với `details.missing` chứa `"hyperframes"`.
+
+Hệ quả: `BinaryProbe` của §5.8 probe **bốn** thứ chứ không phải ba — `hyperframes`, Chromium, FFmpeg, FFprobe. R6.12 đòi nêu **từng** binary thiếu, và binary hay thiếu nhất chính là cái bản 2 quên liệt. Giai đoạn 4 (SEA/đóng gói) phải giữ được bước 1–2 hoặc thay bằng đường resolve tương đương đã khai; đây là ràng buộc mà PK-6/PK-7 thừa kế từ Design này.
 
 ---
 
@@ -478,7 +523,8 @@ Recovery lúc khởi động chạy **hai** việc độc lập: requeue/finaliz
   ): Promise<WorkspaceEntry[]>;
   ```
 - **Configuration**: bỏ qua `node_modules`, `.git`, `.hyperframes`, mọi dir bắt đầu bằng `.` (R1.9).
-- **Lifecycle**: per-request; kết quả cache theo file watcher event, **không** stat toàn cây (R1.12).
+- **Chi phí**: phân loại `authored` vs `invalid(composition)` và `sceneCount` **đòi parse `index.html`** — đây là chủ đích, không phải sơ suất, vì thiếu nó thì card project và `no-scenes` không quyết được lúc scan. Cache hai tầng theo `(path, mtime, size)`; target tách làm hai ở §9.1.
+- **Lifecycle**: per-request; kết quả cache theo file watcher event; quét đúng **một cấp**, MUST NOT đi xuống cây con (R1.12).
 
 ### 5.3 `EntryRegistry` — `packages/core/src/service/entry-registry.ts` (mới)
 
@@ -666,11 +712,21 @@ Recovery lúc khởi động chạy **hai** việc độc lập: requeue/finaliz
       Promise<{ deleted: number; errors: { root: string; reason: string }[] }>;
   }
 
+  export const PROCESS_CAPTURE_INTERVAL_MS = 250;
+  export const PROCESS_VERIFY_SWEEP_INTERVAL_MS = 100;
+  export const PROCESS_VERIFY_MAX_SWEEPS = 20;          // trần 2 s; đo được p95 = 2 sweep
+
   export interface ProcessTerminationProof {
     reason: "abort" | "timeout";
     rootPid: number;
+    /** PID cụ thể tích luỹ trong lúc chạy + PID xuất hiện muộn trong sweep. */
     capturedPids: number[];
+    /** Process group phân biệt đã quan sát — Chromium tự tách nhóm (R6.6b-ii). */
+    capturedGroups: number[];
     survivors: number[];
+    sweeps: number;
+    /** `false` khi sweep cạn — proof bounded, không phải zero-survivor (R6.6b-i). */
+    exhaustive: boolean;
   }
   export type SupervisedProcessResult =
     | { kind: "exited"; output: ProcessRunOutput }
@@ -680,10 +736,61 @@ Recovery lúc khởi động chạy **hai** việc độc lập: requeue/finaliz
     run(input: ProcessRunInput): Promise<SupervisedProcessResult>;
   }
   ```
-- **Adapters**: `FsRenderRootAdapter` sở hữu mkdir/marker/remove; `NodeProcessSupervisor` thay `NodeProcessRunner` ở composition root. Trên Windows, adapter spawn **một sidecar bundled theo mỗi run** (`vidcom-process-supervisor.exe`): sidecar tạo target bằng `CREATE_SUSPENDED`, assign vào Job Object `KILL_ON_JOB_CLOSE`, rồi mới resume. Abort/timeout gửi lệnh qua pipe; EOF hoặc sidecar crash cũng đóng Job Object. Sidecar trả captured PID + survivors bằng JSON framed; adapter validate schema và chỉ trả `kind:"terminated"` khi survivors rỗng. `taskkill /T /F` chỉ là emergency cleanup sau lỗi sidecar, MUST NOT tạo proof thành công. POSIX dùng process group rồi verify.
-- **DG-1 — stack gate còn mở**: cơ chế Win32 đã PASS, nhưng repo hiện khóa production code ở TypeScript/Node SEA và Node không expose Job Object. Đề xuất nhỏ nhất là sidecar **C/Win32 không dependency**, source dưới `packages/adapter/sidecars/process-supervisor/windows/`, build bằng MSVC trên Windows CI và package/hash như native dependency. Phương án này cần người dùng duyệt ngoại lệ trong steering/01 trước Checklist. Nếu không duyệt native sidecar thì phải quay lại Goals và đổi R6.6b sang awaited `taskkill /T /F` + verify; Design MUST NOT tự hạ guarantee.
-- **Evidence**: [`job-object-contract.ps1`](../../../../spikes/phase-3-detailed-design/job-object-contract.ps1) PASS root + child + grandchild, survivors `[]`. Implementation vẫn phải chạy adapter contract trên Node 24.9.0 và 26.5.0; không dùng `Add-Type`/PowerShell ở runtime — spike chỉ chứng minh Win32 protocol của sidecar.
-- **Scheduler**: `CANCELLATION_POLL_MS = 250` có tên, poll cờ bền và abort `context.signal`; timer clear trong `finally`. Chỉ `ProcessTerminationProof.survivors=[]` mới đi vào `cancelled`.
+- **Adapters**: `FsRenderRootAdapter` sở hữu mkdir/marker/remove; `NodeProcessSupervisor` thay `NodeProcessRunner` ở composition root và **giữ nguyên** `NodeProcessRunner` cho TTS (`ProcessPort` cũ không đổi).
+
+**Thuật toán ba pha — chung cho mọi nền tảng, đã đo (R6.6b/R6.6b-ii).** Bản 3 viết "POSIX dùng process group là bao đóng thật nên hội tụ ngay". Spike bác bỏ: `chrome-headless-shell` **tự đặt mình vào process group riêng**, `kill(-pgid)` để sót 5 process Chromium còn sống ([S1c](../../../../spikes/phase-3-checklist-gate/README.md)). Process group không phải bao đóng ở đâu cả.
+
+1. **Capture — trong lúc process chạy**, mỗi `PROCESS_CAPTURE_INTERVAL_MS = 250`: duyệt bao đóng descendant, tích luỹ **PID cụ thể** vào `capturedPids` và **tập pgid phân biệt** vào `capturedGroups`. Đây là pha hôm nay hoàn toàn không tồn tại; thiếu nó thì sau khi cha chết không còn cách nào tìm lại đám con.
+2. **Kill** — kill **mọi pgid đã ghi**, rồi **mọi PID đã ghi**, rồi `rootPid`. Windows: `taskkill /pid <root> /t /f` **được await tới khi thoát** — sửa trực tiếp [`node-process-runner.ts:119-140`](../../../../packages/adapter/src/runtime/node-process-runner.ts#L119-L140) vốn `spawn(...).unref()` rồi bỏ đi — cộng probe/kill theo PID đã ghi cho phần Chromium tách group.
+3. **Verify** — mỗi `PROCESS_VERIFY_SWEEP_INTERVAL_MS`, probe **từng PID đã ghi trực tiếp** (`process.kill(pid, 0)`; Windows dùng `tasklist /fi "PID eq …"`). Nạp PID mới xuất hiện vào tập. Dừng khi **hai lượt liên tiếp** cho tập survivor rỗng → `exhaustive: true`. Cạn `PROCESS_VERIFY_MAX_SWEEPS` mà còn survivor → `ProcessTerminationUnverifiedError`, `exhaustive: false`.
+
+- **Hai điều cấm, mỗi cái ứng một cách đo đã báo PASS giả** (R6.6b-ii):
+  - **MUST NOT** suy survivor từ **quan hệ cha-con**. Con được reparent sang `pid 1` khi cha chết, nên duyệt theo ppid trả rỗng **đúng lúc** đang leak — spike đo `ppidWalkAfterKillCount: 0` trong khi 5 process còn sống.
+  - **MUST NOT** suy survivor từ **thành viên process group**. Leak theo định nghĩa nằm ngoài group, nên sweep theo group không bao giờ thấy nó. Đây là lý do S1 báo `PASS_POSIX` mà sai.
+- **Lỗ còn lại, không được coi là đã đóng** (R6.6b-i, **mọi nền tảng** chứ không chỉ Windows): process sinh **giữa lượt capture cuối và lúc kill** nằm ngoài `capturedPids`. Vì vậy render root sở hữu của R6.7b là **tầng phòng thủ thứ hai bắt buộc** — orphan lọt sweep vẫn nằm trong root và bị `reclaimOrphans` thu hồi. Zero-survivor bằng Job Object là D7/Giai đoạn 4.
+- **Evidence đã đo** ([spike checklist-gate](../../../../spikes/phase-3-checklist-gate/README.md), darwin/Node 24.9.0/hyperframes 0.7.86):
+
+  | Đo | Số |
+  |---|---|
+  | `kill(-pgid)` đơn thuần | **leak 5 × `chrome-headless-shell`** |
+  | Thuật toán ba pha, 3/3 lần cancel | survivors `[]`, `exhaustive: true` |
+  | PID capture trung bình / process group phân biệt | 11.3 / 4 |
+  | Sweep tới hội tụ (p95 và max) | **2** |
+  | Tổng kill + verify | ~170 ms |
+
+  [`job-object-contract.ps1`](../../../../spikes/phase-3-detailed-design/job-object-contract.ps1) giữ nguyên giá trị nhưng là **bằng chứng cho Giai đoạn 4** (D7), không cho Phase 3.
+- **Khác biệt nền tảng gói vào đúng ba primitive; thuật toán phía trên không rẽ nhánh theo OS.** Đây là điều kiện để "đa nền tảng" là một hợp đồng chứ không phải ba code path song song mà chỉ một cái được test:
+
+  | Primitive | POSIX (darwin, linux) | Windows |
+  |---|---|---|
+  | `enumerate()` | `ps -Ao pid=,ppid=,pgid=` | **PowerShell CIM** → `tasklist` (thoái hoá); chỉ cái đầu cho `ppid` |
+  | `killGroup(id)` | `process.kill(-pgid, SIGKILL)` | `taskkill /pid <id> /t /f`, **awaited** |
+  | `killPid(pid)` | `process.kill(pid, SIGKILL)` | `taskkill /pid <pid> /f` |
+  | `isAlive(pid)` | `process.kill(pid, 0)`; `EPERM` = **còn sống** | `tasklist /fi "PID eq <pid>"`, so **theo cột PID** |
+
+  Hai cái bẫy trong chính primitive, đã bịt trong spike và phải giữ khi port sang adapter: `isAlive` trên Windows MUST NOT tìm `"<pid>"` trong cả dòng CSV — CSV là `"image","PID","Session","Session#","Mem"` nên cột `Session#` khớp nhầm, làm pid nhỏ đọc ra "còn sống" vĩnh viễn; `isAlive` trên POSIX MUST coi `EPERM` là còn sống, không phải là lỗi.
+
+- **Lệnh cấm PowerShell được thu hẹp, không bỏ** (sửa bản 5, quyết định người dùng). Bản 4 cấm PowerShell làm dependency runtime. Dữ kiện đã đổi: `wmic` **đã bị gỡ** khỏi Windows Server 2025 và Windows 11 24H2 — và khỏi ảnh `windows-latest` của GitHub từ 9/2025 — còn `tasklist` không có `ppid`. Cấm tuyệt đối nghĩa là Windows hiện đại **không còn nguồn nào** cho quan hệ cha-con, tức pha capture chết. Luật mới:
+
+  | Đường | PowerShell | Vì sao |
+  |---|---|---|
+  | Hot path — mỗi lần spawn, mỗi tick tiến độ | **MUST NOT** | đây mới là chỗ lệnh cấm nhắm tới; chi phí nhân theo tần suất |
+  | Cancel/timeout — một lần cho mỗi lượt kết thúc bất thường | **được phép** | cancel là vài lần/ngày; trả ~vài trăm ms một lần là chấp nhận được |
+
+  `Get-CimInstance Win32_Process` chạy `-NoProfile -NonInteractive`, có timeout riêng, và **vắng mặt không phải lỗi** — nó rơi xuống `tasklist` thoái hoá.
+- **`wmic` bị bỏ hẳn, không giữ làm fast path** (D10, quyết định người dùng). Nó nhanh hơn ở nơi còn tồn tại, nhưng **không nền tảng CI nào còn chạy nó** — Server 2025 đã gỡ — nên giữ lại là giữ một nhánh không ai chạy, phục vụ Windows cũ, và tin là đúng. Đó đúng là hình dạng lỗi spec này đã bị cắn hai lần (Finding 11 process group, Finding 12 `wmic`). Đổi lại: một đường duy nhất, được CI chạy mọi lần, giá là vài trăm ms mỗi lần cancel trên máy cũ — cancel là vài lần/ngày nên gần như không cảm nhận được.
+- **Thoái hoá khi không có enumerator cho `ppid`**: capture chỉ còn root group, proof mang `exhaustive: false` và warning `termination_proof_not_exhaustive`. Luật ở trạng thái này là **trung thực, không phải zero survivor**: proof MUST NOT báo sạch trong lúc process còn sống. Leak mà khai báo thì containment R6.7b thu hồi được; leak mà giấu thì không tầng nào đỡ. Đây là điều kiện gate của CI, không phải lời khuyên.
+- **Gate tự chạy, ba tầng** ([`process-supervision.yml`](../../../../.github/workflows/process-supervision.yml)), mỗi tầng đóng một khoảng trống mà tầng trước không thấy:
+
+  | Tầng | Chạy ở đâu | Đóng cái gì |
+  |---|---|---|
+  | `s1e` fixture tổng hợp | Linux + macOS + Windows, hai lượt | thuật toán ba pha trên bốn process Node, một cái tự tách group; không cần Chromium/mạng |
+  | `s1e` **ép thoái hoá** (`VIDCOM_DISABLE_ENUMERATORS`) | Windows | nhánh mà Windows khoá chặt sẽ đi thật; gate là **trung thực**, không phải zero survivor |
+  | `s1f` render thật | Windows, ngoài pull request | `chrome-headless-shell` **thật** trên Windows có tách group không — thứ duy nhất fixture tổng hợp không trả lời được |
+
+  Tầng ép-thoái-hoá tồn tại vì một máy còn `wmic` sẽ **không bao giờ** chạy nhánh thoái hoá một cách tự nhiên, mà đó đúng là nhánh proof dễ nói dối nhất. Tầng `s1f` tồn tại vì trên macOS hình dạng leak đã được xác nhận bằng render thật (S1c), Windows thì chưa — và một thói quen riêng của Chromium ở đó (Job Object riêng, cờ breakaway) sẽ không lộ ra từ fixture Node.
+- **Còn mở**: số Linux/Windows về theo lần chạy CI đầu tiên. Design không chờ chúng vì cách sửa không phụ thuộc kết quả; cái CI trả về là con số, cộng một tín hiệu đỏ thường trực nếu nền tảng nào phá contract.
+- **Scheduler**: `CANCELLATION_POLL_MS = 250` có tên, poll cờ bền và abort `context.signal`; timer clear trong `finally`. Chỉ proof có `survivors=[]` mới đi vào `cancelled` — `exhaustive: false` **không** chặn `cancelled` nếu survivors rỗng, nhưng phải vào `warnings` của job để người dùng thấy proof là bounded. Chi tiết sửa scheduler ở §5.20.
 - **Race cancel/complete**: `requestCancel` trên `queued` terminal hoá ngay thành `cancelled`; trên `running` chỉ set cờ. Handler kiểm signal/cờ lần cuối **trước publish derived composite**. Terminal settle là compare-and-swap từ `running`: nếu cancel đã được quan sát trước publish thì cancel thắng và staging bị bỏ; nếu `succeeded`/`partial` đã settle thì cancel sau đó là `no_change`. Không có trạng thái “artifact đã publish nhưng job cancelled”.
 - **Lifecycle**: singleton adapter. `environment` gồm `TEMP`/`TMP`, `HYPERFRAMES_FFMPEG_PATH` và `HYPERFRAMES_FFPROBE_PATH`.
 
@@ -714,6 +821,8 @@ Recovery lúc khởi động chạy **hai** việc độc lập: requeue/finaliz
 - **Runtime media**: document builder đặt CSP `img-src 'self' data: blob:` + `media-src 'self' data: blob:` làm phần tử đầu tiên của `<head>`, trước mọi node tác giả có thể chạy, rồi inject listener `securitypolicyviolation`. Listener POST URL/directive tới callback loopback. Guard đóng **trước publish**; violation làm bỏ staged artifact và fail `remote_asset_not_local`.
 - **Runtime script/style/font**: cùng bootstrap cài `PerformanceObserver({type:"resource", buffered:true})`, chỉ nhận initiator `script | link | css | font`, loại chính callback URL, dedupe theo `(initiatorType,url)` và cap 100 entry/job. Những URL này không bị chặn ở Phase 3; chúng hợp với static list để set `reproducible:false` + warning.
 - **Security**: callback chỉ bind loopback, body/entry count giới hạn, token ngẫu nhiên theo job không log, payload phải khớp job đang chạy, server đóng trong `finally`. Token không one-shot: dùng một token cho nhiều report hợp lệ trong cùng job, chống replay bằng lifecycle ngắn + dedupe. Đây là enforcement trong chính lượt render, không phải preflight hai lượt có TOCTOU.
+- **Lỗ đã biết — `blob:` + `connect-src` không giới hạn.** R6.15b **cho phép** script ngoài ở Phase 3. Một script như vậy `fetch()` được media remote rồi `URL.createObjectURL(blob)`; media vào qua `blob:` đã nằm trong allowlist, `securitypolicyviolation` không bắn, và Resource Timing chỉ thấy một `fetch` chứ không thấy một `<img>`. Nghĩa là guard chặn được **remote media do document khai**, không chặn được **remote media do script ngoài kéo về**. Đóng lỗ đòi siết `connect-src` hoặc bỏ `blob:`, mà cả hai đều phá scaffold HyperFrames hiện tại — thuộc D1/Giai đoạn 4 cùng với vendor GSAP.
+  Ba hệ quả bắt buộc ở Phase 3: (a) §5.10 và Decision 11 MUST NOT phát biểu "mọi remote media bị chặn"; câu đúng là "mọi remote media **do document khai** bị chặn trước byte đầu tiên"; (b) project có external script **luôn** `reproducible: false`, và đây là lý do thứ hai của cờ đó, không chỉ là chuyện pin version; (c) `externalDependencies` phải tới client kể cả khi render thành công, vì nó là thứ duy nhất người dùng có để tự đánh giá lỗ này.
 
 ### 5.11 `SnapshotJobRunner` — `packages/worker/src/snapshot-job.ts` (mới)
 
@@ -728,7 +837,18 @@ Recovery lúc khởi động chạy **hai** việc độc lập: requeue/finaliz
   }
   ```
 - **Responsibilities**: phạm vi sinh lại theo bảng R7.9c (so `sourceRevision` với `partialAtSourceRevision`, tính lại danh sách scene trước); một scene lỗi không làm mất cả bộ; `authored`+0 scene → thành công rỗng.
-- **Invocation**: mỗi scene cần sinh/retry chạy `hyperframes snapshot --at <global-midpoint> --no-end --describe false` qua cùng `ProcessSupervisorPort`, dưới staging con riêng trong render root của job. Chỉ nhận PNG; bỏ `contact-sheet.jpg` CLI tự sinh. VidCom chỉ ghép một contact sheet deterministic sau khi mọi scene của generation hiện tại đủ, rồi publish ảnh + sheet + state như một derived composite. Cancel/crash vì vậy dùng cùng containment/recovery với render, không có đường spawn Chromium thứ hai thiếu supervision.
+- **Invocation** (sửa bản 3 — xem Decision 13): **một** invocation cho cả tập scene cần sinh, dùng `--at` dạng comma-separated:
+  ```
+  hyperframes snapshot --at <m1>,<m2>,…,<mN> --no-end --describe false --output <staging>
+  ```
+  `--at` nhận danh sách timestamp (`hyperframes snapshot --help`, 0.7.86), nên 50 scene = **một** lần khởi động Chromium, không phải 50. Chạy qua cùng `ProcessSupervisorPort`, dưới staging con riêng trong render root của job. Chỉ nhận PNG; bỏ `contact-sheet.jpg` CLI tự sinh.
+- **Mapping output → scene: theo TIMESTAMP, không theo ordinal.** Bản 3 viết map theo ordinal; spike bác bỏ ([S3b](../../../../spikes/phase-3-checklist-gate/README.md)). Một timestamp không parse được bị CLI **bỏ im lặng**: `--at 1.0,abc,3.0` ra đúng hai file `frame-00-at-1s.png` + `frame-01-at-3s.png`, exit 0, không dòng lỗi nào. Ordinal `01` giờ trỏ vào midpoint **thứ ba** — map theo ordinal sẽ gán ảnh của scene 3 cho scene 2, im lặng và sai.
+  Luật đúng: parse token `-at-<t>s` trong tên file, so **theo số** với mảng midpoint đã gửi (`1.0` ra `1s`, `1.5` ra `1.5s`, `-5.0` ra `at--5s`). Midpoint không có file khớp ⇒ vào `missingSceneIds`. Đây là contract ngầm cần golden test và phải chạy lại khi bump HyperFrames — cùng loại rủi ro với format stdout ở Decision 6.
+- **Hai tiền điều kiện VidCom phải tự làm — CLI không làm hộ**:
+  - **Validate range**: `--at 999` (quá duration) và `--at -5` đều **ra frame**, exit 0. Midpoint tính sai quay về dưới dạng một tấm ảnh chứ không phải lỗi, nên generation sẽ được đánh dấu hoàn tất với frame sai. Mọi midpoint MUST được kiểm `0 <= t <= rootDuration` trước khi spawn.
+  - **Dedupe**: hai scene cùng midpoint ra hai file cùng timestamp khác ordinal, làm mapping theo timestamp nhập nhằng. Dedupe mảng midpoint trước khi gửi, rồi fan-out kết quả cho mọi scene chia sẻ midpoint đó.
+- **Retry của scene thiếu**: một invocation thứ hai với đúng tập midpoint còn thiếu. Không có đường per-scene riêng — cùng một code path, khác tập `--at`.
+- VidCom chỉ ghép một contact sheet deterministic sau khi mọi scene của generation hiện tại đủ, rồi publish ảnh + sheet + state như một derived composite qua `mutateDerived`. Cancel/crash vì vậy dùng cùng containment/recovery với render, không có đường spawn Chromium thứ hai thiếu supervision.
 
 ### 5.12 `ThumbnailResolver` — `packages/core/src/usecase/thumbnail.ts` (mới)
 
@@ -754,9 +874,11 @@ export class DiagnosticsService {
   forEntry(entryId: EntryId): Promise<DiagnosticsReport>;
 }
 ```
-Nguồn diagnostic: 4 lint port từ `src/lib` sang Core (VD-3) + `platform-mismatch` + `narration-overflow` + `missing-asset` + `no-composition`/`no-scenes` + `lint:<rule>` từ `hyperframes check`.
+Nguồn diagnostic: 4 cảnh báo VD-3 đưa vào Core (**sửa bản 7**: chúng **không** ở `src/lib` — *stranded tween* và *element overrun* chỉ tồn tại dưới dạng số học trong [`timeline-elements.tsx`](../../../../src/components/studio/timeline-elements.tsx), còn *unresolved selector* và *empty scene* đã có nguồn ở parser [`hyperframes/parse.ts`](../../../../packages/adapter/src/hyperframes/parse.ts). Nên đây là **trích luật khỏi JSX**, không phải di chuyển module) + `platform-mismatch` + `narration-overflow` + `missing-asset` + `no-composition`/`no-scenes` + `lint:<rule>` từ `hyperframes check`.
 
-### 5.14 `SceneTimingService` — `packages/core/src/domain/scene-timing.ts` + usecase (mới)
+### 5.14 Timing invariants — **mở rộng** `packages/core/src/domain/invariants.ts` + `usecase/project-writes.ts` (sửa)
+
+> **Sửa bản 7**: bản trước ghi "`domain/scene-timing.ts` (mới)" và một usecase mới. Cả hai **đã tồn tại**: `validateSceneTiming` ở [`invariants.ts`](../../../../packages/core/src/domain/invariants.ts) với `SceneTimingInput` **đã mang `trackIndex` + `rootDuration`**, còn `createScene`/`setSceneTiming` ở [`project-writes.ts`](../../../../packages/core/src/usecase/project-writes.ts). Tạo file song song sẽ sinh đường ghi thứ hai cho cùng một thao tác.
 
 ```ts
 export interface TrackRipplePlan {
@@ -842,9 +964,9 @@ Surface gồm năm tool, mỗi tool định nghĩa **một lần**, gọi đúng
 
 - **Suy `usableBy`** (R13.9b–9b-i): từ **router native được discover**, không từ file chỉ dẫn chính. Cả hai host gọi được probe từ `vidcom/SKILL.md` dù file chỉ dẫn vắng mặt, nên `AGENTS.md` `foreign` **không** làm host `blocked` khi router còn nguyên.
 
-### 5.18 `WriteAuthority.mutateWorkspace` + `WorkspaceMutationCoordinator` — `packages/core/src/service/` (sửa + mới)
+### 5.18 `WriteAuthority` — `mutateSource` / `mutateDerived` / `mutateWorkspace` + `WorkspaceMutationCoordinator` — `packages/core/src/service/` (sửa + mới)
 
-- **Purpose**: R13.11 — đường ghi duy nhất vào gốc workspace.
+- **Purpose**: R4.4c — tách input render khỏi ghi dẫn xuất bằng **method**, không bằng cờ do caller truyền; và R13.11 — đường ghi duy nhất vào gốc workspace.
 - **Public interface**:
   ```ts
   export interface WorkspaceWriteRequest {
@@ -865,7 +987,32 @@ Surface gồm năm tool, mỗi tool định nghĩa **một lần**, gọi đúng
     workspaceRoot: AbsolutePath; projectId: ProjectId;
     slug: string; verifiedBackupId: string; actor: Actor;
   }
+  /** Ghi nội dung người dùng — LUÔN persist advances_source=1. */
+  export type SourceMutationRequest = {
+    kind: "file"; ref: ProjectRef; path: RelPath;
+    content: string | Uint8Array; expectedContentHash: string | null;
+  } | {
+    kind: "entity"; ref: ProjectRef; entity: "preview-settings";
+    patch: PreviewSettingsPatchDto; expectedRevision: number;
+  } | {
+    kind: "composite"; ref: ProjectRef; steps: CompositeStep[];
+  };
+
+  /** Ghi dẫn xuất — LUÔN persist advances_source=0. Không có nhánh entity. */
+  export interface DerivedMutationRequest {
+    ref: ProjectRef;
+    /** Một hoặc nhiều file, publish như MỘT composite (snapshot: N ảnh + sheet + state.json). */
+    writes: { path: RelPath; content: string | Uint8Array }[];
+    producedByJobId: JobId | null;
+    /** Ghi vào summary revision; KHÔNG phải cột — so sánh vẫn qua latestSourceRevision. */
+    computedAtSourceRevision: number;
+  }
+
   export class WriteAuthority {
+    /** advances_source=1. Purpose suy từ path, caller KHÔNG truyền. */
+    mutateSource(req: SourceMutationRequest): Promise<Result<WriteResult, DomainError>>;
+    /** advances_source=0. Allowlist path đóng: .vidcom/**, snapshots/**, renders/**. */
+    mutateDerived(req: DerivedMutationRequest): Promise<Result<WriteResult, DomainError>>;
     /** Facade public: composite capture/publish/rollback · precondition hash · audit. KHÔNG revision/backup. */
     mutateWorkspace(req: WorkspaceWriteRequest): Promise<Result<WorkspaceWriteEnvelope, DomainError>>;
     /** Ba method này dùng cùng operation journal/coordinator, nhưng giữ revision/audit của lifecycle. */
@@ -875,7 +1022,19 @@ Surface gồm năm tool, mỗi tool định nghĩa **một lần**, gọi đúng
   }
   ```
 - **Coordinator nội bộ chọn guarantee theo method facade**: `mutateWorkspace` (agent-kit) không revision/backup nhưng vẫn composite recovery; ba method lifecycle dùng `projectId`, registration/revision/audit và backup đã verify theo R5. Journal operation/step chung biểu diễn đúng file batch lẫn directory staging/quarantine mà không nới journal Phase 2. Caller không truyền enum scope hay cờ revision.
-- `WorkspaceWriteRequest` chỉ là interface nội bộ. HTTP/MCP schema **không** nhận `workspaceRoot`; composition root inject root đã resolve. Caller không thể chọn path tuyệt đối.
+- `WorkspaceWriteRequest` chỉ là interface nội bộ. HTTP/MCP schema **không** nhận `workspaceRoot`; composition root inject root đã resolve. Caller không thể chọn path tuyệt đối. `writes[].content` là `string | Uint8Array` để khớp `MutationRequest` hiện có — agent-kit hôm nay toàn text, nhưng thu hẹp về `string` sẽ khoá cứng giả định đó vào contract.
+- **Breaking change bắt buộc trên `MutationRequest`** (bản 2 bỏ sót): [`write-authority.ts:34-49`](../../../../packages/core/src/service/write-authority.ts#L34-L49) hiện cho caller truyền `purpose?: "write-source" | "system-write"`. Luật "caller không tự chọn cờ" của §5.6 **mâu thuẫn trực tiếp** với field đó — thêm `state-write` vào union này sẽ mở đúng cái lỗ Decision 3 đang bịt. Sửa: **bỏ `purpose` khỏi request public**, authority suy purpose từ `(method, path)`:
+
+  | Method | Path | Purpose suy ra | `advances_source` |
+  |---|---|---|---|
+  | `mutateSource` | `vidcom.json`, `preview-settings.json`, `narration/*.json` | `system-write` | `1` |
+  | `mutateSource` | còn lại | `write-source` | `1` |
+  | `mutateDerived` | `.vidcom/**` | `state-write` | `0` |
+  | `mutateDerived` | `snapshots/**`, `renders/**` | `write-asset` | `0` |
+  | `mutateWorkspace` | tập literal §5.19 | `workspace-agent-kit` | *không có revision* |
+
+  Path không khớp dòng nào của method đang gọi → `not_allowed_for_purpose`, **không** fallback sang method khác. Bảng này là allowlist compile-time (union literal của path prefix) cộng một test integration khoá cả năm dòng; đây chính là cơ chế mà §5.6 gọi là "caller mới không thể vô tình tự chọn sai cờ".
+- **`mutateDerived` dùng lại `StagedAssetPort` đã có** ([`write-authority.ts:74`](../../../../packages/core/src/service/write-authority.ts#L74)) cho artifact nhị phân, thay vì phát minh đường staging thứ hai. Render root của §5.9 là nơi HyperFrames ghi ra; `StagedAssetPort` là nơi VidCom giữ artifact giữa lúc verify và lúc publish. Hai thứ khác nhau, đừng gộp.
 
 ### 5.19 `pathPolicy` — hai purpose mới (sửa)
 
@@ -885,7 +1044,28 @@ export type PathPurpose =
   | "state-write"          // MỚI: chỉ .vidcom/** trong project (R4.10)
   | "workspace-agent-kit"; // MỚI: chỉ tập file agent-kit ở gốc workspace (R13.12)
 ```
-Cả hai **giữ** luật chặn dotfile chung và **giữ** `agents.md`/`claude.md` trong `PROTECTED_FILES` cho mọi purpose khác. Containment (canonicalize + resolve symlink) áp nguyên cho cả hai (R4.11, R13.13).
+
+**Exception phải tường minh — bản 2 viết sai chỗ này.** [`path-policy.ts:47-53`](../../../../packages/core/src/domain/path-policy.ts#L47-L53) chặn **mọi** segment `startsWith(".")`, nên `.vidcom/state.json`, `.agents/skills/**`, `.claude/skills/**` đều bị reject **trước** khi tới `switch(purpose)`. Câu "giữ nguyên luật chặn dotfile chung" là không thực hiện được. Đúng phải là: mở đúng một cửa hẹp cho mỗi purpose mới, theo cùng pattern exception `system-write` đang có ở [`path-policy.ts:78-80`](../../../../packages/core/src/domain/path-policy.ts#L78-L80).
+
+| Purpose | Prefix cho phép (allowlist đóng) | Ngoài prefix |
+|---|---|---|
+| `state-write` | `.vidcom/` — và chỉ các nhánh do §5.6 sở hữu: `state.json`, `context/`, `logs/`, `jobs/`, `revisions/`, `cache/` | `not_allowed_for_purpose` |
+| `workspace-agent-kit` | đúng tập literal: `AGENTS.md`, `CLAUDE.md`, `AGENTS.vidcom.md`, `CLAUDE.vidcom.md`, `.agents/skills/`, `.claude/skills/` | `not_allowed_for_purpose` |
+
+Luật giữ nguyên ngoài cửa hẹp đó: `.env*` chặn ở **mọi** purpose kể cả hai purpose mới; `node_modules`/`.git`/`.hyperframes` chặn nguyên; `agents.md`/`claude.md` vẫn ở `PROTECTED_FILES` cho mọi purpose khác. `checkPathSyntax` không đổi — vẫn cấm `..`, absolute, `\`, NUL. Containment (canonicalize + resolve symlink) áp nguyên (R4.11, R13.13).
+
+**Base root khác nhau, phải nói rõ**: `state-write` là path tương đối **project root**; `workspace-agent-kit` là path tương đối **workspace root** — cao hơn một cấp so với mọi purpose đang có. `checkPathPurpose` thuần cú pháp nên không tự biết điều này; base root do adapter truyền và **`WorkspaceMutationCoordinator` là chỗ duy nhất được phép truyền workspace root** (§5.18). Test phải chứng minh một path `workspace-agent-kit` không resolve được vào trong một project, và ngược lại.
+
+### 5.20 `JobScheduler` — `packages/core/src/service/job-scheduler.ts` (sửa)
+
+Bản 2 rải thay đổi scheduler qua §5.9, §6.4 và §4.3.2 mà không có mục riêng, nên file bị sửa nhiều nhất lại là file duy nhất checklist không map được. Bốn thay đổi, tất cả trên `execute()` và `recoverStale()`:
+
+- **Cancel poll trong lúc handler chạy.** Hôm nay `execute()` chỉ gọi `throwIfCancelled()` trước và sau `definition.run()` ([`job-scheduler.ts:207-219`](../../../../packages/core/src/service/job-scheduler.ts#L207-L219)) — đúng Finding 6. Thêm interval `CANCELLATION_POLL_MS = 250` gọi `store.isCancellationRequested`, và khi thấy cờ thì `controller.abort()`. Clear trong `finally` cùng chỗ với `heartbeat`.
+- **Phân biệt abort-do-cancel với abort-do-timeout.** `execute()` hiện dùng **một** `AbortController` cho timeout, và nhánh timeout reject bằng `JobRetryableError`. Nếu cancel dùng chung controller đó mà không đánh dấu, cancel sẽ đi vào đường retry. Sửa: một field `abortReason: "cancel" | "timeout" | null` set **trước** `controller.abort()`; nhánh catch đọc field, không đoán từ loại error. `Promise.race` giữ nguyên hình dạng.
+- **Terminal settle là compare-and-swap.** `store.finish` hôm nay ghi đè vô điều kiện. Thêm `expectedStatus` để settle chỉ thành công khi hàng còn `running`; thua CAS trả `no_change`. Đây là thứ làm cho luật "không có artifact published + status cancelled" ở §5.9 đúng được, không phải chỉ là ý định.
+- **Biết `partial`.** `JobStorePort.finishPartial(jobId, result)` persist `status='partial'`, `progress=1`, `result` trong một transaction — MUST NOT đi qua `complete()` vốn ép `succeeded`. `recoverStale()` ([`job-scheduler.ts:134-147`](../../../../packages/core/src/service/job-scheduler.ts#L134-L147)) coi `partial` là terminal (không requeue, không finalize lại) và set `cleanup_pending` khi job treo có render root chưa release.
+
+`maxAttempts: 1` cho render đi cùng `idempotent: false`, nên nhánh retry hiện có tự nhiên không chạm tới — không cần sửa logic retry.
 
 ---
 
@@ -949,6 +1129,11 @@ erDiagram
 - **Transaction boundaries**: (a) composite project commit revision + step + audit + event trong một transaction; (b) workspace operation begin/step state và terminal audit settle trong transaction DB, filesystem nằm giữa theo journal protocol; (c) derived write tạo revision `advances_source=0`, audit/event cùng transaction — source query chỉ chọn `=1`.
 - **Migration strategy**: một `ALTER TABLE revision ADD COLUMN ... CHECK`; một table-rebuild `job`; hai `CREATE TABLE`; index/constraint dựng lại tường minh. Chi tiết §6.5.
 - **Retention / deletion**: workspace operation terminal cũ hơn 30 ngày được prune **chỉ sau** khi không còn rollback slot. Xoá project giữ audit + backup (R5.9). `.vidcom/logs/` theo `projectLogRetentionDays`.
+- **Retention của derived rollback payload — mới, bản 3** (Decision 14). Mỗi `mutateDerived` capture artifact **cũ** làm rollback payload; quá ngưỡng thì spill sang `PreviousContentStore` ([`journal.ts:157-165`](../../../../packages/adapter/src/db/journal.ts#L157-L165)). Với MP4 thì mỗi lần re-render để lại một bản cũ, không có gì dọn — bản 2 không nói gì về chuyện này. Chốt: **giữ capture, thêm prune K generation**.
+  - `DERIVED_ROLLBACK_GENERATIONS = 3` — hằng số có tên, có test khoá giá trị.
+  - Prune giữ **K bản gần nhất theo `(project_id, path)`** với `advances_source = 0`; bản thứ K+1 trở đi bị xoá payload (`revision_blob` row + object trong `PreviousContentStore`), **revision row ở lại nguyên** để `computedAtSourceRevision` và audit không thủng.
+  - Prune chạy sau mỗi derived publish thành công, trong **cùng transaction** với publish đó — không có job dọn nền, không có đường "quên chạy".
+  - Rollback vượt quá K trả `rollback_payload_pruned` chứ **không** im lặng thành công. Artifact dẫn xuất tái tạo được từ `sourceRevision`, nên mất payload là mất tiện nghi, không mất dữ liệu — nhưng người gọi phải biết.
 - **Filesystem, không phải bảng**: `vidcom.json`, `.vidcom/**`, `snapshots/**`, `renders/**` + sidecar, `narration/*.json`, agent-kit. `entryId` **chỉ trong bộ nhớ**.
 
 ### 6.2 Entity: `ProjectIdentity` (file `vidcom.json`)
@@ -1002,8 +1187,8 @@ interface SnapshotState {
   |---|---|---|---|---|---|
   | `advances_source` | `integer` | no | `1` | `CHECK IN (0,1)` | `1` = input render; `0` = output/dẫn xuất |
 - **Vì sao là cột mới, không phải giá trị `kind` mới**: `ck_revision_kind` là check constraint, và SQLite **không** `ALTER` được check tại chỗ → phải table-rebuild. Cột mới thì `ALTER TABLE ADD COLUMN` là đủ. Default `1` giữ đúng nghĩa cho mọi hàng đã có (chúng đều là ghi nội dung).
-- **Indexes**: `idx_revision_source (project_id, advances_source, id DESC)` — phục vụ đúng một truy vấn nóng: `sourceRevision(projectId)` = `id` lớn nhất với `advances_source = 1`.
-- **Expected query patterns**: `latestSourceRevision(projectId)`; liệt kê revision theo project + thời gian (đã có `idx_revision_project_created`).
+- **Indexes**: `idx_revision_source (project_id, advances_source, id DESC)` — phục vụ đúng một truy vấn nóng: `sourceRevision(projectId)` = `id` lớn nhất với `advances_source = 1`. Cộng `idx_revision_derived_path (project_id, path, id DESC)` `WHERE advances_source = 0` — phục vụ prune K generation (§6.1), partial index nên nó không phình theo revision source.
+- **Expected query patterns**: `latestSourceRevision(projectId)`; liệt kê revision theo project + thời gian (đã có `idx_revision_project_created`); liệt kê derived revision theo `(project_id, path)` giảm dần để prune.
 - **Concurrency**: single writer (Hono daemon), không đổi.
 
 #### `job` — **modified**
@@ -1019,7 +1204,7 @@ interface SnapshotState {
 - **Indexes thêm**: `idx_job_cleanup (cleanup_pending)` `WHERE cleanup_pending = 1` — recovery chỉ quét hàng cần thu hồi, không full scan.
 - **Write patterns**: `render`/`snapshot` mỗi project vài lần/ngày; progress update theo tick (đã có `updateProgress`).
 - **Idempotency**: `uq_job_idempotency(project_id, type, idempotency_key)` đã có, dùng nguyên trạng. `maxAttempts: 1` cho `render` (R6.8).
-- **Contract propagation bắt buộc**: `JobStatus`, `JobDto`, Zod response, SSE event mapper, HTTP mapper và MCP `get_job_status` cùng thêm `partial`; `TERMINAL_JOB_STATUSES` gồm `succeeded | partial | failed | cancelled`. `JobStorePort.finishPartial(jobId, result)` persist status/result/progress=1 trong một transaction; MUST NOT đi qua nhánh `complete()` vốn ép `succeeded`. `cleanupPending` cập nhật được cho mọi terminal status, còn `warnings` round-trip nguyên thứ tự qua DB → HTTP/MCP.
+- **Contract propagation bắt buộc**: `JobStatus`, `JobDto`, Zod response, SSE event mapper, HTTP mapper và MCP `get_job_status` cùng thêm `partial`; `TERMINAL_JOB_STATUSES` gồm `succeeded | partial | failed | cancelled`. **Sửa bản 7 — bề mặt thật khác mô tả cũ**: `JobStorePort` **không có** `complete()`; nó có `finish(id, outcome: JobOutcome)` với union `succeeded | failed | cancelled`. Việc đúng là **thêm nhánh `{status:"partial"; result}` vào `JobOutcome`**, không thêm method. Kèm hai lỗi câm phải sửa trong adapter [`job-store.ts:150-163`](../../../../packages/adapter/src/db/job-store.ts#L150-L163): `result` chỉ được serialize khi `succeeded` (nên `partial` sẽ ghi `NULL` và mất `missingSceneIds`), và `progress` chỉ set `1` khi `succeeded` (nên `partial` giữ progress cũ). Cả hai không throw. `cleanupPending` cập nhật được cho mọi terminal status, còn `warnings` round-trip nguyên thứ tự qua DB → HTTP/MCP.
 
 #### `workspace_operation` + `workspace_operation_step` — **new**
 
@@ -1041,7 +1226,7 @@ sequenceDiagram
     M->>DB: BEGIN; create __new_job với status partial + cột/check mới
     M->>DB: INSERT SELECT hàng cũ; drop/rename; rebuild toàn bộ index/FK
     M->>DB: CREATE workspace_operation + workspace_operation_step
-    M->>DB: CREATE idx_revision_source / idx_job_cleanup / workspace indexes
+    M->>DB: CREATE idx_revision_source / idx_revision_derived_path<br/>/ idx_job_cleanup / workspace indexes
     M->>DB: COMMIT; foreign_key_check + integrity_check
     App->>DB: listPending() — journal project + workspace operation
     App->>App: reclaimOrphans() render root theo 4 điều kiện
@@ -1049,7 +1234,7 @@ sequenceDiagram
 ```
 
 - **Migration files expected**: một migration mới + cập nhật rollback helper cho `job` table-rebuild. Dùng cùng protocol rename-table đã có ở `mcp-migration-rollback.ts`; không tắt foreign keys ngoài transaction mà không check lại.
-- **DDL changes**: 1 × `ADD COLUMN`; 1 × `job` table-rebuild; 2 × `CREATE TABLE`; rebuild tất cả index/constraint của `job` cộng index mới.
+- **DDL changes**: 1 × `ADD COLUMN`; 1 × `job` table-rebuild; 2 × `CREATE TABLE`; 3 × `CREATE INDEX` mới (`idx_revision_source`, `idx_revision_derived_path`, `idx_job_cleanup`) + index của hai bảng workspace; rebuild tất cả index/constraint của `job`.
 - **Backfill plan**:
   - `revision.advances_source` — **không backfill**: `DEFAULT 1` đúng nghĩa cho mọi hàng lịch sử.
   - `vidcom.json.platform` — **lazy khi mở project**, không phải batch migration. Ba project prototype (`kinetic-type`, `swiss-grid`, `warm-grain`) hiện chỉ có `{ id }` và là test case thật. Idempotent: đọc lại thấy có `platform` thì bỏ qua.
@@ -1090,7 +1275,16 @@ Các path trong bảng là path **sau** `new Hono().basePath("/api")`; URL ngoà
 | `PATCH /v1/recovery/entries/:entryId` | đổi tên invalid identity entry | session | không |
 | `DELETE /v1/recovery/entries/:entryId` | xoá invalid identity entry, backup + confirmation/grant | session | không |
 
-Mã mới cần thêm vào `ErrorCode`: `project_invalid`, `identity_parse_error`, `composition_parse_error`, `no_composition`, `no_scenes`, `remote_asset_not_local`, `render_binary_missing`, `process_termination_unverified`, `confirmation_required`. Warning ổn định nhưng không phải error: `external_dependency_unpinned`, `sub_timeline_readiness_timeout`.
+Mã mới cần thêm vào `ErrorCode`: `project_invalid`, `identity_parse_error`, `composition_parse_error`, `no_composition`, `no_scenes`, `remote_asset_not_local`, `render_binary_missing`, `process_termination_unverified`, `confirmation_required`, `rollback_payload_pruned` (Decision 14). Warning ổn định nhưng không phải error: `external_dependency_unpinned`, `sub_timeline_readiness_timeout`, `termination_proof_not_exhaustive` (R6.6b-i), `engine_version_drift` (§4.6).
+
+**Hai route bản 2 thiếu**: `EntryRegistry.clear()` và R1.13 treo vào sự kiện đổi workspace, nhưng không có endpoint nào phát ra sự kiện đó.
+
+| Method + path | Purpose | Auth | Idempotency |
+|---|---|---|---|
+| `PUT /v1/workspace/active` | đổi workspace đang mở — resolve + scan + `EntryRegistry.clear()` (R1.13) | session | idempotent theo path |
+| `GET /v1/jobs/:jobId/termination-proof` | proof đầy đủ cho job đã `cancelled`/`failed`, gồm `exhaustive` và `survivors` | session | — |
+
+`POST /v1/projects/:slug/adopt` dùng **slug** trong khi các route project khác dùng `:id`, vì candidate chưa có `ProjectId` — đây là chủ đích, không phải lệch quy ước.
 
 ### 7.2 MCP tools (`packages/mcp`)
 
@@ -1135,9 +1329,19 @@ Năm-tool surface ở §5.16. `tools/list` **thứ tự deterministic** và gold
 
 ### 9.1 Performance
 
-- **Targets**: scan workspace 100 thư mục con **< 500 ms** và **không** đọc toàn cây (R1.12) — chỉ stat `vidcom.json`, `hyperframes.json`, `index.html`. Render là job phút-cấp; không có target latency, có target **không block request** (R6.1).
-- **Đo được từ spike**: 90 frame / 1 worker ≈ 54 s; 420 frame / 2 worker ≈ 73 s. `--workers` scale thật, nên concurrency theo type là đòn điều tiết đúng.
-- **Strategies**: cache scan invalidate theo file-watcher event (không stat toàn cây); `sourceRevision` một truy vấn có index; append `.jsonl` không qua transaction.
+- **Scan target — sửa bản 3.** Bản 2 viết "< 500 ms / 100 dir, **chỉ stat**", nhưng §4.3.2 phân biệt `authored` với `invalid(composition)` bằng **parse `index.html`**, và `WorkspaceEntry` mang `sceneCount` — cũng phải parse. Stat không cho hai thứ đó, nên hai câu không thể cùng đúng. Quyết định người dùng: **giữ phân loại đầy đủ, sửa target**.
+
+  | Bước | Chi phí | Target |
+  |---|---|---|
+  | readdir một cấp + stat `vidcom.json`/`hyperframes.json`/`index.html` | I/O metadata | **< 500 ms / 100 dir** — giữ nguyên |
+  | parse `vidcom.json` (nhỏ, JSON) | CPU | gộp vào dòng trên |
+  | parse `index.html` để lấy state + `sceneCount` | CPU, theo kích thước composition | **< 2 s / 100 dir** trên project mẫu, **cache theo `(path, mtime, size)`** |
+
+  Hai target đo riêng, không gộp thành một số. Lần scan thứ hai không parse lại project nào chưa đổi `mtime`/`size`, nên chi phí 2 s chỉ trả ở lần mở workspace nguội. R1.12 giữ nguyên nghĩa: **không** stat/đọc toàn cây — vẫn đúng một cấp thư mục con, vẫn không đi vào `node_modules`/`assets`/`snapshots`.
+- **Số phải đo, không phải khai.** Con số 2 s là giả thiết dựa trên ba project mẫu; Checklist phải có task đo trên 100 project sinh tổng hợp trước khi khoá nó thành target. Nếu vượt, đường lùi đã biết là "parse N project gần nhất, phần dư `state: unknown` + parse nền" — nhưng đó là đổi contract `WorkspaceEntry`, nên phải quay lại Design chứ không tự làm trong implementation.
+- **Đo được từ spike**: 90 frame / 1 worker ≈ 54 s; 420 frame / 2 worker ≈ 73 s. `--workers` scale thật, nên concurrency theo type là đòn điều tiết đúng. Render là job phút-cấp; không có target latency, có target **không block request** (R6.1).
+- **Snapshot**: một invocation cho cả tập scene (Decision 13), nên chi phí ≈ một lần khởi động Chromium + N lần seek, không phải N lần khởi động.
+- **Strategies**: cache scan hai tầng (metadata + parse) invalidate theo file-watcher event; `sourceRevision` một truy vấn có index; append `.jsonl` không qua transaction.
 
 ### 9.2 Security
 
@@ -1166,7 +1370,7 @@ Năm-tool surface ở §5.16. `tools/list` **thứ tự deterministic** và gold
 
 ### Decision 1: `vidcom.json` là marker, không phải `hyperframes.json` + `index.html`
 
-**Context**: Code hiện tại coi project là thư mục có `hyperframes.json` **và** `index.html` ([`workspace-fs.ts:39-58`](../../../../packages/adapter/src/fs/workspace-fs.ts#L39-L58)). Mô hình sản phẩm M1/M3 đòi `vidcom.json` là marker và project tồn tại trước khi có nội dung.
+**Context**: Code hiện tại coi project là thư mục có **cả ba**: `hyperframes.json`, `vidcom.json` parse được và có `id` không rỗng, **và** `index.html` ([`workspace-fs.ts:39-58`](../../../../packages/adapter/src/fs/workspace-fs.ts#L39-L58)) — *sửa bản 7: mô tả cũ bỏ sót điều kiện `vidcom.json`, nên thay đổi thật là **bỏ** hai điều kiện kia chứ không phải thêm marker mới*. Mô hình sản phẩm M1/M3 đòi `vidcom.json` là marker và project tồn tại trước khi có nội dung.
 
 **Options Considered**:
 1. **Giữ marker cũ, thêm `vidcom.json` là bắt buộc thứ ba** — Pros: ít đổi đường đọc. Cons: không có project `empty`, nên "tạo project rồi nhờ AI dựng" không thực hiện được — đúng mốc của giai đoạn.
@@ -1240,7 +1444,7 @@ Năm-tool surface ở §5.16. `tools/list` **thứ tự deterministic** và gold
 
 **Decision**: Option 1.
 **Rationale**: Cô lập crash là giá trị lớn nhất — render là đường nặng nhất và nó **phải không** kéo daemon xuống theo. Spike đã chứng minh cả đường happy path và đường crash.
-**Implications**: Tiến độ đến từ stdout nên format stdout là contract ngầm có golden. Bump `hyperframes` phải chạy lại render/cancel/runtime-media/snapshot spike. `ProcessPort` cũ vẫn dùng được cho TTS nhẹ; render/snapshot dùng contract supervised mạnh hơn. Windows package phải bundle sidecar supervisor, kiểm hash trước launch, và có test Node 24/26; PowerShell `Add-Type` chỉ là spike, không là dependency runtime.
+**Implications**: Tiến độ đến từ stdout nên format stdout là contract ngầm có golden — cùng loại rủi ro với mapping tên file snapshot (§5.11). Bump `hyperframes` phải chạy lại render/cancel/runtime-media/snapshot spike. `ProcessPort` cũ vẫn dùng được cho TTS nhẹ; render/snapshot dùng contract supervised mạnh hơn. `hyperframes` phải chuyển từ `devDependencies` sang `dependencies` và resolve qua `require.resolve` + `process.execPath`, không qua PATH (§4.6).
 
 ### Decision 7: Render root do VidCom sở hữu, marker ở root theo job
 
@@ -1306,7 +1510,50 @@ Năm-tool surface ở §5.16. `tools/list` **thứ tự deterministic** và gold
 
 **Decision**: Option 3, kèm static preflight để lỗi tĩnh được trả trước enqueue.
 **Rationale**: Đây là phương án duy nhất đã chạy thật vừa không tải media, vừa quan sát đúng lượt render, vừa không bỏ CLI isolation. Spike guard nhận đúng URL và asset server nhận 0 request; spike observer nhận đúng script tạo động.
-**Implications**: Artifact của HyperFrames luôn là staging cho tới khi callback đóng và report media rỗng. CSP/report injection là contract cần test khi bump HyperFrames; callback token là secret ngắn hạn và MUST NOT vào log/sidecar. Observer phải loại callback URL, lọc type, dedupe và cap; probe ngây thơ đã tự tạo vòng feedback nên các điều kiện này là safety contract, không phải tối ưu.
+**Implications**: Artifact của HyperFrames luôn là staging cho tới khi callback đóng và report media rỗng. CSP/report injection là contract cần test khi bump HyperFrames; callback token là secret ngắn hạn và MUST NOT vào log. Observer phải loại callback URL, lọc type, dedupe và cap; probe ngây thơ đã tự tạo vòng feedback nên các điều kiện này là safety contract, không phải tối ưu. **Phạm vi phát biểu bị giới hạn** (bản 3): guard chặn remote media *do document khai*; script ngoài được phép vẫn `fetch` + `blob:` vòng qua được (§5.10). Không tài liệu nào của spec này được nói "chặn mọi remote media" ở Phase 3.
+
+### Decision 12: Termination proof là bounded best-effort trên mọi nền tảng, không phải zero-survivor
+
+**Context**: DG-1. R6.6b bản 10 đòi verify không còn descendant. Cơ chế duy nhất cho guarantee đó là Win32 Job Object, mà Node không expose.
+
+**Options Considered**:
+1. **Native sidecar C/Win32** — Pros: giữ nguyên guarantee; spike [`job-object-contract.ps1`](../../../../spikes/phase-3-detailed-design/job-object-contract.ps1) PASS zero-survivor. Cons: thêm toolchain MSVC vào CI, thêm artifact phải hash/package theo OS.
+   *(Sửa bản 6 — lý do bác bỏ ban đầu ghi thêm "ngoại lệ steering/01 về stack", và điều đó **không đúng**: [steering/01 §TTS](../../../steering/01-backend-stack.md) đã có tiền lệ sidecar không phải npm nằm ở `packages/adapter/sidecars/vieneu/`, và steering/01 vốn đã đòi build artifact riêng theo OS × kiến trúc cho Node SEA. Luật "TypeScript, không JavaScript thuần" nói về source trong `packages/`, không cấm sidecar bundled. Giá thật của Option 1 là **chuỗi build MSVC**, không phải một ngoại lệ steering. Quyết định không đổi — xem hậu kiểm bên dưới — nhưng lý do phải đúng.)*
+2. **Awaited kill + verify sweep, thuần Node** — Pros: không ngoại lệ stack, không toolchain mới. Cons: proof yếu hơn — process sinh sau lượt capture cuối không bị bắt; phải sửa Goals. *(Hình dạng cuối cùng là **ba pha**, xem hậu kiểm bên dưới; lúc quyết định nó mới chỉ là hai pha.)*
+3. **Ship POSIX trước, gate Windows sang Giai đoạn 4** — Pros: guarantee sạch ở nơi có process group. Cons: mất cross-platform vốn đã là mốc của repo.
+
+**Decision**: Option 2 — **quyết định người dùng 2026-08-04**. Goals bản 11 sửa R6.6b và thêm R6.6b-i.
+**Rationale**: Giá của Option 1 không nằm ở code sidecar mà ở chuỗi build/hash/CI cho một OS, đúng lúc phạm vi Phase 3 đã căng. Option 3 đổi một lỗ kỹ thuật lấy một lỗ sản phẩm lớn hơn.
+**Implications**: Guarantee phải được **hạ trong Goals trước**, không phải nới ngầm trong Design — đã làm. Containment R6.7b thăng hạng từ "bảo hiểm" lên **tầng phòng thủ thứ hai bắt buộc**: nó là thứ duy nhất bắt được orphan lọt sweep. `ProcessTerminationProof` mang `exhaustive` để chỗ nào cần biết proof mạnh hay yếu thì đọc được bằng field, không phải đoán. Spike Job Object không vứt đi — nó là bằng chứng sẵn cho D7.
+
+**Hậu kiểm bằng spike đã đổi phạm vi của chính Decision này.** Bản 3 tin rằng vấn đề chỉ ở Windows và POSIX đã sạch nhờ process group. Đo thật cho thấy `kill(-pgid)` **leak 5 process Chromium trên macOS**, và cách đo cũ báo PASS trong lúc đang leak (chi tiết ở §5.9 và [spike](../../../../spikes/phase-3-checklist-gate/README.md)). Nên đây không còn là "Windows yếu hơn POSIX" mà là "**mọi nền tảng** cần capture PID + probe trực tiếp". Điều đó làm Option 1 (Job Object) **kém hấp dẫn hơn** so với lúc quyết định, không phải hơn: nó chỉ đóng được nửa Windows, trong khi phần capture/probe vẫn phải viết cho POSIX. Quyết định Option 2 đứng vững sau khi biết thêm.
+
+### Decision 13: Một invocation snapshot cho cả tập scene
+
+**Context**: Bản 2 chạy một `hyperframes snapshot` cho mỗi scene, suy từ Finding 9. 50 scene = 50 lần khởi động Chromium.
+
+**Options Considered**:
+1. **Một invocation mỗi scene** — Pros: một scene fail không ảnh hưởng scene khác; staging tách sẵn. Cons: chi phí khởi động Chromium nhân N, và Finding 9 **không** chứng minh điều này cần thiết — nó chỉ nói contact sheet luôn được sinh.
+2. **Một invocation, `--at` comma-separated** — Pros: `hyperframes snapshot --help` (0.7.86) cho thấy `--at` nhận danh sách; một lần khởi động cho cả tập. Cons: mapping output→scene theo ordinal tên file, là contract ngầm; chưa biết một scene lỗi có làm hỏng cả invocation không.
+3. **Batch cho lần đầu, per-scene cho retry** — Pros: nhanh ở đường chính, cô lập ở đường sửa. Cons: hai code path cho một việc, và đường ít chạy hơn là đường ít được test hơn.
+
+**Decision**: Option 2, retry là một invocation thứ hai với tập `--at` còn thiếu.
+**Rationale**: Cô lập mà Option 1 mua được đã có sẵn ở tầng khác — VidCom chỉ publish sau khi đủ scene, nên scene thiếu là `missingSceneIds` chứ không phải sheet thủng. Trả N lần khởi động Chromium cho một tính chất đã được bảo đảm ở chỗ khác là trả hai lần.
+**Implications**: Task đo đã chạy ([S3b](../../../../spikes/phase-3-checklist-gate/README.md)) — **không** input nào trong 5 ca làm abort cả invocation, nên Option 3 không quay lại bàn và Decision này đứng. Nhưng cùng phép đo lộ ba thứ đổi §5.11: mapping phải theo **timestamp** chứ không theo ordinal (timestamp rác bị bỏ im lặng, làm dịch ordinal); midpoint phải được **validate range** vì `999` và `-5` đều ra frame chứ không ra lỗi; midpoint phải được **dedupe** trước khi gửi. Mapping vẫn cần golden test khi bump HyperFrames.
+
+### Decision 14: Derived rollback payload giữ K generation
+
+**Context**: `mutateDerived` capture artifact cũ làm rollback payload, spill sang object store khi lớn. Một project re-render 20 lần để lại 20 bản MP4 cũ. Bản 2 không có retention nào cho việc này.
+
+**Options Considered**:
+1. **Không capture previous cho derived nhị phân** — Pros: đĩa phẳng; artifact tái tạo được từ `sourceRevision` nên payload gần như vô dụng. Cons: mất rollback ngay cả cho lần gần nhất; một publish hỏng không quay lui được về bản vừa chạy được.
+2. **Capture + prune giữ K bản gần nhất theo `(project_id, path)`** — Pros: rollback thật cho vài lần gần nhất — đúng khoảng thời gian người dùng còn quan tâm; đĩa bị chặn trên. Cons: thêm prune logic + một partial index.
+3. **Capture + prune theo tuổi** — Pros: đơn giản nhất, dùng chung lịch với prune workspace operation. Cons: đỉnh đĩa không chặn được — render dồn trong một ngày vẫn phình.
+
+**Decision**: Option 2, `DERIVED_ROLLBACK_GENERATIONS = 3`.
+**Rationale**: Chặn trên theo **số bản**, không theo thời gian, là thứ duy nhất chặn được đỉnh; và K nhỏ đủ để giá đĩa dự đoán được (`K × kích thước MP4 × số path`). Option 1 rẻ hơn nhưng bỏ mất chính lần rollback hay cần nhất.
+**Rationale phụ**: prune chạy **trong cùng transaction với publish**, không phải job nền — đường dọn rác chạy riêng là đường quên chạy.
+**Implications**: Xoá payload MUST NOT xoá revision row; `computedAtSourceRevision` và audit phải sống lâu hơn payload. Rollback vượt K trả `rollback_payload_pruned`, không im lặng thành công. Cần `idx_revision_derived_path` partial index (§6.4).
 
 ---
 
@@ -1321,7 +1568,8 @@ Năm-tool surface ở §5.16. `tools/list` **thứ tự deterministic** và gold
 | Contract | MCP 5 tool × 2 era; golden `tools/list` | harness Phase 2 | Dev |
 | Golden | `vidcom.json` serialize · `project-context.md` · payload diagnostics | vitest snapshot | Dev |
 | Sync (AK-8) | tool trong `AGENTS.md` ↔ Registry · tool skill tham chiếu tồn tại · router `/vidcom-*` có `SKILL.md` | vitest | Dev |
-| Process | cancel flag→signal, kill/verify tree, crash, orphan reclaim; Windows sidecar create-suspended→assign→resume | vitest + `ProcessSupervisorPort` adapter thật | Dev |
+| Process | cancel flag→signal, capture→kill→probe, crash, orphan reclaim; đo số sweep tới hội tụ trên Node 24.9.0 và 26.5.0 | vitest + `ProcessSupervisorPort` adapter thật | Dev |
+| Cross-platform | thuật toán ba pha trên fixture tự tách group; ba primitive mỗi nền tảng; naive-leak ghi nhận là thuộc tính nền tảng | `spike:process-supervision` trên Linux + macOS + Windows | CI |
 
 > Datastore thật là **SQLite trong app-data + filesystem trong temp directory**, đúng runtime production. MUST NOT mock `node:fs`, MUST NOT dùng in-memory stand-in.
 > Test cần Chromium/FFmpeg phải **skip có thông báo** khi binary vắng mặt, MUST NOT pass im lặng.
@@ -1354,7 +1602,16 @@ Năm-tool surface ở §5.16. `tools/list` **thứ tự deterministic** và gold
 | `link` đổi Claude `usableBy` từ `degraded` → `ready` khi router/skills pristine; `host: "codex"` bị `schema_invalid` | R13.9e, Decision 10 |
 | `hosts` rỗng → `schema_invalid`; chọn một host → file host kia **không** vào `expectedFiles` | R12.9-i, 9-iii |
 | `entryId`: liệt kê/diagnostics/thay identity/rename/delete được; một tool nghiệp vụ **từ chối** nó | R1.2c-iv — tập đóng phải đóng thật |
-| Cancel render: descendant = 0 **trước khi** status thành `cancelled`; `release` lỗi → `cleanupPending: true` | R6.6b |
+| Cancel render: `taskkill` được **await**, sweep hội tụ, survivors = 0 **trước khi** status thành `cancelled`; `release` lỗi → `cleanupPending: true` | R6.6b |
+| Sweep cạn còn survivor → `process_termination_unverified`, **không** `cancelled`; sweep rỗng nhưng `exhaustive:false` → `cancelled` **kèm** warning `termination_proof_not_exhaustive` | R6.6b-i — hai đường này dễ bị gộp thành một |
+| Abort do cancel **không** đi vào nhánh retry của timeout (`abortReason` phân biệt được) | §5.20 — một controller dùng chung là bẫy sẵn có |
+| Path: `.vidcom/state.json` qua `state-write` **được**, qua `write-source` **bị chặn**; `.env` bị chặn ở **cả hai** purpose mới; `workspace-agent-kit` không resolve được vào trong một project | §5.19 — exception hẹp phải hẹp thật |
+| `mutateDerived` với path `index.html` → `not_allowed_for_purpose`, **không** fallback sang `mutateSource` | §5.18 bảng suy purpose |
+| Prune K generation: publish lần K+1 xoá payload cũ nhất nhưng **giữ** revision row; rollback vượt K trả `rollback_payload_pruned` | Decision 14 |
+| Snapshot một invocation nhiều `--at`: map theo **timestamp**; một midpoint bị CLI bỏ **không** làm scene sau bị gán nhầm ảnh; retry chỉ gửi midpoint còn thiếu | Decision 13 — spike đo được ordinal dịch khi có timestamp bị bỏ |
+| Midpoint quá `rootDuration` hoặc âm bị **VidCom** từ chối trước khi spawn; midpoint trùng bị dedupe rồi fan-out | S3b — CLI trả frame chứ không trả lỗi cho cả hai ca |
+| `kill(-pgid)` đơn thuần **không** đủ: test phải khẳng định Chromium chết bằng probe PID trực tiếp, và một sweep theo quan hệ cha-con phải bị chứng minh là báo sai | R6.6b-ii — đây là ca mà hai cách đo cũ đều báo PASS giả |
+| `hyperframes` không resolve được → `render_binary_missing` có `"hyperframes"` trong `details.missing` | §4.6 — binary hay thiếu nhất |
 | Race cancel/complete ở barrier trước publish: cancel thắng → không artifact; terminal đã settle → cancel `no_change` | Không được có artifact published + status cancelled |
 | Crash render: artifact không công bố **và** render root nhận diện được là orphan theo 4 điều kiện | R6.7b |
 | `remote_asset_not_local` bắt được asset trong **CSS `url(...)`**, không chỉ attribute | R6.15 — asset đã phát hiện ở spike nằm trong CSS |
@@ -1375,8 +1632,9 @@ Năm-tool surface ở §5.16. `tools/list` **thứ tự deterministic** và gold
 | R3 `vidcom.json` | §5.5 `ProjectIdentityService` · §6.2 | golden: serialize · integration: backfill 3 project prototype, `schemaVersion` cao hơn |
 | R4 `.vidcom/` | §5.6 `ProjectStateStore` · §6.3 · §6.4 `revision.advances_source` · Decision 3, 5 | integration: 4 loại ghi không làm `sourceRevision` tiến · `.gitignore` · determinism context · không ghi ngược |
 | R5 project CRUD | §5.7 `ProjectLifecycle` · §4.4.1 | integration: create atomic, adopt không sửa file người dùng, rename giữ `ProjectId`, delete có backup, job chạy chặn |
-| R6 render | §5.8 `RenderJobRunner` · §5.9 supervised process/render root ports · §5.10 `RemoteAssetGuard` · §6.4 `job` · Decision 6, 7, 8, 11 | process: cancel flag→abort→proof + crash · integration: static CSS và dynamic runtime media guard, binary, bestEffort |
-| R7 snapshot | §5.11 `SnapshotJobRunner` · §6.3 `SnapshotState` | integration: partial → hai đường retry, contact sheet chỉ khi complete, 0 scene thành công rỗng |
+| R6 render | §5.8 `RenderJobRunner` · §5.9 supervised process/render root ports · §5.10 `RemoteAssetGuard` · §5.20 `JobScheduler` · §4.6 resolve binary · §6.4 `job` · Decision 6, 7, 8, 11, 12 | process: cancel flag→abort→proof + crash · integration: static CSS và dynamic runtime media guard, binary thiếu, bestEffort |
+| R6.6b-i proof bounded | §5.9 `ProcessTerminationProof.exhaustive` · Decision 12 · D7 | process: sweep cạn → `process_termination_unverified` · sweep rỗng + `exhaustive:false` → `cancelled` kèm warning |
+| R7 snapshot | §5.11 `SnapshotJobRunner` · §6.3 `SnapshotState` · Decision 13 | integration: partial → hai đường retry, một invocation nhiều `--at`, map ordinal→scene, contact sheet chỉ khi complete, 0 scene thành công rỗng |
 | R8 thumbnail | §5.12 `ThumbnailResolver` | unit: seed theo `ProjectId` vs slug · integration: ETag |
 | R9 diagnostics | §5.13 `DiagnosticsService` | integration: 4 lint port giữ đủ, `check` vắng → cờ, `invalid` vẫn chạy, `entryId` không ghi `.vidcom` |
 | R10 scene/ripple | §5.14 `SceneTimingService` · Decision 9 | unit: `planRipple` per-track, `detectTrackGapsAndOverlaps` · integration: multi-track, một revision |
@@ -1398,6 +1656,9 @@ Không có design element nào không map về một goal. Không có goal nào 
 | D4 | Parse tiến độ render qua kênh có contract thay vì stdout | Decision 6 — stdout là contract ngầm; đổi cần upstream | Giai đoạn 4 |
 | D5 | `entryId` bền qua restart | Decision 2 — chưa có nhu cầu; re-scan là thứ client đã làm | khi có nhu cầu thật |
 | D6 | Undo một lượt agent trên nhiều revision | CE-8 ngoài phạm vi; `advances_source` đã đủ để phân biệt cái gì nên undo | Giai đoạn 5 |
+| D7 | **Zero-survivor termination trên Windows bằng Job Object** | DG-1 — người dùng không duyệt ngoại lệ native cho Phase 3. Cơ chế **đã PASS** ở [`job-object-contract.ps1`](../../../../spikes/phase-3-detailed-design/job-object-contract.ps1), nên đây là việc đóng gói chứ không phải việc nghiên cứu | Giai đoạn 4 (đóng gói) — đi cùng SEA vì cả hai đều là bài toán artifact theo OS |
+| D8 | Siết `connect-src` / bỏ `blob:` để đóng đường script ngoài kéo media remote | §5.10 — phá scaffold HyperFrames hiện tại; cùng gốc với D1 | Giai đoạn 4, chung task với D1 |
+| D9 | Scan hai pha (`state: unknown` + parse nền) nếu target 2 s không đạt trên 100 project | §9.1 — **đã đo PASS** (488 ms / 2000 ms, biên 4×), nên deferred với lý do mạnh hơn trước: chưa cần, không phải chưa biết | khi workspace thật bác target |
 
 ---
 
@@ -1406,7 +1667,8 @@ Không có design element nào không map về một goal. Không có goal nào 
 **Completeness**
 - [x] Mọi detailed goal R1–R13 được address (§12 traceability)
 - [x] Component/port chính được định nghĩa (§5; bổ sung directory, supervised process và runtime guard)
-- [x] Data model phủ mọi entity (§6.2, §6.3) và nói rõ cái gì là file, cái gì là bảng, cái gì chỉ trong bộ nhớ
+- [x] Data model phủ mọi entity **có schema quyết định hành vi** (§6.2, §6.3) và nói rõ cái gì là file, cái gì là bảng, cái gì chỉ trong bộ nhớ
+- [ ] **Còn năm type chỉ có tên, chưa có shape**: `RenderState`, `ProjectContext`, `JobLogLine`, `RevisionLogLine`, `StructuredLogLine`. Cả năm là payload nội bộ của `.vidcom/` projection, không có ràng buộc DB và không qua biên HTTP/MCP, nên Checklist định nghĩa được lúc implement — nhưng bản 2 tick `[x]` cho dòng trên là **sai**, và ghi nhận ở đây để không lặp lại
 - [x] Persistence Overview hoàn thành (§6.1)
 - [x] Mọi bảng mới/sửa có cột, DB type, constraint, index, owner, query pattern, write pattern (§6.4)
 - [x] Migration/backfill/rollback định nghĩa cho từng thay đổi schema (§6.5)
@@ -1423,14 +1685,21 @@ Không có design element nào không map về một goal. Không có goal nào 
 - [x] Text chỉ dùng cho chi tiết cần chính xác (contract, cột, decision)
 
 **Decision Discipline**
-- [x] 11 Decision Record cho mọi lựa chọn material
+- [x] 14 Decision Record cho mọi lựa chọn material
 - [x] Mỗi record có Context / Options / Decision / Rationale / Implications
 
 **Feasibility**
-- [ ] **DG-1 cần duyệt stack** — tám spike Design chứng minh cơ chế, gồm Job Object zero-survivor, nhưng implementation Windows cần ngoại lệ native C sidecar hoặc phải sửa guarantee R6.6b; TypeScript/Node thuần không expose API này
-- [x] Performance target thực tế và có số đo từ spike (§9.1)
-- [x] Security được address (§9.2), gồm hai purpose mới không nới containment
-- [ ] **Độ phức tạp so với capacity là rủi ro đã biết**: estimate Goals ~190 SP không còn là trần sau table-rebuild, root-operation journal và CSP callback. Checklist phải re-estimate theo dependency; Design không tự khai con số cũ vẫn đúng.
+- [x] **DG-1 đã đóng** — người dùng chọn đường thuần Node; hình dạng cuối là **ba pha capture → kill → probe**, chung cho mọi nền tảng. Goals bản 11 hạ R6.6b, bản 12 thêm R6.6b-i/R6.6b-ii; zero-survivor bằng Job Object chuyển sang D7/Giai đoạn 4. Không còn ngoại lệ stack nào cần duyệt.
+- [x] **Ba số đã đo** — [spike checklist-gate](../../../../spikes/phase-3-checklist-gate/README.md), 2026-08-04, darwin/Node 24.9.0/hyperframes 0.7.86:
+  - (b) **scan 100 project**: stat 1.5 ms / 500 ms · parse cold 488 ms / 2000 ms · warm 1.9 ms / 100 ms → **PASS**, D9 vẫn deferred
+  - (c) **`--at` fail**: không ca nào abort cả invocation → Decision 13 **đứng**; nhưng lộ ba sửa cho §5.11 (map theo timestamp, validate range, dedupe)
+  - (a) **kill + sweep**: giả định POSIX **bị bác bỏ** — `kill(-pgid)` leak 5 process Chromium; thuật toán ba pha đã đo PASS 3/3, p95 = 2 sweep, ~170 ms. §5.9 và R6.6b viết lại theo số này.
+- [x] **Đa nền tảng có gate tự chạy, không còn là lời hứa**: thuật toán ba pha được đóng gói sau đúng ba primitive, và [`s1e`](../../../../spikes/phase-3-checklist-gate/README.md) chạy nó trên fixture tổng hợp không cần Chromium/mạng. [`process-supervision.yml`](../../../../.github/workflows/process-supervision.yml) chạy `ubuntu-latest` + `macos-latest` + `windows-latest`, hai lượt mỗi OS, và đỏ nếu nền tảng nào phá contract. PASS trên darwin.
+- [x] **Tổ hợp nguy hiểm nhất đã được xử lý trước, không chờ CI phát hiện**: trên Windows hiện đại `wmic` đã bị gỡ và `tasklist` không có `ppid`, nên lệnh cấm PowerShell tuyệt đối của bản 4 sẽ làm pha capture chết. Đã thu hẹp thành "cấm ở hot path, cho phép ở đường cancel", và trạng thái thoái hoá có luật riêng (trung thực thay vì zero survivor) cùng một step CI ép chạy đúng nhánh đó.
+- [ ] **Số Linux/Windows về theo lần chạy CI đầu**: naive có leak trên nền tảng đó không · PowerShell CIM tốn bao nhiêu ms · số sweep tới hội tụ · `chrome-headless-shell` trên Windows có tách group không (`s1f`). Không cái nào chặn Design.
+- [x] Performance target thực tế, tách làm hai tầng đo riêng, và nói rõ số nào từ spike số nào là giả thiết (§9.1)
+- [x] Security được address (§9.2), gồm hai purpose mới có exception **hẹp và tường minh** thay vì câu "giữ nguyên luật chung" vốn không thực hiện được (§5.19), và lỗ `blob:` được khai thay vì bỏ qua (§5.10)
+- [ ] **Độ phức tạp so với capacity là rủi ro đã biết**: estimate Goals ~190 SP không còn là trần sau table-rebuild, root-operation journal, CSP callback và prune K generation. Bản 3 **giảm** ba khoản (bỏ native sidecar và toolchain MSVC; snapshot còn một invocation; không thêm bảng mới) và **tăng** hai (`mutateSource`/`mutateDerived` tách đôi cộng bảng suy purpose; prune + partial index). Checklist phải re-estimate theo dependency; Design không tự khai con số cũ vẫn đúng.
 
 **Traceability**
 - [x] Matrix §12 đầy đủ — mọi goal map tới ≥1 design element và ≥1 test
@@ -1443,15 +1712,22 @@ Không có design element nào không map về một goal. Không có goal nào 
 
 > Do not create the implementation checklist or write code until this section is explicitly confirmed.
 
-- **Status**: **Pending Confirmation**
-- **Confirmed by**: —
-- **Confirmation date**: —
+- **Status**: **✅ APPROVED 2026-08-04** (bản 6) — Implementation Checklist đã được tạo: [spec-project-delivery-loop-implementation-checklist.md](./spec-project-delivery-loop-implementation-checklist.md)
+- **Confirmed by**: Người dùng — duyệt tường minh để chuyển sang phase Implementation Checklist, sau khi DG-1/B3/M1/D10 đã chốt và ba số gate đã đo.
+- **Confirmation date**: 2026-08-04
+- **Phạm vi phê duyệt**: Design bản 6 + Goals bản 12 + `steering/08` đã đồng bộ. Code Execution **chưa** được duyệt — nó cần Approval Gate riêng trong chính Checklist.
 - **Notes / required revisions before implementation**:
-  - **BLOCKER DG-1 — cần quyết định người dùng**: duyệt sidecar C/Win32 không dependency, build MSVC trong Windows CI và bundle/hash theo artifact OS; hoặc quay lại Goals sửa R6.6b sang awaited `taskkill /T /F` + verify. Không có phương án TypeScript/Node thuần đáp ứng Job Object hiện tại.
-  - **Schema đã chốt bằng spike**: `revision` thêm 1 cột có CHECK; `job` table-rebuild để mở status `partial` và thêm 2 cột có CHECK; workspace thêm đúng 2 bảng operation/step. Không còn tuyên bố sai “tất cả expand-only”.
-  - **Windows process containment đã chốt về cơ chế, chưa chốt ngoại lệ stack**: sidecar theo run dùng create-suspended → assign Job Object → resume; spike root/child/grandchild có zero survivor. Nếu DG-1 duyệt sidecar, Checklist phải có task build/package/hash và contract test trên Node 24.9.0 + 26.5.0; runtime MUST NOT dùng PowerShell.
+  - **DG-1 đã đóng 2026-08-04 bằng quyết định người dùng**: không duyệt native sidecar. Windows dùng awaited `taskkill /T /F` + verify sweep (`PROCESS_VERIFY_MAX_SWEEPS`), proof mang `exhaustive` để bounded-hay-không đọc được bằng field. **Goals bản 11 đã sửa R6.6b và thêm R6.6b-i trước khi Design đổi theo** — thứ tự này quan trọng: Design không được hạ guarantee của Goals, và nó đã không làm thế.
+  - **Ba quyết định người dùng khác đã vào văn bản**: scan chấp nhận parse với target hai tầng (§9.1, đường lùi D9); derived rollback payload giữ `DERIVED_ROLLBACK_GENERATIONS = 3` prune trong cùng transaction publish (Decision 14).
+  - **Tám sửa do design tự mâu thuẫn với code hiện tại** — mỗi cái đều verify lại trên repo: exception dotfile phải tường minh vì `isGloballyBlocked` chặn trước `switch` (§5.19) · `mutateSource`/`mutateDerived` có signature và `MutationRequest.purpose` do caller truyền bị bỏ (§5.18) · `JobScheduler` có mục riêng với bốn thay đổi trên `execute`/`recoverStale` (§5.20) · `hyperframes` chuyển từ `devDependencies` sang `dependencies` và resolve qua `require.resolve` (§4.6) · `BinaryProbe` probe bốn binary không phải ba · lỗ `blob:`/`connect-src` được khai (§5.10, D8) · snapshot một invocation nhiều `--at` (Decision 13) · hai route thiếu và năm type chưa có shape được ghi nhận thay vì tick bừa (§7.1, §14).
+  - **Schema đã chốt bằng spike**: `revision` thêm 1 cột có CHECK + 2 index (một partial cho prune); `job` table-rebuild để mở status `partial` và thêm 2 cột có CHECK; workspace thêm đúng 2 bảng operation/step. Không còn tuyên bố sai “tất cả expand-only”.
+  - **Windows process containment**: cơ chế đã chốt, guarantee đã hạ tường minh. Checklist phải có contract test trên Node 24.9.0 + 26.5.0 và đo số sweep tới hội tụ; runtime MUST NOT dùng PowerShell/`Add-Type`/`wmic`. Containment R6.7b là tầng phòng thủ thứ hai **bắt buộc**, không được cắt như tối ưu.
   - **Runtime asset guard đã chốt bằng hai remediation spike**: CSP chặn media trước byte tải; Resource Timing bắt external script tạo động. Callback phải loại chính nó, dedupe và cap 100 — probe đầu đã chứng minh thiếu filter tạo feedback loop.
   - **Ba deliverable hậu-Goals đã đồng bộ**: steering/07 phân biệt SQLite authority với `.vidcom/` projection và dùng `explicit > cwd-marker > active > cwd`; steering/14 cài agent-kit tường minh ở gốc workspace theo host; build-order kéo AK-1..6/8 lên Giai đoạn 3.
   - **Decision 4 là chỗ tốn code nhất**: authority workspace dùng operation + step để rollback batch, không dùng pseudo-project và không nới journal Phase 2. Target collision được serialize bằng mutex + pending query dưới lease single-writer; không giả cross-table unique index trong SQLite.
-  - **Rủi ro triển khai lớn nhất**: fixture Phase 1/2 vẫn xanh trong khi marker semantics đã đổi, và packaging sidecar bị bỏ quên. Checklist phải có task riêng cho cả hai, không gộp vào implementation chức năng.
-  - Estimate Goals ~190 SP cần re-estimate khi lập Checklist vì table-rebuild, journal batch, runtime callback và native sidecar đã cụ thể hơn sau Design.
+  - **Hai việc của bản 6 đã đóng, không còn treo**: (1) `steering/08` đã được sửa theo ba xung đột ở §2.1 — `partial` là terminal thứ tư, `Job` có `warnings`/`cleanupPending`, và §6 "MUST NOT để process con sống sót" viết lại thành §6.1 bounded best-effort ba pha kèm hai điều cấm đo lường. (2) D10 chốt **bỏ** nhánh `wmic`; Windows chỉ còn PowerShell CIM → `tasklist` thoái hoá, tức một đường được CI chạy mọi lần.
+  - **Bug thật đã tìm thấy trong repo, không chỉ trong tài liệu**: [`node-process-runner.ts:137`](../../../../packages/adapter/src/runtime/node-process-runner.ts#L137) `kill(-pid)` để sót Chromium (Finding 11). Comment tại chỗ nói về sidecar VieNeu/Python — đúng cho ca đó, hỏng cho render. Checklist cần task riêng, và task đó phải sửa cả `ProcessPort` cũ hay chỉ supervisor mới là câu hỏi phải trả lời ở đó.
+  - **Rủi ro triển khai lớn nhất**: fixture Phase 1/2 vẫn xanh trong khi marker semantics đã đổi. Checklist phải có task riêng cho việc rà fixture, không gộp vào task đổi scanner (Decision 1). Rủi ro packaging sidecar đã **biến mất** cùng DG-1; thay vào đó là rủi ro mới nhỏ hơn: `hyperframes` còn nằm ở `devDependencies` lúc ship.
+  - **Ba số đã đo xong** ([spike checklist-gate](../../../../spikes/phase-3-checklist-gate/README.md)). Hai cái PASS thẳng (scan, `--at`). Cái thứ ba **bác bỏ một giả định của bản 3**: `kill(-pgid)` để sót 5 process Chromium trên macOS vì Chromium tự tách process group, và cách đo cũ báo sạch trong lúc đang leak. §5.9 viết lại thành thuật toán ba pha capture→kill→probe; Goals bản 12 thêm R6.6b-ii ghi hai điều cấm. Remediation đo PASS 3/3. **Còn lại đúng một số**: nửa Windows (W1/W2), cần Windows CI.
+  - **Ba sửa §5.11 do spike `--at`**: map output theo **timestamp** không theo ordinal (timestamp rác bị bỏ im lặng làm dịch ordinal) · validate midpoint theo root duration (`999` và `-5` đều ra frame chứ không ra lỗi) · dedupe midpoint trước khi gửi.
+  - Estimate Goals ~190 SP cần re-estimate khi lập Checklist. Bản 3 bỏ toolchain MSVC và packaging sidecar, gộp N invocation snapshot thành 1, nhưng thêm bảng suy purpose + prune K generation. Con số cũ không còn dùng lại được theo hướng nào.

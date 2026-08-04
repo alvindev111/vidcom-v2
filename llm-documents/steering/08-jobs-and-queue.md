@@ -20,12 +20,14 @@ MUST NOT chạy những thứ trên trong request handler. Không có job infras
 
 ```
 queued → running → succeeded
+                 → partial
                  → failed
                  → cancelled
 ```
 
 - `queued → running`: worker nhận job, ghi `startedAt`, `workerId`.
-- Chỉ ba trạng thái cuối là **terminal**. Không có state nào khác.
+- Chỉ bốn trạng thái cuối là **terminal**. Không có state nào khác.
+- `partial` là kết quả **thành công một phần có thể tiếp tục**: job sinh ra tập artifact mà một phần còn thiếu, và lần chạy sau chỉ cần bù phần thiếu. Dùng khi "tất cả hoặc không gì" sẽ vứt đi công đã làm được — ví dụ snapshot thiếu vài scene. `progress = 1`, `result` MUST nêu phần còn thiếu. MUST NOT giả `partial` thành `succeeded`: mọi thứ dẫn xuất từ nó sẽ tin là đã đủ.
 - MUST NOT xoá job ngay khi xong — giữ để UI hiện lịch sử; dọn theo policy (§8).
 
 ## 3. Bản ghi job
@@ -35,12 +37,19 @@ interface Job {
   id: JobId;
   type: "render" | "snapshot" | "tts" | "transcribe" | "agent" | "import";
   projectId: ProjectId;
-  status: "queued" | "running" | "succeeded" | "failed" | "cancelled";
+  status: "queued" | "running" | "succeeded" | "partial" | "failed" | "cancelled";
   input: unknown;              // đã validate theo schema của type
   progress: number;            // 0..1
   stage: string | null;        // "rendering frame 120/300"
   result: unknown | null;
   error: { code: string; message: string } | null;
+  // Cảnh báo không làm job fail nhưng người dùng phải thấy. MUST tới client,
+  // không chỉ nằm trong log — một cảnh báo không ai đọc biến "chấp nhận rủi ro
+  // có thông báo" thành "bỏ qua rủi ro im lặng".
+  warnings: { code: string; message: string }[] | null;
+  // Job đã terminal nhưng tài nguyên ngoài (thư mục làm việc, process) chưa dọn
+  // được. Recovery lúc khởi động thu hồi. MUST NOT chặn job terminal hoá.
+  cleanupPending: boolean;
   attempt: number;
   idempotencyKey: string | null;
   createdAt: string; startedAt: string | null; finishedAt: string | null;
@@ -88,8 +97,30 @@ POST /api/v1/jobs/:id/cancel  →  202
 
 - Cancel là **hợp tác**: worker kiểm tra cancellation token ở các mốc an toàn.
 - MUST dọn sạch output dở dang. Một file MP4 nửa chừng không được nằm trong `renders/`.
-- MUST NOT để process con sống sót. Kill cả cây process.
+- MUST kill cả cây process, và MUST xác minh trước khi ghi `cancelled`.
 - Job đã terminal → cancel là no-op, trả `200`, không lỗi.
+
+### 6.1 Kill cây process — bảo đảm thật, không phải bảo đảm mong muốn
+
+Bản trước viết "**MUST NOT để process con sống sót**". Đo thật cho thấy không nền tảng nào cung cấp được bảo đảm đó bằng công cụ thuần Node, nên luật ấy mô tả một điều hệ thống không làm được — loại luật nguy hiểm nhất trong một source of truth, vì mọi tầng trên sẽ tin nó. Thay bằng **bounded best-effort có khai báo**. Bằng chứng: [spike checklist-gate](../../spikes/phase-3-checklist-gate/README.md).
+
+Ba pha, giống nhau trên mọi nền tảng; khác biệt OS chỉ nằm ở primitive enumerate/kill/probe:
+
+1. **Capture** — trong lúc process chạy, tích luỹ PID cụ thể và các process group phân biệt. Thiếu pha này thì sau khi cha chết không còn cách nào tìm lại đám con.
+2. **Kill** — mọi group đã ghi, rồi mọi PID đã ghi. Lệnh kill ngoài tiến trình MUST được **await**, không fire-and-forget.
+3. **Verify** — probe **từng PID đã ghi trực tiếp**, lặp tới khi hai lượt liên tiếp rỗng.
+
+Hai điều cấm, mỗi cái ứng một cách đo đã báo *thành công trong lúc đang rò*:
+
+- **MUST NOT** suy survivor từ **quan hệ cha-con**. Con được reparent khi cha chết, nên duyệt theo cha-con trả về rỗng đúng lúc leak xảy ra.
+- **MUST NOT** suy survivor từ **thành viên process group**. Process engine (đo được với `chrome-headless-shell`) tự tách sang group riêng, nên leak theo định nghĩa nằm ngoài tập được quét.
+
+Hệ quả bắt buộc:
+
+- Còn survivor sau khi cạn số lượt verify → lỗi `process_termination_unverified`. **MUST NOT** ghi `cancelled`.
+- Proof MUST mang cờ cho biết nó **cạn kiệt hay bị chặn** (`exhaustive`). Process sinh sau lượt capture cuối nằm ngoài tập đã ghi; đó là lỗ đã biết, không được coi là đã đóng.
+- Vì lỗ đó có thật, **containment là tầng phòng thủ thứ hai bắt buộc**: job spawn process con MUST chạy trong thư mục do hệ thống sở hữu, có marker, để recovery thu hồi được thứ lọt qua. MUST NOT coi containment là dư thừa khi verify đã sạch.
+- Nền tảng không có nguồn quan hệ cha-con thì pha capture thoái hoá. Ở trạng thái đó luật là **trung thực, không phải zero survivor**: proof MUST NOT báo sạch trong lúc process còn sống. Rò mà khai báo thì containment thu hồi được; rò mà giấu thì không tầng nào đỡ.
 
 ## 7. Timeout, retry, recovery
 

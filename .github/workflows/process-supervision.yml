@@ -1,0 +1,126 @@
+name: Process supervision gate
+
+# Closes W1/W2 of the Phase 3 Detailed Design: the three-phase kill/verify
+# algorithm (§5.9) was measured on macOS with a real render, and the remaining
+# question was whether it holds on Linux and Windows.
+#
+# This is a separate workflow rather than a step in CI on purpose. It spawns
+# process trees and kills them, so a failure here means "the supervision
+# contract broke", not "a test broke" — and mixing that signal into the general
+# static-checks job would blur which one is being reported. It is also cheap:
+# the fixture is four idle Node processes, no Chromium, no FFmpeg, no network.
+on:
+  pull_request:
+    paths:
+      - "spikes/phase-3-checklist-gate/**"
+      - "packages/adapter/src/runtime/**"
+      - "packages/core/src/port/process-port.ts"
+      - ".github/workflows/process-supervision.yml"
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  supervision:
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+
+    strategy:
+      # Never cancel a sibling: the whole point is which platform differs, and
+      # fail-fast would hide the comparison this workflow exists to make.
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            name: Linux x64
+          - os: macos-latest
+            name: macOS arm64
+          - os: windows-latest
+            name: Windows x64
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24.9.0
+
+      # No `bun install`: the spike imports nothing outside node: builtins, so a
+      # dependency install here would only add a way for this gate to go red for
+      # a reason that has nothing to do with process supervision.
+      - name: Report toolchain
+        run: node --version
+
+      # Non-zero exit means either the fixture failed to escape its process group
+      # on this platform (inconclusive — read the JSON) or the algorithm leaked.
+      # Both need a human; neither should be swallowed.
+      - name: Three-phase kill and verify
+        run: npm run spike:process-supervision
+
+      # Run it twice. Process lifecycle bugs are frequently intermittent, and one
+      # green run on a quiet runner is weak evidence for a concurrency contract.
+      - name: Three-phase kill and verify (repeat)
+        run: npm run spike:process-supervision
+
+      # Force the branch a locked-down Windows will actually take. `wmic` is gone
+      # from Windows Server 2025 and was dropped from the design entirely (D10),
+      # so PowerShell CIM is the only parent-capable source left — and a machine
+      # with PowerShell restricted has none. That degraded path is where a proof
+      # is most tempted to lie, and nothing would exercise it otherwise. The gate
+      # here is honesty, not zero survivors: leaking is allowed, claiming success
+      # while leaking is not.
+      - name: Degraded enumerator path reports its own limits truthfully
+        if: runner.os == 'Windows'
+        run: npm run spike:process-supervision
+        env:
+          VIDCOM_DISABLE_ENUMERATORS: powershell-cim
+
+  # The synthetic fixture reproduces the SHAPE of the leak, not chrome-headless-shell
+  # itself. On macOS the shape was confirmed against a real render (S1c); Windows had
+  # no equivalent, so a Chromium-specific habit there — its own Job Object, a
+  # breakaway flag — would have gone unseen until implementation.
+  #
+  # Kept off pull requests: it downloads Chromium and renders, which is minutes
+  # rather than seconds, and the answer changes only when HyperFrames or the OS does.
+  real-render-windows:
+    name: Real render — Windows x64
+    if: github.event_name != 'pull_request'
+    runs-on: windows-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24.9.0
+
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.14
+
+      - name: Install FFmpeg
+        run: choco install ffmpeg --no-progress --yes
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      # Does chrome-headless-shell leave the root's process group on Windows the
+      # way it does on macOS? This is the one question the synthetic fixture
+      # cannot answer, and the reason S1c exists.
+      - name: Observe a real render's process tree and prove termination
+        run: node spikes/phase-3-checklist-gate/s1f-real-render-windows.mjs
