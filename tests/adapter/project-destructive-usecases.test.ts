@@ -19,9 +19,12 @@ import {
   deleteScene,
   prepareFileDeletion,
   prepareSceneDeletion,
+  ProjectIdentityService,
   reconcileCompositeMutation,
   restoreBackup,
   saveSourceFile,
+  setSceneScript,
+  setSceneTiming,
   serializePreviewSettings,
   ToolAuditService,
   WriteAuthority,
@@ -159,6 +162,7 @@ function targetMatches(target: string, suffix: string | undefined): boolean {
 function authorityWithFailure(options: { writePath?: string; deletePath?: string }): WriteAuthority {
   const proxy: WorkspacePort = {
     resolve: workspace.resolve.bind(workspace),
+    resolveWorkspace: workspace.resolveWorkspace.bind(workspace),
     listProjects: workspace.listProjects.bind(workspace),
     readProjectRef: workspace.readProjectRef.bind(workspace),
     readFile: workspace.readFile.bind(workspace),
@@ -253,6 +257,105 @@ describe("Phase J use cases with real SQLite and filesystem", () => {
     expect(dbOne(database, `SELECT revision_id AS revisionId FROM audit_entry
       WHERE action = 'tool:save_file'`)).toEqual({ revisionId: 2 });
     expect(dbOne(database, "SELECT kind FROM revision WHERE id = 2")).toEqual({ kind: "file" });
+  });
+
+  it("ripples only the affected track and commits every moved scene in one revision", async () => {
+    const multiTrack = `<!doctype html><html><body>
+<main data-hf-id="root" data-composition-id="root" data-width="1920" data-height="1080" data-duration="8">
+  <div data-hf-id="scene-1-host" data-composition-id="scene-1" data-composition-src="compositions/scene-1.html" data-start="0" data-duration="4" data-track-index="1"></div>
+  <div data-hf-id="scene-2-host" data-composition-id="scene-2" data-composition-src="compositions/scene-2.html" data-start="4" data-duration="4" data-track-index="1"></div>
+  <div data-hf-id="scene-3-host" data-composition-id="scene-3" data-composition-src="compositions/scene-3.html" data-start="1" data-duration="2" data-track-index="2"></div>
+</main></body></html>`;
+    await writeFile(path.join(projectRoot, "index.html"), multiTrack);
+    await writeFile(path.join(projectRoot, "compositions/scene-2.html"), sceneSource.replaceAll("scene-1", "scene-2"));
+    await writeFile(path.join(projectRoot, "compositions/scene-3.html"), sceneSource.replaceAll("scene-1", "scene-3"));
+
+    const result = await setSceneTiming({ workspace, composition, journal, authority, clock }, {
+      projectId,
+      sceneId: "scene-1",
+      timing: { duration: 6 },
+      ripple: true,
+      extendRoot: true,
+      expectedContentHash: hashContent(multiTrack),
+    }, "user");
+
+    expect(result).toMatchObject({
+      ok: true,
+      value: { envelope: { projectRevision: 1 }, moved: [{ sceneId: "scene-2", fromStart: 4, toStart: 6 }] },
+    });
+    const model = await composition.parseProject(ref);
+    expect(model.scenes.map(({ id, start, trackIndex }) => ({ id, start, trackIndex }))
+      .sort((left, right) => left.id.localeCompare(right.id))).toEqual([
+      { id: "scene-1", start: 0, trackIndex: 1 },
+      { id: "scene-2", start: 6, trackIndex: 1 },
+      { id: "scene-3", start: 1, trackIndex: 2 },
+    ]);
+    expect(dbOne(database, "SELECT COUNT(*) AS count FROM revision")).toEqual({ count: 1 });
+  });
+
+  it("authors an empty identity-backed project with the first scene in one revision", async () => {
+    await Promise.all([
+      rm(path.join(projectRoot, "index.html"), { force: true }),
+      rm(path.join(projectRoot, "compositions/scene-1.html"), { force: true }),
+      rm(path.join(projectRoot, "narration/scene-1.json"), { force: true }),
+      rm(path.join(projectRoot, "narration/scene-1.wav"), { force: true }),
+    ]);
+    await writeFile(path.join(projectRoot, "vidcom.json"), `${JSON.stringify({
+      schemaVersion: 1,
+      id: projectId,
+      platform: {
+        presetId: "horizontal-youtube", orientation: "horizontal", aspectRatio: "16:9",
+        width: 1920, height: 1080, fps: 30, targets: ["youtube"], recommendedMaxDurationSeconds: null,
+      },
+      render: { defaultPresetId: "horizontal-youtube", outputDirectory: "renders" },
+      narration: { defaultProviderId: null, defaultVoiceId: null },
+      createdAt: now,
+      updatedAt: now,
+    }, null, 2)}\n`);
+    const identity = new ProjectIdentityService({ workspace, authority, composition, clock });
+
+    const result = await createScene({ workspace, composition, journal, authority, clock, identity }, {
+      projectId,
+      title: "First scene",
+      index: 0,
+      expectedContentHash: null,
+    }, "user");
+
+    expect(result).toMatchObject({ ok: true, value: { envelope: { projectRevision: 1 }, scene: { id: "scene-1" } } });
+    expect(await readFile(path.join(projectRoot, "index.html"), "utf8")).toContain('data-fps="30"');
+    expect(dbOne(database, "SELECT COUNT(*) AS count FROM revision")).toEqual({ count: 1 });
+    expect(dbOne(database, "SELECT COUNT(*) AS count FROM revision_step WHERE revision_id = 1")).toEqual({ count: 3 });
+  });
+
+  it("marks only the narration cue bound to the edited script element stale", async () => {
+    const twoLines = sceneSource.replace("</section>", '<p data-hf-id="subtitle">Second line</p></section>');
+    await writeFile(path.join(projectRoot, "compositions/scene-1.html"), twoLines);
+    await writeFile(path.join(projectRoot, "narration/scene-1.json"), `${JSON.stringify({
+      schemaVersion: 2,
+      sceneId: "scene-1",
+      revision: 4,
+      updatedAt: now,
+      cues: [
+        { cueId: "title", text: "Scene one", voice: "af_heart", offsetSeconds: 0, durationSeconds: 1, staleSince: null, status: "mock", audioPath: "narration/scene-1/title.wav" },
+        { cueId: "subtitle", text: "Second line", voice: "af_heart", offsetSeconds: 1.5, durationSeconds: 1, staleSince: null, status: "mock", audioPath: "narration/scene-1/subtitle.wav" },
+      ],
+    }, null, 2)}\n`);
+
+    const result = await setSceneScript({ workspace, composition, journal, authority, clock }, {
+      projectId,
+      sceneId: "scene-1",
+      file: "compositions/scene-1.html" as RelPath,
+      elementId: "title",
+      text: "Updated title",
+      expectedContentHash: hashContent(twoLines),
+    }, "user");
+
+    expect(result).toMatchObject({ ok: true, value: { narrationStale: true, envelope: { projectRevision: 1 } } });
+    const sidecar = JSON.parse(await readFile(path.join(projectRoot, "narration/scene-1.json"), "utf8"));
+    expect(sidecar.cues.map((cue: { cueId: string; staleSince: string | null }) => [cue.cueId, cue.staleSince])).toEqual([
+      ["title", now],
+      ["subtitle", null],
+    ]);
   });
 
   it("rejects zero, negative and overflowing create_scene timing before filesystem or SQLite mutation", async () => {
@@ -474,7 +577,7 @@ describe("Phase J use cases with real SQLite and filesystem", () => {
       WHERE action = 'tool:delete_scene'`)).toEqual({ revisionId: 1 });
 
     const afterDelete = await readFile(path.join(projectRoot, "index.html"), "utf8");
-    const later = await authority.mutateComposite({
+    const later = await authority.mutateSource({
       ref,
       steps: [{
         kind: "write",

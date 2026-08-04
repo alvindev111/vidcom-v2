@@ -48,7 +48,7 @@ export function createSceneTool(
     handler: async (context, input) => createScene(dependencies, {
       ...input,
       projectId: input.projectId as ProjectId,
-      expectedContentHash: input.expectedContentHash as ContentHash,
+      expectedContentHash: input.expectedContentHash as ContentHash | null,
     }, context.actor, context.writeInvocation),
   };
 }
@@ -80,6 +80,8 @@ export function setSceneTimingTool(
         ...(input.duration === undefined ? {} : { duration: input.duration }),
         ...(input.trackIndex === undefined ? {} : { trackIndex: input.trackIndex }),
       },
+      ripple: input.ripple,
+      extendRoot: input.extendRoot,
       expectedContentHash: input.expectedContentHash,
     }, context.actor, context.writeInvocation),
   };

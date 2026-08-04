@@ -21,9 +21,26 @@
           "duration": {
             "type": "number"
           },
+          "index": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "trackIndex": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
           "expectedContentHash": {
-            "type": "string",
-            "pattern": "^sha256:[0-9a-f]{64}$"
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^sha256:[0-9a-f]{64}$"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "required": [
@@ -290,12 +307,46 @@
               "diagnostics"
             ],
             "additionalProperties": false
+          },
+          "affectedTrackIndex": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "moved": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "sceneId": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 255
+                },
+                "fromStart": {
+                  "type": "number",
+                  "minimum": 0
+                },
+                "toStart": {
+                  "type": "number",
+                  "minimum": 0
+                }
+              },
+              "required": [
+                "sceneId",
+                "fromStart",
+                "toStart"
+              ],
+              "additionalProperties": false
+            }
           }
         },
         "required": [
           "scene",
           "project",
-          "envelope"
+          "envelope",
+          "affectedTrackIndex",
+          "moved"
         ],
         "additionalProperties": false
       }
@@ -756,7 +807,7 @@
     {
       "name": "get_job_status",
       "title": "Get background job status",
-      "description": "Use when you need to poll a jobId returned by start_tts until its status is succeeded, failed or cancelled. Do not use to list jobs or to cancel one. Preconditions: jobId comes from the tool that queued the work. Side effects: read-only. Errors/recovery: on failed, error.code names the cause — tts_credential_missing, tts_quota_exceeded, tts_provider_unavailable and tts_voice_not_supported are all fixed by the user or by changing the request, not by retrying unchanged.",
+      "description": "Use when you need to poll a jobId returned by start_tts, start_snapshot, or start_render until it reaches a terminal outcome. Do not use to list jobs or to cancel one. Preconditions: jobId comes from the tool that queued the work. Side effects: read-only. Errors/recovery: wait pollAfterMs before the next poll; terminal outcome is explicit, including partial. On failed, fix error.code before a deliberate resubmission.",
       "inputSchema": {
         "type": "object",
         "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -797,6 +848,7 @@
               "queued",
               "running",
               "succeeded",
+              "partial",
               "failed",
               "cancelled"
             ]
@@ -844,6 +896,11 @@
                       "asset_not_allowed",
                       "path_outside_project",
                       "project_not_found",
+                      "project_invalid",
+                      "identity_parse_error",
+                      "composition_parse_error",
+                      "no_composition",
+                      "no_scenes",
                       "not_found",
                       "write_conflict",
                       "idempotency_key_reused",
@@ -868,6 +925,12 @@
                       "backup_expired",
                       "duplicate_mutation_target",
                       "recovery_required",
+                      "remote_asset_not_local",
+                      "render_binary_missing",
+                      "sub_timeline_readiness_timeout",
+                      "process_termination_unverified",
+                      "confirmation_required",
+                      "rollback_payload_pruned",
                       "committed_response_error",
                       "tts_provider_unavailable",
                       "tts_credential_missing",
@@ -903,6 +966,42 @@
               }
             ]
           },
+          "warnings": {
+            "anyOf": [
+              {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "enum": [
+                        "external_dependency_unpinned",
+                        "sub_timeline_readiness_timeout",
+                        "termination_proof_not_exhaustive",
+                        "engine_version_drift"
+                      ]
+                    },
+                    "message": {
+                      "type": "string",
+                      "minLength": 1
+                    }
+                  },
+                  "required": [
+                    "code",
+                    "message"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "cleanupPending": {
+            "type": "boolean"
+          },
           "attempt": {
             "type": "integer",
             "minimum": 0,
@@ -936,6 +1035,41 @@
                 "type": "null"
               }
             ]
+          },
+          "outcome": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "succeeded",
+                  "partial",
+                  "failed",
+                  "cancelled"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "pollAfterMs": {
+            "anyOf": [
+              {
+                "anyOf": [
+                  {
+                    "type": "number",
+                    "const": 250
+                  },
+                  {
+                    "type": "number",
+                    "const": 1000
+                  }
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "required": [
@@ -946,10 +1080,14 @@
           "stage",
           "result",
           "error",
+          "warnings",
+          "cleanupPending",
           "attempt",
           "createdAt",
           "startedAt",
-          "finishedAt"
+          "finishedAt",
+          "outcome",
+          "pollAfterMs"
         ],
         "additionalProperties": false
       }
@@ -1701,6 +1839,286 @@
           "diagnostics",
           "fileHashes",
           "recovery"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "install_agent_kit",
+      "title": "Install the VidCom agent kit",
+      "description": "Use when explicitly installing or repairing VidCom instructions and native skill routers for selected agent hosts. Do not use to install both hosts implicitly or overwrite foreign/newer files. Preconditions: install requires non-empty unique hosts; link is Claude-only; replace requires one manifest path and its current expectedContentHash. Side effects: writes one journaled workspace batch, or records an audited no-change when everything selected is pristine. Errors/recovery: follow installationState.recovery; re-read hashes after write_conflict and never invent a Codex import line.",
+      "inputSchema": {
+        "type": "object",
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "oneOf": [
+          {
+            "type": "object",
+            "properties": {
+              "operation": {
+                "type": "string",
+                "const": "install"
+              },
+              "hosts": {
+                "minItems": 1,
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "enum": [
+                    "codex",
+                    "claude-code"
+                  ]
+                }
+              }
+            },
+            "required": [
+              "operation",
+              "hosts"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "operation": {
+                "type": "string",
+                "const": "link"
+              },
+              "host": {
+                "type": "string",
+                "const": "claude-code"
+              },
+              "expectedContentHash": {
+                "type": "string",
+                "pattern": "^sha256:[0-9a-f]{64}$"
+              }
+            },
+            "required": [
+              "operation",
+              "host",
+              "expectedContentHash"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "operation": {
+                "type": "string",
+                "const": "replace"
+              },
+              "host": {
+                "type": "string",
+                "enum": [
+                  "codex",
+                  "claude-code"
+                ]
+              },
+              "relativePath": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 4096
+              },
+              "expectedContentHash": {
+                "type": "string",
+                "pattern": "^sha256:[0-9a-f]{64}$"
+              }
+            },
+            "required": [
+              "operation",
+              "host",
+              "relativePath",
+              "expectedContentHash"
+            ],
+            "additionalProperties": false
+          }
+        ]
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": false
+      },
+      "outputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "operationResult": {
+            "type": "object",
+            "properties": {
+              "status": {
+                "type": "string",
+                "enum": [
+                  "applied",
+                  "no_change"
+                ]
+              },
+              "changedFiles": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "relativePath": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 4096
+                    },
+                    "contentHash": {
+                      "type": "string",
+                      "pattern": "^sha256:[0-9a-f]{64}$"
+                    }
+                  },
+                  "required": [
+                    "relativePath",
+                    "contentHash"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            },
+            "required": [
+              "status",
+              "changedFiles"
+            ],
+            "additionalProperties": false
+          },
+          "installationState": {
+            "type": "object",
+            "properties": {
+              "outcome": {
+                "type": "string",
+                "enum": [
+                  "installed",
+                  "already_installed",
+                  "partial",
+                  "blocked"
+                ]
+              },
+              "files": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "host": {
+                      "type": "string",
+                      "enum": [
+                        "codex",
+                        "claude-code"
+                      ]
+                    },
+                    "relativePath": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 4096
+                    },
+                    "state": {
+                      "type": "string",
+                      "enum": [
+                        "missing",
+                        "current_pristine",
+                        "current_modified",
+                        "outdated",
+                        "newer",
+                        "foreign"
+                      ]
+                    },
+                    "contentHash": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "pattern": "^sha256:[0-9a-f]{64}$"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "nextAction": {
+                      "type": "string",
+                      "enum": [
+                        "none",
+                        "install",
+                        "replace",
+                        "link",
+                        "manual_merge"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "host",
+                    "relativePath",
+                    "state",
+                    "contentHash",
+                    "nextAction"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "usableBy": {
+                "type": "object",
+                "propertyNames": {
+                  "type": "string",
+                  "enum": [
+                    "codex",
+                    "claude-code"
+                  ]
+                },
+                "additionalProperties": {
+                  "type": "string",
+                  "enum": [
+                    "ready",
+                    "degraded",
+                    "blocked"
+                  ]
+                }
+              },
+              "recovery": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "host": {
+                      "type": "string",
+                      "enum": [
+                        "codex",
+                        "claude-code"
+                      ]
+                    },
+                    "action": {
+                      "type": "string",
+                      "enum": [
+                        "none",
+                        "install",
+                        "replace",
+                        "link",
+                        "manual_merge"
+                      ]
+                    },
+                    "detail": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "host",
+                    "action",
+                    "detail"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            },
+            "required": [
+              "outcome",
+              "files",
+              "usableBy",
+              "recovery"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "operationResult",
+          "installationState"
         ],
         "additionalProperties": false
       }
@@ -2671,6 +3089,12 @@
             "minimum": -9007199254740991,
             "maximum": 9007199254740991
           },
+          "ripple": {
+            "type": "boolean"
+          },
+          "extendRoot": {
+            "type": "boolean"
+          },
           "expectedContentHash": {
             "type": "string",
             "pattern": "^sha256:[0-9a-f]{64}$"
@@ -2940,12 +3364,46 @@
               "diagnostics"
             ],
             "additionalProperties": false
+          },
+          "affectedTrackIndex": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "moved": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "sceneId": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 255
+                },
+                "fromStart": {
+                  "type": "number",
+                  "minimum": 0
+                },
+                "toStart": {
+                  "type": "number",
+                  "minimum": 0
+                }
+              },
+              "required": [
+                "sceneId",
+                "fromStart",
+                "toStart"
+              ],
+              "additionalProperties": false
+            }
           }
         },
         "required": [
           "scene",
           "project",
-          "envelope"
+          "envelope",
+          "affectedTrackIndex",
+          "moved"
         ],
         "additionalProperties": false
       }
@@ -3268,6 +3726,106 @@
       }
     },
     {
+      "name": "start_render",
+      "title": "Start a video render",
+      "description": "Use when the validated, visually inspected project is ready for one MP4 render. Do not use before validate_project and start_snapshot, or to wait synchronously for video completion. Preconditions: projectId comes from list_projects and optional idempotencyKey must identify this exact request. Side effects: enqueues one render job and returns immediately without publishing an artifact yet. Errors/recovery: poll get_job_status after pollAfterMs; fix stable gate errors before retrying and report warnings, outcome, and cleanupPending honestly.",
+      "inputSchema": {
+        "type": "object",
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "projectId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 255
+          },
+          "bestEffort": {
+            "type": "boolean"
+          },
+          "renderPresetId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 255
+          },
+          "idempotencyKey": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 255
+          }
+        },
+        "required": [
+          "projectId"
+        ],
+        "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": false
+      },
+      "outputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "jobId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 255
+          }
+        },
+        "required": [
+          "jobId"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "start_snapshot",
+      "title": "Start project snapshots",
+      "description": "Use when creating midpoint snapshots for visual inspection before final render. Do not use as a substitute for validate_project or to wait synchronously for every image. Preconditions: projectId comes from list_projects and optional idempotencyKey must identify this exact request. Side effects: enqueues one snapshot job and returns immediately without publishing frames yet. Errors/recovery: poll get_job_status after pollAfterMs; report a partial outcome and its missingSceneIds, then retry deliberately after fixing the cause.",
+      "inputSchema": {
+        "type": "object",
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "projectId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 255
+          },
+          "idempotencyKey": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 255
+          }
+        },
+        "required": [
+          "projectId"
+        ],
+        "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": false
+      },
+      "outputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "jobId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 255
+          }
+        },
+        "required": [
+          "jobId"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
       "name": "start_tts",
       "title": "Generate scene narration audio",
       "description": "Use when you need to turn the narration text already written on one or more scenes into audio files in the project. Do not use to write or change narration text, and do not use to render video. Preconditions: every scene must already have narration text; providerId and voiceId come from list_tts_voices; leave computeDevice unset for CPU and only pass gpu when the voice lists it. Side effects: enqueues one job, then writes narration/<sceneId>.wav plus its JSON sidecar and commits one project revision when the job succeeds. Cloud engines bill the account. Errors/recovery: this job is never retried automatically because synthesis costs money and its output is not reproducible — read the failed job's error code and resubmit deliberately. Poll with get_job_status; cancel through the job API stops the engine before anything is written.",
@@ -3375,6 +3933,141 @@
           "jobId",
           "status",
           "pollWith"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "validate_project",
+      "title": "Validate a VidCom project",
+      "description": "Use when validating a project after an edit and before snapshot or render. Do not use to mutate source or to inspect rendered pixels. Preconditions: projectId comes from list_projects. Side effects: computes diagnostics and refreshes only the derived diagnostics projection; source revision is unchanged. Errors/recovery: fix every error diagnostic before continuing; no-composition is an informational result for an empty project, not a tool failure.",
+      "inputSchema": {
+        "type": "object",
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "projectId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 255
+          }
+        },
+        "required": [
+          "projectId"
+        ],
+        "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "outputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "diagnostics": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "severity": {
+                  "type": "string",
+                  "enum": [
+                    "error",
+                    "warning",
+                    "info"
+                  ]
+                },
+                "code": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "sceneId": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 255
+                },
+                "elementId": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 255
+                },
+                "effectId": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 255
+                },
+                "file": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 4096
+                },
+                "line": {
+                  "type": "integer",
+                  "exclusiveMinimum": 0,
+                  "maximum": 9007199254740991
+                },
+                "message": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "fix": {
+                  "type": "object",
+                  "properties": {
+                    "kind": {
+                      "type": "string",
+                      "const": "set-attribute"
+                    },
+                    "target": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "attribute": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "value": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "kind",
+                    "target",
+                    "attribute",
+                    "value"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "required": [
+                "severity",
+                "code",
+                "message"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "computedAtSourceRevision": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "lintSourceAvailable": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "diagnostics",
+          "computedAtSourceRevision",
+          "lintSourceAvailable"
         ],
         "additionalProperties": false
       }

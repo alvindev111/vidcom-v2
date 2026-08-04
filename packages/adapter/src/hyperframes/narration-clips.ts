@@ -1,16 +1,16 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
-import type { ProjectRef } from "@vidcom/core";
+import { buildNarrationClips, readCues, type ProjectRef } from "@vidcom/core";
 
 import { readCompositionHosts } from "./dom";
-import type { Narration } from "./types";
 
 const NARRATION_DIRECTORY = "narration";
 
 /** One narration track placed on the root timeline at its scene's start. */
 export interface NarrationClip {
   sceneId: string;
+  cueId?: string;
   /** Project-relative path to the WAV, for the file-serving base URL. */
   path: string;
   startSeconds: number;
@@ -38,26 +38,43 @@ export function readNarrationClips(ref: ProjectRef, html: string): NarrationClip
     if (!host.id) continue;
     const sidecar = readSidecar(ref, host.id);
     if (!sidecar) continue;
-    const audioPath = `${NARRATION_DIRECTORY}/${host.id}.wav`;
-    if (sidecar.audioPath !== audioPath || !existsSync(join(ref.root, audioPath))) continue;
-    clips.push({
-      sceneId: host.id,
-      path: audioPath,
-      startSeconds: host.start,
-      durationSeconds: typeof sidecar.durationSeconds === "number" && sidecar.durationSeconds > 0
-        ? sidecar.durationSeconds
-        : null,
+    const modern = typeof sidecar === "object" && sidecar !== null
+      && Array.isArray((sidecar as { cues?: unknown }).cues);
+    const legacy = sidecar as { status?: unknown; audioPath?: unknown };
+    const legacyStatus: "mock" | "generated" | undefined = legacy.status === "mock" || legacy.status === "generated"
+      ? legacy.status : undefined;
+    const cues = readCues(sidecar).map((cue) => modern ? cue : {
+      ...cue,
+      ...(legacyStatus ? { status: legacyStatus } : {}),
+      ...(typeof legacy.audioPath === "string" ? { audioPath: legacy.audioPath } : {}),
+    }).filter((cue) => {
+      const legacyPath = `${NARRATION_DIRECTORY}/${host.id}.wav`;
+      const cuePath = `${NARRATION_DIRECTORY}/${host.id}/${cue.cueId}.wav`;
+      return cue.status === "generated"
+        && (cue.audioPath === legacyPath || cue.audioPath === cuePath)
+        && existsSync(join(ref.root, cue.audioPath));
     });
+    clips.push(...buildNarrationClips({
+      sceneId: host.id,
+      start: host.start,
+      duration: host.duration,
+      trackIndex: host.trackIndex,
+    }, cues).flatMap((clip) => clip.path ? [{
+      sceneId: clip.sceneId,
+      ...(modern ? { cueId: clip.cueId } : {}),
+      path: clip.path,
+      startSeconds: clip.startSeconds,
+      durationSeconds: clip.durationSeconds,
+    }] : []));
   }
   return clips;
 }
 
-function readSidecar(ref: ProjectRef, sceneId: string): Narration | null {
+function readSidecar(ref: ProjectRef, sceneId: string): unknown | null {
   const filename = join(ref.root, NARRATION_DIRECTORY, `${sceneId}.json`);
   if (!existsSync(filename)) return null;
   try {
-    const parsed = JSON.parse(readFileSync(filename, "utf8")) as Narration;
-    return typeof parsed?.audioPath === "string" ? parsed : null;
+    return JSON.parse(readFileSync(filename, "utf8"));
   } catch {
     return null;
   }

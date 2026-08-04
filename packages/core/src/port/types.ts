@@ -6,6 +6,7 @@ import type {
   Era,
   ErrorCode,
   JobDto,
+  JobWarningDto,
   PreviewSettingsPatchDto,
   PreviewSettingsDto,
   ProjectId,
@@ -13,7 +14,7 @@ import type {
   ToolLevel,
 } from "@vidcom/contracts";
 
-import type { ProjectRef } from "../domain/models";
+import type { AbsolutePath, ProjectRef } from "../domain/models";
 
 /** Resolved filesystem capability created only by a WorkspacePort implementation. */
 export type ResolvedPath = string & { readonly __brand: "ResolvedPath" };
@@ -27,13 +28,100 @@ export type PathRejection = {
 export type ReadPurpose = "read-source" | "read-asset";
 
 /** Supported write purposes for project paths. */
-export type WritePurpose = "write-source" | "write-asset" | "system-write";
+export type WritePurpose =
+  | "write-source"
+  | "write-asset"
+  | "system-write"
+  | "state-write"
+  | "workspace-agent-kit";
 
 /** Purpose-scoped capability requested from the workspace adapter. */
 export type PathPurpose = ReadPurpose | WritePurpose;
 
+/** HyperFrames CLI version bundled and contract-tested by the render pipeline. */
+export const HYPERFRAMES_EXPECTED_VERSION = "0.7.86";
+
 /** Stable journal row identity. */
 export type JournalId = number & { readonly __brand: "JournalId" };
+
+/** Stable workspace-operation row identity. */
+export type WorkspaceOperationId = number & { readonly __brand: "WorkspaceOperationId" };
+
+export type WorkspaceOperationKind =
+  | "agent_kit_files"
+  | "project_create"
+  | "project_rename"
+  | "project_delete";
+
+export interface WorkspaceOperationIntent {
+  workspaceRoot: AbsolutePath;
+  kind: WorkspaceOperationKind;
+  projectId: ProjectId | null;
+  fromPath: string | null;
+  toPath: string | null;
+  stagingPath: string | null;
+  backupId?: string | null;
+  grantId?: string | null;
+  actor: Actor;
+  action: string;
+  toolAudit?: PendingToolAudit | null;
+}
+
+export interface WorkspaceOperationStepIntent {
+  ordinal: number;
+  path: RelPath;
+  fromHash: ContentHash | null;
+  toHash: ContentHash | null;
+  previousContent: string | Uint8Array | null;
+}
+
+export interface WorkspaceOperationStepState extends WorkspaceOperationStepIntent {
+  rollbackPath: ResolvedPath | null;
+  capturedHash: ContentHash | null;
+  captureState: "pending" | "captured";
+  status: "pending" | "written" | "rolled_back";
+}
+
+export interface PendingWorkspaceOperation extends WorkspaceOperationIntent {
+  id: WorkspaceOperationId;
+  status: "pending" | "orphaned";
+  steps: WorkspaceOperationStepState[];
+}
+
+export type ProjectLifecycleCommit =
+  | {
+      kind: "create";
+      projectId: ProjectId;
+      workspaceRoot: AbsolutePath;
+      slug: string;
+      actor: Actor;
+      manifestHash: ContentHash;
+      previewSettingsHash: ContentHash;
+      occurredAt: string;
+    }
+  | {
+      kind: "rename";
+      projectId: ProjectId | null;
+      workspaceRoot: AbsolutePath;
+      fromSlug: string;
+      toSlug: string;
+      actor: Actor;
+      occurredAt: string;
+    }
+  | {
+      kind: "delete";
+      projectId: ProjectId | null;
+      workspaceRoot: AbsolutePath;
+      slug: string;
+      backupId: string;
+      actor: Actor;
+      occurredAt: string;
+    };
+
+export interface WorkspaceWriteEnvelope {
+  operationId: WorkspaceOperationId;
+  fileHashes: Record<RelPath, ContentHash>;
+}
 
 /** Redacted MCP invocation context persisted before a workspace write begins. */
 export interface PendingToolAudit {
@@ -68,15 +156,17 @@ export interface ToolAuditEntry {
 }
 
 /** Redacted CLI command context durably owned by a composite journal. */
-export interface PendingCommandAudit {
-  action: "cli:restore";
-  detail: { backupId: string };
-}
+export type PendingCommandAudit =
+  | { action: "cli:restore"; detail: { backupId: string } }
+  | {
+      action: "derived.write";
+      detail: { producedByJobId: JobId | null; computedAtSourceRevision: number };
+    };
 
 /** Immutable destructive-plan binding approved outside the MCP capability boundary. */
 export interface GrantBinding {
   tool: string;
-  projectId: ProjectId;
+  projectId: ProjectId | null;
   target: string;
   expectedRevision: number;
   planDigest: string;
@@ -101,7 +191,6 @@ export type CompositeStep =
       path: RelPath;
       content: string | Uint8Array;
       expectedContentHash: ContentHash | null;
-      purpose?: PathPurpose;
     }
   | {
       kind: "delete";
@@ -192,7 +281,7 @@ export interface PendingCompositeMutation extends CompositeIntent {
 
 /** Durable filesystem capture owned by one journal step at the publish boundary. */
 export interface MutationCapture {
-  journalId: JournalId;
+  journalId: JournalId | WorkspaceOperationId;
   ordinal: number;
   target: ResolvedPath;
   rollbackPath: ResolvedPath | null;
@@ -235,15 +324,20 @@ export interface BackupPayload {
 }
 
 /** Durable backup metadata retained after its restorable payload is pruned. */
-export interface BackupManifest {
+interface BackupManifestBase {
   id: string;
-  projectId: ProjectId;
   revisionId: number | null;
   createdAt: string;
   reason: string;
   entries: BackupManifestEntry[];
   manifestHash: string;
   payloadPrunedAt: string | null;
+}
+
+export interface BackupManifest extends BackupManifestBase {
+  projectId: ProjectId | null;
+  workspaceRoot?: AbsolutePath | null;
+  slug?: string | null;
 }
 
 /** Durable approval row visible to Core without exposing adapter transaction types. */
@@ -345,12 +439,20 @@ export interface LeaseInfo {
 }
 
 /** Event read from durable outbox storage. */
-export interface StoredEvent extends DomainEvent {
-  seq: number;
-}
+export type StoredEvent = DomainEvent & { seq: number };
 
 /** Stable job identity. */
 export type JobId = string & { readonly __brand: "JobId" };
+
+/** Ordered SQLite revision row used only to rebuild the human-readable projection. */
+export interface ProjectRevisionProjection {
+  revision: number;
+  sourceRevision: number;
+  actor: Actor;
+  createdAt: string;
+  paths: RelPath[];
+  summary: string;
+}
 
 /** Internal durable job record consumed by Core scheduling logic. */
 export interface Job extends JobDto {
@@ -361,6 +463,7 @@ export interface Job extends JobDto {
   cancelRequested: boolean;
   workerId: string | null;
   heartbeatAt: string | null;
+  terminationProof?: import("./process-port").ProcessTerminationProof | null;
 }
 
 /** New job data ready for durable enqueue. */
@@ -375,9 +478,15 @@ export interface NewJob {
 
 /** Terminal outcome persisted for a job. */
 export type JobOutcome =
-  | { status: "succeeded"; result: unknown }
-  | { status: "failed"; error: { code: ErrorCode; message: string } }
-  | { status: "cancelled" };
+  (| { status: "succeeded"; result: unknown }
+   | { status: "partial"; result: unknown }
+   | { status: "failed"; error: { code: ErrorCode; message: string } }
+   | { status: "cancelled" })
+  & {
+    warnings?: readonly JobWarningDto[];
+    cleanupPending?: boolean;
+    terminationProof?: import("./process-port").ProcessTerminationProof;
+  };
 
 /** Preview settings shape accepted by the composition adapter. */
 export type PreviewSettings = PreviewSettingsDto;

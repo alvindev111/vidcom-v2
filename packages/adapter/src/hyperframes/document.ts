@@ -18,6 +18,20 @@ export interface DocumentOptions {
   fileBaseUrl?: string;
 }
 
+/** Inserts the runtime guard before every author-controlled head element. */
+export function injectRuntimeAssetGuardDocument(
+  html: string,
+  guard: { csp: string; bootstrapScript: string },
+): string {
+  const head = html.match(/<head\b[^>]*>/iu);
+  if (!head || head.index === undefined) throw new Error("HyperFrames document has no head for the runtime asset guard");
+  const csp = guard.csp.replaceAll("&", "&amp;").replaceAll('"', "&quot;");
+  const injection = `<meta data-vidcom-runtime-guard="csp" http-equiv="Content-Security-Policy" content="${csp}">\n`
+    + `<script data-vidcom-runtime-guard="bootstrap">${guard.bootstrapScript}</script>`;
+  const insertion = head.index + head[0].length;
+  return `${html.slice(0, insertion)}\n${injection}${html.slice(insertion)}`;
+}
+
 export function buildHyperframesBaseDocument(
   projectRoot: string,
   entry: string,

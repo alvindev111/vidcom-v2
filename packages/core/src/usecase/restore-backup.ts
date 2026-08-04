@@ -1,16 +1,17 @@
-import { ErrorCode, type DomainError, type PreviewSettingsPatchDto, type ProjectId, type RelPath } from "@vidcom/contracts";
+import { ErrorCode, type Actor, type DomainError, type PreviewSettingsPatchDto, type ProjectId, type RelPath } from "@vidcom/contracts";
 
 import { normalizePreviewSettings } from "../domain/preview-settings";
 import { err, type Result } from "../error/result";
 import type { BackupPort, CompositeMutationJournalPort, WorkspacePort } from "../port/ports";
-import type { BackupPayload, CompositeStep, PathPurpose, WriteEnvelope } from "../port/types";
-import type { WriteAuthority } from "../service/write-authority";
+import type { BackupPayload, CompositeRequest, CompositeStep, WriteEnvelope } from "../port/types";
 
 export interface RestoreBackupDependencies {
   backups: BackupPort;
   journal: Pick<CompositeMutationJournalPort, "readBackupRevisionSteps" | "readEntityState">;
   workspace: Pick<WorkspacePort, "readProjectRef" | "resolve" | "readFile">;
-  writes: Pick<WriteAuthority, "mutateComposite">;
+  writes: {
+    mutateSource(request: CompositeRequest, actor: Actor): Promise<Result<WriteEnvelope, DomainError>>;
+  };
 }
 
 function failure(code: ErrorCode, message: string): Result<never, DomainError> {
@@ -19,14 +20,6 @@ function failure(code: ErrorCode, message: string): Result<never, DomainError> {
 
 function payloadMap(payloads: BackupPayload[]): Map<RelPath, BackupPayload> {
   return new Map(payloads.map((payload) => [payload.path, payload]));
-}
-
-function restorePurpose(path: RelPath): PathPurpose {
-  if (path === "preview-settings.json"
-    || (path.startsWith("narration/") && path.endsWith(".json"))) return "system-write";
-  if (["assets/", "preview-assets/", "narration/", "snapshots/", "renders/"]
-    .some((root) => path.startsWith(root))) return "write-asset";
-  return "write-source";
 }
 
 /** Restores one verified destructive backup as a new preconditioned composite revision. */
@@ -131,11 +124,10 @@ export async function restoreBackup(
       path: step.path,
       content: payload.bytes,
       expectedContentHash: step.toHash,
-      purpose: restorePurpose(step.path),
     });
   }
 
-  return dependencies.writes.mutateComposite({
+  return dependencies.writes.mutateSource({
     ref,
     steps: restoreSteps,
     toolAudit: null,

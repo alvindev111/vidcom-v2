@@ -11,6 +11,7 @@ import { ErrorCode, type ContentHash, type RelPath } from "@vidcom/contracts";
 import {
   err,
   ok,
+  readCues,
   type CompositionModel,
   type CompositionPort,
   type CompositionReference,
@@ -172,7 +173,28 @@ function readNarration(ref: ProjectRef, sceneId: string): Narration | null {
   const filename = safeProjectFile(ref, `narration/${sceneId}.json`);
   if (!filename) return null;
   try {
-    const narration = JSON.parse(readFileSync(filename, "utf8")) as Narration;
+    const raw = JSON.parse(readFileSync(filename, "utf8")) as Narration & {
+      cues?: unknown; revision?: number; updatedAt?: string;
+    };
+    if (Array.isArray(raw.cues)) {
+      const cue = readCues(raw)[0];
+      if (!cue?.audioPath) return null;
+      return {
+        sceneId,
+        text: cue.text,
+        voice: cue.voice,
+        status: safeProjectFile(ref, cue.audioPath) ? "generated" : "mock",
+        audioPath: cue.audioPath,
+        command: cue.command ?? "",
+        revision: typeof raw.revision === "number" ? raw.revision : 0,
+        updatedAt: typeof raw.updatedAt === "string" ? raw.updatedAt : new Date(0).toISOString(),
+        staleSince: cue.staleSince,
+        ...(cue.durationSeconds ? { durationSeconds: cue.durationSeconds } : {}),
+        ...(cue.words ? { words: cue.words } : {}),
+        ...(cue.wordTimingSource ? { wordTimingSource: cue.wordTimingSource } : {}),
+      };
+    }
+    const narration = raw;
     return {
       ...narration,
       status: safeProjectFile(ref, narration.audioPath) ? "generated" : "mock",
@@ -349,6 +371,7 @@ export class CompositionHf implements CompositionPort {
         sceneCount: scenes.length,
         revision: 0,
       },
+      frameRate: root ? parseNumeric(root.getAttribute("data-fps")) ?? 30 : 30,
       scenes,
       rootTrack,
       diagnostics: [],

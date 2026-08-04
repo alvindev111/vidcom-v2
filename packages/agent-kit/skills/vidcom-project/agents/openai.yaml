@@ -1,0 +1,5 @@
+# x-vidcom-agent-kit: 1
+interface:
+  display_name: "VidCom Project"
+  short_description: "Create and orient VidCom projects"
+  default_prompt: "Create or orient this VidCom project through MCP."

@@ -99,7 +99,7 @@ afterEach(async () => {
 });
 
 async function destructiveWrite() {
-  const result = await authority.mutateComposite({
+  const result = await authority.mutateSource({
     ref,
     steps: [{
       kind: "write",
@@ -150,7 +150,7 @@ describe("backup restore with real SQLite and filesystem", () => {
 
   it("rejects restore when a later edit no longer matches the destructive to_hash", async () => {
     await destructiveWrite();
-    const later = await authority.mutateComposite({
+    const later = await authority.mutateSource({
       ref,
       steps: [{
         kind: "write",

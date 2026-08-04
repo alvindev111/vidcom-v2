@@ -2,7 +2,6 @@ import { describe, expect, it } from "vitest";
 
 import type { Actor, ContentHash, ProjectId, RelPath } from "@vidcom/contracts";
 import {
-  err,
   ok,
   ToolAuditService,
   type AbsolutePath,
@@ -15,10 +14,12 @@ import {
 } from "@vidcom/core";
 import {
   registerVidcomTools,
+  getJobStatusTool,
   saveFileTool,
   setSceneTimingTool,
   ToolRegistry,
   type VidcomToolDependencies,
+  type JobToolDependencies,
   type WriteToolDependencies,
 } from "@vidcom/mcp";
 
@@ -76,6 +77,27 @@ describe("all registered tool handlers", () => {
       tts: { listProviders: async () => [] },
       jobs: { enqueue: async () => ({ conflict: "idempotency_key_reused" }), get: async () => null },
       ids: { newId: (prefix: string) => `${prefix}-1` },
+      workspaceRoot: "/workspace" as AbsolutePath,
+      diagnostics: {
+        forProject: async () => ({
+          ok: false as const,
+          error: { code: "project_not_found", message: "project was not found" },
+        }),
+      },
+      agentKit: {
+        apply: async () => ({
+          ok: false as const,
+          error: { code: "project_not_found", message: "workspace fixture is unavailable" },
+        }),
+      },
+      enqueueRender: async () => ({
+        ok: false as const,
+        error: { code: "project_not_found", message: "project was not found" },
+      }),
+      enqueueSnapshot: async () => ({
+        ok: false as const,
+        error: { code: "project_not_found", message: "project was not found" },
+      }),
     } as unknown as VidcomToolDependencies;
     dependencies.reads = dependencies;
     registerVidcomTools(tools, dependencies);
@@ -97,6 +119,10 @@ describe("all registered tool handlers", () => {
       list_tts_voices: { projectId },
       start_tts: { projectId, sceneIds: ["scene-1"], providerId: "nobody", voiceId: "nobody" },
       get_job_status: { jobId: "job-1" },
+      validate_project: { projectId },
+      start_snapshot: { projectId },
+      start_render: { projectId },
+      install_agent_kit: { operation: "install", hosts: ["codex"] },
     };
     expect(Object.keys(cases).sort()).toEqual(tools.list("modern").map((tool) => tool.name));
 
@@ -177,7 +203,7 @@ function writeDependencies(captured: Array<{ tool: string; invocation: WriteInvo
     journal: {} as WriteToolDependencies["journal"],
     authority: {
       mutate,
-      mutateComposite: async () => err({ code: "internal" as never, message: "not used" }),
+      mutateSource: mutate,
     },
     clock: { now: () => new Date("2026-08-02T00:00:00.000Z") },
   } as unknown as WriteToolDependencies;
@@ -197,12 +223,13 @@ describe("write tool invocation forwarding", () => {
       content: "<main>after</main>",
       expectedContentHash: digest("1"),
     }, request)).resolves.toMatchObject({ ok: true, value: { envelope: { projectRevision: 1 } } });
-    await expect(tools.invoke("set_scene_timing", {
+    const timingResult = await tools.invoke("set_scene_timing", {
       projectId,
       sceneId: "scene-1",
       duration: 5,
       expectedContentHash: digest("1"),
-    }, request)).resolves.toMatchObject({ ok: true, value: { envelope: { projectRevision: 2 } } });
+    }, request);
+    expect(timingResult).toMatchObject({ ok: true, value: { envelope: { projectRevision: 2 } } });
 
     expect(captured.map((item) => item.tool)).toEqual(["save_file", "set_scene_timing"]);
     expect(captured[0]!.invocation.toolAudit).toMatchObject({
@@ -211,5 +238,76 @@ describe("write tool invocation forwarding", () => {
     expect(captured[1]!.invocation.toolAudit).toMatchObject({
       tool: "set_scene_timing", invocationId: "invocation-2", projectId, credentialId: "credential-1",
     });
+  });
+});
+
+describe("delivery-loop MCP schemas", () => {
+  it("exposes stable backoff hints and an explicit partial terminal outcome", async () => {
+    const tools = registry([]);
+    let status: "queued" | "running" | "partial" = "queued";
+    const jobs = {
+      get: async () => ({
+        id: "job-delivery",
+        type: "snapshot",
+        status,
+        progress: status === "queued" ? 0 : status === "running" ? 0.5 : 1,
+        stage: status === "running" ? "capture" : null,
+        result: status === "partial" ? { missingSceneIds: ["scene-2"] } : null,
+        error: null,
+        warnings: status === "partial" ? [{
+          code: "sub_timeline_readiness_timeout",
+          message: "scene-2 failed",
+        }] : null,
+        cleanupPending: status === "partial",
+        attempt: status === "queued" ? 0 : 1,
+        createdAt: "2026-08-02T00:00:00.000Z",
+        startedAt: status === "queued" ? null : "2026-08-02T00:00:01.000Z",
+        finishedAt: status === "partial" ? "2026-08-02T00:00:02.000Z" : null,
+      }),
+    } as unknown as JobToolDependencies["jobs"];
+    tools.register(getJobStatusTool({ jobs } as unknown as JobToolDependencies));
+
+    await expect(tools.invoke("get_job_status", { jobId: "job-delivery" }, request))
+      .resolves.toMatchObject({ ok: true, value: { outcome: null, pollAfterMs: 250 } });
+    status = "running";
+    await expect(tools.invoke("get_job_status", { jobId: "job-delivery" }, request))
+      .resolves.toMatchObject({ ok: true, value: { outcome: null, pollAfterMs: 1000 } });
+    status = "partial";
+    await expect(tools.invoke("get_job_status", { jobId: "job-delivery" }, request))
+      .resolves.toMatchObject({
+        ok: true,
+        value: {
+          outcome: "partial",
+          pollAfterMs: null,
+          warnings: [{ code: "sub_timeline_readiness_timeout", message: "scene-2 failed" }],
+          cleanupPending: true,
+        },
+      });
+  });
+
+  it("rejects cross-branch install_agent_kit fields before the handler", async () => {
+    const tools = registry([]);
+    const dependencies = {
+      workspaceRoot: "/workspace" as AbsolutePath,
+      agentKit: { apply: async () => { throw new Error("handler must not run"); } },
+    } as unknown as VidcomToolDependencies;
+    registerVidcomTools(tools, dependencies);
+
+    for (const input of [
+      { operation: "install", hosts: ["codex"], host: "codex" },
+      { operation: "link", host: "claude-code", expectedContentHash: digest("1"), hosts: ["codex"] },
+      {
+        operation: "replace",
+        host: "codex",
+        relativePath: ".agents/skills/vidcom/SKILL.md",
+        expectedContentHash: digest("1"),
+        hosts: ["codex"],
+      },
+    ]) {
+      await expect(tools.invoke("install_agent_kit", input, request)).resolves.toMatchObject({
+        ok: false,
+        error: { code: "schema_invalid", field: "input" },
+      });
+    }
   });
 });

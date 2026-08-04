@@ -1,0 +1,5 @@
+# x-vidcom-agent-kit: 1
+interface:
+  display_name: "VidCom Narration"
+  short_description: "Author and generate VidCom narration"
+  default_prompt: "Author and generate narration through VidCom MCP."

@@ -140,11 +140,11 @@ export function getJobStatusTool(
     title: "Get background job status",
     level: "read",
     description: [
-      "Use when you need to poll a jobId returned by start_tts until its status is succeeded, failed or cancelled.",
+      "Use when you need to poll a jobId returned by start_tts, start_snapshot, or start_render until it reaches a terminal outcome.",
       "Do not use to list jobs or to cancel one.",
       "Preconditions: jobId comes from the tool that queued the work.",
       "Side effects: read-only.",
-      "Errors/recovery: on failed, error.code names the cause — tts_credential_missing, tts_quota_exceeded, tts_provider_unavailable and tts_voice_not_supported are all fixed by the user or by changing the request, not by retrying unchanged.",
+      "Errors/recovery: wait pollAfterMs before the next poll; terminal outcome is explicit, including partial. On failed, fix error.code before a deliberate resubmission.",
     ].join(" "),
     input: GetJobStatusInputSchema,
     output: GetJobStatusOutputSchema,
@@ -162,10 +162,17 @@ export function getJobStatusTool(
         stage: job.stage,
         result: job.result,
         error: job.error,
+        warnings: job.warnings,
+        cleanupPending: job.cleanupPending,
         attempt: job.attempt,
         createdAt: job.createdAt,
         startedAt: job.startedAt,
         finishedAt: job.finishedAt,
+        outcome: job.status === "succeeded" || job.status === "partial"
+          || job.status === "failed" || job.status === "cancelled"
+          ? job.status
+          : null,
+        pollAfterMs: job.status === "queued" ? 250 : job.status === "running" ? 1000 : null,
       }));
     },
   };

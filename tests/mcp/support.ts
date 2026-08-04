@@ -13,6 +13,7 @@ import {
   type AbsolutePath,
   type CompositionModel,
   type CompositeRequest,
+  type MutationRequest,
   type ProjectRef,
   type ResolvedPath,
   type ToolAuditEntry,
@@ -71,6 +72,10 @@ export const CONTRACT_MATRIX_CASES: Record<string, Record<string, unknown>> = {
     voiceId: "matrix-voice",
   },
   get_job_status: { jobId: "job_matrix" },
+  validate_project: { projectId: matrixProjectId },
+  start_snapshot: { projectId: matrixProjectId },
+  start_render: { projectId: matrixProjectId, bestEffort: true },
+  install_agent_kit: { operation: "install", hosts: ["codex"] },
 };
 
 function createBaseRegistry(auditEntries: ToolAuditEntry[] = [], journalOwned = false): ToolRegistry {
@@ -106,7 +111,16 @@ export function createContractMatrixRegistry(): ToolRegistry {
     ["preview-settings.json", previewSettings],
     // The scene has narration, so its sidecar must exist: set_text marks that
     // sidecar stale and fails outright if it cannot read it.
-    ["narration/scene-1.json", `${JSON.stringify({ sceneId: "scene-1", text: "Xin chào" })}\n`],
+    ["narration/scene-1.json", `${JSON.stringify({
+      sceneId: "scene-1",
+      text: "Xin chào",
+      voice: "matrix-voice",
+      status: "mock",
+      audioPath: "narration/scene-1.wav",
+      revision: 0,
+      updatedAt: "2026-08-02T00:00:00.000Z",
+      staleSince: null,
+    })}\n`],
   ]);
   const model: CompositionModel = {
     project: {
@@ -196,7 +210,15 @@ export function createContractMatrixRegistry(): ToolRegistry {
         revision: 3,
         diagnostics: [],
       }),
-      mutateComposite: async (request: CompositeRequest) => {
+      mutateSource: async (request: CompositeRequest | MutationRequest) => {
+        if (!("steps" in request)) {
+          return ok({
+            path: request.kind === "file" ? request.path : null,
+            contentHash: matrixNewHash,
+            revision: 3,
+            diagnostics: [],
+          });
+        }
         const fileHashes = Object.fromEntries(
           request.steps
             .filter((step) => step.kind === "write")
@@ -244,6 +266,8 @@ export function createContractMatrixRegistry(): ToolRegistry {
           stage: null,
           result: null,
           error: null,
+          warnings: null,
+          cleanupPending: false,
           attempt: 0,
           createdAt: "2026-08-02T00:00:00.000Z",
           startedAt: null,
@@ -259,6 +283,8 @@ export function createContractMatrixRegistry(): ToolRegistry {
         stage: null,
         result: { assets: [], revision: 3 },
         error: null,
+        warnings: null,
+        cleanupPending: false,
         attempt: 1,
         createdAt: "2026-08-02T00:00:00.000Z",
         startedAt: "2026-08-02T00:00:01.000Z",
@@ -266,6 +292,71 @@ export function createContractMatrixRegistry(): ToolRegistry {
       }),
     },
     ids: { newId: (prefix: string) => `${prefix}_matrix` },
+    workspaceRoot: "/workspace" as AbsolutePath,
+    diagnostics: {
+      forProject: async () => ok({
+        diagnostics: [],
+        computedAtSourceRevision: 2,
+        lintSourceAvailable: true,
+      }),
+    },
+    agentKit: {
+      apply: async () => ok({
+        operationResult: { status: "no_change", changedFiles: [] },
+        installationState: {
+          outcome: "already_installed",
+          files: [],
+          usableBy: { codex: "ready" },
+          recovery: [{ host: "codex", action: "none", detail: "VidCom agent kit is current." }],
+        },
+      }),
+    },
+    enqueueRender: async () => ok({
+      id: "job_render",
+      projectId: matrixProjectId,
+      type: "render",
+      status: "queued" as const,
+      progress: 0,
+      stage: null,
+      result: null,
+      error: null,
+      warnings: null,
+      cleanupPending: false,
+      terminationProof: null,
+      attempt: 0,
+      input: {},
+      inputHash: matrixHash,
+      idempotencyKey: null,
+      cancelRequested: false,
+      workerId: null,
+      heartbeatAt: null,
+      createdAt: "2026-08-02T00:00:00.000Z",
+      startedAt: null,
+      finishedAt: null,
+    }),
+    enqueueSnapshot: async () => ok({
+      id: "job_snapshot",
+      projectId: matrixProjectId,
+      type: "snapshot",
+      status: "queued" as const,
+      progress: 0,
+      stage: null,
+      result: null,
+      error: null,
+      warnings: null,
+      cleanupPending: false,
+      terminationProof: null,
+      attempt: 0,
+      input: {},
+      inputHash: matrixHash,
+      idempotencyKey: null,
+      cancelRequested: false,
+      workerId: null,
+      heartbeatAt: null,
+      createdAt: "2026-08-02T00:00:00.000Z",
+      startedAt: null,
+      finishedAt: null,
+    }),
   } as unknown as VidcomToolDependencies;
   // The read dependencies are the same fakes the write tools use, so the job
   // tools see the identical project rather than a second, divergent harness.

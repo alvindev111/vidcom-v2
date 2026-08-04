@@ -88,6 +88,7 @@ describe("classifyCompositeStep", () => {
     const operations: string[] = [];
     const workspace: WorkspacePort = {
       async resolve() { return ok(first); },
+      async resolveWorkspace() { throw new Error("unused"); },
       async listProjects() { return []; },
       async readProjectRef() { return null; },
       async readFile() { return null; },
@@ -130,6 +131,7 @@ describe("classifyCompositeStep", () => {
     const target = "/workspace/project/index.html" as ResolvedPath;
     const workspace: WorkspacePort = {
       async resolve() { return ok(target); },
+      async resolveWorkspace() { throw new Error("unused"); },
       async listProjects() { return []; },
       async readProjectRef() { return null; },
       async readFile() { return null; },

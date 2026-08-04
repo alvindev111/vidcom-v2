@@ -26,6 +26,31 @@ export interface ProcessRunOutput {
   timedOut: boolean;
 }
 
+/** Direct-PID evidence recorded when VidCom terminates a process tree. */
+export interface ProcessTerminationProof {
+  reason: "abort" | "timeout";
+  rootPid: number;
+  capturedPids: readonly number[];
+  capturedGroups: readonly number[];
+  survivors: readonly number[];
+  sweeps: number;
+  exhaustive: boolean;
+}
+
+/** Result from the render/snapshot process supervisor. */
+export type SupervisedProcessResult =
+  | { status: "exited"; output: ProcessRunOutput }
+  | {
+      status: "terminated";
+      proof: ProcessTerminationProof;
+      warnings: readonly ["termination_proof_not_exhaustive"] | readonly [];
+    };
+
+/** Child-process seam that proves termination before cancellation can settle. */
+export interface ProcessSupervisorPort {
+  run(input: ProcessRunInput): Promise<SupervisedProcessResult>;
+}
+
 /** Child-process seam so Core can orchestrate ffmpeg and model sidecars without importing `node:child_process`. */
 export interface ProcessPort {
   /**

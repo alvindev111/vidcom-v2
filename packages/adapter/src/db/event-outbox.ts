@@ -41,12 +41,19 @@ export class SqliteEventOutbox implements EventOutboxPort {
       .orderBy(asc(eventOutbox.seq)).limit(boundedLimit).all();
     return {
       gap,
-      events: rows.map((row) => ({
-        seq: row.seq,
-        type: row.type,
-        projectId: row.projectId as ProjectId,
-        payload: JSON.parse(row.payload) as Record<string, unknown>,
-      })),
+      events: rows.map((row): StoredEvent => row.type === "workspace.changed"
+        ? {
+            seq: row.seq,
+            type: "workspace.changed",
+            projectId: null,
+            payload: JSON.parse(row.payload) as Record<string, unknown>,
+          }
+        : {
+            seq: row.seq,
+            type: row.type,
+            projectId: row.projectId as ProjectId,
+            payload: JSON.parse(row.payload) as Record<string, unknown>,
+          }),
     };
   }
 

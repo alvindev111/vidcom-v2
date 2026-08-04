@@ -14,6 +14,7 @@ export default defineConfig({
   resolve: {
     alias: {
       "@": path.resolve(import.meta.dirname, "src"),
+      "@vidcom/agent-kit": path.resolve(import.meta.dirname, "packages/agent-kit/src/index.ts"),
       "@vidcom/adapter": path.resolve(import.meta.dirname, "packages/adapter/src/index.ts"),
       "@vidcom/cli": path.resolve(import.meta.dirname, "packages/cli/src/index.ts"),
       "@vidcom/contracts": path.resolve(

@@ -10,18 +10,14 @@ async function candidate(raw: string | null | undefined): Promise<WorkspaceCandi
   if (!raw) return null;
   const root = path.resolve(raw) as AbsolutePath;
   try {
-    const entries = await readdir(root, { withFileTypes: true });
-    for (const entry of entries) {
-      if (!entry.isDirectory()) continue;
-      const project = path.join(root, entry.name);
-      const [config, source] = await Promise.all([
-        stat(path.join(project, "hyperframes.json")),
-        stat(path.join(project, "index.html")),
-      ]).catch(() => []);
-      if (config?.isFile() && source?.isFile()) return { root, valid: true };
-    }
+    await readdir(root);
+    const identity = await stat(path.join(root, "vidcom.json")).catch(() => null);
+    const parent = path.dirname(root);
+    const parentReadable = parent !== root
+      && await readdir(parent).then(() => true).catch(() => false);
+    return { root, readable: true, hasIdentityFile: identity?.isFile() === true, parentReadable };
   } catch { /* invalid candidates are handled by the resolver */ }
-  return { root, valid: false };
+  return { root, readable: false, hasIdentityFile: false, parentReadable: false };
 }
 
 async function activeWorkspace(appDataRoot: string): Promise<string | null> {
@@ -41,8 +37,8 @@ export async function selectWorkspace(options: {
   cwd?: string;
 }): Promise<AbsolutePath> {
   const explicit = await candidate(options.explicit);
-  if (explicit && !explicit.valid) {
-    throw new CliInputError("explicit workspace is invalid or contains no valid project");
+  if (explicit && !explicit.readable) {
+    throw new CliInputError(`explicit workspace is not readable: ${explicit.root}`);
   }
   const active = explicit ? null : await activeWorkspace(options.appDataRoot);
   const resolution = resolveWorkspace({
@@ -50,8 +46,11 @@ export async function selectWorkspace(options: {
     active: await candidate(active),
     cwd: explicit ? null : await candidate(options.cwd ?? process.cwd()),
   });
-  if (resolution.status === "selection_required") {
-    throw new Error("workspace selection required; pass --workspace or VIDCOM_WORKSPACE");
+  if (resolution.status === "error") {
+    throw new CliInputError(`${resolution.reason}: ${resolution.path}`);
+  }
+  for (const warning of resolution.warnings) {
+    process.emitWarning(`${warning.reason}: ${warning.path}`, { code: warning.code });
   }
   const database = openVidcomDatabase(options.appDataRoot);
   try {

@@ -8,6 +8,7 @@ import {
   SquareIcon,
   TriangleAlertIcon,
 } from "lucide-react";
+import { countStrandedTweens, measureElementWindow } from "@vidcom/contracts";
 
 import { formatTimecode } from "@/lib/studio/format";
 import type { RootTrack, Scene, SceneElement } from "@/lib/studio/types";
@@ -120,12 +121,7 @@ export const TimelineElementRows = React.memo(function TimelineElementRows({
   // The runtime hides a scene once its clip window closes, so a tween authored
   // past that point never runs. Counting them turns a bar that looks like a
   // rendering glitch into the authoring bug it actually is.
-  const window = scene.duration;
-  const stranded = scene.elements.reduce(
-    (total, element) =>
-      total + element.effects.filter((effect) => effect.start >= window).length,
-    0,
-  );
+  const stranded = countStrandedTweens(scene.elements, scene.duration);
 
   return (
     <>
@@ -191,18 +187,8 @@ const ElementRows = React.memo(function ElementRows({
 
   // An element with no clip timing still has a lifespan on screen — the span its
   // tweens cover. Drawn faintly so it never reads as an authored slot.
-  const effectStart = element.effects[0]?.start ?? 0;
-  const effectEnd = element.effects.reduce(
-    (end, effect) => Math.max(end, effect.start + effect.duration),
-    effectStart,
-  );
-  const start = element.start ?? effectStart;
-  const span = element.duration ?? Math.max(effectEnd - effectStart, 0);
+  const { start, span, inWindow, overrun } = measureElementWindow(element, sceneDuration);
   const authored = element.start !== null;
-
-  // Split at the scene's clip end: what plays, and what is authored past it.
-  const inWindow = Math.max(Math.min(start + span, sceneDuration) - start, 0);
-  const overrun = Math.max(start + span - Math.max(start, sceneDuration), 0);
 
   return (
     <>

@@ -162,7 +162,7 @@ describe("deleteFile", () => {
     const deleted = await deleteFile({
       ...base,
       authority: {
-        async mutateComposite(request) {
+        async mutateSource(request) {
           requests.push(request);
           return {
             ok: true as const,
@@ -199,7 +199,7 @@ describe("deleteFile", () => {
     const result = await deleteFile({
       ...base,
       authority: {
-        async mutateComposite(request) {
+        async mutateSource(request) {
           requests.push(request);
           throw new Error("must not mutate");
         },

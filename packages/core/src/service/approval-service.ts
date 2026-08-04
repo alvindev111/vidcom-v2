@@ -31,6 +31,7 @@ export function canonicalizeGrantBinding(binding: GrantBinding): GrantBinding {
 function validBinding(binding: GrantBinding): boolean {
   return binding.tool.length > 0
     && binding.target.length > 0
+    && (binding.projectId === null ? binding.target.startsWith("location:") : !binding.target.startsWith("location:"))
     && binding.expectedRevision >= 0
     && Number.isInteger(binding.expectedRevision)
     && /^sha256:[0-9a-f]{64}$/.test(binding.planDigest)

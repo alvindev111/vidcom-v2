@@ -11,6 +11,7 @@ export const LARGE_PREVIOUS_CONTENT_THRESHOLD = 64 * 1024;
 export interface PreviousContentStore {
   put(bytes: Uint8Array): Promise<ContentHash>;
   read(hash: ContentHash): Promise<Uint8Array>;
+  cleanupUnreferenced?(referenced: ReadonlySet<string>, olderThan?: Date): Promise<number>;
 }
 
 function digest(bytes: Uint8Array): ContentHash {
@@ -71,7 +72,7 @@ export class LargePreviousContentStore implements PreviousContentStore {
   }
 
   /** Removes only old, unreferenced immutable objects; callers derive references from durable SQLite rows. */
-  async cleanupUnreferenced(referenced: ReadonlySet<string>, olderThan: Date): Promise<number> {
+  async cleanupUnreferenced(referenced: ReadonlySet<string>, olderThan?: Date): Promise<number> {
     let removed = 0;
     let prefixes: string[];
     try {
@@ -88,7 +89,7 @@ export class LargePreviousContentStore implements PreviousContentStore {
         const hash = `sha256:${filename}`;
         if (referenced.has(hash)) continue;
         const target = path.join(directory, filename);
-        if ((await stat(target)).mtimeMs > olderThan.getTime()) continue;
+        if (olderThan && (await stat(target)).mtimeMs > olderThan.getTime()) continue;
         await rm(target, { force: true });
         removed += 1;
       }

@@ -2,7 +2,51 @@
 
 > **Reference**: [Detailed Goals](./spec-project-delivery-loop-detailed-goal.md) — **Approved 2026-08-04**
 > **Next**: `spec-project-delivery-loop-implementation-checklist.md` — chưa tạo, bị Phase Gate `Design → Implement` chặn
-> **Bản 7 — 2026-08-04.** Vá executability sau khi đối chiếu tài liệu với repo thật lúc lập Checklist. Bốn chỗ Design **mô tả sai code hiện có**, đều sẽ chặn giữa chừng: (1) `JobStorePort.complete()` **không tồn tại** — bề mặt thật là `finish(id, outcome)`, nên `partial` là **thêm nhánh vào `JobOutcome`**, kèm hai lỗi câm phải sửa trong adapter (`result` và `progress` chỉ được set khi `succeeded`); (2) bốn lint VD-3 **không** ở `src/lib` — hai trong bốn chỉ tồn tại dưới dạng số học trong JSX, nên đây là *trích luật*, không phải *di chuyển module*; (3) Decision 1 Context bỏ sót — định nghĩa project hôm nay đã đòi `vidcom.json` hợp lệ, nên thay đổi thật là **bỏ** hai điều kiện kia; (4) §5.14 khai file mới cho timing, nhưng `validateSceneTiming` (kèm `trackIndex`) và `createScene`/`setSceneTiming` **đã tồn tại** — đây là *mở rộng*, không phải *tạo mới*. Chi tiết và bốn điểm còn lại ở §Vá executability của [Checklist](./spec-project-delivery-loop-implementation-checklist.md).
+> **Bản 44 — 2026-08-04.** Vá no-change audit và schema tool Phase P trước code. `install_agent_kit` gọi lại sau khi đã pristine vẫn là một invocation MCP `write` phải có audit bền, nhưng không có file để mutation journal sở hữu. `AgentKitInstaller` vì vậy chỉ với MCP pending audit sẽ gọi `WriteAuthority.mutateWorkspace` bằng batch rỗng; coordinator cho phép batch rỗng **chỉ khi có `toolAudit`**, journal một `agent_kit_files` operation không step rồi commit audit-only. HTTP/CLI no-change (`toolAudit=null`) không tạo operation. Input tool được khóa: `validate_project` là strict `{projectId}`; `start_snapshot` là strict `{projectId,idempotencyKey?}`; `start_render` là strict `{projectId,bestEffort?,renderPresetId?,idempotencyKey?}`; hai start tool trả strict `{jobId}` và chuyển nguyên input sang enqueue usecase chung.
+> **Bản 43 — 2026-08-04.** Vá executability Phase P trước code. `install_agent_kit` là tool level `write`, nên workspace-operation journal phải sở hữu pending MCP audit giống project composite journal; nếu không Registry sẽ thấy caller-owned sau khi file đã commit và trả `committed_response_error`, còn audit workspace hiện ghi `protocol_version=NULL`, trái P.5. Thêm nullable `tool_audit_json` có JSON CHECK vào `workspace_operation`; `WorkspaceOperationJournalPort.isJournalOwned(invocationId)` kiểm pending payload, settle success/failure materialize đúng một audit row từ payload (gồm `protocol_version`, credential, revision null), và composition root inject một ownership facade kiểm cả project journal lẫn workspace journal vào `ToolAuditService`. HTTP truyền null; MCP truyền `context.writeInvocation.toolAudit`, actor agent. `get_job_status` output mở rộng `JobSchema` bằng `outcome: succeeded|partial|failed|cancelled|null` và `pollAfterMs: 250|1000|null`: queued trả 250 ms, running trả 1000 ms, terminal trả null; đây là backoff hint ổn định, không ngủ trong handler. `start_render`/`start_snapshot` trả strict `{jobId}` theo bảng §5.16. Bốn tool mới đều degrade được ở hai era; luật ẩn legacy vẫn do `availableInLegacy` + Registry filter thực thi và có contract test bằng một descriptor không-degrade, không tạo nhánh transport thứ hai.
+> **Bản 42 — 2026-08-04.** Vá executability Phase O trước code. Route `GET /jobs/:jobId/termination-proof` không thể dựng lại proof từ `warnings`/`cleanupPending`, vì hàng `cancelled` không có `result`; do đó `job` thêm nullable `termination_proof_json`, `JobOutcome`/`JobCancelledError`/`JobFailureError` mang proof từ `ProcessSupervisorPort`, scheduler persist proof trong cùng terminal CAS, và `JobStorePort.readTerminationProof` là read seam duy nhất của HTTP. Recovery `PUT identity` dùng `EntryRegistry` resolve location, validate identity mới rồi gọi chính bootstrap/adopt authority với hash cũ làm precondition; `ProjectRef` lúc này mang ID đã validate và sẽ được persist, không phải ID giả. Thành công register + revision/audit cùng transaction rồi revoke `entryId`. `PUT /workspace/active` không chỉ clear token trên runtime cũ: host callback phải resolve/lease/khởi tạo composition root mới, swap runtime cho request kế tiếp, clear registry cũ, phát `workspace.changed`, rồi dispose runtime cũ sau response; response báo `reauthRequired:true` vì session là in-memory per runtime. HTTP route nhận đúng các application service instance đã đưa vào MCP Registry; render/snapshot enqueue dùng chung `enqueueRenderJob`/`enqueueSnapshotJob`, chỉ mở rộng hai input usecase bằng `idempotencyKey` để adapter HTTP không tự gọi `JobStorePort.enqueue`. Startup identity-backfill chỉ gọi bootstrap cho candidate **đã có** `vidcom.json` (legacy marker); folder có HyperFrames nhưng thiếu identity phải giữ state `candidate` cho tới `POST /projects/:slug/adopt`, nếu không route adopt không bao giờ executable.
+> **Bản 41 — 2026-08-04.** Làm rõ dependency closure Q.12 mà checklist đặt trước P: bundle Q bắt buộc tham chiếu bốn tool final (`validate_project`, `start_snapshot`, `start_render`, `install_agent_kit`), nhưng Registry chỉ được đăng ký chúng ở Phase P. Vì vậy Q dựng và test nội dung/router/final tool catalog, còn assertion hai chiều **actual Registry ↔ AGENTS.md** được chuẩn bị ở Q và chỉ được tick terminal trong P sau khi bốn descriptor thật đã register; không tạo stub tool và không đăng ký P sớm để làm xanh Q giả. Các task Q.1–Q.11/Q.13 vẫn hoàn tất trước O đúng dependency; Q.12 là integration closure của P, tương tự F.13 từng chờ definition snapshot thật ở J.
+> **Bản 40 — 2026-08-04.** Vá executability Phase Q trước code. `packages/agent-kit/scripts/build.mjs` đọc source Markdown, sinh `CLAUDE.md` byte-for-byte từ `AGENTS.md`, rồi sinh `src/generated-bundle.ts` chứa literal content + SHA-256 per-file; runtime chỉ import literal này, tuyệt đối không đọc asset cạnh executable. Composition root inject bundle vào `AgentKitInstaller`, nên Core không phụ thuộc package asset hay `node:fs`. Mọi file có marker integer `x-vidcom-agent-kit`; classifier dùng marker trước rồi hash bundled: vắng marker=`foreign`, version bằng binary + hash bằng manifest=`current_pristine`, version bằng + hash khác=`current_modified`, thấp hơn=`outdated`, cao hơn=`newer`. Installer nhận `WorkspacePort`, `WriteAuthority`, `hashContent`; resolve/read chỉ qua workspace capability và ghi một batch duy nhất qua `mutateWorkspace`. `install` chỉ ghi missing; nếu file chỉ dẫn chính foreign thì tạo file phụ VidCom khi phụ missing. `replace` chỉ nhận path thuộc manifest host, marker-owned và không newer/foreign. `link` chỉ append đúng một dòng vào `CLAUDE.md`, coi instruction có hiệu lực khi dòng exact tồn tại và file phụ pristine. Router native được discover chỉ khi đúng path host, marker parse được và nội dung router có frontmatter name `vidcom`; trạng thái file chỉ dẫn không được dùng để quyết định `blocked`.
+> **Bản 39 — 2026-08-04.** Vá executability Phase N trước code. `ProjectWriteDependencies` nhận `ProjectIdentityService`; root source generator được trích dùng chung với lifecycle để `createScene` xử lý project `empty` mà không parse file vắng. Input create là `{index?,trackIndex?,expectedContentHash:ContentHash|null}`: index mặc định append trong track, track mặc định track của scene tại index tham chiếu nếu có, nếu không là 0. `setSceneTiming` nhận `ripple?:boolean` và `extendRoot?:boolean`; hard guard 3600 kiểm trước, root overflow trả discriminator khi chưa cho extend, và mọi SDK op + root update commit một composite revision. Sidecar narration v2 là `{schemaVersion:2,sceneId,cues,revision,updatedAt}`; mỗi cue giữ `status`, `audioPath`, `offsetSeconds`, duration/timing metadata. Legacy record được chiếu in-memory thành một cue, không tự ghi. `regenerateNarration` nhận optional `cueId/offsetSeconds/voice`, cập nhật đúng cue rồi ghi v2; sửa script chỉ stale cue có `cueId===elementId`, với legacy/sidecar đúng một cue thì fallback cue duy nhất. Audio path mặc định deterministic `narration/<sceneId>/<cueId>.wav`; adapter dùng `readCues` + file tồn tại, rồi `buildNarrationClips` lấy `scene.start + cue.offsetSeconds`.
+> **Bản 38 — 2026-08-04.** Sửa xung đột executability M.1 với steering import boundary: `src/**` bị cấm import Core, nên hai helper số học thuần, không I/O (`countStrandedTweens`, `measureElementWindow`) nằm ở shared-kernel `packages/contracts/src/timeline-diagnostics.ts`; Core diagnostics và JSX cùng import đúng helper này. Business policy tạo `Diagnostic` vẫn ở Core. Đây giữ một nguồn sự thật mà không mở ngoại lệ ESLint hay làm UI gọi nghiệp vụ Core.
+> **Bản 37 — 2026-08-04.** Vá executability Phase M trước code. `DiagnosticsService.forProject/forEntry` trả `Result<DiagnosticsReport,DomainError>`; service nhận một callback scan workspace, `CompositionPort`, `ProjectIdentityService`, journal source-revision, `WriteAuthority` và `DiagnosticsLintPort`. Port lint trả `{available, diagnostics}`; adapter chạy `[node, hyperframes-cli, "check", "--json", projectRoot]` qua process port có timeout, parse cả năm nhóm finding dù exit code khác 0 vì finding chính là nguyên nhân exit, và coi missing/timeout/JSON lỗi là unavailable. `forProject` là nhánh duy nhất parse composition và publish `.vidcom/context/diagnostics.json` bằng `mutateDerived`; `forEntry` tìm đúng entry trong scan, chỉ chiếu `invalidReason`, không parse/không ghi. Hai luật số học `countStrandedTweens` và `measureElementWindow` là hàm Core thuần và JSX bắt buộc gọi lại. Parser đưa `frameRate` vào `CompositionModel` từ `data-fps`, mặc định engine 30 khi attribute vắng, để `platform-mismatch` không đoán fps. `SnapshotState` được hoàn tất đúng shape J (`sceneIds`, `snapshotPaths`, `contactSheet`); `ThumbnailResolver` nhận `WorkspacePort`, current source revision và đọc hash của contact sheet/frame được chọn để tạo ETag thật — signature thuần cũ không thể đồng thời sinh content hash mà không có byte/hash input. Ưu tiên contact sheet rồi frame của scene đầu; file biến mất thì fallback placeholder. Chỉ identity-invalid seed bằng slug; mọi entry có ProjectId seed bằng ProjectId.
+> **Bản 37 — 2026-08-04.** Vá executability Phase M: khóa các seam diagnostics lint/projection, nguồn platform đã parse, mapping JSON của `hyperframes check`, và đường recovery `entryId` chỉ đọc identity; bốn luật timeline dùng chung helper Core. Chi tiết tại §5.13.
+> **Bản 36 — 2026-08-04.** Làm rõ lookup recovery đã nêu ở bản 32: `ProjectLifecycle` được inject read-only `Pick<MutationJournalPort,"findProjectRegistrationAt">` để áp running-job precondition nếu location từng được đăng ký và truyền stable ID đó xuống coordinator; đây không phải write bypass. Nếu lookup null, facade recovery giữ `project_id = NULL`. `EntryRegistry` vẫn là nguồn duy nhất resolve `entryId` thành root/slug và token bị revoke sau rename/delete thành công.
+> **Bản 35 — 2026-08-04.** Khóa capability backup cho recovery identity trước code. `entryId` chỉ resolve ra direct-child root đã containment-check và không được bịa `ProjectRef`, nên `WorkspacePort.listBackupSourcesAt(root)` là primitive read-only cho đúng root capability đó; `listBackupSources(ref)` chỉ delegate về primitive này cho project hợp lệ. `BackupManifest` mang ownership union đóng: `{projectId, workspaceRoot:null, slug:null}` hoặc `{projectId:null, workspaceRoot, slug}`; restore revision chỉ nhận nhánh project, còn recovery delete dùng `createForLocation({workspaceRoot,slug}, ...)`. Thư mục payload location dùng digest của `workspaceRoot + NUL + slug`, không dùng/persist `entryId`. Rename/delete recovery gọi facade riêng với `projectId:null`; journal commit không cập nhật registry, ghi audit nullable và `workspace.changed` nullable-project event. Hai facade này cùng diagnostics và replace-identity là toàn bộ tập bốn operation nhận `entryId`; API nghiệp vụ vẫn chỉ nhận `ProjectId`.
+> **Bản 34 — 2026-08-04.** Vá backup delete trước code. `WorkspacePort.readTree` chỉ trả relative nodes, còn resolve purpose cố ý không cho đọc mọi file người dùng (`package.json`, marker, file lạ), nên usecase không thể tạo backup toàn project an toàn. Thêm read-only capability đóng `listProjectBackupSources(ref)`: adapter walk regular files dưới đúng project root, bỏ symlink và operational `.vidcom`, trả `{path,resolved}` containment-checked cho `BackupPort.create`; không expose arbitrary read/write path.
+> **Bản 33 — 2026-08-04.** Vá dependency `ProjectLifecycle.create/adopt` trước code: tạo stable `ProjectId`, timestamps và byte identity schema v1 không thể làm chỉ với danh sách dependency cũ. Usecase nhận `IdPort`, `ClockPort`, `ProjectIdentityService` (serialize duy nhất) và `CompositionPort` (validate staged root source trước publish); không tự nhân đôi schema/HTML validator.
+> **Bản 32 — 2026-08-04.** Vá path boundary lifecycle trước code: Core có slug nhưng không được import `node:path`, còn rename/delete cần absolute direct-child capability kể cả target chưa tồn tại. `ProjectDirectoryPort.projectRoot(workspaceRoot, slug)` validate slug + injected root rồi trả absolute child path không tạo I/O target; coordinator dùng nó cho journal/recovery và vẫn là nơi duy nhất gọi rename/quarantine.
+> **Bản 31 — 2026-08-04.** Vá recovery lifecycle trước code. Delete phải giữ `verifiedBackupId` qua crash để audit/settle, nên `workspace_operation` thêm nullable `backup_id` (FK không bắt buộc vì operation phải sống qua retention); `setDirectoryPaths` ghi staging/quarantine và backup sau khi ID cấp. `ProjectDirectoryPort.inspect(target)` trả `absent | directory | invalid` cho đúng direct-child target, không expose fs tổng quát. Recovery create/rename/delete quyết định từ old/new/staging/quarantine: final/new/quarantine hiện hữu một phía thì settle/recover; staging-only bị remove-owned rồi abort; old-only abort; trạng thái hai phía/không chứng minh được thì orphan. Coordinator nhận `ClockPort` để tạo registration timestamps deterministic khi normal/recovery commit.
+> **Bản 30 — 2026-08-04.** Sửa mâu thuẫn Phase L trước code và mở lại delta Gate B. R5.9 bắt giữ audit + backup sau delete, nhưng `revision.project_id`, `backup_manifest.project_id`, `job.project_id` đang FK tới `project_registry`; physical DELETE registration sẽ vi phạm FK. Chốt logical unregister bằng cột additive nullable `project_registry.deleted_at`: mọi lookup/list active thêm `deleted_at IS NULL`; delete set timestamp và giữ row làm identity tombstone cho history/backup. Rename/create chỉ thao tác active row; ID đã tombstone không được mint lại. Đây là additive migration L, phải chạy lại migration/rollback/FK/integrity gate B trước khi tiếp tục. `WorkspaceOperationJournalPort.commitProjectLifecycle` terminal hóa operation cùng transaction với create registration + đúng một composite revision + entity seed, rename location, hoặc delete tombstone; không dùng generic `commit` cho lifecycle. `setDirectoryPaths` ghi staging/quarantine path sau khi operation ID cấp được.
+> **Bản 35 — 2026-08-04.** Vá approval cho entry-only recovery: `GrantBinding.projectId` và `approval_grant.project_id` nullable chỉ khi target bắt đầu `location:`; CHECK bắt buộc project target có ID và location target không có ID. Như backup, grant không persist `entryId`, chỉ bind workspace-scoped slug + toàn bộ file hash. Tool business vẫn không nhận nullable ProjectId.
+> **Bản 34 — 2026-08-04.** Khóa approval cho delete từ MCP trước code. `ProjectRemovalAuthority` là union đóng: local user cần `confirmed:true`; `agent|cli-external` cần thêm `grantId`. Lifecycle tự dựng canonical `GrantBinding` từ owner, latest revision và ordered source hashes, gọi `ApprovalService.planReserve`; coordinator đưa `grantId` vào intent. `workspace_operation.grant_id` unique FK; transaction `begin` reserve issued grant, lifecycle commit consume, abort/rollback release về issued nếu còn hạn, orphan invalidate. Không có khoảng thời gian filesystem đã bị quarantine nhưng grant chưa reserve.
+> **Bản 33 — 2026-08-04.** Khóa session identity khi rename recovery: `EntryRegistry.relocate(entryId,nextSlug,nextRoot)` cập nhật map location in-memory nhưng giữ nguyên opaque ID; remove thành công thì `revoke`. Recovery startup không thể khôi phục entryId qua restart và cũng không được thử — scanner phiên mới mint token phiên mới, đúng R1.2c-iii.
+> **Bản 32 — 2026-08-04.** Vá nhánh recovery `entryId` trước code. Identity-invalid có thể chưa từng có registration, nên không được bịa/persist `ProjectId` chỉ để thỏa FK backup. `MutationJournalPort.findProjectRegistrationAt(workspaceRoot,slug)` dùng real ID nếu location đã đăng ký; nếu không, rename/delete lifecycle giữ `project_id = NULL`. `backup_manifest.project_id` nullable và thêm `workspace_root` + `slug`, với CHECK đúng một ownership shape; `BackupPort.createForLocation` publish backup verify theo location và tuyệt đối không nhận/persist `entryId`. Audit lifecycle entry-only có `project_id = NULL`; outbox dùng event mới `workspace.changed` với `projectId = null` để list refresh. `DomainEvent` trở thành union: project events bắt buộc `ProjectId`, riêng workspace event bắt buộc null. Không tạo durable identity thứ hai.
+> **Bản 31 — 2026-08-04.** Khóa capability path còn thiếu trước code L: Core không được tự `join(workspaceRoot,nextSlug)`, nên `ProjectDirectoryPort.projectRoot(workspaceRoot,slug)` trả direct-child `AbsolutePath` sau validate slug/containment, kể cả target chưa tồn tại. `WorkspaceOperationJournalPort.commitProjectLifecycle` là một primitive union duy nhất (create/rename/delete), không ba method trùng transaction; create lấy ordered file hashes từ operation steps để tạo revision steps. `completeBootstrapIdentity` nhận actor từ intent (default system cho caller cũ) để adopt có audit actor đúng mà không mở write bypass.
+> **Bản 30 — 2026-08-04.** Vá executability Phase L trước code. Ba facade lifecycle đã được nêu nhưng chưa có request/settlement shape, nên khóa chúng tại boundary `WriteAuthority`/`WorkspaceMutationCoordinator`: create nhận bộ file staged + registration, manifest hash và preview seed; rename nhận `ProjectRef` + slug/root mới; delete nhận `ProjectRef` + `backupId`. `WorkspaceOperationJournalPort` thêm đúng ba transaction settle lifecycle để atomically cập nhật soft registration, một revision create, audit và `project.changed` event sau directory rename; không expose database cho usecase. `JobStorePort.hasRunningProjectJob(projectId)` khóa precondition rename/delete. `WorkspacePort.listBackupSources(ref)` trả capability regular-file đã containment để backup toàn tree mà Core không import `node:fs`; `.vidcom`, `renders`, `snapshots` vẫn được backup vì delete phải restore nguyên project. Recovery lifecycle phân nhánh bằng kind + old/new/staging/quarantine existence; không chạy đường file-agent-kit. Adoption dùng facade riêng `adoptProjectIdentity` để registration + strict identity write vẫn là một journaled source revision và chỉ chạm `vidcom.json`. `ProjectDeleteAuthorization = { actor: "user"; confirmed: true } | { actor: "agent" | "cli-external"; grantId: string }`; tên cũ `MutationAuthority` vẫn chỉ là lease capability và không được dùng nhầm làm approval payload.
+> **Bản 29 — 2026-08-04.** Khóa nghĩa `ProjectStateStore.ensure` trước khi đóng K. Ghi `.gitignore` không tự tạo các directory rỗng `context/jobs/revisions/logs/cache`, nên thêm capability đóng `WorkspacePort.ensureProjectStateDirectories(ref)`; adapter chỉ mkdir đúng năm nhánh cố định dưới `.vidcom` sau containment direct project root và fsync. Directory không phải dữ liệu, không tạo revision; mọi file state/context vẫn qua `mutateDerived`, JSONL vẫn append atomic.
+> **Bản 28 — 2026-08-04.** Sửa dependency scanner trước code: phân loại `authored`/`invalid(composition)` và `sceneCount` bắt buộc gọi parser, nên `scanWorkspace` nhận thêm `CompositionPort`; không chui qua private dependency của identity service và không parse HTML trong Core.
+> **Bản 27 — 2026-08-04.** Sửa một lỗ capability còn lại trước implementation K. `resolve(ref,path,"read-source")` cố ý chặn protected `vidcom.json`/`hyperframes.json`, nên scanner không thể dùng resolve hiện hữu như bản 25 mô tả. `WorkspacePort` thêm đúng hai read-only primitive `statWorkspaceFile(projectRoot,path)` và `readWorkspaceFile(projectRoot,path)`; adapter chỉ chấp nhận direct-child root vừa nằm trong workspace đã inject và path literal thuộc `{vidcom.json,hyperframes.json,index.html}`. Không mở một bypass path-policy tổng quát. Identity service và scanner dùng hai primitive này; mọi ghi vẫn bắt buộc qua authority.
+> **Bản 26 — 2026-08-04.** Đóng phần còn thiếu của vá K trước code. Scanner/identity dùng một `ProjectRef` tạm chỉ như filesystem capability cho direct-child root đã do `listWorkspaceDirectories` cấp; ID tạm không được persist hay trả ra ngoài. `WorkspacePort` bổ sung `listProjectFiles(ref,directory,"state-write")` để prune log có containment/allowlist, bên cạnh `appendAtomic(resolved,line)`. Reconcile muốn rebuild `jobs/index.jsonl` và `revisions/index.jsonl` đầy đủ nên `JobStorePort.listProjectJobs(projectId)` và `MutationJournalPort.listProjectRevisions(projectId)` là hai read API ordered từ SQLite; không suy lịch sử từ file projection. Reconcile publish `state.json` + hai index bằng một `mutateDerived`, sau đó các append mới tiếp tục qua append/fync. §6.3 khóa shape năm payload còn nợ và `ReconcileReport`; không payload nào có field `stale`.
+> **Bản 25 — 2026-08-04.** Vá executability Phase K trước code. `WorkspaceScanner` cần quét cả folder trống/candidate/identity lỗi nhưng `WorkspacePort.listProjectCandidates()` hiện chỉ trả folder có đủ `hyperframes.json` + `index.html`; thêm `listWorkspaceDirectories(root)` one-level và giữ filter/phân loại/cache ở Core. Append JSONL không được tạo revision nên thêm `WorkspacePort.appendAtomic(path, line)`; adapter sở hữu mkdir/open-append/fsync đa nền tảng, Core vẫn không import `node:fs`. Allowlist `state-write` thêm đúng literal `.vidcom/.gitignore`, phù hợp R4.1b nhưng không mở dotfile khác. `ProjectIdentityService` nhận `CompositionPort` để infer preset từ model khi lazy-backfill; riêng `backfillPlatform` chấp nhận identity legacy `{id}` rồi nâng deterministic sang schema v1 với default render/narration và clock cho created/updated, còn `read()` vẫn strict và không ghi đè input lỗi. `ProjectStateStore` nhận thêm `JobStorePort`; `reconcile` dựng state/job/revision projection chỉ từ SQLite/job rows, tuyệt đối không parse projection để ghi ngược. Năm payload nội bộ được khóa shape tại §6.3; context nằm ở `.vidcom/context/project-context.md` đúng R4.3b.
+> **Bản 24 — 2026-08-04.** Vá executability/gate-order Phase J trước code. Worker/Core không được đọc native output directory hay import image library, nên `RenderProjectPort.stage` trả thêm `snapshotOutputRoot`; port thêm `readSnapshotArtifacts` (chỉ regular PNG, ordered) và `composeContactSheet` (Sharp adapter, layout deterministic). Retry partial phải chạy trước `ProjectStateStore` Phase K: `JobStorePort.latestTerminal(projectId,"snapshot")` đọc job result SQLite authoritative; nếu partial cùng source revision chỉ gửi scene thiếu, khác revision gửi lại toàn bộ. K về sau projection kết quả job vào `.vidcom/state.json`, không tạo nguồn sự thật thứ hai. Snapshot result mang đủ `complete`, hai revision field, scene/missing list, paths và contact sheet để projection không phải suy từ filesystem.
+> **Bản 23 — 2026-08-04.** Vá stale cleanup F.12 sau khi job render thật tồn tại: scheduler không sở hữu `RenderRootPort` và MUST NOT đoán resource theo chuỗi `type`. Thêm `JobTypeDefinition.cleanupPendingOnStale?: boolean`; render/snapshot set `true`. Khi recovery terminal hóa row `running` của definition này (cancelled hoặc one-shot failed), outcome mang `cleanupPending:true`; startup reclaim độc lập của G sau đó inspect/reclaim root và clear cờ. Job type khác giữ false mặc định.
+> **Bản 22 — 2026-08-04.** Vá gate-order I.3 trước Phase K: `WorkspaceFs.readProjectRef` hiện đòi cả `hyperframes.json` + `index.html`, trái R1.2 vốn định nghĩa identity hợp lệ là đủ để project tồn tại và làm `empty` bị làm phẳng thành `project_not_found`. Sửa semantics read-by-ID/list identity-backed: chỉ `vidcom.json` hợp lệ là điều kiện tạo `ProjectRef`; `prepareRender` tự phân biệt entry vắng → `no_composition`, entry không đọc/parse được → `project_invalid` + reason `composition_parse_error`, model không scene → `no_scenes`. Identity-invalid vẫn không có `ProjectId` và do Phase K cấp `entryId`, nên render API không nhận nhánh đó. Không thêm state store hay scanner sớm.
+> **Bản 21 — 2026-08-04.** Vá error propagation tại publication barrier I.5/I.9: lỗi `guard.close` vẫn map `storage_unavailable`; nhưng lỗi từ callback `publish` (đặc biệt `JobCancelledError`, domain error từ `mutateDerived`) phải `discard` rồi rethrow nguyên loại để scheduler giữ đúng terminal/code. Nếu helper đổi mọi lỗi publish thành storage thì cancel thắng ở barrier bị ghi `failed`, trái race contract §11.
+> **Bản 20 — 2026-08-04.** Vá testability I.1/I.7 mà không mock filesystem: `NodeRenderBinaryProbe` nhận optional explicit `hyperframesCliPath`, `hyperframesPackagePath`, `browserPath` bên cạnh hai sidecar path. Khi field explicit có mặt, adapter kiểm tra đúng path đó trên filesystem thật và không fallback; khi vắng, production giữ `require.resolve` + `hyperframes browser path`. Nhờ vậy integration test tạo executable fixture thật có thể chứng minh từng phần tử `details.missing` và version drift một cách deterministic, đa nền tảng.
+> **Bản 19 — 2026-08-04.** Vá publication barrier I/H trước code: `finalizeGuardedArtifact` bản đầu đóng guard rồi mới gọi `artifact.publish()`, nhưng callback không nhận kết quả đã đánh giá nên sidecar không thể chứa `externalDependencies` runtime mà không đóng/đánh giá guard lần hai hoặc publish thiếu dữ liệu. `GuardedArtifactPublication.publish(guardResult)` nay nhận `{ externalDependencies }`; helper vẫn sở hữu đúng một lần `close → evaluate → publish|discard`, và runner dựng MP4/sidecar trong callback sau barrier.
+> **Bản 18 — 2026-08-04.** Vá terminal metadata I/F.12 trước code: release render root có thể lỗi cả khi job thất bại, nhưng `JobFailureError`/scheduler cũ chỉ persist code+message nên không có đường set `cleanupPending`/warnings cho terminal `failed`, trái §4.4.2. Mở rộng `JobFailureError` bằng optional ordered warnings + cleanupPending (giữ tương thích constructor hiện hữu); scheduler forward hai field vào `finish`. `JobCancelledError` và success/partial envelope giữ nguyên.
+> **Bản 17 — 2026-08-04.** Vá executability I.4 trước code: Decision 8 đòi `bestEffort:false` fail bằng mã ổn định nhưng danh sách `ErrorCode` không có mã readiness, trong khi `sub_timeline_readiness_timeout` chỉ tồn tại ở `WarningCode`. Thêm cùng wire value vào `ErrorCode` (enum type riêng, không đổi payload string). Runner chỉ nhận token code allowlist từ stderr HyperFrames pinned, không phân loại bằng câu message; best-effort đưa warning vào result + job metadata, strict nonzero có token này trả đúng domain error, nonzero khác là `internal` với message đã redacted.
+> **Bản 16 — 2026-08-04.** Vá executability Phase I trước code. HyperFrames CLI chỉ nhận project directory, nhưng bản cũ đòi render document đã build/inject guard mà không có boundary stage document; đồng thời `createRenderJobHandler` phụ thuộc `ProjectStateStore` dù Phase K đứng sau I. Thêm `RenderProjectPort.stage(ref,renderRoot,document,runtimeSource)` ở Adapter: copy file/directory thường của project vào `<renderRoot>/project`, bỏ symlink và ba derived/operational root `.vidcom|renders|snapshots`, thay entry bằng document đã build với runtime/file base tương đối, trả absolute `projectRoot` + `outputPath`; `readArtifact` đọc bytes sau CLI validate. Runner publish MP4 + sidecar trực tiếp qua `mutateDerived`; Phase K sau đó projection state/log từ SQLite, không bị gọi sớm. Port cũng là nơi nối path đa nền tảng, Core/Worker không import `node:path`/`node:fs`.
+> **Bản 15 — 2026-08-04.** Sửa race do chính bản 13 tạo: crash giữa remove root và clear `cleanupPending` không thể retry chỉ từ `reclaimedJobIds`, vì root đã mất nên scan sau không còn ID. `JobStorePort.listCleanupPendingIds()` và `RenderRootPort.inspect(jobId)` (`absent|owned|unowned`) đóng cửa sổ này: sau reclaim, startup clear ID vừa xóa và mọi cleanup-pending root xác nhận `absent`; `owned` còn trẻ/đang chạy giữ cờ, `unowned` giữ cờ + warning, tuyệt đối không xóa. Hai recovery vẫn chạy độc lập theo control flow: reclaim luôn được thử cả khi `recoverStale` lỗi; nếu một hoặc cả hai lỗi startup trả lỗi tương ứng sau khi cả hai đã settle.
+> **Bản 14 — 2026-08-04.** Vá executability Phase G trước khi wire composition root: singleton `FsRenderRootAdapter` dùng staging cố định `<appDataRoot>/render-roots`; đường binary theo thứ tự `CompositionRootConfig.renderBinaryPaths` → biến môi trường HyperFrames tương ứng → `<nativeDependenciesRoot>/bin/ffmpeg[.exe]` và `ffprobe[.exe]`. Hậu tố `.exe` chỉ do adapter composition chọn theo `process.platform`; Phase I.1 vẫn phải probe bốn binary và fail trước spawn, nên quy ước này không biến đường đoán thành bằng chứng binary tồn tại. Startup reclaim chỉ dùng staging/marker và chạy được độc lập với probe hoặc `recoverStale`.
+> **Bản 13 — 2026-08-04.** Vá executability Phase G trước code: `reclaimOrphans` chỉ trả count thì startup không biết job nào để clear `cleanupPending`. Contract nay trả thêm ordered `reclaimedJobIds`; `JobStorePort` thêm `listRunningIds()` và CAS `clearCleanupPending(id)`. Nhờ đó G.3 lấy đúng live-set, G.4 thu hồi root xong mới clear cờ; không đổi schema.
+> **Bản 12 — 2026-08-04.** Vá executability Gate E trước code: protocol create phải theo đúng boundary E.9 `stage/write/validate → atomic rename → DB settle`; bản cũ vừa đặt DB commit trước rename vừa mô tả recovery sau rename nên tự mâu thuẫn. `ProjectDirectoryPort.stageCreate` trả cả capability staging và final root, đồng thời thêm `writeStagedFiles`; nếu không Core buộc phải import `node:path`/`node:fs` hoặc tự nối path không đa nền tảng để dựng project, trái boundary của chính §5.7.
+> **Bản 12 — 2026-08-04.** Vá executability Phase E trước code: `WorkspacePort.resolve(ref, …)` cố ý chặn purpose workspace còn `ProjectDirectoryPort` chỉ có directory primitive, nên thêm capability `resolveWorkspace(workspaceRoot,path,"workspace-agent-kit")` trên port hiện hữu; chỉ `WorkspaceMutationCoordinator` được gọi và adapter xác minh root đúng root đã inject. E.9 khóa crash protocol adapter+journal; L.6 lặp lại end-to-end qua `ProjectLifecycle`, không viết Phase L sớm.
+> **Bản 11 — 2026-08-04.** Sửa mô tả query plan theo schema đã duyệt: `revision.path` là `NULL` cho composite nhiều file, nên `idx_revision_derived_path` chỉ tăng tốc derived revision một file. Prune composite vẫn xếp generation theo `revision_step.path` rồi join revision derived; không thêm index hay đổi cấu trúc bốn bảng journal/revision-step ngoài migration đã chốt.
+> **Bản 10 — 2026-08-04.** Vá gate-order D.7: Phase D kiểm invariant bằng một batch “render completion” thật qua `mutateDerived` trên SQLite + filesystem và chứng minh source revision/snapshot freshness không đổi; Phase I kiểm lại end-to-end qua `RenderJobRunner` thật. Không được dựng stub production runner ở D khi runner chỉ thuộc I.
+> **Bản 9 — 2026-08-04.** Vá executability Phase D trước khi code: source asset authored (`assets/**`, `preview-assets/**`, audio dưới `narration/**`) cần một dòng purpose riêng nhưng `snapshots/**`/`renders/**` vẫn bị chặn khỏi `mutateSource`; derived composite giữ payload ở `revision_step` chứ không chỉ `revision_blob`; SQLite chỉ detach payload refs trong transaction commit, còn object content-addressed được GC sau commit khi không còn reference vì filesystem không thể tham gia transaction SQLite. Thêm contract lookup payload để đường rollback trả `rollback_payload_pruned` thay vì đoán từ bytes rỗng.
+> **Bản 8 — 2026-08-04.** Bản 7 vá bề mặt repo; bản 8 vá đường terminal của process proof được phát hiện khi thực thi F.15/F.16. `ProcessSupervisorPort` có warning/error nhưng `JobTypeDefinition.run(): Promise<unknown>` cũ không có đường mang warning tới `job.warnings`, và một nhánh catch chỉ nhìn `abortReason="cancel"` có thể ghi sai `cancelled` khi proof vẫn còn survivor. §5.20 nay quy định `JobCancelledError` mang ordered warnings + `cleanupPending`; `process_termination_unverified` phải thắng nhánh cancel và terminal hóa `failed`. Kết quả `partial`/metadata thành công dùng envelope có brand do Core tạo; return `unknown` cũ vẫn tương thích và được hiểu là `succeeded` không warning. Các vá executability bản 7 vẫn giữ nguyên.
 > **Bản 6 — 2026-08-04.** Kiểm dữ kiện nền tảng và **thu hẹp một lệnh cấm của chính bản 5**. `wmic` đã bị gỡ khỏi Windows Server 2025 / Windows 11 24H2 và khỏi ảnh `windows-latest` từ 9/2025; `tasklist` không có `ppid`. Nên lệnh cấm PowerShell tuyệt đối làm pha capture **chết** trên Windows hiện đại — hỏng bằng thiết kế, không phải bằng thiếu số liệu. Sửa: cấm ở **hot path**, cho phép **một lần ở đường cancel**. Kèm luật cho trạng thái thoái hoá (**trung thực** thay vì zero survivor: proof MUST NOT báo sạch khi process còn sống) và ba tầng gate CI, trong đó một tầng **ép** chạy nhánh thoái hoá và một tầng chạy **render thật trên Windows** để đóng khoảng trống fixture tổng hợp không thấy.
 > **Bản 5 — 2026-08-04.** Đóng đường đa nền tảng của §5.9 thành **hợp đồng chạy được**, không phải mô tả. Khác biệt OS gói vào đúng ba primitive (`enumerate`/`kill`/`isAlive`), thuật toán ba pha phía trên không rẽ nhánh theo OS; contract test dùng fixture tổng hợp bốn process — một cái tự tách group đúng như Chromium — nên chạy được ở mọi OS không cần Chromium hay mạng, và [`process-supervision.yml`](../../../../.github/workflows/process-supervision.yml) chạy nó trên Linux + macOS + Windows. Kèm hai bẫy primitive đã bịt: `isAlive` trên Windows phải so theo **cột** PID của `tasklist` (cột `Session#` khớp nhầm), `isAlive` trên POSIX phải coi `EPERM` là **còn sống**. Rủi ro Windows chưa đóng được nêu tường minh: `wmic` đã bị gỡ, PowerShell bị cấm ở runtime, `tasklist` không có `ppid`.
 > **Bản 4 — 2026-08-04.** Đóng ba số chưa đo bằng [spike checklist-gate](../../../../spikes/phase-3-checklist-gate/README.md). Scan và `--at` PASS. Số thứ ba **bác bỏ giả định POSIX của bản 3**: `chrome-headless-shell` tự tách process group nên `kill(-pgid)` để sót 5 process, và sweep theo quan hệ cha-con báo *sạch* trong đúng lúc leak (con bị reparent sang `pid 1`). §5.9 viết lại thành thuật toán ba pha capture→kill→probe-theo-PID, đo PASS 3/3, p95 = 2 sweep; Goals bản 12 thêm R6.6b-ii. Kèm ba sửa §5.11 do spike `--at`: map theo timestamp không theo ordinal, validate range, dedupe. Còn mở đúng một việc: nửa Windows (W1/W2, cần Windows CI).
@@ -504,6 +548,7 @@ Hệ quả: `BinaryProbe` của §5.8 probe **bốn** thứ chứ không phải 
 
   export interface InvalidReason {
     code: "identity_parse_error" | "composition_parse_error";
+    field?: string;                 // unknown/missing field name, never its value
     line?: number;
     column?: number;                // MUST NOT chứa stack trace (R1.2c)
   }
@@ -518,11 +563,12 @@ Hệ quả: `BinaryProbe` của §5.8 probe **bốn** thứ chứ không phải 
     | { kind: "candidate"; slug: string };
 
   export function scanWorkspace(
-    deps: { workspace: WorkspacePort; identity: ProjectIdentityService; entries: EntryRegistry },
+    deps: { workspace: WorkspacePort; identity: ProjectIdentityService; entries: EntryRegistry; composition: CompositionPort },
     root: AbsolutePath,
   ): Promise<WorkspaceEntry[]>;
   ```
 - **Configuration**: bỏ qua `node_modules`, `.git`, `.hyperframes`, mọi dir bắt đầu bằng `.` (R1.9).
+- **Filesystem capability (bản 25)**: `WorkspacePort.listWorkspaceDirectories(root)` chỉ trả `{slug, root}` của directory con trực tiếp; không lọc marker và không đi sâu. Scanner giữ toàn bộ ignore/classification policy, rồi resolve/stat/read ba file `vidcom.json`, `hyperframes.json`, `index.html` qua capability hiện hữu. Metadata cache và parse cache là hai map riêng theo `(absolute path, modifiedAt, size)`.
 - **Chi phí**: phân loại `authored` vs `invalid(composition)` và `sceneCount` **đòi parse `index.html`** — đây là chủ đích, không phải sơ suất, vì thiếu nó thì card project và `no-scenes` không quyết được lúc scan. Cache hai tầng theo `(path, mtime, size)`; target tách làm hai ở §9.1.
 - **Lifecycle**: per-request; kết quả cache theo file watcher event; quét đúng **một cấp**, MUST NOT đi xuống cây con (R1.12).
 
@@ -601,7 +647,7 @@ Hệ quả: `BinaryProbe` của §5.8 probe **bốn** thứ chứ không phải 
   }
   ```
 - **Configuration**: `schemaVersion` cao hơn binary → từ chối mở, MUST NOT đọc theo schema cũ (R3.9).
-- **Dependencies**: `WorkspacePort`, `WriteAuthority`, `ClockPort`. Class Core không import `node:fs`; mọi root/path được resolve thành capability qua port.
+- **Dependencies**: `WorkspacePort`, `WriteAuthority`, `ClockPort`, `CompositionPort`. Class Core không import `node:fs`; mọi root/path được resolve thành capability qua port. `read()` luôn strict. Riêng `backfillPlatform()` nhận legacy `{id}` như input migration, parse composition qua port để infer preset, rồi ghi schema v1 đầy đủ với render/narration defaults; parse lỗi không ghi byte nào.
 
 ### 5.6 `ProjectStateStore` — `packages/core/src/service/project-state-store.ts` (mới)
 
@@ -624,7 +670,7 @@ Hệ quả: `BinaryProbe` của §5.8 probe **bốn** thứ chứ không phải 
     reconcile(ref: ProjectRef): Promise<ReconcileReport>;
   }
   ```
-- **Lifecycle**: singleton; nhận `WriteAuthority` và `MutationJournalPort` (chỉ đọc, để rebuild).
+- **Lifecycle**: singleton; nhận `WriteAuthority`, `MutationJournalPort` và `JobStorePort` (chỉ đọc, để rebuild). Append JSONL dùng `WorkspacePort.appendAtomic`: adapter tạo parent thuộc allowlist, append một dòng + newline và fsync; không tạo revision. `reconcile` chỉ lấy SQLite/job rows làm input và không có API nhận projection để ghi DB.
 - **Phân loại source/derived nằm trong authority, không ở caller**: `WriteAuthority` expose hai method khác tên `mutateSource(...)` và `mutateDerived(...)`; caller **không** được truyền boolean `advancesSource`. Method đầu luôn persist `advances_source=1`, method sau luôn persist `0`. Allowlist compile-time + test integration khóa `state.json`, `context/**`, `snapshots/**`, `renders/**` vào đường derived; như vậy một caller mới không thể vô tình tự chọn sai cờ.
 
 ### 5.7 `ProjectLifecycle` — `packages/core/src/usecase/project-lifecycle.ts` (mới)
@@ -649,19 +695,32 @@ Hệ quả: `BinaryProbe` của §5.8 probe **bốn** thứ chứ không phải 
     | { kind: "project"; projectId: ProjectId }
     | { kind: "entry"; entryId: EntryId };
   ```
-- **Dependencies**: chỉ nhận facade `WriteAuthority` cho mọi ghi, cùng `WorkspacePort`, `BackupPort`, `ApprovalService`, `EntryRegistry`, `JobStorePort`. `ProjectDirectoryPort` và `WorkspaceOperationJournalPort` là dependency nội bộ của coordinator sau facade, MUST NOT inject thẳng vào usecase.
-- **Protocol create**: `WriteAuthority.createProjectRoot(...)` begin operation bền → dựng toàn bộ project trong sibling staging dot-dir → validate hash/schema → commit registration + đúng một revision + audit/event → atomic rename staging thành slug. `vidcom.json` chỉ xuất hiện trong final root cùng toàn bộ file còn lại. Crash trước rename để lại staging bị scanner bỏ qua; crash sau rename có đủ file và recovery settle DB.
+- **Dependencies**: chỉ nhận facade `WriteAuthority` cho mọi ghi, cùng `WorkspacePort`, `BackupPort`, `ApprovalService`, `EntryRegistry`, `JobStorePort`, `IdPort`, `ClockPort`, `ProjectIdentityService`, `CompositionPort`. `ProjectDirectoryPort` và `WorkspaceOperationJournalPort` là dependency nội bộ của coordinator sau facade, MUST NOT inject thẳng vào usecase.
+- **Lifecycle capability shapes (bản 30)**:
+  - `WriteAuthority.createProjectRoot({ workspaceRoot, projectId, slug, files, registration, previewSeed, actor })`; coordinator hash/validate toàn bộ file trước begin, stage/publish qua `ProjectDirectoryPort`, rồi gọi `journal.commitProjectCreate(...)`. Commit tạo registration active, preview entity seed, **đúng một** composite source revision với ordered steps, audit và `project.changed` trong một SQLite transaction.
+  - `WriteAuthority.adoptProjectIdentity({ ref, registration, identityContent, expectedContentHash, previewSeed, actor })`; facade dùng bootstrap journal hiện có, nên registration và source revision không thể tách, và chỉ target `vidcom.json`.
+  - `WriteAuthority.renameProjectRoot({ ref, nextSlug, nextRoot, actor })`; begin trước I/O, rename directory, rồi `journal.commitProjectRename(id,nextSlug)` cập nhật registration/audit/event atomically. `projectId` không đổi.
+  - `WriteAuthority.deleteProjectRoot({ ref, backupId, actor })`; begin sau khi backup đã verify, quarantine directory, rồi `journal.commitProjectDelete(id,backupId)` soft-delete registration/audit/event atomically; chỉ sau settle mới dọn quarantine.
+  - `WorkspacePort.listBackupSources(ref)` trả regular-file capabilities theo path tương đối, không follow symlink. `JobStorePort.hasRunningProjectJob(projectId)` là read-only precondition bắt buộc trước rename/delete.
+  - `ProjectDeleteAuthorization` tách confirmation local khỏi approval MCP; không tái sử dụng `MutationAuthority` vì type đó là lease proof nội bộ.
+- **Protocol create**: `WriteAuthority.createProjectRoot(...)` begin operation bền → dựng toàn bộ project trong sibling staging dot-dir → validate hash/schema → atomic rename staging thành slug → commit registration + đúng một revision + audit/event + settle. `vidcom.json` chỉ xuất hiện trong final root cùng toàn bộ file còn lại. Crash trước rename để lại staging bị scanner bỏ qua; crash sau rename có đủ file và recovery settle DB.
 - **Protocol rename**: `WriteAuthority.renameProjectRoot(...)` journal `{fromSlug,toSlug,projectId}` trước I/O → atomic directory rename → transaction cập nhật registration + audit/event + settle. Recovery nhìn old/new root, không mint ID mới.
 - **Protocol delete**: verify backup trước → `WriteAuthority.deleteProjectRoot(...)` journal → atomic rename root sang quarantine dot-dir sở hữu → transaction gỡ registration + audit/event + settle → dọn quarantine. Recovery restore hoặc hoàn tất; không recursive-delete live root trực tiếp.
 
   ```ts
   export interface ProjectDirectoryPort {
-    stageCreate(workspaceRoot: AbsolutePath, slug: string, operationId: WorkspaceOperationId): Promise<AbsolutePath>;
+    projectRoot(workspaceRoot: AbsolutePath, slug: string): Promise<AbsolutePath>;
+    projectRoot(workspaceRoot: AbsolutePath, slug: string): Promise<AbsolutePath>;
+    stageCreate(workspaceRoot: AbsolutePath, slug: string, operationId: WorkspaceOperationId):
+      Promise<{ stagingRoot: AbsolutePath; finalRoot: AbsolutePath }>;
+    /** Ghi trọn bộ file vào capability staging do adapter vừa cấp; Core không tự nối path. */
+    writeStagedFiles(stagingRoot: AbsolutePath, files: { path: RelPath; content: string | Uint8Array }[]): Promise<void>;
     publishCreate(stagingRoot: AbsolutePath, finalRoot: AbsolutePath): Promise<void>;
     rename(from: AbsolutePath, to: AbsolutePath): Promise<void>;
     quarantine(root: AbsolutePath, operationId: WorkspaceOperationId): Promise<AbsolutePath>;
     restoreQuarantine(quarantine: AbsolutePath, root: AbsolutePath): Promise<void>;
     removeOwned(path: AbsolutePath): Promise<void>;
+    inspect(path: AbsolutePath): Promise<"absent" | "directory" | "invalid">;
   }
   ```
 
@@ -686,12 +745,22 @@ Hệ quả: `BinaryProbe` của §5.8 probe **bốn** thứ chứ không phải 
     runtimeMs: number;
   }
 
+  export interface RenderProjectPort {
+    stage(ref: ProjectRef, renderRoot: AbsolutePath, document: string, runtimeSource: string): Promise<{
+      projectRoot: AbsolutePath;
+      outputPath: AbsolutePath;
+    }>;
+    readArtifact(outputPath: AbsolutePath): Promise<Uint8Array>;
+  }
+
   export function createRenderJobHandler(deps: {
     process: ProcessSupervisorPort; roots: RenderRootPort;
     authority: WriteAuthority; composition: CompositionPort; assets: RemoteAssetGuard;
-    binaries: BinaryProbe; state: ProjectStateStore;
+    binaries: BinaryProbe; renderProjects: RenderProjectPort; runtimeSource(): string;
   }): JobHandler<RenderJobInput, RenderJobResult>;
   ```
+- **Staging project**: adapter copy chỉ file/directory thường, không theo symlink và bỏ `.vidcom/`, `renders/`, `snapshots/`; sau đó thay entry bằng document duy nhất từ `CompositionPort.buildDocument` với `runtimeUrl:"./.vidcom-runtime.js"` và `fileBaseUrl:"./"`, rồi ghi runtime pinned vào clone. Mọi path join nằm ở Adapter. CLI output luôn là `outputPath` dưới render root; chỉ sau exit 0 + ffprobe + callback close/evaluate mới đọc bytes và gọi `mutateDerived` cho MP4 + sidecar. Release render root nằm trong `finally` sau publish/abort.
+- **Phase order**: I không phụ thuộc `ProjectStateStore` của K. Sidecar là derived artifact và được commit cùng MP4 bằng `mutateDerived`; K chỉ bổ sung projection `.vidcom/**` từ authority/SQLite về sau.
 - **Configuration**: `maxAttempts: 1` (R6.8) · `concurrency` theo type, và **không** hai render cùng project song song (R6.11) — dùng `nextQueued(types, excluded)` đã có của `JobStorePort`.
 
 ### 5.9 `RenderRootPort` + `ProcessSupervisorPort` (mới)
@@ -708,8 +777,9 @@ Hệ quả: `BinaryProbe` của §5.8 probe **bốn** thứ chứ không phải 
     /** Xoá root; `ok:false` → caller set cleanupPending (R6.6b). */
     release(jobId: JobId): Promise<{ ok: boolean; error?: string }>;
     /** Bốn điều kiện đồng thời; MUST NOT quét TEMP chung (R6.7b). */
+    inspect(jobId: JobId): Promise<"absent" | "owned" | "unowned">;
     reclaimOrphans(now: Date, runningJobIds: ReadonlySet<JobId>):
-      Promise<{ deleted: number; errors: { root: string; reason: string }[] }>;
+      Promise<{ deleted: number; reclaimedJobIds: JobId[]; errors: { root: string; reason: string }[] }>;
   }
 
   export const PROCESS_CAPTURE_INTERVAL_MS = 250;
@@ -736,7 +806,9 @@ Hệ quả: `BinaryProbe` của §5.8 probe **bốn** thứ chứ không phải 
     run(input: ProcessRunInput): Promise<SupervisedProcessResult>;
   }
   ```
+- `JobStorePort.listRunningIds()` cấp live-set chính xác cho orphan reclaim; `listCleanupPendingIds()` cấp tập obligation cần reconcile; `clearCleanupPending(jobId)` chỉ đổi `1→0` sau khi root của đúng job đã được reclaim/release thành công **hoặc** `inspect(jobId)` xác nhận root exact đã `absent`. `unowned` (directory tồn tại nhưng marker thiếu/hỏng/sai ID) không bị xóa và không được clear; startup ghi warning. Nhờ lượt đối chiếu `absent`, crash giữa remove và clear được retry idempotent ở lần startup kế tiếp.
 - **Adapters**: `FsRenderRootAdapter` sở hữu mkdir/marker/remove; `NodeProcessSupervisor` thay `NodeProcessRunner` ở composition root và **giữ nguyên** `NodeProcessRunner` cho TTS (`ProcessPort` cũ không đổi).
+- **Composition root**: singleton dùng `<appDataRoot>/render-roots`, không quét `TEMP` chung. Binary path resolve theo thứ tự explicit config → `HYPERFRAMES_FFMPEG_PATH`/`HYPERFRAMES_FFPROBE_PATH` → `<nativeDependenciesRoot>/bin/<name>` với `.exe` trên Windows. Đây chỉ là input cho adapter; `BinaryProbe` Phase I mới là authority xác nhận đủ bốn binary trước enqueue/spawn.
 
 **Thuật toán ba pha — chung cho mọi nền tảng, đã đo (R6.6b/R6.6b-ii).** Bản 3 viết "POSIX dùng process group là bao đóng thật nên hội tụ ngay". Spike bác bỏ: `chrome-headless-shell` **tự đặt mình vào process group riêng**, `kill(-pgid)` để sót 5 process Chromium còn sống ([S1c](../../../../spikes/phase-3-checklist-gate/README.md)). Process group không phải bao đóng ở đâu cả.
 
@@ -808,7 +880,10 @@ Hệ quả: `BinaryProbe` của §5.8 probe **bốn** thứ chứ không phải 
                                  stylesheets: { path: RelPath; css: string }[]):
     RemoteAssetViolation[];
   /** Script/stylesheet/font: KHÔNG chặn, chỉ warning + reproducible:false (R6.15b). */
-  export function scanExternalDependencies(documents: { path: RelPath; html: string }[]): string[];
+  export function scanExternalDependencies(
+    documents: { path: RelPath; html: string }[],
+    stylesheets?: { path: RelPath; css: string }[],
+  ): string[];
   export interface RuntimeAssetGuardPort {
     open(jobId: JobId): Promise<{ csp: string; bootstrapScript: string; token: string }>;
     close(jobId: JobId, token: string): Promise<{
@@ -817,7 +892,7 @@ Hệ quả: `BinaryProbe` của §5.8 probe **bốn** thứ chứ không phải 
     }>;
   }
   ```
-- **Static**: quét CSS `url(...)`, local stylesheet và element attribute trước enqueue.
+- **Static**: quét CSS `url(...)`, local stylesheet và element attribute trước enqueue. `@font-face url(...)` đi vào `externalDependencies` qua tham số `stylesheets` tùy chọn, **không** đi vào media violation; nếu không nhận stylesheet thì signature cũ không thể thực thi luật “font chỉ warning” của R6.15b.
 - **Runtime media**: document builder đặt CSP `img-src 'self' data: blob:` + `media-src 'self' data: blob:` làm phần tử đầu tiên của `<head>`, trước mọi node tác giả có thể chạy, rồi inject listener `securitypolicyviolation`. Listener POST URL/directive tới callback loopback. Guard đóng **trước publish**; violation làm bỏ staged artifact và fail `remote_asset_not_local`.
 - **Runtime script/style/font**: cùng bootstrap cài `PerformanceObserver({type:"resource", buffered:true})`, chỉ nhận initiator `script | link | css | font`, loại chính callback URL, dedupe theo `(initiatorType,url)` và cap 100 entry/job. Những URL này không bị chặn ở Phase 3; chúng hợp với static list để set `reproducible:false` + warning.
 - **Security**: callback chỉ bind loopback, body/entry count giới hạn, token ngẫu nhiên theo job không log, payload phải khớp job đang chạy, server đóng trong `finally`. Token không one-shot: dùng một token cho nhiều report hợp lệ trong cùng job, chống replay bằng lifecycle ngắn + dedupe. Đây là enforcement trong chính lượt render, không phải preflight hai lượt có TOCTOU.
@@ -830,13 +905,18 @@ Hệ quả: `BinaryProbe` của §5.8 probe **bốn** thứ chứ không phải 
   ```ts
   export interface SnapshotJobResult {
     outcome: "succeeded" | "partial";
+    complete: boolean;
     sceneCount: number;
+    sceneIds: string[];
     missingSceneIds: string[];
+    snapshotPaths: Record<string, RelPath>;
     contactSheet: RelPath | null;        // chỉ khi complete (R7.4)
     computedAtSourceRevision: number | null;  // null khi partial (R7.9b)
+    partialAtSourceRevision: number | null;   // chỉ khi partial (R7.9b/c)
   }
   ```
-- **Responsibilities**: phạm vi sinh lại theo bảng R7.9c (so `sourceRevision` với `partialAtSourceRevision`, tính lại danh sách scene trước); một scene lỗi không làm mất cả bộ; `authored`+0 scene → thành công rỗng.
+- **Responsibilities**: phạm vi sinh lại theo bảng R7.9c (đọc `JobStorePort.latestTerminal(projectId,"snapshot")`, so `sourceRevision` với `partialAtSourceRevision`, tính lại danh sách scene trước); một scene lỗi không làm mất cả bộ; `authored`+0 scene → thành công rỗng. Result SQLite là authority trong J; K chỉ projection result này vào `.vidcom/state.json`.
+- **Adapter boundary**: `RenderProjectPort.stage` trả thêm `snapshotOutputRoot`; `readSnapshotArtifacts` chỉ trả regular PNG ordered, còn `composeContactSheet` dùng Sharp sau port với tile 320×180, tối đa 4 cột và PNG output deterministic. Worker không import `node:fs`, `node:path` hay Sharp.
 - **Invocation** (sửa bản 3 — xem Decision 13): **một** invocation cho cả tập scene cần sinh, dùng `--at` dạng comma-separated:
   ```
   hyperframes snapshot --at <m1>,<m2>,…,<mN> --no-end --describe false --output <staging>
@@ -861,6 +941,8 @@ export function resolveThumbnail(entry: WorkspaceEntry, snapshots: SnapshotState
 `seedKind: "slug"` chỉ dùng cho `invalidKind: "identity"` — `entryId` đổi mỗi phiên nên dùng nó làm seed sẽ đổi màu card mỗi lần khởi động (R8.2b).
 
 ### 5.13 `DiagnosticsService` — `packages/core/src/usecase/diagnostics.ts` (mới)
+
+> **Sửa bản 37 — vá executability Phase M:** `DiagnosticsService` nhận bốn seam rõ ràng: `WorkspacePort` để resolve/kiểm tra asset, `CompositionPort` để parse đúng một nguồn sự thật, `MutationJournalPort` để đọc `sourceRevision`, và `DiagnosticsProjectionPort` để ghi dẫn xuất qua `WriteAuthority.mutateDerived`. `DiagnosticsLintPort.check(ref)` là adapter-owned capability chạy argv (không shell) `hyperframes check --json <root>` qua `ProcessPort`; nó trả `{ available, diagnostics }`, coi spawn lỗi/timeout/JSON không đọc được là `available:false`, và map mọi finding trong `lint/runtime/layout/motion/contrast` thành `lint:<code>`. Core không parse stdout riêng và không import process/fs. `CompositionModel.compositionPlatform` mang `{ width, height, fps }` đã parse từ root `data-*` (fps mặc định 30 khi thiếu), để Core so với identity platform mà không parse HTML lần hai. `ProjectIdentityService.read(root)` là nguồn platform/invalid reason; `EntryRegistry.resolve(entryId)` chỉ cấp location cho recovery. `forProject` luôn persist canonical `DiagnosticsReport` vào `.vidcom/context/diagnostics.json` bằng derived write, nên không tiến `sourceRevision`; `forEntry` chỉ gọi identity read, không gọi composition/lint/projection. Bốn luật VD-3 dùng helper thuần export từ file này và JSX timeline phải gọi lại chính helper đó. `missing-asset` duyệt `CompositionModel.references` qua `WorkspacePort.resolve(..., "read-source")` + `exists`; narration overflow dùng `scene.narration.durationSeconds`; empty scene là `elements.length===0 && unresolvedEffects===0`.
 
 ```ts
 export interface DiagnosticsReport {
@@ -963,6 +1045,8 @@ Surface gồm năm tool, mỗi tool định nghĩa **một lần**, gọi đúng
   | `claude-code` | `CLAUDE.md` | `.claude/skills/**` | append `@CLAUDE.vidcom.md` + `expectedContentHash` |
 
 - **Suy `usableBy`** (R13.9b–9b-i): từ **router native được discover**, không từ file chỉ dẫn chính. Cả hai host gọi được probe từ `vidcom/SKILL.md` dù file chỉ dẫn vắng mặt, nên `AGENTS.md` `foreign` **không** làm host `blocked` khi router còn nguyên.
+- **Bundle/runtime seam (bản 40)**: source Markdown ở `packages/agent-kit/` được build script biến thành `src/generated-bundle.ts`; module sinh ra chứa content literal và SHA-256 của từng source file, gồm `CLAUDE.md` sinh từ `AGENTS.md`. Adapter/composition root import bundle và inject vào Core; `AgentKitInstaller` không đọc package filesystem lúc runtime. Marker integer trong từng file cùng manifest hash phân loại sáu state theo bảng ở Bản 40.
+- **Effective-chain seam (bản 40)**: router được xem là discoverable chỉ khi file `vidcom/SKILL.md` ở đúng dot-directory host đọc được, marker parse được và frontmatter có `name: vidcom`. Instruction chung có hiệu lực khi file chính pristine, hoặc riêng Claude khi `CLAUDE.md` chứa dòng exact `@CLAUDE.vidcom.md` và file phụ pristine. Vì vậy router còn nguyên + main foreign vẫn `degraded`; router hỏng luôn `blocked`; `link` có thể nâng Claude lên `ready` mà không đổi ownership của main file.
 
 ### 5.18 `WriteAuthority` — `mutateSource` / `mutateDerived` / `mutateWorkspace` + `WorkspaceMutationCoordinator` — `packages/core/src/service/` (sửa + mới)
 
@@ -1010,9 +1094,9 @@ Surface gồm năm tool, mỗi tool định nghĩa **một lần**, gọi đúng
 
   export class WriteAuthority {
     /** advances_source=1. Purpose suy từ path, caller KHÔNG truyền. */
-    mutateSource(req: SourceMutationRequest): Promise<Result<WriteResult, DomainError>>;
+    mutateSource(req: SourceMutationRequest, actor: Actor): Promise<Result<WriteResult, DomainError>>;
     /** advances_source=0. Allowlist path đóng: .vidcom/**, snapshots/**, renders/**. */
-    mutateDerived(req: DerivedMutationRequest): Promise<Result<WriteResult, DomainError>>;
+    mutateDerived(req: DerivedMutationRequest, actor: Actor): Promise<Result<WriteResult, DomainError>>;
     /** Facade public: composite capture/publish/rollback · precondition hash · audit. KHÔNG revision/backup. */
     mutateWorkspace(req: WorkspaceWriteRequest): Promise<Result<WorkspaceWriteEnvelope, DomainError>>;
     /** Ba method này dùng cùng operation journal/coordinator, nhưng giữ revision/audit của lifecycle. */
@@ -1028,12 +1112,13 @@ Surface gồm năm tool, mỗi tool định nghĩa **một lần**, gọi đúng
   | Method | Path | Purpose suy ra | `advances_source` |
   |---|---|---|---|
   | `mutateSource` | `vidcom.json`, `preview-settings.json`, `narration/*.json` | `system-write` | `1` |
-  | `mutateSource` | còn lại | `write-source` | `1` |
+  | `mutateSource` | `assets/**`, `preview-assets/**`, audio dưới `narration/**` | `write-asset` | `1` |
+  | `mutateSource` | còn lại, nhưng loại tường minh `.vidcom/**`, `snapshots/**`, `renders/**` | `write-source` | `1` |
   | `mutateDerived` | `.vidcom/**` | `state-write` | `0` |
   | `mutateDerived` | `snapshots/**`, `renders/**` | `write-asset` | `0` |
   | `mutateWorkspace` | tập literal §5.19 | `workspace-agent-kit` | *không có revision* |
 
-  Path không khớp dòng nào của method đang gọi → `not_allowed_for_purpose`, **không** fallback sang method khác. Bảng này là allowlist compile-time (union literal của path prefix) cộng một test integration khoá cả năm dòng; đây chính là cơ chế mà §5.6 gọi là "caller mới không thể vô tình tự chọn sai cờ".
+  Path không khớp dòng nào của method đang gọi → `not_allowed_for_purpose`, **không** fallback sang method khác. Đặc biệt `mutateSource("snapshots/x.json")` vẫn bị từ chối dù đuôi `.json` tự nó hợp lệ với `write-source`; phân loại method chạy trước path policy. Bảng này là allowlist compile-time (union literal của path prefix) cộng một test integration khoá cả sáu dòng; đây chính là cơ chế mà §5.6 gọi là "caller mới không thể vô tình tự chọn sai cờ".
 - **`mutateDerived` dùng lại `StagedAssetPort` đã có** ([`write-authority.ts:74`](../../../../packages/core/src/service/write-authority.ts#L74)) cho artifact nhị phân, thay vì phát minh đường staging thứ hai. Render root của §5.9 là nơi HyperFrames ghi ra; `StagedAssetPort` là nơi VidCom giữ artifact giữa lúc verify và lúc publish. Hai thứ khác nhau, đừng gộp.
 
 ### 5.19 `pathPolicy` — hai purpose mới (sửa)
@@ -1049,12 +1134,24 @@ export type PathPurpose =
 
 | Purpose | Prefix cho phép (allowlist đóng) | Ngoài prefix |
 |---|---|---|
-| `state-write` | `.vidcom/` — và chỉ các nhánh do §5.6 sở hữu: `state.json`, `context/`, `logs/`, `jobs/`, `revisions/`, `cache/` | `not_allowed_for_purpose` |
+| `state-write` | `.vidcom/` — đúng literal `.gitignore` và các nhánh do §5.6 sở hữu: `state.json`, `context/`, `logs/`, `jobs/`, `revisions/`, `cache/` | `not_allowed_for_purpose` |
 | `workspace-agent-kit` | đúng tập literal: `AGENTS.md`, `CLAUDE.md`, `AGENTS.vidcom.md`, `CLAUDE.vidcom.md`, `.agents/skills/`, `.claude/skills/` | `not_allowed_for_purpose` |
 
 Luật giữ nguyên ngoài cửa hẹp đó: `.env*` chặn ở **mọi** purpose kể cả hai purpose mới; `node_modules`/`.git`/`.hyperframes` chặn nguyên; `agents.md`/`claude.md` vẫn ở `PROTECTED_FILES` cho mọi purpose khác. `checkPathSyntax` không đổi — vẫn cấm `..`, absolute, `\`, NUL. Containment (canonicalize + resolve symlink) áp nguyên (R4.11, R13.13).
 
 **Base root khác nhau, phải nói rõ**: `state-write` là path tương đối **project root**; `workspace-agent-kit` là path tương đối **workspace root** — cao hơn một cấp so với mọi purpose đang có. `checkPathPurpose` thuần cú pháp nên không tự biết điều này; base root do adapter truyền và **`WorkspaceMutationCoordinator` là chỗ duy nhất được phép truyền workspace root** (§5.18). Test phải chứng minh một path `workspace-agent-kit` không resolve được vào trong một project, và ngược lại.
+
+`WorkspacePort` vì vậy có thêm đúng một capability workspace-scoped, không tạo port filesystem thứ ba và không dựng pseudo-project:
+
+```ts
+resolveWorkspace(
+  workspaceRoot: AbsolutePath,
+  path: RelPath,
+  purpose: "workspace-agent-kit",
+): Promise<Result<ResolvedPath, PathRejection>>;
+```
+
+Adapter MUST so `workspaceRoot` với root canonical đã inject trước khi resolve; lệch root → `outside_project`. Mọi usecase ngoài coordinator chỉ thấy facade `WriteAuthority`, không nhận capability này.
 
 ### 5.20 `JobScheduler` — `packages/core/src/service/job-scheduler.ts` (sửa)
 
@@ -1063,7 +1160,8 @@ Bản 2 rải thay đổi scheduler qua §5.9, §6.4 và §4.3.2 mà không có 
 - **Cancel poll trong lúc handler chạy.** Hôm nay `execute()` chỉ gọi `throwIfCancelled()` trước và sau `definition.run()` ([`job-scheduler.ts:207-219`](../../../../packages/core/src/service/job-scheduler.ts#L207-L219)) — đúng Finding 6. Thêm interval `CANCELLATION_POLL_MS = 250` gọi `store.isCancellationRequested`, và khi thấy cờ thì `controller.abort()`. Clear trong `finally` cùng chỗ với `heartbeat`.
 - **Phân biệt abort-do-cancel với abort-do-timeout.** `execute()` hiện dùng **một** `AbortController` cho timeout, và nhánh timeout reject bằng `JobRetryableError`. Nếu cancel dùng chung controller đó mà không đánh dấu, cancel sẽ đi vào đường retry. Sửa: một field `abortReason: "cancel" | "timeout" | null` set **trước** `controller.abort()`; nhánh catch đọc field, không đoán từ loại error. `Promise.race` giữ nguyên hình dạng.
 - **Terminal settle là compare-and-swap.** `store.finish` hôm nay ghi đè vô điều kiện. Thêm `expectedStatus` để settle chỉ thành công khi hàng còn `running`; thua CAS trả `no_change`. Đây là thứ làm cho luật "không có artifact published + status cancelled" ở §5.9 đúng được, không phải chỉ là ý định.
-- **Biết `partial`.** `JobStorePort.finishPartial(jobId, result)` persist `status='partial'`, `progress=1`, `result` trong một transaction — MUST NOT đi qua `complete()` vốn ép `succeeded`. `recoverStale()` ([`job-scheduler.ts:134-147`](../../../../packages/core/src/service/job-scheduler.ts#L134-L147)) coi `partial` là terminal (không requeue, không finalize lại) và set `cleanup_pending` khi job treo có render root chưa release.
+- **Biết `partial`.** `JobOutcome` có nhánh `{status:"partial"; result}` và `finish(id, outcome)` persist `status='partial'`, `progress=1`, `result` trong cùng update terminal. `listStale()` chỉ đọc `running`, nên `partial` là terminal và không bao giờ bị requeue/finalize lại. Sau Phase G, recovery kiểm tra render root của hàng `running` treo; release chưa chứng minh được thì outcome recovery mang `cleanupPending:true`.
+- **Vá executability bản 8/18 — metadata terminal phải có đường đi thật.** `JobTypeDefinition.run()` vẫn nhận return `unknown` để không phá TTS/noop hiện hữu; Core thêm một envelope có brand và factory (`jobExecutionOutcome`) cho hai outcome có result: `succeeded | partial`, kèm ordered `warnings` và `cleanupPending`. Scheduler unwrap envelope rồi gọi đúng `finish(id, outcome)`; object nghiệp vụ tình cờ có field `status` không bị hiểu nhầm. Với cancel, `JobCancelledError` mang `warnings`/`cleanupPending` từ proof/release; với failure, `JobFailureError` cũng mang optional ordered warnings + cleanupPending để release lỗi không biến mất. Nếu handler chuyển `ProcessTerminationUnverifiedError` thành `JobFailureError` mã `process_termination_unverified`, lỗi này **MUST thắng** `abortReason="cancel"`: persist `failed`, tuyệt đối không `cancelled`. F.15/F.16 phải assert hàng SQLite sau scheduler, không chỉ assert adapter helper.
 
 `maxAttempts: 1` cho render đi cùng `idempotent: false`, nên nhánh retry hiện có tự nhiên không chạm tới — không cần sửa logic retry.
 
@@ -1129,11 +1227,11 @@ erDiagram
 - **Transaction boundaries**: (a) composite project commit revision + step + audit + event trong một transaction; (b) workspace operation begin/step state và terminal audit settle trong transaction DB, filesystem nằm giữa theo journal protocol; (c) derived write tạo revision `advances_source=0`, audit/event cùng transaction — source query chỉ chọn `=1`.
 - **Migration strategy**: một `ALTER TABLE revision ADD COLUMN ... CHECK`; một table-rebuild `job`; hai `CREATE TABLE`; index/constraint dựng lại tường minh. Chi tiết §6.5.
 - **Retention / deletion**: workspace operation terminal cũ hơn 30 ngày được prune **chỉ sau** khi không còn rollback slot. Xoá project giữ audit + backup (R5.9). `.vidcom/logs/` theo `projectLogRetentionDays`.
-- **Retention của derived rollback payload — mới, bản 3** (Decision 14). Mỗi `mutateDerived` capture artifact **cũ** làm rollback payload; quá ngưỡng thì spill sang `PreviousContentStore` ([`journal.ts:157-165`](../../../../packages/adapter/src/db/journal.ts#L157-L165)). Với MP4 thì mỗi lần re-render để lại một bản cũ, không có gì dọn — bản 2 không nói gì về chuyện này. Chốt: **giữ capture, thêm prune K generation**.
+- **Retention của derived rollback payload — bản 9 làm rõ storage thật** (Decision 14). Mỗi `mutateDerived` capture artifact **cũ** làm rollback payload; quá ngưỡng thì spill sang `PreviousContentStore` ([`journal.ts:157-165`](../../../../packages/adapter/src/db/journal.ts#L157-L165)). Với MP4 thì mỗi lần re-render để lại một bản cũ, không có gì dọn — bản 2 không nói gì về chuyện này. Chốt: **giữ capture, thêm prune K generation**.
   - `DERIVED_ROLLBACK_GENERATIONS = 3` — hằng số có tên, có test khoá giá trị.
-  - Prune giữ **K bản gần nhất theo `(project_id, path)`** với `advances_source = 0`; bản thứ K+1 trở đi bị xoá payload (`revision_blob` row + object trong `PreviousContentStore`), **revision row ở lại nguyên** để `computedAtSourceRevision` và audit không thủng.
-  - Prune chạy sau mỗi derived publish thành công, trong **cùng transaction** với publish đó — không có job dọn nền, không có đường "quên chạy".
-  - Rollback vượt quá K trả `rollback_payload_pruned` chứ **không** im lặng thành công. Artifact dẫn xuất tái tạo được từ `sourceRevision`, nên mất payload là mất tiện nghi, không mất dữ liệu — nhưng người gọi phải biết.
+  - Composite nhiều file lưu payload chuẩn ở `revision_step`; `revision_blob` chỉ là bản tương thích của revision một step. Prune giữ **K payload gần nhất cho từng `(project_id, path)`** với `advances_source = 0`: transaction commit đặt `revision_step.previous_content`/`previous_object_hash` về `NULL`, `byte_size=0`, đồng thời xoá `revision_blob` tương ứng; **revision row và revision_step metadata ở lại nguyên** để `computedAtSourceRevision`, audit và path history không thủng.
+  - Việc **detach reference** chạy trong chính transaction commit derived revision, nên không có job nền nào quyết định retention. Object content-addressed trên filesystem không thể commit atomically cùng SQLite: sau commit, journal gọi GC chỉ xoá hash không còn được tham chiếu bởi bất kỳ journal/revision/operation row nào. Crash trước GC chỉ để lại object vô chủ an toàn và startup GC retry; tuyệt đối không xoá object trước khi transaction detach thành công.
+  - `MutationJournalPort.readRevisionRollbackPayload(revisionId, path)` phân biệt ba trạng thái: payload hiện hữu → trả bytes; revision/path không tồn tại → `not_found`; metadata còn nhưng refs đã detach → `rollback_payload_pruned`. Đường rollback dùng contract này, MUST NOT diễn giải `previous_content = NULL` thành “file trước đó không tồn tại”. Artifact dẫn xuất tái tạo được từ `sourceRevision`, nên mất payload là mất tiện nghi, không mất dữ liệu — nhưng người gọi phải biết.
 - **Filesystem, không phải bảng**: `vidcom.json`, `.vidcom/**`, `snapshots/**`, `renders/**` + sidecar, `narration/*.json`, agent-kit. `entryId` **chỉ trong bộ nhớ**.
 
 ### 6.2 Entity: `ProjectIdentity` (file `vidcom.json`)
@@ -1173,10 +1271,84 @@ interface SnapshotState {
   missingSceneIds: string[];
   sceneCount: number;
 }
+
+interface RenderState {
+  jobId: string;
+  status: "succeeded" | "partial" | "failed" | "cancelled";
+  artifact: RelPath | null;
+  computedAtSourceRevision: number | null;
+}
+interface ProjectContext {
+  slug: string;
+  state: ProjectState;
+  platform: PlatformConfig | null;
+  sceneCount: number;
+  durationSeconds: number;
+  scenes: Array<{ id: string; start: number; duration: number; trackIndex: number }>;
+  narration: { cueCount: number; staleSceneIds: string[] };
+  openIssues: string[];
+}
+interface JobLogLine {
+  at: string;
+  jobId: string;
+  type: string;
+  status: JobStatus;
+  result: unknown | null;
+  errorCode: ErrorCode | null;
+}
+interface RevisionLogLine {
+  at: string;
+  revision: number;
+  sourceRevision: number;
+  actor: Actor;
+  paths: RelPath[];
+  summary: string;
+}
+interface StructuredLogLine {
+  at: string;
+  level: "debug" | "info" | "warn" | "error";
+  message: string;
+  code?: string;
+  detail?: Record<string, unknown>;
+}
+interface ReconcileReport {
+  rebuilt: boolean;
+  stateChanged: boolean;
+  jobsChanged: boolean;
+  revisionsChanged: boolean;
+}
 ```
 `stale` **không** được lưu — nó là phép so `computedAtSourceRevision < sourceRevision` (R4.4b). Cờ phải được ai đó cập nhật; phép so thì không thể lệch.
 
+`ProjectContext` là input semantic cho serializer Markdown deterministic và vì thế không có absolute path, timestamp hoặc job ID. Ba log-line type là projection vận hành nên được phép mang `at`/`jobId`, nhưng serializer phải redact secret trước append. SQLite read models tương ứng là ordered: jobs theo `(created_at,id)`, revisions theo `id`; rebuild không đọc `.vidcom` để điền khoảng trống.
+
+Năm payload nội bộ còn thiếu shape (bản 25):
+
+```ts
+interface RenderState {
+  status: "succeeded" | "failed" | "cancelled";
+  artifact: RelPath | null;
+  computedAtSourceRevision: number | null;
+  warnings: JobWarningDto[];
+}
+interface ProjectContext {
+  platform: PlatformConfig | null;
+  durationSeconds: number;
+  scenes: Array<{ id: string; start: number; duration: number; narration: "missing" | "ready" | "stale" }>;
+  diagnostics: Array<{ code: string; severity: "error" | "warning" | "info"; message: string }>;
+}
+interface JobLogLine { at: string; jobId: JobId; type: string; status: JobStatus; result: unknown | null }
+interface RevisionLogLine { at: string; revision: number; actor: Actor; summary: string; paths: RelPath[] }
+interface StructuredLogLine { at: string; level: "debug" | "info" | "warn" | "error"; message: string; fields?: Record<string, string | number | boolean | null> }
+```
+
+Các shape này không đi qua HTTP/MCP và không ràng buộc schema DB. Serializer `context/project-context.md` cố ý bỏ `at`, job ID và absolute path. JSONL serializer redact các key nhạy cảm (`apiKey`, `authorization`, `token`, `secret`, `password`, `cookie`) trước append.
+
 ### 6.4 Database Tables
+
+#### `project_registry` — modified by lifecycle executability fix
+
+`deleted_at TEXT NULL` biểu diễn logical unregister. Mọi active lookup/list/uniqueness phải thêm `deleted_at IS NULL`; lifecycle delete set timestamp thay vì physical DELETE để giữ FK anchor cho revision, backup, job và audit theo R5.9. Tombstone không được trả lại như project đang hoạt động và ProjectId đã tombstone không được mint lại. Migration additive này phải chạy lại Gate B (`foreign_key_check`, `integrity_check`, upgrade/rollback compatibility) trước khi Phase L được đóng.
 
 #### `revision` — **modified**
 
@@ -1187,8 +1359,8 @@ interface SnapshotState {
   |---|---|---|---|---|---|
   | `advances_source` | `integer` | no | `1` | `CHECK IN (0,1)` | `1` = input render; `0` = output/dẫn xuất |
 - **Vì sao là cột mới, không phải giá trị `kind` mới**: `ck_revision_kind` là check constraint, và SQLite **không** `ALTER` được check tại chỗ → phải table-rebuild. Cột mới thì `ALTER TABLE ADD COLUMN` là đủ. Default `1` giữ đúng nghĩa cho mọi hàng đã có (chúng đều là ghi nội dung).
-- **Indexes**: `idx_revision_source (project_id, advances_source, id DESC)` — phục vụ đúng một truy vấn nóng: `sourceRevision(projectId)` = `id` lớn nhất với `advances_source = 1`. Cộng `idx_revision_derived_path (project_id, path, id DESC)` `WHERE advances_source = 0` — phục vụ prune K generation (§6.1), partial index nên nó không phình theo revision source.
-- **Expected query patterns**: `latestSourceRevision(projectId)`; liệt kê revision theo project + thời gian (đã có `idx_revision_project_created`); liệt kê derived revision theo `(project_id, path)` giảm dần để prune.
+- **Indexes**: `idx_revision_source (project_id, advances_source, id DESC)` — phục vụ đúng một truy vấn nóng: `sourceRevision(projectId)` = `id` lớn nhất với `advances_source = 1`. Cộng `idx_revision_derived_path (project_id, path, id DESC)` `WHERE advances_source = 0` — tăng tốc revision derived **một file**; partial index không phình theo revision source. Với composite nhiều file, `revision.path = NULL`, nên prune đúng nghĩa phải xếp theo `revision_step.path` rồi join `revision`; migration đã duyệt không thêm index vào `revision_step`.
+- **Expected query patterns**: `latestSourceRevision(projectId)`; liệt kê revision theo project + thời gian (đã có `idx_revision_project_created`); liệt kê derived single-file theo `(project_id, path)` giảm dần; prune composite xếp generation trên step path trong phạm vi một project.
 - **Concurrency**: single writer (Hono daemon), không đổi.
 
 #### `job` — **modified**
@@ -1275,7 +1447,7 @@ Các path trong bảng là path **sau** `new Hono().basePath("/api")`; URL ngoà
 | `PATCH /v1/recovery/entries/:entryId` | đổi tên invalid identity entry | session | không |
 | `DELETE /v1/recovery/entries/:entryId` | xoá invalid identity entry, backup + confirmation/grant | session | không |
 
-Mã mới cần thêm vào `ErrorCode`: `project_invalid`, `identity_parse_error`, `composition_parse_error`, `no_composition`, `no_scenes`, `remote_asset_not_local`, `render_binary_missing`, `process_termination_unverified`, `confirmation_required`, `rollback_payload_pruned` (Decision 14). Warning ổn định nhưng không phải error: `external_dependency_unpinned`, `sub_timeline_readiness_timeout`, `termination_proof_not_exhaustive` (R6.6b-i), `engine_version_drift` (§4.6).
+Mã mới cần thêm vào `ErrorCode`: `project_invalid`, `identity_parse_error`, `composition_parse_error`, `no_composition`, `no_scenes`, `remote_asset_not_local`, `render_binary_missing`, `process_termination_unverified`, `confirmation_required`, `rollback_payload_pruned` (Decision 14), và `sub_timeline_readiness_timeout` cho strict render (Decision 8, bản 17). Warning ổn định: `external_dependency_unpinned`, `sub_timeline_readiness_timeout`, `termination_proof_not_exhaustive` (R6.6b-i), `engine_version_drift` (§4.6); cùng wire string readiness xuất hiện ở hai enum type riêng vì best-effort là warning còn strict là error.
 
 **Hai route bản 2 thiếu**: `EntryRegistry.clear()` và R1.13 treo vào sự kiện đổi workspace, nhưng không có endpoint nào phát ra sự kiện đó.
 
@@ -1552,8 +1724,8 @@ Năm-tool surface ở §5.16. `tools/list` **thứ tự deterministic** và gold
 
 **Decision**: Option 2, `DERIVED_ROLLBACK_GENERATIONS = 3`.
 **Rationale**: Chặn trên theo **số bản**, không theo thời gian, là thứ duy nhất chặn được đỉnh; và K nhỏ đủ để giá đĩa dự đoán được (`K × kích thước MP4 × số path`). Option 1 rẻ hơn nhưng bỏ mất chính lần rollback hay cần nhất.
-**Rationale phụ**: prune chạy **trong cùng transaction với publish**, không phải job nền — đường dọn rác chạy riêng là đường quên chạy.
-**Implications**: Xoá payload MUST NOT xoá revision row; `computedAtSourceRevision` và audit phải sống lâu hơn payload. Rollback vượt K trả `rollback_payload_pruned`, không im lặng thành công. Cần `idx_revision_derived_path` partial index (§6.4).
+**Rationale phụ**: detach rollback reference chạy **trong transaction commit derived revision**, không phải job nền — đường quyết định retention chạy riêng là đường quên chạy. Xoá object vật lý là GC hậu-commit idempotent vì SQLite và filesystem không có distributed transaction; GC chỉ được xoá hash đã chứng minh không còn reference và startup retry object vô chủ.
+**Implications**: Composite prune payload ở `revision_step` và dọn `revision_blob` tương ứng nhưng MUST NOT xoá revision/step metadata; `computedAtSourceRevision` và audit phải sống lâu hơn payload. `readRevisionRollbackPayload(revisionId, path)` trả `rollback_payload_pruned` khi metadata còn mà payload đã detach, không im lặng thành công. Cần `idx_revision_derived_path` partial index (§6.4).
 
 ---
 

@@ -57,6 +57,64 @@ afterEach(async () => {
 });
 
 describe("readNarrationClips", () => {
+  it("mounts every generated cue at scene start plus its own offset", async () => {
+    const ref = await project();
+    await mkdir(join(ref.root, "narration", "intro"), { recursive: true });
+    await Promise.all([
+      writeFile(join(ref.root, "narration", "intro", "line-1.wav"), Buffer.alloc(2_048, 1)),
+      writeFile(join(ref.root, "narration", "intro", "line-2.wav"), Buffer.alloc(2_048, 2)),
+      writeFile(join(ref.root, "narration", "intro.json"), JSON.stringify({
+        schemaVersion: 2,
+        sceneId: "intro",
+        revision: 2,
+        updatedAt: "2026-08-04T00:00:00.000Z",
+        cues: [
+          { cueId: "line-1", text: "Một", voice: "a", offsetSeconds: 0, durationSeconds: 1,
+            staleSince: null, status: "generated", audioPath: "narration/intro/line-1.wav" },
+          { cueId: "line-2", text: "Hai", voice: "b", offsetSeconds: 1.5, durationSeconds: 2,
+            staleSince: null, status: "generated", audioPath: "narration/intro/line-2.wav" },
+        ],
+      })),
+    ]);
+    const clips = readNarrationClips(ref, ROOT_HTML);
+    expect(clips).toEqual([
+      { sceneId: "intro", cueId: "line-1", path: "narration/intro/line-1.wav", startSeconds: 0, durationSeconds: 1 },
+      { sceneId: "intro", cueId: "line-2", path: "narration/intro/line-2.wav", startSeconds: 1.5, durationSeconds: 2 },
+    ]);
+    const html = buildNarrationHtml(clips, "/files/");
+    expect(html.match(/<audio /g)).toHaveLength(2);
+    expect(html).toContain('data-start="0"');
+    expect(html).toContain('data-start="1.5"');
+  });
+
+  it("reads multiple v2 cues as separate audio clips at document-relative offsets", async () => {
+    const ref = await project();
+    await mkdir(join(ref.root, "narration", "intro"), { recursive: true });
+    await writeFile(join(ref.root, "narration", "intro.json"), JSON.stringify({
+      schemaVersion: 2,
+      sceneId: "intro",
+      revision: 2,
+      updatedAt: "2026-08-04T00:00:00.000Z",
+      cues: [
+        { cueId: "line-1", text: "Một", voice: "a", status: "generated", audioPath: "narration/intro/line-1.wav", offsetSeconds: 0, durationSeconds: 1, staleSince: null },
+        { cueId: "line-2", text: "Hai", voice: "b", status: "generated", audioPath: "narration/intro/line-2.wav", offsetSeconds: 1.5, durationSeconds: 2, staleSince: null },
+      ],
+    }));
+    await Promise.all([
+      writeFile(join(ref.root, "narration", "intro", "line-1.wav"), Buffer.alloc(16, 1)),
+      writeFile(join(ref.root, "narration", "intro", "line-2.wav"), Buffer.alloc(16, 2)),
+    ]);
+
+    const clips = readNarrationClips(ref, ROOT_HTML);
+    expect(clips).toEqual([
+      { sceneId: "intro", cueId: "line-1", path: "narration/intro/line-1.wav", startSeconds: 0, durationSeconds: 1 },
+      { sceneId: "intro", cueId: "line-2", path: "narration/intro/line-2.wav", startSeconds: 1.5, durationSeconds: 2 },
+    ]);
+    const html = buildNarrationHtml(clips, "/files/");
+    expect(html.match(/class="clip hf-narration"/g)).toHaveLength(2);
+    expect(html).toContain('data-start="1.5"');
+  });
+
   it("places each scene's audio at the start time the document declares", async () => {
     const ref = await project();
     await sidecar(ref, "intro");

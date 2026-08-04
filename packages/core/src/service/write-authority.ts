@@ -12,6 +12,7 @@ import {
 } from "@vidcom/contracts";
 
 import { DEFAULT_PREVIEW_SETTINGS, mergePreviewSettings, normalizePreviewSettings, serializePreviewSettings } from "../domain/preview-settings";
+import { checkPathPurpose } from "../domain/path-policy";
 import type { ProjectRef } from "../domain/models";
 import { err, ok, type Result } from "../error/result";
 import type { BackupPort, CompositeMutationJournalPort, LeasePort, MutationJournalPort, StagedAssetPort, WorkspacePort } from "../port/ports";
@@ -27,19 +28,27 @@ import type {
   StepIntent,
   WriteEnvelope,
   WriteInvocation,
+  JobId,
+  WorkspaceWriteEnvelope,
 } from "../port/types";
 import type { JournalId } from "../port/types";
 import { canonicalizeJson } from "./canonical-json";
+import type {
+  WorkspaceMutationCoordinator,
+  WorkspaceProjectCreateRequest,
+  WorkspaceProjectDeleteRequest,
+  WorkspaceProjectRenameRequest,
+  WorkspaceProjectLocation,
+  WorkspaceWriteRequest,
+} from "./workspace-mutation-coordinator";
 
-export type MutationRequest =
+export type SingleSourceMutationRequest =
   | {
       kind: "file";
       ref: ProjectRef;
       path: RelPath;
       content: string | Uint8Array;
       expectedContentHash: string | null;
-      /** Defaults to source writes; privileged internal flows must opt in explicitly. */
-      purpose?: "write-source" | "system-write";
     }
   | {
       kind: "entity";
@@ -48,6 +57,24 @@ export type MutationRequest =
       patch: PreviewSettingsPatchDto;
       expectedRevision: number;
     };
+
+/** Compile-time closed set of paths owned by derived project state and artifacts. */
+export type DerivedMutationPath = RelPath & (
+  | `.vidcom/${string}`
+  | `snapshots/${string}`
+  | `renders/${string}`
+);
+
+export interface DerivedMutationRequest {
+  ref: ProjectRef;
+  writes: Array<{ path: DerivedMutationPath; content: string | Uint8Array }>;
+  producedByJobId: JobId | null;
+  computedAtSourceRevision: number;
+}
+
+/** Backward-compatible name for source-only callers; no caller-selectable purpose remains. */
+export type SourceMutationRequest = SingleSourceMutationRequest | CompositeRequest;
+export type MutationRequest = SingleSourceMutationRequest;
 
 /** Successful mutation payload returned to transport adapters. */
 export interface WriteResult {
@@ -73,6 +100,7 @@ export interface WriteAuthorityDependencies {
   stagedAssets?: StagedAssetPort;
   backups?: BackupPort;
   reconcileJournal?(id: JournalId): Promise<Result<CompositeReconcileOutcome, DomainError>>;
+  workspaceCoordinator?: WorkspaceMutationCoordinator;
 }
 
 /** Journal-first identity write prepared by `bootstrapProject`. */
@@ -83,6 +111,17 @@ export interface BootstrapIdentityWrite {
   previousContent: string | null;
   fromHash: ContentHash | null;
   toHash: ContentHash;
+  actor?: Actor;
+}
+
+export interface AdoptProjectIdentityRequest {
+  ref: ProjectRef;
+  workspaceRoot: string;
+  content: string;
+  occurredAt: string;
+  actor?: Actor;
+  /** Omitted for candidate adoption; required when replacing an invalid recovery marker. */
+  expectedContentHash?: ContentHash;
 }
 
 class ProjectMutex {
@@ -114,7 +153,11 @@ function pathError(rejection: PathRejection): DomainError {
     case "symlink_escape":
       return { code: ErrorCode.PathOutsideProject, message: "path resolves outside the project" };
     case "not_allowed_for_purpose":
-      return { code: ErrorCode.AssetNotAllowed, message: "this file is not served" };
+      return {
+        code: ErrorCode.AssetNotAllowed,
+        message: "the path is not allowed for this mutation method",
+        details: { reason: rejection.reason },
+      };
   }
 }
 
@@ -155,14 +198,28 @@ interface ValidatedCompositeStep extends PreparedCompositeStep {
   previewSettings: PreviewSettingsDto | null;
 }
 
-function deletePurpose(path: RelPath): PathPurpose {
-  if (path === "preview-settings.json" || (path.startsWith("narration/") && path.endsWith(".json"))) {
+const SOURCE_ASSET_PREFIXES = ["assets/", "preview-assets/", "narration/"] as const;
+const DERIVED_ASSET_PREFIXES = ["snapshots/", "renders/"] as const;
+
+export type MutationMethod = "source" | "derived" | "workspace";
+
+/** Closed `(method, path)` authority table; a miss never falls through to another method. */
+export function inferMutationPurpose(method: MutationMethod, path: RelPath): PathPurpose | null {
+  if (method === "workspace") {
+    return checkPathPurpose(path, "workspace-agent-kit") === null ? "workspace-agent-kit" : null;
+  }
+  if (method === "derived") {
+    if (path.startsWith(".vidcom/")) return "state-write";
+    return DERIVED_ASSET_PREFIXES.some((root) => path.startsWith(root)) ? "write-asset" : null;
+  }
+  if (path.startsWith(".vidcom/") || DERIVED_ASSET_PREFIXES.some((root) => path.startsWith(root))) {
+    return null;
+  }
+  if (path === "vidcom.json" || path === "preview-settings.json"
+    || (path.startsWith("narration/") && path.endsWith(".json"))) {
     return "system-write";
   }
-  if (["assets/", "preview-assets/", "narration/", "snapshots/", "renders/"].some((root) => path.startsWith(root))) {
-    return "write-asset";
-  }
-  return "write-source";
+  return SOURCE_ASSET_PREFIXES.some((root) => path.startsWith(root)) ? "write-asset" : "write-source";
 }
 
 /** Single project write authority enforcing lease, mutex, precondition, journal and event order. */
@@ -172,9 +229,10 @@ export class WriteAuthority {
   constructor(private readonly dependencies: WriteAuthorityDependencies) {}
 
   /** Executes one ordered multi-target mutation only while the lease and project recovery gate permit writes. */
-  async mutateComposite(
+  private async executeComposite(
     request: CompositeRequest,
     actor: Actor,
+    advancesSource: boolean,
   ): Promise<Result<WriteEnvelope, DomainError>> {
     if (!(await this.dependencies.lease.assertHeld(this.dependencies.leaseId))) {
       return err({ code: ErrorCode.WorkspaceLeaseLost, message: "the workspace write lease was lost" });
@@ -193,16 +251,17 @@ export class WriteAuthority {
           details: { recovery },
         });
       }
-      const prepared = await this.resolveCompositeTargets(request);
+      const prepared = await this.resolveCompositeTargets(request, advancesSource);
       if (!prepared.ok) return prepared;
       const validated = await this.validateCompositePreconditions(request, prepared.value);
       if (!validated.ok) return validated;
-      return this.executeValidatedComposite(request, validated.value, actor);
+      return this.executeValidatedComposite(request, validated.value, actor, advancesSource);
     });
   }
 
   private async resolveCompositeTargets(
     request: CompositeRequest,
+    advancesSource: boolean,
   ): Promise<Result<PreparedCompositeStep[], DomainError>> {
     const prepared: PreparedCompositeStep[] = [];
     const canonicalTargets = new Set<ResolvedPath>();
@@ -217,7 +276,11 @@ export class WriteAuthority {
         purpose = "system-write";
       } else {
         path = step.path;
-        purpose = step.kind === "write" ? step.purpose ?? "write-source" : deletePurpose(step.path);
+        const inferred = inferMutationPurpose(advancesSource ? "source" : "derived", step.path);
+        if (inferred === null) {
+          return err(pathError({ reason: "not_allowed_for_purpose" }));
+        }
+        purpose = inferred;
       }
       const resolved = await this.dependencies.workspace.resolve(request.ref, path, purpose);
       if (!resolved.ok) return err(pathError(resolved.error));
@@ -351,6 +414,7 @@ export class WriteAuthority {
     request: CompositeRequest,
     steps: ValidatedCompositeStep[],
     actor: Actor,
+    advancesSource: boolean,
   ): Promise<Result<WriteEnvelope, DomainError>> {
     if (steps.every((item) => item.intent.kind !== "delete" && item.intent.fromHash === item.intent.toHash)) {
       const projectRevision = (await this.dependencies.journal.latestRevision(request.ref.id)) ?? 0;
@@ -485,10 +549,27 @@ export class WriteAuthority {
       for (const item of steps) {
         const capture = captures[item.intent.ordinal];
         if (!capture) throw new Error("a mutation capture was lost before publish");
-        const landed = await this.dependencies.workspace.publishCaptured(
-          capture,
-          item.step.kind === "delete" ? null : item.content,
-        );
+        let landed: boolean;
+        if (!advancesSource && item.step.kind === "write" && item.content instanceof Uint8Array) {
+          const stager = this.dependencies.stagedAssets;
+          if (!stager) throw new Error("derived binary staging is unavailable");
+          const staged = await stager.stage(item.target, item.step.path, item.content);
+          try {
+            if (staged.contentHash !== item.intent.toHash) {
+              throw new Error("staged derived artifact hash differs from the journal intent");
+            }
+            await staged.commit();
+            landed = await this.dependencies.workspace.readHash(item.target) === item.intent.toHash;
+          } catch (error) {
+            await staged.cleanup().catch(() => {});
+            throw error;
+          }
+        } else {
+          landed = await this.dependencies.workspace.publishCaptured(
+            capture,
+            item.step.kind === "delete" ? null : item.content,
+          );
+        }
         if (!landed) {
           const restored = await this.restoreCapturedSteps(steps, captures, published);
           if (!restored) {
@@ -552,17 +633,20 @@ export class WriteAuthority {
         ? { type: "file.changed", projectId: request.ref.id, payload: { path: single.step.path } }
         : { type: "project.changed", projectId: request.ref.id, payload: { composite: true } };
     try {
-      const envelope = await this.dependencies.compositeJournal.commitComposite(
-        journalId,
-        {
-          projectId: request.ref.id,
-          actor,
-          steps: steps.map(({ intent }) => ({ ...intent, status: "written" as const })),
-          diagnostics: request.diagnostics ?? [],
-          event,
-        },
-        request.grant ? { kind: "consume", grantId: request.grant.id } : undefined,
-      );
+      const result = {
+        projectId: request.ref.id,
+        actor,
+        steps: steps.map(({ intent }) => ({ ...intent, status: "written" as const })),
+        diagnostics: request.diagnostics ?? [],
+        event,
+      };
+      const envelope = advancesSource
+        ? await this.dependencies.compositeJournal.commitComposite(
+            journalId,
+            result,
+            request.grant ? { kind: "consume", grantId: request.grant.id } : undefined,
+          )
+        : await this.dependencies.compositeJournal.commitDerivedComposite(journalId, result);
       for (const [path, hash] of Object.entries(envelope.fileHashes)) {
         this.dependencies.recordWrittenHash?.(request.ref.id, path as RelPath, hash);
       }
@@ -785,13 +869,23 @@ export class WriteAuthority {
     });
   }
 
-  /** Executes one file or entity mutation through the composite authority while preserving the Phase-1 result shape. */
-  async mutate(
+  /** Executes one authored single-target mutation; callers cannot choose a path purpose. */
+  async mutateSource(
     request: MutationRequest,
     actor: Actor,
+    invocation?: WriteInvocation,
+  ): Promise<Result<WriteResult, DomainError>>;
+  async mutateSource(
+    request: CompositeRequest,
+    actor: Actor,
+  ): Promise<Result<WriteEnvelope, DomainError>>;
+  async mutateSource(
+    request: MutationRequest | CompositeRequest,
+    actor: Actor,
     invocation: WriteInvocation = { toolAudit: null },
-  ): Promise<Result<WriteResult, DomainError>> {
-    const composite = await this.mutateComposite({
+  ): Promise<Result<WriteResult | WriteEnvelope, DomainError>> {
+    if ("steps" in request) return this.executeComposite(request, actor, true);
+    const composite = await this.executeComposite({
       ref: request.ref,
       steps: request.kind === "file"
         ? [{
@@ -799,7 +893,6 @@ export class WriteAuthority {
             path: request.path,
             content: request.content,
             expectedContentHash: request.expectedContentHash as ContentHash | null,
-            purpose: request.purpose,
           }]
         : [{
             kind: "entity",
@@ -809,7 +902,7 @@ export class WriteAuthority {
           }],
       toolAudit: invocation.toolAudit,
       backup: false,
-    }, actor);
+    }, actor, true);
     if (!composite.ok) {
       return composite.error.code === ErrorCode.RecoveryRequired && invocation.toolAudit === null
         ? err({ code: ErrorCode.StorageUnavailable, message: "the project mutation could not be committed" })
@@ -839,6 +932,140 @@ export class WriteAuthority {
     });
   }
 
+  /** Executes one derived composite; only `.vidcom`, snapshot and render targets are reachable. */
+  async mutateDerived(
+    request: DerivedMutationRequest,
+    actor: Actor,
+  ): Promise<Result<WriteEnvelope, DomainError>> {
+    if (request.writes.length === 0) {
+      return err({ code: ErrorCode.SchemaInvalid, message: "a derived mutation must contain at least one write" });
+    }
+    if (!Number.isSafeInteger(request.computedAtSourceRevision) || request.computedAtSourceRevision < 0) {
+      return err({
+        code: ErrorCode.SchemaInvalid,
+        message: "computedAtSourceRevision must be a non-negative safe integer",
+        field: "computedAtSourceRevision",
+      });
+    }
+    const seen = new Set<RelPath>();
+    const steps: CompositeStep[] = [];
+    for (const write of request.writes) {
+      if (seen.has(write.path)) {
+        return err({
+          code: ErrorCode.DuplicateMutationTarget,
+          message: "a derived mutation cannot write the same path twice",
+          details: { path: write.path },
+        });
+      }
+      seen.add(write.path);
+      const purpose = inferMutationPurpose("derived", write.path);
+      if (purpose === null) return err(pathError({ reason: "not_allowed_for_purpose" }));
+      const target = await this.dependencies.workspace.resolve(request.ref, write.path, purpose);
+      if (!target.ok) return err(pathError(target.error));
+      steps.push({
+        kind: "write",
+        path: write.path,
+        content: write.content,
+        expectedContentHash: await this.dependencies.workspace.readHash(target.value),
+      });
+    }
+    return this.executeComposite({
+      ref: request.ref,
+      steps,
+      toolAudit: null,
+      commandAudit: {
+        action: "derived.write",
+        detail: {
+          producedByJobId: request.producedByJobId,
+          computedAtSourceRevision: request.computedAtSourceRevision,
+        },
+      },
+      backup: false,
+    }, actor, false);
+  }
+
+  /** Delegates workspace-root writes through the internal coordinator without creating a project revision/event. */
+  async mutateWorkspace(
+    request: WorkspaceWriteRequest,
+  ): Promise<Result<WorkspaceWriteEnvelope, DomainError>> {
+    if (!this.dependencies.workspaceCoordinator) {
+      return err({
+        code: ErrorCode.StorageUnavailable,
+        message: "workspace mutation coordination is unavailable",
+      });
+    }
+    return this.dependencies.workspaceCoordinator.mutate(request);
+  }
+
+  createProjectRoot(request: WorkspaceProjectCreateRequest): Promise<Result<ProjectRef, DomainError>> {
+    return this.dependencies.workspaceCoordinator
+      ? this.dependencies.workspaceCoordinator.createProjectRoot(request)
+      : Promise.resolve(err({ code: ErrorCode.StorageUnavailable, message: "project lifecycle coordination is unavailable" }));
+  }
+
+  renameProjectRoot(request: WorkspaceProjectRenameRequest): Promise<Result<WorkspaceProjectLocation, DomainError>> {
+    return this.dependencies.workspaceCoordinator
+      ? this.dependencies.workspaceCoordinator.renameProjectRoot(request)
+      : Promise.resolve(err({ code: ErrorCode.StorageUnavailable, message: "project lifecycle coordination is unavailable" }));
+  }
+
+  deleteProjectRoot(request: WorkspaceProjectDeleteRequest): Promise<Result<{ backupId: string }, DomainError>> {
+    return this.dependencies.workspaceCoordinator
+      ? this.dependencies.workspaceCoordinator.deleteProjectRoot(request)
+      : Promise.resolve(err({ code: ErrorCode.StorageUnavailable, message: "project lifecycle coordination is unavailable" }));
+  }
+
+  async adoptProjectIdentity(request: AdoptProjectIdentityRequest): Promise<Result<WriteResult, DomainError>> {
+    const identityPath = "vidcom.json" as RelPath;
+    const resolved = await this.dependencies.workspace.resolve(request.ref, identityPath, "system-write");
+    if (!resolved.ok) return err(pathError(resolved.error));
+    const current = await this.dependencies.workspace.readFile(resolved.value);
+    if (request.expectedContentHash === undefined && current) {
+      return err({ code: ErrorCode.WriteConflict, message: "project identity already exists" });
+    }
+    if (request.expectedContentHash !== undefined && current?.contentHash !== request.expectedContentHash) {
+      return err({ code: ErrorCode.WriteConflict, message: "project identity changed before recovery" });
+    }
+    const previewPath = "preview-settings.json" as RelPath;
+    const preview = await this.dependencies.workspace.resolve(request.ref, previewPath, "system-write");
+    if (!preview.ok) return err(pathError(preview.error));
+    const currentPreviewHash = await this.dependencies.workspace.readHash(preview.value);
+    const previewHash = currentPreviewHash
+      ?? this.dependencies.hashContent(serializePreviewSettings(DEFAULT_PREVIEW_SETTINGS));
+    const toHash = this.dependencies.hashContent(request.content);
+    const journalId = await this.dependencies.journal.beginBootstrap({
+      id: request.ref.id,
+      workspaceRoot: request.workspaceRoot,
+      slug: request.ref.slug,
+      firstSeenAt: request.occurredAt,
+      lastSeenAt: request.occurredAt,
+    }, {
+      revision: currentPreviewHash ? 1 : 0,
+      contentHash: previewHash,
+      backingPath: previewPath,
+      actor: request.actor ?? "system",
+      updatedAt: request.occurredAt,
+    }, {
+      projectId: request.ref.id,
+      kind: "file",
+      path: identityPath,
+      entity: null,
+      fromHash: current?.contentHash ?? null,
+      previousContent: current?.content ?? null,
+      toHash,
+      actor: request.actor ?? "system",
+    }, null);
+    return this.completeBootstrapIdentity({
+      ref: request.ref,
+      journalId,
+      content: request.content,
+      previousContent: current?.content ?? null,
+      fromHash: current?.contentHash ?? null,
+      toHash,
+      actor: request.actor,
+    });
+  }
+
   /** Completes a pre-journaled `vidcom.json` system write through the same authority and mutex. */
   async completeBootstrapIdentity(
     write: BootstrapIdentityWrite,
@@ -862,7 +1089,7 @@ export class WriteAuthority {
           entity: null,
           fromHash: write.fromHash,
           toHash: write.toHash,
-          actor: "system",
+          actor: write.actor ?? "system",
           previousContent: write.previousContent,
           event: {
             type: "project.changed",
@@ -886,7 +1113,8 @@ export class WriteAuthority {
   ): Promise<Result<WriteResult, DomainError>> {
     const formatError = validateExpectedHash(request.expectedContentHash);
     if (formatError) return err(formatError);
-    const purpose = request.purpose ?? "write-source";
+    const purpose = inferMutationPurpose("source", request.path);
+    if (purpose === null) return err(pathError({ reason: "not_allowed_for_purpose" }));
     const resolved = await this.dependencies.workspace.resolve(request.ref, request.path, purpose);
     if (!resolved.ok) return err(pathError(resolved.error));
     const currentHash = await this.dependencies.workspace.readHash(resolved.value);

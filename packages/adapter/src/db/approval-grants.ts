@@ -12,7 +12,7 @@ import type { VidcomDatabase } from "./client";
 
 interface StoredGrant {
   id: string;
-  projectId: string;
+  projectId: string | null;
   tool: string;
   target: string;
   expectedRevision: number;
@@ -30,7 +30,7 @@ function record(row: StoredGrant): ApprovalGrantRecord {
     id: row.id,
     binding: {
       tool: row.tool,
-      projectId: row.projectId as ProjectId,
+      projectId: row.projectId as ProjectId | null,
       target: row.target,
       expectedRevision: row.expectedRevision,
       planDigest: row.planDigest,
@@ -109,7 +109,7 @@ export class SqliteApprovalGrantStore implements ApprovalGrantPort {
     return this.database.get<{ id: string }>(sql`
       SELECT id FROM approval_grant
       WHERE id = ${id} AND status = 'issued' AND expires_at > ${now}
-        AND tool = ${binding.tool} AND project_id = ${binding.projectId}
+        AND tool = ${binding.tool} AND project_id IS ${binding.projectId}
         AND target = ${binding.target} AND expected_revision = ${binding.expectedRevision}
         AND plan_digest = ${binding.planDigest}
         AND target_hashes = ${canonicalizeJson(binding.targetHashes)}

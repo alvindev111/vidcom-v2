@@ -3,7 +3,7 @@
 > **References**:
 > - [Detailed Goals](./spec-project-delivery-loop-detailed-goal.md) — bản 12, Approved 2026-08-04
 > - [Detailed Design](./spec-project-delivery-loop-detailed-design.md) — bản 6, Approved 2026-08-04
-> - [Main spec](./spec-project-delivery-loop-pending.md)
+> - [Main spec](./spec-project-delivery-loop-inprocess.md)
 > - Spike gate: [phase-3-checklist-gate](../../../../spikes/phase-3-checklist-gate/README.md) · [phase-3-detailed-design](../../../../spikes/phase-3-detailed-design/README.md) · [phase-3-render](../../../../spikes/phase-3-render/README.md) · [phase-3-agent-kit-host](../../../../spikes/phase-3-agent-kit-host/README.md)
 
 ## Context
@@ -28,7 +28,7 @@ Bốn trọng tâm rủi ro, và cả bốn đều **đã có bằng chứng ch�
 - **Status**: **✅ APPROVED 2026-08-04** — nội dung checklist được duyệt. **Code Execution CHƯA bắt đầu theo yêu cầu tường minh của người dùng** ("approve nhưng không thực hiện code").
 - **Confirmed by**: Người dùng
 - **Confirmation date**: 2026-08-04
-- **Trạng thái thực thi**: **Chưa bắt đầu.** Không task nào được đánh `[/]` hay `[x]`; Execution Log rỗng; `spec-project-delivery-loop-pending.md` **giữ nguyên tên** — đổi sang `-inprocess.md` chỉ xảy ra khi Phase A thực sự bắt đầu (AGENTS.md §Task Execution Workflow bước 3).
+- **Trạng thái thực thi**: **Đang thực thi.** Phase A bắt đầu ngày 2026-08-04; main spec đã đổi sang `spec-project-delivery-loop-inprocess.md`.
 - **Notes**:
   - Design bản 7 và Goals bản 12 đã duyệt; `steering/08` đã đồng bộ (§2.1 Design).
   - **Phase B, D, E, F là gate**: không sang phase sau khi gate còn đỏ. Lý do ở Dependency Order.
@@ -124,6 +124,34 @@ tất cả ───────────→ S CI gate + contract matrix + re
 
 ---
 
+## Phase Verification Matrix
+
+Mỗi phase chạy focused command dưới đây trên SQLite/filesystem thật, rồi chạy `rtk bun run typecheck`, `rtk bun run lint`, `rtk bun run test:boundaries` khi chạm boundary và `rtk git diff --check`. Phase S chạy toàn bộ release gate trên ba OS qua GitHub Actions.
+
+| Phase | Focused verification command |
+|---|---|
+| A | `rtk bunx vitest run tests/contracts/api-contracts.test.ts tests/mcp/error-map.test.ts` |
+| B | `rtk bunx vitest run tests/adapter/database-migration.test.ts tests/adapter/delivery-loop-database-migration.test.ts tests/adapter/mcp-database-migration.test.ts` |
+| C | `rtk bunx vitest run tests/core/delivery-loop-domain.test.ts tests/core/workspace-and-path-policy.test.ts` |
+| D | `rtk bunx vitest run tests/core/source-revision.test.ts tests/adapter/composite-write-authority.test.ts` |
+| E | `rtk bunx vitest run tests/adapter/workspace-mutation-coordinator.test.ts` |
+| F | `rtk bunx vitest run tests/adapter/process-supervisor.test.ts tests/adapter/job-infrastructure.test.ts` và `rtk bun run spike:process-supervision` |
+| G | `rtk bunx vitest run tests/adapter/render-root.test.ts tests/cli/startup.test.ts` |
+| H | `rtk bunx vitest run tests/adapter/remote-asset-guard.test.ts tests/adapter/remote-asset-browser.test.ts tests/golden/runtime-asset-guard.test.ts` |
+| I | `rtk bunx vitest run tests/adapter/render-job.test.ts tests/adapter/render-binary-probe.test.ts tests/adapter/render-project.test.ts` |
+| J | `rtk bunx vitest run tests/adapter/snapshot-job.test.ts tests/golden/snapshot-timestamp-mapping.test.ts` |
+| K | `rtk bunx vitest run tests/adapter/project-discovery-state.test.ts tests/adapter/workspace-scan-identity.test.ts tests/adapter/project-state-store.test.ts tests/golden/project-context.test.ts` |
+| L | `rtk bunx vitest run tests/adapter/project-lifecycle.test.ts tests/adapter/workspace-mutation-coordinator.test.ts` |
+| M | `rtk bunx vitest run tests/core/diagnostics-rules.test.ts tests/adapter/diagnostics-thumbnail.test.ts` |
+| N | `rtk bunx vitest run tests/adapter/scene-ripple-narration.test.ts tests/adapter/narration-clips.test.ts tests/adapter/project-destructive-usecases.test.ts` |
+| O | `rtk bunx vitest run tests/server/delivery-loop-routes.test.ts tests/server/events.test.ts tests/server/payload-limits.test.ts` |
+| P | `rtk bunx vitest run tests/mcp/contract-matrix.test.ts tests/mcp/tools.test.ts tests/mcp/negative-contract-matrix.test.ts tests/mcp/golden/tools-list.test.ts tests/adapter/agent-kit-installer.test.ts` |
+| Q | `rtk bunx vitest run tests/adapter/agent-kit-installer.test.ts tests/agent-kit/sync.test.ts` và `rtk bun run test:agent-kit` |
+| R | `rtk bunx vitest run tests/adapter/workspace-scan-identity.test.ts tests/adapter/bootstrap-project.test.ts tests/cli/mcp-commands.test.ts tests/cli/startup.test.ts tests/server/events.test.ts` |
+| S | `rtk bun run typecheck`; `rtk bun run lint`; `rtk bun run test:boundaries`; `rtk bun run test`; `rtk bun run test:golden`; `rtk bun run test:schema-drift`; `rtk bun run test:mcp-contract`; `rtk bun run test:runtime-smoke`; `rtk bun run spike:process-supervision`; `rtk bun run test:spec-paths`; `rtk git diff --check` |
+
+---
+
 ## Task Status Legend
 
 - `[ ]` — Not started
@@ -141,32 +169,32 @@ tất cả ───────────→ S CI gate + contract matrix + re
 **Estimate**: 8 SP
 
 **Tasks**:
-- [ ] A.1 Chuyển `hyperframes` từ `devDependencies` sang `dependencies`
+- [x] A.1 Chuyển `hyperframes` từ `devDependencies` sang `dependencies`
   - Render là tính năng runtime; hiện nó là devDependency nên bản ship sẽ thiếu binary
   - Pin `HYPERFRAMES_EXPECTED_VERSION = "0.7.86"` làm hằng số có tên
   - _Requirements: R6.1_ — _Design: §4.6_
-- [ ] A.2 Thêm `ErrorCode` mới
+- [x] A.2 Thêm `ErrorCode` mới
   - `project_invalid`, `identity_parse_error`, `composition_parse_error`, `no_composition`, `no_scenes`, `remote_asset_not_local`, `render_binary_missing`, `process_termination_unverified`, `confirmation_required`, `rollback_payload_pruned`
   - _Requirements: R1.2c, R6.12, R6.15_ — _Design: §7.1, §8.1_
-- [ ] A.3 Thêm warning code ổn định (không phải error)
+- [x] A.3 Thêm warning code ổn định (không phải error)
   - `external_dependency_unpinned`, `sub_timeline_readiness_timeout`, `termination_proof_not_exhaustive`, `engine_version_drift`
   - Warning là **giá trị có mã**, MUST NOT là chuỗi tự do — client quyết định hiển thị bằng mã
   - _Requirements: R6.14, R6.15b_ — _Design: §7.1_
-- [ ] A.4 Mở rộng `JobStatus` và `JobDto`
+- [x] A.4 Mở rộng `JobStatus` và `JobDto`
   - `partial` vào union; thêm `warnings: {code,message}[] | null` và `cleanupPending: boolean`
   - `TERMINAL_JOB_STATUSES` = `succeeded | partial | failed | cancelled`
   - `Job extends JobDto` ([`types.ts:356`](../../../../packages/core/src/port/types.ts#L356)) nên hai field mới bắt buộc phải map trong [`toJob`](../../../../packages/adapter/src/db/job-store.ts#L44) — TypeScript sẽ bắt nếu quên, đây là lỗi ồn chứ không câm
   - _Requirements: R7.9b, R6.6b, R6.14_ — _Design: §6.4_
-- [ ] A.5 Thêm hai `PathPurpose`
+- [x] A.5 Thêm hai `PathPurpose`
   - `state-write`, `workspace-agent-kit` vào union ở `port/types.ts` (logic ở Phase C)
   - _Requirements: R4.10, R13.12_ — _Design: §5.19_
-- [ ] A.6 Unit test contract
+- [x] A.6 Unit test contract
   - Zod response chấp nhận `partial`; `warnings` round-trip giữ nguyên **thứ tự**; `TERMINAL_JOB_STATUSES` có đúng 4 phần tử
   - _Requirements: R7.9b_
 
 **Acceptance Criteria**:
-- [ ] `npm run typecheck` xanh sau khi thêm `partial` — mọi `switch` trên `JobStatus` đã xử lý nhánh mới (đây là cách tìm hết call site, không phải grep)
-- [ ] `hyperframes` resolve được từ `dependencies` bằng `require.resolve("hyperframes/package.json")`
+- [x] `npm run typecheck` xanh sau khi thêm `partial` — mọi `switch` trên `JobStatus` đã xử lý nhánh mới (đây là cách tìm hết call site, không phải grep)
+- [x] `hyperframes` resolve được từ `dependencies` bằng `require.resolve("hyperframes/package.json")`
 
 **Deliverables**: `package.json` · `packages/contracts/src/dto.ts` · `packages/core/src/port/types.ts`
 
@@ -181,40 +209,40 @@ tất cả ───────────→ S CI gate + contract matrix + re
 **Read first**: [`schema.ts`](../../../../packages/adapter/src/db/schema.ts) (FULL) · spike [`migration-remediation.ts`](../../../../spikes/phase-3-detailed-design/migration-remediation.ts) (FULL — protocol table-rebuild đã PASS)
 
 **Tasks**:
-- [ ] B.1 `ALTER TABLE revision ADD COLUMN advances_source integer NOT NULL DEFAULT 1 CHECK (advances_source IN (0,1))`
+- [x] B.1 `ALTER TABLE revision ADD COLUMN advances_source integer NOT NULL DEFAULT 1 CHECK (advances_source IN (0,1))`
   - Expand-only. Default `1` đúng nghĩa cho **mọi** hàng lịch sử — chúng đều là ghi nội dung, nên **không backfill**
   - _Requirements: R4.4c_ — _Design: §6.4 `revision`_
-- [ ] B.2 Table-rebuild `job` trong một transaction
+- [x] B.2 Table-rebuild `job` trong một transaction
   - `ck_job_status` mở thêm `partial`; thêm `cleanup_pending integer NOT NULL DEFAULT 0 CHECK IN (0,1)` và `warnings_json text NULL CHECK (json_valid)`
   - Dựng lại **toàn bộ** index/FK/check của bảng cũ — liệt kê tường minh, MUST NOT dựa vào drizzle sinh đủ
   - `job.type` **không** đổi: nó không có check constraint, nên `render`/`snapshot` là zero-migration
   - _Requirements: R7.9b, R6.6b, R6.14_ — _Design: §6.4 `job`, Finding 2_
-- [ ] B.3 `CREATE TABLE workspace_operation` + `workspace_operation_step`
+- [x] B.3 `CREATE TABLE workspace_operation` + `workspace_operation_step`
   - Header: `kind` CHECK `agent_kit_files|project_create|project_rename|project_delete`; `status` CHECK `pending|committed|aborted|recovered|orphaned`; `project_id` nullable **không FK bắt buộc** (delete phải giữ journal sau khi registration bị gỡ)
   - Step: PK `(operation_id, ordinal)` + UNIQUE `(operation_id, path)`; spill policy previous-content **dùng lại** của Phase 2
   - _Requirements: R12.10b, R13.11_ — _Design: §6.4, Decision 4_
-- [ ] B.4 Ba index mới
+- [x] B.4 Ba index mới
   - `idx_revision_source (project_id, advances_source, id DESC)` · `idx_revision_derived_path (project_id, path, id DESC) WHERE advances_source = 0` · `idx_job_cleanup (cleanup_pending) WHERE cleanup_pending = 1`
   - _Requirements: R4.4c, R6.7b_ — _Design: §6.4_
-- [ ] B.5 Rollback helper cho table-rebuild `job`
+- [x] B.5 Rollback helper cho table-rebuild `job`
   - Preflight **từ chối** rollback khi còn hàng `status='partial'`, nêu count. **MUST NOT** map im lặng sang `succeeded`
   - Dùng cùng protocol rename-table của `mcp-migration-rollback.ts`
   - _Requirements: R7.9b_ — _Design: §6.5_
-- [ ] B.6 Cập nhật schema drift snapshot
+- [x] B.6 Cập nhật schema drift snapshot
   - `npm run test:schema-drift` phải xanh; nếu `drizzle-kit` không sinh đúng table-rebuild thì **được phép sửa tay** `migration.sql` (tiền lệ Phase 2)
   - _Requirements: —_ — _Design: §6.5_
 
 **Tasks — Real Datastore Tests**:
-- [ ] B.7 Migration test: hàng `revision` cũ đọc ra `advances_source = 1`; `advances_source = 7` bị CHECK chặn
-- [ ] B.8 Migration test: hàng `job` cũ giữ nguyên byte/nghĩa; `INSERT status='partial'` thành công; `warnings_json` JSON lỗi bị chặn; `cleanup_pending = 2` bị chặn
-- [ ] B.9 Migration test: `job.type='render'` insert được **không** cần DDL enum
-- [ ] B.10 Migration test: `PRAGMA foreign_key_check` rỗng, `integrity_check` OK sau migration
-- [ ] B.11 Rollback test: còn `partial` → preflight từ chối kèm count; hết `partial` → rollback sạch
+- [x] B.7 Migration test: hàng `revision` cũ đọc ra `advances_source = 1`; `advances_source = 7` bị CHECK chặn
+- [x] B.8 Migration test: hàng `job` cũ giữ nguyên byte/nghĩa; `INSERT status='partial'` thành công; `warnings_json` JSON lỗi bị chặn; `cleanup_pending = 2` bị chặn
+- [x] B.9 Migration test: `job.type='render'` insert được **không** cần DDL enum
+- [x] B.10 Migration test: `PRAGMA foreign_key_check` rỗng, `integrity_check` OK sau migration
+- [x] B.11 Rollback test: còn `partial` → preflight từ chối kèm count; hết `partial` → rollback sạch
 
 **Acceptance Criteria**:
-- [ ] Toàn bộ ~180 test Phase 1/2 vẫn xanh sau migration
-- [ ] `foreign_key_check` rỗng; index mới xuất hiện trong `sqlite_master`
-- [ ] **GATE**: không sang phase sau nếu bất kỳ test B.7–B.11 đỏ
+- [x] Toàn bộ ~180 test Phase 1/2 vẫn xanh sau migration
+- [x] `foreign_key_check` rỗng; index mới xuất hiện trong `sqlite_master`
+- [x] **GATE**: không sang phase sau nếu bất kỳ test B.7–B.11 đỏ
 
 **Deliverables**: `packages/adapter/src/db/schema.ts` · migration mới trong `drizzle/` · rollback helper · `tests/adapter/migration-*.test.ts`
 
@@ -231,74 +259,74 @@ tất cả ───────────→ S CI gate + contract matrix + re
 **Read first**: [`node-process-runner.ts`](../../../../packages/adapter/src/runtime/node-process-runner.ts) (FULL) · [`job-scheduler.ts`](../../../../packages/core/src/service/job-scheduler.ts) (FULL) · [spike `platform-supervisor.mjs`](../../../../spikes/phase-3-checklist-gate/platform-supervisor.mjs) (FULL)
 
 **Tasks — Port + adapter**:
-- [ ] F.1 Khai `ProcessSupervisorPort` + `ProcessTerminationProof`
+- [x] F.1 Khai `ProcessSupervisorPort` + `ProcessTerminationProof`
   - `capturedPids`, `capturedGroups`, `survivors`, `sweeps`, `exhaustive`; hằng số có tên `PROCESS_CAPTURE_INTERVAL_MS = 250`, `PROCESS_VERIFY_SWEEP_INTERVAL_MS = 100`, `PROCESS_VERIFY_MAX_SWEEPS = 20`
   - `ProcessPort` cũ **giữ nguyên** cho TTS — MUST NOT đổi contract đang có
   - _Requirements: R6.6b_ — _Design: §5.9_
-- [ ] F.2 Ba primitive theo nền tảng, thuật toán phía trên **không** rẽ nhánh OS
+- [x] F.2 Ba primitive theo nền tảng, thuật toán phía trên **không** rẽ nhánh OS
   - POSIX: `ps -Ao pid=,ppid=,pgid=` · `kill(-pgid)` / `kill(pid)` · `kill(pid,0)` với **`EPERM` = còn sống**
   - Windows: PowerShell CIM → `tasklist` thoái hoá · `taskkill /t /f` **awaited** · `tasklist /fi "PID eq"` so **theo cột PID**
   - `wmic` **MUST NOT** xuất hiện (D10)
   - _Requirements: R6.6b-ii_ — _Design: §5.9, Finding 12_
-- [ ] F.3 Pha capture
+- [x] F.3 Pha capture
   - Poll bao đóng descendant mỗi `PROCESS_CAPTURE_INTERVAL_MS` **trong lúc process chạy**, tích luỹ PID cụ thể + pgid phân biệt
   - Thiếu pha này thì sau khi cha chết không còn cách nào tìm lại đám con — đây là pha hôm nay hoàn toàn không tồn tại
   - _Requirements: R6.6b_ — _Design: §5.9_
-- [ ] F.4 Pha kill + verify
+- [x] F.4 Pha kill + verify
   - Kill mọi group đã ghi, rồi mọi PID đã ghi, rồi root. Verify probe **từng PID đã ghi**, nạp PID mới xuất hiện, dừng ở hai lượt rỗng liên tiếp
   - Survivor sau `MAX_SWEEPS` → `ProcessTerminationUnverifiedError`
   - _Requirements: R6.6b_ — _Design: §5.9_
-- [ ] F.5 Sửa bug đang tồn tại ở `killProcessTree`
+- [x] F.5 Sửa bug đang tồn tại ở `killProcessTree`
   - [`node-process-runner.ts:137`](../../../../packages/adapter/src/runtime/node-process-runner.ts#L137) `kill(-pid)` để sót Chromium; Windows `spawn(taskkill).unref()` không await
   - **Quyết định phải trả lời trong task này**: sửa luôn `ProcessPort` cũ (TTS cũng hưởng) hay chỉ supervisor mới. Comment tại chỗ nói về sidecar VieNeu/Python — đúng cho ca đó; nếu chỉ sửa supervisor thì **MUST** cập nhật comment để không ai đọc nhầm là đã an toàn chung
   - _Requirements: R6.6b_ — _Design: §15, Finding 11_
-- [ ] F.6 Thoái hoá khi không có enumerator cho `ppid`
+- [x] F.6 Thoái hoá khi không có enumerator cho `ppid`
   - Capture chỉ còn root group; proof `exhaustive: false` + warning `termination_proof_not_exhaustive`
   - Luật là **trung thực, không phải zero survivor**: proof MUST NOT báo sạch khi process còn sống
   - _Requirements: R6.6b-i_ — _Design: §5.9_
 
 **Tasks — JobScheduler (§5.20)**:
-- [ ] F.7 Poll cờ cancel bền trong lúc handler chạy
+- [x] F.7 Poll cờ cancel bền trong lúc handler chạy
   - `CANCELLATION_POLL_MS = 250`, gọi `store.isCancellationRequested`, thấy cờ thì `controller.abort()`; clear trong `finally` cùng chỗ `heartbeat`
   - _Requirements: R6.6b_ — _Design: §5.20_
-- [ ] F.8 Phân biệt abort-do-cancel với abort-do-timeout
+- [x] F.8 Phân biệt abort-do-cancel với abort-do-timeout
   - Field `abortReason: "cancel" | "timeout" | null` set **trước** `controller.abort()`; catch đọc field, **MUST NOT** đoán từ loại error — nếu không cancel sẽ rơi vào nhánh retry của timeout
   - _Requirements: R6.6b_ — _Design: §5.20_
-- [ ] F.9 Terminal settle **báo được** thắng hay thua race
+- [x] F.9 Terminal settle **báo được** thắng hay thua race
   - `finish` **đã có** nửa CAS: `WHERE id = ? AND status IN ('queued','running')` ([`job-store.ts:161`](../../../../packages/adapter/src/db/job-store.ts#L161)). **MUST NOT** thêm `expectedStatus` chồng lên nó
   - Cái thiếu: nó trả `void`, nên caller không phân biệt "settle thành công" với "thua race". Đổi thành trả **số hàng bị ảnh hưởng** (hoặc `applied: boolean`); scheduler map `0` → `no_change`
   - Đây là thứ làm luật "không có artifact published + status cancelled" đúng được, không chỉ là ý định
   - _Requirements: R6.6b_ — _Design: §5.9, §5.20_ — _Vá executability #3_
-- [ ] F.10 Mở rộng `JobOutcome` với `partial` — **không** thêm method mới
+- [x] F.10 Mở rộng `JobOutcome` với `partial` — **không** thêm method mới
   - Thêm nhánh `{ status: "partial"; result: unknown }` vào [`JobOutcome`](../../../../packages/core/src/port/types.ts#L377)
   - `JobStorePort.complete()` **không tồn tại** — đừng đi tìm nó; bề mặt thật chỉ có `finish(id, outcome)`
   - _Requirements: R7.9b_ — _Design: §6.4_ — _Vá executability #1_
-- [ ] F.11 Sửa **hai lỗi câm** trong adapter `finish` mà `partial` sẽ kích hoạt
+- [x] F.11 Sửa **hai lỗi câm** trong adapter `finish` mà `partial` sẽ kích hoạt
   - [`job-store.ts:152`](../../../../packages/adapter/src/db/job-store.ts#L152): `result` chỉ serialize khi `succeeded` → outcome `partial` ghi `NULL` và **mất `missingSceneIds`**
   - [`job-store.ts:157`](../../../../packages/adapter/src/db/job-store.ts#L157): `progress` chỉ set `1` khi `succeeded` → `partial` giữ progress cũ, trái luật `partial ⇒ progress = 1`
   - Cả hai **không throw**. Test phải khẳng định **giá trị đã ghi**, không chỉ khẳng định "không lỗi"
   - _Requirements: R7.9b_ — _Design: §6.4_ — _Vá executability #2_
-- [ ] F.12 `recoverStale` biết `partial`
+- [x] F.12 `recoverStale` biết `partial`
   - Coi `partial` là terminal (không requeue, không finalize lại); set `cleanup_pending` khi job treo còn render root chưa release
   - _Requirements: R7.9b, R6.7b_ — _Design: §5.20_
-- [ ] F.13 Đăng ký hai job type mới ở `packages/worker/src/index.ts`
+- [x] F.13 Đăng ký hai job type mới ở `packages/worker/src/index.ts`
   - Package **đã tồn tại** và đã đăng ký `tts-job`; `render`/`snapshot` thêm vào cùng chỗ. `job.type` không có check constraint nên đây là zero-migration
   - _Requirements: R6.1, R7.1_ — _Vá executability #5_
 
 **Tasks — Process Tests** (adapter thật, không mock):
-- [ ] F.14 Port `s1e` thành test vitest: fixture tự tách group, naive leak vs ba pha không leak
-- [ ] F.15 Test: sweep cạn còn survivor → `process_termination_unverified`, **không** ghi `cancelled`
-- [ ] F.16 Test: sweep rỗng nhưng `exhaustive:false` → `cancelled` **kèm** warning `termination_proof_not_exhaustive`
-- [ ] F.17 Test: sweep theo quan hệ cha-con **bị chứng minh là báo sai** — assert nó trả rỗng trong lúc PID probe còn thấy sống
-- [ ] F.18 Test: abort do cancel không đi vào nhánh retry của timeout
-- [ ] F.19 Test: race cancel/complete ở barrier trước publish — cancel thắng → không artifact; terminal đã settle → cancel `no_change`
-- [ ] F.20 Test: `finish` với outcome `partial` ghi **đúng** `result` JSON và `progress = 1` (chốt F.11 — hai lỗi câm)
-- [ ] F.21 Test skip **có thông báo** khi Chromium/FFmpeg vắng mặt, MUST NOT pass im lặng
+- [x] F.14 Port `s1e` thành test vitest: fixture tự tách group, naive leak vs ba pha không leak
+- [x] F.15 Test: sweep cạn còn survivor → `process_termination_unverified`, **không** ghi `cancelled`
+- [x] F.16 Test: sweep rỗng nhưng `exhaustive:false` → `cancelled` **kèm** warning `termination_proof_not_exhaustive`
+- [x] F.17 Test: sweep theo quan hệ cha-con **bị chứng minh là báo sai** — assert nó trả rỗng trong lúc PID probe còn thấy sống
+- [x] F.18 Test: abort do cancel không đi vào nhánh retry của timeout
+- [x] F.19 Test: race cancel/complete ở barrier trước publish — cancel thắng → không artifact; terminal đã settle → cancel `no_change`
+- [x] F.20 Test: `finish` với outcome `partial` ghi **đúng** `result` JSON và `progress = 1` (chốt F.11 — hai lỗi câm)
+- [x] F.21 Test skip **có thông báo** khi Chromium/FFmpeg vắng mặt, MUST NOT pass im lặng
 
 **Acceptance Criteria**:
-- [ ] `npm run spike:process-supervision` xanh trên máy dev
-- [ ] Không test nào suy survivor từ ppid hoặc từ thành viên process group (R6.6b-ii)
-- [ ] **GATE**: F.14–F.20 xanh trước khi bắt đầu I/J
+- [x] `npm run spike:process-supervision` xanh trên máy dev
+- [x] Không test nào suy survivor từ ppid hoặc từ thành viên process group (R6.6b-ii)
+- [x] **GATE**: F.14–F.20 xanh trước khi bắt đầu I/J
 
 **Deliverables**: `packages/core/src/port/process-port.ts` · `packages/adapter/src/runtime/process-supervisor.ts` + primitive theo OS · `packages/core/src/service/job-scheduler.ts` · `tests/adapter/process-supervisor.test.ts`
 
@@ -313,40 +341,40 @@ tất cả ───────────→ S CI gate + contract matrix + re
 **Read first**: [`path-policy.ts`](../../../../packages/core/src/domain/path-policy.ts) (FULL — đặc biệt `isGloballyBlocked`) · [`workspace-resolver.ts`](../../../../packages/core/src/domain/workspace-resolver.ts) (FULL)
 
 **Tasks**:
-- [ ] C.1 Viết lại `resolveWorkspace` theo bảng quyết định 8 dòng
+- [x] C.1 Viết lại `resolveWorkspace` theo bảng quyết định 8 dòng
   - `WorkspaceSource = explicit | cwd-project | cwd-solo | active | cwd`; `readable` thay `valid`; `hasIdentityFile` xét **sự có mặt**, MUST NOT xét tính hợp lệ
   - Hàm thuần, không I/O — composition root nạp candidate
   - **Call site thật nằm ở [`packages/cli/src/workspace-selection.ts`](../../../../packages/cli/src/workspace-selection.ts)**, và `active_workspace` lưu qua `AppSettingsStore`, không phải file riêng. Sửa domain mà quên file này thì logic mới không có ai gọi
   - _Requirements: R1.2e, R1.10_ — _Design: §5.1, §4.3.1_ — _Vá executability_
-- [ ] C.2 `PlatformPresetCatalog`
+- [x] C.2 `PlatformPresetCatalog`
   - `PLATFORM_PRESETS`, `assertCatalogEncodable()` (từ chối lúc khởi động nếu preset có kích thước lẻ), `inferPreset`, `validateCustom` (chẵn, 128…7680, fps 1…120)
   - _Requirements: R2.4b–4d, R2.7, R3.4_ — _Design: §5.4_
-- [ ] C.3 `pathPolicy` — hai purpose mới với **exception hẹp tường minh**
+- [x] C.3 `pathPolicy` — hai purpose mới với **exception hẹp tường minh**
   - `isGloballyBlocked` chặn **mọi** segment `startsWith(".")`, nên `state-write` và `workspace-agent-kit` phải có cửa hẹp theo đúng pattern exception của `system-write`
   - `state-write`: chỉ `.vidcom/` + các nhánh §5.6 sở hữu · `workspace-agent-kit`: đúng tập literal `AGENTS.md`, `CLAUDE.md`, `AGENTS.vidcom.md`, `CLAUDE.vidcom.md`, `.agents/skills/`, `.claude/skills/`
   - `.env*` chặn ở **cả hai** purpose mới; `node_modules`/`.git`/`.hyperframes` chặn nguyên
   - _Requirements: R4.10, R4.11, R13.12, R13.13_ — _Design: §5.19_
-- [ ] C.4 `planRipple` + `detectTrackGapsAndOverlaps` — **mở rộng [`domain/invariants.ts`](../../../../packages/core/src/domain/invariants.ts)**, không tạo file mới
+- [x] C.4 `planRipple` + `detectTrackGapsAndOverlaps` — **mở rộng [`domain/invariants.ts`](../../../../packages/core/src/domain/invariants.ts)**, không tạo file mới
   - `validateSceneTiming` đã tồn tại ở đó và `SceneTimingInput` **đã mang `trackIndex` + `rootDuration`**. Tạo `domain/scene-timing.ts` song song = hai nhà cho cùng một invariant, đúng thứ spec này đang loại bỏ
   - Chỉ dịch scene **trong cùng track**; `rootDuration` là `max` trên **mọi** track; hở/chồng chỉ tính trong cùng track, chồng giữa track là **hợp lệ**
   - _Requirements: R10.1–3, R10.2b, R10.7_ — _Design: §5.14, Decision 9_ — _Vá executability #9_
-- [ ] C.5 `NarrationCueService.readCues` + `buildNarrationClips`
+- [x] C.5 `NarrationCueService.readCues` + `buildNarrationClips`
   - Sidecar một-cue cũ đọc thành **đúng một** cue, MUST NOT ghi đè
   - _Requirements: R11.2, R11.3_ — _Design: §5.15_
-- [ ] C.6 `scanRemoteMedia` + `scanExternalDependencies` (static)
+- [x] C.6 `scanRemoteMedia` + `scanExternalDependencies` (static)
   - Quét CSS `url(...)`, local stylesheet, element attribute. Script/stylesheet/font: **không** chặn, chỉ warning + `reproducible:false`
   - _Requirements: R6.15, R6.15b_ — _Design: §5.10_
 
 **Tasks — Logic Tests**:
-- [ ] C.7 Unit test bảng 8 dòng của `resolveWorkspace`, gồm `cwd` có `vidcom.json` **lỗi** → vẫn chọn cwd, **không** rơi xuống active
-- [ ] C.8 Unit test `validateCustom` bounds · `inferPreset` không khớp → `custom` · `assertCatalogEncodable`
-- [ ] C.9 Unit test path: `.vidcom/state.json` qua `state-write` **được**, qua `write-source` **bị chặn**; `.env` chặn ở cả hai purpose mới; `workspace-agent-kit` không resolve được vào trong một project
-- [ ] C.10 Unit test `planRipple` trên project **nhiều track**: track khác **không** dịch; chồng giữa track **không** là lỗi
-- [ ] C.11 Unit test `scanRemoteMedia` bắt được asset trong **CSS `url(...)`**, không chỉ attribute
+- [x] C.7 Unit test bảng 8 dòng của `resolveWorkspace`, gồm `cwd` có `vidcom.json` **lỗi** → vẫn chọn cwd, **không** rơi xuống active
+- [x] C.8 Unit test `validateCustom` bounds · `inferPreset` không khớp → `custom` · `assertCatalogEncodable`
+- [x] C.9 Unit test path: `.vidcom/state.json` qua `state-write` **được**, qua `write-source` **bị chặn**; `.env` chặn ở cả hai purpose mới; `workspace-agent-kit` không resolve được vào trong một project
+- [x] C.10 Unit test `planRipple` trên project **nhiều track**: track khác **không** dịch; chồng giữa track **không** là lỗi
+- [x] C.11 Unit test `scanRemoteMedia` bắt được asset trong **CSS `url(...)`**, không chỉ attribute
 
 **Acceptance Criteria**:
-- [ ] Không file nào trong `packages/core/` import `node:fs` — luật do **ESLint flat config** áp lên `packages/core/**` và bắt lúc `npm run lint`. `npm run test:boundaries` chỉ chứng minh **luật còn hiệu lực** (nó lint fixture), MUST NOT nhầm nó là phép kiểm file mới của bạn
-- [ ] Test multi-track có thật — luật per-track chỉ tồn tại trong tài liệu nếu fixture chỉ có một track
+- [x] Không file nào trong `packages/core/` import `node:fs` — luật do **ESLint flat config** áp lên `packages/core/**` và bắt lúc `npm run lint`. `npm run test:boundaries` chỉ chứng minh **luật còn hiệu lực** (nó lint fixture), MUST NOT nhầm nó là phép kiểm file mới của bạn
+- [x] Test multi-track có thật — luật per-track chỉ tồn tại trong tài liệu nếu fixture chỉ có một track
 
 **Deliverables**: `packages/core/src/domain/workspace-resolver.ts` · `packages/core/src/domain/platform-preset.ts` · `packages/core/src/domain/path-policy.ts` · `packages/core/src/domain/invariants.ts` (mở rộng) · `packages/core/src/usecase/narration-cues.ts` · `packages/core/src/service/remote-asset-scan.ts`
 
@@ -361,37 +389,37 @@ tất cả ───────────→ S CI gate + contract matrix + re
 **Read first**: [`write-authority.ts`](../../../../packages/core/src/service/write-authority.ts) (FULL) · [`journal.ts`](../../../../packages/adapter/src/db/journal.ts) (search `preparePrevious`, `LARGE_PREVIOUS_CONTENT_THRESHOLD`)
 
 **Tasks**:
-- [ ] D.1 Tách thành hai method, bỏ `purpose` do caller truyền
+- [x] D.1 Tách thành hai method, bỏ `purpose` do caller truyền
   - `mutateSource(SourceMutationRequest)` luôn `advances_source=1`; `mutateDerived(DerivedMutationRequest)` luôn `0`
   - **Breaking change bắt buộc**: `MutationRequest.purpose?: "write-source" | "system-write"` hiện cho caller tự chọn — thêm `state-write` vào đó sẽ mở đúng cái lỗ Decision 3 đang bịt
   - _Requirements: R4.4c_ — _Design: §5.18_
-- [ ] D.2 Bảng suy purpose từ `(method, path)` — allowlist compile-time
-  - 5 dòng: `mutateSource`+identity/preview/narration → `system-write` · `mutateSource`+còn lại → `write-source` · `mutateDerived`+`.vidcom/**` → `state-write` · `mutateDerived`+`snapshots|renders/**` → `write-asset` · `mutateWorkspace`+literal → `workspace-agent-kit`
+- [x] D.2 Bảng suy purpose từ `(method, path)` — allowlist compile-time
+  - 6 dòng: `mutateSource`+identity/preview/narration JSON → `system-write` · `mutateSource`+authored asset → `write-asset` · `mutateSource`+còn lại nhưng loại `.vidcom|snapshots|renders/**` → `write-source` · `mutateDerived`+`.vidcom/**` → `state-write` · `mutateDerived`+`snapshots|renders/**` → `write-asset` · `mutateWorkspace`+literal → `workspace-agent-kit`
   - Path không khớp dòng nào của method đang gọi → `not_allowed_for_purpose`, **MUST NOT** fallback sang method khác
   - _Requirements: R4.4c_ — _Design: §5.18_
-- [ ] D.3 `mutateDerived` composite nhiều file
+- [x] D.3 `mutateDerived` composite nhiều file
   - Snapshot publish N ảnh + contact sheet + `state.json` như **một** composite; dùng lại `StagedAssetPort` đã có cho artifact nhị phân
   - _Requirements: R7.4_ — _Design: §5.18, §5.11_
-- [ ] D.4 `latestSourceRevision(projectId)` trên `MutationJournalPort`
+- [x] D.4 `latestSourceRevision(projectId)` trên `MutationJournalPort`
   - `id` lớn nhất với `advances_source = 1`, dùng `idx_revision_source`
   - _Requirements: R4.4c_ — _Design: §6.4_
-- [ ] D.5 Prune K generation cho derived rollback payload
+- [x] D.5 Prune K generation cho derived rollback payload
   - `DERIVED_ROLLBACK_GENERATIONS = 3` hằng số có tên; giữ K bản gần nhất theo `(project_id, path)` với `advances_source=0`
-  - Xoá payload (`revision_blob` row + object trong `PreviousContentStore`) nhưng **giữ revision row** — `computedAtSourceRevision` và audit phải sống lâu hơn payload
-  - Chạy **trong cùng transaction với publish**, MUST NOT là job nền
-  - Rollback vượt K trả `rollback_payload_pruned`, MUST NOT im lặng thành công
+  - Trong transaction commit: detach payload ở `revision_step`, xoá `revision_blob` tương ứng, nhưng **giữ revision + step metadata** — `computedAtSourceRevision` và audit phải sống lâu hơn payload
+  - Sau commit: GC object `PreviousContentStore` chỉ khi không còn reference; crash trước GC để lại object vô chủ an toàn và startup retry, MUST NOT xoá object trước DB commit
+  - `readRevisionRollbackPayload(revisionId,path)` vượt K trả `rollback_payload_pruned`, MUST NOT diễn giải `NULL` thành file trước đó không tồn tại
   - _Requirements: R4.4_ — _Design: §6.1, Decision 14_
 
 **Tasks — Real Datastore Tests** (test quan trọng nhất của spec):
-- [ ] D.6 Ghi `state.json` · `context/**` · `snapshots/**` · `renders/**` — **cả bốn** MUST NOT làm `latestSourceRevision` tiến
-- [ ] D.7 Một job render chạy xong MUST NOT làm snapshot bị nhãn stale
-- [ ] D.8 `mutateDerived` với path `index.html` → `not_allowed_for_purpose`, **không** fallback sang `mutateSource`
-- [ ] D.9 Publish lần K+1 xoá payload cũ nhất nhưng **giữ** revision row; rollback vượt K trả `rollback_payload_pruned`
-- [ ] D.10 `latestSourceRevision` dùng `idx_revision_source` (assert query plan, không chỉ kết quả)
+- [x] D.6 Ghi `state.json` · `context/**` · `snapshots/**` · `renders/**` — **cả bốn** MUST NOT làm `latestSourceRevision` tiến
+- [x] D.7 Batch render-completion thật qua `mutateDerived` trên SQLite + fs MUST NOT làm snapshot bị nhãn stale; Phase I kiểm lại qua `RenderJobRunner` thật (không stub runner sớm ở Gate D)
+- [x] D.8 `mutateDerived` với path `index.html` → `not_allowed_for_purpose`, **không** fallback sang `mutateSource`
+- [x] D.9 Publish lần K+1 xoá payload cũ nhất nhưng **giữ** revision row; rollback vượt K trả `rollback_payload_pruned`
+- [x] D.10 `latestSourceRevision` dùng `idx_revision_source` (assert query plan, không chỉ kết quả)
 
 **Acceptance Criteria**:
-- [ ] Không caller nào truyền được cờ `advancesSource` hay `purpose` — kiểm bằng type, không bằng review
-- [ ] **GATE**: D.6–D.9 xanh trước Phase E/I/J
+- [x] Không caller nào truyền được cờ `advancesSource` hay `purpose` — kiểm bằng type, không bằng review
+- [x] **GATE**: D.6–D.9 xanh trước Phase E/I/J
 
 **Deliverables**: `packages/core/src/service/write-authority.ts` · `packages/adapter/src/db/journal.ts` · `tests/core/source-revision.test.ts`
 
@@ -405,37 +433,38 @@ tất cả ───────────→ S CI gate + contract matrix + re
 **Estimate**: 21 SP
 
 **Tasks**:
-- [ ] E.1 `WorkspaceOperationJournalPort` + adapter
+- [x] E.1 `WorkspaceOperationJournalPort` + adapter
   - Header/step theo B.3; protocol capture → publish → settle giống composite project nhưng **không** revision/backup
   - _Requirements: R13.11_ — _Design: Decision 4_
-- [ ] E.2 `WriteAuthority.mutateWorkspace` (facade public)
+- [x] E.2 `WriteAuthority.mutateWorkspace` (facade public)
   - **MUST NOT phát `DomainEvent`**: `DomainEvent.projectId` không nullable và `ck_event_type` khoá đúng 4 loại — scope workspace không có `projectId` để bịa. Chỉ ghi `audit_entry` với `project_id = NULL` (_Vá executability #8_)
   - Coordinator là dependency **nội bộ sau facade**; MUST NOT inject thẳng vào installer/route/MCP
   - HTTP/MCP schema **không** nhận `workspaceRoot` — composition root inject root đã resolve
   - `writes[].content` là `string | Uint8Array` để khớp `MutationRequest`
+  - `WorkspacePort.resolveWorkspace(...)` là capability nội bộ duy nhất cho base root workspace; adapter từ chối root khác root đã inject (_Vá executability Design bản 12_)
   - _Requirements: R13.11_ — _Design: §5.18_
-- [ ] E.3 `ProjectDirectoryPort` + `FsProjectDirectoryAdapter`
+- [x] E.3 `ProjectDirectoryPort` + `FsProjectDirectoryAdapter`
   - `stageCreate` / `publishCreate` / `rename` / `quarantine` / `restoreQuarantine` / `removeOwned`
   - Core MUST NOT import `node:fs` chỉ vì class có chữ "Manager"
   - _Requirements: R5.1, R5.10_ — _Design: §5.7_
-- [ ] E.4 Serialize target collision
+- [x] E.4 Serialize target collision
   - Mutex dưới lease single-writer + query join pending/orphaned step theo target path trong transaction begin; trùng target → `write_conflict`
   - SQLite **không** tạo được partial index cross-table theo status của bảng header — MUST NOT giả có index đó
   - _Requirements: R12.10b_ — _Design: §6.4_
-- [ ] E.5 Recovery một operation terminal hoá **cả batch**
+- [x] E.5 Recovery một operation terminal hoá **cả batch**
   - Step publish fail → restore theo ordinal **giảm dần**; rollback fail → `orphaned`, chặn mutation trùng target
   - MUST NOT settle từng file thành các operation độc lập
   - _Requirements: R12.10b_ — _Design: Decision 4, Finding 10_
 
 **Tasks — Real Datastore Tests**:
-- [ ] E.6 Agent-kit fail ở step N → restore N−1 step và terminal hoá **một** workspace operation
-- [ ] E.7 Hai operation đồng thời đụng cùng path → đúng một bắt đầu, cái kia `write_conflict` (test `Promise.all`)
-- [ ] E.8 `mutateWorkspace` MUST NOT insert vào `revision`
-- [ ] E.9 Crash ở từng boundary staging→rename→DB settle không để lại folder nửa vời
+- [x] E.6 Agent-kit fail ở step N → restore N−1 step và terminal hoá **một** workspace operation
+- [x] E.7 Hai operation đồng thời đụng cùng path → đúng một bắt đầu, cái kia `write_conflict` (test `Promise.all`)
+- [x] E.8 `mutateWorkspace` MUST NOT insert vào `revision`
+- [x] E.9 Adapter + operation journal crash ở từng boundary staging→rename→DB settle không để lại folder nửa vời; Phase L.6 lặp end-to-end qua `ProjectLifecycle`, MUST NOT viết usecase L sớm
 
 **Acceptance Criteria**:
-- [ ] `mutation_journal`, `mutation_step`, `revision_step`, `revision_blob` **không đổi cấu trúc**
-- [ ] **GATE**: E.6–E.9 xanh trước Phase L/Q
+- [x] `mutation_journal`, `mutation_step`, `revision_step`, `revision_blob` **không đổi cấu trúc**
+- [x] **GATE**: E.6–E.9 xanh trước Phase L/Q
 
 **Deliverables**: `packages/core/src/service/workspace-mutation-coordinator.ts` · `packages/core/src/port/ports.ts` (thêm 2 port) · `packages/adapter/src/fs/project-directory.ts`
 
@@ -448,22 +477,23 @@ tất cả ───────────→ S CI gate + contract matrix + re
 **Estimate**: 10 SP
 
 **Tasks**:
-- [ ] G.1 `RenderRootPort.acquire/release` + `FsRenderRootAdapter`
+- [x] G.1 `RenderRootPort.acquire/release` + `FsRenderRootAdapter`
   - `mkdir <stagingRoot>/<jobId>/` + marker `.vidcom-render-owner` `{jobId, createdAt}`; `environment` trả `TEMP`/`TMP`/`HYPERFRAMES_FFMPEG_PATH`/`HYPERFRAMES_FFPROBE_PATH`
   - _Requirements: R6.7b_ — _Design: §5.9, Finding 3_
-- [ ] G.2 `reclaimOrphans` — **bốn** điều kiện đồng thời
+- [x] G.2 `reclaimOrphans` — **bốn** điều kiện đồng thời
   - dưới staging root · marker + `jobId` hợp lệ · quá `RENDER_WORKDIR_ORPHAN_GRACE_SECONDS = 3600` · job không chạy
   - **MUST NOT** quét `TEMP` chung — xoá theo pattern tên có thể xoá workdir của `hyperframes` do người dùng tự chạy
-  - Trả **số đã xoá + lỗi**; thất bại im lặng ở đường dọn rác là cách leak quay lại mà không ai biết
+  - Trả **số đã xoá + `reclaimedJobIds` + lỗi**; startup clear `cleanupPending` theo ID sau remove thành công; thất bại im lặng ở đường dọn rác là cách leak quay lại mà không ai biết
+  - Vá executability §5.9 bản 15: startup đối chiếu thêm `listCleanupPendingIds()` với `inspect(jobId)`; chỉ root exact `absent` mới clear cờ sau crash remove→clear, `unowned` giữ cờ + warning và MUST NOT bị xoá
   - _Requirements: R6.7b_ — _Design: Decision 7_
-- [ ] G.3 Recovery lúc khởi động chạy **hai việc độc lập**
+- [x] G.3 Recovery lúc khởi động chạy **hai việc độc lập**
   - `recoverStale` (đã có) và `reclaimOrphans` (mới). Cái thứ hai không phụ thuộc cái thứ nhất — một root có thể mồ côi trong khi job của nó đã kết thúc sạch, nếu `release` từng thất bại
   - _Requirements: R6.7b_ — _Design: §4.4.2_
 
 **Tasks — Tests**:
-- [ ] G.4 Integration: `release` lỗi → `cleanupPending: true`, recovery thu hồi sau
-- [ ] G.5 Integration: root thiếu **bất kỳ** một trong bốn điều kiện → **không** bị xoá (4 test, mỗi điều kiện một ca)
-- [ ] G.6 Test khoá giá trị `RENDER_WORKDIR_ORPHAN_GRACE_SECONDS = 3600`
+- [x] G.4 Integration: `release` lỗi → `cleanupPending: true`, recovery thu hồi sau
+- [x] G.5 Integration: root thiếu **bất kỳ** một trong bốn điều kiện → **không** bị xoá (4 test, mỗi điều kiện một ca)
+- [x] G.6 Test khoá giá trị `RENDER_WORKDIR_ORPHAN_GRACE_SECONDS = 3600`
 
 **Deliverables**: `packages/core/src/port/ports.ts` (thêm `RenderRootPort`) · `packages/adapter/src/fs/render-root.ts`
 
@@ -477,29 +507,30 @@ tất cả ───────────→ S CI gate + contract matrix + re
 **Read first**: spike [`runtime-media-csp-guard.mjs`](../../../../spikes/phase-3-detailed-design/runtime-media-csp-guard.mjs) · [`runtime-external-observer.mjs`](../../../../spikes/phase-3-detailed-design/runtime-external-observer.mjs)
 
 **Tasks**:
-- [ ] H.1 Inject CSP làm phần tử **đầu tiên** của `<head>`
+- [x] H.1 Inject CSP làm phần tử **đầu tiên** của `<head>`
   - `img-src 'self' data: blob:` + `media-src 'self' data: blob:`, trước **mọi** node tác giả có thể chạy
   - _Requirements: R6.15_ — _Design: §5.10_
-- [ ] H.2 Listener `securitypolicyviolation` → callback loopback nonce-bound
+- [x] H.2 Listener `securitypolicyviolation` → callback loopback nonce-bound
   - Chỉ bind loopback; token ngẫu nhiên theo job, **không log**; payload phải khớp job đang chạy; server đóng trong `finally`
   - Token **không** one-shot — một render có thể có nhiều report; chống replay bằng lifecycle ngắn + dedupe
   - _Requirements: R6.15_ — _Design: §5.10, Decision 11_
-- [ ] H.3 `PerformanceObserver` cho external dependency
+- [x] H.3 `PerformanceObserver` cho external dependency
   - `{type:"resource", buffered:true}`, chỉ nhận initiator `script|link|css|font`, **loại chính callback URL**, dedupe theo `(initiatorType,url)`, cap 100 entry/job
   - Probe đầu tiên đã tự tạo vòng lặp feedback — các điều kiện này là safety contract, không phải tối ưu
   - _Requirements: R6.15b_ — _Design: §5.10_
-- [ ] H.4 Guard đóng **trước publish**
+- [x] H.4 Guard đóng **trước publish**
   - Violation → bỏ staging artifact + fail `remote_asset_not_local`. Artifact của HyperFrames luôn là staging cho tới khi callback đóng và report media rỗng
   - _Requirements: R6.15_ — _Design: §4.3.2_
 
 **Tasks — Tests**:
-- [ ] H.5 Integration: `new Image()` tạo bằng JS lúc runtime bị chặn; asset server nhận **0 byte** request
-- [ ] H.6 Integration: script external tạo động được observer ghi **đúng một lần**; callback URL **không** tự xuất hiện; >100 entry bị cap
-- [ ] H.7 Golden: document injection (CSP + bootstrap) — contract cần chạy lại khi bump HyperFrames
+- [x] H.5 Integration: `new Image()` tạo bằng JS lúc runtime bị chặn; asset server nhận **0 byte** request
+- [x] H.6 Integration: script external tạo động được observer ghi **đúng một lần**; callback URL **không** tự xuất hiện; >100 entry bị cap
+- [x] H.7 Golden: document injection (CSP + bootstrap) — contract cần chạy lại khi bump HyperFrames
 
 **Acceptance Criteria**:
-- [ ] Tài liệu và code **không** phát biểu "chặn mọi remote media" — câu đúng là "chặn remote media **do document khai**". Lỗ `blob:` + `connect-src` là D8/Giai đoạn 4
-- [ ] `externalDependencies` tới client **kể cả khi render thành công**
+- [x] Tài liệu và code **không** phát biểu "chặn mọi remote media" — câu đúng là "chặn remote media **do document khai**". Lỗ `blob:` + `connect-src` là D8/Giai đoạn 4
+- [x] `externalDependencies` tới client **kể cả khi render thành công**
+  - I.4/I.5 đã nối ordered runtime list vào sidecar, job result và warning metadata; render Chromium/FFmpeg thật chứng minh dependency GSAP CDN tới client dù job `succeeded`.
 
 **Deliverables**: `packages/core/src/service/remote-asset-guard.ts` · `packages/adapter/src/hyperframes/document.ts` (injection) · `packages/adapter/src/runtime/guard-callback-server.ts`
 
@@ -512,30 +543,31 @@ tất cả ───────────→ S CI gate + contract matrix + re
 **Estimate**: 16 SP
 
 **Tasks**:
-- [ ] I.1 `BinaryProbe` — **bốn** binary
+- [x] I.1 `BinaryProbe` — **bốn** binary
   - `hyperframes` (resolve qua `require.resolve` + `process.execPath`, **không** qua PATH), Chromium, FFmpeg, FFprobe
   - `render_binary_missing` mang `details.missing: string[]` — nêu **từng** binary, MUST NOT gộp thành "render failed"
   - Version lệch minor+ → warning `engine_version_drift`
   - _Requirements: R6.12_ — _Design: §4.6, §8.2_
-- [ ] I.2 `createRenderJobHandler`
+- [x] I.2 `createRenderJobHandler`
   - `maxAttempts: 1` + `idempotent: false` (output không byte-deterministic nên retry sinh artifact thứ hai cho một yêu cầu)
   - Không hai render cùng project song song — dùng `nextQueued(types, excluded)` **đã có**
   - _Requirements: R6.8, R6.11_ — _Design: §5.8_
-- [ ] I.3 Gate trạng thái trước enqueue
+- [x] I.3 Gate trạng thái trước enqueue
   - `empty` → `no_composition` · 0 scene → `no_scenes` · `invalid` → `project_invalid`
   - _Requirements: R6.2b, R6.2c_ — _Design: §4.3.2_
-- [ ] I.4 `bestEffort` mặc định `true`
+- [x] I.4 `bestEffort` mặc định `true`
   - Warning vào **job metadata VÀ tới client**, không chỉ stdout; `bestEffort: false` fail bằng **mã ổn định**, không phải message
   - _Requirements: R6.14_ — _Design: Decision 8_
-- [ ] I.5 Publish qua `mutateDerived`
+- [x] I.5 Publish qua `mutateDerived`
   - `renders/<name>.mp4` + sidecar; **KHÔNG** làm `sourceRevision` tiến
+  - Vá executability §5.8 bản 16: `RenderProjectPort` clone an toàn vào render root, bỏ symlink + `.vidcom|renders|snapshots`, thay entry bằng document guard và runtime local; runner đọc output qua port rồi publish trực tiếp, MUST NOT gọi `ProjectStateStore` Phase K sớm
   - _Requirements: R4.4_ — _Design: §4.3.2_
 
 **Tasks — Tests**:
-- [ ] I.6 Integration: `authored` + 0 scene → render **từ chối** (đối chiếu J.6 và M.5 — ba đường khác nhau có chủ đích)
-- [ ] I.7 Integration: thiếu từng binary → `details.missing` nêu đúng tên
-- [ ] I.8 Integration: crash render → artifact **không** công bố **và** render root nhận diện được là orphan theo 4 điều kiện
-- [ ] I.9 Integration: cancel render → descendant = 0 **trước khi** status thành `cancelled`
+- [x] I.6 Integration: `authored` + 0 scene → render **từ chối** (đối chiếu J.6 và M.5 — ba đường khác nhau có chủ đích)
+- [x] I.7 Integration: thiếu từng binary → `details.missing` nêu đúng tên
+- [x] I.8 Integration: crash render → artifact **không** công bố **và** render root nhận diện được là orphan theo 4 điều kiện
+- [x] I.9 Integration: cancel render → descendant = 0 **trước khi** status thành `cancelled`
 
 **Deliverables**: `packages/worker/src/render-job.ts`
 
@@ -549,30 +581,30 @@ tất cả ───────────→ S CI gate + contract matrix + re
 **Read first**: spike [`s3b-at-failure-modes.mjs`](../../../../spikes/phase-3-checklist-gate/s3b-at-failure-modes.mjs) — ba lỗ của CLI
 
 **Tasks**:
-- [ ] J.1 Một invocation cho cả tập scene
+- [x] J.1 Một invocation cho cả tập scene
   - `hyperframes snapshot --at <m1>,<m2>,…,<mN> --no-end --describe false --output <staging>` qua cùng `ProcessSupervisorPort`
   - Chỉ nhận PNG; bỏ `contact-sheet.jpg` CLI tự sinh
   - _Requirements: R7.4_ — _Design: Decision 13_
-- [ ] J.2 Map output → scene **theo timestamp**, không theo ordinal
+- [x] J.2 Map output → scene **theo timestamp**, không theo ordinal
   - Parse token `-at-<t>s` trong tên file, so **theo số** (`1.0`→`1s`, `1.5`→`1.5s`, `-5.0`→`at--5s`)
   - Lý do: timestamp không parse được bị CLI **bỏ im lặng**, làm ordinal dịch — `01` sẽ trỏ vào midpoint thứ ba
   - _Requirements: R7.9_ — _Design: §5.11_
-- [ ] J.3 Hai tiền điều kiện VidCom **phải tự làm**
+- [x] J.3 Hai tiền điều kiện VidCom **phải tự làm**
   - Validate `0 <= t <= rootDuration`: CLI trả **frame** cho `999` và `-5`, không trả lỗi
   - Dedupe midpoint trước khi gửi, rồi fan-out kết quả cho mọi scene chia sẻ midpoint
   - _Requirements: R7.9_ — _Design: §5.11_
-- [ ] J.4 Terminal `partial` + `partialAtSourceRevision`
+- [x] J.4 Terminal `partial` + `partialAtSourceRevision`
   - `computedAtSourceRevision` **null** khi partial; contact sheet **chỉ** khi complete
   - Phạm vi sinh lại theo bảng R7.9c: so `sourceRevision` với `partialAtSourceRevision`, tính lại danh sách scene trước
   - _Requirements: R7.9b, R7.9c_ — _Design: §5.11, §6.3_
-- [ ] J.5 Ghép contact sheet deterministic **sau khi** mọi scene của generation hiện tại đủ, publish như một derived composite
+- [x] J.5 Ghép contact sheet deterministic **sau khi** mọi scene của generation hiện tại đủ, publish như một derived composite
 
 **Tasks — Tests**:
-- [ ] J.6 Integration: `authored` + 0 scene → snapshot **thành công rỗng**
-- [ ] J.7 Integration: partial → retry **cùng** revision (chỉ scene thiếu) **và** retry **khác** revision (toàn bộ) — đường (b) là chỗ sai im lặng
-- [ ] J.8 Integration: một midpoint bị CLI bỏ **không** làm scene sau bị gán nhầm ảnh
-- [ ] J.9 Integration: midpoint quá `rootDuration` hoặc âm bị **VidCom** từ chối trước khi spawn
-- [ ] J.10 Golden: mapping ordinal↔timestamp — chạy lại khi bump HyperFrames
+- [x] J.6 Integration: `authored` + 0 scene → snapshot **thành công rỗng**
+- [x] J.7 Integration: partial → retry **cùng** revision (chỉ scene thiếu) **và** retry **khác** revision (toàn bộ) — đường (b) là chỗ sai im lặng
+- [x] J.8 Integration: một midpoint bị CLI bỏ **không** làm scene sau bị gán nhầm ảnh
+- [x] J.9 Integration: midpoint quá `rootDuration` hoặc âm bị **VidCom** từ chối trước khi spawn
+- [x] J.10 Golden: mapping ordinal↔timestamp — chạy lại khi bump HyperFrames
 
 **Deliverables**: `packages/worker/src/snapshot-job.ts`
 
@@ -585,47 +617,47 @@ tất cả ───────────→ S CI gate + contract matrix + re
 **Estimate**: 21 SP
 
 **Tasks**:
-- [ ] K.1 `scanWorkspace` — quét **một cấp**
+- [x] K.1 `scanWorkspace` — quét **một cấp**
   - Bỏ qua `node_modules`, `.git`, `.hyperframes`, mọi dir bắt đầu bằng `.`
   - Phân loại: `authored` / `empty` / `invalid(identity)` / `invalid(composition)` / `candidate` / bỏ qua
   - Cache **hai tầng** theo `(path, mtime, size)`: metadata và parse tách riêng
   - _Requirements: R1.9, R1.12_ — _Design: §5.2, §9.1_
-- [ ] K.2 `EntryRegistry` — **không có bảng**
+- [x] K.2 `EntryRegistry` — **không có bảng**
   - `mint` idempotent theo `(workspaceRoot, slug)`; `resolve`; `revoke` khi identity phục hồi; `clear` khi đổi workspace
   - Persist nó là tạo định danh bền **thứ hai** song song `ProjectId`
   - _Requirements: R1.2c-iii, R1.13_ — _Design: §5.3, Decision 2_
-- [ ] K.3 `ProjectIdentityService` — `vidcom.json` schema v1
+- [x] K.3 `ProjectIdentityService` — `vidcom.json` schema v1
   - Zod strict: key lạ → lỗi nêu **tên field**, không nêu giá trị; parse lỗi → **KHÔNG** ghi đè
   - `schemaVersion` cao hơn binary → từ chối mở, MUST NOT đọc theo schema cũ
   - `serialize` byte-deterministic: key ổn định, indent 2, newline cuối
   - _Requirements: R3.1, R3.3, R3.7, R3.9_ — _Design: §5.5, §6.2_
-- [ ] K.4 Backfill `platform` lazy khi mở project
+- [x] K.4 Backfill `platform` lazy khi mở project
   - Không phải batch migration; idempotent (đọc lại thấy có `platform` thì bỏ qua); đi qua `WriteAuthority` có journal
   - Ba project prototype (`kinetic-type`, `swiss-grid`, `warm-grain`) hiện chỉ có `{ id }` và là test case thật
   - _Requirements: R3.4_ — _Design: §6.5_
-- [ ] K.5 `ProjectStateStore` — sở hữu toàn bộ `.vidcom/`
+- [x] K.5 `ProjectStateStore` — sở hữu toàn bộ `.vidcom/`
   - `ensure` (cấu trúc + `.gitignore`) · `writeState`/`writeContext` qua `mutateDerived` · append `.jsonl` atomic (không qua transaction) · `pruneLogs` · `reconcile` **một chiều** SQLite → `.vidcom`
   - _Requirements: R4.1, R4.1b, R4.5, R4.7, R4.8b_ — _Design: §5.6, Decision 5_
-- [ ] K.6 Định nghĩa **năm type còn thiếu shape** (Design §14 ghi nợ)
+- [x] K.6 Định nghĩa **năm type còn thiếu shape** (Design §14 ghi nợ)
   - `RenderState`, `ProjectContext`, `JobLogLine`, `RevisionLogLine`, `StructuredLogLine`
   - Cả năm là payload nội bộ `.vidcom/`, không ràng buộc DB, không qua biên HTTP/MCP
   - _Requirements: R4.3, R4.5_ — _Design: §6.3, §14_
-- [ ] K.7 `stale` **không** được lưu
+- [x] K.7 `stale` **không** được lưu
   - Nó là phép so `computedAtSourceRevision < sourceRevision`. Cờ phải được ai đó cập nhật; phép so thì không thể lệch
   - _Requirements: R4.4b_ — _Design: §6.3_
 
 **Tasks — Tests**:
-- [ ] K.8 Integration: folder trống mở được (chặn đứng hiện tại)
-- [ ] K.9 Integration: `cwd` có `vidcom.json` **lỗi** → mở đúng project đó ở `invalid`, **không** rơi xuống active
-- [ ] K.10 Integration: active workspace bị xoá → **cảnh báo** nêu path cũ rồi fallback
-- [ ] K.11 Integration: `entryId` từ workspace A **không** resolve sau khi đổi sang workspace B
-- [ ] K.12 Integration: `.vidcom/.gitignore` → `git status` sạch sau khi mở project + chạy job; chỉ `project-context.md` được track
-- [ ] K.13 Golden: `project-context.md` deterministic — **không** absolute path / timestamp / jobId
-- [ ] K.14 Integration: **không có đường nào** từ `.vidcom/` ghi ngược vào SQLite; `reconcile` chỉ rebuild một chiều
-- [ ] K.15 Perf: scan 100 project sinh tổng hợp — stat < 500 ms, parse cold < 2 s, warm < 100 ms
+- [x] K.8 Integration: folder trống mở được (chặn đứng hiện tại)
+- [x] K.9 Integration: `cwd` có `vidcom.json` **lỗi** → mở đúng project đó ở `invalid`, **không** rơi xuống active
+- [x] K.10 Integration: active workspace bị xoá → **cảnh báo** nêu path cũ rồi fallback
+- [x] K.11 Integration: `entryId` từ workspace A **không** resolve sau khi đổi sang workspace B
+- [x] K.12 Integration: `.vidcom/.gitignore` → `git status` sạch sau khi mở project + chạy job; chỉ `project-context.md` được track
+- [x] K.13 Golden: `project-context.md` deterministic — **không** absolute path / timestamp / jobId
+- [x] K.14 Integration: **không có đường nào** từ `.vidcom/` ghi ngược vào SQLite; `reconcile` chỉ rebuild một chiều
+- [x] K.15 Perf: scan 100 project sinh tổng hợp — stat < 500 ms, parse cold < 2 s, warm < 100 ms
 
 **Acceptance Criteria**:
-- [ ] Perf task ở trên đạt cả ba ngưỡng; nếu không → **quay lại Design** (D9 đổi contract `WorkspaceEntry`), MUST NOT tự sửa trong implementation
+- [x] Perf task ở trên đạt cả ba ngưỡng; nếu không → **quay lại Design** (D9 đổi contract `WorkspaceEntry`), MUST NOT tự sửa trong implementation
 
 **Deliverables**: `packages/core/src/usecase/scan-workspace.ts` · `packages/core/src/service/entry-registry.ts` · `packages/core/src/usecase/project-identity.ts` · `packages/core/src/service/project-state-store.ts`
 
@@ -638,23 +670,23 @@ tất cả ───────────→ S CI gate + contract matrix + re
 **Estimate**: 16 SP
 
 **Tasks**:
-- [ ] L.1 `create` — một composite mutation
+- [x] L.1 `create` — một composite mutation
   - `WriteAuthority.createProjectRoot` begin operation bền → dựng toàn bộ project trong **sibling staging dot-dir** → validate hash/schema → commit registration + **đúng một** revision + audit/event → atomic rename staging thành slug
   - `vidcom.json` chỉ xuất hiện trong final root cùng toàn bộ file còn lại. Crash trước rename để lại staging bị scanner bỏ qua
   - _Requirements: R5.1_ — _Design: §5.7_
-- [ ] L.2 `adopt` — chỉ ghi `vidcom.json`, **MUST NOT** sửa file nội dung của người dùng
-- [ ] L.3 `rename` — journal `{fromSlug,toSlug,projectId}` trước I/O → atomic directory rename → transaction cập nhật registration. Giữ nguyên `ProjectId`
-- [ ] L.4 `remove` — backup **verify được TRƯỚC khi chạm đĩa** → journal → atomic rename sang quarantine dot-dir → transaction gỡ registration → dọn quarantine. **MUST NOT** recursive-delete live root trực tiếp
-- [ ] L.5 `ProjectLocator` — nghiệp vụ chỉ nhận `ProjectId`; recovery nhận `entryId`
+- [x] L.2 `adopt` — chỉ ghi `vidcom.json`, **MUST NOT** sửa file nội dung của người dùng
+- [x] L.3 `rename` — journal `{fromSlug,toSlug,projectId}` trước I/O → atomic directory rename → transaction cập nhật registration. Giữ nguyên `ProjectId`
+- [x] L.4 `remove` — backup **verify được TRƯỚC khi chạm đĩa** → journal → atomic rename sang quarantine dot-dir → transaction gỡ registration → dọn quarantine. **MUST NOT** recursive-delete live root trực tiếp
+- [x] L.5 `ProjectLocator` — nghiệp vụ chỉ nhận `ProjectId`; recovery nhận `entryId`
   - Tập operation nhận `entryId` phải **đóng ở đúng bốn** (R1.2c-iv)
   - _Requirements: R1.2c-iv_ — _Design: §5.7, Decision 2_
 
 **Tasks — Tests**:
-- [ ] L.6 Integration: create atomic — crash ở từng boundary không để final folder nửa vời
-- [ ] L.7 Integration: adopt **không** sửa file người dùng (so hash trước/sau)
-- [ ] L.8 Integration: rename giữ `ProjectId`; recovery nhìn old/new root, **không** mint ID mới
-- [ ] L.9 Integration: delete có backup verify; job đang chạy chặn delete
-- [ ] L.10 Integration: một tool nghiệp vụ **từ chối** `entryId` — tập đóng trên giấy không đủ
+- [x] L.6 Integration: create atomic — crash ở từng boundary không để final folder nửa vời
+- [x] L.7 Integration: adopt **không** sửa file người dùng (so hash trước/sau)
+- [x] L.8 Integration: rename giữ `ProjectId`; recovery nhìn old/new root, **không** mint ID mới
+- [x] L.9 Integration: delete có backup verify; job đang chạy chặn delete
+- [x] L.10 Integration: một tool nghiệp vụ **từ chối** `entryId` — tập đóng trên giấy không đủ
 
 **Deliverables**: `packages/core/src/usecase/project-lifecycle.ts`
 
@@ -667,7 +699,7 @@ tất cả ───────────→ S CI gate + contract matrix + re
 **Estimate**: 13 SP
 
 **Tasks**:
-- [ ] M.1 Đưa **4 cảnh báo hiện có** (VD-3) vào Core — **trích luật, không phải di chuyển module**
+- [x] M.1 Đưa **4 cảnh báo hiện có** (VD-3) vào Core — **trích luật, không phải di chuyển module**
   - Design §5.13 nói chúng ở `src/lib`; **sai**. Vị trí thật, và hai trong bốn cái chỉ tồn tại dưới dạng số học trong JSX:
 
     | Lint | Ở đâu thật | Hình dạng công việc |
@@ -679,23 +711,23 @@ tất cả ───────────→ S CI gate + contract matrix + re
 
   - Sau khi trích, component **phải** dùng lại hàm Core thay vì giữ bản sao — nếu không sẽ có hai nguồn sự thật cho cùng một cảnh báo, đúng thứ spec này đang cố loại bỏ
   - _Requirements: R9 VD-3_ — _Design: §5.13_ — _Vá executability #4_
-- [ ] M.2 Thêm 4 diagnostic mới: `platform-mismatch`, `narration-overflow`, `missing-asset`, `no-composition`/`no-scenes`
-- [ ] M.3 Tích hợp `hyperframes check` → `lint:<rule>`
+- [x] M.2 Thêm 4 diagnostic mới: `platform-mismatch`, `narration-overflow`, `missing-asset`, `no-composition`/`no-scenes`
+- [x] M.3 Tích hợp `hyperframes check` → `lint:<rule>`
   - Vắng mặt → `lintSourceAvailable: false` và **nêu rõ**, MUST NOT trả rỗng
   - _Requirements: R9.3, R9.4_ — _Design: §5.13, §8.2_
-- [ ] M.4 `forEntry(entryId)` — đường recovery
+- [x] M.4 `forEntry(entryId)` — đường recovery
   - **KHÔNG** gọi parser composition, **KHÔNG** ghi `.vidcom`; `computedAtSourceRevision` null
   - _Requirements: R9.1, R9.8d, R9.8e_ — _Design: §5.13_
-- [ ] M.5 `ThumbnailResolver`
+- [x] M.5 `ThumbnailResolver`
   - `seedKind: "slug"` **chỉ** cho `invalidKind: "identity"` — `entryId` đổi mỗi phiên nên dùng nó làm seed sẽ đổi màu card mỗi lần khởi động
   - _Requirements: R8.2b_ — _Design: §5.12_
 
 **Tasks — Tests**:
-- [ ] M.6 Integration: `authored` + 0 scene → diagnostics `no-scenes`
-- [ ] M.7 Integration: `invalid` → diagnostics **vẫn chạy**, render/mutation từ chối `project_invalid` (bảng R1.2d, **từng dòng một test**)
-- [ ] M.8 Integration: `check` vắng → cờ `lintSourceAvailable: false`, không rỗng
-- [ ] M.9 Integration: đường `entryId` **không** ghi `.vidcom`
-- [ ] M.10 Unit: seed theo `ProjectId` vs slug
+- [x] M.6 Integration: `authored` + 0 scene → diagnostics `no-scenes`
+- [x] M.7 Integration: `invalid` → diagnostics **vẫn chạy**, render/mutation từ chối `project_invalid` (bảng R1.2d, **từng dòng một test**)
+- [x] M.8 Integration: `check` vắng → cờ `lintSourceAvailable: false`, không rỗng
+- [x] M.9 Integration: đường `entryId` **không** ghi `.vidcom`
+- [x] M.10 Unit: seed theo `ProjectId` vs slug
 
 **Deliverables**: `packages/core/src/usecase/diagnostics.ts` · `packages/core/src/usecase/thumbnail.ts`
 
@@ -708,20 +740,20 @@ tất cả ───────────→ S CI gate + contract matrix + re
 **Estimate**: 13 SP
 
 **Tasks**:
-- [ ] N.1 **Mở rộng `createScene`** trong [`project-writes.ts:339`](../../../../packages/core/src/usecase/project-writes.ts#L339) — nhận `{ index, trackIndex? }` + ripple theo track, **một revision**
+- [x] N.1 **Mở rộng `createScene`** trong [`project-writes.ts:339`](../../../../packages/core/src/usecase/project-writes.ts#L339) — nhận `{ index, trackIndex? }` + ripple theo track, **một revision**
   - `createScene` và `setSceneTiming` **đã tồn tại**; tạo `usecase/scene-insert.ts` mới sẽ là đường ghi thứ hai cho cùng một thao tác (_Vá executability #9_)
-- [ ] N.2 `empty → authored`: scene đầu tiên được chèn, root composition sinh **cùng revision**
-- [ ] N.3 **Mở rộng `setSceneTiming`** ([`project-writes.ts:130`](../../../../packages/core/src/usecase/project-writes.ts#L130)) — `duration_overflow` mang `details.limitKind` (`runtime`|`root`) + `actualSeconds` + `maxSeconds` + `extendRootAllowed`
+- [x] N.2 `empty → authored`: scene đầu tiên được chèn, root composition sinh **cùng revision**
+- [x] N.3 **Mở rộng `setSceneTiming`** ([`project-writes.ts:130`](../../../../packages/core/src/usecase/project-writes.ts#L130)) — `duration_overflow` mang `details.limitKind` (`runtime`|`root`) + `actualSeconds` + `maxSeconds` + `extendRootAllowed`
   - Client quyết định hiện nút gì bằng **field**, MUST NOT parse message
   - _Requirements: R10.5c_ — _Design: §8.2_
-- [ ] N.4 Narration nhiều cue: một `<audio class="clip hf-narration">` cho mỗi cue, `data-start` từ document
+- [x] N.4 Narration nhiều cue: một `<audio class="clip hf-narration">` cho mỗi cue, `data-start` từ document
   - Đi qua vùng `NarrationRecord` / `regenerateNarration` **đã có** ([`project-writes.ts:284`](../../../../packages/core/src/usecase/project-writes.ts#L284)), không dựng đường narration thứ hai
-- [ ] N.5 Sửa **đúng một** cue → cue khác **không** bị stale
+- [x] N.5 Sửa **đúng một** cue → cue khác **không** bị stale
 
 **Tasks — Tests**:
-- [ ] N.6 Integration: ripple trên project **nhiều track** — track khác **không** dịch
-- [ ] N.7 Integration: chèn scene đầu tiên → `empty → authored` trong một revision
-- [ ] N.8 Integration: đọc sidecar một-cue cũ thành đúng một cue; nhiều `<audio>` đúng `data-start`
+- [x] N.6 Integration: ripple trên project **nhiều track** — track khác **không** dịch
+- [x] N.7 Integration: chèn scene đầu tiên → `empty → authored` trong một revision
+- [x] N.8 Integration: đọc sidecar một-cue cũ thành đúng một cue; nhiều `<audio>` đúng `data-start`
 
 **Deliverables**: `packages/core/src/usecase/project-writes.ts` (mở rộng `createScene`, `setSceneTiming`, vùng narration) · `packages/core/src/usecase/narration-cues.ts` (đọc/ghi cue, mới)
 
@@ -735,33 +767,34 @@ tất cả ───────────→ S CI gate + contract matrix + re
 **Read first**: [`steering/14`](../../../steering/14-agent-kit-and-skills.md) (FULL) · [spike ma trận host](../../../../spikes/phase-3-agent-kit-host/README.md)
 
 **Tasks**:
-- [ ] Q.1 Nội dung agent-kit + build asset nhúng + manifest hash **trong binary**
+- [x] Q.1 Nội dung agent-kit + build asset nhúng + manifest hash **trong binary**
   - MUST NOT là lock file trong workspace
   - _Requirements: R13_ — _Design: §4.6_
-- [ ] Q.2 **Hai** manifest theo host — mapping do **bằng chứng**, không do quy ước
+- [x] Q.2 **Hai** manifest theo host — mapping do **bằng chứng**, không do quy ước
   - `codex` → `AGENTS.md` + `.agents/skills/**`, `link` **không expose**, recovery là `manual_merge`
   - `claude-code` → `CLAUDE.md` + `.claude/skills/**`, `link` append `@CLAUDE.vidcom.md` + `expectedContentHash`
   - _Requirements: R13.7-i_ — _Design: §5.17, Decision 10_
-- [ ] Q.3 Sáu `FileState` + bốn outcome
+- [x] Q.3 Sáu `FileState` + bốn outcome
   - `missing|current_pristine|current_modified|outdated|newer|foreign`; `newer` **không** bị hạ cấp
   - _Requirements: R13.9a_ — _Design: §5.17_
-- [ ] Q.4 Suy `usableBy` từ **router native được discover**, không từ file chỉ dẫn chính
+- [x] Q.4 Suy `usableBy` từ **router native được discover**, không từ file chỉ dẫn chính
   - Cả hai host gọi được probe từ `vidcom/SKILL.md` dù file chỉ dẫn vắng mặt, nên `AGENTS.md` `foreign` **không** làm host `blocked` khi router còn nguyên
   - _Requirements: R13.9b, R13.9b-i_ — _Design: §5.17, Decision 10_
-- [ ] Q.5 Boundary schema: discriminated union `.strict()`
+- [x] Q.5 Boundary schema: discriminated union `.strict()`
   - Nhánh install dùng array `.min(1)` + unique host; field của nhánh khác bị **schema** từ chối, không phải code
   - `installationState.files`/`usableBy`/`recovery` có key **đúng bằng** selected-host set, không placeholder cho host không chọn
   - _Requirements: R12.9, R12.9-iii_ — _Design: §5.17, §7.2_
-- [ ] Q.6 Ghi qua `mutateWorkspace` — audit `project_id = NULL`, **không** revision/backup
+- [x] Q.6 Ghi qua `mutateWorkspace` — audit `project_id = NULL`, **không** revision/backup
 
 **Tasks — Tests**:
-- [ ] Q.7 6 state per-file; `current_pristine`+`missing` → `installed`; mọi `current_pristine` → `already_installed`
-- [ ] Q.8 Hai host `degraded` → **`partial`** không phải `blocked`
-- [ ] Q.9 `AGENTS.md` rỗng-có-marker nhưng router native còn → **`degraded`**; router không parse/discover → `blocked`
-- [ ] Q.10 `link` đổi Claude `usableBy` `degraded` → `ready`; `host: "codex"` bị `schema_invalid`
-- [ ] Q.11 `hosts` rỗng → `schema_invalid`; chọn một host → file host kia **không** vào `expectedFiles`
-- [ ] Q.12 Sync (AK-8): tool trong `AGENTS.md` ↔ Registry · tool skill tham chiếu tồn tại · router `/vidcom-*` có `SKILL.md`
-- [ ] Q.13 Batch rollback: fail giữa chừng → restore mọi step, **không** revision
+- [x] Q.7 6 state per-file; `current_pristine`+`missing` → `installed`; mọi `current_pristine` → `already_installed`
+- [x] Q.8 Hai host `degraded` → **`partial`** không phải `blocked`
+- [x] Q.9 `AGENTS.md` rỗng-có-marker nhưng router native còn → **`degraded`**; router không parse/discover → `blocked`
+- [x] Q.10 `link` đổi Claude `usableBy` `degraded` → `ready`; `host: "codex"` bị `schema_invalid`
+- [x] Q.11 `hosts` rỗng → `schema_invalid`; chọn một host → file host kia **không** vào `expectedFiles`
+- [x] Q.12 Sync (AK-8): tool trong `AGENTS.md` ↔ Registry · tool skill tham chiếu tồn tại · router `/vidcom-*` có `SKILL.md`
+  - Actual Registry equality đóng ở Phase P bằng catalog 17 descriptor production; không còn final-catalog fixture song song.
+- [x] Q.13 Batch rollback: fail giữa chừng → restore mọi step, **không** revision
 
 **Deliverables**: `packages/agent-kit/` · `usecase/agent-kit-install.ts`
 
@@ -774,18 +807,18 @@ tất cả ───────────→ S CI gate + contract matrix + re
 **Estimate**: 16 SP
 
 **Tasks**:
-- [ ] O.1 Route workspace/project: `GET /v1/workspace` · `PUT /v1/workspace/active` (phát sự kiện đổi workspace cho `EntryRegistry.clear`) · `POST /v1/projects` · `POST /v1/projects/:slug/adopt` (slug vì candidate chưa có `ProjectId`) · `PATCH`/`DELETE /v1/projects/:id`
-- [ ] O.2 Route job: `POST .../renders` · `POST .../snapshots` (cả hai `idempotencyKey`) · `GET /v1/jobs/:jobId` (gồm `partial`, `warnings`, `cleanupPending`) · `POST /v1/jobs/:jobId/cancel` (202, idempotent) · `GET /v1/jobs/:jobId/termination-proof`
-- [ ] O.3 Route nội dung: diagnostics · scenes · scene timing · narration-cues (GET/PUT/PATCH với `expectedContentHash`)
-- [ ] O.4 Route recovery `entryId`: diagnostics · thay identity · rename · delete (backup + confirmation/grant)
-- [ ] O.5 `GET /v1/renders/:jobId/download` — Range + ETag
-- [ ] O.6 `POST /v1/agent-kit/install`
-- [ ] O.7 Error mapping theo §8.1 — giữ nguyên shape `ErrorDetail`, **không** thêm shape thứ hai
+- [x] O.1 Route workspace/project: `GET /v1/workspace` · `PUT /v1/workspace/active` (phát sự kiện đổi workspace cho `EntryRegistry.clear`) · `POST /v1/projects` · `POST /v1/projects/:slug/adopt` (slug vì candidate chưa có `ProjectId`) · `PATCH`/`DELETE /v1/projects/:id`
+- [x] O.2 Route job: `POST .../renders` · `POST .../snapshots` (cả hai `idempotencyKey`) · `GET /v1/jobs/:jobId` (gồm `partial`, `warnings`, `cleanupPending`) · `POST /v1/jobs/:jobId/cancel` (202, idempotent) · `GET /v1/jobs/:jobId/termination-proof`
+- [x] O.3 Route nội dung: diagnostics · scenes · scene timing · narration-cues (GET/PUT/PATCH với `expectedContentHash`)
+- [x] O.4 Route recovery `entryId`: diagnostics · thay identity · rename · delete (backup + confirmation/grant)
+- [x] O.5 `GET /v1/renders/:jobId/download` — Range + ETag
+- [x] O.6 `POST /v1/agent-kit/install`
+- [x] O.7 Error mapping theo §8.1 — giữ nguyên shape `ErrorDetail`, **không** thêm shape thứ hai
 
 **Tasks — Tests**:
-- [ ] O.8 Integration: HTTP và MCP gọi **cùng** usecase (MP-2) — không có đường thứ hai
-- [ ] O.9 Integration: mã lỗi đúng status theo bảng §8.1
-- [ ] O.10 Integration: SSE `job.progress`/`job.done` mang `partial` — assert **đúng shape payload**, không chỉ assert "có event": `payload` là `Record<string, unknown>` nên compiler không bảo vệ gì (_Vá executability #7_)
+- [x] O.8 Integration: HTTP và MCP gọi **cùng** usecase (MP-2) — không có đường thứ hai
+- [x] O.9 Integration: mã lỗi đúng status theo bảng §8.1
+- [x] O.10 Integration: SSE `job.progress`/`job.done` mang `partial` — assert **đúng shape payload**, không chỉ assert "có event": `payload` là `Record<string, unknown>` nên compiler không bảo vệ gì (_Vá executability #7_)
 
 **Deliverables**: `packages/server/src/routes/*`
 
@@ -798,19 +831,19 @@ tất cả ───────────→ S CI gate + contract matrix + re
 **Estimate**: 13 SP
 
 **Tasks**:
-- [ ] P.1 Bốn tool mới: `validate_project`, `start_snapshot`, `start_render`, `install_agent_kit`
-- [ ] P.2 **Mở rộng** `get_job_status` đã có ở `registry/job-tools.ts`
+- [x] P.1 Bốn tool mới: `validate_project`, `start_snapshot`, `start_render`, `install_agent_kit`
+- [x] P.2 **Mở rộng** `get_job_status` đã có ở `registry/job-tools.ts`
   - Thêm `partial`, warnings, `cleanupPending`, outcome; poll có backoff
   - **MUST NOT** register tool thứ hai cùng tên
   - _Requirements: R12.1_ — _Design: §5.16_
-- [ ] P.3 `tools/list` thứ tự **deterministic**; golden **cả hai era** phải cập nhật
-- [ ] P.4 Tool không degrade được sang legacy thì **ẩn** khỏi `tools/list` legacy, **không** lỗi lúc gọi
-- [ ] P.5 Audit: MCP tool ghi thêm `protocol_version`
+- [x] P.3 `tools/list` thứ tự **deterministic**; golden **cả hai era** phải cập nhật
+- [x] P.4 Tool không degrade được sang legacy thì **ẩn** khỏi `tools/list` legacy, **không** lỗi lúc gọi
+- [x] P.5 Audit: MCP tool ghi thêm `protocol_version`
 
 **Tasks — Tests**:
-- [ ] P.6 Contract: 5 tool × 2 era
-- [ ] P.7 Golden `tools/list` cả hai era
-- [ ] P.8 Union strict: field nhánh khác bị schema từ chối
+- [x] P.6 Contract: 5 tool × 2 era
+- [x] P.7 Golden `tools/list` cả hai era
+- [x] P.8 Union strict: field nhánh khác bị schema từ chối
 
 **Deliverables**: `packages/mcp/src/registry/*`
 
@@ -825,15 +858,15 @@ tất cả ───────────→ S CI gate + contract matrix + re
 **Estimate**: 8 SP
 
 **Tasks**:
-- [ ] R.1 Liệt kê **mọi** fixture Phase 1/2 giả định "project = có `hyperframes.json` + `index.html`"
+- [x] R.1 Liệt kê **mọi** fixture Phase 1/2 giả định "project = có `hyperframes.json` + `index.html`"
   - Rủi ro chính **không** phải viết code mới mà là fixture cũ **vẫn xanh trong khi hành vi đã khác**
   - _Design: Decision 1_
-- [ ] R.2 Với từng fixture: quyết định giữ / sửa sang marker `vidcom.json` / xoá, ghi lý do
-- [ ] R.3 Thêm test chứng minh định nghĩa **cũ** không còn được chấp nhận ở đường mới
-- [ ] R.4 Rà `packages/adapter/src/fs/workspace-fs.ts:39-58` và mọi call site của định nghĩa cũ
+- [x] R.2 Với từng fixture: quyết định giữ / sửa sang marker `vidcom.json` / xoá, ghi lý do
+- [x] R.3 Thêm test chứng minh định nghĩa **cũ** không còn được chấp nhận ở đường mới
+- [x] R.4 Rà `packages/adapter/src/fs/workspace-fs.ts:39-58` và mọi call site của định nghĩa cũ
 
 **Acceptance Criteria**:
-- [ ] Không còn hai định nghĩa "project tồn tại" cùng sống trong test suite
+- [x] Không còn hai định nghĩa "project tồn tại" cùng sống trong test suite
 
 ---
 
@@ -851,8 +884,8 @@ tất cả ───────────→ S CI gate + contract matrix + re
   - `chrome-headless-shell` trên Windows có tách process group không. Nếu có → cách sửa đã đúng. Nếu **không** → ghi là thuộc tính nền tảng, MUST NOT bỏ pha capture (một code path phải đúng ở mọi nơi)
   - _Design: §5.9_
 - [ ] S.3 Nếu Windows vừa **không** có enumerator `ppid` vừa leak với naive → **quay lại Design §5.9**, không tự xử trong implementation
-- [ ] S.4 Mở rộng `test:golden` sang golden mới của spec này (tiền lệ: Phase 2 từng bỏ sót)
-- [ ] S.5 Cập nhật `verify-spec-test-paths.mjs` cho Verification Matrix mới
+- [x] S.4 Mở rộng `test:golden` sang golden mới của spec này (tiền lệ: Phase 2 từng bỏ sót)
+- [x] S.5 Cập nhật `verify-spec-test-paths.mjs` cho Verification Matrix mới
 - [ ] S.6 Release gate: `typecheck` · `lint` · `test:boundaries` · `test` · `test:golden` · `test:schema-drift` · `test:mcp-contract` · `test:runtime-smoke` · `spike:process-supervision` — tất cả xanh trên **cả ba** OS
 
 ---
@@ -960,7 +993,137 @@ Chi tiết: §13 [Detailed Design](./spec-project-delivery-loop-detailed-design.
 
 > Append một entry mỗi phiên làm việc.
 
-_Chưa bắt đầu. Approval Gate đã `Approved` 2026-08-04, nhưng người dùng yêu cầu **chưa thực hiện code**. Entry đầu tiên sẽ được ghi khi Phase A bắt đầu._
+2026-08-04 — Phase A, Tasks A.1–A.6
+  - Files: `package.json`, `bun.lock`, `packages/contracts/src/errors.ts`, `packages/contracts/src/dto.ts`, `packages/core/src/port/types.ts`, `packages/adapter/src/db/job-store.ts`, `packages/server/src/middleware/error-mapper.ts`, `packages/server/src/routes/jobs.ts`, `packages/mcp/src/error-map.ts`, `packages/mcp/src/registry/job-tools.ts`, `tests/contracts/api-contracts.test.ts`
+  - Summary: Pin `hyperframes@0.7.86` ở runtime dependencies; thêm error/warning vocabulary, terminal `partial`, ordered warnings, `cleanupPending`, hai path purpose và cập nhật mọi HTTP/MCP mapper bị typecheck phát hiện.
+  - Verification: `bunx vitest run tests/contracts/api-contracts.test.ts tests/mcp/error-map.test.ts` — 2 files/9 tests xanh; `bun run typecheck` exit 0; `require.resolve("hyperframes/package.json")` trả version `0.7.86`; `git diff --check` exit 0.
+  - Decisions: Không lệch Design. `toJob` dùng giá trị mặc định `warnings=null`, `cleanupPending=false` cho schema DB cũ; Phase B sẽ nối hai cột SQLite thật.
+  - Blockers: Không có. Phase B là gate kế tiếp.
+
+2026-08-04 — Phase B, Tasks B.1–B.11
+  - Files: `packages/adapter/src/db/schema.ts`, `packages/adapter/drizzle/20260804140510_flippant_tenebrous/*`, `packages/adapter/src/db/delivery-loop-migration-rollback.ts`, `packages/adapter/src/db/health.ts`, `packages/adapter/src/db/job-store.ts`, `tests/adapter/delivery-loop-database-migration.test.ts`, migration tests hiện có, MCP golden fixtures.
+  - Summary: Thêm `advances_source`, rebuild `job`, hai bảng workspace operation, toàn bộ index/check/FK và rollback preflight có count; nối warnings/cleanup từ SQLite tới job DTO.
+  - Verification: Migration matrix 3 files/9 tests xanh; full suite 85 files/655 tests xanh (3 skip có thông báo); `test:schema-drift`, `typecheck`, `lint` (0 error), `git diff --check` exit 0; SQLite `foreign_key_check=[]`, `integrity_check=ok`.
+  - Decisions: Hand-edit SQL Drizzle đúng quyền B.6 để tránh rebuild `revision`; Drizzle migrator đã tự sở hữu transaction nên bỏ nested `BEGIN IMMEDIATE`. Golden MCP cập nhật vì contract thay đổi có chủ đích.
+  - Blockers: Không có. Gate B xanh; Phase F được mở.
+
+2026-08-04 — Phase F gate, Tasks F.1–F.11, F.14–F.21
+  - Files: `packages/core/src/port/process-port.ts`, `packages/core/src/port/types.ts`, `packages/core/src/port/ports.ts`, `packages/core/src/service/job-scheduler.ts`, `packages/adapter/src/runtime/process-environment.ts`, `packages/adapter/src/runtime/process-supervisor.ts`, `packages/adapter/src/runtime/node-process-runner.ts`, `packages/adapter/src/db/job-store.ts`, `tests/adapter/process-supervisor.test.ts`, `tests/adapter/job-infrastructure.test.ts`, `.github/workflows/process-supervision.yml`.
+  - Summary: Port thuật toán capture→kill→direct-PID-verify thành adapter đa nền tảng; sửa luôn `ProcessPort` TTS; thêm cancel poll/abort reason/CAS result; persist `partial` đúng result/progress/warnings/cleanup metadata; nối test adapter thật vào matrix Linux/macOS/Windows và nhánh Windows degraded.
+  - Verification: `bun run spike:process-supervision` PASS (naive leak 2 PID, ppid walk 0, supervisor 0 survivor); process/scheduler subset xanh; real Chromium/FFmpeg render xanh; full suite 87 files/665 tests xanh (3 skip có thông báo); typecheck, lint 0 error, boundary và diff check xanh.
+  - Decisions: Theo F.5, sửa luôn `ProcessPort` cũ bằng supervisor ba pha để VieNeu hưởng cùng bảo đảm. Detailed Design nâng lên bản 8 trước code: `JobCancelledError` mang warning/cleanup metadata, termination-unverified thắng nhánh cancel, branded outcome envelope giữ partial/metadata mà không đoán field của payload nghiệp vụ.
+  - Blockers: Không có blocker gate. F.12 còn phần render-root cleanup phụ thuộc Phase G; F.13 chỉ hoàn tất khi hai definition thật được tạo ở I/J, nên chưa tick và không tạo stub production giả.
+
+2026-08-04 — Phase C, Tasks C.1–C.11
+  - Files: `packages/core/src/domain/workspace-resolver.ts`, `packages/core/src/domain/platform-preset.ts`, `packages/core/src/domain/path-policy.ts`, `packages/core/src/domain/invariants.ts`, `packages/core/src/usecase/narration-cues.ts`, `packages/core/src/service/remote-asset-scan.ts`, `packages/cli/src/workspace-selection.ts`, `packages/adapter/src/fs/resolve.ts`, domain/CLI/fs tests, Detailed Design §5.10.
+  - Summary: Áp bảng workspace 8 dòng tại domain và CLI thật; thêm catalog preset/custom; mở cửa hẹp cho state/agent-kit; ripple/diagnostic per-track; legacy/multi-cue narration; static media và external dependency scan.
+  - Verification: Domain + fs subset 4 files/62 tests xanh; CLI 26 tests xanh; full suite 88 files/690 tests xanh (3 skip có thông báo); `typecheck`, `test:boundaries`, `lint` exit 0 (10 warning cũ, 0 error); diff check xanh.
+  - Decisions: Detailed Design §5.10 được sửa trước code để `scanExternalDependencies` nhận stylesheet tùy chọn; nhờ đó `@font-face url(...)` chỉ làm reproducibility warning, không bị chặn nhầm như remote media.
+  - Blockers: Không có. Phase D mở.
+
+2026-08-04 — Gate D, Tasks D.1–D.10
+  - Files: `packages/core/src/service/write-authority.ts`, `packages/core/src/port/ports.ts`, `packages/core/src/port/types.ts`, `packages/adapter/src/db/journal.ts`, `packages/adapter/src/fs/large-content-store.ts`, authority call sites, `tests/core/source-revision.test.ts` và `tests/adapter/composite-write-authority.test.ts`.
+  - Summary: Tách source/derived facade không còn cờ caller; suy purpose theo method/path; derived composite dùng staging nhị phân; source revision query/index; retention K=3 detach trong transaction và GC object sau commit.
+  - Verification: Real SQLite + filesystem authority suite 14 tests xanh; authority/path/usecase subset 105 tests xanh; full suite 88 files/698 tests xanh (3 skip có thông báo); `typecheck`, `lint` (0 error), `test:boundaries`, `test:schema-drift`, `git diff --check` xanh. Test type khoá không có `purpose`/`advancesSource`; query plan khoá `idx_revision_source`; payload >64 KiB chứng minh object thật giảm còn ba.
+  - Decisions: Detailed Design nâng tuần tự lên bản 9–11 trước code tương ứng: authored asset là source nhưng dùng `write-asset`; GC filesystem chạy sau SQLite detach vì hai storage không thể commit atomically; D.7 khóa persistence invariant trước runner Phase I; `idx_revision_derived_path` không được mô tả sai là tăng tốc composite có `revision.path=NULL`.
+  - Blockers: Không có. Gate D xanh; Phase E được mở.
+
+2026-08-04 — Gate E, Tasks E.1–E.9
+  - Files: `packages/core/src/port/{ports,types}.ts`, `packages/core/src/service/workspace-mutation-coordinator.ts`, `packages/core/src/service/write-authority.ts`, `packages/adapter/src/db/workspace-operation-journal.ts`, `packages/adapter/src/fs/{workspace-fs,resolve,project-directory}.ts`, composition root và `tests/adapter/workspace-mutation-coordinator.test.ts`.
+  - Summary: Thêm operation journal header/step, facade workspace không revision/event, batch rollback/recovery nguyên khối, collision query trong transaction, workspace-root resolver bắt buộc và directory staging/quarantine đa nền tảng có chặn symlink escape.
+  - Verification: 7 real SQLite + filesystem tests xanh; full suite 89 files/705 tests xanh (3 skip có thông báo); `typecheck`, `test:boundaries`, `test:schema-drift`, `git diff --check` xanh; lint 0 error (10 warning fixture cũ). Test chứng minh fail step N restore cả batch, Promise.all chỉ một begin, audit null project, revision/event bằng 0 và staging→rename→settle không lộ folder nửa vời.
+  - Decisions: Detailed Design nâng lên bản 12 trước code: create phải stage/write/validate → rename → DB settle; `stageCreate` trả staging/final capability và adapter có `writeStagedFiles`, tránh import/path join native trong Core. Recovery tự hoàn tất marker `written` khi hash đích chứng minh publish đã xong nhưng process chết trước marker.
+  - Blockers: Không có. Gate E xanh; Phase G được mở.
+
+2026-08-04 — Phase G, Tasks G.1–G.6
+  - Files: `packages/core/src/port/ports.ts`, `packages/adapter/src/fs/render-root.ts`, `packages/adapter/src/db/job-store.ts`, `packages/cli/src/{composition-root,startup}.ts`, `tests/adapter/render-root.test.ts`, `tests/cli/startup.test.ts`, `.github/workflows/process-supervision.yml`.
+  - Summary: Mỗi render job có root + ownership marker riêng dưới app-data; environment chứa TEMP/TMP và đường FFmpeg/FFprobe đa nền tảng. Startup luôn thử cả stale-job recovery lẫn orphan reclaim; clear `cleanupPending` theo ID đã xóa hoặc root exact đã vắng, giữ cờ + warning cho directory không chứng minh được ownership, và báo lỗi cleanup thay vì nuốt.
+  - Verification: Render-root/startup 2 files/29 tests xanh trên filesystem + SQLite thật; full suite 90 files/713 tests xanh (3 skip có thông báo); `typecheck`, `lint` (0 error), `test:boundaries`, `test:schema-drift`, `git diff --check` xanh. CI matrix Linux/macOS/Windows chạy thêm render-root + startup contracts.
+  - Decisions: Detailed Design bản 13–15 được sửa trước code: `reclaimOrphans` trả ordered `reclaimedJobIds`; JobStore có live-set/cleanup-pending/CAS clear; `RenderRootPort.inspect` đóng race crash giữa remove và clear. Binary path dùng explicit config → env override → `<native>/bin/{ffmpeg,ffprobe}[.exe]`; Phase I vẫn probe sự tồn tại/version thật.
+  - Blockers: Không có cho G. F.12 còn phần terminal stale render/snapshot phụ thuộc job definitions thật ở I/J; không tick sớm.
+
+2026-08-04 — Phase H, Tasks H.1–H.7
+  - Files: `packages/core/src/service/{remote-asset-scan,remote-asset-guard}.ts`, `packages/adapter/src/runtime/guard-callback-server.ts`, `packages/adapter/src/hyperframes/document.ts`, `tests/adapter/{remote-asset-guard,remote-asset-browser}.test.ts`, `tests/golden/runtime-asset-guard.test.ts` + fixture.
+  - Summary: Thêm callback loopback per-job có token 256-bit, body cap, job/token validation, dedupe media và cap 100 external pair; document inject CSP + bootstrap trước mọi head element của tác giả. Barrier Core đóng callback rồi evaluate trước khi trao quyền publish; media runtime trả `remote_asset_not_local`, external dependencies vẫn được giữ ordered.
+  - Verification: Browser Chrome thật chứng minh `new Image()` runtime bị CSP chặn và asset server nhận 0 request; dynamic script trùng được observer ghi đúng một lần và callback không tự xuất hiện. Callback HTTP thật gửi 105 dependency để khóa cap 100. H subset 4 files/9 tests xanh; full suite 93 files/719 tests xanh (3 skip có thông báo); `typecheck`, lint 0 error, boundary, schema drift và diff check xanh. Workflow matrix Linux/macOS/Windows chạy thêm toàn bộ contract H.
+  - Decisions: Giữ đúng giới hạn đã duyệt: CSP cho `connect-src *` và `blob:` nên chỉ tuyên bố chặn remote media do document khai; external script vẫn làm render `reproducible:false`. Token không one-shot trong session nhưng server đóng ở publication barrier.
+  - Blockers: Không có cho H. Acceptance propagation `externalDependencies` tới client chờ I.4/I.5 dùng runner/result thật; không tick trước dependency.
+
+2026-08-04 — Phase I, Tasks I.1–I.9; closure F.12 và H propagation AC
+  - Files: `packages/worker/src/render-job.ts`, `packages/core/src/{port/ports,service/job-scheduler,service/remote-asset-guard}.ts`, `packages/adapter/src/{fs/render-project,fs/workspace-fs,hyperframes/binary-probe}.ts`, `packages/cli/src/composition-root.ts`, `tests/adapter/{render-job,render-binary-probe,render-project,render-root,job-infrastructure}.test.ts`.
+  - Summary: Probe đủ bốn binary/version; gate state trước enqueue; render one-shot qua supervisor/root/guard; clone project không theo symlink; ffprobe MP4; publication barrier commit MP4+sidecar bằng `mutateDerived`; best-effort warning và external dependencies tới job/client. Stale render/snapshot contract khai `cleanupPendingOnStale`, startup reclaim giữ quyền dọn root.
+  - Verification: Render/scheduler/root bundle 3 files/23 tests xanh; guard/binary/staging bundle 5 files/12 tests xanh. Chromium + HyperFrames + FFmpeg/FFprobe thật tạo MP4, sidecar ghi GSAP CDN, source revision không tiến. Cancel fixture có descendant tự tách group và khóa thứ tự `zero-survivor-proof` trước `cancelled-persist`; crash không publish và chỉ reclaim khi đủ bốn điều kiện. Full suite 96 files/731 tests xanh (3 skip có thông báo); `typecheck`, lint (0 error; 10 warning fixture cũ), boundaries, schema drift và diff check xanh. Matrix Linux/macOS/Windows chạy thêm Phase I contracts.
+  - Decisions: Detailed Design nâng bản 16–23 trước từng thay đổi material: staging port không kéo K sớm; stable readiness error; failed terminal metadata; guard result vào publication callback; explicit path seams kiểm fs thật; publish rethrow domain/cancel; identity-backed project ref cho empty gate; metadata stale cleanup theo definition thay vì đoán tên type.
+  - Blockers: Không có. Phase I hoàn tất; Phase J được mở. F.13 vẫn chờ đăng ký definition snapshot thật trong J, không tick sớm.
+
+2026-08-04 — Phase J, Tasks J.1–J.10; closure F.13
+  - Files: `packages/worker/src/snapshot-job.ts`, `packages/worker/src/index.ts`, `packages/core/src/port/ports.ts`, `packages/adapter/src/{db/job-store,fs/render-project}.ts`, `packages/cli/src/composition-root.ts`, `tests/adapter/{snapshot-job,render-project}.test.ts`, `tests/golden/snapshot-timestamp-mapping.test.ts`, `tests/golden/fixtures/snapshot-timestamp-mapping.json`, `package.json`, `bun.lock`.
+  - Summary: Snapshot job gọi HyperFrames đúng một lần cho tập midpoint đã dedupe; map PNG theo timestamp số và fan-out; terminal partial giữ generation revision để retry cùng revision chỉ bù thiếu, còn revision mới sinh lại toàn bộ. Contact sheet Sharp deterministic chỉ publish khi đủ mọi scene; zero-scene thành công rỗng; render và snapshot definitions đều đã export/wire thật.
+  - Verification: J subset 3 files/6 tests xanh trên SQLite + filesystem + child process thật; contact sheet lặp lại byte-identical. Full Vitest 98 files pass + 1 skip, 736 tests pass + 3 skip; `typecheck`, `test:boundaries`, `test:schema-drift`, lint (0 error; 10 warning fixture cũ) và `git diff --check` xanh. Test khóa retry thiếu-only và full revision mới, midpoint ngoài timeline bị từ chối trước spawn, dropped midpoint không dịch scene sau; matrix GitHub Actions Linux/macOS/Windows chạy thêm integration/golden J.
+  - Decisions: Detailed Design bản 24 được sửa trước code: staging trả snapshot output root; adapter đọc PNG/ghép contact sheet; JobStore đọc terminal gần nhất để retry trước Phase K. Derived snapshot vẫn chỉ đi qua `mutateDerived`, không tạo nguồn sự thật thứ hai.
+  - Blockers: Không có. Phase J hoàn tất; Phase K được mở.
+
+2026-08-04 — Phase K, Tasks K.1–K.15
+  - Files: `packages/core/src/{service/entry-registry,service/project-state-store,usecase/project-identity,usecase/scan-workspace,port/ports,port/types}.ts`, `packages/adapter/src/{fs/workspace-fs,db/journal,db/job-store}.ts`, `packages/cli/src/composition-root.ts`, `tests/adapter/{project-discovery-state,workspace-scan-identity,project-state-store}.test.ts`, `tests/golden/project-context.test.ts` + fixture.
+  - Summary: Scanner one-level phân loại đủ project/candidate/invalid và cache parse theo metadata; entryId chỉ sống trong session. Identity schema v1 strict/deterministic và lazy-backfill journaled cho cả ba prototype thật. `.vidcom` có skeleton + ignore, state/context derived, JSONL append/fsync, redact secret, retention và reconcile một chiều từ SQLite; stale chỉ là phép so.
+  - Verification: K subset 4 files/17 tests xanh trên filesystem + SQLite + git CLI thật; riêng project-discovery-state 7/7 xanh, perf 100 project đạt cả stat/cold/warm thresholds trong test chuyên biệt. Full suite 102 files pass + 1 skip, 752 tests pass + 3 skip; `typecheck`, `test:boundaries`, `test:schema-drift`, `test:spec-paths`, lint 0 error (10 warning fixture cũ) và `git diff --check` xanh.
+  - Decisions: Detailed Design được sửa trước code qua bản 25–29: scanner marker capability đóng; ordered projection reads từ SQLite; CompositionPort là dependency parser; `.vidcom/.gitignore` literal allowlist; capability mkdir đúng năm state directory, không tạo revision.
+  - Blockers: Không có. Performance gate xanh; Phase L được mở.
+
+2026-08-04 — Phase L, Tasks L.1–L.10
+  - Files: `packages/core/src/{usecase/project-lifecycle,service/workspace-mutation-coordinator,service/write-authority,service/entry-registry,port/ports,port/types}.ts`, `packages/adapter/src/{db/schema,db/journal,db/workspace-operation-journal,db/event-outbox,fs/project-directory,fs/workspace-fs,fs/backup-store}.ts`, `packages/cli/src/composition-root.ts`, `packages/contracts/src/{domain,dto}.ts`, migrations `20260804163227`–`20260804165459`, `tests/adapter/{project-lifecycle,database-migration,delivery-loop-database-migration,mcp-database-migration}.test.ts`, `.github/workflows/process-supervision.yml`.
+  - Summary: Create publish nguyên project qua sibling staging và đúng một revision; adopt chỉ ghi identity; rename/delete journal trước I/O và recovery theo old/new/quarantine. Delete chỉ chạm live root sau backup verify, soft-delete registration để giữ FK history. Identity-invalid dùng location-owned backup và nullable audit/event, tuyệt đối không persist `entryId`; MCP business tool từ chối token này tại schema boundary.
+  - Verification: Lifecycle 8/8 và coordinator 7/7 xanh trên SQLite + filesystem thật, gồm grant location-bound được consume; full Vitest toàn repo exit 0. `typecheck`, boundaries, schema drift, spec-path verification, lint 0 error (10 warning fixture cũ) và `git diff --check` xanh. GitHub Actions chạy full CI Linux/Windows cho PR, Linux/macOS/Windows cho main/manual; workflow platform còn chạy trực tiếp lifecycle contract.
+  - Decisions: Detailed Design được sửa trước code qua bản 30–36. Physical delete registration đổi thành tombstone vì FK history; recovery identity có ownership backup `{workspaceRoot,slug}` thay vì ProjectId giả; approval grant được reserve/consume trong durable workspace operation; `workspace.changed` là event nullable-project duy nhất.
+  - Blockers: Không có. Gate B delta đã chạy lại và xanh; Phase M được mở.
+
+2026-08-04 — Phase M, Tasks M.1–M.10
+  - Files: `packages/contracts/src/timeline-diagnostics.ts`, `packages/core/src/usecase/{diagnostics,thumbnail}.ts`, `packages/core/src/{domain/models,port/ports,service/project-state-store}.ts`, `packages/adapter/src/hyperframes/{parse,check}.ts`, `packages/cli/src/composition-root.ts`, `src/components/studio/timeline-elements.tsx`, `tests/{core/diagnostics-rules,adapter/diagnostics-thumbnail}.test.ts`.
+  - Summary: Gom bốn cảnh báo timeline/parser vào một bộ luật thuần dùng chung; thêm platform/narration/asset/content-state diagnostics; gộp đủ năm nhóm HyperFrames check; persist report dẫn xuất có source revision; recovery identity chỉ trả response. Thumbnail ưu tiên contact sheet/frame thật, đọc hash làm ETag và fallback seed ổn định.
+  - Verification: Phase M 2 files/8 tests xanh; bundle project-state/render/snapshot/project-write 4 files/51 tests xanh trên SQLite + filesystem + child process thật. Full Vitest 105 files pass + 1 skip, 768 tests pass + 3 skip; `typecheck`, `test:boundaries`, `test:schema-drift`, `test:spec-paths`, lint 0 error (10 warning fixture cũ) và `git diff --check` xanh. Test invalid khóa riêng diagnostics chạy, render/snapshot/mutation trả `project_invalid`; checker thật vắng trả cờ false + diagnostic; recovery không tạo `.vidcom`.
+  - Decisions: Detailed Design bản 37 khóa lint/projection/thumbnail seams trước code; bản 38 sửa xung đột steering: số học thuần nằm ở contracts shared-kernel để UI và Core dùng chung mà `src/**` không import Core. Business diagnostic vẫn ở Core. Mutation composition giờ validate source và map lỗi parser thành `project_invalid` ổn định thay vì throw/not_found.
+  - Blockers: Không có. Phase M hoàn tất; Phase N được mở.
+
+2026-08-04 — Phase N, Tasks N.1–N.8
+  - Files: `packages/contracts/src/{domain,mcp}.ts`, `packages/core/src/{domain/platform-preset,usecase/project-writes,usecase/narration-cues,usecase/project-lifecycle}.ts`, `packages/adapter/src/hyperframes/{parse,narration-clips}.ts`, `packages/mcp/src/registry/write-tools.ts`, `packages/cli/src/composition-root.ts`, `tests/adapter/{scene-ripple-narration,narration-clips,project-destructive-usecases}.test.ts`, `tests/core/delivery-loop-domain.test.ts`, `tests/mcp/{contract-matrix,tools,support}.ts`, MCP tools-list goldens và `.github/workflows/process-supervision.yml`.
+  - Summary: Insert theo index/track và timing ripple commit một composite revision, chỉ dịch peer cùng track và tính root trên mọi track. Empty project sinh root từ identity cùng scene đầu. Overflow runtime/root có discriminator máy đọc được. Narration v2 giữ nhiều cue, mount mỗi file theo document start + offset, legacy chỉ chiếu in-memory; script edit stale đúng cue.
+  - Verification: Phase N bundle 7 files/88 tests xanh trên SQLite + filesystem + Hono/child adapter thật; riêng integration mới 5/5, narration clip/domain 29/29; MCP registry/2-era×2-transport contract và goldens xanh. Full Vitest toàn repo exit 0; `typecheck`, `test:boundaries`, `test:schema-drift`, `test:spec-paths`, lint 0 error (10 warning fixture cũ), `git diff --check` xanh. Workflow Linux/macOS/Windows chạy trực tiếp Phase N.
+  - Decisions: Detailed Design bản 39 được ghi trước code: shared root generator + identity dependency; explicit ripple/extendRoot; sidecar v2 có cue audio ownership và compatibility projection cho client cũ. Strict MCP input/output được mở cùng usecase để response có `affectedTrackIndex`/`moved` không bị finalization từ chối sau commit. `MAX_PROJECT_DURATION_SECONDS=3600` là constant contracts, không gọi là giới hạn encoder.
+  - Blockers: Không có. Phase N hoàn tất; theo thứ tự đã duyệt, Phase Q được mở trước O/P.
+
+2026-08-04 — Phase Q, Tasks Q.1–Q.11, Q.13; Q.12 integration closure pending P
+  - Files: `packages/agent-kit/{AGENTS,CLAUDE}.md`, `packages/agent-kit/{skills,prompts,scripts,src}/**`, `packages/contracts/src/agent-kit.ts`, `packages/core/src/usecase/agent-kit-install.ts`, `packages/cli/{package.json,src/composition-root.ts}`, `tests/{adapter/agent-kit-installer,agent-kit/sync}.test.ts`, `.github/workflows/process-supervision.yml`.
+  - Summary: Bundle build sinh CLAUDE byte-identical và TypeScript literal có SHA-256; installer phân loại sáu state, hai host manifest, native-router usability, Claude link/Codex manual merge và ghi batch duy nhất qua workspace authority. Không runtime-read asset cạnh executable, không revision/event/backup.
+  - Verification: 10/10 test xanh; 7 integration dùng SQLite + filesystem thật gồm rollback giữa batch, 3 sync/bundle tests. `typecheck`, boundaries, lint 0 error (10 warning fixture cũ), spec paths và diff check xanh. Skill validator chính thức đã được gọi nhưng môi trường thiếu module Python `yaml`; test frontmatter/marker/name/line-count tương đương chạy xanh cho cả bảy skill.
+  - Decisions: Detailed Design bản 40 khóa runtime bundle và classifier trước code. Bản 41 ghi trước khi chuyển O: Q.12 actual Registry equality phải terminal ở P vì bốn descriptor final thuộc P; không tạo stub/đăng ký tool sớm để làm xanh giả.
+  - Blockers: Không có gate đỏ. Q.12 còn integration closure có dependency P; Phase O được mở theo thứ tự.
+
+2026-08-04 — Phase O, Tasks O.1–O.10
+  - Files: `packages/contracts/src/delivery-loop-http.ts`, `packages/server/src/{app,routes/delivery-loop,routes/jobs,middleware/error-mapper}.ts`, `packages/cli/src/next-host.ts`, `packages/adapter/src/hyperframes/{check,binary-probe}.ts`, recovery identity authority/coordinator/path seams, `tests/server/{delivery-loop-routes,events,payload-limits}.test.ts`.
+  - Summary: Mount toàn bộ HTTP delivery loop vào production host; workspace activation khởi tạo composition root mới, swap runtime, clear entry token, phát workspace.changed và buộc re-auth. Render/snapshot dùng đúng enqueue usecase worker; recovery identity validate ID rồi dùng bootstrap/adopt authority với hash precondition và transaction đăng ký + revision/audit. MP4 hỗ trợ Range/ETag; termination proof đọc cột SQLite riêng.
+  - Verification: O integration 9/9 xanh trên SQLite + filesystem thật; hot-swap chạy hai workspace/composition root thật; recovery/lifecycle/coordinator/path regression 59/59 xanh; SSE exact payload 1/1 xanh; `typecheck`, boundaries, lint 0 error và diff check xanh. `bun run build` compile production sạch; `bun run test:runtime-smoke` đi qua nonce, MCP legacy/modern, credential audit và SSE 1→2. HTTP tạo project/scene, MCP đổi timing trên cùng application instance, rồi HTTP đọc narration/diagnostics và enqueue hai job.
+  - Decisions: Không đổi contract đã duyệt. Bản42 được thực thi bằng ProjectRef mang ID mới đã strict-validate và sẽ persist, không phải ID giả; bootstrap chấp nhận registration cùng ID/location khi sửa marker hỏng. Fixture payload-limit được cập nhật 400→409 theo bảng §8.1. HyperFrames package resolution giữ nguyên Node `createRequire` nhưng gọi qua `Reflect.apply`, tránh Turbopack bundle CLI ESM hoặc thay dynamic resolve bằng runtime stub. Test SSE Next cũ còn đỏ vì fixture marker Phase 1/2 không có vidcom.json; giữ lại cho Phase R audit đúng thứ tự.
+  - Blockers: Không có blocker Phase O. Phase P được mở; full suite sẽ được đóng sau Phase R sửa fixture cũ theo task R.1–R.4.
+
+2026-08-04 — Phase P, Tasks P.1–P.8; closure Q.12
+  - Files: `packages/contracts/src/{mcp,agent-kit}.ts`, `packages/mcp/src/registry/{all-tools,delivery-loop-tools,job-tools,registry}.ts`, `packages/core/src/{usecase/agent-kit-install,service/workspace-mutation-coordinator,port/ports}.ts`, `packages/adapter/src/db/{schema,workspace-operation-journal}.ts`, `packages/cli/src/composition-root.ts`, migration `20260804180557_spotty_catseye`, `tests/{mcp,adapter/agent-kit-installer,agent-kit/sync}.test.ts` và MCP tools-list goldens.
+  - Summary: Registry production có 17 tool theo thứ tự tên ổn định, gồm bốn delivery-loop descriptor mới dùng đúng diagnostics/enqueue/installer usecase chung. `get_job_status` giữ một registration, trả outcome terminal, warning, cleanupPending và backoff 250/1000/null. Workspace journal sở hữu audit pending của `install_agent_kit`, kể cả audited no-change, và materialize đúng protocol version.
+  - Verification: MCP/agent-kit/workspace-journal 17 files/80 tests xanh; contract P chạy legacy/modern qua stdio/HTTP, goldens và strict union. SQLite + filesystem thật chứng minh applied lẫn no-change có đúng một audit protocol-bearing. Full Vitest 109 files xanh + 1 skip, 798 tests xanh + 3 skip; `typecheck`, boundaries, schema drift 22 migration artifacts, lint 0 error (10 warning fixture cũ), spec paths và diff check xanh. Production Next build sạch; runtime smoke đi qua nonce, MCP exact/latest hai era, credential audit và SSE.
+  - Decisions: Detailed Design bản 43–44 được ghi trước code để khóa workspace-owned pending audit, no-change audit-only batch, strict input và output `{jobId}`. Q.12 bỏ final catalog song song: AGENTS/skill references giờ so hai chiều trực tiếp với Registry production 17 tool.
+  - Blockers: Không có. Phase P và Q.12 hoàn tất; Phase R được mở để audit toàn bộ fixture Phase 1/2 trước full-suite closure.
+
+2026-08-04 — Phase R, Tasks R.1–R.4
+  - Files audited: `tests/adapter/{backup-restore,bgm-composite-recovery,bootstrap-project,composite-write-authority,composition-hf,concurrency-lease,diagnostics-thumbnail,events-watcher-cache,fs,journal-recovery,project-destructive-usecases,project-discovery-state,project-lifecycle,project-state-store,render-job,scene-ripple-narration,snapshot-job,workspace-mutation-coordinator,workspace-scan-identity}.test.ts`, `tests/cli/{mcp-commands,startup}.test.ts`, `tests/core/{file-deletion,project-usecases,source-revision}.test.ts`, `tests/e2e/mcp-stdio-host.test.ts`, `tests/golden/parse.test.ts`, `tests/server/{delivery-loop-routes,events}.test.ts` — toàn bộ 28 file test có nhắc `hyperframes.json`.
+  - Decisions per fixture: Giữ marker-backed fixtures đã có `vidcom.json`; sửa 3 fixture MCP CLI và 4 fixture startup orchestration thành marker-backed vì chúng mô tả project hợp lệ; giữ không marker duy nhất cho các case tường minh candidate/adopt trong `bootstrap-project`, `project-discovery-state`, `project-lifecycle`, `workspace-scan-identity`, `delivery-loop-routes`; giữ các literal path-policy/direct-parser vì không phát biểu project discovery. Không fixture nào cần xoá.
+  - Summary: Candidate scanner test giờ có cả cặp cũ `hyperframes.json` + `index.html` nhưng vẫn phải là candidate, đồng thời `WorkspaceFs.listProjects()` bị assert không nhận slug đó. Rà call sites xác nhận `listProjects/readProjectRef` chỉ đọc `vidcom.json`; `scanWorkspace` kiểm identity trước; `listProjectCandidates` chỉ phục vụ explicit bootstrap/adopt và startup backfill còn có gate identity-exists, không biến candidate thành project.
+  - Verification: Phase R 5 files/60 tests xanh trên SQLite + filesystem thật. Full Vitest 109 files pass + 1 skip, 798 tests pass + 3 skip; không còn failure SSE fixture cũ. Lần chạy `bun test` trực tiếp bị loại khỏi evidence vì đó là Bun runner không hỗ trợ `node:sqlite`/Vitest snapshots; gate dùng đúng `bun run test`.
+  - Blockers: Không có. Phase R hoàn tất; Phase S được mở.
+
+2026-08-04 — Phase S, Tasks S.4–S.5; local release gate ready for remote evidence
+  - Files: `package.json`, `scripts/verify-spec-test-paths.mjs`, Phase Verification Matrix trong checklist, MCP/golden fixtures và hai workflow GitHub Actions.
+  - Summary: `test:golden` bao gồm cả `tests/golden` lẫn `tests/mcp/golden`; Verification Matrix mới liệt kê A–S với 43 đường test thật và guard đã chuyển khỏi spec Phase 2 cũ sang spec delivery-loop hiện tại.
+  - Verification: Golden 9 files/26 tests, MCP contract 9 files/71 tests, full Vitest 109 files pass + 1 skip/798 pass + 3 skip; agent-kit deterministic, typecheck, boundaries, schema drift, spec paths, build, runtime smoke, local process supervision và diff check đều xanh; lint 0 error/10 warning fixture cũ. Local S1e darwin: naive leak=true, captured PID=3, group=2, sweep=2, 125.2 ms, exhaustive=true, survivor=0.
+  - Blockers: S.1/S.2/S.6 chờ GitHub Actions trên exact commit để đọc số Linux/Windows, Windows real render và full matrix ba OS; chưa tick trước remote evidence.
 
 Format:
 ```

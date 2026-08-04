@@ -1,0 +1,5 @@
+# x-vidcom-agent-kit: 1
+interface:
+  display_name: "VidCom"
+  short_description: "Route video production work through VidCom MCP"
+  default_prompt: "Use VidCom MCP to plan, edit, validate, preview, and render this video safely."

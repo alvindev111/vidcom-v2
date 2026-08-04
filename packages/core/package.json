@@ -5,6 +5,7 @@
   "type": "module",
   "exports": "./src/index.ts",
   "dependencies": {
-    "@vidcom/contracts": "workspace:*"
+    "@vidcom/contracts": "workspace:*",
+    "zod": "4.4.3"
   }
 }

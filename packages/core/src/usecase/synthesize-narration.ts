@@ -137,14 +137,12 @@ export async function synthesizeNarration(
         path: cue.audioPath,
         content: audio.audio,
         expectedContentHash: cue.audioHash,
-        purpose: "write-asset",
       },
       {
         kind: "write",
         path: cue.sidecarPath,
         content: `${JSON.stringify(record, null, 2)}\n`,
         expectedContentHash: cue.sidecarHash,
-        purpose: "system-write",
       },
     );
     assets.push({
@@ -155,10 +153,10 @@ export async function synthesizeNarration(
   }
 
   // Last gate before the write: a batch cancelled while the engine was running
-  // must not land on disk. Once `mutateComposite` starts it is the write
+  // must not land on disk. Once `mutateSource` starts it is the write
   // authority's transaction and cancelling it is no longer this function's call.
   options.signal?.throwIfAborted();
-  const written = await dependencies.authority.mutateComposite({
+  const written = await dependencies.authority.mutateSource({
     ref,
     steps,
     toolAudit: null,

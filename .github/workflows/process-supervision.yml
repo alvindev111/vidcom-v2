@@ -7,14 +7,87 @@ name: Process supervision gate
 # This is a separate workflow rather than a step in CI on purpose. It spawns
 # process trees and kills them, so a failure here means "the supervision
 # contract broke", not "a test broke" — and mixing that signal into the general
-# static-checks job would blur which one is being reported. It is also cheap:
-# the fixture is four idle Node processes, no Chromium, no FFmpeg, no network.
+# static-checks job would blur which one is being reported. The synthetic gate
+# remains four idle Node processes; dependencies are installed so the same run
+# also executes the production adapter's Vitest contract.
 on:
   pull_request:
     paths:
       - "spikes/phase-3-checklist-gate/**"
       - "packages/adapter/src/runtime/**"
+      - "packages/adapter/src/hyperframes/document.ts"
+      - "packages/adapter/src/hyperframes/binary-probe.ts"
+      - "packages/adapter/src/hyperframes/check.ts"
+      - "packages/adapter/src/hyperframes/narration-clips.ts"
+      - "packages/adapter/src/hyperframes/parse.ts"
+      - "packages/adapter/src/fs/render-project.ts"
+      - "packages/adapter/src/fs/render-root.ts"
+      - "packages/adapter/src/fs/mutation-capture.ts"
+      - "packages/adapter/src/fs/workspace-fs.ts"
+      - "packages/adapter/src/db/job-store.ts"
+      - "packages/adapter/src/db/schema.ts"
+      - "packages/adapter/drizzle/**"
+      - "packages/adapter/src/db/journal.ts"
       - "packages/core/src/port/process-port.ts"
+      - "packages/core/src/port/ports.ts"
+      - "packages/core/src/service/remote-asset-guard.ts"
+      - "packages/core/src/service/remote-asset-scan.ts"
+      - "packages/core/src/service/entry-registry.ts"
+      - "packages/core/src/service/project-state-store.ts"
+      - "packages/core/src/usecase/project-identity.ts"
+      - "packages/core/src/usecase/scan-workspace.ts"
+      - "packages/core/src/usecase/project-lifecycle.ts"
+      - "packages/core/src/usecase/diagnostics.ts"
+      - "packages/core/src/usecase/thumbnail.ts"
+      - "packages/core/src/usecase/narration-cues.ts"
+      - "packages/core/src/usecase/project-writes.ts"
+      - "packages/core/src/usecase/agent-kit-install.ts"
+      - "packages/agent-kit/**"
+      - "packages/contracts/src/agent-kit.ts"
+      - "packages/contracts/src/delivery-loop-http.ts"
+      - "packages/contracts/src/mcp.ts"
+      - "packages/mcp/src/registry/write-tools.ts"
+      - "src/components/studio/timeline-elements.tsx"
+      - "packages/cli/src/composition-root.ts"
+      - "packages/cli/src/startup.ts"
+      - "packages/cli/src/next-host.ts"
+      - "packages/server/src/app.ts"
+      - "packages/server/src/routes/delivery-loop.ts"
+      - "packages/server/src/routes/events.ts"
+      - "packages/server/src/routes/jobs.ts"
+      - "packages/worker/src/render-job.ts"
+      - "packages/worker/src/snapshot-job.ts"
+      - "tests/adapter/render-binary-probe.test.ts"
+      - "tests/adapter/render-job.test.ts"
+      - "tests/adapter/render-project.test.ts"
+      - "tests/adapter/render-root.test.ts"
+      - "tests/adapter/snapshot-job.test.ts"
+      - "tests/adapter/remote-asset-guard.test.ts"
+      - "tests/adapter/remote-asset-browser.test.ts"
+      - "tests/adapter/project-discovery-state.test.ts"
+      - "tests/adapter/project-state-store.test.ts"
+      - "tests/adapter/workspace-scan-identity.test.ts"
+      - "tests/adapter/project-lifecycle.test.ts"
+      - "tests/adapter/diagnostics-thumbnail.test.ts"
+      - "tests/adapter/narration-clips.test.ts"
+      - "tests/adapter/scene-ripple-narration.test.ts"
+      - "tests/adapter/agent-kit-installer.test.ts"
+      - "tests/agent-kit/sync.test.ts"
+      - "tests/server/delivery-loop-routes.test.ts"
+      - "tests/server/events.test.ts"
+      - "tests/server/job-routes.test.ts"
+      - "tests/core/delivery-loop-domain.test.ts"
+      - "tests/core/diagnostics-rules.test.ts"
+      - "tests/mcp/contract-matrix.test.ts"
+      - "tests/mcp/golden/tools-list.test.ts"
+      - "tests/mcp/tools.test.ts"
+      - "tests/cli/startup.test.ts"
+      - "tests/golden/runtime-asset-guard.test.ts"
+      - "tests/golden/fixtures/runtime-asset-guard.html"
+      - "tests/golden/snapshot-timestamp-mapping.test.ts"
+      - "tests/golden/fixtures/snapshot-timestamp-mapping.json"
+      - "tests/golden/project-context.test.ts"
+      - "tests/golden/fixtures/project-context.md"
       - ".github/workflows/process-supervision.yml"
   push:
     branches:
@@ -56,11 +129,19 @@ jobs:
         with:
           node-version: 24.9.0
 
-      # No `bun install`: the spike imports nothing outside node: builtins, so a
-      # dependency install here would only add a way for this gate to go red for
-      # a reason that has nothing to do with process supervision.
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.14
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
       - name: Report toolchain
-        run: node --version
+        run: bun --version && node --version
+
+      - name: Production supervisor adapter contract
+        run: bunx vitest run tests/adapter/process-supervisor.test.ts tests/adapter/node-process-runner.test.ts tests/adapter/render-binary-probe.test.ts tests/adapter/render-job.test.ts tests/adapter/render-project.test.ts tests/adapter/render-root.test.ts tests/adapter/snapshot-job.test.ts tests/adapter/remote-asset-guard.test.ts tests/adapter/remote-asset-browser.test.ts tests/adapter/project-discovery-state.test.ts tests/adapter/project-state-store.test.ts tests/adapter/workspace-scan-identity.test.ts tests/adapter/project-lifecycle.test.ts tests/adapter/diagnostics-thumbnail.test.ts tests/adapter/narration-clips.test.ts tests/adapter/scene-ripple-narration.test.ts tests/adapter/agent-kit-installer.test.ts tests/agent-kit/sync.test.ts tests/core/delivery-loop-domain.test.ts tests/core/diagnostics-rules.test.ts tests/mcp/contract-matrix.test.ts tests/mcp/golden/tools-list.test.ts tests/mcp/tools.test.ts tests/server/delivery-loop-routes.test.ts tests/server/events.test.ts tests/server/job-routes.test.ts tests/cli/startup.test.ts tests/golden/project-context.test.ts tests/golden/runtime-asset-guard.test.ts tests/golden/snapshot-timestamp-mapping.test.ts
 
       # Non-zero exit means either the fixture failed to escape its process group
       # on this platform (inconclusive — read the JSON) or the algorithm leaked.
@@ -83,6 +164,12 @@ jobs:
       - name: Degraded enumerator path reports its own limits truthfully
         if: runner.os == 'Windows'
         run: npm run spike:process-supervision
+        env:
+          VIDCOM_DISABLE_ENUMERATORS: powershell-cim
+
+      - name: Production adapter degraded proof carries warning
+        if: runner.os == 'Windows'
+        run: bunx vitest run tests/adapter/process-supervisor.test.ts
         env:
           VIDCOM_DISABLE_ENUMERATORS: powershell-cim
 

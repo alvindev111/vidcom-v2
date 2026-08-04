@@ -1,0 +1,5 @@
+# x-vidcom-agent-kit: 1
+interface:
+  display_name: "VidCom Look"
+  short_description: "Adjust VidCom look and audio bed"
+  default_prompt: "Adjust this video look through VidCom preview settings."

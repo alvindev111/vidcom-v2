@@ -87,7 +87,7 @@ describe("real WriteAuthority concurrency and workspace lease", () => {
                   invalidate() {},
                   notifyEvents() {},
                 });
-                const resultB = await authorityB.mutate({
+                const resultB = await authorityB.mutateSource({
                   kind: "file",
                   ref,
                   path: "index.html" as RelPath,
@@ -114,7 +114,7 @@ describe("real WriteAuthority concurrency and workspace lease", () => {
         notifyEvents() {},
       });
 
-      await expect(authorityA.mutate({
+      await expect(authorityA.mutateSource({
         kind: "file",
         ref,
         path: "index.html" as RelPath,
@@ -159,7 +159,7 @@ describe("real WriteAuthority concurrency and workspace lease", () => {
     const leaseB = await lease.acquire(workspaceRoot as AbsolutePath, "daemon-b:2:boot");
     expect(leaseB).toEqual({ ok: true, leaseId: "lease_0003" });
     if (!leaseB.ok) return;
-    await expect(authorityA.mutate({
+    await expect(authorityA.mutateSource({
       kind: "file",
       ref,
       path: "index.html" as RelPath,
@@ -181,7 +181,7 @@ describe("real WriteAuthority concurrency and workspace lease", () => {
       invalidate() {},
       notifyEvents() {},
     });
-    const mutate = (content: string) => authorityB.mutate({
+    const mutate = (content: string) => authorityB.mutateSource({
       kind: "file" as const,
       ref,
       path: "index.html" as RelPath,

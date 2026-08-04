@@ -166,7 +166,7 @@ describe("exact MCP SDK CLI smoke", () => {
       legacyTransport.stderr?.on("data", (chunk: Buffer) => legacyStderr.push(chunk));
       const legacy = new LegacyClient({ name: "vidcom-sdk-host-legacy", version: "1.0.0" });
       await legacy.connect(legacyTransport);
-      expect((await legacy.listTools()).tools.map((tool) => tool.name)).toHaveLength(13);
+      expect((await legacy.listTools()).tools.map((tool) => tool.name)).toHaveLength(17);
       const legacyCall = await legacy.callTool({ name: "list_projects", arguments: {} });
       expect(legacyCall.structuredContent).toMatchObject({ projects: [{ projectId }] });
       await legacy.close();
@@ -207,7 +207,7 @@ describe("exact MCP SDK CLI smoke", () => {
         return { action: "accept" as const, content: { grantId: requestId } };
       });
       await modern.connect(modernTransport);
-      expect((await modern.listTools()).tools.map((tool) => tool.name)).toHaveLength(13);
+      expect((await modern.listTools()).tools.map((tool) => tool.name)).toHaveLength(17);
       const deleted = await modern.callTool({
         name: "delete_file",
         arguments: { projectId, path: unused, expectedContentHash: unusedHash },

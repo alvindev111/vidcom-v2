@@ -1,0 +1,5 @@
+# x-vidcom-agent-kit: 1
+interface:
+  display_name: "VidCom Render"
+  short_description: "Preview and render VidCom projects"
+  default_prompt: "Preview and render this project through VidCom MCP."

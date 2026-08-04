@@ -6,9 +6,9 @@ import path from "node:path";
 import { describe, expect, it } from "vitest";
 
 import { createBootstrapNonce, runStartupSequence, startVidcomFoundation, StartupError, type StartupStepName } from "@vidcom/cli";
-import { AppDataBackupStore, initializeDatabase } from "@vidcom/adapter";
-import type { ProjectId, RelPath } from "@vidcom/contracts";
-import type { AbsolutePath, ResolvedPath } from "@vidcom/core";
+import { AppDataBackupStore, initializeDatabase, RENDER_OWNER_MARKER, SqliteJobStore } from "@vidcom/adapter";
+import type { ContentHash, ProjectId, RelPath } from "@vidcom/contracts";
+import type { AbsolutePath, JobId, ResolvedPath } from "@vidcom/core";
 import { createFixedClock, createSequentialIdPort } from "../support/deterministic";
 import { dbOne, dbRun } from "../support/database";
 
@@ -67,7 +67,7 @@ describe("startup order", () => {
     );
   });
 
-  it("integrates migration, lease, reconciliation and identity backfill before listener", async () => {
+  it("integrates migration and lease while preserving an unadopted candidate before listener", async () => {
     const root = await mkdtemp(path.join(tmpdir(), "vidcom-startup-"));
     const workspace = path.join(root, "workspace");
     const project = path.join(workspace, "project");
@@ -89,9 +89,107 @@ describe("startup order", () => {
         async openListener() { hooks.push("listener"); return { port: 4321 }; },
       });
       expect(hooks).toEqual(["jobs", "scheduler", "watcher", "listener"]);
-      expect(JSON.parse(await readFile(path.join(project, "vidcom.json"), "utf8"))).toEqual({ id: "project_0002" });
+      await expect(access(path.join(project, "vidcom.json"))).rejects.toMatchObject({ code: "ENOENT" });
+      expect(await runtime.application.scanWorkspace()).toContainEqual({ kind: "candidate", slug: "project" });
       expect(runtime.listener).toEqual({ port: 4321 });
       await runtime.stop();
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("reclaims owned roots and reconciles the remove-to-clear crash window before opening the listener", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "vidcom-startup-render-root-"));
+    const workspace = path.join(root, "workspace");
+    const appData = path.join(root, "app-data");
+    const jobId = "job_startup_cleanup" as JobId;
+    const removedBeforeClearId = "job_removed_before_clear" as JobId;
+    const unownedId = "job_unowned_cleanup" as JobId;
+    const warnings: string[] = [];
+    await mkdir(workspace, { recursive: true });
+    const setupDatabase = await initializeDatabase(appData);
+    dbRun(setupDatabase, `INSERT INTO project_registry
+      (id, workspace_root, slug, first_seen_at, last_seen_at) VALUES (?, ?, ?, ?, ?)`,
+    "project_render_root", workspace, "project", "2026-08-03T22:00:00.000Z", "2026-08-03T22:00:00.000Z");
+    const store = new SqliteJobStore(setupDatabase, createFixedClock("2026-08-03T22:00:00.000Z"));
+    for (const id of [jobId, removedBeforeClearId, unownedId]) {
+      await store.enqueue({
+        id,
+        projectId: "project_render_root" as ProjectId,
+        type: "render",
+        input: {},
+        inputHash: `sha256:${"0".repeat(64)}` as ContentHash,
+        idempotencyKey: null,
+      });
+      expect(await store.claim(id, "worker")).toBe(true);
+      expect(await store.finish(id, { status: "succeeded", result: {}, cleanupPending: true })).toBe(true);
+    }
+    await setupDatabase.destroy();
+    const renderRoot = path.join(appData, "render-roots", jobId);
+    await mkdir(renderRoot, { recursive: true });
+    await writeFile(path.join(renderRoot, RENDER_OWNER_MARKER), `${JSON.stringify({
+      jobId,
+      createdAt: "2026-08-03T22:00:00.000Z",
+    })}\n`);
+    const unownedRoot = path.join(appData, "render-roots", unownedId);
+    await mkdir(unownedRoot, { recursive: true });
+    await writeFile(path.join(unownedRoot, RENDER_OWNER_MARKER), "not-json\n");
+    try {
+      const runtime = await startVidcomFoundation({
+        appDataRoot: appData,
+        workspaceRoot: workspace as AbsolutePath,
+        holderId: "test:render-root-recovery",
+        clock: createFixedClock("2026-08-04T00:00:00.000Z"),
+        ids: createSequentialIdPort(),
+        logger: {
+          warn(message) { warnings.push(message); },
+          error() {},
+        },
+      }, {
+        async recoverJobs() {},
+        async startScheduler() {},
+        async startWatcher() {},
+        async openListener({ infrastructure }) {
+          await expect(access(renderRoot)).rejects.toMatchObject({ code: "ENOENT" });
+          expect((await infrastructure.jobs.get(jobId))?.cleanupPending).toBe(false);
+          expect((await infrastructure.jobs.get(removedBeforeClearId))?.cleanupPending).toBe(false);
+          expect((await infrastructure.jobs.get(unownedId))?.cleanupPending).toBe(true);
+          await expect(access(unownedRoot)).resolves.toBeUndefined();
+          expect(warnings).toContain("render root cleanup remains pending because ownership is invalid");
+          return null;
+        },
+      });
+      await runtime.stop();
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("still reclaims render roots when stale-job recovery fails", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "vidcom-startup-independent-recovery-"));
+    const workspace = path.join(root, "workspace");
+    const appData = path.join(root, "app-data");
+    const renderRoot = path.join(appData, "render-roots", "job_independent");
+    await mkdir(workspace, { recursive: true });
+    await mkdir(renderRoot, { recursive: true });
+    await writeFile(path.join(renderRoot, RENDER_OWNER_MARKER), `${JSON.stringify({
+      jobId: "job_independent",
+      createdAt: "2026-08-03T22:00:00.000Z",
+    })}\n`);
+    try {
+      await expect(startVidcomFoundation({
+        appDataRoot: appData,
+        workspaceRoot: workspace as AbsolutePath,
+        holderId: "test:independent-recovery",
+        clock: createFixedClock("2026-08-04T00:00:00.000Z"),
+        ids: createSequentialIdPort(),
+      }, {
+        async recoverJobs() { throw new Error("injected stale recovery failure"); },
+        async startScheduler() {},
+        async startWatcher() {},
+        async openListener() { return null; },
+      })).rejects.toMatchObject({ name: "StartupError", step: "job-recovery" });
+      await expect(access(renderRoot)).rejects.toMatchObject({ code: "ENOENT" });
     } finally {
       await rm(root, { recursive: true, force: true });
     }
@@ -224,6 +322,7 @@ describe("startup order", () => {
     const project = path.join(workspace, "project");
     await mkdir(project, { recursive: true });
     await writeFile(path.join(project, "hyperframes.json"), "{}\n");
+    await writeFile(path.join(project, "vidcom.json"), '{"id":"project_startup_unwind"}\n');
     await writeFile(path.join(project, "index.html"), '<main data-composition-id="root"></main>');
     const lifecycle: string[] = [];
     try {
@@ -255,6 +354,7 @@ describe("startup order", () => {
     const lifecycle: string[] = [];
     await mkdir(project, { recursive: true });
     await writeFile(path.join(project, "hyperframes.json"), "{}\n");
+    await writeFile(path.join(project, "vidcom.json"), '{"id":"project_startup_abort"}\n');
     await writeFile(path.join(project, "index.html"), '<main data-composition-id="root"></main>');
     try {
       await expect(startVidcomFoundation({
@@ -288,6 +388,7 @@ describe("startup order", () => {
     const project = path.join(workspace, "project");
     await mkdir(project, { recursive: true });
     await writeFile(path.join(project, "hyperframes.json"), "{}\n");
+    await writeFile(path.join(project, "vidcom.json"), '{"id":"project_startup_stop"}\n');
     await writeFile(path.join(project, "index.html"), '<main data-composition-id="root"></main>');
     const lifecycle: string[] = [];
     try {
@@ -322,6 +423,7 @@ describe("startup order", () => {
       const project = path.join(workspace, "project");
       await mkdir(project, { recursive: true });
       await writeFile(path.join(project, "hyperframes.json"), "{}\n");
+      await writeFile(path.join(project, "vidcom.json"), `{\"id\":\"project_cleanup_${failure}\"}\n`);
       await writeFile(path.join(project, "index.html"), '<main data-composition-id="root"></main>');
       const lifecycle: string[] = [];
       try {

@@ -82,7 +82,7 @@ async function runReadOperation(
 async function validateRestoreTarget(
   id: string,
   dependencies: BackupCommandDependencies,
-): Promise<{ manifest: BackupManifest; workspaceRoot: AbsolutePath }> {
+): Promise<{ manifest: BackupManifest & { projectId: ProjectId }; workspaceRoot: AbsolutePath }> {
   const appDataRoot = dependencies.appDataRoot();
   const database = await initializeDatabase(appDataRoot);
   try {
@@ -94,6 +94,7 @@ async function validateRestoreTarget(
     );
     const manifest = await backups.read(id);
     if (!manifest) throw new CliInputError("backup_not_found");
+    if (manifest.projectId === null) throw new CliInputError("project_not_found");
     if (manifest.payloadPrunedAt !== null) throw new CliInputError("backup_expired");
     if (manifest.revisionId === null || !(await backups.verify(id))) {
       throw new CliInputError("backup_failed");
@@ -105,7 +106,7 @@ async function validateRestoreTarget(
     if (!(await new WorkspaceFs(workspaceRoot).readProjectRef(manifest.projectId))) {
       throw new CliInputError("project_not_found");
     }
-    return { manifest, workspaceRoot };
+    return { manifest: { ...manifest, projectId: manifest.projectId }, workspaceRoot };
   } finally {
     await database.destroy();
   }

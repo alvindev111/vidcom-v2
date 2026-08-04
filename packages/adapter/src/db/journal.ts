@@ -1,17 +1,21 @@
 import { sql } from "drizzle-orm";
 import { createHash } from "node:crypto";
 
-import { ErrorCode, type Actor, type ContentHash, type ProjectId, type RelPath } from "@vidcom/contracts";
+import { ErrorCode, type Actor, type ContentHash, type DomainError, type ProjectId, type RelPath } from "@vidcom/contracts";
 import {
   canonicalizeJson,
+  err,
+  ok,
   parsePendingToolAudit,
   serializePendingToolAudit,
+  type AbsolutePath,
   type CompositeIntent,
   type CompositeMutationJournalPort,
   type CompositeResult,
   type ClockPort,
   type EntitySeed,
   type EntityState,
+  type Result,
   type JournalId,
   type MutationIntent,
   type MutationJournalPort,
@@ -19,6 +23,7 @@ import {
   type MutationAuthority,
   type PendingMutation,
   type ProjectRegistration,
+  type ProjectRevisionProjection,
   type GrantTransition,
   type PendingMutationContext,
   type PendingCompositeMutation,
@@ -35,6 +40,8 @@ import {
   LARGE_PREVIOUS_CONTENT_THRESHOLD,
   type PreviousContentStore,
 } from "../fs/large-content-store";
+
+export const DERIVED_ROLLBACK_GENERATIONS = 3;
 
 function contentBytes(content: string | Uint8Array | null): Uint8Array | null {
   return typeof content === "string" ? new TextEncoder().encode(content) : content;
@@ -63,6 +70,19 @@ function compositeManifestHash(steps: StepIntent[]): ContentHash {
     toHash,
   }));
   return `sha256:${createHash("sha256").update(canonicalizeJson(manifest)).digest("hex")}` as ContentHash;
+}
+
+function isDerivedPath(path: RelPath | null): boolean {
+  return path !== null && (
+    path.startsWith(".vidcom/")
+    || path.startsWith("snapshots/")
+    || path.startsWith("renders/")
+  );
+}
+
+function isDerivedComposite(result: CompositeResult): boolean {
+  return result.steps.length > 0
+    && result.steps.every((step) => step.kind === "write" && isDerivedPath(step.path));
 }
 
 interface StoredStepRow {
@@ -209,7 +229,7 @@ export class MutationJournal implements MutationJournalPort, CompositeMutationJo
         UPDATE workspace_lease SET expires_at = expires_at
         WHERE lease_id = ${authority.leaseId} AND expires_at >= ${now}
           AND workspace_root = (
-            SELECT workspace_root FROM project_registry WHERE id = ${intent.projectId}
+            SELECT workspace_root FROM project_registry WHERE id = ${intent.projectId} AND deleted_at IS NULL
           )
         RETURNING lease_id AS leaseId
       `);
@@ -380,12 +400,28 @@ export class MutationJournal implements MutationJournalPort, CompositeMutationJo
     result: CompositeResult,
     grant?: Extract<GrantTransition, { kind: "consume" }>,
   ): Promise<WriteEnvelope> {
-    return this.settleCompositeCommit(id, result, "pending", "committed", grant);
+    return this.settleCompositeCommit(id, result, "pending", "committed", true, grant);
+  }
+
+  async commitDerivedComposite(id: JournalId, result: CompositeResult): Promise<WriteEnvelope> {
+    if (!isDerivedComposite(result)) {
+      throw new JournalTransactionError(
+        ErrorCode.AssetNotAllowed,
+        "a derived journal commit contains a source or entity target",
+      );
+    }
+    return this.settleCompositeCommit(id, result, "pending", "committed", false);
   }
 
   /** Accepts a validated orphan state without reviving or consuming its already-invalidated grant. */
   async resolveOrphanedAccept(id: JournalId, result: CompositeResult): Promise<WriteEnvelope> {
-    return this.settleCompositeCommit(id, result, "orphaned", "recovered");
+    return this.settleCompositeCommit(
+      id,
+      result,
+      "orphaned",
+      "recovered",
+      !isDerivedComposite(result),
+    );
   }
 
   private async settleCompositeCommit(
@@ -393,12 +429,13 @@ export class MutationJournal implements MutationJournalPort, CompositeMutationJo
     result: CompositeResult,
     sourceStatus: "pending" | "orphaned",
     terminalStatus: "committed" | "recovered",
+    advancesSource: boolean,
     grant?: Extract<GrantTransition, { kind: "consume" }>,
   ): Promise<WriteEnvelope> {
     assertOrderedSteps(result.steps);
     const preparedSteps = await Promise.all(result.steps.map((step) => this.preparePrevious(step.previousContent)));
     const now = this.clock.now().toISOString();
-    return this.database.transaction((transaction) => {
+    const envelope = this.database.transaction((transaction) => {
       const journal = transaction.get<{
         projectId: string;
         actor: Actor;
@@ -424,12 +461,16 @@ export class MutationJournal implements MutationJournalPort, CompositeMutationJo
       const parent = transaction.get<{ id: number }>(sql`
         SELECT id FROM revision WHERE project_id = ${result.projectId} ORDER BY id DESC LIMIT 1
       `);
+      const context = journal.auditJson === null ? { toolAudit: null } : storedMutationContext(journal.auditJson);
+      const revisionSummary = context.commandAudit?.action === "derived.write"
+        ? canonicalizeJson(context.commandAudit.detail)
+        : null;
       const revision = transaction.get<{ id: number }>(sql`
         INSERT INTO revision (
-          project_id, kind, path, entity, content_hash, parent_revision, actor, summary, created_at
+          project_id, kind, path, entity, content_hash, parent_revision, actor, summary, advances_source, created_at
         ) VALUES (
           ${result.projectId}, ${revisionKind}, ${single?.path ?? null}, ${single?.entity ?? null},
-          ${revisionHash}, ${parent?.id ?? null}, ${result.actor}, NULL, ${now}
+          ${revisionHash}, ${parent?.id ?? null}, ${result.actor}, ${revisionSummary}, ${advancesSource ? 1 : 0}, ${now}
         ) RETURNING id
       `);
       if (!revision) throw new Error("composite revision insert returned no id");
@@ -473,6 +514,29 @@ export class MutationJournal implements MutationJournalPort, CompositeMutationJo
           VALUES (${revision.id}, ${previous.inline}, ${previous.objectHash}, ${previous.byteSize})
         `);
       }
+      if (!advancesSource) {
+        const stale = transaction.all<{ revisionId: number; path: string }>(sql`
+          SELECT revision_id AS revisionId, path FROM (
+            SELECT revision_step.revision_id, revision_step.path,
+              ROW_NUMBER() OVER (
+                PARTITION BY revision_step.path ORDER BY revision_step.revision_id DESC
+              ) AS generation
+            FROM revision_step
+            INNER JOIN revision ON revision.id = revision_step.revision_id
+            WHERE revision.project_id = ${result.projectId}
+              AND revision.advances_source = 0
+              AND revision_step.path IS NOT NULL
+          ) WHERE generation > ${DERIVED_ROLLBACK_GENERATIONS}
+        `);
+        for (const row of stale) {
+          transaction.run(sql`
+            UPDATE revision_step
+            SET previous_content = NULL, previous_object_hash = NULL, byte_size = 0
+            WHERE revision_id = ${row.revisionId} AND path = ${row.path}
+          `);
+          transaction.run(sql`DELETE FROM revision_blob WHERE revision_id = ${row.revisionId}`);
+        }
+      }
       if (journal.backupId) {
         const linked = transaction.get<{ id: string }>(sql`
           UPDATE backup_manifest SET revision_id = ${revision.id}
@@ -499,7 +563,6 @@ export class MutationJournal implements MutationJournalPort, CompositeMutationJo
         )
       `);
       if (sourceStatus === "pending" && journal.auditJson !== null) {
-        const context = storedMutationContext(journal.auditJson);
         const audit = context.toolAudit;
         const command = context.commandAudit;
         transaction.run(sql`
@@ -554,6 +617,12 @@ export class MutationJournal implements MutationJournalPort, CompositeMutationJo
         diagnostics: result.diagnostics,
       };
     });
+    if (!advancesSource && this.largeContent?.cleanupUnreferenced) {
+      await this.largeContent.cleanupUnreferenced(
+        await this.listPreviousObjectHashes(),
+      ).catch(() => 0);
+    }
+    return envelope;
   }
 
   /** Aborts an unchanged mutation, releases its reserved grant and returns cleared audit context for best-effort recording. */
@@ -720,13 +789,74 @@ export class MutationJournal implements MutationJournalPort, CompositeMutationJo
     return Promise.all(rows.map(async (row) => storedStepIntent(row, await this.hydratePrevious(row))));
   }
 
+  /** Reads one rollback slot without confusing a pruned payload with a previously absent file. */
+  async readRevisionRollbackPayload(
+    revisionId: number,
+    path: RelPath,
+  ): Promise<Result<Uint8Array | null, DomainError>> {
+    const row = this.database.get<{
+      fromHash: string | null;
+      previousContent: Uint8Array | null;
+      previousObjectHash: string | null;
+      generation: number;
+    }>(sql`
+      WITH ranked AS (
+        SELECT revision_step.revision_id AS revisionId,
+          revision_step.from_hash AS fromHash,
+          revision_step.previous_content AS previousContent,
+          revision_step.previous_object_hash AS previousObjectHash,
+          ROW_NUMBER() OVER (
+            PARTITION BY revision.project_id, revision_step.path
+            ORDER BY revision_step.revision_id DESC
+          ) AS generation
+        FROM revision_step
+        INNER JOIN revision ON revision.id = revision_step.revision_id
+        WHERE revision.advances_source = 0 AND revision_step.path = ${path}
+      )
+      SELECT fromHash, previousContent, previousObjectHash, generation
+      FROM ranked WHERE revisionId = ${revisionId}
+    `);
+    if (!row) {
+      return err({ code: ErrorCode.NotFound, message: "the derived revision path was not found" });
+    }
+    if (row.generation > DERIVED_ROLLBACK_GENERATIONS) {
+      return err({
+        code: ErrorCode.RollbackPayloadPruned,
+        message: "the derived rollback payload is outside the retained generation window",
+      });
+    }
+    if (row.fromHash === null) return ok(null);
+    if (row.previousContent === null && row.previousObjectHash === null) {
+      return err({
+        code: ErrorCode.StorageUnavailable,
+        message: "the retained rollback payload is missing",
+      });
+    }
+    try {
+      return ok(await this.hydrateContent(row.previousContent, row.previousObjectHash));
+    } catch {
+      return err({
+        code: ErrorCode.StorageUnavailable,
+        message: "the retained rollback payload could not be read",
+      });
+    }
+  }
+
   /** Returns the live content-addressed rollback references used by safe startup compaction. */
   async listPreviousObjectHashes(): Promise<Set<string>> {
     const rows = this.database.all<{ hash: string }>(sql`
-      SELECT previous_object_hash AS hash FROM mutation_journal WHERE previous_object_hash IS NOT NULL
-      UNION SELECT previous_object_hash AS hash FROM mutation_step WHERE previous_object_hash IS NOT NULL
+      SELECT previous_object_hash AS hash FROM mutation_journal
+        WHERE previous_object_hash IS NOT NULL AND status IN ('pending', 'orphaned')
+      UNION SELECT mutation_step.previous_object_hash AS hash FROM mutation_step
+        INNER JOIN mutation_journal ON mutation_journal.id = mutation_step.journal_id
+        WHERE mutation_step.previous_object_hash IS NOT NULL
+          AND mutation_journal.status IN ('pending', 'orphaned')
       UNION SELECT previous_object_hash AS hash FROM revision_step WHERE previous_object_hash IS NOT NULL
       UNION SELECT previous_object_hash AS hash FROM revision_blob WHERE previous_object_hash IS NOT NULL
+      UNION SELECT workspace_operation_step.previous_object_hash AS hash FROM workspace_operation_step
+        INNER JOIN workspace_operation ON workspace_operation.id = workspace_operation_step.operation_id
+        WHERE workspace_operation_step.previous_object_hash IS NOT NULL
+          AND workspace_operation.status IN ('pending', 'orphaned')
     `);
     return new Set(rows.map(({ hash }) => hash));
   }
@@ -891,6 +1021,60 @@ export class MutationJournal implements MutationJournalPort, CompositeMutationJo
     `)?.id ?? null;
   }
 
+  async latestSourceRevision(projectId: ProjectId): Promise<number | null> {
+    return this.database.get<{ id: number }>(sql`
+      SELECT id FROM revision
+      WHERE project_id = ${projectId} AND advances_source = 1
+      ORDER BY id DESC LIMIT 1
+    `)?.id ?? null;
+  }
+
+  async listProjectRevisions(projectId: ProjectId): Promise<ProjectRevisionProjection[]> {
+    const rows = this.database.all<{
+      revision: number; sourceRevision: number; actor: Actor; createdAt: string;
+      path: string | null; summary: string | null; kind: string;
+    }>(sql`
+      SELECT revision.id AS revision,
+        COALESCE((
+          SELECT MAX(source.id) FROM revision AS source
+          WHERE source.project_id = revision.project_id
+            AND source.advances_source = 1 AND source.id <= revision.id
+        ), 0) AS sourceRevision,
+        revision.actor, revision.created_at AS createdAt, revision.path,
+        revision.summary, revision.kind
+      FROM revision WHERE revision.project_id = ${projectId}
+        AND NOT (
+          revision.advances_source = 0
+          AND (
+            revision.path LIKE '.vidcom/%'
+            OR (revision.path IS NULL AND NOT EXISTS (
+              SELECT 1 FROM revision_step AS visible_step
+              WHERE visible_step.revision_id = revision.id
+                AND visible_step.path IS NOT NULL
+                AND visible_step.path NOT LIKE '.vidcom/%'
+            ))
+          )
+        )
+      ORDER BY revision.id
+    `);
+    return rows.map((row) => {
+      const stepPaths = this.database.all<{ path: string }>(sql`
+        SELECT path FROM revision_step
+        WHERE revision_id = ${row.revision} AND path IS NOT NULL
+        ORDER BY ordinal
+      `).map(({ path }) => path as RelPath);
+      const paths = stepPaths.length > 0 ? stepPaths : row.path ? [row.path as RelPath] : [];
+      return {
+        revision: row.revision,
+        sourceRevision: row.sourceRevision,
+        actor: row.actor,
+        createdAt: row.createdAt,
+        paths,
+        summary: row.summary ?? `${row.kind}:${paths.join(",")}`,
+      };
+    });
+  }
+
   async readEntityState(projectId: ProjectId, entity: "preview-settings"): Promise<EntityState | null> {
     const row = this.database.get<{ revision: number; contentHash: string; backingPath: string }>(sql`
       SELECT revision, content_hash AS contentHash, backing_path AS backingPath
@@ -909,19 +1093,33 @@ export class MutationJournal implements MutationJournalPort, CompositeMutationJo
     }>(sql`
       SELECT id, workspace_root AS workspaceRoot, slug,
         first_seen_at AS firstSeenAt, last_seen_at AS lastSeenAt
-      FROM project_registry WHERE id = ${projectId}
+      FROM project_registry WHERE id = ${projectId} AND deleted_at IS NULL
+    `);
+    return row ? { ...row, id: row.id as ProjectId } : null;
+  }
+
+  async findProjectRegistrationAt(workspaceRoot: AbsolutePath, slug: string): Promise<ProjectRegistration | null> {
+    const row = this.database.get<{
+      id: string; workspaceRoot: string; slug: string; firstSeenAt: string; lastSeenAt: string;
+    }>(sql`
+      SELECT id, workspace_root AS workspaceRoot, slug,
+        first_seen_at AS firstSeenAt, last_seen_at AS lastSeenAt
+      FROM project_registry
+      WHERE workspace_root = ${workspaceRoot} AND slug = ${slug} AND deleted_at IS NULL
     `);
     return row ? { ...row, id: row.id as ProjectId } : null;
   }
 
   async registerProject(registration: ProjectRegistration, seed: EntitySeed): Promise<void> {
     this.database.transaction((transaction) => {
-      transaction.run(sql`
+      const registered = transaction.run(sql`
         INSERT INTO project_registry (id, workspace_root, slug, first_seen_at, last_seen_at)
         VALUES (${registration.id}, ${registration.workspaceRoot}, ${registration.slug}, ${registration.firstSeenAt}, ${registration.lastSeenAt})
         ON CONFLICT(id) DO UPDATE SET workspace_root = excluded.workspace_root,
           slug = excluded.slug, last_seen_at = excluded.last_seen_at
+        WHERE project_registry.deleted_at IS NULL
       `);
+      if (registered.changes !== 1) throw new Error("tombstoned project identity cannot be registered again");
       transaction.run(sql`
         INSERT INTO entity_state (
           project_id, entity, revision, content_hash, backing_path, last_actor, updated_at
@@ -941,9 +1139,26 @@ export class MutationJournal implements MutationJournalPort, CompositeMutationJo
   ): Promise<JournalId> {
     const previous = await this.preparePrevious(intent.previousContent);
     return this.database.transaction((transaction) => {
+      const occupied = transaction.get<{ id: string; workspaceRoot: string; slug: string }>(sql`
+        SELECT id, workspace_root AS workspaceRoot, slug
+        FROM project_registry
+        WHERE deleted_at IS NULL
+          AND (id = ${registration.id}
+            OR (workspace_root = ${registration.workspaceRoot} AND slug = ${registration.slug}))
+        LIMIT 1
+      `);
+      if (occupied && (occupied.id !== registration.id
+        || occupied.workspaceRoot !== registration.workspaceRoot
+        || occupied.slug !== registration.slug)) {
+        throw new Error("project bootstrap registration conflicts with an active identity");
+      }
       transaction.run(sql`
         INSERT INTO project_registry (id, workspace_root, slug, first_seen_at, last_seen_at)
         VALUES (${registration.id}, ${registration.workspaceRoot}, ${registration.slug}, ${registration.firstSeenAt}, ${registration.lastSeenAt})
+        ON CONFLICT(id) DO UPDATE SET last_seen_at = excluded.last_seen_at
+        WHERE project_registry.workspace_root = excluded.workspace_root
+          AND project_registry.slug = excluded.slug
+          AND project_registry.deleted_at IS NULL
       `);
       transaction.run(sql`
         INSERT INTO entity_state (
@@ -951,7 +1166,7 @@ export class MutationJournal implements MutationJournalPort, CompositeMutationJo
         ) VALUES (
           ${registration.id}, 'preview-settings', ${seed.revision}, ${seed.contentHash},
           ${seed.backingPath}, ${seed.actor}, ${seed.updatedAt}
-        )
+        ) ON CONFLICT(project_id, entity) DO NOTHING
       `);
       if (duplicateFrom) transaction.run(sql`
         INSERT INTO audit_entry (

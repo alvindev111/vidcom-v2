@@ -1,0 +1,2 @@
+ALTER TABLE `workspace_operation` ADD `grant_id` text REFERENCES approval_grant(id);--> statement-breakpoint
+CREATE UNIQUE INDEX `uq_workspace_operation_grant` ON `workspace_operation` (`grant_id`) WHERE "workspace_operation"."grant_id" IS NOT NULL;

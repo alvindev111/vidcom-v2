@@ -113,6 +113,16 @@ describe("allowlist and workspace I/O", () => {
     expect(PATH_REJECTION_MAP.symlink_escape).toEqual(PATH_REJECTION_MAP.outside_project);
   });
 
+  it("never resolves workspace-agent-kit paths against a project root", async () => {
+    const adapter = new WorkspaceFs(workspace as AbsolutePath);
+    await expect(adapter.resolve(project, "AGENTS.md", "workspace-agent-kit")).resolves.toEqual({
+      ok: false,
+      error: { reason: "not_allowed_for_purpose" },
+    });
+    await expect(resolveProjectPath(project, ".agents/skills/vidcom/SKILL.md", "workspace-agent-kit"))
+      .resolves.toEqual({ ok: false, error: { reason: "not_allowed_for_purpose" } });
+  });
+
   it("creates a missing target and reads hash, content, stat, tree and identity", async () => {
     const adapter = new WorkspaceFs(workspace as AbsolutePath);
     const resolved = await adapter.resolve(project, "compositions/new.html", "write-source");

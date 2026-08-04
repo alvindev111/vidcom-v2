@@ -1,0 +1,7 @@
+{
+  "captured": [
+    { "sceneId": "one", "bytes": [1] },
+    { "sceneId": "three", "bytes": [3] }
+  ],
+  "missingSceneIds": ["one-half"]
+}

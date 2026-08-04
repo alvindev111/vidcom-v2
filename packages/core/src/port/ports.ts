@@ -1,13 +1,15 @@
 import type {
   ContentHash,
+  Diagnostic,
   DomainError,
   DomainEvent,
   ErrorCode,
+  JobWarningDto,
   ProjectId,
   RelPath,
 } from "@vidcom/contracts";
 
-import type { BinaryContent, CompositionModel, CompositionOp, FileContent, FileNode, FileStat, ProjectRef } from "../domain/models";
+import type { AbsolutePath, BinaryContent, CompositionModel, CompositionOp, FileContent, FileNode, FileStat, ProjectRef } from "../domain/models";
 import type { Result } from "../error/result";
 import type {
   Job,
@@ -45,12 +47,117 @@ import type {
   MutationCapture,
   MutationCaptureConflict,
   MutationAuthority,
+  PendingWorkspaceOperation,
+  WorkspaceOperationId,
+  WorkspaceOperationIntent,
+  WorkspaceOperationStepIntent,
 } from "./types";
+
+/** Durable journal for root-workspace and project-directory operations. */
+export interface WorkspaceOperationJournalPort {
+  isJournalOwned(invocationId: string): Promise<boolean>;
+  begin(
+    intent: WorkspaceOperationIntent,
+    steps: WorkspaceOperationStepIntent[],
+    authority: MutationAuthority,
+  ): Promise<WorkspaceOperationId>;
+  markStepCaptured(
+    id: WorkspaceOperationId,
+    ordinal: number,
+    rollbackPath: ResolvedPath | null,
+    capturedHash: ContentHash | null,
+  ): Promise<void>;
+  markStepWritten(id: WorkspaceOperationId, ordinal: number): Promise<void>;
+  commit(id: WorkspaceOperationId): Promise<void>;
+  setDirectoryPaths(
+    id: WorkspaceOperationId,
+    paths: { fromPath?: string | null; toPath?: string | null; stagingPath?: string | null },
+  ): Promise<void>;
+  commitProjectLifecycle(
+    id: WorkspaceOperationId,
+    result: import("./types").ProjectLifecycleCommit,
+    recovered?: boolean,
+  ): Promise<number | null>;
+  recover(id: WorkspaceOperationId): Promise<void>;
+  abort(id: WorkspaceOperationId, reason: ErrorCode): Promise<void>;
+  rollback(id: WorkspaceOperationId, reason: ErrorCode): Promise<void>;
+  orphan(id: WorkspaceOperationId, reason: ErrorCode): Promise<void>;
+  read(id: WorkspaceOperationId): Promise<PendingWorkspaceOperation | null>;
+  listPending(workspaceRoot: AbsolutePath): Promise<PendingWorkspaceOperation[]>;
+}
+
+/** Filesystem-only directory lifecycle boundary; Core never joins or removes native paths. */
+export interface ProjectDirectoryPort {
+  projectRoot(workspaceRoot: AbsolutePath, slug: string): Promise<AbsolutePath>;
+  stageCreate(
+    workspaceRoot: AbsolutePath,
+    slug: string,
+    operationId: WorkspaceOperationId,
+  ): Promise<{ stagingRoot: AbsolutePath; finalRoot: AbsolutePath }>;
+  writeStagedFiles(
+    stagingRoot: AbsolutePath,
+    files: Array<{ path: RelPath; content: string | Uint8Array }>,
+  ): Promise<void>;
+  publishCreate(stagingRoot: AbsolutePath, finalRoot: AbsolutePath): Promise<void>;
+  rename(from: AbsolutePath, to: AbsolutePath): Promise<void>;
+  quarantine(root: AbsolutePath, operationId: WorkspaceOperationId): Promise<AbsolutePath>;
+  restoreQuarantine(quarantine: AbsolutePath, root: AbsolutePath): Promise<void>;
+  removeOwned(path: AbsolutePath): Promise<void>;
+  inspect(path: AbsolutePath): Promise<"absent" | "directory" | "invalid">;
+}
+
+export interface RenderRootPort {
+  acquire(jobId: JobId): Promise<{ root: AbsolutePath; environment: Record<string, string> }>;
+  release(jobId: JobId): Promise<{ ok: boolean; error?: string }>;
+  inspect(jobId: JobId): Promise<"absent" | "owned" | "unowned">;
+  reclaimOrphans(
+    now: Date,
+    runningJobIds: ReadonlySet<JobId>,
+  ): Promise<{ deleted: number; reclaimedJobIds: JobId[]; errors: Array<{ root: string; reason: string }> }>;
+}
+
+/** Filesystem capability that prepares a guarded, disposable HyperFrames project clone. */
+export interface RenderProjectPort {
+  stage(
+    ref: ProjectRef,
+    renderRoot: AbsolutePath,
+    document: string,
+    runtimeSource: string,
+  ): Promise<{ projectRoot: AbsolutePath; outputPath: AbsolutePath; snapshotOutputRoot: AbsolutePath }>;
+  readArtifact(outputPath: AbsolutePath): Promise<Uint8Array>;
+  readSnapshotArtifacts(outputRoot: AbsolutePath): Promise<Array<{ name: string; content: Uint8Array }>>;
+  composeContactSheet(images: readonly Uint8Array[]): Promise<Uint8Array>;
+}
+
+export interface RenderBinaryProbeResult {
+  hyperframesCommand: readonly [string, string];
+  browserPath: AbsolutePath;
+  ffmpegPath: AbsolutePath;
+  ffprobePath: AbsolutePath;
+  warnings: JobWarningDto[];
+}
+
+export interface BinaryProbePort {
+  probe(): Promise<Result<RenderBinaryProbeResult, DomainError>>;
+}
+
+/** Adapter-owned HyperFrames check execution; non-zero finding exits remain available results. */
+export interface DiagnosticsLintPort {
+  check(ref: ProjectRef): Promise<{ available: boolean; diagnostics: Diagnostic[] }>;
+}
 
 /** Filesystem access for the selected workspace; every method performs I/O. */
 export interface WorkspacePort {
+  /** Lists direct child directories only; classification and ignore rules stay in Core. */
+  listWorkspaceDirectories?(root: AbsolutePath): Promise<Array<{ slug: string; root: AbsolutePath }>>;
   /** Resolves and authorizes a path; supports missing targets and returns rejection without throwing. */
   resolve(ref: ProjectRef, path: string, purpose: PathPurpose): Promise<Result<ResolvedPath, PathRejection>>;
+  /** Resolves an agent-kit path against the exact injected workspace root; only the workspace coordinator calls this. */
+  resolveWorkspace(
+    workspaceRoot: AbsolutePath,
+    path: RelPath,
+    purpose: "workspace-agent-kit",
+  ): Promise<Result<ResolvedPath, PathRejection>>;
   /** Lists valid projects from workspace storage; this may be an expensive directory traversal. */
   listProjects(): Promise<ProjectRef[]>;
   /** Reads one project identity; `null` means the project does not exist. */
@@ -63,6 +170,8 @@ export interface WorkspacePort {
   readHash(path: ResolvedPath): Promise<ContentHash | null>;
   /** Atomically writes a resolved path; no precondition is checked by this method. */
   writeAtomic(path: ResolvedPath, content: string | Uint8Array): Promise<void>;
+  /** Appends one already-serialized line durably without creating a project revision. */
+  appendAtomic?(path: ResolvedPath, line: string): Promise<void>;
   /** Checks one resolved capability using filesystem I/O; `false` means the target is absent. */
   exists(path: ResolvedPath): Promise<boolean>;
   /** Atomically removes one resolved file and fsyncs its directory; an absent target is a no-op. */
@@ -71,7 +180,7 @@ export interface WorkspacePort {
   captureForMutation(
     path: ResolvedPath,
     expectedHash: ContentHash | null,
-    journalId: JournalId,
+    journalId: JournalId | WorkspaceOperationId,
     ordinal: number,
   ): Promise<Result<MutationCapture, MutationCaptureConflict>>;
   /** Publishes staged bytes without replacing a target created after capture; `null` verifies a delete remains absent. */
@@ -84,6 +193,21 @@ export interface WorkspacePort {
   readTree(ref: ProjectRef): Promise<FileNode[]>;
   /** Reads metadata for a resolved path; `null` means the path does not exist. */
   stat(path: ResolvedPath): Promise<FileStat | null>;
+  /** Stats one scanner-owned marker without opening a general path-policy bypass. */
+  statWorkspaceFile?(root: AbsolutePath, path: "vidcom.json" | "hyperframes.json" | "index.html"):
+    Promise<{ size: number; modifiedAtMs: number } | null>;
+  /** Reads one scanner-owned marker without opening a general path-policy bypass. */
+  readWorkspaceFile?(root: AbsolutePath, path: "vidcom.json" | "hyperframes.json" | "index.html"):
+    Promise<FileContent | null>;
+  /** Lists regular files immediately below one allowlisted `.vidcom` directory. */
+  listProjectFiles?(ref: ProjectRef, directory: RelPath):
+    Promise<Array<{ path: RelPath; modifiedAtMs: number }>>;
+  /** Creates only the fixed `.vidcom` directory skeleton; files still go through authority/append. */
+  ensureProjectStateDirectories?(ref: ProjectRef): Promise<void>;
+  /** Enumerates every regular project file as a contained read capability for verified deletion backup. */
+  listBackupSources?(ref: ProjectRef): Promise<BackupSource[]>;
+  /** Same closed read capability for a session-scoped recovery root that has no ProjectId. */
+  listBackupSourcesAt?(root: AbsolutePath): Promise<BackupSource[]>;
 }
 
 export interface StagedAsset {
@@ -127,10 +251,21 @@ export interface MutationJournalPort {
   listPending(): Promise<PendingMutation[]>;
   /** Reads the latest project mutation revision; `null` means no mutation has committed. */
   latestRevision(projectId: ProjectId): Promise<number | null>;
+  /** Reads the newest revision that advances authored render input. */
+  latestSourceRevision(projectId: ProjectId): Promise<number | null>;
+  /** Lists ordered SQLite revision rows for one-way `.vidcom` projection rebuild. */
+  listProjectRevisions?(projectId: ProjectId): Promise<import("./types").ProjectRevisionProjection[]>;
+  /** Reads one committed rollback slot and distinguishes retention pruning from an absent prior file. */
+  readRevisionRollbackPayload(
+    revisionId: number,
+    path: RelPath,
+  ): Promise<Result<Uint8Array | null, DomainError>>;
   /** Reads entity precondition state; `null` means bootstrap has not seeded it. */
   readEntityState(projectId: ProjectId, entity: "preview-settings"): Promise<EntityState | null>;
   /** Reads one identity registration; `null` means this ID has never been registered. */
   findProjectRegistration(projectId: ProjectId): Promise<ProjectRegistration | null>;
+  /** Reads an active identity registration at one workspace location without minting an ID. */
+  findProjectRegistrationAt?(workspaceRoot: AbsolutePath, slug: string): Promise<ProjectRegistration | null>;
   /** Upserts location and seeds entity state atomically when no identity file write is needed. */
   registerProject(registration: ProjectRegistration, seed: EntitySeed): Promise<void>;
   /** Atomically registers identity, seeds entity state and inserts pending journal before filesystem I/O. */
@@ -171,6 +306,8 @@ export interface CompositeMutationJournalPort extends MutationJournalPort {
     result: CompositeResult,
     grant?: Extract<GrantTransition, { kind: "consume" }>,
   ): Promise<WriteEnvelope>;
+  /** Commits derived artifacts without advancing the authored source revision. */
+  commitDerivedComposite(id: JournalId, result: CompositeResult): Promise<WriteEnvelope>;
   /** Atomically aborts a journal and releases its grant, returning context for failure audit or `null` after a prior terminal transition. */
   abortComposite(
     id: JournalId,
@@ -213,6 +350,12 @@ export interface CompositeMutationJournalPort extends MutationJournalPort {
 export interface BackupPort {
   /** Atomically publishes a verified backup, or throws without publishing a manifest on failure. */
   create(projectId: ProjectId, reason: string, files: BackupSource[]): Promise<BackupManifest>;
+  /** Publishes a verified backup for an identity-invalid location without persisting its entryId. */
+  createForLocation?(
+    owner: { workspaceRoot: AbsolutePath; slug: string },
+    reason: string,
+    files: BackupSource[],
+  ): Promise<BackupManifest>;
   /** Reads durable metadata; `null` means the backup ID has never existed. */
   read(id: string): Promise<BackupManifest | null>;
   /** Reads all retained payload bytes; an empty array means the manifest has no entries. */
@@ -335,6 +478,14 @@ export interface JobStorePort {
   enqueue(job: NewJob): Promise<{ job: Job; reused: boolean } | { conflict: "idempotency_key_reused" }>;
   /** Reads one job; `null` means the ID does not exist. */
   get(id: JobId): Promise<Job | null>;
+  /** Reads durable process termination evidence without exposing internal job input. */
+  readTerminationProof?(id: JobId): Promise<import("./process-port").ProcessTerminationProof | null>;
+  /** Reads the newest terminal job for one project/type; `null` means no prior terminal result exists. */
+  latestTerminal(projectId: ProjectId, type: string): Promise<Job | null>;
+  /** Lists ordered SQLite jobs for one-way `.vidcom` projection rebuild. */
+  listProjectJobs?(projectId: ProjectId): Promise<Job[]>;
+  /** True only while a queued/running job currently blocks project rename or deletion. */
+  hasRunningProjectJob?(projectId: ProjectId): Promise<boolean>;
   /** Claims a queued job atomically; `false` means another worker won or it is not queued. */
   claim(id: JobId, workerId: string): Promise<boolean>;
   /** Reads the oldest eligible queued job; `null` means none is ready. */
@@ -346,8 +497,8 @@ export interface JobStorePort {
   updateProgress(id: JobId, progress: number, stage: string | null): Promise<void>;
   /** Persists a liveness timestamp for a running job. */
   heartbeat(id: JobId): Promise<void>;
-  /** Persists exactly one terminal outcome for a job. */
-  finish(id: JobId, outcome: JobOutcome): Promise<void>;
+  /** Persists exactly one terminal outcome; `false` means another terminal settle won. */
+  finish(id: JobId, outcome: JobOutcome): Promise<boolean>;
   /** Records cooperative cancellation; terminal jobs remain unchanged. */
   requestCancel(id: JobId): Promise<void>;
   /** Reads the durable cooperative-cancellation flag. */
@@ -356,6 +507,12 @@ export interface JobStorePort {
   requeue(id: JobId): Promise<void>;
   /** Lists running jobs older than cutoff; an empty list means recovery has no work. */
   listStale(cutoff: Date): Promise<Job[]>;
+  /** Lists the exact live-set used by render-root orphan reclaim. */
+  listRunningIds?(): Promise<JobId[]>;
+  /** Lists terminal jobs whose owned render root still needs reconciliation. */
+  listCleanupPendingIds?(): Promise<JobId[]>;
+  /** Clears a persisted cleanup obligation only after its owned root is gone. */
+  clearCleanupPending?(id: JobId): Promise<boolean>;
 }
 
 /** Injectable wall clock used to keep Core deterministic. */

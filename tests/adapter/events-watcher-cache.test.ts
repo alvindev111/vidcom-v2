@@ -187,11 +187,11 @@ describe("event outbox, watcher and project cache", () => {
         recordWrittenHash(id, relativePath, contentHash) { tracker.record(id, relativePath, contentHash); },
         notifyEvents() {},
       });
-      const stale = await authority.mutate({
+      const stale = await authority.mutateSource({
         kind: "entity", ref, entity: "preview-settings", patch: { bgm: { loop: true } }, expectedRevision: 1,
       }, "user");
       expect(stale).toMatchObject({ ok: false, error: { code: "write_conflict" } });
-      const written = await authority.mutate({
+      const written = await authority.mutateSource({
         kind: "entity", ref, entity: "preview-settings", patch: { bgm: { loop: true } }, expectedRevision: 2,
       }, "user");
       expect(written).toMatchObject({ ok: true, value: { revision: 3 } });

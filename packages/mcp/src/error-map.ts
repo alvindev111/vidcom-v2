@@ -28,6 +28,8 @@ function protocolCode(error: DomainError, era: Era): number {
     case ErrorCode.BackupFailed:
     case ErrorCode.BackupExpired:
     case ErrorCode.RecoveryRequired:
+    case ErrorCode.RenderBinaryMissing:
+    case ErrorCode.ProcessTerminationUnverified:
     case ErrorCode.CommittedResponseError:
     // Machine state, not a bad call: the engine is missing, out of credit or
     // simply failed. Retrying with different arguments will not help.
@@ -46,6 +48,12 @@ function protocolCode(error: DomainError, era: Era): number {
     case ErrorCode.OriginNotAllowed:
     case ErrorCode.AssetNotAllowed:
     case ErrorCode.PathOutsideProject:
+    case ErrorCode.ProjectInvalid:
+    case ErrorCode.IdentityParseError:
+    case ErrorCode.CompositionParseError:
+    case ErrorCode.NoComposition:
+    case ErrorCode.NoScenes:
+    case ErrorCode.SubTimelineReadinessTimeout:
     case ErrorCode.WriteConflict:
     case ErrorCode.IdempotencyKeyReused:
     case ErrorCode.TimingInvalid:
@@ -61,6 +69,9 @@ function protocolCode(error: DomainError, era: Era): number {
     case ErrorCode.ToolNotAvailableInEra:
     case ErrorCode.ReferencedByComposition:
     case ErrorCode.DuplicateMutationTarget:
+    case ErrorCode.RemoteAssetNotLocal:
+    case ErrorCode.ConfirmationRequired:
+    case ErrorCode.RollbackPayloadPruned:
     case ErrorCode.TtsCredentialMissing:
     case ErrorCode.TtsVoiceNotSupported:
       return MCP_INVALID_PARAMS;

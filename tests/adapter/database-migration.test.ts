@@ -55,6 +55,8 @@ describe("Drizzle migrations", () => {
           "revision_blob.revision_id->revision.id",
           "revision_step.backup_id->backup_manifest.id",
           "revision_step.revision_id->revision.id",
+          "workspace_operation.grant_id->approval_grant.id",
+          "workspace_operation_step.operation_id->workspace_operation.id",
         ],
         tables: [
           "__drizzle_migrations",
@@ -75,6 +77,8 @@ describe("Drizzle migrations", () => {
           "revision_step",
           "sqlite_sequence",
           "workspace_lease",
+          "workspace_operation",
+          "workspace_operation_step",
         ],
       });
       await expect(stat(path.join(appData, "vidcom.sqlite"))).resolves.toMatchObject({});

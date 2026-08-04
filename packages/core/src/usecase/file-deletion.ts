@@ -11,8 +11,7 @@ import {
 import { checkPathPurpose, checkPathSyntax } from "../domain/path-policy";
 import { err, ok, type Result } from "../error/result";
 import type { CompositionPort, MutationJournalPort, WorkspacePort } from "../port/ports";
-import type { GrantBinding, WriteEnvelope, WriteInvocation } from "../port/types";
-import type { WriteAuthority } from "../service/write-authority";
+import type { CompositeRequest, GrantBinding, WriteEnvelope, WriteInvocation } from "../port/types";
 import { canonicalizeJson } from "../service/canonical-json";
 
 export interface FileDeletionPlan {
@@ -86,7 +85,9 @@ export async function prepareFileDeletion(
 }
 
 export interface DeleteFileDependencies extends PrepareFileDeletionDependencies {
-  authority: Pick<WriteAuthority, "mutateComposite">;
+  authority: {
+    mutateSource(request: CompositeRequest, actor: Actor): Promise<Result<WriteEnvelope, DomainError>>;
+  };
 }
 
 /** Re-plans and executes only the approved file deletion with backup and one-shot grant reservation. */
@@ -107,7 +108,7 @@ export async function deleteFile(
   }
   const ref = await dependencies.workspace.readProjectRef(input.projectId);
   if (!ref) return err({ code: ErrorCode.ProjectNotFound, message: "project was not found" });
-  const written = await dependencies.authority.mutateComposite({
+  const written = await dependencies.authority.mutateSource({
     ref,
     steps: [{
       kind: "delete",

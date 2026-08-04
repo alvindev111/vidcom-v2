@@ -64,7 +64,7 @@ function setup(options: {
       },
     },
     writes: {
-      async mutateComposite(request: CompositeRequest, actor: string) {
+      async mutateSource(request: CompositeRequest, actor: string) {
         calls.push({ request, actor });
         return {
           ok: true as const,
@@ -107,9 +107,9 @@ describe("restoreBackup", () => {
         toolAudit: null,
         commandAudit: { action: "cli:restore", detail: { backupId: "backup_1" } },
         steps: [
-          { kind: "write", path: "index.html", expectedContentHash: null, purpose: "write-source" },
+          { kind: "write", path: "index.html", expectedContentHash: null },
           { kind: "delete", path: "narration/new.wav", expectedContentHash: hash("2") },
-          { kind: "write", path: "src/scene.html", expectedContentHash: hash("4"), purpose: "write-source" },
+          { kind: "write", path: "src/scene.html", expectedContentHash: hash("4") },
         ],
       },
     });

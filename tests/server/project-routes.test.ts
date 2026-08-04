@@ -3,6 +3,7 @@ import { createHash } from "node:crypto";
 import { mimeFromPath } from "@vidcom/adapter";
 import {
   ErrorResponseSchema,
+  ErrorCode,
   ListProjectsResponseSchema,
   StudioSnapshotResponseSchema,
   type ContentHash,
@@ -59,6 +60,7 @@ function fixture() {
   const projectReads = {
     workspace: {
       async resolve(_ref: ProjectRef, path: string) { return ok(path as ResolvedPath); },
+      async resolveWorkspace() { throw new Error("unused"); },
       async listProjects() { return [ref]; },
       async readProjectRef(projectId: ProjectId) { return projectId === id ? ref : null; },
       async readFile(path: ResolvedPath) {
@@ -106,7 +108,10 @@ function fixture() {
     },
     journal: {
       async begin() { return 1 as never; }, async commit() { return 1; }, async abort() {},
-      async listPending() { return []; }, async latestRevision() { return 3; },
+      async listPending() { return []; }, async latestRevision() { return 3; }, async latestSourceRevision() { return 3; },
+      async readRevisionRollbackPayload() {
+        return { ok: false as const, error: { code: ErrorCode.NotFound, message: "unused" } };
+      },
       async readEntityState() {
         return { revision: 2, contentHash: contentHash(files.get("preview-settings.json")!), backingPath: "preview-settings.json" as RelPath };
       },

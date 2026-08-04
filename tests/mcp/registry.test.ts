@@ -495,7 +495,7 @@ describe("complete tool descriptor contract", () => {
               "openWorldHint": false,
               "readOnlyHint": true,
             },
-            "description": "Use when you need to poll a jobId returned by start_tts until its status is succeeded, failed or cancelled. Do not use to list jobs or to cancel one. Preconditions: jobId comes from the tool that queued the work. Side effects: read-only. Errors/recovery: on failed, error.code names the cause — tts_credential_missing, tts_quota_exceeded, tts_provider_unavailable and tts_voice_not_supported are all fixed by the user or by changing the request, not by retrying unchanged.",
+            "description": "Use when you need to poll a jobId returned by start_tts, start_snapshot, or start_render until it reaches a terminal outcome. Do not use to list jobs or to cancel one. Preconditions: jobId comes from the tool that queued the work. Side effects: read-only. Errors/recovery: wait pollAfterMs before the next poll; terminal outcome is explicit, including partial. On failed, fix error.code before a deliberate resubmission.",
             "level": "read",
             "name": "get_job_status",
             "title": "Get background job status",
@@ -511,6 +511,18 @@ describe("complete tool descriptor contract", () => {
             "level": "read",
             "name": "get_project_context",
             "title": "Get project editing context",
+          },
+          {
+            "annotations": {
+              "destructiveHint": false,
+              "idempotentHint": false,
+              "openWorldHint": false,
+              "readOnlyHint": false,
+            },
+            "description": "Use when explicitly installing or repairing VidCom instructions and native skill routers for selected agent hosts. Do not use to install both hosts implicitly or overwrite foreign/newer files. Preconditions: install requires non-empty unique hosts; link is Claude-only; replace requires one manifest path and its current expectedContentHash. Side effects: writes one journaled workspace batch, or records an audited no-change when everything selected is pristine. Errors/recovery: follow installationState.recovery; re-read hashes after write_conflict and never invent a Codex import line.",
+            "level": "write",
+            "name": "install_agent_kit",
+            "title": "Install the VidCom agent kit",
           },
           {
             "annotations": {
@@ -603,10 +615,46 @@ describe("complete tool descriptor contract", () => {
               "openWorldHint": false,
               "readOnlyHint": false,
             },
+            "description": "Use when the validated, visually inspected project is ready for one MP4 render. Do not use before validate_project and start_snapshot, or to wait synchronously for video completion. Preconditions: projectId comes from list_projects and optional idempotencyKey must identify this exact request. Side effects: enqueues one render job and returns immediately without publishing an artifact yet. Errors/recovery: poll get_job_status after pollAfterMs; fix stable gate errors before retrying and report warnings, outcome, and cleanupPending honestly.",
+            "level": "job",
+            "name": "start_render",
+            "title": "Start a video render",
+          },
+          {
+            "annotations": {
+              "destructiveHint": false,
+              "idempotentHint": false,
+              "openWorldHint": false,
+              "readOnlyHint": false,
+            },
+            "description": "Use when creating midpoint snapshots for visual inspection before final render. Do not use as a substitute for validate_project or to wait synchronously for every image. Preconditions: projectId comes from list_projects and optional idempotencyKey must identify this exact request. Side effects: enqueues one snapshot job and returns immediately without publishing frames yet. Errors/recovery: poll get_job_status after pollAfterMs; report a partial outcome and its missingSceneIds, then retry deliberately after fixing the cause.",
+            "level": "job",
+            "name": "start_snapshot",
+            "title": "Start project snapshots",
+          },
+          {
+            "annotations": {
+              "destructiveHint": false,
+              "idempotentHint": false,
+              "openWorldHint": false,
+              "readOnlyHint": false,
+            },
             "description": "Use when you need to turn the narration text already written on one or more scenes into audio files in the project. Do not use to write or change narration text, and do not use to render video. Preconditions: every scene must already have narration text; providerId and voiceId come from list_tts_voices; leave computeDevice unset for CPU and only pass gpu when the voice lists it. Side effects: enqueues one job, then writes narration/<sceneId>.wav plus its JSON sidecar and commits one project revision when the job succeeds. Cloud engines bill the account. Errors/recovery: this job is never retried automatically because synthesis costs money and its output is not reproducible — read the failed job's error code and resubmit deliberately. Poll with get_job_status; cancel through the job API stops the engine before anything is written.",
             "level": "job",
             "name": "start_tts",
             "title": "Generate scene narration audio",
+          },
+          {
+            "annotations": {
+              "destructiveHint": false,
+              "idempotentHint": true,
+              "openWorldHint": false,
+              "readOnlyHint": true,
+            },
+            "description": "Use when validating a project after an edit and before snapshot or render. Do not use to mutate source or to inspect rendered pixels. Preconditions: projectId comes from list_projects. Side effects: computes diagnostics and refreshes only the derived diagnostics projection; source revision is unchanged. Errors/recovery: fix every error diagnostic before continuing; no-composition is an informational result for an empty project, not a tool failure.",
+            "level": "read",
+            "name": "validate_project",
+            "title": "Validate a VidCom project",
           },
         ]
       `);

@@ -120,6 +120,7 @@ function setup(options: {
       }
       return ok(path as ResolvedPath);
     },
+    async resolveWorkspace() { throw new Error("unused"); },
     async listProjects() { return options.missing ? [] : [ref]; },
     async readProjectRef() { return options.missing ? null : ref; },
     async readFile(path: ResolvedPath) {
@@ -169,6 +170,10 @@ function setup(options: {
     async commit() { return ++revision; },
     async abort() {}, async recover() { return ++revision; }, async orphan() {}, async listPending() { return []; },
     async latestRevision() { return revision; },
+    async latestSourceRevision() { return revision; },
+    async readRevisionRollbackPayload() {
+      return err({ code: ErrorCode.NotFound, message: "unused" });
+    },
     async readEntityState() { return entityState; },
     async findProjectRegistration() { return null; }, async registerProject() {},
     async beginBootstrap() { return 1 as JournalId; },
@@ -180,12 +185,33 @@ function setup(options: {
   };
   const mutations: unknown[] = [];
   const invocations: WriteInvocation[] = [];
-  const authority = {
-    async mutate(
-      request: MutationRequest,
-      _actor?: string,
-      invocation: WriteInvocation = { toolAudit: null },
-    ): Promise<Result<WriteResult, DomainError>> {
+  async function mutateSource(
+    request: MutationRequest,
+    _actor?: string,
+    invocation?: WriteInvocation,
+  ): Promise<Result<WriteResult, DomainError>>;
+  async function mutateSource(
+    request: CompositeRequest,
+    _actor?: string,
+  ): Promise<Result<WriteEnvelope, DomainError>>;
+  async function mutateSource(
+    request: MutationRequest | CompositeRequest,
+    _actor?: string,
+    invocation: WriteInvocation = { toolAudit: null },
+  ): Promise<Result<WriteResult | WriteEnvelope, DomainError>> {
+      if ("steps" in request) {
+        mutations.push(request);
+        if (options.failWrite) return err({ code: ErrorCode.WorkspaceLeaseLost, message: "lost" });
+        const fileHashes: Record<RelPath, ContentHash> = {};
+        for (const step of request.steps) {
+          if (step.kind !== "write") continue;
+          if (typeof step.content === "string") files.set(step.path, step.content);
+          else binaries.set(step.path, step.content);
+          fileHashes[step.path] = hash(step.content);
+        }
+        revision += 1;
+        return ok({ projectRevision: revision, entityRevision: null, fileHashes, diagnostics: [] });
+      }
       mutations.push(request);
       invocations.push(invocation);
       if (options.failWrite) return err({ code: ErrorCode.WorkspaceLeaseLost, message: "lost" });
@@ -201,20 +227,9 @@ function setup(options: {
       if (typeof content === "string") files.set(request.path, content);
       else binaries.set(request.path, content);
       return ok({ path: request.path, contentHash: hash(content), revision, diagnostics: [] });
-    },
-    async mutateComposite(request: CompositeRequest): Promise<Result<WriteEnvelope, DomainError>> {
-      mutations.push(request);
-      if (options.failWrite) return err({ code: ErrorCode.WorkspaceLeaseLost, message: "lost" });
-      const fileHashes: Record<RelPath, ContentHash> = {};
-      for (const step of request.steps) {
-        if (step.kind !== "write") continue;
-        if (typeof step.content === "string") files.set(step.path, step.content);
-        else binaries.set(step.path, step.content);
-        fileHashes[step.path] = hash(step.content);
-      }
-      revision += 1;
-      return ok({ projectRevision: revision, entityRevision: null, fileHashes, diagnostics: [] });
-    },
+  }
+  const authority = {
+    mutateSource,
     async uploadBgm(request: { name: string; path: RelPath; bytes: Uint8Array }): Promise<Result<WriteResult, DomainError>> {
       mutations.push({ kind: "composite", ...request });
       const settings = mergePreviewSettings(DEFAULT_PREVIEW_SETTINGS, {
@@ -532,7 +547,7 @@ describe("project write and legacy use cases without HTTP", () => {
       toolAudit,
       steps: [
         { kind: "write", path: "index.html", expectedContentHash: hash("<main>old</main>") },
-        { kind: "write", path: "narration/scene-1.json", purpose: "system-write" },
+        { kind: "write", path: "narration/scene-1.json" },
       ],
     }]);
     expect(JSON.parse(runtime.files.get("narration/scene-1.json") ?? "null"))
@@ -598,7 +613,7 @@ describe("project write and legacy use cases without HTTP", () => {
       steps: [
         { kind: "write", path: "compositions/scene-2.html", expectedContentHash: null },
         { kind: "write", path: "index.html", expectedContentHash: hash("<main>old</main>") },
-        { kind: "write", path: "narration/scene-2.json", expectedContentHash: null, purpose: "system-write" },
+        { kind: "write", path: "narration/scene-2.json", expectedContentHash: null },
       ],
     });
     const scene = (runtime.mutations[0] as CompositeRequest).steps[0];

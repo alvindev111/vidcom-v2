@@ -1,12 +1,14 @@
 import { createHash } from "node:crypto";
-import { mkdtemp, rm } from "node:fs/promises";
+import { access, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
 import { migrateDatabase, nodeSchedulerTimers, openVidcomDatabase, SqliteJobStore } from "@vidcom/adapter";
-import { ErrorCode, type ContentHash, type ProjectId } from "@vidcom/contracts";
+import { ErrorCode, WarningCode, type ContentHash, type ProjectId } from "@vidcom/contracts";
 import {
   canonicalizeJobInput,
+  JobCancelledError,
+  JobFailureError,
   JobScheduler,
   JobRetryableError,
   type JobExecutionContext,
@@ -101,13 +103,37 @@ describe("SQLite job infrastructure", () => {
       await store.updateProgress("job_claim" as JobId, 0.7, "later");
       await store.updateProgress("job_claim" as JobId, 0.7, "same-progress-new-stage");
       await store.updateProgress("job_claim" as JobId, 0.4, "earlier");
-      await store.finish("job_claim" as JobId, { status: "succeeded", result: { ok: true } });
+      expect(await store.finish("job_claim" as JobId, { status: "succeeded", result: { ok: true } })).toBe(true);
       await store.requestCancel("job_claim" as JobId);
-      await store.finish("job_claim" as JobId, {
+      expect(await store.finish("job_claim" as JobId, {
         status: "failed", error: { code: ErrorCode.Internal, message: "too late" },
-      });
+      })).toBe(false);
       expect(await store.get("job_claim" as JobId)).toMatchObject({
         status: "succeeded", progress: 1, stage: "same-progress-new-stage", result: { ok: true }, attempt: 1,
+      });
+    } finally {
+      await database.destroy();
+    }
+  });
+
+  it("persists a partial result, terminal progress, warnings, and cleanup metadata", async () => {
+    const { database, store } = await fixture();
+    try {
+      await store.enqueue(newJob("job_partial", p1, {}));
+      await store.claim("job_partial" as JobId, "worker_partial");
+      await store.updateProgress("job_partial" as JobId, 0.4, "rendering");
+      expect(await store.finish("job_partial" as JobId, {
+        status: "partial",
+        result: { missingSceneIds: ["scene_2"] },
+        warnings: [{ code: WarningCode.TerminationProofNotExhaustive, message: "bounded proof" }],
+        cleanupPending: true,
+      })).toBe(true);
+      expect(await store.get("job_partial" as JobId)).toMatchObject({
+        status: "partial",
+        progress: 1,
+        result: { missingSceneIds: ["scene_2"] },
+        warnings: [{ code: "termination_proof_not_exhaustive", message: "bounded proof" }],
+        cleanupPending: true,
       });
     } finally {
       await database.destroy();
@@ -209,6 +235,108 @@ describe("SQLite job infrastructure", () => {
     }
   });
 
+  it("polls durable cancellation during a running handler without entering timeout retry", async () => {
+    const { database, store, clock } = await fixture();
+    let runs = 0;
+    const definition: JobTypeDefinition = {
+      type: "noop-probe", concurrency: 1, idempotent: true, maxAttempts: 3, timeoutMs: 10_000,
+      async run(_input, context) {
+        runs += 1;
+        await new Promise<never>((_resolve, reject) => {
+          context.signal.addEventListener("abort", () => reject(new JobCancelledError([
+            { code: WarningCode.TerminationProofNotExhaustive, message: "bounded termination proof" },
+          ], true)), { once: true });
+        });
+      },
+    };
+    try {
+      await store.enqueue(newJob("job_poll_cancel", p1, {}));
+      const scheduler = new JobScheduler(store, clock, createSequentialIdPort(), [definition], undefined, nodeSchedulerTimers);
+      await scheduler.runAvailable();
+      while ((await store.get("job_poll_cancel" as JobId))?.status !== "running") {
+        await new Promise((resolve) => setTimeout(resolve, 5));
+      }
+      await store.requestCancel("job_poll_cancel" as JobId);
+      await scheduler.waitForIdle();
+      expect(await store.get("job_poll_cancel" as JobId)).toMatchObject({
+        status: "cancelled",
+        attempt: 1,
+        warnings: [{ code: WarningCode.TerminationProofNotExhaustive }],
+        cleanupPending: true,
+      });
+      expect(runs).toBe(1);
+    } finally {
+      await database.destroy();
+    }
+  });
+
+  it("persists process termination failure instead of cancelled when a cancel proof has survivors", async () => {
+    const { database, store, clock } = await fixture();
+    const definition: JobTypeDefinition = {
+      type: "noop-probe", concurrency: 1, idempotent: false, timeoutMs: 10_000,
+      async run(_input, context) {
+        await new Promise<never>((_resolve, reject) => {
+          context.signal.addEventListener("abort", () => reject(new JobFailureError({
+            code: ErrorCode.ProcessTerminationUnverified,
+            message: "survivor pid 42",
+          })), { once: true });
+        });
+      },
+    };
+    try {
+      await store.enqueue(newJob("job_unverified_cancel", p1, {}));
+      const scheduler = new JobScheduler(store, clock, createSequentialIdPort(), [definition], undefined, nodeSchedulerTimers);
+      await scheduler.runAvailable();
+      while ((await store.get("job_unverified_cancel" as JobId))?.status !== "running") {
+        await new Promise((resolve) => setTimeout(resolve, 5));
+      }
+      await store.requestCancel("job_unverified_cancel" as JobId);
+      await scheduler.waitForIdle();
+      expect(await store.get("job_unverified_cancel" as JobId)).toMatchObject({
+        status: "failed",
+        error: { code: ErrorCode.ProcessTerminationUnverified, message: "survivor pid 42" },
+      });
+    } finally {
+      await database.destroy();
+    }
+  });
+
+  it("keeps the cancel/complete barrier atomic with respect to artifact publish", async () => {
+    const { database, store, clock, root } = await fixture();
+    const artifact = path.join(root, "published.txt");
+    let release!: () => void;
+    let entered!: () => void;
+    const barrier = new Promise<void>((resolve) => { release = resolve; });
+    const started = new Promise<void>((resolve) => { entered = resolve; });
+    const definition: JobTypeDefinition = {
+      type: "barrier", concurrency: 1, idempotent: false,
+      async run(_input, context) {
+        entered();
+        await barrier;
+        await context.throwIfCancelled();
+        await writeFile(artifact, "published", "utf8");
+        return { artifact };
+      },
+    };
+    try {
+      await store.enqueue(newJob("job_barrier", p1, {}, null, "barrier"));
+      const scheduler = new JobScheduler(store, clock, createSequentialIdPort(), [definition], undefined, nodeSchedulerTimers);
+      await scheduler.runAvailable();
+      await started;
+      await store.requestCancel("job_barrier" as JobId);
+      release();
+      await scheduler.waitForIdle();
+      await expect(access(artifact)).rejects.toThrow();
+      expect(await store.get("job_barrier" as JobId)).toMatchObject({ status: "cancelled" });
+
+      expect(await store.finish("job_barrier" as JobId, { status: "succeeded", result: {} })).toBe(false);
+      await store.requestCancel("job_barrier" as JobId);
+      expect(await store.get("job_barrier" as JobId)).toMatchObject({ status: "cancelled" });
+    } finally {
+      await database.destroy();
+    }
+  });
+
   it("cancels at a noop-probe safe point and records worker failures", async () => {
     const { database, store, clock } = await fixture();
     let release!: () => void;
@@ -262,7 +390,13 @@ describe("SQLite job infrastructure", () => {
       const scheduler = new JobScheduler(
         store, clock, createSequentialIdPort(), [
           createNoopProbeJobType({ sleep: async () => {} }),
-          { type: "one-shot", concurrency: 1, idempotent: false, async run() { return {}; } },
+          {
+            type: "one-shot",
+            concurrency: 1,
+            idempotent: false,
+            cleanupPendingOnStale: true,
+            async run() { return {}; },
+          },
         ],
         undefined,
         nodeSchedulerTimers,
@@ -270,7 +404,9 @@ describe("SQLite job infrastructure", () => {
       await scheduler.recoverStale();
       expect(await store.get("job_restart" as JobId)).toMatchObject({ status: "queued", attempt: 1 });
       expect(await store.get("job_one_shot" as JobId)).toMatchObject({
-        status: "failed", error: { message: "job worker stopped before completion" },
+        status: "failed",
+        error: { message: "job worker stopped before completion" },
+        cleanupPending: true,
       });
       await scheduler.runAvailable();
       await scheduler.waitForIdle();

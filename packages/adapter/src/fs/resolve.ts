@@ -12,6 +12,7 @@ import {
   type ProjectRef,
   type ResolvedPath,
   type Result,
+  type AbsolutePath,
 } from "@vidcom/core";
 
 /** Stable security mapping shared by filesystem adapters and the HTTP error mapper. */
@@ -66,6 +67,9 @@ export async function resolveProjectPath(
   relativePath: string,
   purpose: PathPurpose,
 ): Promise<Result<ResolvedPath, PathRejection>> {
+  // This resolver is project-scoped. Agent-kit targets are workspace-relative
+  // and must be resolved only by WorkspaceMutationCoordinator's adapter.
+  if (purpose === "workspace-agent-kit") return err({ reason: "not_allowed_for_purpose" });
   const syntaxError = checkPathSyntax(relativePath);
   if (syntaxError) return err(syntaxError);
   const inputPurposeError = checkPathPurpose(relativePath, purpose);
@@ -82,6 +86,30 @@ export async function resolveProjectPath(
   const canonicalTarget = path.join(canonicalAncestor, ...suffix);
   if (!contained(canonicalRoot, canonicalTarget)) return err({ reason: "symlink_escape" });
 
+  const canonicalRelative = path.relative(canonicalRoot, canonicalTarget).split(path.sep).join("/");
+  const targetPurposeError = checkPathPurpose(canonicalRelative, purpose);
+  return targetPurposeError ? err(targetPurposeError) : ok(canonicalTarget as ResolvedPath);
+}
+
+/** Resolves the one workspace-scoped write purpose without inventing a pseudo-project. */
+export async function resolveWorkspacePath(
+  workspaceRoot: AbsolutePath,
+  relativePath: string,
+  purpose: "workspace-agent-kit",
+): Promise<Result<ResolvedPath, PathRejection>> {
+  const syntaxError = checkPathSyntax(relativePath);
+  if (syntaxError) return err(syntaxError);
+  const inputPurposeError = checkPathPurpose(relativePath, purpose);
+  if (inputPurposeError) return err(inputPurposeError);
+
+  const canonicalRoot = await realpath(workspaceRoot);
+  const joined = path.resolve(canonicalRoot, relativePath);
+  if (!contained(canonicalRoot, joined)) return err({ reason: "outside_project" });
+  const { ancestor, suffix } = await nearestExistingAncestor(joined);
+  const canonicalAncestor = await realpath(ancestor);
+  if (!contained(canonicalRoot, canonicalAncestor)) return err({ reason: "symlink_escape" });
+  const canonicalTarget = path.join(canonicalAncestor, ...suffix);
+  if (!contained(canonicalRoot, canonicalTarget)) return err({ reason: "symlink_escape" });
   const canonicalRelative = path.relative(canonicalRoot, canonicalTarget).split(path.sep).join("/");
   const targetPurposeError = checkPathPurpose(canonicalRelative, purpose);
   return targetPurposeError ? err(targetPurposeError) : ok(canonicalTarget as ResolvedPath);

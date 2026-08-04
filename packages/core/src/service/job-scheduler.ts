@@ -1,7 +1,10 @@
-import { ErrorCode, type DomainError } from "@vidcom/contracts";
+import { ErrorCode, type DomainError, type JobWarningDto } from "@vidcom/contracts";
 
 import type { ClockPort, EventOutboxPort, IdPort, JobStorePort } from "../port/ports";
 import type { Job, JobId } from "../port/types";
+import type { ProcessTerminationProof } from "../port/process-port";
+
+export const CANCELLATION_POLL_MS = 250;
 
 export interface JobExecutionContext {
   job: Job;
@@ -20,8 +23,27 @@ export interface JobTypeDefinition {
   maxAttempts?: number;
   retryBaseDelayMs?: number;
   retryMaxDelayMs?: number;
+  cleanupPendingOnStale?: boolean;
   run(input: unknown, context: JobExecutionContext): Promise<unknown>;
   cleanup?(job: Job): Promise<void>;
+}
+
+const JOB_EXECUTION_OUTCOME = Symbol("vidcom.job-execution-outcome");
+
+/** Branded terminal result for handlers that need partial status or job metadata. */
+export interface JobExecutionOutcome {
+  readonly [JOB_EXECUTION_OUTCOME]: true;
+  readonly outcome: Extract<import("../port/types").JobOutcome, { status: "succeeded" | "partial" }>;
+}
+
+/** Wraps a successful/partial handler outcome without confusing ordinary result objects. */
+export function jobExecutionOutcome(outcome: JobExecutionOutcome["outcome"]): JobExecutionOutcome {
+  return { [JOB_EXECUTION_OUTCOME]: true, outcome };
+}
+
+function isJobExecutionOutcome(value: unknown): value is JobExecutionOutcome {
+  return typeof value === "object" && value !== null
+    && (value as Partial<JobExecutionOutcome>)[JOB_EXECUTION_OUTCOME] === true;
 }
 
 export interface SchedulerTimers {
@@ -32,7 +54,11 @@ export interface SchedulerTimers {
 }
 
 export class JobCancelledError extends Error {
-  constructor() {
+  constructor(
+    readonly warnings: readonly JobWarningDto[] = [],
+    readonly cleanupPending = false,
+    readonly terminationProof?: ProcessTerminationProof,
+  ) {
     super("job cancelled");
     this.name = "JobCancelledError";
   }
@@ -55,9 +81,23 @@ export class JobRetryableError extends Error {
  * fix themselves.
  */
 export class JobFailureError extends Error {
-  constructor(readonly error: DomainError, options?: ErrorOptions) {
+  readonly warnings: readonly JobWarningDto[];
+  readonly cleanupPending: boolean;
+  readonly terminationProof: ProcessTerminationProof | undefined;
+
+  constructor(
+    readonly error: DomainError,
+    options?: ErrorOptions & {
+      warnings?: readonly JobWarningDto[];
+      cleanupPending?: boolean;
+      terminationProof?: ProcessTerminationProof;
+    },
+  ) {
     super(error.message, options);
     this.name = "JobFailureError";
+    this.warnings = options?.warnings ?? [];
+    this.cleanupPending = options?.cleanupPending ?? false;
+    this.terminationProof = options?.terminationProof;
   }
 }
 
@@ -135,13 +175,17 @@ export class JobScheduler {
     const cutoff = new Date(this.clock.now().getTime() - staleAfterMs);
     for (const job of await this.store.listStale(cutoff)) {
       if (job.cancelRequested) {
-        await this.store.finish(job.id as JobId, { status: "cancelled" });
+        await this.store.finish(job.id as JobId, {
+          status: "cancelled",
+          cleanupPending: this.definitions.get(job.type)?.cleanupPendingOnStale === true,
+        });
       } else if (this.definitions.get(job.type)?.idempotent) {
         await this.store.requeue(job.id as JobId);
       } else {
         await this.store.finish(job.id as JobId, {
           status: "failed",
           error: { code: ErrorCode.Internal, message: "job worker stopped before completion" },
+          cleanupPending: this.definitions.get(job.type)?.cleanupPendingOnStale === true,
         });
       }
     }
@@ -168,6 +212,7 @@ export class JobScheduler {
     const definition = this.definitions.get(job.type);
     if (!definition) return;
     const controller = new AbortController();
+    let abortReason: "cancel" | "timeout" | null = null;
     let lastProgress = job.progress;
     let lastStage = job.stage;
     let lastProgressAt = Number.NEGATIVE_INFINITY;
@@ -191,6 +236,7 @@ export class JobScheduler {
             jobId: job.id,
             progress: persisted?.progress ?? bounded,
             stage: persisted?.stage ?? stage,
+            partial: persisted?.status === "partial",
           },
         });
       },
@@ -201,6 +247,13 @@ export class JobScheduler {
       },
     };
     const heartbeat = this.timers.setInterval(() => void context.heartbeat(), 5_000);
+    const cancellationPoll = this.timers.setInterval(() => {
+      void context.isCancellationRequested().then((requested) => {
+        if (!requested || abortReason !== null) return;
+        abortReason = "cancel";
+        controller.abort();
+      });
+    }, CANCELLATION_POLL_MS);
     const timeoutMs = definition.timeoutMs ?? 60_000;
     let timeout: unknown | null = null;
     try {
@@ -209,22 +262,37 @@ export class JobScheduler {
         definition.run(job.input, context),
         new Promise<never>((_resolve, reject) => {
           timeout = this.timers.setTimeout(() => {
+            if (abortReason !== null) return;
+            abortReason = "timeout";
             controller.abort();
             reject(new JobRetryableError(`job timed out after ${timeoutMs}ms`));
           }, timeoutMs);
         }),
       ]);
       await context.throwIfCancelled();
-      await this.store.finish(job.id as JobId, { status: "succeeded", result });
-      await this.emit({
-        type: "job.done", projectId: job.projectId, payload: { jobId: job.id, status: "succeeded" },
+      const outcome = isJobExecutionOutcome(result)
+        ? result.outcome
+        : { status: "succeeded" as const, result };
+      const applied = await this.store.finish(job.id as JobId, outcome);
+      if (applied) await this.emit({
+        type: "job.done", projectId: job.projectId,
+        payload: { jobId: job.id, status: outcome.status, partial: outcome.status === "partial" },
       });
     } catch (error) {
       await definition.cleanup?.(job);
-      if (error instanceof JobCancelledError) {
-        await this.store.finish(job.id as JobId, { status: "cancelled" });
-        await this.emit({
-          type: "job.done", projectId: job.projectId, payload: { jobId: job.id, status: "cancelled" },
+      const terminationUnverified = error instanceof JobFailureError
+        && error.error.code === ErrorCode.ProcessTerminationUnverified;
+      if (!terminationUnverified && (abortReason === "cancel" || error instanceof JobCancelledError)) {
+        const cancelled = error instanceof JobCancelledError ? error : new JobCancelledError();
+        const applied = await this.store.finish(job.id as JobId, {
+          status: "cancelled",
+          warnings: cancelled.warnings,
+          cleanupPending: cancelled.cleanupPending,
+          terminationProof: cancelled.terminationProof,
+        });
+        if (applied) await this.emit({
+          type: "job.done", projectId: job.projectId,
+          payload: { jobId: job.id, status: "cancelled", partial: false },
         });
       } else {
         if (definition.idempotent
@@ -244,6 +312,7 @@ export class JobScheduler {
               jobId: job.id,
               progress: persisted?.progress ?? lastProgress,
               stage: persisted?.stage ?? "retrying",
+              partial: false,
             },
           });
           return;
@@ -256,14 +325,19 @@ export class JobScheduler {
                 code: ErrorCode.Internal,
                 message: error instanceof Error ? error.message : "job failed",
               },
+          warnings: error instanceof JobFailureError ? error.warnings : undefined,
+          cleanupPending: error instanceof JobFailureError ? error.cleanupPending : false,
+          terminationProof: error instanceof JobFailureError ? error.terminationProof : undefined,
         });
         await this.emit({
-          type: "job.done", projectId: job.projectId, payload: { jobId: job.id, status: "failed" },
+          type: "job.done", projectId: job.projectId,
+          payload: { jobId: job.id, status: "failed", partial: false },
         });
       }
     } finally {
       if (timeout !== null) this.timers.clearTimeout(timeout);
       this.timers.clearInterval(heartbeat);
+      this.timers.clearInterval(cancellationPoll);
     }
   }
 

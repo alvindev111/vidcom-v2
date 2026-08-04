@@ -80,7 +80,7 @@ function dependencies(
     },
     journal: {},
     authority: {
-      mutateComposite: async (): Promise<Result<WriteEnvelope, DomainError>> => ok({
+      mutateSource: async (): Promise<Result<WriteEnvelope, DomainError>> => ok({
         projectRevision: 7, entityRevision: null, fileHashes: {}, diagnostics: [],
       } as WriteEnvelope),
     },
@@ -224,7 +224,7 @@ describe("tts job type", () => {
           },
         },
         authority: {
-          mutateComposite: async () => {
+          mutateSource: async () => {
             seen.push("published");
             return ok({ projectRevision: 1, entityRevision: null, fileHashes: {}, diagnostics: [] } as WriteEnvelope);
           },

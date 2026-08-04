@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { ErrorCode, type ContentHash, type ProjectId, type RelPath } from "@vidcom/contracts";
 import {
+  err,
   ok,
   reconcilePendingMutations,
   type AbsolutePath,
@@ -55,6 +56,10 @@ class FakeJournal implements MutationJournalPort {
   async abort(id: JournalId, reason: ErrorCode) { this.aborted.push({ id, reason }); }
   async listPending() { return this.rows; }
   async latestRevision() { return null; }
+  async latestSourceRevision() { return null; }
+  async readRevisionRollbackPayload() {
+    return err({ code: ErrorCode.NotFound, message: "unused" });
+  }
   async readEntityState(): Promise<EntityState | null> {
     return { revision: 2, contentHash: hash("entity-old"), backingPath: "preview-settings.json" as RelPath };
   }
@@ -73,6 +78,7 @@ class FakeJournal implements MutationJournalPort {
 function workspace(actualHashes: Map<string, ContentHash | null>): WorkspacePort {
   return {
     async resolve(_ref, path) { return ok(`/workspace/project/${path}` as ResolvedPath); },
+    async resolveWorkspace() { throw new Error("unused"); },
     async listProjects() { return [ref]; },
     async readProjectRef() { return ref; },
     async readFile() { return null; },

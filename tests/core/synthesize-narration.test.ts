@@ -83,7 +83,7 @@ function harness(options: {
       },
       journal: {} as SynthesizeNarrationDependencies["journal"],
       authority: {
-        mutateComposite: async (request: { steps: CompositeStep[] }): Promise<Result<WriteEnvelope, DomainError>> => {
+        mutateSource: async (request: { steps: CompositeStep[] }): Promise<Result<WriteEnvelope, DomainError>> => {
           committed.push(request.steps);
           return ok({
             projectRevision: 12,

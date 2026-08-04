@@ -95,6 +95,9 @@ jobs:
       - name: Typecheck
         run: npm run typecheck
 
+      - name: Verify embedded agent-kit bundle is current
+        run: npm run test:agent-kit
+
       - name: Lint
         run: npm run lint
 

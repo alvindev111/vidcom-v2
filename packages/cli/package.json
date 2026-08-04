@@ -8,6 +8,7 @@
   },
   "exports": "./src/index.ts",
   "dependencies": {
+    "@vidcom/agent-kit": "workspace:*",
     "@vidcom/adapter": "workspace:*",
     "@vidcom/contracts": "workspace:*",
     "@vidcom/core": "workspace:*",

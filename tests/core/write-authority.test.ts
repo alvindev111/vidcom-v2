@@ -6,6 +6,7 @@ import type { ContentHash, ProjectId, RelPath } from "@vidcom/contracts";
 import { ErrorCode } from "@vidcom/contracts";
 import {
   DEFAULT_PREVIEW_SETTINGS,
+  err,
   serializePreviewSettings,
   WriteAuthority,
   type AbsolutePath,
@@ -54,6 +55,7 @@ class FakeWorkspace {
     }
     return { ok: true as const, value: (this.resolvedPaths.get(path) ?? path) as ResolvedPath };
   }
+  async resolveWorkspace(_root: AbsolutePath, path: RelPath) { return this.resolve(project, path); }
   async listProjects() { return [project]; }
   async readProjectRef(id: ProjectId) { return id === projectId ? project : null; }
   async readFile(path: ResolvedPath) {
@@ -177,6 +179,10 @@ class FakeJournal {
   async orphan(id: JournalId) { this.pending = this.pending.filter((entry) => entry.id !== id); }
   async listPending() { return this.pending; }
   async latestRevision() { return this.revision || null; }
+  async latestSourceRevision() { return this.revision || null; }
+  async readRevisionRollbackPayload() {
+    return err({ code: ErrorCode.NotFound, message: "unused" });
+  }
   async readEntityState() { return this.entityState; }
   async findProjectRegistration() { return null; }
   async registerProject() {}
@@ -227,6 +233,10 @@ class FakeJournal {
       }
     }
     return { projectRevision: this.revision, entityRevision, fileHashes, diagnostics: result.diagnostics };
+  }
+
+  async commitDerivedComposite(id: JournalId, result: CompositeResult): Promise<WriteEnvelope> {
+    return this.commitComposite(id, result);
   }
   async abortComposite(id: JournalId, reason: ErrorCode) {
     if (this.compositeAbortError) throw this.compositeAbortError;
@@ -327,7 +337,7 @@ describe("WriteAuthority composite gate", () => {
   it("checks lease and recovery state under the project mutex before T1 or filesystem I/O", async () => {
     const { authority, journal, workspace } = setup();
     journal.recoveryRequired = true;
-    await expect(authority.mutateComposite({
+    await expect(authority.mutateSource({
       ref: project,
       steps: [{
         kind: "write",
@@ -349,7 +359,7 @@ describe("WriteAuthority composite gate", () => {
   it("rejects duplicate canonical targets before beginning a journal", async () => {
     const { authority, journal, workspace } = setup();
     workspace.resolvedPaths.set("alias.html", "index.html");
-    await expect(authority.mutateComposite({
+    await expect(authority.mutateSource({
       ref: project,
       steps: [
         { kind: "write", path: "index.html" as RelPath, content: "one", expectedContentHash: null },
@@ -369,7 +379,7 @@ describe("WriteAuthority composite gate", () => {
     const { authority, journal, workspace } = setup();
     workspace.files.set("one.html", "one-old");
     workspace.files.set("two.html", "two-current");
-    await expect(authority.mutateComposite({
+    await expect(authority.mutateSource({
       ref: project,
       steps: [
         { kind: "write", path: "one.html" as RelPath, content: "one-new", expectedContentHash: digest("one-old") },
@@ -389,7 +399,7 @@ describe("WriteAuthority composite gate", () => {
   it("rejects a purpose-mismatched target before T1", async () => {
     const { authority, journal, workspace } = setup();
     workspace.rejectedPaths.add("preview-settings.json");
-    await expect(authority.mutateComposite({
+    await expect(authority.mutateSource({
       ref: project,
       steps: [{
         kind: "write",
@@ -411,7 +421,7 @@ describe("WriteAuthority composite gate", () => {
     const { authority, backups, journal, workspace } = setup();
     workspace.files.set("index.html", "entry-old");
     workspace.files.set("compositions/scene.html", "scene-old");
-    await expect(authority.mutateComposite({
+    await expect(authority.mutateSource({
       ref: project,
       steps: [
         { kind: "write", path: "index.html" as RelPath, content: "entry-new", expectedContentHash: digest("entry-old") },
@@ -440,7 +450,7 @@ describe("WriteAuthority composite gate", () => {
     backups.createError = new Error("backup unavailable");
     journal.compositeAbortError = new Error("T2a unavailable");
 
-    await expect(authority.mutateComposite({
+    await expect(authority.mutateSource({
       ref: project,
       steps: [{ kind: "delete", path: "index.html" as RelPath, expectedContentHash: digest("old") }],
       toolAudit: null,
@@ -464,7 +474,7 @@ describe("WriteAuthority composite gate", () => {
     journal.compositeAbortError = new Error("T2a unavailable");
     reconciliation.outcome = { terminal: "aborted" };
 
-    await expect(authority.mutateComposite({
+    await expect(authority.mutateSource({
       ref: project,
       steps: [{ kind: "delete", path: "index.html" as RelPath, expectedContentHash: digest("old") }],
       toolAudit: null,
@@ -483,7 +493,7 @@ describe("WriteAuthority composite gate", () => {
     workspace.files.set("two.html", "two-old");
     workspace.writeFailure = (path, content) => path === "two.html"
       && typeof content === "string" && content === "two-new";
-    await expect(authority.mutateComposite({
+    await expect(authority.mutateSource({
       ref: project,
       steps: [
         { kind: "write", path: "one.html" as RelPath, content: "one-new", expectedContentHash: digest("one-old") },
@@ -506,7 +516,7 @@ describe("WriteAuthority composite gate", () => {
       const text = typeof content === "string" ? content : new TextDecoder().decode(content);
       return (path === "two.html" && text === "two-new") || (path === "one.html" && text === "one-old");
     };
-    await expect(authority.mutateComposite({
+    await expect(authority.mutateSource({
       ref: project,
       steps: [
         { kind: "write", path: "one.html" as RelPath, content: "one-new", expectedContentHash: digest("one-old") },
@@ -533,7 +543,7 @@ describe("WriteAuthority composite gate", () => {
         diagnostics: [],
       },
     };
-    await expect(authority.mutateComposite({
+    await expect(authority.mutateSource({
       ref: project,
       steps: [{ kind: "write", path: "index.html" as RelPath, content: "new", expectedContentHash: digest("old") }],
       toolAudit: null,
@@ -547,7 +557,7 @@ describe("WriteAuthority composite gate", () => {
     const { authority, journal, reconciliation, workspace } = setup();
     workspace.files.set("index.html", "old");
     journal.compositeCommitError = new Error("T2 unavailable");
-    await expect(authority.mutateComposite({
+    await expect(authority.mutateSource({
       ref: project,
       steps: [{ kind: "write", path: "index.html" as RelPath, content: "new", expectedContentHash: digest("old") }],
       toolAudit: null,
@@ -566,7 +576,7 @@ describe("WriteAuthority composite gate", () => {
       && typeof content === "string" && content === "two-new";
     journal.compositeAbortError = new Error("T2a unavailable");
     reconciliation.outcome = { terminal: "aborted" };
-    await expect(authority.mutateComposite({
+    await expect(authority.mutateSource({
       ref: project,
       steps: [
         { kind: "write", path: "one.html" as RelPath, content: "one-new", expectedContentHash: digest("one-old") },
@@ -589,7 +599,7 @@ describe("WriteAuthority composite gate", () => {
     };
     journal.compositeOrphanError = new Error("T2c unavailable");
     reconciliation.outcome = { terminal: "orphaned" };
-    await authority.mutateComposite({
+    await authority.mutateSource({
       ref: project,
       steps: [
         { kind: "write", path: "one.html" as RelPath, content: "one-new", expectedContentHash: digest("one-old") },
@@ -618,7 +628,7 @@ describe("WriteAuthority file mutations", () => {
       invokedAt: "2026-08-02T00:00:00.000Z",
       revisionBefore: 0,
     };
-    await expect(authority.mutate({
+    await expect(authority.mutateSource({
       kind: "file",
       ref: project,
       path: "new.html" as RelPath,
@@ -633,7 +643,7 @@ describe("WriteAuthority file mutations", () => {
     workspace.files.set("index.html", "old");
     lease.held = false;
     await expect(
-      authority.mutate({
+      authority.mutateSource({
         kind: "file",
         ref: project,
         path: "index.html" as RelPath,
@@ -653,7 +663,7 @@ describe("WriteAuthority file mutations", () => {
       ["l1-2z", ErrorCode.VersionFormatLegacy],
       ["anything", ErrorCode.SchemaInvalid],
     ] as const) {
-      await expect(authority.mutate({
+      await expect(authority.mutateSource({
         kind: "file",
         ref: project,
         path: "index.html" as RelPath,
@@ -667,7 +677,7 @@ describe("WriteAuthority file mutations", () => {
     const { authority, workspace } = setup();
     workspace.files.set("index.html", "old");
     workspace.writeDelayMs = 10;
-    const request = (content: string) => authority.mutate({
+    const request = (content: string) => authority.mutateSource({
       kind: "file" as const,
       ref: project,
       path: "index.html" as RelPath,
@@ -695,8 +705,8 @@ describe("WriteAuthority file mutations", () => {
       content: "new",
       expectedContentHash: null,
     };
-    await expect(authority.mutate(request, "user")).resolves.toMatchObject({ ok: true, value: { revision: 1 } });
-    await expect(authority.mutate({ ...request, expectedContentHash: digest("new") }, "user")).resolves.toMatchObject({
+    await expect(authority.mutateSource(request, "user")).resolves.toMatchObject({ ok: true, value: { revision: 1 } });
+    await expect(authority.mutateSource({ ...request, expectedContentHash: digest("new") }, "user")).resolves.toMatchObject({
       ok: true,
       value: { revision: 1 },
     });
@@ -707,7 +717,7 @@ describe("WriteAuthority file mutations", () => {
     const { authority, workspace } = setup();
     workspace.files.set("index.html", "current");
 
-    await expect(authority.mutate({
+    await expect(authority.mutateSource({
       kind: "file",
       ref: project,
       path: "index.html" as RelPath,
@@ -723,7 +733,7 @@ describe("WriteAuthority file mutations", () => {
     const { authority, workspace, journal } = setup();
     workspace.writeError = new Error("disk unavailable");
 
-    await expect(authority.mutate({
+    await expect(authority.mutateSource({
       kind: "file",
       ref: project,
       path: "compositions/new.html" as RelPath,
@@ -741,7 +751,7 @@ describe("WriteAuthority file mutations", () => {
     const { authority, journal, workspace } = setup();
     journal.commitError = new Error("database unavailable");
 
-    await expect(authority.mutate({
+    await expect(authority.mutateSource({
       kind: "file",
       ref: project,
       path: "compositions/new.html" as RelPath,
@@ -761,7 +771,7 @@ describe("WriteAuthority entity mutations", () => {
   it("reports missing entity state as an internal invariant failure", async () => {
     const { authority } = setup();
 
-    await expect(authority.mutate({
+    await expect(authority.mutateSource({
       kind: "entity",
       ref: project,
       entity: "preview-settings",
@@ -780,7 +790,7 @@ describe("WriteAuthority entity mutations", () => {
       contentHash: digest(serializePreviewSettings(DEFAULT_PREVIEW_SETTINGS)),
       backingPath: "preview-settings.json" as RelPath,
     };
-    await expect(authority.mutate({
+    await expect(authority.mutateSource({
       kind: "entity",
       ref: project,
       entity: "preview-settings",
@@ -801,7 +811,7 @@ describe("WriteAuthority entity mutations", () => {
       contentHash: digest("stale"),
       backingPath: "preview-settings.json" as RelPath,
     };
-    await expect(authority.mutate({
+    await expect(authority.mutateSource({
       kind: "entity",
       ref: project,
       entity: "preview-settings",
@@ -825,7 +835,7 @@ describe("WriteAuthority entity mutations", () => {
     };
     workspace.writeError = new Error("disk unavailable");
 
-    await expect(authority.mutate({
+    await expect(authority.mutateSource({
       kind: "entity",
       ref: project,
       entity: "preview-settings",

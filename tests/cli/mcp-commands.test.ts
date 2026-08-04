@@ -91,7 +91,7 @@ describe("VidCom CLI dispatch", () => {
     expect(stderr).toBe("internal_error\n");
   });
 
-  it("requires an explicit, saved or marker-backed workspace without creating a guess", async () => {
+  it("uses a readable cwd as the workspace without creating project files", async () => {
     const root = await mkdtemp(path.join(tmpdir(), "vidcom-missing-workspace-"));
     const cwd = path.join(root, "empty-cwd");
     await mkdir(cwd);
@@ -99,7 +99,7 @@ describe("VidCom CLI dispatch", () => {
       await expect(selectWorkspace({
         appDataRoot: path.join(root, "app-data"),
         cwd,
-      })).rejects.toThrow("workspace selection required");
+      })).resolves.toBe(cwd);
       await expect(readFile(path.join(cwd, "hyperframes.json"))).rejects.toMatchObject({ code: "ENOENT" });
       await expect(readFile(path.join(cwd, "index.html"))).rejects.toMatchObject({ code: "ENOENT" });
     } finally {
@@ -128,14 +128,13 @@ describe("VidCom CLI dispatch", () => {
     expect(stderr).not.toBe("");
   });
 
-  it("rejects a missing workspace without creating or guessing one", async () => {
+  it("persists a readable empty cwd without creating or guessing project files", async () => {
     const root = await mkdtemp(path.join(tmpdir(), "vidcom-missing-workspace-"));
     const cwd = path.join(root, "empty-cwd");
     const appData = path.join(root, "app-data");
     await mkdir(cwd);
     try {
-      await expect(selectWorkspace({ appDataRoot: appData, cwd }))
-        .rejects.toThrow("workspace selection required; pass --workspace or VIDCOM_WORKSPACE");
+      await expect(selectWorkspace({ appDataRoot: appData, cwd })).resolves.toBe(cwd);
       await expect(readFile(path.join(cwd, "hyperframes.json"), "utf8")).rejects.toThrow();
       await expect(readFile(path.join(cwd, "index.html"), "utf8")).rejects.toThrow();
     } finally {
@@ -143,15 +142,15 @@ describe("VidCom CLI dispatch", () => {
     }
   });
 
-  it("rejects an invalid explicit workspace without falling back or acquiring a lease", async () => {
+  it("rejects a missing explicit workspace without falling back or acquiring a lease", async () => {
     const root = await mkdtemp(path.join(tmpdir(), "vidcom-invalid-explicit-workspace-"));
     const active = path.join(root, "active");
     const project = path.join(active, "project");
     const invalid = path.join(root, "typo");
     const appData = path.join(root, "app-data");
     await mkdir(project, { recursive: true });
-    await mkdir(invalid);
     await writeFile(path.join(project, "hyperframes.json"), "{}\n");
+    await writeFile(path.join(project, "vidcom.json"), '{"id":"project_explicit_active"}\n');
     await writeFile(path.join(project, "index.html"), '<main data-composition-id="root"></main>');
     try {
       await expect(selectWorkspace({ explicit: active, appDataRoot: appData })).resolves.toBe(active);
@@ -188,6 +187,7 @@ describe("VidCom CLI dispatch", () => {
     const appData = path.join(root, "app-data");
     await mkdir(project, { recursive: true });
     await writeFile(path.join(project, "hyperframes.json"), "{}\n");
+    await writeFile(path.join(project, "vidcom.json"), '{"id":"project_mcp_command"}\n');
     await writeFile(path.join(project, "index.html"), '<main data-composition-id="root"></main>');
     let stdioClosed = false;
     try {
@@ -197,7 +197,7 @@ describe("VidCom CLI dispatch", () => {
         selectWorkspace: async () => workspace as AbsolutePath,
         startStdio: async (registry, _dependencies, options) => {
           expect(options).toEqual({ pinnedRevision: "2025-11-25" });
-          expect(registry.list("legacy").map((tool) => tool.name)).toHaveLength(13);
+          expect(registry.list("legacy").map((tool) => tool.name)).toHaveLength(17);
           return {
             close: async () => { stdioClosed = true; },
             closed: new Promise<void>(() => undefined),
@@ -316,6 +316,7 @@ describe("VidCom CLI dispatch", () => {
     let listenerClosed = false;
     await mkdir(project, { recursive: true });
     await writeFile(path.join(project, "hyperframes.json"), "{}\n");
+    await writeFile(path.join(project, "vidcom.json"), '{"id":"project_mcp_disconnect"}\n');
     await writeFile(path.join(project, "index.html"), '<main data-composition-id="root"></main>');
     try {
       const runtime = await startVidcomMcp({ workspace }, {
@@ -568,7 +569,7 @@ describe("VidCom CLI dispatch", () => {
         root: projectRoot as AbsolutePath,
         entry: "index.html" as RelPath,
       };
-      const destructive = await authority.mutateComposite({
+      const destructive = await authority.mutateSource({
         ref,
         steps: [{
           kind: "write",

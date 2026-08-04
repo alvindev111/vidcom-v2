@@ -89,6 +89,45 @@ export interface DaemonHooks<Listener> {
   onLeaseLost?(runtime: DaemonRuntime): Promise<void> | void;
 }
 
+async function recoverRenderRoots(infrastructure: ReturnType<typeof createInfrastructure>): Promise<void> {
+  const running = new Set(await infrastructure.jobs.listRunningIds());
+  const result = await infrastructure.renderRoots.reclaimOrphans(infrastructure.clock.now(), running);
+  for (const jobId of result.reclaimedJobIds) {
+    await infrastructure.jobs.clearCleanupPending(jobId);
+  }
+  const reclaimed = new Set(result.reclaimedJobIds);
+  for (const jobId of await infrastructure.jobs.listCleanupPendingIds()) {
+    if (reclaimed.has(jobId)) continue;
+    const ownership = await infrastructure.renderRoots.inspect(jobId);
+    if (ownership === "absent") {
+      await infrastructure.jobs.clearCleanupPending(jobId);
+    } else if (ownership === "unowned") {
+      infrastructure.logger.warn(
+        "render root cleanup remains pending because ownership is invalid",
+        { jobId },
+      );
+    }
+  }
+  if (result.errors.length > 0) {
+    throw new AggregateError(
+      result.errors.map(({ root, reason }) => new Error(`${root}: ${reason}`)),
+      "one or more render roots could not be reclaimed",
+    );
+  }
+}
+
+async function recoverJobsAndRenderRoots(
+  runtime: DaemonRuntime,
+  recoverJobs: DaemonHooks<unknown>["recoverJobs"],
+): Promise<void> {
+  const errors: unknown[] = [];
+  try { await recoverJobs(runtime); }
+  catch (error) { errors.push(error); }
+  try { await recoverRenderRoots(runtime.infrastructure); }
+  catch (error) { errors.push(error); }
+  if (errors.length > 0) throw new AggregateError(errors, "VidCom job recovery failed");
+}
+
 async function closeListener(listener: unknown): Promise<void> {
   if (listener && typeof (listener as { close?: unknown }).close === "function") {
     await (listener as { close(): Promise<void> | void }).close();
@@ -218,10 +257,15 @@ export async function startVidcomFoundation<Listener>(
           new Date(infrastructure.clock.now().getTime() - TTS_SCRATCH_GRACE_MS),
         );
       },
-      jobRecovery: () => hooks.recoverJobs({ infrastructure, application }),
+      jobRecovery: () => recoverJobsAndRenderRoots(
+        { infrastructure, application },
+        hooks.recoverJobs,
+      ),
       identityBackfill: async () => {
         if (!application) throw new Error("application was not initialized after lease acquisition");
         for (const candidate of await infrastructure.workspace.listProjectCandidates()) {
+          const identity = await infrastructure.workspace.statWorkspaceFile?.(candidate.root, "vidcom.json") ?? null;
+          if (!identity) continue;
           const result = await bootstrapProject({
             workspace: infrastructure.workspace,
             journal: infrastructure.journal,

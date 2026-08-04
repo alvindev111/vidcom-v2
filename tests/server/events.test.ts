@@ -6,9 +6,8 @@ import path from "node:path";
 import { migrateDatabase, nodeSchedulerTimers, openVidcomDatabase, SqliteEventOutbox, SqliteJobStore } from "@vidcom/adapter";
 import { getNextHostedRuntime, handleNextHostedRequest } from "@vidcom/cli";
 import type { ContentHash, ProjectId } from "@vidcom/contracts";
-import { canonicalizeJobInput, JobScheduler, type JobId } from "@vidcom/core";
+import { canonicalizeJobInput, jobExecutionOutcome, JobScheduler, type JobId } from "@vidcom/core";
 import { createEventRoutes, createServerApp, InMemoryNonceStore, InMemorySessionStore } from "@vidcom/server";
-import { createNoopProbeJobType } from "@vidcom/worker";
 import { Hono } from "hono";
 import { afterEach, describe, expect, it } from "vitest";
 
@@ -69,14 +68,27 @@ describe("durable SSE", () => {
     const events = new SqliteEventOutbox(database, clock);
     const input = { steps: 2, delayMs: 0 };
     await jobs.enqueue({
-      id: "job_events" as JobId, projectId, type: "noop-probe", input,
+      id: "job_events" as JobId, projectId, type: "partial-probe", input,
       inputHash: inputHash(input), idempotencyKey: null,
     });
-    const scheduler = new JobScheduler(jobs, clock, createSequentialIdPort(), [
-      createNoopProbeJobType({ sleep: async () => { clock.advance(250); } }),
-    ], events, nodeSchedulerTimers);
+    const scheduler = new JobScheduler(jobs, clock, createSequentialIdPort(), [{
+      type: "partial-probe", concurrency: 1, idempotent: true,
+      async run(_input, context) {
+        clock.advance(250);
+        await context.updateProgress(0.5, "capturing");
+        return jobExecutionOutcome({ status: "partial", result: { missingSceneIds: ["scene-2"] } });
+      },
+    }], events, nodeSchedulerTimers);
     await scheduler.runAvailable();
     await scheduler.waitForIdle();
+
+    const persistedEvents = (await events.readFrom(0, 20)).events;
+    expect(persistedEvents.filter((event) => event.type === "job.progress").map((event) => event.payload))
+      .toEqual([
+        { jobId: "job_events", progress: 0.5, stage: "capturing", partial: false },
+      ]);
+    expect(persistedEvents.find((event) => event.type === "job.done")?.payload)
+      .toEqual({ jobId: "job_events", status: "partial", partial: true });
 
     const nonces = new InMemoryNonceStore(clock);
     const sessions = new InMemorySessionStore(clock);
@@ -95,7 +107,7 @@ describe("durable SSE", () => {
     const headers = { Host: `127.0.0.1:${port}`, Cookie: cookie };
     try {
       const polled = await app.request(`http://127.0.0.1:${port}/api/v1/jobs/job_events`, { headers });
-      expect(await polled.json()).toMatchObject({ status: "succeeded", progress: 1 });
+      expect(await polled.json()).toMatchObject({ status: "partial", progress: 1 });
       const stream = await app.request(`http://127.0.0.1:${port}/api/v1/events`, { headers });
       expect(stream.headers.get("x-accel-buffering")).toBe("no");
       const reader = stream.body!.getReader();
@@ -103,6 +115,14 @@ describe("durable SSE", () => {
       await reader.cancel();
       expect(text).toContain("event: job.progress");
       expect(text).toContain("event: job.done");
+      const payloads = text.split("\n").filter((line) => line.startsWith("data: "))
+        .map((line) => JSON.parse(line.slice(6)) as { type: string; payload: Record<string, unknown> });
+      expect(payloads.find(({ type }) => type === "job.progress")?.payload).toEqual({
+        jobId: "job_events", progress: 0.5, stage: "capturing", partial: false,
+      });
+      expect(payloads.find(({ type }) => type === "job.done")?.payload).toEqual({
+        jobId: "job_events", status: "partial", partial: true,
+      });
 
       const heartbeatApp = new Hono().route("/", createEventRoutes(events, { pollMs: 5, heartbeatMs: 10 }));
       const heartbeat = await heartbeatApp.request("http://local/events", { headers: { "Last-Event-ID": String(await events.latestSeq()) } });
@@ -127,6 +147,7 @@ describe("durable SSE", () => {
     await mkdir(project, { recursive: true });
     await writeFile(path.join(project, "hyperframes.json"), "{}\n");
     await writeFile(path.join(project, "index.html"), '<main data-composition-id="root"></main>');
+    await writeFile(path.join(project, "vidcom.json"), JSON.stringify({ id: "project_events" }));
     const nonce = Buffer.alloc(32, 7).toString("base64url");
     const port = 49321;
     const prior = {

@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-import { ErrorCode } from "./errors";
+import { ErrorCode, WarningCode } from "./errors";
 
 const identifierSchema = z.string().min(1).max(255);
 const relativePathSchema = z.string().min(1).max(4096);
@@ -355,14 +355,24 @@ export const PatchPreviewSettingsResponseSchema = z.strictObject({
   diagnostics: z.array(DiagnosticSchema),
 });
 
+/** Job states after which no further handler execution may settle the job. */
+export const TERMINAL_JOB_STATUSES = ["succeeded", "partial", "failed", "cancelled"] as const;
+
+export const JobWarningSchema = z.strictObject({
+  code: z.enum(WarningCode),
+  message: z.string().min(1),
+});
+
 export const JobSchema = z.strictObject({
   id: identifierSchema,
   type: z.string().min(1),
-  status: z.enum(["queued", "running", "succeeded", "failed", "cancelled"]),
+  status: z.enum(["queued", "running", ...TERMINAL_JOB_STATUSES]),
   progress: z.number().min(0).max(1),
   stage: z.string().nullable(),
   result: z.unknown().nullable(),
   error: ErrorDetailSchema.nullable(),
+  warnings: z.array(JobWarningSchema).nullable(),
+  cleanupPending: z.boolean(),
   attempt: z.number().int().nonnegative(),
   createdAt: isoTimestampSchema,
   startedAt: isoTimestampSchema.nullable(),
@@ -374,12 +384,20 @@ export const CancelJobResponseSchema = NoContentResponseSchema;
 export const EventsHeadersSchema = z.strictObject({
   lastEventId: z.coerce.number().int().nonnegative().optional(),
 });
-export const DomainEventSchema = z.strictObject({
-  id: z.number().int().positive(),
-  type: z.enum(["file.changed", "project.changed", "job.progress", "job.done"]),
-  projectId: identifierSchema,
-  payload: z.record(z.string(), z.unknown()),
-});
+export const DomainEventSchema = z.discriminatedUnion("type", [
+  z.strictObject({
+    id: z.number().int().positive(),
+    type: z.enum(["file.changed", "project.changed", "job.progress", "job.done"]),
+    projectId: identifierSchema,
+    payload: z.record(z.string(), z.unknown()),
+  }),
+  z.strictObject({
+    id: z.number().int().positive(),
+    type: z.literal("workspace.changed"),
+    projectId: z.null(),
+    payload: z.record(z.string(), z.unknown()),
+  }),
+]);
 
 export const AssetResponseSchema = z.instanceof(Uint8Array);
 
@@ -438,4 +456,6 @@ export type StudioSnapshotResponse = z.infer<typeof StudioSnapshotResponseSchema
 export type PreviewSettingsDto = z.infer<typeof PreviewSettingsSchema>;
 export type PreviewSettingsPatchDto = z.infer<typeof PreviewSettingsPatchSchema>;
 export type JobDto = z.infer<typeof JobSchema>;
+export type JobStatus = JobDto["status"];
+export type JobWarningDto = z.infer<typeof JobWarningSchema>;
 export type DomainEventDto = z.infer<typeof DomainEventSchema>;

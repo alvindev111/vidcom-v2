@@ -12,6 +12,11 @@ export enum ErrorCode {
   AssetNotAllowed = "asset_not_allowed",
   PathOutsideProject = "path_outside_project",
   ProjectNotFound = "project_not_found",
+  ProjectInvalid = "project_invalid",
+  IdentityParseError = "identity_parse_error",
+  CompositionParseError = "composition_parse_error",
+  NoComposition = "no_composition",
+  NoScenes = "no_scenes",
   NotFound = "not_found",
   WriteConflict = "write_conflict",
   IdempotencyKeyReused = "idempotency_key_reused",
@@ -36,12 +41,26 @@ export enum ErrorCode {
   BackupExpired = "backup_expired",
   DuplicateMutationTarget = "duplicate_mutation_target",
   RecoveryRequired = "recovery_required",
+  RemoteAssetNotLocal = "remote_asset_not_local",
+  RenderBinaryMissing = "render_binary_missing",
+  SubTimelineReadinessTimeout = "sub_timeline_readiness_timeout",
+  ProcessTerminationUnverified = "process_termination_unverified",
+  ConfirmationRequired = "confirmation_required",
+  RollbackPayloadPruned = "rollback_payload_pruned",
   CommittedResponseError = "committed_response_error",
   TtsProviderUnavailable = "tts_provider_unavailable",
   TtsCredentialMissing = "tts_credential_missing",
   TtsVoiceNotSupported = "tts_voice_not_supported",
   TtsQuotaExceeded = "tts_quota_exceeded",
   TtsSynthesisFailed = "tts_synthesis_failed",
+}
+
+/** Stable machine-readable warning codes exposed with job results. */
+export enum WarningCode {
+  ExternalDependencyUnpinned = "external_dependency_unpinned",
+  SubTimelineReadinessTimeout = "sub_timeline_readiness_timeout",
+  TerminationProofNotExhaustive = "termination_proof_not_exhaustive",
+  EngineVersionDrift = "engine_version_drift",
 }
 
 /** Structured error payload returned by HTTP and MCP adapters. */

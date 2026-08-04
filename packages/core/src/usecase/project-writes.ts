@@ -1,5 +1,6 @@
 import {
   ErrorCode,
+  MAX_PROJECT_DURATION_SECONDS,
   MAX_SOURCE_BYTES,
   type Actor,
   type ContentHash,
@@ -10,24 +11,54 @@ import {
 } from "@vidcom/contracts";
 
 import type { ProjectRef } from "../domain/models";
-import { validateSceneTiming } from "../domain/invariants";
+import { detectTrackGapsAndOverlaps, planRipple, validateSceneTiming, type SceneClip } from "../domain/invariants";
 import { checkPathPurpose, checkPathSyntax } from "../domain/path-policy";
+import { rootCompositionSource } from "../domain/platform-preset";
 import { err, ok, type Result } from "../error/result";
 import type { ClockPort, CompositionPort, MutationJournalPort, WorkspacePort } from "../port/ports";
-import type { WriteInvocation } from "../port/types";
+import type { CompositeRequest, WriteInvocation } from "../port/types";
 import type { WriteAuthority } from "../service/write-authority";
+import { readCues, type NarrationCue } from "./narration-cues";
+import type { ProjectIdentityService } from "./project-identity";
 
 export interface ProjectWriteDependencies {
   workspace: WorkspacePort;
   composition: CompositionPort;
   journal: MutationJournalPort;
-  authority: Pick<WriteAuthority, "mutate" | "mutateComposite"> & Partial<Pick<WriteAuthority, "uploadBgm">>;
+  authority: Pick<WriteAuthority, "mutateSource"> & Partial<Pick<WriteAuthority, "uploadBgm">>;
   clock: ClockPort;
+  identity?: Pick<ProjectIdentityService, "read">;
 }
 
 async function findRef(dependencies: ProjectWriteDependencies, id: ProjectId): Promise<Result<ProjectRef, DomainError>> {
   const ref = await dependencies.workspace.readProjectRef(id);
   return ref ? ok(ref) : err({ code: ErrorCode.ProjectNotFound, message: "project was not found" });
+}
+
+async function parseForMutation(dependencies: ProjectWriteDependencies, ref: ProjectRef) {
+  try {
+    const source = await sourceForMutation(dependencies, ref, ref.entry);
+    if (!source.ok) return err({
+      code: ErrorCode.ProjectInvalid,
+      message: "project composition is invalid",
+      details: { reason: ErrorCode.CompositionParseError },
+    });
+    if (dependencies.composition.validateSource) {
+      const valid = await dependencies.composition.validateSource(ref.entry, source.value.content);
+      if (!valid.ok) return err({
+        code: ErrorCode.ProjectInvalid,
+        message: "project composition is invalid",
+        details: { reason: ErrorCode.CompositionParseError },
+      });
+    }
+    return ok(await dependencies.composition.parseProject(ref));
+  } catch {
+    return err({
+      code: ErrorCode.ProjectInvalid,
+      message: "project composition is invalid",
+      details: { reason: ErrorCode.CompositionParseError },
+    });
+  }
 }
 
 export async function saveSourceFile(
@@ -44,7 +75,7 @@ export async function saveSourceFile(
   if (checkPathSyntax(input.path) || checkPathPurpose(input.path, "write-source")) {
     return err({ code: ErrorCode.AssetNotAllowed, message: "the path is not an allowed composition source" });
   }
-  const written = await dependencies.authority.mutate({
+  const written = await dependencies.authority.mutateSource({
     kind: "file",
     ref: ref.value,
     path: input.path,
@@ -71,7 +102,7 @@ export async function patchPreviewSettings(
 ) {
   const ref = await findRef(dependencies, input.projectId);
   if (!ref.ok) return ref;
-  const written = await dependencies.authority.mutate({
+  const written = await dependencies.authority.mutateSource({
     kind: "entity",
     ref: ref.value,
     entity: "preview-settings",
@@ -134,6 +165,8 @@ export async function setSceneTiming(
     sceneId: string;
     timing: { start?: number; duration?: number; trackIndex?: number };
     expectedContentHash: string;
+    ripple?: boolean;
+    extendRoot?: boolean;
   },
   actor: Actor,
   invocation: WriteInvocation = { toolAudit: null },
@@ -145,23 +178,68 @@ export async function setSceneTiming(
     && input.timing.trackIndex === undefined) {
     return err({ code: ErrorCode.SchemaInvalid, message: "at least one scene timing field is required", field: "timing" });
   }
-  const model = await dependencies.composition.parseProject(ref.value);
+  const parsed = await parseForMutation(dependencies, ref.value);
+  if (!parsed.ok) return parsed;
+  const model = parsed.value;
   const scene = model.scenes.find((candidate) => candidate.id === input.sceneId);
   if (!scene) return err({ code: ErrorCode.NotFound, message: "scene was not found" });
-  const timingError = validateSceneTiming({
+  const next = {
+    sceneId: scene.id,
     start: input.timing.start ?? scene.start,
     duration: input.timing.duration ?? scene.duration,
     trackIndex: input.timing.trackIndex ?? scene.trackIndex,
-    rootDuration: model.project.duration,
-  });
+  };
+  const timingError = validateSceneTiming({ ...next, rootDuration: Number.POSITIVE_INFINITY });
   if (timingError) return err(timingError);
+  if (input.ripple && next.trackIndex !== scene.trackIndex) {
+    return err({ code: ErrorCode.TimingInvalid, message: "ripple cannot move a scene between tracks", field: "trackIndex" });
+  }
+  const clips: SceneClip[] = model.scenes.map((item) => ({
+    sceneId: item.id, start: item.start, duration: item.duration, trackIndex: item.trackIndex,
+  }));
+  const ripple = input.ripple
+    ? planRipple(clips, { sceneId: scene.id, start: next.start, duration: next.duration })
+    : null;
+  if (ripple && !ripple.ok) return ripple;
+  const moved = ripple?.ok ? ripple.value.moved : [];
+  const changed = new Map(moved.map((item) => [item.sceneId, item.toStart]));
+  changed.set(scene.id, next.start);
+  const nextClips = clips.map((item) => item.sceneId === scene.id
+    ? next
+    : changed.has(item.sceneId) ? { ...item, start: changed.get(item.sceneId)! } : item);
+  const rootDuration = nextClips.reduce((maximum, item) => Math.max(maximum, item.start + item.duration), 0);
+  if (rootDuration > MAX_PROJECT_DURATION_SECONDS) return err({
+    code: ErrorCode.DurationOverflow,
+    message: "project duration exceeds the VidCom runtime guard",
+    field: "duration",
+    details: {
+      limitKind: "runtime", actualSeconds: rootDuration,
+      maxSeconds: MAX_PROJECT_DURATION_SECONDS, extendRootAllowed: false,
+    },
+  });
+  if (rootDuration > model.project.duration && !input.extendRoot) return err({
+    code: ErrorCode.DurationOverflow,
+    message: "scene timing exceeds the current root duration",
+    field: "duration",
+    details: {
+      limitKind: "root", actualSeconds: rootDuration,
+      maxSeconds: model.project.duration, extendRootAllowed: true,
+    },
+  });
   const source = await sourceForMutation(dependencies, ref.value, ref.value.entry);
   if (!source.ok) return source;
-  const applied = await dependencies.composition.applyOps(ref.value, ref.value.entry, [
-    { kind: "setTiming", target: input.sceneId, value: input.timing },
-  ]);
+  const operations = [
+    { kind: "setTiming" as const, target: input.sceneId, value: input.timing },
+    ...moved.filter(({ sceneId }) => sceneId !== input.sceneId).map((item) => ({
+      kind: "setTiming" as const, target: item.sceneId, value: { start: item.toStart },
+    })),
+    ...(rootDuration !== model.project.duration
+      ? [{ kind: "setTiming" as const, target: "@root", value: { duration: rootDuration } }]
+      : []),
+  ];
+  const applied = await dependencies.composition.applyOps(ref.value, ref.value.entry, operations);
   if (!applied.ok) return applied;
-  const written = await dependencies.authority.mutate({
+  const written = await dependencies.authority.mutateSource({
     kind: "file",
     ref: ref.value,
     path: ref.value.entry,
@@ -171,10 +249,21 @@ export async function setSceneTiming(
   if (!written.ok) return written;
   const updatedScene = {
     ...scene,
-    start: input.timing.start ?? scene.start,
-    duration: input.timing.duration ?? scene.duration,
-    trackIndex: input.timing.trackIndex ?? scene.trackIndex,
+    start: next.start,
+    duration: next.duration,
+    trackIndex: next.trackIndex,
   };
+  const diagnostics = input.ripple ? [] : detectTrackGapsAndOverlaps(
+    nextClips.filter((item) => item.trackIndex === next.trackIndex),
+  );
+  const identity = await dependencies.identity?.read(ref.value.root);
+  const recommended = identity?.ok ? identity.identity.platform?.recommendedMaxDurationSeconds : null;
+  if (recommended !== null && recommended !== undefined && rootDuration > recommended) diagnostics.push({
+    severity: "warning",
+    code: "platform-duration-recommendation",
+    sceneId: scene.id,
+    message: `Project duration ${rootDuration}s exceeds the platform recommendation of ${recommended}s.`,
+  });
   return ok({
     scene: {
       id: updatedScene.id,
@@ -196,8 +285,10 @@ export async function setSceneTiming(
       projectRevision: written.value.revision,
       entityRevision: null,
       fileHashes: { [ref.value.entry]: written.value.contentHash },
-      diagnostics: written.value.diagnostics,
+      diagnostics: [...written.value.diagnostics, ...diagnostics],
     },
+    affectedTrackIndex: next.trackIndex,
+    moved,
   });
 }
 
@@ -216,7 +307,9 @@ export async function setSceneScript(
 ) {
   const ref = await findRef(dependencies, input.projectId);
   if (!ref.ok) return ref;
-  const model = await dependencies.composition.parseProject(ref.value);
+  const parsed = await parseForMutation(dependencies, ref.value);
+  if (!parsed.ok) return parsed;
+  const model = parsed.value;
   const scene = model.scenes.find((candidate) => candidate.id === input.sceneId);
   if (!scene || !scene.script.some((line) => line.id === input.elementId && line.file === input.file)) {
     return err({ code: ErrorCode.NotFound, message: "script element does not belong to this scene" });
@@ -227,14 +320,14 @@ export async function setSceneScript(
     { kind: "setText", target: input.elementId, value: input.text },
   ]);
   if (!applied.ok) return applied;
-  const steps: Parameters<WriteAuthority["mutateComposite"]>[0]["steps"] = [{
+  const steps: CompositeRequest["steps"] = [{
     kind: "write",
     path: input.file,
     content: applied.value,
     expectedContentHash: input.expectedContentHash as ContentHash,
   }];
   const staleSince = dependencies.clock.now().toISOString();
-  const narrationStale = scene.narration !== null;
+  let narrationStale = false;
   if (scene.narration !== null) {
     const narrationPath = `narration/${scene.id}.json` as RelPath;
     const resolved = await dependencies.workspace.resolve(ref.value, narrationPath, "system-write");
@@ -244,15 +337,34 @@ export async function setSceneScript(
     let narration: Record<string, unknown>;
     try { narration = JSON.parse(current.content) as Record<string, unknown>; }
     catch { return err({ code: ErrorCode.StorageUnavailable, message: "narration sidecar is invalid" }); }
-    steps.push({
-      kind: "write",
-      path: narrationPath,
-      content: `${JSON.stringify({ ...narration, staleSince }, null, 2)}\n`,
-      expectedContentHash: current.contentHash,
-      purpose: "system-write",
-    });
+    const parsedCues = readCues(narration);
+    const legacyStatus: NarrationCue["status"] = narration.status === "mock" || narration.status === "generated"
+      ? narration.status : undefined;
+    const cues: NarrationCue[] = Array.isArray(narration.cues) ? parsedCues : parsedCues.map((cue): NarrationCue => ({
+      ...cue,
+      ...(legacyStatus ? { status: legacyStatus } : {}),
+      ...(typeof narration.audioPath === "string" ? { audioPath: narration.audioPath } : {}),
+      ...(typeof narration.command === "string" ? { command: narration.command } : {}),
+    }));
+    const target = cues.findIndex((cue) => cue.cueId === input.elementId);
+    const cueIndex = target >= 0 ? target : cues.length === 1 ? 0 : -1;
+    if (cueIndex >= 0) {
+      narrationStale = true;
+      const nextCues = cues.map((cue, index) => index === cueIndex ? { ...cue, staleSince } : cue);
+      steps.push({
+        kind: "write",
+        path: narrationPath,
+        content: serializeNarrationSidecar(
+          scene.id,
+          nextCues,
+          (typeof narration.revision === "number" ? narration.revision : 0) + 1,
+          staleSince,
+        ),
+        expectedContentHash: current.contentHash,
+      });
+    }
   }
-  const written = await dependencies.authority.mutateComposite({
+  const written = await dependencies.authority.mutateSource({
     ref: ref.value,
     steps,
     toolAudit: invocation.toolAudit,
@@ -293,9 +405,73 @@ export interface NarrationRecord {
   staleSince: string | null;
 }
 
+interface NarrationSidecarV2 {
+  schemaVersion: 2;
+  sceneId: string;
+  cues: NarrationCue[];
+  revision: number;
+  updatedAt: string;
+  /** First-cue compatibility projection for existing Studio/read clients. */
+  text?: string;
+  voice?: string;
+  status?: "mock" | "generated";
+  audioPath?: string;
+  command?: string;
+  staleSince?: string | null;
+  durationSeconds?: number;
+}
+
+function cueAudioPath(sceneId: string, cueId: string): string {
+  return `narration/${sceneId}/${cueId}.wav`;
+}
+
+function initialCue(sceneId: string, text: string, cueId = sceneId): NarrationCue {
+  const audioPath = cueAudioPath(sceneId, cueId);
+  return {
+    cueId,
+    text,
+    voice: "af_heart",
+    offsetSeconds: 0,
+    durationSeconds: null,
+    staleSince: null,
+    status: "mock",
+    audioPath,
+    command: `hyperframes tts --text "${text.replace(/"/g, '\\"')}" --voice af_heart -o ${audioPath}`,
+  };
+}
+
+function serializeNarrationSidecar(
+  sceneId: string,
+  cues: NarrationCue[],
+  revision: number,
+  updatedAt: string,
+): string {
+  const first = cues[0];
+  const sidecar: NarrationSidecarV2 = {
+    schemaVersion: 2, sceneId, cues, revision, updatedAt,
+    ...(first ? {
+      text: first.text,
+      voice: first.voice,
+      ...(first.status ? { status: first.status } : {}),
+      ...(first.audioPath ? { audioPath: first.audioPath } : {}),
+      ...(first.command ? { command: first.command } : {}),
+      staleSince: first.staleSince,
+      ...(first.durationSeconds ? { durationSeconds: first.durationSeconds } : {}),
+    } : {}),
+  };
+  return `${JSON.stringify(sidecar, null, 2)}\n`;
+}
+
 export async function regenerateNarration(
   dependencies: ProjectWriteDependencies,
-  input: { projectId: ProjectId; sceneId: string; text: string },
+  input: {
+    projectId: ProjectId;
+    sceneId: string;
+    text: string;
+    cueId?: string;
+    offsetSeconds?: number;
+    voice?: string;
+  },
   actor: Actor,
 ): Promise<Result<NarrationRecord, DomainError>> {
   const ref = await findRef(dependencies, input.projectId);
@@ -305,28 +481,55 @@ export async function regenerateNarration(
   if (!resolved.ok) return err({ code: ErrorCode.PathOutsideProject, message: "narration path was rejected" });
   const previous = await dependencies.workspace.readFile(resolved.value);
   let previousRevision = 0;
+  let cues: NarrationCue[] = [];
   if (previous) {
-    try { previousRevision = Number((JSON.parse(previous.content) as { revision?: unknown }).revision) || 0; } catch { /* reset */ }
+    try {
+      const parsed = JSON.parse(previous.content) as { revision?: unknown };
+      previousRevision = Number(parsed.revision) || 0;
+      cues = readCues(parsed);
+    } catch { /* reset */ }
   }
-  const audioPath = `narration/${input.sceneId}.wav`;
+  const cueId = input.cueId ?? cues[0]?.cueId ?? input.sceneId;
+  const current = cues.find((cue) => cue.cueId === cueId);
+  const audioPath = current?.audioPath ?? cueAudioPath(input.sceneId, cueId);
+  const voice = input.voice ?? current?.voice ?? "af_heart";
+  const cue: NarrationCue = {
+    ...(current ?? initialCue(input.sceneId, input.text, cueId)),
+    cueId,
+    text: input.text,
+    voice,
+    offsetSeconds: input.offsetSeconds ?? current?.offsetSeconds ?? 0,
+    durationSeconds: null,
+    staleSince: null,
+    status: "mock",
+    audioPath,
+    command: `hyperframes tts --text "${input.text.replace(/"/g, '\\"')}" --voice ${voice} -o ${audioPath}`,
+  };
+  const nextCues = current
+    ? cues.map((candidate) => candidate.cueId === cueId ? cue : candidate)
+    : [...cues, cue];
   const narration: NarrationRecord = {
     sceneId: input.sceneId,
     text: input.text,
-    voice: "af_heart",
+    voice,
     status: "mock",
     audioPath,
-    command: `hyperframes tts --text "${input.text.replace(/"/g, '\\"')}" --voice af_heart -o ${audioPath}`,
+    command: cue.command!,
     revision: previousRevision + 1,
     updatedAt: dependencies.clock.now().toISOString(),
     staleSince: null,
   };
-  const written = await dependencies.authority.mutate({
+  const written = await dependencies.authority.mutateSource({
     kind: "file",
     ref: ref.value,
     path,
-    content: `${JSON.stringify(narration, null, 2)}\n`,
+    content: serializeNarrationSidecar(
+      input.sceneId,
+      nextCues,
+      previousRevision + 1,
+      narration.updatedAt,
+    ),
     expectedContentHash: previous?.contentHash ?? null,
-    purpose: "system-write",
   }, actor);
   return written.ok ? ok(narration) : written;
 }
@@ -338,26 +541,103 @@ function sceneSource(sceneId: string, title: string, duration: number): string {
 
 export async function createScene(
   dependencies: ProjectWriteDependencies,
-  input: { projectId: ProjectId; title: string; duration?: number; expectedContentHash: ContentHash },
+  input: {
+    projectId: ProjectId;
+    title: string;
+    duration?: number;
+    index?: number;
+    trackIndex?: number;
+    expectedContentHash: ContentHash | null;
+  },
   actor: Actor,
   invocation: WriteInvocation = { toolAudit: null },
 ) {
   const ref = await findRef(dependencies, input.projectId);
   if (!ref.ok) return ref;
-  const [model, source] = await Promise.all([
-    dependencies.composition.parseProject(ref.value),
-    sourceForMutation(dependencies, ref.value, ref.value.entry),
-  ]);
-  if (!source.ok) return source;
+  const resolvedEntry = await dependencies.workspace.resolve(ref.value, ref.value.entry, "read-source");
+  if (!resolvedEntry.ok) return err({ code: ErrorCode.PathOutsideProject, message: "composition path was rejected" });
+  const existingEntry = await dependencies.workspace.readFile(resolvedEntry.value);
+  if ((existingEntry?.contentHash ?? null) !== input.expectedContentHash) {
+    return err({ code: ErrorCode.WriteConflict, message: "composition changed before scene insertion" });
+  }
+  const duration = input.duration ?? 4;
+  const basicTiming = validateSceneTiming({
+    start: 0, duration, trackIndex: input.trackIndex ?? 0, rootDuration: Number.POSITIVE_INFINITY,
+  });
+  if (basicTiming) return err(basicTiming);
+
+  if (!existingEntry) {
+    if (input.index !== undefined && input.index !== 0) {
+      return err({ code: ErrorCode.SchemaInvalid, message: "the first scene index must be zero", field: "index" });
+    }
+    const identity = await dependencies.identity?.read(ref.value.root);
+    if (!identity?.ok || !identity.identity.platform) {
+      return err({ code: ErrorCode.ProjectInvalid, message: "empty project platform is unavailable" });
+    }
+    const trackIndex = input.trackIndex ?? 0;
+    const sceneId = "scene-1";
+    const scenePath = `compositions/${sceneId}.html` as RelPath;
+    const mount = `<div id="${sceneId}-layer" class="comp-layer clip" data-composition-id="${sceneId}" data-composition-src="${scenePath}" data-start="0" data-duration="${duration}" data-track-index="${trackIndex}"></div>`;
+    const cue = initialCue(sceneId, input.title);
+    const written = await dependencies.authority.mutateSource({
+      ref: ref.value,
+      steps: [
+        { kind: "write", path: scenePath, content: sceneSource(sceneId, input.title, duration), expectedContentHash: null },
+        {
+          kind: "write", path: ref.value.entry,
+          content: rootCompositionSource(identity.identity.platform, mount, duration), expectedContentHash: null,
+        },
+        {
+          kind: "write", path: `narration/${sceneId}.json` as RelPath,
+          content: serializeNarrationSidecar(sceneId, [cue], 1, dependencies.clock.now().toISOString()),
+          expectedContentHash: null,
+        },
+      ],
+      toolAudit: invocation.toolAudit,
+      backup: false,
+    }, actor);
+    if (!written.ok) return written;
+    return ok({
+      scene: {
+        id: sceneId, src: scenePath, start: 0, duration, trackIndex,
+        isTransition: false, elementCount: 1,
+        fileContentHash: written.value.fileHashes[scenePath], narrationStale: false,
+      },
+      project: {
+        id: input.projectId, slug: ref.value.slug, title: ref.value.slug,
+        width: identity.identity.platform.width, height: identity.identity.platform.height,
+        duration, updatedAt: dependencies.clock.now().toISOString(), sceneCount: 1,
+        revision: written.value.projectRevision,
+      },
+      envelope: written.value,
+      affectedTrackIndex: trackIndex,
+      moved: [] as Array<{ sceneId: string; fromStart: number; toStart: number }>,
+    });
+  }
+
+  const parsed = await parseForMutation(dependencies, ref.value);
+  if (!parsed.ok) return parsed;
+  const model = parsed.value;
   const scenes = model.scenes as Array<{ id: string; start: number; duration: number; trackIndex: number }>;
   const generated = scenes.flatMap((scene) => {
     const match = /^scene-(\d+)$/.exec(scene.id);
     return match ? [Number(match[1])] : [];
   });
   const sceneId = `scene-${generated.length ? Math.max(...generated) + 1 : 1}`;
-  const start = Math.max(0, ...scenes.map((scene) => scene.start + scene.duration));
-  const duration = input.duration ?? 4;
-  const trackIndex = Math.max(0, ...scenes.map((scene) => scene.trackIndex)) + 1;
+  const reference = input.index === undefined
+    ? model.scenes[model.scenes.length - 1] ?? null
+    : model.scenes[input.index] ?? null;
+  const trackIndex = input.trackIndex ?? reference?.trackIndex ?? 0;
+  const track = scenes.filter((scene) => scene.trackIndex === trackIndex)
+    .sort((left, right) => left.start - right.start || left.id.localeCompare(right.id));
+  const index = input.index ?? track.length;
+  if (!Number.isInteger(index) || index < 0 || index > track.length) {
+    return err({ code: ErrorCode.SchemaInvalid, message: "scene index is outside the target track", field: "index" });
+  }
+  const start = index === 0 ? 0 : track[index - 1]!.start + track[index - 1]!.duration;
+  const shifted = track.slice(index).map((scene) => ({
+    sceneId: scene.id, fromStart: scene.start, toStart: scene.start + duration,
+  }));
   const timingError = validateSceneTiming({
     start,
     duration,
@@ -365,29 +645,38 @@ export async function createScene(
     rootDuration: Number.MAX_VALUE,
   });
   if (timingError) return err(timingError);
+  const projectDuration = Math.max(
+    start + duration,
+    ...scenes.map((scene) => (shifted.find(({ sceneId: id }) => id === scene.id)?.toStart ?? scene.start) + scene.duration),
+  );
+  if (projectDuration > MAX_PROJECT_DURATION_SECONDS) return err({
+    code: ErrorCode.DurationOverflow,
+    message: "project duration exceeds the VidCom runtime guard",
+    field: "duration",
+    details: {
+      limitKind: "runtime", actualSeconds: projectDuration,
+      maxSeconds: MAX_PROJECT_DURATION_SECONDS, extendRootAllowed: false,
+    },
+  });
   const scenePath = `compositions/${sceneId}.html` as RelPath;
   const html = `<div id="${sceneId}-layer" class="comp-layer clip" data-composition-id="${sceneId}" data-composition-src="${scenePath}" data-start="${start}" data-duration="${duration}" data-track-index="${trackIndex}"></div>`;
+  const insertionReference = track[index];
+  const documentIndex = insertionReference
+    ? model.scenes.findIndex((scene) => scene.id === insertionReference.id)
+    : -1;
   const applied = await dependencies.composition.applyOps(ref.value, ref.value.entry, [
-    { kind: "addElement", target: "@root", value: { index: -1, html } },
-    ...start + duration > model.project.duration
-      ? [{ kind: "setTiming" as const, target: "@root", value: { duration: start + duration } }]
+    { kind: "addElement", target: "@root", value: { index: documentIndex, html } },
+    ...shifted.map((item) => ({
+      kind: "setTiming" as const, target: item.sceneId, value: { start: item.toStart },
+    })),
+    ...projectDuration !== model.project.duration
+      ? [{ kind: "setTiming" as const, target: "@root", value: { duration: projectDuration } }]
       : [],
   ]);
   if (!applied.ok) return applied;
-  const audioPath = `narration/${sceneId}.wav`;
-  const narration: NarrationRecord = {
-    sceneId,
-    text: input.title,
-    voice: "af_heart",
-    status: "mock",
-    audioPath,
-    command: `hyperframes tts --text "${input.title.replace(/"/g, '\\"')}" --voice af_heart -o ${audioPath}`,
-    revision: 1,
-    updatedAt: dependencies.clock.now().toISOString(),
-    staleSince: null,
-  };
+  const cue = initialCue(sceneId, input.title);
   const narrationPath = `narration/${sceneId}.json` as RelPath;
-  const written = await dependencies.authority.mutateComposite({
+  const written = await dependencies.authority.mutateSource({
     ref: ref.value,
     steps: [
       {
@@ -405,16 +694,14 @@ export async function createScene(
       {
         kind: "write",
         path: narrationPath,
-        content: `${JSON.stringify(narration, null, 2)}\n`,
+        content: serializeNarrationSidecar(sceneId, [cue], 1, dependencies.clock.now().toISOString()),
         expectedContentHash: null,
-        purpose: "system-write",
       },
     ],
     toolAudit: invocation.toolAudit,
     backup: false,
   }, actor);
   if (!written.ok) return written;
-  const projectDuration = Math.max(model.project.duration, start + duration);
   return ok({
     scene: {
       id: sceneId,
@@ -429,11 +716,108 @@ export async function createScene(
     },
     project: {
       ...model.project,
+      id: input.projectId,
       duration: projectDuration,
       updatedAt: dependencies.clock.now().toISOString(),
       sceneCount: model.project.sceneCount + 1,
       revision: written.value.projectRevision,
     },
     envelope: written.value,
+    affectedTrackIndex: trackIndex,
+    moved: shifted,
   });
+}
+
+export async function readNarrationCues(
+  dependencies: Pick<ProjectWriteDependencies, "workspace">,
+  input: { projectId: ProjectId; sceneId: string },
+): Promise<Result<{ cues: NarrationCue[]; contentHash: ContentHash | null }, DomainError>> {
+  const ref = await dependencies.workspace.readProjectRef(input.projectId);
+  if (!ref) return err({ code: ErrorCode.ProjectNotFound, message: "project was not found" });
+  const path = `narration/${input.sceneId}.json` as RelPath;
+  const resolved = await dependencies.workspace.resolve(ref, path, "read-asset");
+  if (!resolved.ok) return err({ code: ErrorCode.PathOutsideProject, message: "narration path was rejected" });
+  const file = await dependencies.workspace.readFile(resolved.value);
+  if (!file) return ok({ cues: [], contentHash: null });
+  try {
+    return ok({ cues: readCues(JSON.parse(file.content)), contentHash: file.contentHash });
+  } catch {
+    return err({ code: ErrorCode.ProjectInvalid, message: "narration sidecar could not be parsed" });
+  }
+}
+
+export async function replaceNarrationCues(
+  dependencies: ProjectWriteDependencies,
+  input: {
+    projectId: ProjectId;
+    sceneId: string;
+    cues: Array<Pick<NarrationCue, "cueId" | "text" | "voice" | "offsetSeconds">>;
+    expectedContentHash: ContentHash | null;
+  },
+  actor: Actor,
+) {
+  const ref = await findRef(dependencies, input.projectId);
+  if (!ref.ok) return ref;
+  const path = `narration/${input.sceneId}.json` as RelPath;
+  const resolved = await dependencies.workspace.resolve(ref.value, path, "system-write");
+  if (!resolved.ok) return err({ code: ErrorCode.PathOutsideProject, message: "narration path was rejected" });
+  const current = await dependencies.workspace.readFile(resolved.value);
+  if ((current?.contentHash ?? null) !== input.expectedContentHash) {
+    return err({ code: ErrorCode.WriteConflict, message: "narration changed before cue replacement" });
+  }
+  const ids = input.cues.map(({ cueId }) => cueId);
+  if (new Set(ids).size !== ids.length) return err({
+    code: ErrorCode.SchemaInvalid, message: "narration cue ids must be unique", field: "cues",
+  });
+  let revision = 0;
+  if (current) {
+    try { revision = Number((JSON.parse(current.content) as { revision?: unknown }).revision) || 0; }
+    catch { return err({ code: ErrorCode.ProjectInvalid, message: "narration sidecar could not be parsed" }); }
+  }
+  const cues = input.cues.map((cue) => ({
+    ...initialCue(input.sceneId, cue.text, cue.cueId),
+    voice: cue.voice,
+    offsetSeconds: cue.offsetSeconds,
+  }));
+  const written = await dependencies.authority.mutateSource({
+    kind: "file",
+    ref: ref.value,
+    path,
+    content: serializeNarrationSidecar(input.sceneId, cues, revision + 1, dependencies.clock.now().toISOString()),
+    expectedContentHash: input.expectedContentHash,
+  }, actor);
+  return written.ok ? ok({ cues, contentHash: written.value.contentHash, revision: written.value.revision }) : written;
+}
+
+export async function patchNarrationCue(
+  dependencies: ProjectWriteDependencies,
+  input: {
+    projectId: ProjectId;
+    sceneId: string;
+    cueId: string;
+    patch: Partial<Pick<NarrationCue, "text" | "voice" | "offsetSeconds">>;
+    expectedContentHash: ContentHash;
+  },
+  actor: Actor,
+) {
+  const current = await readNarrationCues(dependencies, input);
+  if (!current.ok) return current;
+  if (current.value.contentHash !== input.expectedContentHash) return err({
+    code: ErrorCode.WriteConflict, message: "narration changed before cue update",
+  });
+  const cue = current.value.cues.find((candidate) => candidate.cueId === input.cueId);
+  if (!cue) return err({ code: ErrorCode.NotFound, message: "narration cue was not found" });
+  return replaceNarrationCues(dependencies, {
+    projectId: input.projectId,
+    sceneId: input.sceneId,
+    cues: current.value.cues.map((candidate) => ({
+      cueId: candidate.cueId,
+      text: candidate.cueId === input.cueId ? input.patch.text ?? candidate.text : candidate.text,
+      voice: candidate.cueId === input.cueId ? input.patch.voice ?? candidate.voice : candidate.voice,
+      offsetSeconds: candidate.cueId === input.cueId
+        ? input.patch.offsetSeconds ?? candidate.offsetSeconds
+        : candidate.offsetSeconds,
+    })),
+    expectedContentHash: input.expectedContentHash,
+  }, actor);
 }

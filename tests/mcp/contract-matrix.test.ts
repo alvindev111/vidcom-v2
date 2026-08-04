@@ -66,7 +66,20 @@ const expectedSuccess: Record<string, object> = {
   },
   list_tts_voices: { providers: [{ id: "matrix-tts", available: true }] },
   start_tts: { jobId: "job_matrix", status: "queued", pollWith: "get_job_status" },
-  get_job_status: { id: "job_matrix", type: "tts", status: "succeeded" },
+  get_job_status: {
+    id: "job_matrix",
+    type: "tts",
+    status: "succeeded",
+    outcome: "succeeded",
+    pollAfterMs: null,
+  },
+  validate_project: { diagnostics: [], computedAtSourceRevision: 2, lintSourceAvailable: true },
+  start_snapshot: { jobId: "job_snapshot" },
+  start_render: { jobId: "job_render" },
+  install_agent_kit: {
+    operationResult: { status: "no_change", changedFiles: [] },
+    installationState: { outcome: "already_installed", usableBy: { codex: "ready" } },
+  },
 };
 
 async function exercise(client: LegacyClient | ModernClient): Promise<void> {

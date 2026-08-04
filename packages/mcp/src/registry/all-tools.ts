@@ -19,9 +19,11 @@ import {
   registerSourceWriteTools,
   type WriteToolDependencies,
 } from "./write-tools";
+import { registerDeliveryLoopTools, type DeliveryLoopToolDependencies } from "./delivery-loop-tools";
 
 export type VidcomToolDependencies =
-  ReadToolDependencies & WriteToolDependencies & DestructiveToolDependencies & JobToolDependencies;
+  ReadToolDependencies & WriteToolDependencies & DestructiveToolDependencies & JobToolDependencies
+  & DeliveryLoopToolDependencies;
 
 /** Registers the complete public tool surface exactly once. */
 export function registerVidcomTools(registry: ToolRegistry, dependencies: VidcomToolDependencies): void {
@@ -33,4 +35,5 @@ export function registerVidcomTools(registry: ToolRegistry, dependencies: Vidcom
   registerDeleteScene(registry, dependencies);
   registerDeleteFile(registry, dependencies);
   registerJobTools(registry, dependencies);
+  registerDeliveryLoopTools(registry, dependencies);
 }

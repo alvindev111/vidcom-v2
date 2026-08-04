@@ -292,7 +292,7 @@ describe("deleteScene", () => {
       },
       hashContent: () => hash("a"),
       authority: {
-        async mutateComposite(request) {
+        async mutateSource(request) {
           requests.push(request);
           return {
             ok: true as const,

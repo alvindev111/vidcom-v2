@@ -10,8 +10,9 @@ import {
 import { ensureVidcomSettingsFile, nodeSchedulerTimers, readVidcomSettings } from "@vidcom/adapter";
 import type { ResolvedVidcomSettings } from "@vidcom/contracts";
 import type { AbsolutePath } from "@vidcom/core";
-import { JobScheduler } from "@vidcom/core";
+import { JobScheduler, type ProjectIdentity } from "@vidcom/core";
 import { createMcpHttpHandlers } from "@vidcom/mcp";
+import { enqueueRenderJob, enqueueSnapshotJob } from "@vidcom/worker";
 
 import { createJobTypes, createMcpRegistry, createSystemClock, hashContent } from "./composition-root";
 import { startVidcomFoundation } from "./startup";
@@ -67,7 +68,7 @@ function runtimeMap(): Map<number, Promise<NextHostedRuntime>> {
   return shared.__vidcomNextRuntimes ??= new Map();
 }
 
-async function startNextHostedRuntime(port: number): Promise<NextHostedRuntime> {
+async function startNextHostedRuntime(port: number, explicitWorkspace?: string): Promise<NextHostedRuntime> {
   const clock = createSystemClock();
   const nonces = new InMemoryNonceStore(clock);
   const bootstrapNonce = process.env.VIDCOM_BOOTSTRAP_NONCE;
@@ -80,7 +81,7 @@ async function startNextHostedRuntime(port: number): Promise<NextHostedRuntime> 
   const appDataRoot = defaultAppDataRoot(settings);
   await ensureVidcomSettingsFile();
   const workspaceRoot = await selectWorkspace({
-    explicit: process.env.VIDCOM_WORKSPACE ?? settings.workspaceRoot,
+    explicit: explicitWorkspace ?? process.env.VIDCOM_WORKSPACE ?? settings.workspaceRoot,
     appDataRoot,
   });
   let scheduler: JobScheduler | null = null;
@@ -129,6 +130,38 @@ async function startNextHostedRuntime(port: number): Promise<NextHostedRuntime> 
     foundation.infrastructure,
     foundation.application,
   ));
+  const workspaceOverview = async () => {
+    const entries = await foundation.application.scanWorkspace();
+    return {
+      workspaceRoot,
+      source: explicitWorkspace ? "explicit" : "active",
+      entries: await Promise.all(entries.map(async (entry) => {
+        if (entry.kind !== "project" || entry.projectId === null) {
+          return { ...entry, thumbnail: await foundation.application.thumbnails.resolve(entry, null, null) };
+        }
+        const ref = await foundation.infrastructure.workspace.readProjectRef(entry.projectId);
+        const state = ref ? await foundation.application.state.readState(ref) : null;
+        const thumbnail = await foundation.application.thumbnails.resolve(
+          entry, state?.snapshots ?? null, state?.sourceRevision ?? null,
+        );
+        return {
+          ...entry,
+          thumbnail,
+          ...(thumbnail.kind === "image"
+            ? { thumbnailUrl: `/api/v1/projects/${entry.projectId}/assets/${thumbnail.path}` }
+            : {}),
+        };
+      })),
+    };
+  };
+  const enqueueDependencies = {
+    workspace: foundation.infrastructure.workspace,
+    composition: foundation.infrastructure.composition,
+    journal: foundation.infrastructure.journal,
+    jobs: foundation.infrastructure.jobs,
+    ids: foundation.infrastructure.ids,
+    hashContent,
+  };
   return {
     foundation,
     nonces,
@@ -151,6 +184,41 @@ async function startNextHostedRuntime(port: number): Promise<NextHostedRuntime> 
       },
       jobs: foundation.infrastructure.jobs,
       events: foundation.infrastructure.events,
+      deliveryLoop: {
+        workspaceRoot,
+        workspaceOverview,
+        activateWorkspace: async (requested) => {
+          const selected = await selectWorkspace({ explicit: requested, appDataRoot });
+          foundation.infrastructure.entries.clear();
+          await foundation.infrastructure.events.append({
+            type: "workspace.changed",
+            projectId: null,
+            payload: { operation: "activate", workspaceRoot: selected },
+          });
+          if (path.resolve(selected) !== path.resolve(workspaceRoot)) {
+            const replacement = startNextHostedRuntime(port, selected);
+            runtimeMap().set(port, replacement);
+            await replacement;
+            setTimeout(() => void foundation.stop(), 0);
+          }
+          return { ok: true, value: { workspaceRoot: selected, reauthRequired: true as const } };
+        },
+        lifecycle: foundation.application.lifecycle,
+        diagnostics: foundation.application.diagnostics,
+        agentKit: foundation.application.agentKit,
+        writes: foundation.application.writeDependencies,
+        reads: foundation.application.readDependencies,
+        jobs: foundation.infrastructure.jobs,
+        enqueueRender: (input) => enqueueRenderJob(enqueueDependencies, input),
+        enqueueSnapshot: (input) => enqueueSnapshotJob(enqueueDependencies, input),
+        replaceRecoveryIdentity: (input) => foundation.application.lifecycle.replaceIdentity({
+          entryId: input.entryId,
+          identity: input.identity as unknown as ProjectIdentity,
+          expectedContentHash: input.expectedContentHash,
+          actor: "user",
+        }),
+        mimeFromPath: foundation.infrastructure.mimeFromPath,
+      },
     }),
   };
 }

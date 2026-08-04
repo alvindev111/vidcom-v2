@@ -21,6 +21,7 @@
     ],
     "paths": {
       "@/*": ["./src/*"],
+      "@vidcom/agent-kit": ["./packages/agent-kit/src/index.ts"],
       "@vidcom/adapter": ["./packages/adapter/src/index.ts"],
       "@vidcom/cli": ["./packages/cli/src/index.ts"],
       "@vidcom/contracts": ["./packages/contracts/src/index.ts"],

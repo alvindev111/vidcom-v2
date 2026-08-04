@@ -19,6 +19,7 @@ import {
   TtsComputeDeviceSchema,
   TtsProviderSchema,
 } from "./tts";
+import { InstallAgentKitInputSchema, InstallAgentKitOutputSchema } from "./agent-kit";
 
 const CanonicalRelativePathSchema = RelativePathSchema.regex(
   /^(?!\/)(?![A-Za-z]:)(?!.*\\)(?!.*\0)(?!.*\/\/)(?!\.{1,2}(?:\/|$))(?!.*\/\.{1,2}(?:\/|$)).+$/,
@@ -134,13 +135,22 @@ export const CreateSceneInputSchema = z.strictObject({
   ...projectIdInput,
   title: z.string().min(1).max(255),
   duration: z.number().finite().optional(),
-  expectedContentHash: ContentHashSchema,
+  index: z.number().int().nonnegative().optional(),
+  trackIndex: z.number().int().nonnegative().optional(),
+  expectedContentHash: ContentHashSchema.nullable(),
+});
+const SceneRippleMoveSchema = z.strictObject({
+  sceneId: IdentifierSchema,
+  fromStart: z.number().nonnegative(),
+  toStart: z.number().nonnegative(),
 });
 /** Output for `create_scene`. */
 export const CreateSceneOutputSchema = z.strictObject({
   scene: SceneContextSchema,
   project: ProjectSummarySchema,
   envelope: WriteEnvelopeSchema,
+  affectedTrackIndex: z.number().int().nonnegative(),
+  moved: z.array(SceneRippleMoveSchema),
 });
 
 /** Input for `set_scene_timing`. */
@@ -150,6 +160,8 @@ export const SetSceneTimingInputSchema = z.strictObject({
   start: z.number().finite().optional(),
   duration: z.number().finite().optional(),
   trackIndex: z.number().int().optional(),
+  ripple: z.boolean().optional(),
+  extendRoot: z.boolean().optional(),
   expectedContentHash: ContentHashSchema,
 }).refine(
   (input) => input.start !== undefined || input.duration !== undefined || input.trackIndex !== undefined,
@@ -160,6 +172,8 @@ export const SetSceneTimingOutputSchema = z.strictObject({
   scene: SceneContextSchema,
   project: ProjectSummarySchema,
   envelope: WriteEnvelopeSchema,
+  affectedTrackIndex: z.number().int().nonnegative(),
+  moved: z.array(SceneRippleMoveSchema),
 });
 
 /** Input for `set_text`. */
@@ -249,6 +263,28 @@ export const StartTtsOutputSchema = z.strictObject({
 /** Input for `get_job_status`. */
 export const GetJobStatusInputSchema = z.strictObject({ jobId: IdentifierSchema });
 /** Output for `get_job_status`. */
-export const GetJobStatusOutputSchema = JobSchema;
+export const GetJobStatusOutputSchema = JobSchema.extend({
+  outcome: z.enum(["succeeded", "partial", "failed", "cancelled"]).nullable(),
+  pollAfterMs: z.union([z.literal(250), z.literal(1000)]).nullable(),
+});
+
+export const ValidateProjectInputSchema = z.strictObject({ ...projectIdInput });
+export const ValidateProjectOutputSchema = z.strictObject({
+  diagnostics: z.array(DiagnosticSchema),
+  computedAtSourceRevision: z.number().int().nonnegative().nullable(),
+  lintSourceAvailable: z.boolean(),
+});
+export const StartRenderInputSchema = z.strictObject({
+  ...projectIdInput,
+  bestEffort: z.boolean().optional(),
+  renderPresetId: IdentifierSchema.optional(),
+  idempotencyKey: z.string().min(1).max(255).optional(),
+});
+export const StartSnapshotInputSchema = z.strictObject({
+  ...projectIdInput,
+  idempotencyKey: z.string().min(1).max(255).optional(),
+});
+export const StartDeliveryJobOutputSchema = z.strictObject({ jobId: IdentifierSchema });
+export { InstallAgentKitInputSchema, InstallAgentKitOutputSchema };
 
 export type SceneContext = z.infer<typeof SceneContextSchema>;

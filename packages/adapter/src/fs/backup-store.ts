@@ -24,13 +24,27 @@ import type { VidcomDatabase } from "../db/client";
 
 interface StoredBackup {
   id: string;
-  projectId: string;
+  projectId: string | null;
+  workspaceRoot: string | null;
+  slug: string | null;
   revisionId: number | null;
   reason: string;
   entries: string;
   manifestHash: string;
   createdAt: string;
   payloadPrunedAt: string | null;
+}
+
+type BackupOwner =
+  | { projectId: ProjectId; workspaceRoot: null; slug: null }
+  | { projectId: null; workspaceRoot: import("@vidcom/core").AbsolutePath; slug: string };
+
+function backupOwner(manifest: BackupManifest): BackupOwner {
+  if (manifest.projectId) return { projectId: manifest.projectId, workspaceRoot: null, slug: null };
+  if (manifest.workspaceRoot && manifest.slug) {
+    return { projectId: null, workspaceRoot: manifest.workspaceRoot, slug: manifest.slug };
+  }
+  throw new TypeError("backup manifest ownership is invalid");
 }
 
 function digest(bytes: string | Uint8Array): ContentHash {
@@ -50,9 +64,8 @@ function manifestDigest(manifest: Omit<BackupManifest, "manifestHash" | "revisio
 }
 
 function storedManifest(row: StoredBackup): BackupManifest {
-  return {
+  const base = {
     id: row.id,
-    projectId: row.projectId as ProjectId,
     revisionId: row.revisionId,
     reason: row.reason,
     entries: JSON.parse(row.entries) as BackupManifestEntry[],
@@ -60,6 +73,9 @@ function storedManifest(row: StoredBackup): BackupManifest {
     createdAt: row.createdAt,
     payloadPrunedAt: row.payloadPrunedAt,
   };
+  return row.projectId
+    ? { ...base, projectId: row.projectId as ProjectId, workspaceRoot: null, slug: null }
+    : { ...base, projectId: null, workspaceRoot: row.workspaceRoot as import("@vidcom/core").AbsolutePath, slug: row.slug! };
 }
 
 async function writeSynced(filename: string, bytes: string | Uint8Array): Promise<void> {
@@ -101,20 +117,38 @@ export class AppDataBackupStore implements BackupPort {
     this.backupsRoot = path.join(appDataRoot, "backups");
   }
 
-  private projectDirectory(projectId: ProjectId): string {
-    return path.join(this.backupsRoot, encodeURIComponent(projectId));
+  private ownerDirectory(owner: BackupOwner): string {
+    const key = owner.projectId
+      ?? `location-${createHash("sha256").update(`${owner.workspaceRoot}\0${owner.slug}`).digest("hex")}`;
+    return path.join(this.backupsRoot, encodeURIComponent(key));
   }
 
-  private backupDirectory(projectId: ProjectId, id: string): string {
-    return path.join(this.projectDirectory(projectId), encodeURIComponent(id));
+  private backupDirectory(owner: BackupOwner, id: string): string {
+    return path.join(this.ownerDirectory(owner), encodeURIComponent(id));
   }
 
   async create(projectId: ProjectId, reason: string, files: BackupSource[]): Promise<BackupManifest> {
+    return this.publish({ projectId, workspaceRoot: null, slug: null }, reason, files);
+  }
+
+  async createForLocation(
+    owner: { workspaceRoot: import("@vidcom/core").AbsolutePath; slug: string },
+    reason: string,
+    files: BackupSource[],
+  ): Promise<BackupManifest> {
+    return this.publish({ projectId: null, ...owner }, reason, files);
+  }
+
+  private async publish(
+    owner: BackupOwner,
+    reason: string,
+    files: BackupSource[],
+  ): Promise<BackupManifest> {
     if (files.length === 0) throw new TypeError("backup must contain at least one source");
     const id = this.ids.newId("backup");
     const createdAt = this.clock.now().toISOString();
-    const projectDirectory = this.projectDirectory(projectId);
-    const publishedDirectory = this.backupDirectory(projectId, id);
+    const projectDirectory = this.ownerDirectory(owner);
+    const publishedDirectory = this.backupDirectory(owner, id);
     const temporaryDirectory = path.join(projectDirectory, `.${encodeURIComponent(id)}.tmp`);
     let published = false;
     try {
@@ -131,7 +165,7 @@ export class AppDataBackupStore implements BackupPort {
         await writeSynced(path.join(temporaryDirectory, "payload", relative), bytes);
         entries.push({ path: source.path, contentHash, byteSize: bytes.byteLength });
       }
-      const core = { id, projectId, createdAt, reason, entries };
+      const core = { id, ...owner, createdAt, reason, entries };
       const manifest: BackupManifest = {
         ...core,
         revisionId: null,
@@ -152,9 +186,9 @@ export class AppDataBackupStore implements BackupPort {
       await this.operations.syncDirectory(projectDirectory);
       this.database.run(sql`
         INSERT INTO backup_manifest (
-          id, project_id, revision_id, reason, entries, manifest_hash, created_at, payload_pruned_at
+          id, project_id, workspace_root, slug, revision_id, reason, entries, manifest_hash, created_at, payload_pruned_at
         ) VALUES (
-          ${id}, ${projectId}, NULL, ${reason}, ${canonicalizeJson(entries)},
+          ${id}, ${owner.projectId}, ${owner.workspaceRoot}, ${owner.slug}, NULL, ${reason}, ${canonicalizeJson(entries)},
           ${manifest.manifestHash}, ${createdAt}, NULL
         )
       `);
@@ -168,7 +202,8 @@ export class AppDataBackupStore implements BackupPort {
 
   private row(id: string): StoredBackup | undefined {
     return this.database.get<StoredBackup>(sql`
-      SELECT id, project_id AS projectId, revision_id AS revisionId, reason, entries,
+      SELECT id, project_id AS projectId, workspace_root AS workspaceRoot, slug,
+        revision_id AS revisionId, reason, entries,
         manifest_hash AS manifestHash, created_at AS createdAt,
         payload_pruned_at AS payloadPrunedAt
       FROM backup_manifest WHERE id = ${id}
@@ -181,12 +216,14 @@ export class AppDataBackupStore implements BackupPort {
     const manifest = storedManifest(row);
     try {
       const disk = JSON.parse(await readFile(
-        path.join(this.backupDirectory(manifest.projectId, id), "manifest.json"),
+        path.join(this.backupDirectory(backupOwner(manifest), id), "manifest.json"),
         "utf8",
       )) as BackupManifest;
       const immutableDisk = {
         id: disk.id,
         projectId: disk.projectId,
+        workspaceRoot: disk.workspaceRoot,
+        slug: disk.slug,
         createdAt: disk.createdAt,
         reason: disk.reason,
         entries: disk.entries,
@@ -195,6 +232,8 @@ export class AppDataBackupStore implements BackupPort {
       const immutableDatabase = {
         id: manifest.id,
         projectId: manifest.projectId,
+        workspaceRoot: manifest.workspaceRoot,
+        slug: manifest.slug,
         createdAt: manifest.createdAt,
         reason: manifest.reason,
         entries: manifest.entries,
@@ -211,7 +250,7 @@ export class AppDataBackupStore implements BackupPort {
   async readPayloads(id: string): Promise<BackupPayload[]> {
     const manifest = await this.read(id);
     if (!manifest || manifest.payloadPrunedAt !== null) return [];
-    const directory = this.backupDirectory(manifest.projectId, id);
+    const directory = this.backupDirectory(backupOwner(manifest), id);
     const payloads: BackupPayload[] = [];
     for (const entry of manifest.entries) {
       const bytes = await readFile(path.join(directory, "payload", safeRelativePath(entry.path)));
@@ -229,6 +268,8 @@ export class AppDataBackupStore implements BackupPort {
       const core = {
         id: manifest.id,
         projectId: manifest.projectId,
+        workspaceRoot: manifest.workspaceRoot,
+        slug: manifest.slug,
         createdAt: manifest.createdAt,
         reason: manifest.reason,
         entries: manifest.entries,
@@ -248,12 +289,13 @@ export class AppDataBackupStore implements BackupPort {
     const manifest = await this.read(id);
     return manifest !== null
       && manifest.payloadPrunedAt === null
-      && this.verifyDirectory(this.backupDirectory(manifest.projectId, id), manifest);
+      && this.verifyDirectory(this.backupDirectory(backupOwner(manifest), id), manifest);
   }
 
   async list(projectId: ProjectId): Promise<BackupManifest[]> {
     const rows = this.database.all<StoredBackup>(sql`
-      SELECT id, project_id AS projectId, revision_id AS revisionId, reason, entries,
+      SELECT id, project_id AS projectId, workspace_root AS workspaceRoot, slug,
+        revision_id AS revisionId, reason, entries,
         manifest_hash AS manifestHash, created_at AS createdAt,
         payload_pruned_at AS payloadPrunedAt
       FROM backup_manifest WHERE project_id = ${projectId} ORDER BY created_at, id
@@ -264,7 +306,8 @@ export class AppDataBackupStore implements BackupPort {
   /** Lists all backup metadata for trusted local administration without widening the Core port. */
   async listAll(): Promise<BackupManifest[]> {
     const rows = this.database.all<StoredBackup>(sql`
-      SELECT id, project_id AS projectId, revision_id AS revisionId, reason, entries,
+      SELECT id, project_id AS projectId, workspace_root AS workspaceRoot, slug,
+        revision_id AS revisionId, reason, entries,
         manifest_hash AS manifestHash, created_at AS createdAt,
         payload_pruned_at AS payloadPrunedAt
       FROM backup_manifest ORDER BY created_at, id
@@ -274,7 +317,7 @@ export class AppDataBackupStore implements BackupPort {
 
   private async reconcilePruneTombstones(): Promise<void> {
     for (const manifest of await this.listAll()) {
-      const directory = this.backupDirectory(manifest.projectId, manifest.id);
+      const directory = this.backupDirectory(backupOwner(manifest), manifest.id);
       const payload = path.join(directory, "payload");
       const tombstone = path.join(directory, ".payload.pruning");
       const present = async (target: string) => {
@@ -301,6 +344,7 @@ export class AppDataBackupStore implements BackupPort {
     await this.reconcilePruneTombstones();
     const rows = this.database.all<StoredBackup>(sql`
       SELECT backup_manifest.id AS id, backup_manifest.project_id AS projectId,
+        backup_manifest.workspace_root AS workspaceRoot, backup_manifest.slug AS slug,
         backup_manifest.revision_id AS revisionId, backup_manifest.reason AS reason,
         backup_manifest.entries AS entries, backup_manifest.manifest_hash AS manifestHash,
         backup_manifest.created_at AS createdAt, backup_manifest.payload_pruned_at AS payloadPrunedAt
@@ -318,7 +362,7 @@ export class AppDataBackupStore implements BackupPort {
     let pruned = 0;
     for (const row of rows) {
       const manifest = storedManifest(row);
-      const directory = this.backupDirectory(manifest.projectId, manifest.id);
+      const directory = this.backupDirectory(backupOwner(manifest), manifest.id);
       const tombstone = path.join(directory, ".payload.pruning");
       await this.operations.rename(path.join(directory, "payload"), tombstone);
       await this.operations.syncDirectory(directory);

@@ -1,10 +1,11 @@
 import { createHash, randomUUID } from "node:crypto";
-import { link, lstat, open, readFile, rename, rm, unlink } from "node:fs/promises";
+import { link, lstat, mkdir, open, readFile, rename, rm, unlink } from "node:fs/promises";
 import path from "node:path";
 
 import type { ContentHash } from "@vidcom/contracts";
 import type {
   JournalId,
+  WorkspaceOperationId,
   MutationCapture,
   MutationCaptureConflict,
   ResolvedPath,
@@ -32,6 +33,7 @@ async function publishWithoutReplace(
   content: string | Uint8Array,
 ): Promise<boolean> {
   const directory = path.dirname(target);
+  await mkdir(directory, { recursive: true, mode: 0o700 });
   const temporary = path.join(directory, `.${path.basename(target)}.vidcom-${randomUUID()}.publish`);
   const handle = await open(temporary, "wx", 0o600);
   try {
@@ -69,7 +71,7 @@ async function restoreSlotWithoutReplace(capture: MutationCapture): Promise<bool
 export async function captureForMutation(
   target: ResolvedPath,
   expectedHash: ContentHash | null,
-  journalId: JournalId,
+  journalId: JournalId | WorkspaceOperationId,
   ordinal: number,
 ): Promise<Result<MutationCapture, MutationCaptureConflict>> {
   const directory = path.dirname(target);

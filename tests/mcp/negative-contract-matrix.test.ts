@@ -95,7 +95,7 @@ describe("negative MCP contract matrix", () => {
     registry.register(saveFileTool({
       workspace: { readProjectRef: async () => ref },
       authority: {
-        mutate: async () => err({
+        mutateSource: async () => err({
           code: ErrorCode.WriteConflict,
           message: "the project changed since it was read",
           field: "expectedContentHash",

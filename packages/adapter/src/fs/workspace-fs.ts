@@ -1,14 +1,16 @@
 import { createHash } from "node:crypto";
-import { readFile, readdir, stat } from "node:fs/promises";
+import { mkdir, open, readFile, readdir, realpath, stat } from "node:fs/promises";
 import path from "node:path";
 
 import type { ContentHash, ProjectId, RelPath } from "@vidcom/contracts";
 import {
   type AbsolutePath,
+  type BackupSource,
   type FileContent,
   type FileNode,
   type FileStat,
   type JournalId,
+  type WorkspaceOperationId,
   type MutationCapture,
   type PathPurpose,
   type PathRejection,
@@ -22,7 +24,8 @@ import {
 
 import { writeAtomic } from "./atomic-write";
 import { deleteAtomic } from "./atomic-delete";
-import { resolveProjectPath } from "./resolve";
+import { syncDirectory } from "./durability";
+import { resolveProjectPath, resolveWorkspacePath } from "./resolve";
 import {
   captureForMutation,
   discardCapture,
@@ -38,12 +41,7 @@ function sha256(content: string | Uint8Array): ContentHash {
 
 async function readProjectRefAt(directory: string, slug: string): Promise<ProjectRef | null> {
   try {
-    const [config, identity] = await Promise.all([
-      stat(path.join(directory, "hyperframes.json")),
-      readFile(path.join(directory, "vidcom.json"), "utf8"),
-      stat(path.join(directory, "index.html")),
-    ]);
-    if (!config.isFile()) return null;
+    const identity = await readFile(path.join(directory, "vidcom.json"), "utf8");
     const parsed = JSON.parse(identity) as { id?: unknown };
     if (typeof parsed.id !== "string" || parsed.id.length === 0) return null;
     return {
@@ -61,6 +59,49 @@ async function readProjectRefAt(directory: string, slug: string): Promise<Projec
 export class WorkspaceFs implements WorkspacePort {
   constructor(private readonly workspaceRoot: AbsolutePath) {}
 
+  private async directProjectRoot(root: AbsolutePath): Promise<string> {
+    const [project, workspace] = await Promise.all([realpath(root), realpath(this.workspaceRoot)]);
+    if (path.dirname(project) !== workspace) throw new TypeError("project root is not a direct workspace child");
+    return project;
+  }
+
+  async listWorkspaceDirectories(root: AbsolutePath): Promise<Array<{ slug: string; root: AbsolutePath }>> {
+    const [requested, owned] = await Promise.all([realpath(root), realpath(this.workspaceRoot)]);
+    if (requested !== owned) throw new TypeError("workspace root does not match the injected capability");
+    return (await readdir(owned, { withFileTypes: true }))
+      .filter((entry) => entry.isDirectory())
+      .sort((left, right) => left.name.localeCompare(right.name))
+      .map((entry) => ({ slug: entry.name, root: path.join(owned, entry.name) as AbsolutePath }));
+  }
+
+  async statWorkspaceFile(
+    root: AbsolutePath,
+    filename: "vidcom.json" | "hyperframes.json" | "index.html",
+  ): Promise<{ size: number; modifiedAtMs: number } | null> {
+    const project = await this.directProjectRoot(root);
+    try {
+      const value = await stat(path.join(project, filename));
+      return value.isFile() ? { size: value.size, modifiedAtMs: value.mtimeMs } : null;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") return null;
+      throw error;
+    }
+  }
+
+  async readWorkspaceFile(
+    root: AbsolutePath,
+    filename: "vidcom.json" | "hyperframes.json" | "index.html",
+  ): Promise<FileContent | null> {
+    const project = await this.directProjectRoot(root);
+    try {
+      const content = await readFile(path.join(project, filename), "utf8");
+      return { content, contentHash: sha256(content) };
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") return null;
+      throw error;
+    }
+  }
+
   /** Resolves and authorizes a path with canonical symlink containment checks. */
   resolve(
     ref: ProjectRef,
@@ -68,6 +109,19 @@ export class WorkspaceFs implements WorkspacePort {
     purpose: PathPurpose,
   ): Promise<Result<ResolvedPath, PathRejection>> {
     return resolveProjectPath(ref, relativePath, purpose);
+  }
+
+  async resolveWorkspace(
+    workspaceRoot: AbsolutePath,
+    relativePath: RelPath,
+    purpose: "workspace-agent-kit",
+  ): Promise<Result<ResolvedPath, PathRejection>> {
+    const [injected, requested] = await Promise.all([
+      realpath(this.workspaceRoot),
+      realpath(workspaceRoot),
+    ]);
+    if (injected !== requested) return { ok: false, error: { reason: "outside_project" } };
+    return resolveWorkspacePath(this.workspaceRoot, relativePath, purpose);
   }
 
   /** Lists valid marker-backed projects in deterministic slug order. */
@@ -154,6 +208,79 @@ export class WorkspaceFs implements WorkspacePort {
     return writeAtomic(pathname, content);
   }
 
+  async appendAtomic(pathname: ResolvedPath, line: string): Promise<void> {
+    const parent = path.dirname(pathname);
+    await mkdir(parent, { recursive: true, mode: 0o700 });
+    const handle = await open(pathname, "a", 0o600);
+    try {
+      await handle.write(line.endsWith("\n") ? line : `${line}\n`);
+      await handle.sync();
+    } finally {
+      await handle.close();
+    }
+    await syncDirectory(parent);
+  }
+
+  async listProjectFiles(
+    ref: ProjectRef,
+    directory: RelPath,
+  ): Promise<Array<{ path: RelPath; modifiedAtMs: number }>> {
+    const resolved = await this.resolve(ref, directory, "state-write");
+    if (!resolved.ok) throw new TypeError(`project state directory is not allowed: ${resolved.error.reason}`);
+    try {
+      const entries = await readdir(resolved.value, { withFileTypes: true });
+      return Promise.all(entries
+        .filter((entry) => entry.isFile() && !entry.isSymbolicLink())
+        .sort((left, right) => left.name.localeCompare(right.name))
+        .map(async (entry) => ({
+          path: `${directory}/${entry.name}` as RelPath,
+          modifiedAtMs: (await stat(path.join(resolved.value, entry.name))).mtimeMs,
+        })));
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") return [];
+      throw error;
+    }
+  }
+
+  async ensureProjectStateDirectories(ref: ProjectRef): Promise<void> {
+    const project = await realpath(ref.root);
+    const workspace = await realpath(this.workspaceRoot);
+    if (path.dirname(project) !== workspace) throw new TypeError("project root is not a direct workspace child");
+    const stateRoot = path.join(project, ".vidcom");
+    await mkdir(stateRoot, { recursive: true, mode: 0o700 });
+    await Promise.all(["context", "jobs", "revisions", "logs", "cache"].map((name) =>
+      mkdir(path.join(stateRoot, name), { recursive: true, mode: 0o700 })));
+    await syncDirectory(stateRoot);
+  }
+
+  async listBackupSources(ref: ProjectRef): Promise<BackupSource[]> {
+    return this.listBackupSourcesAt(ref.root);
+  }
+
+  async listBackupSourcesAt(root: AbsolutePath): Promise<BackupSource[]> {
+    const project = await this.directProjectRoot(root);
+    const sources: BackupSource[] = [];
+    const walk = async (directory: string): Promise<void> => {
+      const entries = (await readdir(directory, { withFileTypes: true }))
+        .sort((left, right) => left.name.localeCompare(right.name));
+      for (const entry of entries) {
+        if (entry.isSymbolicLink()) continue;
+        if (directory === project && entry.name === ".vidcom") continue;
+        const absolute = path.join(directory, entry.name);
+        if (entry.isDirectory()) {
+          await walk(absolute);
+        } else if (entry.isFile()) {
+          sources.push({
+            path: path.relative(project, absolute).split(path.sep).join("/") as RelPath,
+            resolved: absolute as ResolvedPath,
+          });
+        }
+      }
+    };
+    await walk(project);
+    return sources;
+  }
+
   /** Checks whether a resolved filesystem target currently exists. */
   async exists(pathname: ResolvedPath): Promise<boolean> {
     try {
@@ -174,7 +301,7 @@ export class WorkspaceFs implements WorkspacePort {
   captureForMutation(
     pathname: ResolvedPath,
     expectedHash: ContentHash | null,
-    journalId: JournalId,
+    journalId: JournalId | WorkspaceOperationId,
     ordinal: number,
   ) {
     return captureForMutation(pathname, expectedHash, journalId, ordinal);

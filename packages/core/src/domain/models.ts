@@ -60,6 +60,8 @@ export interface CompositionReference {
 /** Parsed composition model shared by all project snapshot views. */
 export interface CompositionModel {
   project: ProjectSummaryDto;
+  /** Authored root frame rate; adapters use the HyperFrames default when the attribute is absent. */
+  frameRate?: number;
   scenes: SceneDto[];
   rootTrack: unknown | null;
   diagnostics: Diagnostic[];

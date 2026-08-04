@@ -14,12 +14,21 @@ export type ContentHash = Brand<string, "ContentHash">;
 /** Identity class responsible for a mutation or audit event. */
 export type Actor = "user" | "agent" | "cli-external" | "system";
 
+/** Product resource guard, not an encoder limitation. */
+export const MAX_PROJECT_DURATION_SECONDS = 3_600;
+
 /** Event payload persisted to the outbox before delivery to connected clients. */
-export interface DomainEvent {
-  type: "file.changed" | "project.changed" | "job.progress" | "job.done";
-  projectId: ProjectId;
-  payload: Record<string, unknown>;
-}
+export type DomainEvent =
+  | {
+      type: "file.changed" | "project.changed" | "job.progress" | "job.done";
+      projectId: ProjectId;
+      payload: Record<string, unknown>;
+    }
+  | {
+      type: "workspace.changed";
+      projectId: null;
+      payload: Record<string, unknown>;
+    };
 
 /** Predictable business failure returned by Core without transport-specific status. */
 export interface DomainError {

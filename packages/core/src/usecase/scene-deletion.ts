@@ -14,8 +14,7 @@ import type { CompositionModel } from "../domain/models";
 import { normalizePreviewSettings } from "../domain/preview-settings";
 import { err, ok, type Result } from "../error/result";
 import type { ClockPort, CompositionPort, MutationJournalPort, WorkspacePort } from "../port/ports";
-import type { CompositeStep, GrantBinding, WriteEnvelope, WriteInvocation } from "../port/types";
-import type { WriteAuthority } from "../service/write-authority";
+import type { CompositeRequest, CompositeStep, GrantBinding, WriteEnvelope, WriteInvocation } from "../port/types";
 import { canonicalizeJson } from "../service/canonical-json";
 
 export interface DeletionPlan {
@@ -188,7 +187,9 @@ export interface DeleteSceneDependencies extends PrepareSceneDeletionDependencie
   composition: Pick<CompositionPort, "parseProject" | "applyOps">;
   journal: Pick<MutationJournalPort, "latestRevision" | "readEntityState">;
   workspace: Pick<WorkspacePort, "readProjectRef" | "resolve" | "readFile" | "readHash">;
-  authority: Pick<WriteAuthority, "mutateComposite">;
+  authority: {
+    mutateSource(request: CompositeRequest, actor: Actor): Promise<Result<WriteEnvelope, DomainError>>;
+  };
 }
 
 /** Executes the re-planned, grant-bound scene deletion as one verified-backup composite. */
@@ -246,7 +247,7 @@ export async function deleteScene(
     });
   }
 
-  const written = await dependencies.authority.mutateComposite({
+  const written = await dependencies.authority.mutateSource({
     ref,
     steps,
     toolAudit: invocation.toolAudit,

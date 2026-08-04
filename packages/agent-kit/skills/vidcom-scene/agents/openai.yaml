@@ -1,0 +1,5 @@
+# x-vidcom-agent-kit: 1
+interface:
+  display_name: "VidCom Scene"
+  short_description: "Create and edit VidCom scenes"
+  default_prompt: "Edit the requested VidCom scenes safely through MCP."

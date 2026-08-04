@@ -1,4 +1,4 @@
-import { ErrorCode, JobParamsSchema, type JobDto } from "@vidcom/contracts";
+import { ErrorCode, JobParamsSchema, TERMINAL_JOB_STATUSES, type JobDto } from "@vidcom/contracts";
 import type { Job, JobId, JobStorePort } from "@vidcom/core";
 import { Hono, type Context } from "hono";
 
@@ -21,6 +21,8 @@ function publicJob(job: Job): JobDto {
     stage: job.stage,
     result: job.result,
     error: job.error,
+    warnings: job.warnings,
+    cleanupPending: job.cleanupPending,
     attempt: job.attempt,
     createdAt: job.createdAt,
     startedAt: job.startedAt,
@@ -38,10 +40,25 @@ async function requireJob(store: JobStorePort, id: JobId): Promise<Job> {
 export function createJobRoutes(store: JobStorePort): Hono {
   const routes = new Hono();
   routes.get("/jobs/:jobId", async (c) => c.json(publicJob(await requireJob(store, jobId(c)))));
+  routes.get("/jobs/:jobId/termination-proof", async (c) => {
+    const id = jobId(c);
+    const job = await requireJob(store, id);
+    if (job.status !== "cancelled" && job.status !== "failed") {
+      throw new HttpBoundaryError({
+        code: ErrorCode.PreconditionRequired,
+        message: "termination proof is available only for cancelled or failed jobs",
+      });
+    }
+    const proof = await store.readTerminationProof?.(id) ?? null;
+    if (!proof) throw new HttpBoundaryError({ code: ErrorCode.NotFound, message: "termination proof was not recorded" });
+    return c.json(proof);
+  });
   routes.post("/jobs/:jobId/cancel", async (c) => {
     const id = jobId(c);
     const job = await requireJob(store, id);
-    if (["succeeded", "failed", "cancelled"].includes(job.status)) return c.body(null, 200);
+    if (TERMINAL_JOB_STATUSES.includes(job.status as (typeof TERMINAL_JOB_STATUSES)[number])) {
+      return c.body(null, 200);
+    }
     await store.requestCancel(id);
     return c.body(null, 202);
   });

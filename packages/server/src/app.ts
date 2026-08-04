@@ -22,6 +22,7 @@ import { createNarrationRoutes, type NarrationRouteDependencies } from "./routes
 import { createEventRoutes } from "./routes/events";
 import { createProjectWriteRoutes, type ProjectWriteRouteDependencies } from "./routes/project-writes";
 import { createMcpRoutes, type McpRouteDependencies } from "./routes/mcp";
+import { createDeliveryLoopRoutes, type DeliveryLoopRouteDependencies } from "./routes/delivery-loop";
 import { ErrorCode, MAX_BGM_BYTES, MAX_SOURCE_BYTES } from "@vidcom/contracts";
 
 export interface ServerAppDependencies {
@@ -38,6 +39,7 @@ export interface ServerAppDependencies {
   events?: EventOutboxPort;
   projectWrites?: ProjectWriteRouteDependencies;
   narration?: NarrationRouteDependencies;
+  deliveryLoop?: DeliveryLoopRouteDependencies;
 }
 
 function observed(step: string, middleware: ReturnType<typeof requestId>, trace?: (step: string) => void) {
@@ -87,6 +89,7 @@ export function createServerApp(deps: ServerAppDependencies) {
   if (deps.events) app.route("/v1", createEventRoutes(deps.events));
   if (deps.projectWrites) app.route("/", createProjectWriteRoutes(deps.projectWrites));
   if (deps.narration) app.route("/", createNarrationRoutes(deps.narration));
+  if (deps.deliveryLoop) app.route("/", createDeliveryLoopRoutes(deps.deliveryLoop));
   app.get("/v1/health", (c) => c.json({ ok: true }));
   app.notFound((c) => mapHttpError(
     new HttpBoundaryError({ code: ErrorCode.NotFound, message: "endpoint not found" }),
