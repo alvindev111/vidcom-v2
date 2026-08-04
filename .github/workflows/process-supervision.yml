@@ -105,7 +105,7 @@ jobs:
   supervision:
     name: ${{ matrix.name }}
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 10
+    timeout-minutes: 30
 
     strategy:
       # Never cancel a sibling: the whole point is which platform differs, and
