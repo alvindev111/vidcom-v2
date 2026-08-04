@@ -61,6 +61,7 @@ function close(server: Server): Promise<void> {
 }
 
 const executablePath = chromeExecutable();
+const BROWSER_LAUNCH_TIMEOUT_MS = 30_000;
 if (!executablePath) console.warn("SKIPPING remote-asset browser integration: Chrome/Chromium is not installed");
 
 describe.skipIf(!executablePath)("remote asset guard in a real browser", () => {
@@ -72,7 +73,7 @@ describe.skipIf(!executablePath)("remote asset guard in a real browser", () => {
       headless: true,
       args: ["--no-sandbox", "--disable-setuid-sandbox"],
     });
-  });
+  }, BROWSER_LAUNCH_TIMEOUT_MS);
 
   afterAll(async () => { await browser?.close(); });
 
