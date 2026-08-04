@@ -237,6 +237,14 @@ describe("AgentKitInstaller with real SQLite and filesystem", () => {
       expectedContentHash: hash(source("skills/vidcom-project/SKILL.md")),
     });
     expect(degraded).toMatchObject({ ok: true, value: { installationState: { usableBy: { codex: "degraded" } } } });
+    await put(".agents/skills/vidcom/SKILL.md", source("skills/vidcom/SKILL.md").replace(/\n/gu, "\r\n"));
+    const crlfRouter = await createInstaller().apply(workspaceRoot, {
+      operation: "replace",
+      host: "codex",
+      relativePath: ".agents/skills/vidcom-project/SKILL.md",
+      expectedContentHash: hash(source("skills/vidcom-project/SKILL.md")),
+    });
+    expect(crlfRouter).toMatchObject({ ok: true, value: { installationState: { usableBy: { codex: "degraded" } } } });
     await put(".agents/skills/vidcom/SKILL.md", "---\nx-vidcom-agent-kit: 1\n---\nmissing name");
     const blocked = await createInstaller().apply(workspaceRoot, {
       operation: "replace",

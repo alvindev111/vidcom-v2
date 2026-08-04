@@ -1124,6 +1124,7 @@ Chi tiết: §13 [Detailed Design](./spec-project-delivery-loop-detailed-design.
   - Summary: `test:golden` bao gồm cả `tests/golden` lẫn `tests/mcp/golden`; Verification Matrix mới liệt kê A–S với 43 đường test thật và guard đã chuyển khỏi spec Phase 2 cũ sang spec delivery-loop hiện tại.
   - Verification: Golden 9 files/26 tests, MCP contract 9 files/71 tests, full Vitest 109 files pass + 1 skip/798 pass + 3 skip; agent-kit deterministic, typecheck, boundaries, schema drift, spec paths, build, runtime smoke, local process supervision và diff check đều xanh; lint 0 error/10 warning fixture cũ. Local S1e darwin: naive leak=true, captured PID=3, group=2, sweep=2, 125.2 ms, exhaustive=true, survivor=0.
   - Blockers: S.1/S.2/S.6 chờ GitHub Actions trên exact commit để đọc số Linux/Windows, Windows real render và full matrix ba OS; chưa tick trước remote evidence.
+  - CI portability loop: run đầu trên commit `b1b8740` làm lộ parser frontmatter agent-kit chỉ nhận LF; Windows checkout tạo CRLF nên host discoverable bị phân loại sai thành blocked. Sửa regex nhận `\r?\n` và thêm regression chạy router CRLF trên filesystem thật; focused installer 9/9 xanh trước khi đẩy lại CI. Đây là sửa portability theo contract đã duyệt, không đổi design.
 
 Format:
 ```

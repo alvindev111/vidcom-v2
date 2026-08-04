@@ -272,6 +272,7 @@
           <div><dt class="font-semibold text-slate-200">Design drift</dt><dd class="mt-1 text-slate-400">Không có. Matrix được thêm vào checklist để script S.5 có nguồn đường test hiện hành thay vì tiếp tục kiểm spec MCP Phase 2 cũ.</dd></div>
           <div><dt class="font-semibold text-slate-200">Số local</dt><dd class="mt-1 text-slate-400">Darwin: naive leak true; capture 3 PID/2 group; hội tụ 2 sweep trong 125.2 ms; exhaustive true; không survivor.</dd></div>
           <div><dt class="font-semibold text-slate-200">Gate còn mở</dt><dd class="mt-1 text-slate-400">CI Linux/macOS/Windows, PowerShell CIM timing/sweep và s1f chrome-headless-shell Windows chưa có evidence terminal.</dd></div>
+          <div><dt class="font-semibold text-slate-200">CI portability loop</dt><dd class="mt-1 text-slate-400">Run đầu trên commit b1b8740 phát hiện router frontmatter chỉ nhận LF nên Windows CRLF bị phân loại blocked. Parser đã nhận cả CRLF và có regression filesystem thật 9/9 xanh; đây là sửa portability trong contract, không đổi design.</dd></div>
         </dl>
       </section>
     </main>

@@ -260,7 +260,7 @@ function markerVersion(content: string): number | null {
   return value === undefined ? null : Number(value);
 }
 function hasRouterFrontmatter(content: string): boolean {
-  const frontmatter = /^---\n([\s\S]*?)\n---/u.exec(content)?.[1] ?? "";
+  const frontmatter = /^---\r?\n([\s\S]*?)\r?\n---/u.exec(content)?.[1] ?? "";
   return /^name:\s*vidcom\s*$/mu.test(frontmatter);
 }
 function hasExactLine(content: string, line: string): boolean { return content.split(/\r?\n/u).includes(line); }
