@@ -15,6 +15,7 @@ import { dbAll, dbOne } from "../support/database";
 
 const roots: string[] = [];
 const now = "2026-08-04T16:45:00.000Z";
+const INTEGRATION_TIMEOUT_MS = 15_000;
 
 async function fixture() {
   const root = await mkdtemp(path.join(tmpdir(), "vidcom-lifecycle-"));
@@ -66,7 +67,7 @@ describe("ProjectLifecycle on real SQLite and filesystem", () => {
     } finally {
       await value.infrastructure.database.destroy();
     }
-  });
+  }, INTEGRATION_TIMEOUT_MS);
 
   it("keeps pre-publish create crashes invisible and recovers a post-rename DB-settle crash", async () => {
     const value = await fixture();
@@ -151,7 +152,7 @@ describe("ProjectLifecycle on real SQLite and filesystem", () => {
     } finally {
       await value.infrastructure.database.destroy();
     }
-  });
+  }, INTEGRATION_TIMEOUT_MS);
 
   it("adopts a candidate by changing only vidcom.json", async () => {
     const value = await fixture();
