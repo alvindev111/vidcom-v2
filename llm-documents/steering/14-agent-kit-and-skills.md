@@ -11,7 +11,7 @@ VidCom export MCP cho AI host (**D1**). Nhưng tool schema **không đủ** đ�
 | | Đối tượng | Ở đâu | Ai đọc |
 |---|---|---|---|
 | **Repo-level** | Agent làm việc **trên codebase vidcom** | `AGENTS.md` gốc + `llm-documents/steering/` | Agent phát triển app |
-| **Shipped agent-kit** | Agent làm video **qua MCP của vidcom** | `packages/agent-kit/` → ghi vào project người dùng | Codex / Claude Code của người dùng cuối |
+| **Shipped agent-kit** | Agent làm video **qua MCP của vidcom** | `packages/agent-kit/` → manifest host ở gốc workspace | Codex / Claude Code của người dùng cuối |
 
 Tài liệu này nói về loại thứ hai. Nội dung hai loại MUST NOT trộn: người dùng cuối không cần biết import boundary của ta, và agent phát triển app không cần quy trình dựng video.
 
@@ -180,15 +180,18 @@ Agent-kit mục là agent làm sai. Nguy hiểm hơn tài liệu người đọc
 
 ---
 
-## 8. Cài đặt vào project người dùng
+## 8. Cài đặt vào workspace người dùng
 
-- `agent-kit` nhúng trong binary (D2), MUST NOT đọc từ đĩa cạnh executable.
-- Ghi `AGENTS.md` + `CLAUDE.md` vào project khi **tạo project**, và khi **mở project** nếu file thiếu hoặc lệch version.
-- MUST ghi version của agent-kit vào `vidcom.json` để biết khi nào cần refresh.
-- File người dùng đã sửa tay: MUST NOT ghi đè im lặng. Hoặc hỏi, hoặc ghi ra `AGENTS.vidcom.md` và báo.
-- Skill cài vào đâu tuỳ host. MUST cung cấp lệnh tường minh (`vidcom skills install`) thay vì đoán thư mục của từng host.
+- Nguồn `agent-kit` nằm ở `packages/agent-kit/` và được nhúng trong binary (D2), MUST NOT đọc từ đĩa cạnh executable.
+- Đích là **gốc workspace**, đúng một manifest cho host người dùng chọn: Codex → `AGENTS.md` + `.agents/skills/**`; Claude Code → `CLAUDE.md` + `.claude/skills/**`. MUST NOT nhân bản xuống từng project, MUST NOT ghi vào `~/.codex`/`~/.claude`.
+- Chỉ cài khi người dùng gọi lệnh hoặc MCP tool tường minh. MUST NOT cài lúc khởi động, tạo project hay mở project; MUST báo file nào đã ghi ở đâu.
+- `hosts` bắt buộc, không rỗng và không có mặc định “cả hai”. Host không chọn MUST NOT có file trong expected set và MUST NOT ảnh hưởng kết quả.
+- Version marker nằm trong từng file VidCom quản. Manifest hash bundled trong binary phân biệt pristine/modified; MUST NOT ghi version agent-kit vào `vidcom.json`, MUST NOT tạo hay sửa `skills-lock.json`.
+- `install` chỉ ghi file thiếu và không bao giờ ghi đè file tồn tại. File chính foreign → ghi tên phụ `AGENTS.vidcom.md` / `CLAUDE.vidcom.md` và báo recovery.
+- `replace` chỉ cho file có marker VidCom, không phải `foreign`/`newer`, và bắt buộc `expectedContentHash`. `link` chỉ cho Claude Code, append `@CLAUDE.vidcom.md` với hash precondition; Codex dùng `manual_merge` vì host probe không theo dòng import tương đương.
+- Trạng thái dùng được suy từ router native trong thư mục host: router không discover/parse → `blocked`; router còn nhưng skill phụ/chỉ dẫn chung lệch → `degraded`; đầy đủ pristine → `ready`.
 
-MUST NOT ghi skill vào workspace mỗi lần khởi động — đó là rác trong thư mục người dùng.
+Mapping trên được khóa bằng probe host thật; host nâng phiên bản phải chạy lại probe discovery/frontmatter/import trước khi đổi contract.
 
 ---
 

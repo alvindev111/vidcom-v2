@@ -86,7 +86,7 @@ Mỗi project có `package.json` gọi `npx hyperframes@<version>`. App bundle m
 |---|---|
 | Import `next` trong `packages/**` | D4 — backend phải chạy độc lập dưới Hono host của Node SEA |
 | Import `react` trong `packages/core` hoặc `packages/server` | Core không biết UI |
-| Gọi `process.cwd()` để tìm project | Workspace do người dùng chọn, phải inject (xem [07-data-and-storage](07-data-and-storage.md)) |
+| Gọi `process.cwd()` ngoài entrypoint/composition root để tự tìm project | Entrypoint được đọc cwd đúng một lần như input của bảng quyết định; `WorkspaceRoot` sau đó phải inject (xem [07-data-and-storage](07-data-and-storage.md)) |
 | `child_process` với chuỗi shell | Dùng argument array. Xem [09-security](09-security.md) |
 | Ghi bí mật vào bundle | API key, license key — xem doc 14 §2 |
 | `console.log` trong đường MCP stdio | `stdout` chỉ chứa MCP protocol message |

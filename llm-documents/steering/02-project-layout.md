@@ -27,8 +27,8 @@ packages/
 │   └── revisions.ts         re-export hằng số revision, đối chiếu với contracts
 ├── worker/                  chạy job dài
 ├── contracts/               schema dùng chung: HTTP DTO, MCP tool schema, error code
-├── agent-kit/               ASSET, không phải code — nhúng vào binary, cài vào project
-│   ├── AGENTS.md            template ghi vào project người dùng
+├── agent-kit/               ASSET, không phải code — nhúng vào binary, cài ở gốc workspace
+│   ├── AGENTS.md            nguồn sinh manifest chỉ dẫn theo host
 │   ├── CLAUDE.md            bản sao của AGENTS.md (Claude Code đọc file này)
 │   ├── skills/<name>/SKILL.md
 │   └── prompts/             MCP prompt expose qua server
@@ -118,7 +118,7 @@ MUST NOT dùng `utils.ts`, `helpers.ts`, `common.ts`, `misc.ts`, `index.ts` ch�
 
 ## 6. `agent-kit` — asset, không phải code
 
-`packages/agent-kit/` chứa **markdown ship cho AI agent**: `AGENTS.md`/`CLAUDE.md` ghi vào project người dùng, skill, và MCP prompt.
+`packages/agent-kit/` chứa **markdown ship cho AI agent**: nguồn `AGENTS.md`/`CLAUDE.md`, skill và MCP prompt. Khi được gọi tường minh, installer sinh manifest host ở **gốc workspace**; không nhân bản vào từng project.
 
 - Không có file `.ts` nào. Không import gì, không ai import nó **như code** — `packages/mcp` và `packages/cli` **nhúng** nó qua SEA assets rồi ghi ra đĩa.
 - Nội dung ở đây là **contract với AI**, mục ngang với tool schema. Đổi tool mà không đổi agent-kit là để lại tài liệu sai trong project người dùng.

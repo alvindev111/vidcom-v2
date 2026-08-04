@@ -50,7 +50,8 @@ Artifact người dùng sở hữu: xem được, copy được, Git commit đư
 ├── compositions/  assets/  narration/  snapshots/
 ├── preview-assets/bgm/
 ├── preview-settings.json
-└── renders/
+├── renders/
+└── .vidcom/              projection bền, đọc được; authority vẫn là SQLite
 ```
 
 ### Application-data hệ điều hành — HIDDEN
@@ -84,25 +85,32 @@ Hệ quả bắt buộc:
 | `narration/*.wav` | **project** | Đi vào bản render |
 | Parse cache | app-data | Dựng lại được |
 | Registry cache | app-data | Dựng lại được |
-| Job state, audit, log | app-data | Vận hành |
+| Job state, audit, revision | app-data | **Authority** vận hành trong SQLite; commit transaction được |
+| `.vidcom/jobs/`, `.vidcom/revisions/`, `.vidcom/logs/` | project | Projection bền/người đọc được; rebuild một chiều từ SQLite, MUST NOT ghi ngược |
+| `.vidcom/context/project-context.md` | project | Context deterministic cho harness; không absolute path/timestamp/job ID/secret |
 | Chromium, FFmpeg, TTS model | app-data | Runtime, không thuộc project |
 
-MUST NOT ghi bí mật vào workspace. MUST NOT ghi state vận hành vào workspace.
+MUST NOT ghi bí mật vào workspace. MUST NOT đặt **authority** state vận hành vào workspace. `.vidcom/` là ngoại lệ projection đã chốt: SQLite vẫn là authority + engine giao dịch; projection lệch phải phát hiện/rebuild được và MUST NOT được dùng để phục hồi ngược SQLite.
 
-## 3. Workspace root — không có `cwd`
+## 3. Workspace root — cwd là input tường minh, không là dependency ngầm
 
-MUST NOT gọi `process.cwd()` để tìm project. Bản mock có `PROJECTS_ROOT = join(process.cwd(), "projects")` — dependency ngầm, không hoạt động khi đóng gói.
+MUST NOT gọi `process.cwd()` rải rác để tự tìm project. Bản mock có `PROJECTS_ROOT = join(process.cwd(), "projects")` — dependency ngầm, không hoạt động khi đóng gói. Entrypoint được phép đọc cwd **một lần** như một input của bảng quyết định dưới đây rồi inject `WorkspaceRoot` xuống.
 
 `WorkspaceRoot` được resolve **một lần** ở composition root và inject xuống. Thứ tự ưu tiên:
 
-1. `--workspace <absolute-path>` hoặc config MCP tường minh;
-2. workspace active trong `settings.json`;
-3. cwd của MCP **nếu** thư mục đó có project marker hợp lệ;
-4. yêu cầu người dùng chọn — MUST NOT tự tạo thư mục đoán được.
+1. `--workspace <absolute-path>` / `VIDCOM_WORKSPACE` / config MCP tường minh;
+2. cwd có **file** `vidcom.json` (xét sự có mặt, kể cả file parse lỗi) → workspace là thư mục cha; nếu cha không đọc được thì dùng cwd ở chế độ `cwd-solo` và phải cảnh báo/xác nhận trước mọi ghi workspace-level;
+3. workspace active đã lưu nếu còn đọc được; nếu mất thì cảnh báo nêu path rồi fallback;
+4. cwd đọc được → dùng cwd làm workspace;
+5. nếu không có đường nào đọc được thì yêu cầu người dùng chọn; MUST NOT tự tạo thư mục đoán được.
+
+Lý do cwd-có-marker đứng trên active: `cd my-video && vidcom` MUST NOT âm thầm mở workspace cũ. Marker lỗi vẫn giữ ưu tiên để lỗi được hiển thị tại đúng project, không bị che bởi fallback.
 
 ## 4. Ghi file — quy tắc cứng
 
-Mọi ghi lên workspace MUST đi qua **một** service duy nhất trong Core. Use case MUST NOT gọi `writeFile` của port trực tiếp.
+Mọi ghi lên workspace MUST đi qua facade **`WriteAuthority` duy nhất** trong Core. Use case MUST NOT gọi `writeFile`, directory port hay journal port trực tiếp. Facade có method tách theo ý nghĩa (`mutateSource`, `mutateDerived`, `mutateWorkspace`, project-directory lifecycle); caller MUST NOT truyền một boolean để tự chọn có tăng source revision hay không.
+
+Scope project dùng journal/revision/backup hiện có. Scope workspace-level dùng coordinator operation/step nội bộ để rollback batch và directory staging, nhưng coordinator MUST NOT được inject trực tiếp ra usecase; agent-kit mutation không bịa `projectId` và không tạo revision/backup.
 
 Service đó làm đúng thứ tự này:
 
@@ -147,7 +155,8 @@ Làm rõ: single-writer áp dụng cho **đường ghi của VidCom**. Người 
 Mỗi ghi thành công sinh một revision: `{ id, projectId, path, contentHash, parentRevision, actor, timestamp, summary }`.
 
 - `actor` phân biệt `user` / `agent` / `cli-external` / `system`.
-- Nội dung revision lưu ở app-data, MUST NOT làm bẩn workspace bằng thư mục lịch sử.
+- Payload rollback và revision authority lưu ở app-data; MUST NOT copy payload lịch sử đầy đủ vào workspace.
+- `.vidcom/revisions/` và `.vidcom/jobs/` được phép chứa **projection** đọc được của dữ liệu SQLite. Chúng không phải nội dung revision/authority, MUST được gitignore, rebuild một chiều và MUST NOT ghi ngược vào SQLite.
 - MUST giữ đủ để undo một lượt agent hoàn chỉnh, không chỉ một file.
 - Trước thao tác **destructive** MUST tạo backup và ghi lại đường dẫn backup trong audit.
 

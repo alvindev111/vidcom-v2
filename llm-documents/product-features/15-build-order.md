@@ -90,33 +90,36 @@ D1 là quyết định số một, nhưng nó cần nền móng ở giai đoạn
 
 ---
 
-## Giai đoạn 3 — Đóng vòng lặp sản phẩm (3–4 tuần)
+## Giai đoạn 3 — Đóng vòng lặp sản phẩm (re-baseline 7–8 tuần)
 
-Đây là lúc vidcom thành công cụ dùng được thay vì prototype.
+Đây là lúc vidcom thành công cụ dùng được thay vì prototype. Re-baseline 2026-08-04 kéo agent-kit vào cùng vòng lặp vì harness phải **biết** quy trình trước khi có thể dùng MCP; chi tiết/AC authoritative nằm ở [spec Project Delivery Loop](../specs-and-process/specs/spec-project-delivery-loop/spec-project-delivery-loop-detailed-goal.md).
 
 | # | Việc | ID | Vì sao ở đây |
 |---|---|---|---|
-| 3.1 | **Render MP4** — job async, progress, download | PR-1 | Không có cái này thì sản phẩm không sinh ra thứ người dùng cần |
-| 3.2 | Snapshot theo scene + contact sheet + invalidate khi composition đổi | PR-5, PR-6 | Storyboard hiện trống; thumbnail Home đang mock |
-| 3.3 | **TTS thật** + trả duration + **mount audio vào composition** | NT-1, NT-3, NT-4 | Narration hiện chỉ ghi lệnh CLI, không có tiếng khi preview lẫn render |
-| 3.4 | Sửa bug narration: bỏ auto-regenerate khi sửa script, hỗ trợ nhiều đoạn/scene | NT-13, NT-7 | Bug nghiệp vụ đã xác định (doc 12 #1, #2) |
-| 3.5 | Diagnostics endpoint + tích hợp `hyperframes check`, giữ 4 cảnh báo hiện có | VD-1, VD-2, VD-3 | Đã có logic, chỉ chưa expose |
-| 3.6 | Tạo / xoá / đổi tên project | PM-2, PM-4 | "New video" đang là nút chết |
-| 3.7 | Scene: chèn vị trí bất kỳ, **ripple edit**, validate timing (xoá đã chuyển lên 2.6 ngày 2026-08-01) | SC-4, SC-5, SC-8 | Hiện chỉ append cuối, sửa duration để lại lỗ hổng |
-| 3.8 | Thumbnail thật ở Home | PM-5 | |
-| 3.9 | Allowlist khi serve asset; Range request | SE-2, FA-8 | Lỗ bảo mật đã xác định |
+| 3.1 | Workspace chạy ở folder bất kỳ; `vidcom.json` là marker; state `empty`/`invalid` + recovery `entryId` | R1 | Bỏ giả định `projects/` và project luôn có composition |
+| 3.2 | Preset platform + schema/backfill `vidcom.json` | R2, R3 | Tạo project đúng output ngay từ đầu |
+| 3.3 | `.vidcom/` projection + `sourceRevision` tách ghi nguồn/dẫn xuất | R4 | Harness đọc được state mà không tạo dual-authority |
+| 3.4 | Tạo / nhận / xoá / đổi tên project với journal + backup | R5, PM-2, PM-4 | "New video" thành luồng hoàn chỉnh, recovery được |
+| 3.5 | **Render MP4** — job async, progress, cancel tree, recovery, download | R6, PR-1 | Không có cái này thì sản phẩm không sinh ra thứ người dùng cần |
+| 3.6 | Snapshot theo scene + contact sheet + partial retry | R7, PR-5, PR-6 | Storyboard/thumbnail có hình thật |
+| 3.7 | Thumbnail thật ở Home | R8, PM-5 | Bỏ mock, có fallback ổn định cho invalid entry |
+| 3.8 | Diagnostics endpoint + `hyperframes check`, giữ cảnh báo hiện có | R9, VD-1..3 | Agent và người dùng thấy lỗi trước render |
+| 3.9 | Scene: chèn vị trí, ripple **theo track**, validate timing | R10, SC-4, SC-5, SC-8 | Sửa duration không phá timeline multi-track |
+| 3.10 | Narration nhiều cue/scene, tương thích sidecar cũ | R11, NT-7 | Không mất thoại trong scene nhiều câu |
+| 3.11 | MCP: 4 tool vòng lặp + `install_agent_kit`; HTTP/MCP dùng cùng usecase | R12, MP-1/2/11/12 | Agent tự validate/snapshot/render/poll được |
+| 3.12 | Agent-kit hai manifest host + install/link/replace + 3 test sync | R13, AK-1..6, AK-8 | Harness biết quy trình và cài đúng workspace/host |
 
 **Mốc:** một người dùng mở app, tạo project, nhờ AI dựng scene, nghe narration, xuất ra MP4.
 
 ---
 
-## Giai đoạn 4 — Agent kit & đóng gói (3–4 tuần)
+## Giai đoạn 4 — Đóng gói & runtime phân phối (3–4 tuần)
 
 | # | Việc | ID |
 |---|---|---|
-| 4.1 | `AGENTS.md` + `CLAUDE.md` + skill router `/vidcom` + 6 skill con | AK-1, AK-2, AK-3 |
-| 4.2 | Cài/refresh agent-kit khi tạo & mở project; version trong `vidcom.json`; không ghi đè file đã sửa | AK-4, AK-5 |
-| 4.3 | 3 test đồng bộ agent-kit ↔ Tool Registry | AK-8 |
+| 4.1 | **Đã chuyển lên 3.12** — nội dung agent-kit | AK-1, AK-2, AK-3 |
+| 4.2 | **Đã chuyển lên 3.12** — cài tường minh ở gốc workspace theo host; không cài lúc tạo/mở project, không version trong `vidcom.json` | AK-4, AK-5, AK-6 |
+| 4.3 | **Đã chuyển lên 3.12** — 3 test đồng bộ agent-kit ↔ Tool Registry | AK-8 |
 | 4.4 | Directory picker server-driven + token flow | PK-3 |
 | 4.5 | Workspace lock/lease, single-writer daemon, MCP bridge qua IPC có xác thực | PK-4 |
 | 4.6 | `vidcom` CLI đủ mode + `doctor` | PK-5, PK-8 |
