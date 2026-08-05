@@ -16,9 +16,10 @@
 //   leaf      idles
 import { spawn } from "node:child_process";
 import { appendFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 
 const [role, ledger] = process.argv.slice(2);
-const self = new URL(import.meta.url).pathname;
+const self = fileURLToPath(import.meta.url);
 
 // Append rather than rewrite: four processes record themselves concurrently and
 // a read-modify-write would lose entries under exactly the race we want covered.

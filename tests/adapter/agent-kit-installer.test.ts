@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, realpath, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
@@ -220,7 +220,7 @@ describe("AgentKitInstaller with real SQLite and filesystem", () => {
     });
     if (!result.ok) throw new Error("install failed");
     expect(result.value.installationState.recovery.find((item) => item.host === "codex")?.detail)
-      .toContain(path.join(workspaceRoot, "AGENTS.vidcom.md"));
+      .toContain(await realpath(path.join(workspaceRoot, "AGENTS.vidcom.md")));
     expect(await readFile(path.join(workspaceRoot, "AGENTS.vidcom.md"), "utf8")).toBe(source("AGENTS.md"));
     expect(await readFile(path.join(workspaceRoot, "CLAUDE.vidcom.md"), "utf8")).toBe(source("CLAUDE.md"));
   });

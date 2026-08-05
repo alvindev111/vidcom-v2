@@ -57,16 +57,30 @@ async function readProjectRefAt(directory: string, slug: string): Promise<Projec
 
 /** Node filesystem implementation scoped to one injected workspace root. */
 export class WorkspaceFs implements WorkspacePort {
-  constructor(private readonly workspaceRoot: AbsolutePath) {}
+  private readonly directProjectRootChecks = new Map<AbsolutePath, Promise<string>>();
+  private readonly workspaceRootCanonical: Promise<string>;
+
+  constructor(private readonly workspaceRoot: AbsolutePath) {
+    this.workspaceRootCanonical = realpath(workspaceRoot);
+  }
 
   private async directProjectRoot(root: AbsolutePath): Promise<string> {
-    const [project, workspace] = await Promise.all([realpath(root), realpath(this.workspaceRoot)]);
-    if (path.dirname(project) !== workspace) throw new TypeError("project root is not a direct workspace child");
-    return project;
+    const active = this.directProjectRootChecks.get(root);
+    if (active) return active;
+    const check = Promise.all([realpath(root), this.workspaceRootCanonical]).then(([project, workspace]) => {
+      if (path.dirname(project) !== workspace) throw new TypeError("project root is not a direct workspace child");
+      return project;
+    });
+    this.directProjectRootChecks.set(root, check);
+    try {
+      return await check;
+    } finally {
+      if (this.directProjectRootChecks.get(root) === check) this.directProjectRootChecks.delete(root);
+    }
   }
 
   async listWorkspaceDirectories(root: AbsolutePath): Promise<Array<{ slug: string; root: AbsolutePath }>> {
-    const [requested, owned] = await Promise.all([realpath(root), realpath(this.workspaceRoot)]);
+    const [requested, owned] = await Promise.all([realpath(root), this.workspaceRootCanonical]);
     if (requested !== owned) throw new TypeError("workspace root does not match the injected capability");
     return (await readdir(owned, { withFileTypes: true }))
       .filter((entry) => entry.isDirectory())
