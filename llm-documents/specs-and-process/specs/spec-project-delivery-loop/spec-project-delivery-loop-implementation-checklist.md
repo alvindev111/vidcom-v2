@@ -3,7 +3,7 @@
 > **References**:
 > - [Detailed Goals](./spec-project-delivery-loop-detailed-goal.md) — bản 12, Approved 2026-08-04
 > - [Detailed Design](./spec-project-delivery-loop-detailed-design.md) — bản 6, Approved 2026-08-04
-> - [Main spec](./spec-project-delivery-loop-inprocess.md)
+> - [Main spec](./spec-project-delivery-loop-complete.md)
 > - Spike gate: [phase-3-checklist-gate](../../../../spikes/phase-3-checklist-gate/README.md) · [phase-3-detailed-design](../../../../spikes/phase-3-detailed-design/README.md) · [phase-3-render](../../../../spikes/phase-3-render/README.md) · [phase-3-agent-kit-host](../../../../spikes/phase-3-agent-kit-host/README.md)
 
 ## Context
@@ -28,7 +28,7 @@ Bốn trọng tâm rủi ro, và cả bốn đều **đã có bằng chứng ch�
 - **Status**: **✅ APPROVED 2026-08-04** — nội dung checklist được duyệt. **Code Execution CHƯA bắt đầu theo yêu cầu tường minh của người dùng** ("approve nhưng không thực hiện code").
 - **Confirmed by**: Người dùng
 - **Confirmation date**: 2026-08-04
-- **Trạng thái thực thi**: **Đang thực thi.** Phase A bắt đầu ngày 2026-08-04; main spec đã đổi sang `spec-project-delivery-loop-inprocess.md`.
+- **Trạng thái thực thi**: **✅ Hoàn tất 2026-08-05.** Đã thực thi đủ dependency order A→B→F→C→D→E→G→H→I→J→K→L→M→N→Q→O→P→R→S; main spec chuyển sang `spec-project-delivery-loop-complete.md`.
 - **Notes**:
   - Design bản 7 và Goals bản 12 đã duyệt; `steering/08` đã đồng bộ (§2.1 Design).
   - **Phase B, D, E, F là gate**: không sang phase sau khi gate còn đỏ. Lý do ở Dependency Order.
@@ -877,16 +877,16 @@ Mỗi phase chạy focused command dưới đây trên SQLite/filesystem thật,
 **Estimate**: 10 SP
 
 **Tasks**:
-- [ ] S.1 Đọc kết quả `process-supervision.yml` lần chạy đầu trên Linux + Windows
+- [x] S.1 Đọc kết quả `process-supervision.yml` lần chạy đầu trên Linux + Windows
   - Ghi số vào [spike README](../../../../spikes/phase-3-checklist-gate/README.md): naive có leak không · PowerShell CIM tốn bao nhiêu ms · số sweep tới hội tụ
   - _Design: §5.9, §14_
-- [ ] S.2 Đọc kết quả `s1f` render thật trên Windows
+- [x] S.2 Đọc kết quả `s1f` render thật trên Windows
   - `chrome-headless-shell` trên Windows có tách process group không. Nếu có → cách sửa đã đúng. Nếu **không** → ghi là thuộc tính nền tảng, MUST NOT bỏ pha capture (một code path phải đúng ở mọi nơi)
   - _Design: §5.9_
-- [ ] S.3 Nếu Windows vừa **không** có enumerator `ppid` vừa leak với naive → **quay lại Design §5.9**, không tự xử trong implementation
+- [x] S.3 Nếu Windows vừa **không** có enumerator `ppid` vừa leak với naive → **quay lại Design §5.9**, không tự xử trong implementation
 - [x] S.4 Mở rộng `test:golden` sang golden mới của spec này (tiền lệ: Phase 2 từng bỏ sót)
 - [x] S.5 Cập nhật `verify-spec-test-paths.mjs` cho Verification Matrix mới
-- [ ] S.6 Release gate: `typecheck` · `lint` · `test:boundaries` · `test` · `test:golden` · `test:schema-drift` · `test:mcp-contract` · `test:runtime-smoke` · `spike:process-supervision` — tất cả xanh trên **cả ba** OS
+- [x] S.6 Release gate: `typecheck` · `lint` · `test:boundaries` · `test` · `test:golden` · `test:schema-drift` · `test:mcp-contract` · `test:runtime-smoke` · `spike:process-supervision` — tất cả xanh trên **cả ba** OS
 
 ---
 
@@ -1126,6 +1126,21 @@ Chi tiết: §13 [Detailed Design](./spec-project-delivery-loop-detailed-design.
   - Blockers: S.1/S.2/S.6 chờ GitHub Actions trên exact commit để đọc số Linux/Windows, Windows real render và full matrix ba OS; chưa tick trước remote evidence.
   - CI portability loop: run đầu trên commit `b1b8740` làm lộ parser frontmatter agent-kit chỉ nhận LF; Windows checkout tạo CRLF nên host discoverable bị phân loại sai thành blocked. Sửa regex nhận `\r?\n` và thêm regression chạy router CRLF trên filesystem thật; focused installer 9/9 xanh trước khi đẩy lại CI. Đây là sửa portability theo contract đã duyệt, không đổi design.
   - CI stability/portability loop: run supervision `30939680978` và full CI `30939680943` trên commit `9086949` xác nhận macOS full xanh, Windows real render xanh, nhưng Linux warm scan 100 project `104.77049 ms`; Windows full CI warm scan `101.7126 ms`; Windows supervision còn lộ fixture tự spawn dùng URL pathname `/D:/...` và recovery assertion so short-path với canonical long-path. Không nới AC: `WorkspaceFs` dùng chung canonical workspace capability và các project-containment check đang chạy đồng thời, nhưng xoá project check sau mỗi nhóm I/O nên scan kế tiếp vẫn revalidate; fixture đổi sang `fileURLToPath`; assertion so canonical path thật. Focused ba file 20/20, perf 5/5 và exact supervision bundle 30 file/158 test xanh; hai lượt S1e PASS; full Vitest 109 file pass + 1 skip/798 test pass + 3 skip; build, typecheck, boundaries, schema drift, spec paths, diff check xanh và lint 0 error trước khi gửi CI đo lại. Không đổi design.
+
+2026-08-05 — Phase S, Tasks S.1–S.3
+  - Evidence: GitHub Actions process-supervision run `30965814511` trên exact commit `17958d4`, cả bốn job Linux/macOS/Windows/real-render Windows đều xanh.
+  - Linux S1e: `ps`; naive leak `escaping` + `leaf` trong khi PPID walk báo sạch; ba pha capture 3 PID/2 group, 2 sweep, 120.4 ms, exhaustive, 0 survivor, PASS.
+  - Windows S1e: `powershell-cim` có parent (142 row, 459 ms); naive không leak trên runner; ba pha capture 4 PID/1 group, 2 sweep, 1921.7 ms, exhaustive, 0 survivor, PASS. Lượt lặp 2 sweep/1906.7 ms, PASS.
+  - Windows S1f: render thật có 7 descendant, không process nào tách root group trên runner; ba pha capture 7 PID/1 group, 2 sweep, 2298.6 ms, exhaustive, 0 survivor, `TERMINATED_CLEAN`.
+  - Decisions: S.3 đóng theo nhánh không kích hoạt — Windows có enumerator PPID và naive không leak. Không đổi Design §5.9; capture vẫn bắt buộc vì Linux/macOS đã chứng minh group kill có thể rò và một code path phải đúng trên mọi nền tảng.
+  - Blockers: Không có; S.6 được đóng sau khi full CI kết thúc.
+
+2026-08-05 — Phase S, Task S.6 và spec closeout
+  - Evidence: full CI run `30965814507` trên exact commit `17958d4` SUCCESS, 3/3 job trong 14m56s. Linux/macOS: full Vitest 109 file/798 test + MCP 9 file/71 test + golden 9 file/26 test. Windows: full Vitest 108 file/797 test + MCP 9/71 + golden 9/26; chênh một file/test là case platform-specific bị skip theo contract.
+  - Gates: typecheck, agent-kit bundle drift, lint (0 error), invalid-boundary rejection, full test, VieNeu sidecar contract, MCP contract, golden, schema drift, spec paths, production build và real Next/SSE runtime smoke đều pass trên Linux/macOS/Windows. Process-supervision run `30965814511` đồng thời xanh 4/4 job, gồm real render Windows.
+  - Council: SM xác nhận mọi task A–S đã tick và có Execution Log; PO xác nhận AC cùng đường product/runtime và portability; Dev xác nhận SQLite/filesystem thật, không mock `node:fs`, boundary/schema/build/runtime và process containment đều xanh.
+  - Decisions: Không có design drift ở closeout. Spec đổi từ `inprocess` sang `complete`; push commit closeout phải được xác minh lại bằng cả full CI và process-supervision trên exact final HEAD trước khi báo hoàn tất.
+  - Blockers: Không có.
 
 Format:
 ```

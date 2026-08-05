@@ -12,11 +12,11 @@
 | **S1b** group vs descendant | descendant có nằm trong process group không? | ❌ **KHÔNG** | Chromium tự tách pgid |
 | **S1c** survivor thật | `kill(-pgid)` có giết Chromium không? | ❌ **LEAK 5 process** | §5.9 POSIX sai; `killProcessTree` hiện tại hỏng |
 | **S1d** remediation | capture-rồi-kill-PID-đã-ghi có bịt được không? | ✅ **WORKS** | 0 leak / 3 lần, 2 sweep, ~170 ms |
-| **S1e** đa nền tảng | thuật toán ba pha có đứng trên mọi OS không? | ✅ PASS trên darwin · Linux/Windows **do CI trả** | harness + CI gate đã wire |
+| **S1e** đa nền tảng | thuật toán ba pha có đứng trên mọi OS không? | ✅ **PASS** darwin + Linux + Windows | 0 survivor; 2 sweep trên cả ba OS |
 | **S2** scan 100 project | target hai tầng §9.1 có đứng không? | ✅ **PASS** | stat 1.5 ms · parse 488 ms / 2000 ms |
 | **S3 + S3b** `--at` fail | một timestamp hỏng có giết cả batch không? | ✅ **KHÔNG** | Decision 13 đứng — nhưng lộ hai lỗ khác |
 
-**Trạng thái W1/W2**: không đóng được bằng máy phát triển (darwin, không có container runtime). Đóng bằng cách khác — **S1e là harness chạy được trên cả ba OS**, và [`.github/workflows/process-supervision.yml`](../../.github/workflows/process-supervision.yml) chạy nó trên `ubuntu-latest` + `macos-latest` + `windows-latest`, hai lượt mỗi OS. Số Linux/Windows về theo lần chạy CI đầu tiên; thiết kế không chờ số đó vì cách sửa không phụ thuộc kết quả.
+**Trạng thái W1/W2**: đã đóng bằng [GitHub Actions run 30965814511](https://github.com/dinh-ai-system-exe-com-vn/vidcom-v2/actions/runs/30965814511) trên exact commit `17958d4`. Linux (`ps`) tái hiện leak ngây thơ ở `escaping` + `leaf`, nhưng ba pha capture 3 PID/2 group và sạch sau 2 sweep trong 120.4 ms. Windows dùng `powershell-cim` (459 ms ở lần probe), naive không leak trên runner này, còn ba pha capture 4 PID/1 group và sạch sau 2 sweep trong 1921.7 ms; lượt lặp cũng PASS trong 1906.7 ms. Cả ba OS đều `exhaustive=true`, 0 survivor.
 
 ---
 
@@ -196,9 +196,9 @@ node spikes/phase-3-checklist-gate/s1d-posix-remediation.mjs     # ~1 phút, POS
 
 | # | Việc | Trạng thái |
 |---|---|---|
-| W1 | Thuật toán ba pha trên Windows: `taskkill /T /F` awaited + capture/probe theo PID | **harness xong**, chạy tự động ở `windows-latest`; chờ lần chạy CI đầu |
-| W2 | Windows có enumerator cho ppid không | **đã trả lời bằng dữ kiện**: `wmic` bị gỡ, `tasklist` không có ppid, còn lại PowerShell CIM. Design bản 6 thu hẹp lệnh cấm theo đó |
-| W3 | Linux — cùng câu hỏi, trước đây chưa ai đặt | **harness xong**, chạy ở `ubuntu-latest` |
-| W4 | `chrome-headless-shell` thật trên Windows có tách group không | **harness xong** (`s1f`), job CI riêng ngoài pull request |
+| W1 | Thuật toán ba pha trên Windows: `taskkill /T /F` awaited + capture/probe theo PID | **PASS hai lượt**: 4 PID/1 group, 2 sweep, 1921.7/1906.7 ms, 0 survivor |
+| W2 | Windows có enumerator cho ppid không | **PASS**: `powershell-cim` có parent, 142 row, 459 ms; `tasklist` có 142 row nhưng không có parent |
+| W3 | Linux — cùng câu hỏi, trước đây chưa ai đặt | **PASS**: naive leak `escaping` + `leaf`; ba pha 3 PID/2 group, 2 sweep, 120.4 ms, 0 survivor |
+| W4 | `chrome-headless-shell` thật trên Windows có tách group không | **Không trên runner đo được**; render thật có 7 descendant, tất cả cùng root group. Ba pha capture 7 PID/1 group, 2 sweep, 2298.6 ms, `TERMINATED_CLEAN` |
 
-Không cái nào còn chặn Design: cách sửa đã đo PASS và không phụ thuộc kết quả các dòng trên. Thứ chúng trả về là **con số**, cộng một tín hiệu đỏ thường trực nếu có nền tảng nào phá contract.
+Không cái nào còn chặn Design: cách sửa đã đo PASS trên cả ba OS và không phụ thuộc thuộc tính group riêng của từng nền tảng. Capture vẫn bắt buộc dù Windows runner này không tái hiện việc tách group, vì Linux/macOS đã chứng minh group kill có thể rò.

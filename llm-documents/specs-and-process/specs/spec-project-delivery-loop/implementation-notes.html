@@ -261,19 +261,20 @@
           <div><dt class="font-semibold text-slate-200">Bằng chứng</dt><dd class="mt-1 text-slate-400">Candidate có đủ hyperframes.json + index.html vẫn bị listProjects loại và scanner trả candidate. Full Vitest: 109 file pass, 1 skip; 798 test pass, 3 skip.</dd></div>
         </dl>
       </section>
-      <section class="mt-6 rounded-2xl border border-amber-500/30 bg-slate-900 p-6">
+      <section class="mt-6 rounded-2xl border border-emerald-500/30 bg-slate-900 p-6">
         <div class="flex flex-wrap items-center justify-between gap-3">
-          <h2 class="text-2xl font-semibold">2026-08-04 · Phase S local xanh</h2>
-          <span class="rounded-full bg-amber-400/10 px-3 py-1 text-sm text-amber-300">Chờ CI ba OS + Windows render thật</span>
+          <h2 class="text-2xl font-semibold">2026-08-05 · Phase S remote evidence</h2>
+          <span class="rounded-full bg-emerald-400/10 px-3 py-1 text-sm text-emerald-300">Phase S hoàn tất</span>
         </div>
         <p class="mt-4 text-slate-300">Golden, MCP contract, full Vitest, schema, boundary, build, runtime smoke và process supervision đều xanh local. Verification Matrix A–S khóa 43 đường test tồn tại.</p>
         <dl class="mt-6 grid gap-5 md:grid-cols-2">
-          <div><dt class="font-semibold text-slate-200">Quyết định</dt><dd class="mt-1 text-slate-400">Không dùng kết quả macOS local để tick S.1 hoặc S.2. Hai task đó chỉ đóng sau khi đọc artifact/log GitHub Actions Linux/Windows trên exact commit.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Quyết định</dt><dd class="mt-1 text-slate-400">S.1–S.3 chỉ được tick sau khi đọc log run 30965814511 trên exact commit 17958d4. Windows có PowerShell CIM và naive không leak, nên nhánh quay lại Design không kích hoạt; pha capture vẫn bắt buộc cho một code path đa nền tảng.</dd></div>
           <div><dt class="font-semibold text-slate-200">Design drift</dt><dd class="mt-1 text-slate-400">Không có. Matrix được thêm vào checklist để script S.5 có nguồn đường test hiện hành thay vì tiếp tục kiểm spec MCP Phase 2 cũ.</dd></div>
           <div><dt class="font-semibold text-slate-200">Số local</dt><dd class="mt-1 text-slate-400">Darwin: naive leak true; capture 3 PID/2 group; hội tụ 2 sweep trong 125.2 ms; exhaustive true; không survivor.</dd></div>
-          <div><dt class="font-semibold text-slate-200">Gate còn mở</dt><dd class="mt-1 text-slate-400">CI Linux/macOS/Windows, PowerShell CIM timing/sweep và s1f chrome-headless-shell Windows chưa có evidence terminal.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Số remote</dt><dd class="mt-1 text-slate-400">Linux: naive leak escaping + leaf; capture 3 PID/2 group, 2 sweep, 120.4 ms, sạch. Windows: PowerShell CIM 459 ms; capture 4 PID/1 group, 2 sweep, 1921.7 ms, sạch; lượt lặp 1906.7 ms. Real render Windows: 7 PID/1 group, 2 sweep, 2298.6 ms, TERMINATED_CLEAN.</dd></div>
           <div><dt class="font-semibold text-slate-200">CI portability loop</dt><dd class="mt-1 text-slate-400">Run đầu trên commit b1b8740 phát hiện router frontmatter chỉ nhận LF nên Windows CRLF bị phân loại blocked. Parser đã nhận cả CRLF và có regression filesystem thật 9/9 xanh; đây là sửa portability trong contract, không đổi design.</dd></div>
           <div><dt class="font-semibold text-slate-200">CI stability loop</dt><dd class="mt-1 text-slate-400">Runs 30939680978 và 30939680943 trên commit 9086949 xác nhận macOS full xanh và Windows real-render xanh, đồng thời làm lộ ba portability gap: warm scan Linux 104.77049 ms/Windows 101.7126 ms; fixture tự spawn dùng URL pathname sai dạng /D:/...; recovery assertion so short-path với canonical long-path. Không nới acceptance: canonical workspace capability được dùng lại, project check chỉ coalesce trong nhóm I/O rồi revalidate ở scan sau; fixture dùng fileURLToPath và assertion canonical hoá bằng realpath. Ba file focused 20/20, perf 5/5, exact supervision bundle 30 file/158 test, hai lượt S1e, full Vitest 109/798, build và static gates đều xanh local; không đổi design.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Full CI</dt><dd class="mt-1 text-slate-400">Run 30965814507 SUCCESS 3/3 trong 14m56s. Linux/macOS: full 109 file/798 test; Windows: 108 file/797 test do một case platform-specific không áp dụng. Mỗi OS còn xanh MCP 9/71 và golden 9/26 cùng toàn bộ static, build và runtime smoke gates.</dd></div>
         </dl>
       </section>
     </main>
