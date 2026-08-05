@@ -59,7 +59,7 @@ describe("narration cues", () => {
     const before = JSON.stringify(legacy);
     expect(readCues(legacy)).toEqual([{
       cueId: "intro", text: "Xin chào", voice: "minh-duc", offsetSeconds: 0,
-      durationSeconds: 2.5, staleSince: null,
+      durationSeconds: 2.5, staleSince: null, audioPath: "narration/intro.wav",
     }]);
     expect(JSON.stringify(legacy)).toBe(before);
   });

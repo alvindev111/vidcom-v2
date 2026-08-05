@@ -7,12 +7,13 @@ import { getNextHostedRuntime, handleNextHostedRequest } from "@vidcom/cli";
 import { ErrorCode, type ProjectId, type RelPath } from "@vidcom/contracts";
 import {
   canonicalizeJobInput,
+  ok,
   type AbsolutePath,
   type DerivedMutationPath,
   type JobId,
   type ProjectIdentity,
 } from "@vidcom/core";
-import { createServerApp, errorStatus, InMemoryNonceStore, InMemorySessionStore } from "@vidcom/server";
+import { createServerApp, InMemoryNonceStore, InMemorySessionStore } from "@vidcom/server";
 import { enqueueRenderJob, enqueueSnapshotJob } from "@vidcom/worker";
 import { afterEach, describe, expect, it } from "vitest";
 
@@ -55,10 +56,20 @@ async function fixture() {
     jobs: infrastructure.jobs,
     ids: infrastructure.ids,
     hashContent,
+    binaries: {
+      probe: async () => ok({
+        hyperframesCommand: [process.execPath, "hyperframes"] as const,
+        browserPath: process.execPath as AbsolutePath,
+        ffmpegPath: process.execPath as AbsolutePath,
+        ffprobePath: process.execPath as AbsolutePath,
+        warnings: [],
+      }),
+    },
   };
   const port = 43219;
   const nonces = new InMemoryNonceStore(clock);
   const sessions = new InMemorySessionStore(clock);
+  let activationError: ErrorCode | null = null;
   const app = createServerApp({
     port,
     uiOrigins: [],
@@ -73,7 +84,9 @@ async function fixture() {
         source: "explicit",
         entries: await application.scanWorkspace(),
       }),
-      activateWorkspace: async () => ({ ok: true, value: { workspaceRoot, reauthRequired: true } }),
+      activateWorkspace: async () => activationError
+        ? { ok: false, error: { code: activationError, message: `injected ${activationError}` } }
+        : { ok: true, value: { workspaceRoot, reauthRequired: true } },
       lifecycle: application.lifecycle,
       diagnostics: application.diagnostics,
       agentKit: application.agentKit,
@@ -104,27 +117,68 @@ async function fixture() {
     ...init,
     headers: { ...Object.fromEntries(new Headers(init.headers)), Cookie: cookie },
   });
-  return { root, workspaceRoot, infrastructure, application, request };
+  return {
+    root, workspaceRoot, infrastructure, application, request,
+    setActivationError: (code: ErrorCode | null) => { activationError = code; },
+  };
 }
 
 describe("project delivery HTTP routes on real SQLite and filesystem", () => {
-  it("maps the Phase-O error categories to their approved HTTP statuses", () => {
-    expect([
-      ErrorCode.SchemaInvalid,
-      ErrorCode.PreconditionRequired,
-      ErrorCode.ProjectInvalid,
-      ErrorCode.NoComposition,
-      ErrorCode.NoScenes,
-      ErrorCode.RemoteAssetNotLocal,
-      ErrorCode.AssetNotAllowed,
-      ErrorCode.PathOutsideProject,
-      ErrorCode.RenderBinaryMissing,
-      ErrorCode.ProcessTerminationUnverified,
-      ErrorCode.ApprovalRequired,
-      ErrorCode.ConfirmationRequired,
-      ErrorCode.StorageUnavailable,
-      ErrorCode.Internal,
-    ].map(errorStatus)).toEqual([400, 409, 409, 422, 422, 422, 403, 403, 503, 500, 403, 403, 500, 500]);
+  it("maps Phase-O errors through the real middleware and route pipeline", async () => {
+    const value = await fixture();
+    try {
+      const cases = [
+        [ErrorCode.SchemaInvalid, 400], [ErrorCode.PreconditionRequired, 409],
+        [ErrorCode.ProjectInvalid, 409], [ErrorCode.NoComposition, 422],
+        [ErrorCode.NoScenes, 422], [ErrorCode.RemoteAssetNotLocal, 422],
+        [ErrorCode.AssetNotAllowed, 403], [ErrorCode.PathOutsideProject, 403],
+        [ErrorCode.RenderBinaryMissing, 503], [ErrorCode.ProcessTerminationUnverified, 500],
+        [ErrorCode.ApprovalRequired, 403], [ErrorCode.ConfirmationRequired, 403],
+        [ErrorCode.StorageUnavailable, 500], [ErrorCode.Internal, 500],
+      ] as const;
+      for (const [code, status] of cases) {
+        value.setActivationError(code);
+        const response = await value.request("/api/v1/workspace/active", {
+          method: "PUT", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ path: value.workspaceRoot }),
+        });
+        expect(response.status, code).toBe(status);
+        expect(await response.json()).toMatchObject({ error: { code } });
+      }
+    } finally {
+      await value.infrastructure.database.destroy();
+    }
+  });
+
+  it("rejects non-JSON bodies and invalid path parameters at the HTTP boundary", async () => {
+    const value = await fixture();
+    try {
+      const wrongMedia = await value.request("/api/v1/projects", {
+        method: "POST", headers: { "Content-Type": "text/plain" },
+        body: JSON.stringify({ name: "Wrong media", presetId: "horizontal-youtube" }),
+      });
+      expect(wrongMedia.status).toBe(415);
+      expect(await wrongMedia.json()).toMatchObject({ error: { code: "unsupported_media", field: "content-type" } });
+
+      const invalid = "x".repeat(256);
+      const responses = await Promise.all([
+        value.request(`/api/v1/projects/${invalid}/adopt`, { method: "POST" }),
+        value.request(`/api/v1/projects/${invalid}/diagnostics`),
+        value.request(`/api/v1/projects/project/scenes/${invalid}/narration-cues`),
+        value.request(`/api/v1/recovery/entries/${invalid}/diagnostics`),
+        value.request(`/api/v1/jobs/${invalid}/termination-proof`),
+        value.request(`/api/v1/projects/project/scenes/scene/narration-cues/${invalid}`, {
+          method: "PATCH", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ offsetSeconds: 0, expectedContentHash: `sha256:${"a".repeat(64)}` }),
+        }),
+      ]);
+      for (const response of responses) {
+        expect(response.status).toBe(400);
+        expect(await response.json()).toMatchObject({ error: { code: "schema_invalid" } });
+      }
+    } finally {
+      await value.infrastructure.database.destroy();
+    }
   });
 
   it("routes project lifecycle, candidate adoption and entryId-only recovery", async () => {
@@ -284,6 +338,73 @@ describe("project delivery HTTP routes on real SQLite and filesystem", () => {
     }
   }, 15_000);
 
+  it("keeps HTTP and MCP set-scene-timing semantics identical on equivalent fixtures", async () => {
+    const value = await fixture();
+    try {
+      const createFixtureProject = async (name: string) => {
+        const created = await value.request("/api/v1/projects", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ name, presetId: "horizontal-youtube" }),
+        });
+        const { projectId } = await created.json() as { projectId: ProjectId };
+        const ref = await value.infrastructure.workspace.readProjectRef(projectId);
+        if (!ref) throw new Error("fixture project was not discoverable");
+        const emptyEntry = await value.infrastructure.workspace.readWorkspaceFile!(ref.root, "index.html");
+        if (!emptyEntry) throw new Error("fixture entry was missing");
+        const scene = await value.request(`/api/v1/projects/${projectId}/scenes`, {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ title: "Opening", duration: 2, expectedContentHash: emptyEntry.contentHash }),
+        });
+        expect(scene.status).toBe(201);
+        const entry = await value.infrastructure.workspace.readWorkspaceFile!(ref.root, "index.html");
+        if (!entry) throw new Error("fixture scene entry was missing");
+        return { projectId, ref, entry };
+      };
+      const httpProject = await createFixtureProject("HTTP Timing");
+      const mcpProject = await createFixtureProject("MCP Timing");
+
+      const httpResponse = await value.request(`/api/v1/projects/${httpProject.projectId}/scenes/scene-1/timing`, {
+        method: "PATCH", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          duration: 3, ripple: false, extendRoot: true,
+          expectedContentHash: httpProject.entry.contentHash,
+        }),
+      });
+      expect(httpResponse.status).toBe(200);
+      const httpResult = await httpResponse.json() as Record<string, unknown>;
+
+      const registry = createMcpRegistry(value.infrastructure, value.application);
+      const mcpResult = await registry.invoke("set_scene_timing", {
+        projectId: mcpProject.projectId,
+        sceneId: "scene-1",
+        duration: 3,
+        ripple: false,
+        extendRoot: true,
+        expectedContentHash: mcpProject.entry.contentHash,
+      }, {
+        era: "modern", protocolVersion: "2026-07-28", credentialId: "delivery-parity-test",
+        requestInput: async (): Promise<never> => { throw new Error("input was not expected"); },
+      });
+      expect(mcpResult.ok).toBe(true);
+      if (!mcpResult.ok) throw new Error(mcpResult.error.message);
+      const expected = {
+        scene: { id: "scene-1", duration: 3 }, affectedTrackIndex: 0, moved: [],
+        envelope: { projectRevision: expect.any(Number) },
+      };
+      expect(httpResult).toMatchObject(expected);
+      expect(mcpResult.value).toMatchObject(expected);
+      const [httpEntry, mcpEntry] = await Promise.all([
+        readFile(path.join(httpProject.ref.root, "index.html"), "utf8"),
+        readFile(path.join(mcpProject.ref.root, "index.html"), "utf8"),
+      ]);
+      expect(httpEntry).toBe(mcpEntry);
+      expect(await value.infrastructure.journal.latestRevision(httpProject.projectId)).toEqual(expect.any(Number));
+      expect(await value.infrastructure.journal.latestRevision(mcpProject.projectId)).toEqual(expect.any(Number));
+    } finally {
+      await value.infrastructure.database.destroy();
+    }
+  }, 15_000);
+
   it("serves MP4 ranges/ETags, exposes termination proof, and maps readiness errors", async () => {
     const value = await fixture();
     try {
@@ -324,11 +445,60 @@ describe("project delivery HTTP routes on real SQLite and filesystem", () => {
       });
       expect(ranged.status).toBe(206);
       expect(ranged.headers.get("content-range")).toBe("bytes 2-4/6");
+      expect(ranged.headers.get("cache-control")).toBe("must-revalidate");
       expect([...new Uint8Array(await ranged.arrayBuffer())]).toEqual([2, 3, 4]);
       const etag = ranged.headers.get("etag")!;
       expect((await value.request("/api/v1/renders/job_download/download", {
         headers: { "If-None-Match": etag },
       })).status).toBe(304);
+      for (const header of [
+        "bytes=999-1000",
+        "bytes=-0",
+        "bytes=4-2",
+        "bytes=abc-def",
+        `bytes=${"9".repeat(400)}-`,
+      ]) {
+        const unsatisfiable = await value.request("/api/v1/renders/job_download/download", {
+          headers: { Range: header },
+        });
+        expect(unsatisfiable.status, header).toBe(416);
+        expect(unsatisfiable.headers.get("content-range"), header).toBe("bytes */6");
+        expect(unsatisfiable.headers.get("cache-control"), header).toBe("must-revalidate");
+      }
+      const hugeSuffix = await value.request("/api/v1/renders/job_download/download", {
+        headers: { Range: `bytes=-${"9".repeat(400)}` },
+      });
+      expect(hugeSuffix.status).toBe(206);
+      expect(hugeSuffix.headers.get("content-range")).toBe("bytes 0-5/6");
+
+      const emptyPath = "renders/empty.mp4" as RelPath;
+      const emptyWrite = await value.application.authority.mutateDerived({
+        ref,
+        writes: [{ path: emptyPath as DerivedMutationPath, content: new Uint8Array() }],
+        producedByJobId: null,
+        computedAtSourceRevision: 1,
+      }, "system");
+      if (!emptyWrite.ok) throw new Error(emptyWrite.error.message);
+      const emptyJobInput = { projectId: created.value.projectId, empty: true };
+      const emptyJob = await value.infrastructure.jobs.enqueue({
+        id: "job_empty_download" as JobId,
+        projectId: created.value.projectId,
+        type: "render",
+        input: emptyJobInput,
+        inputHash: hashContent(canonicalizeJobInput(emptyJobInput)),
+        idempotencyKey: null,
+      });
+      if ("conflict" in emptyJob) throw new Error("unexpected empty job conflict");
+      await value.infrastructure.jobs.claim(emptyJob.job.id as JobId, "worker-http");
+      await value.infrastructure.jobs.finish(emptyJob.job.id as JobId, {
+        status: "succeeded",
+        result: { artifactPath: emptyPath },
+      });
+      const emptyRange = await value.request("/api/v1/renders/job_empty_download/download", {
+        headers: { Range: "bytes=0-0" },
+      });
+      expect(emptyRange.status).toBe(416);
+      expect(emptyRange.headers.get("content-range")).toBe("bytes */0");
 
       const failedInput = { projectId: created.value.projectId, attempt: 2 };
       const failed = await value.infrastructure.jobs.enqueue({
@@ -389,6 +559,7 @@ describe("project delivery HTTP routes on real SQLite and filesystem", () => {
       appData: process.env.VIDCOM_APP_DATA,
       workspace: process.env.VIDCOM_WORKSPACE,
       nonce: process.env.VIDCOM_BOOTSTRAP_NONCE,
+      settings: process.env.VIDCOM_SETTINGS,
     };
     const nonce = Buffer.alloc(32, 9).toString("base64url");
     const port = 49331;
@@ -396,6 +567,7 @@ describe("project delivery HTTP routes on real SQLite and filesystem", () => {
     process.env.VIDCOM_APP_DATA = appData;
     process.env.VIDCOM_WORKSPACE = firstWorkspace;
     process.env.VIDCOM_BOOTSTRAP_NONCE = nonce;
+    process.env.VIDCOM_SETTINGS = path.join(root, "setting.json");
     const first = await getNextHostedRuntime(port);
     let second: Awaited<ReturnType<typeof getNextHostedRuntime>> | null = null;
     try {
@@ -436,6 +608,8 @@ describe("project delivery HTTP routes on real SQLite and filesystem", () => {
       else process.env.VIDCOM_WORKSPACE = prior.workspace;
       if (prior.nonce === undefined) delete process.env.VIDCOM_BOOTSTRAP_NONCE;
       else process.env.VIDCOM_BOOTSTRAP_NONCE = prior.nonce;
+      if (prior.settings === undefined) delete process.env.VIDCOM_SETTINGS;
+      else process.env.VIDCOM_SETTINGS = prior.settings;
     }
   });
 });

@@ -419,6 +419,10 @@ interface NarrationSidecarV2 {
   command?: string;
   staleSince?: string | null;
   durationSeconds?: number;
+  provider?: string;
+  words?: NarrationCue["words"];
+  wordTimingSource?: NarrationCue["wordTimingSource"];
+  engine?: NarrationCue["engine"];
 }
 
 function cueAudioPath(sceneId: string, cueId: string): string {
@@ -455,8 +459,12 @@ function serializeNarrationSidecar(
       ...(first.status ? { status: first.status } : {}),
       ...(first.audioPath ? { audioPath: first.audioPath } : {}),
       ...(first.command ? { command: first.command } : {}),
+      ...(first.provider ? { provider: first.provider } : {}),
       staleSince: first.staleSince,
       ...(first.durationSeconds ? { durationSeconds: first.durationSeconds } : {}),
+      ...(first.words ? { words: first.words } : {}),
+      ...(first.wordTimingSource ? { wordTimingSource: first.wordTimingSource } : {}),
+      ...(first.engine ? { engine: first.engine } : {}),
     } : {}),
   };
   return `${JSON.stringify(sidecar, null, 2)}\n`;
@@ -746,12 +754,12 @@ export async function readNarrationCues(
   }
 }
 
-export async function replaceNarrationCues(
+async function persistNarrationCues(
   dependencies: ProjectWriteDependencies,
   input: {
     projectId: ProjectId;
     sceneId: string;
-    cues: Array<Pick<NarrationCue, "cueId" | "text" | "voice" | "offsetSeconds">>;
+    cues: NarrationCue[];
     expectedContentHash: ContentHash | null;
   },
   actor: Actor,
@@ -774,11 +782,7 @@ export async function replaceNarrationCues(
     try { revision = Number((JSON.parse(current.content) as { revision?: unknown }).revision) || 0; }
     catch { return err({ code: ErrorCode.ProjectInvalid, message: "narration sidecar could not be parsed" }); }
   }
-  const cues = input.cues.map((cue) => ({
-    ...initialCue(input.sceneId, cue.text, cue.cueId),
-    voice: cue.voice,
-    offsetSeconds: cue.offsetSeconds,
-  }));
+  const cues = input.cues;
   const written = await dependencies.authority.mutateSource({
     kind: "file",
     ref: ref.value,
@@ -789,6 +793,28 @@ export async function replaceNarrationCues(
   return written.ok ? ok({ cues, contentHash: written.value.contentHash, revision: written.value.revision }) : written;
 }
 
+/** Replaces authored cues and deliberately resets synthesis metadata for the new cue set. */
+export function replaceNarrationCues(
+  dependencies: ProjectWriteDependencies,
+  input: {
+    projectId: ProjectId;
+    sceneId: string;
+    cues: Array<Pick<NarrationCue, "cueId" | "text" | "voice" | "offsetSeconds">>;
+    expectedContentHash: ContentHash | null;
+  },
+  actor: Actor,
+) {
+  return persistNarrationCues(dependencies, {
+    ...input,
+    cues: input.cues.map((cue) => ({
+      ...initialCue(input.sceneId, cue.text, cue.cueId),
+      voice: cue.voice,
+      offsetSeconds: cue.offsetSeconds,
+    })),
+  }, actor);
+}
+
+/** Updates one narration cue without rebuilding metadata for it or its siblings. */
 export async function patchNarrationCue(
   dependencies: ProjectWriteDependencies,
   input: {
@@ -807,17 +833,19 @@ export async function patchNarrationCue(
   });
   const cue = current.value.cues.find((candidate) => candidate.cueId === input.cueId);
   if (!cue) return err({ code: ErrorCode.NotFound, message: "narration cue was not found" });
-  return replaceNarrationCues(dependencies, {
+  const contentChanged = (input.patch.text !== undefined && input.patch.text !== cue.text)
+    || (input.patch.voice !== undefined && input.patch.voice !== cue.voice);
+  const staleSince = contentChanged ? dependencies.clock.now().toISOString() : cue.staleSince;
+  return persistNarrationCues(dependencies, {
     projectId: input.projectId,
     sceneId: input.sceneId,
-    cues: current.value.cues.map((candidate) => ({
-      cueId: candidate.cueId,
-      text: candidate.cueId === input.cueId ? input.patch.text ?? candidate.text : candidate.text,
-      voice: candidate.cueId === input.cueId ? input.patch.voice ?? candidate.voice : candidate.voice,
-      offsetSeconds: candidate.cueId === input.cueId
-        ? input.patch.offsetSeconds ?? candidate.offsetSeconds
-        : candidate.offsetSeconds,
-    })),
+    cues: current.value.cues.map((candidate) => candidate.cueId === input.cueId ? {
+      ...candidate,
+      text: input.patch.text ?? candidate.text,
+      voice: input.patch.voice ?? candidate.voice,
+      offsetSeconds: input.patch.offsetSeconds ?? candidate.offsetSeconds,
+      staleSince,
+    } : candidate),
     expectedContentHash: input.expectedContentHash,
   }, actor);
 }

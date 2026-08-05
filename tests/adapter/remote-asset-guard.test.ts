@@ -74,6 +74,7 @@ describe("LoopbackRuntimeAssetGuard", () => {
       expect(opened.bootstrapScript).toContain('entry.name === callbackUrl');
       expect(opened.bootstrapScript).toContain('observed.size >= 100');
       expect(opened.bootstrapScript).toContain('observe({ type: "resource", buffered: true })');
+      expect(opened.bootstrapScript).toContain('request.open("POST", callbackUrl, false)');
       expect(opened.csp).toContain("img-src 'self' data: blob:");
       expect(opened.csp).toContain("media-src 'self' data: blob:");
     } finally {

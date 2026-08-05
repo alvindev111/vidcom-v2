@@ -3,6 +3,15 @@ import { z } from "zod";
 import { ContentHashSchema, IdentifierSchema } from "./dto";
 import { InstallAgentKitInputSchema } from "./agent-kit";
 
+/** Strict path parameters for project adoption by workspace slug. */
+export const ProjectSlugParamsSchema = z.strictObject({ slug: IdentifierSchema });
+/** Strict path parameters for scene-scoped delivery-loop operations. */
+export const SceneParamsSchema = z.strictObject({ id: IdentifierSchema, sceneId: IdentifierSchema });
+/** Strict path parameters for one narration cue. */
+export const NarrationCueParamsSchema = SceneParamsSchema.extend({ cueId: IdentifierSchema });
+/** Strict path parameters for recovery-entry operations. */
+export const RecoveryEntryParamsSchema = z.strictObject({ entryId: IdentifierSchema });
+
 export const ActivateWorkspaceRequestSchema = z.strictObject({ path: z.string().min(1).max(4096) });
 export const CreateProjectRequestSchema = z.strictObject({
   name: z.string().min(1).max(255),

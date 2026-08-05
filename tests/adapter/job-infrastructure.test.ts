@@ -218,7 +218,14 @@ describe("SQLite job infrastructure", () => {
       maxAttempts: 2,
       retryBaseDelayMs: 1,
       retryMaxDelayMs: 2,
-      async run() { return new Promise(() => {}); },
+      terminationGraceMs: 100,
+      async run(_input, context) {
+        return new Promise((_resolve, reject) => {
+          context.signal.addEventListener("abort", () => {
+            setTimeout(() => reject(new JobRetryableError("abort cleanup finished")), 20);
+          }, { once: true });
+        });
+      },
     };
     try {
       await store.enqueue(newJob("job_timeout", p1, {}));
@@ -311,9 +318,9 @@ describe("SQLite job infrastructure", () => {
     const definition: JobTypeDefinition = {
       type: "barrier", concurrency: 1, idempotent: false,
       async run(_input, context) {
+        await context.beginPublication();
         entered();
         await barrier;
-        await context.throwIfCancelled();
         await writeFile(artifact, "published", "utf8");
         return { artifact };
       },
@@ -326,12 +333,12 @@ describe("SQLite job infrastructure", () => {
       await store.requestCancel("job_barrier" as JobId);
       release();
       await scheduler.waitForIdle();
-      await expect(access(artifact)).rejects.toThrow();
-      expect(await store.get("job_barrier" as JobId)).toMatchObject({ status: "cancelled" });
+      await expect(access(artifact)).resolves.toBeUndefined();
+      expect(await store.get("job_barrier" as JobId)).toMatchObject({ status: "succeeded", cancelRequested: false });
 
       expect(await store.finish("job_barrier" as JobId, { status: "succeeded", result: {} })).toBe(false);
       await store.requestCancel("job_barrier" as JobId);
-      expect(await store.get("job_barrier" as JobId)).toMatchObject({ status: "cancelled" });
+      expect(await store.get("job_barrier" as JobId)).toMatchObject({ status: "succeeded", cancelRequested: false });
     } finally {
       await database.destroy();
     }

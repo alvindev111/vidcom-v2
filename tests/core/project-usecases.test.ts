@@ -206,8 +206,10 @@ function setup(options: {
         for (const step of request.steps) {
           if (step.kind !== "write") continue;
           if (typeof step.content === "string") files.set(step.path, step.content);
-          else binaries.set(step.path, step.content);
-          fileHashes[step.path] = hash(step.content);
+          else if (step.content instanceof Uint8Array) binaries.set(step.path, step.content);
+          fileHashes[step.path] = typeof step.content === "object" && !(step.content instanceof Uint8Array)
+            ? step.content.contentHash
+            : hash(step.content);
         }
         revision += 1;
         return ok({ projectRevision: revision, entityRevision: null, fileHashes, diagnostics: [] });

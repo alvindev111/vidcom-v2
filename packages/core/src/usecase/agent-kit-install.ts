@@ -136,8 +136,22 @@ export class AgentKitInstaller {
       });
       if (!auditedNoChange.ok) return auditedNoChange;
     }
-    const after = await this.inspect(workspaceRoot, hosts);
-    if (!after.ok) return after;
+    let after: Result<InstallAgentKitOutput["installationState"], DomainError>;
+    try {
+      after = await this.inspect(workspaceRoot, hosts);
+    } catch (error) {
+      if (writes.length > 0) return err({
+        code: ErrorCode.CommittedResponseError,
+        message: "agent-kit mutation committed but installation state could not be inspected; do not retry the mutation",
+        details: { committed: true, changedFiles },
+      });
+      throw error;
+    }
+    if (!after.ok) return writes.length > 0 ? err({
+      code: ErrorCode.CommittedResponseError,
+      message: "agent-kit mutation committed but installation state could not be inspected; do not retry the mutation",
+      details: { committed: true, changedFiles },
+    }) : after;
     return ok({
       operationResult: { status: writes.length > 0 ? "applied" : "no_change", changedFiles },
       installationState: {
@@ -188,16 +202,12 @@ export class AgentKitInstaller {
           : host === "claude-code" && main?.state === "foreign" ? "link"
             : main?.state === "foreign" ? "manual_merge"
               : hostFiles.find((file) => file.nextAction !== "none")?.nextAction ?? "none";
-      const [resolvedMain, resolvedAuxiliary] = await Promise.all([
-        this.dependencies.workspace.resolveWorkspace(workspaceRoot, this.mainPath(host), "workspace-agent-kit"),
-        this.dependencies.workspace.resolveWorkspace(workspaceRoot, this.auxiliaryPath(host), "workspace-agent-kit"),
-      ]);
       const detail = usability === "ready"
         ? "VidCom instructions and native router are current."
-        : action === "link" && resolvedMain.ok
-          ? `Append ${EXACT_CLAUDE_LINK} to ${resolvedMain.value}`
-          : action === "manual_merge" && resolvedMain.ok && resolvedAuxiliary.ok
-            ? `Merge ${resolvedAuxiliary.value} into ${resolvedMain.value}`
+        : action === "link"
+          ? `Append ${EXACT_CLAUDE_LINK} to ${this.mainPath(host)}`
+          : action === "manual_merge"
+            ? `Merge ${this.auxiliaryPath(host)} into ${this.mainPath(host)}`
             : `Host is ${usability}; follow ${action}.`;
       recovery.push({ host, action, detail });
     }

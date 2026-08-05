@@ -1,3 +1,5 @@
+import path from "node:path";
+
 import {
   ErrorCode,
   WarningCode,
@@ -33,6 +35,7 @@ import {
   type MutationJournalPort,
   type ProcessSupervisorPort,
   type PreviewSettings,
+  type RenderBinaryProbeResult,
   type ProjectRef,
   type RenderProjectPort,
   type RenderRootPort,
@@ -88,6 +91,70 @@ export interface RenderJobEnqueueDependencies {
   jobs: JobStorePort;
   ids: IdPort;
   hashContent(content: string | Uint8Array): import("@vidcom/contracts").ContentHash;
+  binaries: BinaryProbePort;
+}
+
+async function localStylesheets(
+  dependencies: Pick<RenderJobDependencies, "workspace">,
+  ref: ProjectRef,
+  document: string,
+): Promise<Array<{ path: RelPath; css: string }>> {
+  const queue = [...document.matchAll(/<link\b[^>]*\brel\s*=\s*["'][^"']*stylesheet[^"']*["'][^>]*>/giu)]
+    .flatMap((tag) => [...tag[0].matchAll(/\bhref\s*=\s*["']([^"']+)["']/giu)]
+      .map((match) => ({ href: match[1]!, base: path.posix.dirname(ref.entry) })));
+  const loaded: Array<{ path: RelPath; css: string }> = [];
+  const seen = new Set<string>();
+  while (queue.length > 0) {
+    const next = queue.shift()!;
+    if (/^(?:[a-z]+:|\/\/|#)/iu.test(next.href)) continue;
+    const clean = next.href.split(/[?#]/u, 1)[0]!;
+    const relative = path.posix.normalize(path.posix.join(next.base, clean));
+    if (relative.startsWith("../") || path.posix.isAbsolute(relative) || seen.has(relative)) continue;
+    seen.add(relative);
+    const resolved = await dependencies.workspace.resolve(ref, relative, "read-source");
+    if (!resolved.ok) throw new TypeError("local stylesheet path is invalid");
+    const file = await dependencies.workspace.readFile(resolved.value);
+    if (!file) throw new TypeError("local stylesheet is missing");
+    loaded.push({ path: relative as RelPath, css: file.content });
+    for (const imported of file.content.matchAll(/@import\s+(?:url\(\s*)?["']([^"']+)["']/giu)) {
+      queue.push({ href: imported[1]!, base: path.posix.dirname(relative) });
+    }
+  }
+  return loaded;
+}
+
+/** Runs binary, generated-document and authored-stylesheet gates before queueing and again in the worker. */
+export async function preflightRenderDocument(
+  dependencies: Pick<RenderJobDependencies, "workspace" | "composition" | "binaries">,
+  prepared: Pick<PreparedRender, "ref" | "previewSettings">,
+): Promise<Result<{
+  document: string;
+  binaries: RenderBinaryProbeResult;
+  externalDependencies: string[];
+}, DomainError>> {
+  const binaries = await dependencies.binaries.probe();
+  if (!binaries.ok) return binaries;
+  try {
+    const document = await dependencies.composition.buildDocument(
+      prepared.ref,
+      prepared.previewSettings,
+      { root: true, runtimeUrl: "./.vidcom-runtime.js", fileBaseUrl: "./" },
+    );
+    const stylesheets = await localStylesheets(dependencies, prepared.ref, document);
+    const violations = scanRemoteMedia([{ path: prepared.ref.entry, html: document }], stylesheets);
+    if (violations.length > 0) return err({
+      code: ErrorCode.RemoteAssetNotLocal,
+      message: "rendered document declares remote media",
+      details: { violations },
+    });
+    return ok({
+      document,
+      binaries: binaries.value,
+      externalDependencies: scanExternalDependencies([{ path: prepared.ref.entry, html: document }], stylesheets),
+    });
+  } catch {
+    return err({ code: ErrorCode.ProjectInvalid, message: "render document or local stylesheet is invalid" });
+  }
 }
 
 function parseInput(raw: unknown): RenderJobInput {
@@ -176,6 +243,8 @@ export async function enqueueRenderJob(
   }
   const prepared = await prepareRender(dependencies, input.projectId);
   if (!prepared.ok) return prepared;
+  const preflight = await preflightRenderDocument(dependencies, prepared.value);
+  if (!preflight.ok) return preflight;
   const canonicalInput = canonicalizeJobInput(input);
   const enqueued = await dependencies.jobs.enqueue({
     id: dependencies.ids.newId("job") as JobId,
@@ -278,28 +347,15 @@ export function createRenderJobHandler(dependencies: RenderJobDependencies): Job
       try {
         const prepared = await prepareRender(dependencies, input.projectId);
         if (!prepared.ok) throw new JobFailureError(prepared.error);
-        const binaries = await dependencies.binaries.probe();
-        if (!binaries.ok) throw new JobFailureError(binaries.error);
-        warnings.push(...binaries.value.warnings);
+        const preflight = await preflightRenderDocument(dependencies, prepared.value);
+        if (!preflight.ok) throw new JobFailureError(preflight.error);
+        warnings.push(...preflight.value.binaries.warnings);
 
         await context.updateProgress(0.05, "building render document");
         const opened = await dependencies.guard.open(context.job.id as JobId);
         guardSession = opened;
-        const baseDocument = await dependencies.composition.buildDocument(
-          prepared.value.ref,
-          prepared.value.previewSettings,
-          { root: true, runtimeUrl: "./.vidcom-runtime.js", fileBaseUrl: "./" },
-        );
-        const staticViolations = scanRemoteMedia([{ path: prepared.value.ref.entry, html: baseDocument }], []);
-        if (staticViolations.length > 0) {
-          throw new JobFailureError({
-            code: ErrorCode.RemoteAssetNotLocal,
-            message: "rendered document declares remote media",
-            details: { violations: staticViolations },
-          });
-        }
-        const staticDependencies = scanExternalDependencies([{ path: prepared.value.ref.entry, html: baseDocument }]);
-        const document = dependencies.injectGuard(baseDocument, opened);
+        const staticDependencies = preflight.value.externalDependencies;
+        const document = dependencies.injectGuard(preflight.value.document, opened);
         const staged = await dependencies.renderProjects.stage(
           prepared.value.ref,
           acquired.root,
@@ -311,7 +367,7 @@ export function createRenderJobHandler(dependencies: RenderJobDependencies): Job
         await context.updateProgress(0.1, "rendering video");
         const rendered = await dependencies.process.run({
           command: [
-            ...binaries.value.hyperframesCommand,
+            ...preflight.value.binaries.hyperframesCommand,
             "render",
             staged.projectRoot,
             "-o",
@@ -324,9 +380,9 @@ export function createRenderJobHandler(dependencies: RenderJobDependencies): Job
           cwd: staged.projectRoot,
           environment: {
             ...acquired.environment,
-            HYPERFRAMES_BROWSER_PATH: binaries.value.browserPath,
-            HYPERFRAMES_FFMPEG_PATH: binaries.value.ffmpegPath,
-            HYPERFRAMES_FFPROBE_PATH: binaries.value.ffprobePath,
+            HYPERFRAMES_BROWSER_PATH: preflight.value.binaries.browserPath,
+            HYPERFRAMES_FFMPEG_PATH: preflight.value.binaries.ffmpegPath,
+            HYPERFRAMES_FFPROBE_PATH: preflight.value.binaries.ffprobePath,
           },
           signal: context.signal,
         });
@@ -335,7 +391,9 @@ export function createRenderJobHandler(dependencies: RenderJobDependencies): Job
             WarningCode.TerminationProofNotExhaustive,
             "process termination proof was not exhaustive",
           )));
-          if (await context.isCancellationRequested()) throw new JobCancelledError([], false, rendered.proof);
+          if (await context.isCancellationRequested()) {
+            throw new JobCancelledError(warnings, !rendered.proof.exhaustive, rendered.proof);
+          }
           throw new JobFailureError(
             { code: ErrorCode.Internal, message: "render process timed out" },
             { terminationProof: rendered.proof },
@@ -354,7 +412,7 @@ export function createRenderJobHandler(dependencies: RenderJobDependencies): Job
         await context.updateProgress(0.92, "validating video");
         const probed = await dependencies.process.run({
           command: [
-            binaries.value.ffprobePath,
+            preflight.value.binaries.ffprobePath,
             "-v", "error",
             "-show_entries", "format=duration:stream=codec_type,width,height,r_frame_rate",
             "-of", "json",
@@ -400,11 +458,11 @@ export function createRenderJobHandler(dependencies: RenderJobDependencies): Job
           warnings: [...warnings],
           runtimeMs: Math.max(0, dependencies.clock.now().getTime() - startedAt),
         };
-        await context.throwIfCancelled();
+        await context.beginPublication();
         const published = await dependencies.authority.mutateDerived({
           ref: prepared.value.ref,
           writes: [
-            { path: artifactPath, content: await dependencies.renderProjects.readArtifact(staged.outputPath) },
+            { path: artifactPath, content: await dependencies.renderProjects.artifactSource(staged.outputPath) },
             {
               path: sidecarPath,
               content: `${canonicalizeJson({ ...result, renderPresetId: input.renderPresetId ?? null })}\n`,

@@ -14,13 +14,23 @@ import { allowlistedEnvironment } from "./process-environment";
 export const PROCESS_CAPTURE_INTERVAL_MS = 250;
 export const PROCESS_VERIFY_SWEEP_INTERVAL_MS = 100;
 export const PROCESS_VERIFY_MAX_SWEEPS = 20;
+export const PROCESS_COMMAND_TIMEOUT_MS = 2_000;
+export const PROCESS_VERIFY_TIMEOUT_MS = 5_000;
 
 const DEFAULT_TIMEOUT_MS = 5 * 60 * 1_000;
 const MAX_CAPTURE_BYTES = 64 * 1024;
 const execFileAsync = promisify(execFile);
 
-interface ProcessRow { pid: number; ppid: number | null; pgid: number | null }
-interface CaptureState { pids: Set<number>; groups: Set<number>; exhaustive: boolean }
+interface ProcessRow { pid: number; ppid: number | null; pgid: number | null; startedAt: string }
+interface CaptureState { pids: Map<number, string>; groups: Map<number, string>; exhaustive: boolean }
+
+/** True only when a numeric PID still names the exact process instance captured earlier. */
+export function processIdentityMatches(
+  captured: { pid: number; startedAt: string },
+  current: { pid: number; startedAt: string } | undefined,
+): boolean {
+  return current?.pid === captured.pid && current.startedAt === captured.startedAt;
+}
 
 /** Error raised when direct PID probes still find survivors after the sweep budget. */
 export class ProcessTerminationUnverifiedError extends Error {
@@ -57,7 +67,7 @@ export class NodeProcessSupervisor implements ProcessSupervisorPort {
     captureStream(child.stdout, (chunk) => { stdout = truncate(stdout + chunk); });
     captureStream(child.stderr, (chunk) => { stderr = truncate(stderr + chunk); });
 
-    const state: CaptureState = { pids: new Set(), groups: new Set([rootPid]), exhaustive: true };
+    const state: CaptureState = { pids: new Map(), groups: new Map(), exhaustive: true };
     const exit = new Promise<{ kind: "exit"; code: number | null }>((resolve, reject) => {
       child.once("error", reject);
       child.once("close", (code) => resolve({ kind: "exit", code }));
@@ -65,8 +75,8 @@ export class NodeProcessSupervisor implements ProcessSupervisorPort {
     const abort = new Promise<{ kind: "terminate"; reason: "abort" }>((resolve) => {
       input.signal?.addEventListener("abort", () => resolve({ kind: "terminate", reason: "abort" }), { once: true });
     });
-    let captureInFlight = true;
-    void this.captureOnce(rootPid, state).finally(() => { captureInFlight = false; });
+    await this.captureOnce(rootPid, state);
+    let captureInFlight = false;
     const captureTimer = setInterval(() => {
       if (captureInFlight) return;
       captureInFlight = true;
@@ -85,7 +95,11 @@ export class NodeProcessSupervisor implements ProcessSupervisorPort {
       if (first.kind === "exit") {
         return { status: "exited", output: { exitCode: first.code, stdout, stderr, timedOut: false } };
       }
-      const proof = await this.terminateAndVerify(rootPid, state, first.reason);
+      const proof = await this.terminateAndVerify(rootPid, state, first.reason, async () => {
+        if (process.platform === "win32") await killPid(rootPid, true);
+        else child.kill("SIGKILL");
+        await Promise.race([exit.catch(() => ({ kind: "exit" as const, code: null })), sleep(PROCESS_COMMAND_TIMEOUT_MS)]);
+      });
       return terminationResult(proof);
     } finally {
       clearInterval(captureTimer);
@@ -93,48 +107,107 @@ export class NodeProcessSupervisor implements ProcessSupervisorPort {
     }
   }
 
-  private async captureOnce(rootPid: number, state: CaptureState): Promise<void> {
+  private async captureOnce(
+    rootPid: number,
+    state: CaptureState,
+  ): Promise<{ rows: ProcessRow[]; exhaustive: boolean }> {
     const snapshot = await enumerateProcesses();
     state.exhaustive &&= snapshot.exhaustive;
-    if (!snapshot.exhaustive) return;
+    if (!snapshot.exhaustive) return snapshot;
     for (const row of descendantsOf(snapshot.rows, rootPid)) {
-      state.pids.add(row.pid);
-      if (row.pgid !== null) state.groups.add(row.pgid);
+      state.pids.set(row.pid, row.startedAt);
+      if (row.pgid !== null) {
+        const leader = snapshot.rows.find((candidate) => candidate.pid === row.pgid);
+        if (leader) state.groups.set(row.pgid, leader.startedAt);
+      }
     }
+    const root = snapshot.rows.find((row) => row.pid === rootPid);
+    if (root) {
+      state.pids.set(root.pid, root.startedAt);
+      if (root.pgid !== null) {
+        const leader = snapshot.rows.find((row) => row.pid === root.pgid);
+        if (leader) state.groups.set(root.pgid, leader.startedAt);
+      }
+    }
+    return snapshot;
   }
 
   private async terminateAndVerify(
     rootPid: number,
     state: CaptureState,
     reason: "abort" | "timeout",
+    killRoot: () => Promise<void>,
   ): Promise<ProcessTerminationProof> {
-    for (const group of state.groups) await killGroup(group);
-    for (const pid of state.pids) await killPid(pid);
-    await killPid(rootPid);
+    await killRoot();
+    await this.killCaptured(state);
+
+    if (!state.exhaustive) {
+      return {
+        reason,
+        rootPid,
+        capturedPids: [...state.pids.keys()],
+        capturedGroups: [...state.groups.keys()],
+        survivors: [],
+        sweeps: 1,
+        exhaustive: false,
+      };
+    }
 
     let survivors: number[] = [];
     let consecutiveEmpty = 0;
     let sweeps = 0;
+    const deadline = Date.now() + PROCESS_VERIFY_TIMEOUT_MS;
     while (sweeps < PROCESS_VERIFY_MAX_SWEEPS) {
       sweeps += 1;
-      await this.captureOnce(rootPid, state);
-      survivors = (await Promise.all([...state.pids, rootPid].map(async (pid) => ({ pid, alive: await isAlive(pid) }))))
-        .filter(({ alive }) => alive)
-        .map(({ pid }) => pid);
-      for (const pid of survivors) await killPid(pid);
+      const snapshot = await this.captureOnce(rootPid, state);
+      if (!snapshot.exhaustive) {
+        survivors = [];
+        break;
+      }
+      const current = new Map(snapshot.rows.map((row) => [row.pid, row.startedAt]));
+      survivors = [...state.pids].flatMap(([pid, startedAt]) => {
+        const actual = current.get(pid);
+        if (actual !== undefined && actual !== startedAt) state.exhaustive = false;
+        return processIdentityMatches({ pid, startedAt }, actual === undefined ? undefined : { pid, startedAt: actual })
+          ? [pid] : [];
+      });
+      await Promise.all(survivors.map((pid) => killPid(pid)));
       consecutiveEmpty = survivors.length === 0 ? consecutiveEmpty + 1 : 0;
       if (consecutiveEmpty >= 2) break;
+      if (Date.now() >= deadline) {
+        state.exhaustive = false;
+        survivors = [];
+        break;
+      }
       await sleep(PROCESS_VERIFY_SWEEP_INTERVAL_MS);
     }
     return {
       reason,
       rootPid,
-      capturedPids: [...state.pids],
-      capturedGroups: [...state.groups],
+      capturedPids: [...state.pids.keys()],
+      capturedGroups: [...state.groups.keys()],
       survivors,
       sweeps,
       exhaustive: state.exhaustive && consecutiveEmpty >= 2,
     };
+  }
+
+  private async killCaptured(state: CaptureState): Promise<void> {
+    const snapshot = await enumerateProcesses();
+    state.exhaustive &&= snapshot.exhaustive;
+    const current = new Map(snapshot.rows.map((row) => [row.pid, row.startedAt]));
+    const kills: Promise<void>[] = [];
+    for (const [group, startedAt] of state.groups) {
+      if (processIdentityMatches({ pid: group, startedAt }, current.has(group)
+        ? { pid: group, startedAt: current.get(group)! } : undefined)) kills.push(killGroup(group));
+      else if (current.has(group)) state.exhaustive = false;
+    }
+    for (const [pid, startedAt] of state.pids) {
+      if (processIdentityMatches({ pid, startedAt }, current.has(pid)
+        ? { pid, startedAt: current.get(pid)! } : undefined)) kills.push(killPid(pid));
+      else if (current.has(pid)) state.exhaustive = false;
+    }
+    await Promise.all(kills);
   }
 }
 
@@ -176,7 +249,9 @@ export function descendantsOf(rows: readonly ProcessRow[], rootPid: number): Pro
 async function enumerateProcesses(): Promise<{ rows: ProcessRow[]; exhaustive: boolean }> {
   if (process.platform !== "win32") {
     try {
-      const { stdout } = await execFileAsync("ps", ["-Ao", "pid=,ppid=,pgid="], { encoding: "utf8" });
+      const { stdout } = await execFileAsync("ps", ["-Ao", "pid=,ppid=,pgid=,lstart="], {
+        encoding: "utf8", timeout: PROCESS_COMMAND_TIMEOUT_MS,
+      });
       return { rows: parsePosixTable(stdout), exhaustive: true };
     } catch {
       return { rows: [], exhaustive: false };
@@ -188,8 +263,8 @@ async function enumerateProcesses(): Promise<{ rows: ProcessRow[]; exhaustive: b
   try {
     const { stdout } = await execFileAsync("powershell.exe", [
       "-NoProfile", "-NonInteractive", "-Command",
-      "Get-CimInstance Win32_Process | Select-Object ProcessId,ParentProcessId | ConvertTo-Csv -NoTypeInformation",
-    ], { encoding: "utf8" });
+      "Get-CimInstance Win32_Process | Select-Object ProcessId,ParentProcessId,CreationDate | ConvertTo-Csv -NoTypeInformation",
+    ], { encoding: "utf8", timeout: PROCESS_COMMAND_TIMEOUT_MS });
     return { rows: parseWindowsCim(stdout), exhaustive: true };
   } catch {
     return { rows: [], exhaustive: false };
@@ -198,17 +273,17 @@ async function enumerateProcesses(): Promise<{ rows: ProcessRow[]; exhaustive: b
 
 function parsePosixTable(stdout: string): ProcessRow[] {
   return stdout.trim().split(/\r?\n/).flatMap((line) => {
-    const values = line.trim().split(/\s+/).map(Number);
-    return values.length >= 3 && values.every(Number.isInteger)
-      ? [{ pid: values[0]!, ppid: values[1]!, pgid: values[2]! }]
+    const match = /^(\d+)\s+(\d+)\s+(\d+)\s+(.+)$/u.exec(line.trim());
+    return match
+      ? [{ pid: Number(match[1]), ppid: Number(match[2]), pgid: Number(match[3]), startedAt: match[4]! }]
       : [];
   });
 }
 
 function parseWindowsCim(stdout: string): ProcessRow[] {
   return stdout.split(/\r?\n/).flatMap((line) => {
-    const match = line.match(/^"?(\d+)"?,"?(\d+)"?$/);
-    return match ? [{ pid: Number(match[1]), ppid: Number(match[2]), pgid: null }] : [];
+    const match = line.match(/^"?(\d+)"?,"?(\d+)"?,"([^"]+)"$/);
+    return match ? [{ pid: Number(match[1]), ppid: Number(match[2]), pgid: null, startedAt: match[3]! }] : [];
   });
 }
 
@@ -223,23 +298,10 @@ async function killPid(pid: number, tree = false): Promise<void> {
     return;
   }
   try {
-    await execFileAsync("taskkill", ["/pid", String(pid), ...(tree ? ["/t"] : []), "/f"], { encoding: "utf8" });
-  } catch { /* taskkill reports non-zero when the pid already exited */ }
-}
-
-async function isAlive(pid: number): Promise<boolean> {
-  if (process.platform !== "win32") {
-    try { process.kill(pid, 0); return true; } catch (error) {
-      return (error as NodeJS.ErrnoException).code === "EPERM";
-    }
-  }
-  try {
-    const { stdout } = await execFileAsync("tasklist", ["/fi", `PID eq ${pid}`, "/fo", "csv", "/nh"], { encoding: "utf8" });
-    return stdout.split(/\r?\n/).some((line) => {
-      const columns = line.trim().match(/^"[^"]*","(\d+)"/);
-      return columns !== null && Number(columns[1]) === pid;
+    await execFileAsync("taskkill", ["/pid", String(pid), ...(tree ? ["/t"] : []), "/f"], {
+      encoding: "utf8", timeout: PROCESS_COMMAND_TIMEOUT_MS,
     });
-  } catch { return false; }
+  } catch { /* taskkill reports non-zero when the pid already exited */ }
 }
 
 function captureStream(stream: NodeJS.ReadableStream | null, append: (chunk: string) => void): void {

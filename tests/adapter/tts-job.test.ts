@@ -113,6 +113,7 @@ function fakeContext(options: { cancelAfterReads?: number; progressFails?: boole
     // this is the only channel a running job has to learn about it.
     async isCancellationRequested() { return cancelled(); },
     async throwIfCancelled() { if (cancelled()) throw new JobCancelledError(); },
+    async beginPublication() { if (cancelled()) throw new JobCancelledError(); },
   } satisfies JobExecutionContext;
   return { context, progress };
 }

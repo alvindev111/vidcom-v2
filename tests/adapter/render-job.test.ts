@@ -79,7 +79,18 @@ async function baseFixture() {
   const journal = new MutationJournal(database, clock, new LargePreviousContentStore(appDataRoot));
   const jobs = new SqliteJobStore(database, clock);
   const ids = createSequentialIdPort();
-  return { root, workspaceRoot, appDataRoot, database, workspace, journal, jobs, ids };
+  const binaries: BinaryProbePort = {
+    async probe() {
+      return { ok: true, value: {
+        hyperframesCommand: [process.execPath, "render-fixture.mjs"] as const,
+        browserPath: process.execPath as AbsolutePath,
+        ffmpegPath: process.execPath as AbsolutePath,
+        ffprobePath: process.execPath as AbsolutePath,
+        warnings: [],
+      } };
+    },
+  };
+  return { root, workspaceRoot, appDataRoot, database, workspace, journal, jobs, ids, binaries };
 }
 
 async function addProject(
@@ -176,6 +187,7 @@ async function enqueue(
     jobs: fixture.jobs,
     ids: fixture.ids,
     hashContent,
+    binaries: fixture.binaries,
   }, { projectId, ...(bestEffort === undefined ? {} : { bestEffort }) });
 }
 
@@ -212,6 +224,7 @@ describe("render job with real SQLite and filesystem", () => {
         jobs: fixture.jobs,
         ids: fixture.ids,
         hashContent,
+        binaries: fixture.binaries,
       };
 
       await expect(enqueueRenderJob(dependencies, { projectId: empty.id }))
@@ -223,6 +236,25 @@ describe("render job with real SQLite and filesystem", () => {
           ok: false,
           error: { code: ErrorCode.ProjectInvalid, details: { reason: ErrorCode.CompositionParseError } },
         });
+      expect(dbOne(fixture.database, "SELECT COUNT(*) AS count FROM job")).toEqual({ count: 0 });
+    } finally {
+      await fixture.database.destroy();
+    }
+  });
+
+  it("rejects remote media in a local stylesheet before creating a queue row", async () => {
+    const fixture = await baseFixture();
+    try {
+      const project = await addProject(fixture, "remote-css", `<!doctype html><html><head>
+        <link rel="stylesheet" href="styles.css"></head><body>
+        <main data-composition-id="main" data-duration="1">
+          <section data-composition-id="scene-1" data-start="0" data-duration="1"></section>
+        </main></body></html>`);
+      await writeFile(path.join(project.projectRoot, "styles.css"), ".hero{background:url(https://assets.test/a.png)}\n");
+      await expect(enqueue(fixture, project.id)).resolves.toMatchObject({
+        ok: false,
+        error: { code: ErrorCode.RemoteAssetNotLocal },
+      });
       expect(dbOne(fixture.database, "SELECT COUNT(*) AS count FROM job")).toEqual({ count: 0 });
     } finally {
       await fixture.database.destroy();
@@ -406,6 +438,9 @@ describe("render job with real SQLite and filesystem", () => {
   it("verifies a real descendant tree is empty before cancelled is persisted", { timeout: 30_000 }, async () => {
     const fixture = await baseFixture();
     let scheduler: JobScheduler | null = null;
+    let ownedRoots: Awaited<ReturnType<typeof renderHarness>>["roots"] | null = null;
+    let cleanupJobId: JobId | null = null;
+    const survivorLedger = path.join(fixture.root, "long-render-survivor.pid");
     try {
       const project = await addProject(fixture, "cancel", `<!doctype html><html><body>
         <main data-composition-id="main" data-duration="1">
@@ -414,12 +449,16 @@ describe("render job with real SQLite and filesystem", () => {
       const script = path.join(fixture.root, "long-render.mjs");
       await writeFile(script, `
         import { spawn } from "node:child_process";
-        spawn(process.execPath, ["-e", "setInterval(() => {}, 1000)"], {
-          detached: true, stdio: "ignore"
-        }).unref();
+        import { writeFileSync } from "node:fs";
+        const child = spawn(process.execPath, ["-e", "setInterval(() => {}, 1000)"], {
+          detached: true, stdio: "ignore", cwd: process.argv[3]
+        });
+        writeFileSync(process.argv[2], process.pid + "," + child.pid);
+        child.unref();
         setInterval(() => {}, 1000);
       `);
       const harness = await renderHarness(fixture);
+      ownedRoots = harness.roots;
       const supervisor = new NodeProcessSupervisor();
       let started!: () => void;
       const processStarted = new Promise<void>((resolve) => { started = resolve; });
@@ -430,7 +469,7 @@ describe("render job with real SQLite and filesystem", () => {
           started();
           const outcome = await supervisor.run({
             ...input,
-            command: [process.execPath, script, ...input.command.slice(2)],
+            command: [process.execPath, script, survivorLedger, tmpdir(), ...input.command.slice(2)],
           });
           if (outcome.status === "terminated") {
             proof = outcome.proof;
@@ -443,6 +482,7 @@ describe("render job with real SQLite and filesystem", () => {
       expect(queued.ok).toBe(true);
       if (!queued.ok) return;
       const id = queued.value.id as JobId;
+      cleanupJobId = id;
       const orderingStore = new Proxy(fixture.jobs, {
         get(target, property) {
           if (property === "finish") {
@@ -470,9 +510,26 @@ describe("render job with real SQLite and filesystem", () => {
       await scheduler.waitForIdle();
       expect(proof).toMatchObject({ survivors: [] });
       expect(terminalOrder).toEqual(["zero-survivor-proof", "cancelled-persist"]);
-      await expect(harness.roots.inspect(id)).resolves.toBe("absent");
-      await expect(fixture.jobs.get(id)).resolves.toMatchObject({ status: "cancelled" });
+      if (process.platform === "win32" && !(proof as { exhaustive?: boolean } | null)?.exhaustive) {
+        expect(["absent", "owned"]).toContain(await harness.roots.inspect(id));
+        await expect(fixture.jobs.get(id)).resolves.toMatchObject({ status: "cancelled", cleanupPending: true });
+      } else {
+        await expect(harness.roots.inspect(id)).resolves.toBe("absent");
+        await expect(fixture.jobs.get(id)).resolves.toMatchObject({ status: "cancelled" });
+      }
     } finally {
+      const fixturePids = (await readFile(survivorLedger, "utf8").catch(() => ""))
+        .split(",").map(Number).filter((pid) => Number.isInteger(pid) && pid > 0);
+      for (const fixturePid of fixturePids) {
+        try { process.kill(fixturePid, "SIGKILL"); } catch { /* already exited */ }
+        for (let attempt = 0; attempt < 20; attempt += 1) {
+          try { process.kill(fixturePid, 0); await new Promise((resolve) => setTimeout(resolve, 100)); }
+          catch { break; }
+        }
+      }
+      if (ownedRoots && cleanupJobId) {
+        await ownedRoots.release(cleanupJobId);
+      }
       await scheduler?.stop();
       await fixture.database.destroy();
     }

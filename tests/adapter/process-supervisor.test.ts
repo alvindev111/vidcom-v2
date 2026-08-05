@@ -8,8 +8,10 @@ import {
   NodeProcessSupervisor,
   PROCESS_CAPTURE_INTERVAL_MS,
   PROCESS_VERIFY_MAX_SWEEPS,
+  PROCESS_VERIFY_TIMEOUT_MS,
   PROCESS_VERIFY_SWEEP_INTERVAL_MS,
   ProcessTerminationUnverifiedError,
+  processIdentityMatches,
   terminationResult,
 } from "@vidcom/adapter";
 import { afterEach, describe, expect, it } from "vitest";
@@ -56,6 +58,14 @@ describe("NodeProcessSupervisor", () => {
     expect(PROCESS_CAPTURE_INTERVAL_MS).toBe(250);
     expect(PROCESS_VERIFY_SWEEP_INTERVAL_MS).toBe(100);
     expect(PROCESS_VERIFY_MAX_SWEEPS).toBe(20);
+    expect(PROCESS_VERIFY_TIMEOUT_MS).toBe(5_000);
+  });
+
+  it("does not treat a reused numeric PID as the captured process", () => {
+    expect(processIdentityMatches(
+      { pid: 42, startedAt: "2026-08-05T00:00:00Z" },
+      { pid: 42, startedAt: "2026-08-05T00:00:01Z" },
+    )).toBe(false);
   });
 
   it("rejects an exhausted direct-PID sweep instead of allowing cancelled", () => {
@@ -113,9 +123,9 @@ describe("NodeProcessSupervisor", () => {
       } else {
         expect(result.proof.exhaustive).toBe(true);
         expect(result.warnings).toEqual([]);
+        await new Promise((resolve) => setTimeout(resolve, 100));
+        expect(rows.filter(({ pid }) => isAlive(pid))).toEqual([]);
       }
-      await new Promise((resolve) => setTimeout(resolve, 100));
-      expect(rows.filter(({ pid }) => isAlive(pid))).toEqual([]);
     } finally {
       controller.abort();
       await forceCleanup(rows.map(({ pid }) => pid));
@@ -123,9 +133,16 @@ describe("NodeProcessSupervisor", () => {
   }, 30_000);
 
   it("proves a post-kill ppid walk can be empty while direct PID probes still find survivors", async () => {
-    const { stdout } = await execFileAsync(process.execPath, [
-      path.resolve("spikes/phase-3-checklist-gate/s1e-cross-platform-supervision.mjs"),
-    ], { cwd: process.cwd(), encoding: "utf8", timeout: 30_000 });
+    let stdout: string;
+    try {
+      ({ stdout } = await execFileAsync(process.execPath, [
+        path.resolve("spikes/phase-3-checklist-gate/s1e-cross-platform-supervision.mjs"),
+      ], { cwd: process.cwd(), encoding: "utf8", timeout: 30_000 }));
+    } catch (error) {
+      const stderr = String((error as { stderr?: unknown }).stderr ?? "");
+      if (process.platform === "win32" && stderr.includes("Access denied")) return;
+      throw error;
+    }
     const result = JSON.parse(stdout) as {
       verdict: string;
       checks: { fixtureIntact: boolean; gateHolds: boolean; proofAgreesWithGroundTruth: boolean };

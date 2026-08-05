@@ -29,6 +29,7 @@ import type {
   WriteEnvelope,
   WriteInvocation,
   JobId,
+  StagedFileSource,
   WorkspaceWriteEnvelope,
 } from "../port/types";
 import type { JournalId } from "../port/types";
@@ -67,7 +68,7 @@ export type DerivedMutationPath = RelPath & (
 
 export interface DerivedMutationRequest {
   ref: ProjectRef;
-  writes: Array<{ path: DerivedMutationPath; content: string | Uint8Array }>;
+  writes: Array<{ path: DerivedMutationPath; content: string | Uint8Array | StagedFileSource }>;
   producedByJobId: JobId | null;
   computedAtSourceRevision: number;
 }
@@ -194,8 +195,14 @@ interface PreparedCompositeStep {
 
 interface ValidatedCompositeStep extends PreparedCompositeStep {
   intent: StepIntent;
-  content: string | Uint8Array | null;
+  content: string | Uint8Array | StagedFileSource | null;
   previewSettings: PreviewSettingsDto | null;
+}
+
+function isStagedFileSource(value: unknown): value is StagedFileSource {
+  return !!value && typeof value === "object"
+    && typeof (value as Partial<StagedFileSource>).sourcePath === "string"
+    && /^sha256:[0-9a-f]{64}$/u.test(String((value as Partial<StagedFileSource>).contentHash));
 }
 
 const SOURCE_ASSET_PREFIXES = ["assets/", "preview-assets/", "narration/"] as const;
@@ -253,7 +260,7 @@ export class WriteAuthority {
       }
       const prepared = await this.resolveCompositeTargets(request, advancesSource);
       if (!prepared.ok) return prepared;
-      const validated = await this.validateCompositePreconditions(request, prepared.value);
+      const validated = await this.validateCompositePreconditions(request, prepared.value, advancesSource);
       if (!validated.ok) return validated;
       return this.executeValidatedComposite(request, validated.value, actor, advancesSource);
     });
@@ -300,6 +307,7 @@ export class WriteAuthority {
   private async validateCompositePreconditions(
     request: CompositeRequest,
     prepared: PreparedCompositeStep[],
+    advancesSource: boolean,
   ): Promise<Result<ValidatedCompositeStep[], DomainError>> {
     const validated: ValidatedCompositeStep[] = [];
     const observedHashes: Record<RelPath, ContentHash> = {};
@@ -344,6 +352,9 @@ export class WriteAuthority {
 
       const formatError = validateExpectedHash(step.expectedContentHash);
       if (formatError) return err(formatError);
+      if (step.kind === "write" && advancesSource && isStagedFileSource(step.content)) {
+        return err({ code: ErrorCode.SchemaInvalid, message: "authored writes cannot use a staged file source" });
+      }
       const current = await this.dependencies.workspace.readBytes(item.target);
       const currentHash = current?.contentHash ?? null;
       if (step.kind === "write" && currentHash !== null && step.expectedContentHash === null) {
@@ -380,7 +391,9 @@ export class WriteAuthority {
               path: step.path,
               entity: null,
               fromHash: currentHash,
-              toHash: this.dependencies.hashContent(step.content),
+              toHash: isStagedFileSource(step.content)
+                ? step.content.contentHash
+                : this.dependencies.hashContent(step.content),
               previousContent: current?.bytes ?? null,
             }
           : {
@@ -550,10 +563,13 @@ export class WriteAuthority {
         const capture = captures[item.intent.ordinal];
         if (!capture) throw new Error("a mutation capture was lost before publish");
         let landed: boolean;
-        if (!advancesSource && item.step.kind === "write" && item.content instanceof Uint8Array) {
+        if (!advancesSource && item.step.kind === "write"
+          && (item.content instanceof Uint8Array || isStagedFileSource(item.content))) {
           const stager = this.dependencies.stagedAssets;
           if (!stager) throw new Error("derived binary staging is unavailable");
-          const staged = await stager.stage(item.target, item.step.path, item.content);
+          const staged = isStagedFileSource(item.content)
+            ? await stager.stageFile(item.target, item.step.path, item.content.sourcePath, item.content.contentHash)
+            : await stager.stage(item.target, item.step.path, item.content);
           try {
             if (staged.contentHash !== item.intent.toHash) {
               throw new Error("staged derived artifact hash differs from the journal intent");
@@ -565,6 +581,7 @@ export class WriteAuthority {
             throw error;
           }
         } else {
+          if (isStagedFileSource(item.content)) throw new Error("staged file source reached an authored publish");
           landed = await this.dependencies.workspace.publishCaptured(
             capture,
             item.step.kind === "delete" ? null : item.content,

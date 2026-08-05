@@ -17,8 +17,6 @@ import {
   JobCancelledError,
   JobFailureError,
   ok,
-  scanExternalDependencies,
-  scanRemoteMedia,
   type BinaryProbePort,
   type ClockPort,
   type CompositeMutationJournalPort,
@@ -41,6 +39,8 @@ import {
   type WorkspacePort,
   type WriteAuthority,
 } from "@vidcom/core";
+
+import { preflightRenderDocument } from "./render-job";
 
 export interface SnapshotJobInput {
   projectId: ProjectId;
@@ -88,6 +88,7 @@ export interface SnapshotEnqueueDependencies {
   jobs: JobStorePort;
   ids: IdPort;
   hashContent(content: string | Uint8Array): ContentHash;
+  binaries: BinaryProbePort;
 }
 
 function parseInput(raw: unknown): SnapshotJobInput {
@@ -161,6 +162,8 @@ export async function enqueueSnapshotJob(
   catch { return err({ code: ErrorCode.SchemaInvalid, message: "snapshot job input does not match its schema" }); }
   const prepared = await prepareSnapshot(dependencies, input.projectId);
   if (!prepared.ok) return prepared;
+  const preflight = await preflightRenderDocument(dependencies, prepared.value);
+  if (!preflight.ok) return preflight;
   const canonicalInput = canonicalizeJobInput(input);
   const enqueued = await dependencies.jobs.enqueue({
     id: dependencies.ids.newId("job") as JobId,
@@ -274,6 +277,23 @@ async function readPriorImages(
   return images;
 }
 
+async function snapshotArtifactsExist(
+  dependencies: SnapshotJobDependencies,
+  prepared: PreparedSnapshot,
+  previous: SnapshotJobResult,
+): Promise<boolean> {
+  const paths = [
+    ...prepared.scenes.map((scene) => previous.snapshotPaths[scene.id]),
+    previous.contactSheet,
+  ];
+  if (paths.some((relative) => !relative)) return false;
+  for (const relative of paths) {
+    const resolved = await dependencies.workspace.resolve(prepared.ref, relative!, "read-asset");
+    if (!resolved.ok || !(await dependencies.workspace.exists(resolved.value))) return false;
+  }
+  return true;
+}
+
 function resultFor(
   prepared: PreparedSnapshot,
   images: ReadonlyMap<string, Uint8Array>,
@@ -322,12 +342,13 @@ export function createSnapshotJobHandler(dependencies: SnapshotJobDependencies):
           result = resultFor(prepared, new Map(), [], null);
         } else if (previous?.complete
           && previous.computedAtSourceRevision === prepared.sourceRevision
-          && previous.sceneIds.join("\0") === prepared.scenes.map((scene) => scene.id).join("\0")) {
+          && previous.sceneIds.join("\0") === prepared.scenes.map((scene) => scene.id).join("\0")
+          && await snapshotArtifactsExist(dependencies, prepared, previous)) {
           result = previous;
         } else {
-          const binaries = await dependencies.binaries.probe();
-          if (!binaries.ok) throw new JobFailureError(binaries.error);
-          warnings.push(...binaries.value.warnings);
+          const preflight = await preflightRenderDocument(dependencies, prepared);
+          if (!preflight.ok) throw new JobFailureError(preflight.error);
+          warnings.push(...preflight.value.binaries.warnings);
           const samePartialGeneration = previous?.complete === false
             && previous.partialAtSourceRevision === prepared.sourceRevision;
           const images = samePartialGeneration
@@ -354,22 +375,11 @@ export function createSnapshotJobHandler(dependencies: SnapshotJobDependencies):
           acquired = true;
           const opened = await dependencies.guard.open(context.job.id as JobId);
           guardSession = opened;
-          const baseDocument = await dependencies.composition.buildDocument(
-            prepared.ref,
-            prepared.previewSettings,
-            { root: true, runtimeUrl: "./.vidcom-runtime.js", fileBaseUrl: "./" },
-          );
-          const violations = scanRemoteMedia([{ path: prepared.ref.entry, html: baseDocument }], []);
-          if (violations.length > 0) throw new JobFailureError({
-            code: ErrorCode.RemoteAssetNotLocal,
-            message: "snapshot document declares remote media",
-            details: { violations },
-          });
-          const externalDependencies = scanExternalDependencies([{ path: prepared.ref.entry, html: baseDocument }]);
+          const externalDependencies = preflight.value.externalDependencies;
           const staged = await dependencies.renderProjects.stage(
             prepared.ref,
             root.root,
-            dependencies.injectGuard(baseDocument, opened),
+            dependencies.injectGuard(preflight.value.document, opened),
             dependencies.runtimeSource(),
           );
           if (midpointGroups.size > 0) {
@@ -377,7 +387,7 @@ export function createSnapshotJobHandler(dependencies: SnapshotJobDependencies):
             await context.updateProgress(0.1, "capturing scene snapshots");
             const captured = await dependencies.process.run({
               command: [
-                ...binaries.value.hyperframesCommand,
+                ...preflight.value.binaries.hyperframesCommand,
                 "snapshot",
                 staged.projectRoot,
                 "--at",
@@ -389,9 +399,9 @@ export function createSnapshotJobHandler(dependencies: SnapshotJobDependencies):
               cwd: staged.projectRoot,
               environment: {
                 ...root.environment,
-                HYPERFRAMES_BROWSER_PATH: binaries.value.browserPath,
-                HYPERFRAMES_FFMPEG_PATH: binaries.value.ffmpegPath,
-                HYPERFRAMES_FFPROBE_PATH: binaries.value.ffprobePath,
+                HYPERFRAMES_BROWSER_PATH: preflight.value.binaries.browserPath,
+                HYPERFRAMES_FFMPEG_PATH: preflight.value.binaries.ffmpegPath,
+                HYPERFRAMES_FFPROBE_PATH: preflight.value.binaries.ffprobePath,
               },
               signal: context.signal,
             });
@@ -400,7 +410,9 @@ export function createSnapshotJobHandler(dependencies: SnapshotJobDependencies):
                 WarningCode.TerminationProofNotExhaustive,
                 "process termination proof was not exhaustive",
               )));
-              if (await context.isCancellationRequested()) throw new JobCancelledError([], false, captured.proof);
+              if (await context.isCancellationRequested()) {
+                throw new JobCancelledError(warnings, !captured.proof.exhaustive, captured.proof);
+              }
               throw new JobFailureError(
                 { code: ErrorCode.Internal, message: "snapshot process timed out" },
                 { terminationProof: captured.proof },
@@ -447,7 +459,7 @@ export function createSnapshotJobHandler(dependencies: SnapshotJobDependencies):
                     WarningCode.ExternalDependencyUnpinned,
                     "snapshot used an external script, stylesheet, or font",
                   ));
-                  await context.throwIfCancelled();
+                  await context.beginPublication();
                   const published = await dependencies.authority.mutateDerived({
                     ref: prepared.ref,
                     writes,

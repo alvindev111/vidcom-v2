@@ -16,8 +16,11 @@ import {
   registerVidcomTools,
   getJobStatusTool,
   saveFileTool,
+  startRenderTool,
+  startSnapshotTool,
   setSceneTimingTool,
   ToolRegistry,
+  type DeliveryLoopToolDependencies,
   type VidcomToolDependencies,
   type JobToolDependencies,
   type WriteToolDependencies,
@@ -242,6 +245,33 @@ describe("write tool invocation forwarding", () => {
 });
 
 describe("delivery-loop MCP schemas", () => {
+  it("forwards idempotency only when the caller explicitly supplies it", async () => {
+    const renderInputs: unknown[] = [];
+    const snapshotInputs: unknown[] = [];
+    const dependencies = {
+      enqueueRender: async (input: unknown) => {
+        renderInputs.push(input);
+        return ok({ id: "job-render" });
+      },
+      enqueueSnapshot: async (input: unknown) => {
+        snapshotInputs.push(input);
+        return ok({ id: "job-snapshot" });
+      },
+    } as unknown as DeliveryLoopToolDependencies;
+    await startRenderTool(dependencies).handler({} as never, { projectId });
+    await startRenderTool(dependencies).handler({} as never, { projectId, idempotencyKey: "render-request-2" });
+    await startSnapshotTool(dependencies).handler({} as never, { projectId });
+    await startSnapshotTool(dependencies).handler({} as never, { projectId, idempotencyKey: "snapshot-request-2" });
+    expect(renderInputs).toEqual([
+      { projectId },
+      { projectId, idempotencyKey: "render-request-2" },
+    ]);
+    expect(snapshotInputs).toEqual([
+      { projectId },
+      { projectId, idempotencyKey: "snapshot-request-2" },
+    ]);
+  });
+
   it("exposes stable backoff hints and an explicit partial terminal outcome", async () => {
     const tools = registry([]);
     let status: "queued" | "running" | "partial" = "queued";

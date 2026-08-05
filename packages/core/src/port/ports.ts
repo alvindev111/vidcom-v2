@@ -51,6 +51,7 @@ import type {
   WorkspaceOperationId,
   WorkspaceOperationIntent,
   WorkspaceOperationStepIntent,
+  StagedFileSource,
 } from "./types";
 
 /** Durable journal for root-workspace and project-directory operations. */
@@ -84,11 +85,17 @@ export interface WorkspaceOperationJournalPort {
   orphan(id: WorkspaceOperationId, reason: ErrorCode): Promise<void>;
   read(id: WorkspaceOperationId): Promise<PendingWorkspaceOperation | null>;
   listPending(workspaceRoot: AbsolutePath): Promise<PendingWorkspaceOperation[]>;
+  completeDirectoryCleanup(id: WorkspaceOperationId): Promise<void>;
 }
 
 /** Filesystem-only directory lifecycle boundary; Core never joins or removes native paths. */
 export interface ProjectDirectoryPort {
   projectRoot(workspaceRoot: AbsolutePath, slug: string): Promise<AbsolutePath>;
+  createPaths(
+    workspaceRoot: AbsolutePath,
+    slug: string,
+    operationId: WorkspaceOperationId,
+  ): Promise<{ stagingRoot: AbsolutePath; finalRoot: AbsolutePath }>;
   stageCreate(
     workspaceRoot: AbsolutePath,
     slug: string,
@@ -101,6 +108,7 @@ export interface ProjectDirectoryPort {
   publishCreate(stagingRoot: AbsolutePath, finalRoot: AbsolutePath): Promise<void>;
   rename(from: AbsolutePath, to: AbsolutePath): Promise<void>;
   quarantine(root: AbsolutePath, operationId: WorkspaceOperationId): Promise<AbsolutePath>;
+  quarantinePath(root: AbsolutePath, operationId: WorkspaceOperationId): Promise<AbsolutePath>;
   restoreQuarantine(quarantine: AbsolutePath, root: AbsolutePath): Promise<void>;
   removeOwned(path: AbsolutePath): Promise<void>;
   inspect(path: AbsolutePath): Promise<"absent" | "directory" | "invalid">;
@@ -124,7 +132,7 @@ export interface RenderProjectPort {
     document: string,
     runtimeSource: string,
   ): Promise<{ projectRoot: AbsolutePath; outputPath: AbsolutePath; snapshotOutputRoot: AbsolutePath }>;
-  readArtifact(outputPath: AbsolutePath): Promise<Uint8Array>;
+  artifactSource(outputPath: AbsolutePath): Promise<StagedFileSource>;
   readSnapshotArtifacts(outputRoot: AbsolutePath): Promise<Array<{ name: string; content: Uint8Array }>>;
   composeContactSheet(images: readonly Uint8Array[]): Promise<Uint8Array>;
 }
@@ -221,6 +229,12 @@ export interface StagedAsset {
 /** App-data staging boundary for a no-overwrite composite asset mutation. */
 export interface StagedAssetPort {
   stage(target: ResolvedPath, targetPath: RelPath, bytes: Uint8Array): Promise<StagedAsset>;
+  stageFile(
+    target: ResolvedPath,
+    targetPath: RelPath,
+    sourcePath: AbsolutePath,
+    expectedHash: ContentHash,
+  ): Promise<StagedAsset>;
 }
 
 /** HyperFrames parsing and mutation operations; parsing and document builds are expensive. */
@@ -501,6 +515,8 @@ export interface JobStorePort {
   finish(id: JobId, outcome: JobOutcome): Promise<boolean>;
   /** Records cooperative cancellation; terminal jobs remain unchanged. */
   requestCancel(id: JobId): Promise<void>;
+  /** Atomically closes the cancellation gate before an irreversible derived publication. */
+  beginPublication(id: JobId): Promise<boolean>;
   /** Reads the durable cooperative-cancellation flag. */
   isCancellationRequested(id: JobId): Promise<boolean>;
   /** Requeues one stale running job after startup recovery. */

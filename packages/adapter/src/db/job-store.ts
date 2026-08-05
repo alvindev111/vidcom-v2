@@ -212,7 +212,15 @@ export class SqliteJobStore implements JobStorePort {
     `);
     if (queued.changes === 0) this.database.run(sql`
       UPDATE job SET cancel_requested = 1 WHERE id = ${id} AND status = 'running'
+        AND (stage IS NULL OR stage != 'publishing')
     `);
+  }
+
+  async beginPublication(id: JobId): Promise<boolean> {
+    return this.database.run(sql`
+      UPDATE job SET stage = 'publishing'
+      WHERE id = ${id} AND status = 'running' AND cancel_requested = 0
+    `).changes === 1;
   }
 
   async isCancellationRequested(id: JobId): Promise<boolean> {

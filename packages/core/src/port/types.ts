@@ -84,7 +84,7 @@ export interface WorkspaceOperationStepState extends WorkspaceOperationStepInten
 
 export interface PendingWorkspaceOperation extends WorkspaceOperationIntent {
   id: WorkspaceOperationId;
-  status: "pending" | "orphaned";
+  status: "pending" | "orphaned" | "committed" | "recovered";
   steps: WorkspaceOperationStepState[];
 }
 
@@ -185,11 +185,17 @@ export type GrantTransition =
     };
 
 /** One caller-authored operation in a composite workspace mutation. */
+/** App-data file source whose digest was computed without loading the whole file into memory. */
+export interface StagedFileSource {
+  sourcePath: AbsolutePath;
+  contentHash: ContentHash;
+}
+
 export type CompositeStep =
   | {
       kind: "write";
       path: RelPath;
-      content: string | Uint8Array;
+      content: string | Uint8Array | StagedFileSource;
       expectedContentHash: ContentHash | null;
     }
   | {

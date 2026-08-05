@@ -130,6 +130,44 @@ function hasStoredStale(value: unknown): boolean {
   return Object.entries(value).some(([key, nested]) => key === "stale" || hasStoredStale(nested));
 }
 
+function isNonNegativeInteger(value: unknown): value is number {
+  return Number.isInteger(value) && (value as number) >= 0;
+}
+
+function isStringArray(value: unknown): value is string[] {
+  return Array.isArray(value) && value.every((item) => typeof item === "string");
+}
+
+function isProjectStateFile(value: unknown): value is ProjectStateFile {
+  if (!value || typeof value !== "object" || Array.isArray(value) || hasStoredStale(value)) return false;
+  const state = value as Record<string, unknown>;
+  const snapshots = state.snapshots as Record<string, unknown> | null;
+  const render = state.lastRender as Record<string, unknown> | null;
+  const diagnostics = state.diagnostics as Record<string, unknown> | null;
+  return state.schemaVersion === 1
+    && typeof state.projectId === "string" && state.projectId.length > 0
+    && ["empty", "authored", "invalid"].includes(String(state.state))
+    && isNonNegativeInteger(state.sceneCount)
+    && typeof state.lastOpenedAt === "string" && Number.isFinite(Date.parse(state.lastOpenedAt))
+    && isNonNegativeInteger(state.sourceRevision)
+    && !!snapshots && typeof snapshots.complete === "boolean"
+    && (snapshots.computedAtSourceRevision === null || isNonNegativeInteger(snapshots.computedAtSourceRevision))
+    && (snapshots.partialAtSourceRevision === null || isNonNegativeInteger(snapshots.partialAtSourceRevision))
+    && isStringArray(snapshots.missingSceneIds) && isNonNegativeInteger(snapshots.sceneCount)
+    && isStringArray(snapshots.sceneIds)
+    && !!snapshots.snapshotPaths && typeof snapshots.snapshotPaths === "object"
+    && !Array.isArray(snapshots.snapshotPaths)
+    && Object.values(snapshots.snapshotPaths as Record<string, unknown>).every((path) => typeof path === "string")
+    && (snapshots.contactSheet === null || typeof snapshots.contactSheet === "string")
+    && (render === null || (typeof render.jobId === "string"
+      && ["succeeded", "partial", "failed", "cancelled"].includes(String(render.status))
+      && (render.artifact === null || typeof render.artifact === "string")
+      && (render.computedAtSourceRevision === null || isNonNegativeInteger(render.computedAtSourceRevision))))
+    && (diagnostics === null || (isNonNegativeInteger(diagnostics.computedAtSourceRevision)
+      && isNonNegativeInteger(diagnostics.errorCount) && isNonNegativeInteger(diagnostics.warningCount)))
+    && isStringArray(state.pendingRecovery);
+}
+
 function jobLine(job: Job): JobLogLine {
   return {
     at: job.finishedAt ?? job.startedAt ?? job.createdAt,
@@ -219,6 +257,7 @@ export class ProjectStateStore {
     }, this.dependencies.actor);
   }
 
+  /** Creates projection directories and writes only the derived gitignore; source revision/events do not advance. */
   async ensure(ref: ProjectRef): Promise<void> {
     const ensureDirectories = this.dependencies.workspace.ensureProjectStateDirectories;
     if (!ensureDirectories) throw new Error("project state directory capability is unavailable");
@@ -234,15 +273,20 @@ export class ProjectStateStore {
     if (!published.ok) throw new Error(published.error.message);
   }
 
+  /** Reads and shape-validates state.json without mutation; invalid or foreign-project state returns null. */
   async readState(ref: ProjectRef): Promise<ProjectStateFile | null> {
     const resolved = await this.dependencies.workspace.resolve(ref, ".vidcom/state.json", "state-write");
     if (!resolved.ok) return null;
     const file = await this.dependencies.workspace.readFile(resolved.value);
     if (!file) return null;
-    try { return JSON.parse(file.content) as ProjectStateFile; }
+    try {
+      const parsed: unknown = JSON.parse(file.content);
+      return isProjectStateFile(parsed) && parsed.projectId === ref.id ? parsed : null;
+    }
     catch { return null; }
   }
 
+  /** Rejects persisted staleness and writes one derived state projection without source revision/event advancement. */
   async writeState(ref: ProjectRef, next: ProjectStateFile): Promise<Result<void, DomainError>> {
     if (hasStoredStale(next)) return err({
       code: "schema_invalid" as DomainError["code"],
@@ -256,6 +300,7 @@ export class ProjectStateStore {
     return published.ok ? ok(undefined) : published;
   }
 
+  /** Serializes project context into derived state; authored files and source revision remain unchanged. */
   async writeContext(ref: ProjectRef, context: ProjectContext): Promise<Result<void, DomainError>> {
     const content = serializeProjectContext(context);
     const published = await this.publish(ref, [{
@@ -265,6 +310,7 @@ export class ProjectStateStore {
     return published.ok ? ok(undefined) : published;
   }
 
+  /** Publishes a derived diagnostics projection without changing authored content or emitting source events. */
   async writeDiagnostics(ref: ProjectRef, report: StoredDiagnosticsReport): Promise<Result<void, DomainError>> {
     const published = await this.publish(ref, [{
       path: ".vidcom/context/diagnostics.json" as DerivedMutationPath,
@@ -279,6 +325,7 @@ export class ProjectStateStore {
     await this.dependencies.workspace.appendAtomic(resolved.value, canonicalizeJson(redact(line)));
   }
 
+  /** Appends a redacted job projection line directly; this creates no project revision or domain event. */
   appendJobEvent(ref: ProjectRef, line: JobLogLine): Promise<void> {
     return this.append(ref, ".vidcom/jobs/index.jsonl" as RelPath, line);
   }
@@ -308,11 +355,13 @@ export class ProjectStateStore {
     return { deleted };
   }
 
+  /** Compares SQLite truth with three derived projections and publishes only drifted files in one derived revision. */
   async reconcile(ref: ProjectRef): Promise<ReconcileReport> {
-    const [jobs, revisions, sourceRevision] = await Promise.all([
+    const [jobs, revisions, sourceRevision, previousState] = await Promise.all([
       this.dependencies.jobs.listProjectJobs(ref.id),
       this.dependencies.journal.listProjectRevisions(ref.id),
       this.sourceRevision(ref.id),
+      this.readState(ref),
     ]);
     const latestSnapshot = [...jobs].reverse().find((job) => job.type === "snapshot"
       && ["succeeded", "partial"].includes(job.status));
@@ -326,14 +375,14 @@ export class ProjectStateStore {
       projectId: ref.id,
       state: hasComposition ? "authored" : "empty",
       sceneCount: snapshots.sceneCount,
-      lastOpenedAt: this.dependencies.clock.now().toISOString(),
+      lastOpenedAt: previousState?.lastOpenedAt ?? this.dependencies.clock.now().toISOString(),
       sourceRevision,
       snapshots,
       lastRender: renderFrom(latestRender),
-      diagnostics: null,
-      pendingRecovery: [],
+      diagnostics: previousState?.diagnostics ?? null,
+      pendingRecovery: previousState?.pendingRecovery ?? [],
     };
-    const writes = [
+    const expected = [
       { path: ".vidcom/state.json" as DerivedMutationPath, content: `${canonicalizeJson(state)}\n` },
       { path: ".vidcom/jobs/index.jsonl" as DerivedMutationPath, content: jsonLines(jobs.map(jobLine)) },
       {
@@ -341,9 +390,25 @@ export class ProjectStateStore {
         content: jsonLines(revisions.map(revisionLine)),
       },
     ];
+    const compared = await Promise.all(expected.map(async (write) => {
+      const resolved = await this.dependencies.workspace.resolve(ref, write.path, "state-write");
+      if (!resolved.ok) throw new Error(`project state path is unavailable: ${resolved.error.reason}`);
+      const current = await this.dependencies.workspace.readFile(resolved.value);
+      return { ...write, changed: current?.content !== write.content };
+    }));
+    const writes = compared.filter((write) => write.changed)
+      .map(({ path, content }) => ({ path, content }));
+    if (writes.length === 0) {
+      return { rebuilt: false, stateChanged: false, jobsChanged: false, revisionsChanged: false };
+    }
     const published = await this.publish(ref, writes);
     if (!published.ok) throw new Error(published.error.message);
-    return { rebuilt: true, stateChanged: true, jobsChanged: true, revisionsChanged: true };
+    return {
+      rebuilt: true,
+      stateChanged: compared[0]?.changed ?? false,
+      jobsChanged: compared[1]?.changed ?? false,
+      revisionsChanged: compared[2]?.changed ?? false,
+    };
   }
 }
 

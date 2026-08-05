@@ -14,6 +14,50 @@
         <p class="mt-4 text-slate-300">Nhật ký quyết định, sai lệch thiết kế, đánh đổi, bất ngờ và blocker theo thứ tự A→B→F→C→D→E→G→H→I→J→K→L→M→N→Q→O→P→R→S.</p>
       </header>
 
+      <section class="mt-10 rounded-2xl border border-amber-500/30 bg-slate-900 p-6">
+        <div class="flex flex-wrap items-center justify-between gap-3">
+          <h2 class="text-2xl font-semibold">2026-08-05 · Mở lại full review remediation</h2>
+          <span class="rounded-full bg-amber-400/10 px-3 py-1 text-sm text-amber-300">Đang audit Agent 2/3</span>
+        </div>
+        <dl class="mt-6 grid gap-5 md:grid-cols-2">
+          <div><dt class="font-semibold text-slate-200">Phát hiện</dt><dd class="mt-1 text-slate-300">File review có 26 finding, không chỉ 7 finding ở nhóm đầu. Các nhóm còn lại bao phủ scheduler timeout/cancel, PID reuse, render publication, lifecycle recovery và projection drift.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Quyết định</dt><dd class="mt-1 text-slate-300">Đưa spec về <code>inprocess</code>, đối chiếu từng finding với code hiện tại và chỉ closeout sau local gate cùng GitHub CI đa nền tảng trên exact commit.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Đánh đổi</dt><dd class="mt-1 text-slate-300">Giữ thay đổi theo root cause và port hiện hữu; không thêm dependency hoặc abstraction nếu primitive hiện có đủ để khóa invariant.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Blocker</dt><dd class="mt-1 text-slate-300">Chưa có. Credential GitHub được lấy từ biến <code>GH_TOKEN</code> trong <code>.env</code> mà không in giá trị ra log.</dd></div>
+        </dl>
+      </section>
+
+      <section class="mt-10 rounded-2xl border border-cyan-500/30 bg-slate-900 p-6">
+        <div class="flex flex-wrap items-center justify-between gap-3">
+          <h2 class="text-2xl font-semibold">2026-08-05 · Đã triển khai remediation cho cả ba nhóm review</h2>
+          <span class="rounded-full bg-cyan-400/10 px-3 py-1 text-sm text-cyan-300">Đang chạy full gate</span>
+        </div>
+        <dl class="mt-6 grid gap-5 md:grid-cols-2">
+          <div><dt class="font-semibold text-slate-200">Lifecycle và storage</dt><dd class="mt-1 text-slate-300">Ghi đường dẫn staging/quarantine trước filesystem rename, giữ cleanup obligation sau commit, kiểm lại hash sau quarantine, xác minh hash khi recover create, chặn symlink marker và chỉ rebuild projection thật sự drift.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Job và publication</dt><dd class="mt-1 text-slate-300">Thêm publication CAS để đóng cancel race, đợi handler cleanup sau timeout, ràng buộc PID với creation time, giới hạn tổng thời gian verify, preflight trước enqueue, guard đồng bộ và kiểm tồn tại snapshot trước reuse.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Filesystem và bộ nhớ</dt><dd class="mt-1 text-slate-300">Clone dùng lstat/realpath/open NOFOLLOW, MP4 được stream từ render root sang staged asset thay vì đọc toàn bộ RAM; render-root marker được phục hồi nếu cleanup một phần thất bại.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Bất ngờ đa nền tảng</dt><dd class="mt-1 text-slate-300">Windows sandbox từ chối CIM/taskkill. Supervisor trả proof không exhaustive và cleanupPending thay vì nói sai là sạch; toàn protocol có deadline và regression thật kết thúc ổn định. GitHub Windows runner vẫn sẽ chạy nhánh đầy đủ có quyền.</dd></div>
+        </dl>
+      </section>
+
+      <section class="mt-10 rounded-2xl border border-emerald-500/30 bg-slate-900 p-6">
+        <div class="flex flex-wrap items-center justify-between gap-3">
+          <h2 class="text-2xl font-semibold">2026-08-05 · Mở lại để sửa delivery-loop review</h2>
+          <span class="rounded-full bg-emerald-400/10 px-3 py-1 text-sm text-emerald-300">Hoàn tất remediation</span>
+        </div>
+        <dl class="mt-6 grid gap-5 md:grid-cols-2">
+          <div><dt class="font-semibold text-slate-200">Quyết định</dt><dd class="mt-1 text-slate-300">Mở lại N.5, N.8, O.5, O.8, O.9 và S.6; sửa toàn bộ finding trong <code>delivery-loop-review.md</code> trước khi closeout lại.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Design drift</dt><dd class="mt-1 text-slate-300">Không đổi kiến trúc. Remediation siết đúng contract đã duyệt: preserve narration metadata, không rò absolute path, phân biệt commit thành công với response lỗi, strict HTTP boundary và Range 416.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Đánh đổi</dt><dd class="mt-1 text-slate-300">Ưu tiên thay đổi nhỏ tại shared boundary/usecase và test hồi quy trực tiếp; không thêm dependency hay abstraction mới.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Bất ngờ</dt><dd class="mt-1 text-slate-300">Review chỉ ra một số checkbox có bằng chứng thấp hơn claim; checklist được mở lại trước khi sửa code để giữ lịch sử trung thực.</dd></div>
+        </dl>
+        <div class="mt-6 rounded-xl border border-slate-700 bg-slate-950/60 p-4 text-sm text-slate-300">
+          <p><strong class="text-slate-100">Kết quả:</strong> đã sửa đủ 7 nhóm finding: narration cue giữ metadata, recovery detail không lộ đường dẫn tuyệt đối, lỗi inspect sau commit mang mã <code>committed_response_error</code>, Range không thỏa trả 416, HTTP boundary parse nghiêm, O.8/O.9 có integration evidence thật và S.6 được mô tả đúng là gate trước release/tag.</p>
+          <p class="mt-3"><strong class="text-slate-100">Xác minh:</strong> focused regression 23/23; MCP contract 71/71; golden 26/26; typecheck, lint, boundaries, schema drift, spec paths, agent-kit và runtime smoke đều xanh.</p>
+          <p class="mt-3"><strong class="text-slate-100">Ngoại lệ:</strong> lệnh tổng hợp <code>bun run test</code> không terminalize trong workspace này; shard <code>render-job.test.ts</code> tái hiện riêng hiện tượng tiến trình supervision con còn sống. Không dùng kết quả đó để claim full-suite local xanh; đây là caveat hiện hữu ngoài phạm vi 7 finding và đã được ghi trung thực trong checklist.</p>
+        </div>
+      </section>
+
       <section class="mt-10 rounded-2xl border border-emerald-500/30 bg-slate-900 p-6">
         <div class="flex flex-wrap items-center justify-between gap-3">
           <h2 class="text-2xl font-semibold">2026-08-04 · Phase A hoàn tất</h2>

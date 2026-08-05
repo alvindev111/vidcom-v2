@@ -80,11 +80,14 @@ function bootstrap(callbackUrl: string, jobId: JobId, token: string): string {
   const jobId = ${JSON.stringify(jobId)};
   const token = ${JSON.stringify(token)};
   const observed = new Set();
-  const send = (report) => fetch(callbackUrl, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ jobId, token, ...report })
-  }).catch(() => {});
+  const send = (report) => {
+    try {
+      const request = new XMLHttpRequest();
+      request.open("POST", callbackUrl, false);
+      request.setRequestHeader("content-type", "application/json");
+      request.send(JSON.stringify({ jobId, token, ...report }));
+    } catch {}
+  };
   addEventListener("securitypolicyviolation", (event) => {
     if (event.effectiveDirective !== "img-src" && event.effectiveDirective !== "media-src") return;
     send({ kind: "media", blockedUri: event.blockedURI, directive: event.effectiveDirective });

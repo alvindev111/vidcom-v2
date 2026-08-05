@@ -397,6 +397,15 @@ export class WorkspaceOperationJournal implements WorkspaceOperationJournalPort 
     this.settleCommit(id, ["pending", "orphaned"], "recovered");
   }
 
+  async completeDirectoryCleanup(id: WorkspaceOperationId): Promise<void> {
+    const completed = this.database.run(sql`
+      UPDATE workspace_operation SET staging_path = NULL
+      WHERE id = ${id} AND kind = 'project_delete'
+        AND status IN ('committed', 'recovered') AND staging_path IS NOT NULL
+    `);
+    if (completed.changes !== 1) throw new Error("project directory cleanup obligation was not found");
+  }
+
   private settleFailure(
     id: WorkspaceOperationId,
     status: "aborted" | "recovered" | "orphaned",
@@ -472,7 +481,10 @@ export class WorkspaceOperationJournal implements WorkspaceOperationJournalPort 
       SELECT workspace_root AS workspaceRoot, kind, project_id AS projectId,
         from_path AS fromPath, to_path AS toPath, staging_path AS stagingPath,
         backup_id AS backupId, actor, action, status
-      FROM workspace_operation WHERE id = ${id} AND status IN ('pending', 'orphaned')
+      FROM workspace_operation WHERE id = ${id} AND (
+        status IN ('pending', 'orphaned')
+        OR (kind = 'project_delete' AND status IN ('committed', 'recovered') AND staging_path IS NOT NULL)
+      )
     `);
     if (!operation) return null;
     const rows = this.database.all<{
@@ -507,7 +519,10 @@ export class WorkspaceOperationJournal implements WorkspaceOperationJournalPort 
   async listPending(workspaceRoot: WorkspaceOperationIntent["workspaceRoot"]): Promise<PendingWorkspaceOperation[]> {
     const rows = this.database.all<{ id: number }>(sql`
       SELECT id FROM workspace_operation
-      WHERE workspace_root = ${workspaceRoot} AND status IN ('pending', 'orphaned')
+      WHERE workspace_root = ${workspaceRoot} AND (
+        status IN ('pending', 'orphaned')
+        OR (kind = 'project_delete' AND status IN ('committed', 'recovered') AND staging_path IS NOT NULL)
+      )
       ORDER BY created_at, id
     `);
     return (await Promise.all(rows.map(({ id }) => this.read(id as WorkspaceOperationId))))

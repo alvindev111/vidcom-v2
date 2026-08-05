@@ -6,12 +6,17 @@ import {
   EnqueueSnapshotRequestSchema,
   ErrorCode,
   InstallAgentKitInputSchema,
+  JobParamsSchema,
+  NarrationCueParamsSchema,
   PatchNarrationCueRequestSchema,
   ProjectParamsSchema,
+  ProjectSlugParamsSchema,
+  RecoveryEntryParamsSchema,
   RenameProjectRequestSchema,
   ReplaceRecoveryIdentityRequestSchema,
   ReplaceNarrationCuesRequestSchema,
   SceneTimingHttpRequestSchema,
+  SceneParamsSchema,
   CreateSceneInputSchema,
   type ContentHash,
   type DomainError,
@@ -71,6 +76,10 @@ function valueOf<Value>(result: Result<Value, DomainError>): Value {
   return result.ok ? result.value : fail(result.error);
 }
 async function json(c: Context): Promise<unknown> {
+  const mediaType = c.req.header("Content-Type")?.split(";", 1)[0]?.trim().toLowerCase();
+  if (mediaType !== "application/json") {
+    return fail({ code: ErrorCode.UnsupportedMedia, message: "content type must be application/json", field: "content-type" });
+  }
   try { return await c.req.json(); }
   catch { return fail({ code: ErrorCode.SchemaInvalid, message: "request body is not valid JSON" }); }
 }
@@ -82,28 +91,41 @@ function projectId(c: Context): ProjectId {
   return parse(ProjectParamsSchema, { id: c.req.param("id") }, "project id is invalid").id as ProjectId;
 }
 function jobId(c: Context): JobId {
-  const value = c.req.param("jobId");
-  return value ? value as JobId : fail({ code: ErrorCode.SchemaInvalid, message: "job id is invalid" });
+  return parse(JobParamsSchema, { jobId: c.req.param("jobId") }, "job id is invalid").jobId as JobId;
 }
 async function requireJob(store: JobStorePort, id: JobId): Promise<Job> {
   const job = await store.get(id);
   return job ?? fail({ code: ErrorCode.NotFound, message: "job not found" });
 }
-function range(header: string | undefined, size: number): { start: number; end: number } | null {
-  const match = header?.match(/^bytes=(\d*)-(\d*)$/u);
-  if (!match) return null;
-  const start = match[1] === "" ? size - Number(match[2]) : Number(match[1]);
-  const end = match[1] === "" || match[2] === "" ? size - 1 : Number(match[2]);
-  return Number.isFinite(start) && Number.isFinite(end) && start >= 0 && start <= end && start < size
-    ? { start, end: Math.min(end, size - 1) }
-    : null;
+type ByteRange = { kind: "absent" } | { kind: "unsatisfiable" } | { kind: "valid"; start: number; end: number };
+function range(header: string | undefined, size: number): ByteRange {
+  if (header === undefined) return { kind: "absent" };
+  const match = header.match(/^bytes=(\d*)-(\d*)$/u);
+  if (!match || size === 0 || (match[1] === "" && match[2] === "")) return { kind: "unsatisfiable" };
+  if (match[1] === "") {
+    const suffixLength = BigInt(match[2]!);
+    if (suffixLength === BigInt(0)) return { kind: "unsatisfiable" };
+    return {
+      kind: "valid",
+      start: suffixLength >= BigInt(size) ? 0 : size - Number(suffixLength),
+      end: size - 1,
+    };
+  }
+  const start = BigInt(match[1]!);
+  const end = match[2] === "" ? BigInt(size - 1) : BigInt(match[2]!);
+  return start <= end && start < BigInt(size)
+    ? { kind: "valid", start: Number(start), end: Number(end >= BigInt(size) ? size - 1 : end) }
+    : { kind: "unsatisfiable" };
 }
 function bytesResponse(c: Context, bytes: Uint8Array, hash: string, mime: string): Response {
   const etag = `"${hash}"`;
-  const common = { "Accept-Ranges": "bytes", "Content-Type": mime, ETag: etag };
+  const common = { "Accept-Ranges": "bytes", "Cache-Control": "must-revalidate", "Content-Type": mime, ETag: etag };
   if (c.req.header("If-None-Match") === etag) return new Response(null, { status: 304, headers: common });
   const selected = range(c.req.header("Range"), bytes.byteLength);
-  if (!selected) return new Response(Uint8Array.from(bytes).buffer, {
+  if (selected.kind === "unsatisfiable") return new Response(null, { status: 416, headers: {
+    ...common, "Content-Length": "0", "Content-Range": `bytes */${bytes.byteLength}`,
+  } });
+  if (selected.kind === "absent") return new Response(Uint8Array.from(bytes).buffer, {
     headers: { ...common, "Content-Length": String(bytes.byteLength) },
   });
   const body = bytes.slice(selected.start, selected.end + 1);
@@ -128,7 +150,10 @@ export function createDeliveryLoopRoutes(dependencies: DeliveryLoopRouteDependen
     return c.json(valueOf(await dependencies.lifecycle.create({ name: input.name, preset, actor: "user" })), 201);
   });
   routes.post("/v1/projects/:slug/adopt", async (c) =>
-    c.json(valueOf(await dependencies.lifecycle.adopt({ slug: c.req.param("slug"), actor: "user" }))));
+    c.json(valueOf(await dependencies.lifecycle.adopt({
+      slug: parse(ProjectSlugParamsSchema, { slug: c.req.param("slug") }, "project slug is invalid").slug,
+      actor: "user",
+    }))));
   routes.patch("/v1/projects/:id", async (c) => {
     const input = parse(RenameProjectRequestSchema, await json(c), "project rename payload is invalid");
     return c.json(valueOf(await dependencies.lifecycle.rename(
@@ -177,56 +202,66 @@ export function createDeliveryLoopRoutes(dependencies: DeliveryLoopRouteDependen
     }, "user")), 201);
   });
   routes.patch("/v1/projects/:id/scenes/:sceneId/timing", async (c) => {
+    const params = parse(SceneParamsSchema, c.req.param(), "scene path parameters are invalid");
     const input = parse(SceneTimingHttpRequestSchema, await json(c), "scene timing payload is invalid");
     return c.json(valueOf(await setSceneTiming(dependencies.writes, {
-      projectId: projectId(c), sceneId: c.req.param("sceneId"),
+      projectId: params.id as ProjectId, sceneId: params.sceneId,
       timing: { start: input.start, duration: input.duration, trackIndex: input.trackIndex },
       ripple: input.ripple, extendRoot: input.extendRoot, expectedContentHash: input.expectedContentHash,
     }, "user")));
   });
-  routes.get("/v1/projects/:id/scenes/:sceneId/narration-cues", async (c) =>
-    c.json(valueOf(await readNarrationCues(dependencies.writes, {
-      projectId: projectId(c), sceneId: c.req.param("sceneId"),
-    }))));
+  routes.get("/v1/projects/:id/scenes/:sceneId/narration-cues", async (c) => {
+    const params = parse(SceneParamsSchema, c.req.param(), "scene path parameters are invalid");
+    return c.json(valueOf(await readNarrationCues(dependencies.writes, {
+      projectId: params.id as ProjectId, sceneId: params.sceneId,
+    })));
+  });
   routes.put("/v1/projects/:id/scenes/:sceneId/narration-cues", async (c) => {
+    const params = parse(SceneParamsSchema, c.req.param(), "scene path parameters are invalid");
     const input = parse(ReplaceNarrationCuesRequestSchema, await json(c), "narration cue payload is invalid");
     return c.json(valueOf(await replaceNarrationCues(dependencies.writes, {
-      projectId: projectId(c), sceneId: c.req.param("sceneId"), cues: input.cues,
+      projectId: params.id as ProjectId, sceneId: params.sceneId, cues: input.cues,
       expectedContentHash: input.expectedContentHash as ContentHash | null,
     }, "user")));
   });
   routes.patch("/v1/projects/:id/scenes/:sceneId/narration-cues/:cueId", async (c) => {
+    const params = parse(NarrationCueParamsSchema, c.req.param(), "narration cue path parameters are invalid");
     const input = parse(PatchNarrationCueRequestSchema, await json(c), "narration cue patch is invalid");
     return c.json(valueOf(await patchNarrationCue(dependencies.writes, {
-      projectId: projectId(c), sceneId: c.req.param("sceneId"), cueId: c.req.param("cueId"),
+      projectId: params.id as ProjectId, sceneId: params.sceneId, cueId: params.cueId,
       patch: { text: input.text, voice: input.voice, offsetSeconds: input.offsetSeconds },
       expectedContentHash: input.expectedContentHash as ContentHash,
     }, "user")));
   });
-  routes.get("/v1/recovery/entries/:entryId/diagnostics", async (c) =>
-    c.json(valueOf(await dependencies.diagnostics.forEntry(c.req.param("entryId") as EntryId))));
+  routes.get("/v1/recovery/entries/:entryId/diagnostics", async (c) => {
+    const params = parse(RecoveryEntryParamsSchema, c.req.param(), "recovery entry id is invalid");
+    return c.json(valueOf(await dependencies.diagnostics.forEntry(params.entryId as EntryId)));
+  });
   routes.put("/v1/recovery/entries/:entryId/identity", async (c) => {
+    const params = parse(RecoveryEntryParamsSchema, c.req.param(), "recovery entry id is invalid");
     const input = parse(
       ReplaceRecoveryIdentityRequestSchema,
       await json(c),
       "recovery identity payload is invalid",
     );
     return c.json(valueOf(await dependencies.replaceRecoveryIdentity({
-      entryId: c.req.param("entryId") as EntryId,
+      entryId: params.entryId as EntryId,
       identity: input.identity,
       expectedContentHash: input.expectedContentHash as ContentHash,
     })));
   });
   routes.patch("/v1/recovery/entries/:entryId", async (c) => {
+    const params = parse(RecoveryEntryParamsSchema, c.req.param(), "recovery entry id is invalid");
     const input = parse(RenameProjectRequestSchema, await json(c), "recovery rename payload is invalid");
     return c.json(valueOf(await dependencies.lifecycle.rename(
-      { kind: "entry", entryId: c.req.param("entryId") as EntryId }, input.name, "user",
+      { kind: "entry", entryId: params.entryId as EntryId }, input.name, "user",
     )));
   });
   routes.delete("/v1/recovery/entries/:entryId", async (c) => {
+    const params = parse(RecoveryEntryParamsSchema, c.req.param(), "recovery entry id is invalid");
     parse(DeleteProjectRequestSchema, await json(c), "recovery delete confirmation is invalid");
     return c.json(valueOf(await dependencies.lifecycle.remove(
-      { kind: "entry", entryId: c.req.param("entryId") as EntryId }, { actor: "user", confirmed: true },
+      { kind: "entry", entryId: params.entryId as EntryId }, { actor: "user", confirmed: true },
     )));
   });
   routes.get("/v1/renders/:jobId/download", async (c) => {

@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
-import { mkdir, open, readFile, readdir, realpath, stat } from "node:fs/promises";
+import { constants } from "node:fs";
+import { lstat, mkdir, open, readFile, readdir, realpath, stat } from "node:fs/promises";
 import path from "node:path";
 
 import type { ContentHash, ProjectId, RelPath } from "@vidcom/contracts";
@@ -41,7 +42,14 @@ function sha256(content: string | Uint8Array): ContentHash {
 
 async function readProjectRefAt(directory: string, slug: string): Promise<ProjectRef | null> {
   try {
-    const identity = await readFile(path.join(directory, "vidcom.json"), "utf8");
+    const handle = await open(path.join(directory, "vidcom.json"), constants.O_RDONLY | constants.O_NOFOLLOW);
+    let identity: string;
+    try {
+      if (!(await handle.stat()).isFile()) return null;
+      identity = await handle.readFile("utf8");
+    } finally {
+      await handle.close();
+    }
     const parsed = JSON.parse(identity) as { id?: unknown };
     if (typeof parsed.id !== "string" || parsed.id.length === 0) return null;
     return {
@@ -94,10 +102,12 @@ export class WorkspaceFs implements WorkspacePort {
   ): Promise<{ size: number; modifiedAtMs: number } | null> {
     const project = await this.directProjectRoot(root);
     try {
-      const value = await stat(path.join(project, filename));
-      return value.isFile() ? { size: value.size, modifiedAtMs: value.mtimeMs } : null;
+      const value = await lstat(path.join(project, filename));
+      return value.isFile() && !value.isSymbolicLink()
+        ? { size: value.size, modifiedAtMs: value.mtimeMs }
+        : null;
     } catch (error) {
-      if ((error as NodeJS.ErrnoException).code === "ENOENT") return null;
+      if (["ENOENT", "ELOOP"].includes((error as NodeJS.ErrnoException).code ?? "")) return null;
       throw error;
     }
   }
@@ -108,10 +118,16 @@ export class WorkspaceFs implements WorkspacePort {
   ): Promise<FileContent | null> {
     const project = await this.directProjectRoot(root);
     try {
-      const content = await readFile(path.join(project, filename), "utf8");
-      return { content, contentHash: sha256(content) };
+      const handle = await open(path.join(project, filename), constants.O_RDONLY | constants.O_NOFOLLOW);
+      try {
+        if (!(await handle.stat()).isFile()) return null;
+        const content = await handle.readFile("utf8");
+        return { content, contentHash: sha256(content) };
+      } finally {
+        await handle.close();
+      }
     } catch (error) {
-      if ((error as NodeJS.ErrnoException).code === "ENOENT") return null;
+      if (["ENOENT", "ELOOP"].includes((error as NodeJS.ErrnoException).code ?? "")) return null;
       throw error;
     }
   }

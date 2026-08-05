@@ -64,15 +64,25 @@ export class FsProjectDirectoryAdapter implements ProjectDirectoryPort {
     slug: string,
     operationId: WorkspaceOperationId,
   ): Promise<{ stagingRoot: AbsolutePath; finalRoot: AbsolutePath }> {
+    const { stagingRoot: staging, finalRoot: final } = await this.createPaths(workspaceRoot, slug, operationId);
+    if (await exists(staging) || await exists(final)) throw new Error("project create target already exists");
+    await mkdir(staging, { recursive: false, mode: 0o700 });
+    await syncDirectory(path.dirname(staging));
+    return { stagingRoot: staging as AbsolutePath, finalRoot: final as AbsolutePath };
+  }
+
+  async createPaths(
+    workspaceRoot: AbsolutePath,
+    slug: string,
+    operationId: WorkspaceOperationId,
+  ): Promise<{ stagingRoot: AbsolutePath; finalRoot: AbsolutePath }> {
     if (!validSlug(slug)) throw new TypeError("project slug is invalid");
     const [injected, requested] = await Promise.all([this.root(), realpath(workspaceRoot)]);
     if (injected !== requested) throw new Error("project staging root differs from the injected workspace");
-    const staging = path.join(injected, `.${slug}${CREATE_MARKER}${operationId}`);
-    const final = path.join(injected, slug);
-    if (await exists(staging) || await exists(final)) throw new Error("project create target already exists");
-    await mkdir(staging, { recursive: false, mode: 0o700 });
-    await syncDirectory(injected);
-    return { stagingRoot: staging as AbsolutePath, finalRoot: final as AbsolutePath };
+    return {
+      stagingRoot: path.join(injected, `.${slug}${CREATE_MARKER}${operationId}`) as AbsolutePath,
+      finalRoot: path.join(injected, slug) as AbsolutePath,
+    };
   }
 
   async writeStagedFiles(
@@ -125,14 +135,16 @@ export class FsProjectDirectoryAdapter implements ProjectDirectoryPort {
 
   async quarantine(root: AbsolutePath, operationId: WorkspaceOperationId): Promise<AbsolutePath> {
     const source = await this.directChild(root);
-    const quarantine = path.join(
-      source.root,
-      `.${path.basename(source.target)}${QUARANTINE_MARKER}${operationId}`,
-    );
+    const quarantine = await this.quarantinePath(root, operationId);
     if (await exists(quarantine)) throw new Error("project quarantine target already exists");
     await rename(source.target, quarantine);
     await syncDirectory(source.root);
     return quarantine as AbsolutePath;
+  }
+
+  async quarantinePath(root: AbsolutePath, operationId: WorkspaceOperationId): Promise<AbsolutePath> {
+    const source = await this.directChild(root);
+    return path.join(source.root, `.${path.basename(source.target)}${QUARANTINE_MARKER}${operationId}`) as AbsolutePath;
   }
 
   async restoreQuarantine(quarantine: AbsolutePath, root: AbsolutePath): Promise<void> {

@@ -55,6 +55,7 @@ export interface WorkspaceProjectDeleteRequest {
   projectId: import("@vidcom/contracts").ProjectId | null;
   slug: string;
   verifiedBackupId: string;
+  expectedTargetHashes: Record<RelPath, ContentHash>;
   grantId?: string;
   actor: Actor;
 }
@@ -132,6 +133,19 @@ export class WorkspaceMutationCoordinator {
     return { directories: this.dependencies.directories, clock: this.dependencies.clock };
   }
 
+  private async rootMatches(root: AbsolutePath, expected: Readonly<Record<RelPath, ContentHash>>): Promise<boolean> {
+    const list = this.dependencies.workspace.listBackupSourcesAt;
+    if (!list) return false;
+    const sources = await list.call(this.dependencies.workspace, root);
+    if (sources.length !== Object.keys(expected).length) return false;
+    for (const source of sources) {
+      if (expected[source.path] === undefined
+        || await this.dependencies.workspace.readHash(source.resolved) !== expected[source.path]) return false;
+    }
+    return true;
+  }
+
+  /** Requires the workspace lease, journals staging before I/O, then commits registry/revision/audit/event atomically. */
   async createProjectRoot(request: WorkspaceProjectCreateRequest): Promise<Result<ProjectRef, DomainError>> {
     if (!(await this.dependencies.lease.assertHeld(this.dependencies.leaseId))) {
       return err({ code: ErrorCode.WorkspaceLeaseLost, message: "the workspace write lease was lost" });
@@ -164,10 +178,11 @@ export class WorkspaceMutationCoordinator {
       let staged: { stagingRoot: AbsolutePath; finalRoot: AbsolutePath } | null = null;
       let published = false;
       try {
-        staged = await directories.stageCreate(request.workspaceRoot, request.slug, operationId);
+        staged = await directories.createPaths(request.workspaceRoot, request.slug, operationId);
         await this.dependencies.journal.setDirectoryPaths(operationId, {
           stagingPath: staged.stagingRoot,
         });
+        staged = await directories.stageCreate(request.workspaceRoot, request.slug, operationId);
         for (const ordinal of request.files.keys()) {
           await this.dependencies.journal.markStepCaptured(operationId, ordinal, null, null);
         }
@@ -206,6 +221,7 @@ export class WorkspaceMutationCoordinator {
     });
   }
 
+  /** Requires the workspace lease and journals a directory rename before committing registry/revision/audit/event. */
   async renameProjectRoot(request: WorkspaceProjectRenameRequest): Promise<Result<WorkspaceProjectLocation, DomainError>> {
     if (!(await this.dependencies.lease.assertHeld(this.dependencies.leaseId))) {
       return err({ code: ErrorCode.WorkspaceLeaseLost, message: "the workspace write lease was lost" });
@@ -265,6 +281,7 @@ export class WorkspaceMutationCoordinator {
     });
   }
 
+  /** Requires a verified backup/hash set, journals quarantine first, then commits delete and durable cleanup state. */
   async deleteProjectRoot(request: WorkspaceProjectDeleteRequest): Promise<Result<{ backupId: string }, DomainError>> {
     if (!(await this.dependencies.lease.assertHeld(this.dependencies.leaseId))) {
       return err({ code: ErrorCode.WorkspaceLeaseLost, message: "the workspace write lease was lost" });
@@ -297,9 +314,19 @@ export class WorkspaceMutationCoordinator {
         return err(operationError(error));
       }
       let quarantine: AbsolutePath | null = null;
+      let moved = false;
+      let committed = false;
       try {
-        quarantine = await directories.quarantine(projectRoot, operationId);
+        quarantine = await directories.quarantinePath(projectRoot, operationId);
         await this.dependencies.journal.setDirectoryPaths(operationId, { stagingPath: quarantine });
+        quarantine = await directories.quarantine(projectRoot, operationId);
+        moved = true;
+        if (!(await this.rootMatches(quarantine, request.expectedTargetHashes))) {
+          await directories.restoreQuarantine(quarantine, projectRoot);
+          moved = false;
+          await this.dependencies.journal.abort(operationId, ErrorCode.WriteConflict);
+          return err({ code: ErrorCode.WriteConflict, message: "project files changed after backup verification" });
+        }
         await this.dependencies.journal.markStepWritten(operationId, 0);
         await this.dependencies.journal.commitProjectLifecycle(operationId, {
           kind: "delete",
@@ -310,19 +337,26 @@ export class WorkspaceMutationCoordinator {
           actor: request.actor,
           occurredAt: clock.now().toISOString(),
         });
-        await directories.removeOwned(quarantine);
+        committed = true;
+        try {
+          await directories.removeOwned(quarantine);
+          await this.dependencies.journal.completeDirectoryCleanup(operationId);
+        } catch {
+          return ok({ backupId: request.verifiedBackupId });
+        }
         return ok({ backupId: request.verifiedBackupId });
       } catch {
-        if (!quarantine) await this.dependencies.journal.abort(operationId, ErrorCode.StorageUnavailable).catch(() => {});
+        if (!moved && !committed) await this.dependencies.journal.abort(operationId, ErrorCode.StorageUnavailable).catch(() => {});
         return err({
-          code: quarantine ? ErrorCode.RecoveryRequired : ErrorCode.StorageUnavailable,
-          message: quarantine ? "project delete requires recovery" : "project delete failed before quarantine",
+          code: moved || committed ? ErrorCode.RecoveryRequired : ErrorCode.StorageUnavailable,
+          message: moved || committed ? "project delete requires recovery" : "project delete failed before quarantine",
           details: { operationId },
         });
       }
     });
   }
 
+  /** Writes one lease-protected workspace batch with audit only; project revisions and events remain unchanged. */
   async mutate(request: WorkspaceWriteRequest): Promise<Result<WorkspaceWriteEnvelope, DomainError>> {
     if (request.writes.length === 0 && !request.toolAudit) {
       return err({ code: ErrorCode.SchemaInvalid, message: "a workspace mutation must contain at least one write" });
@@ -619,7 +653,10 @@ export class WorkspaceMutationCoordinator {
         const stagingState = operation.stagingPath
           ? await directories.inspect(operation.stagingPath as AbsolutePath)
           : "absent";
+        const expected = Object.fromEntries(operation.steps.flatMap((step) =>
+          step.toHash ? [[step.path, step.toHash]] : [])) as Record<RelPath, ContentHash>;
         if (finalState === "directory" && stagingState === "absent") {
+          if (!(await this.rootMatches(finalRoot, expected))) return orphan();
           await markWritten();
           const preview = operation.steps.find((step) => step.path === "preview-settings.json")?.toHash;
           if (!preview) return orphan();
@@ -679,6 +716,14 @@ export class WorkspaceMutationCoordinator {
       }
 
       if (!operation.fromPath || !operation.backupId) return orphan();
+      if (operation.status === "committed" || operation.status === "recovered") {
+        if (!operation.stagingPath) return orphan();
+        const cleanupState = await directories.inspect(operation.stagingPath as AbsolutePath);
+        if (cleanupState === "invalid") return orphan();
+        if (cleanupState === "directory") await directories.removeOwned(operation.stagingPath as AbsolutePath);
+        await this.dependencies.journal.completeDirectoryCleanup(operation.id);
+        return { operationId: operation.id, terminal: "recovered" };
+      }
       const liveRoot = await directories.projectRoot(operation.workspaceRoot, operation.fromPath);
       const liveState = await directories.inspect(liveRoot);
       const quarantineState = operation.stagingPath
@@ -696,6 +741,7 @@ export class WorkspaceMutationCoordinator {
           occurredAt: clock.now().toISOString(),
         }, true);
         await directories.removeOwned(operation.stagingPath as AbsolutePath);
+        await this.dependencies.journal.completeDirectoryCleanup(operation.id);
         return { operationId: operation.id, terminal: "recovered" };
       }
       if (liveState === "directory" && quarantineState === "absent") {

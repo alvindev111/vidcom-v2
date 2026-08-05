@@ -213,6 +213,12 @@ describe("ProjectStateStore on real SQLite and filesystem", () => {
     expect(projectedJobs).not.toContain("projection-must-not-win");
     const persisted = JSON.parse(await readFile(path.join(projectRoot, ".vidcom/state.json"), "utf8")) as Record<string, unknown>;
     expect(JSON.stringify(persisted)).not.toContain('"stale"');
+    await expect(store.reconcile(ref)).resolves.toEqual({
+      rebuilt: false,
+      stateChanged: false,
+      jobsChanged: false,
+      revisionsChanged: false,
+    });
     expect(isStale(null, 1)).toBe(false);
     expect(isStale(0, 1)).toBe(true);
     expect(await journal.latestSourceRevision(projectId)).toBe(1);
@@ -234,5 +240,28 @@ describe("ProjectStateStore on real SQLite and filesystem", () => {
     expect(await store.writeState(ref, invalid)).toMatchObject({ ok: false, error: { field: "stale" } });
     await expect(store.pruneLogs(ref, -1)).rejects.toThrow("projectLogRetentionDays");
     await expect(store.pruneLogs(ref, 366)).rejects.toThrow("projectLogRetentionDays");
+  });
+
+  it("treats malformed and foreign state projections as absent", async () => {
+    const statePath = path.join(projectRoot, ".vidcom/state.json");
+    await mkdir(path.dirname(statePath), { recursive: true });
+    await writeFile(statePath, JSON.stringify({ schemaVersion: 1, projectId, state: "authored" }));
+    await expect(store.readState(ref)).resolves.toBeNull();
+    await writeFile(statePath, JSON.stringify({
+      schemaVersion: 1,
+      projectId: "project-foreign",
+      state: "authored",
+      sceneCount: 0,
+      lastOpenedAt: now,
+      sourceRevision: 0,
+      snapshots: {
+        complete: false, computedAtSourceRevision: null, partialAtSourceRevision: null,
+        missingSceneIds: [], sceneCount: 0, sceneIds: [], snapshotPaths: {}, contactSheet: null,
+      },
+      lastRender: null,
+      diagnostics: null,
+      pendingRecovery: [],
+    }));
+    await expect(store.readState(ref)).resolves.toBeNull();
   });
 });

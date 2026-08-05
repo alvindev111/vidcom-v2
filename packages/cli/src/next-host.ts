@@ -161,6 +161,7 @@ async function startNextHostedRuntime(port: number, explicitWorkspace?: string):
     jobs: foundation.infrastructure.jobs,
     ids: foundation.infrastructure.ids,
     hashContent,
+    binaries: foundation.infrastructure.renderBinaries,
   };
   return {
     foundation,

@@ -13,6 +13,7 @@ export interface JobExecutionContext {
   heartbeat(): Promise<void>;
   isCancellationRequested(): Promise<boolean>;
   throwIfCancelled(): Promise<void>;
+  beginPublication(): Promise<void>;
 }
 
 export interface JobTypeDefinition {
@@ -20,6 +21,7 @@ export interface JobTypeDefinition {
   concurrency: number;
   idempotent: boolean;
   timeoutMs?: number;
+  terminationGraceMs?: number;
   maxAttempts?: number;
   retryBaseDelayMs?: number;
   retryMaxDelayMs?: number;
@@ -245,6 +247,9 @@ export class JobScheduler {
       throwIfCancelled: async () => {
         if (await this.store.isCancellationRequested(job.id as JobId)) throw new JobCancelledError();
       },
+      beginPublication: async () => {
+        if (!(await this.store.beginPublication(job.id as JobId))) throw new JobCancelledError();
+      },
     };
     const heartbeat = this.timers.setInterval(() => void context.heartbeat(), 5_000);
     const cancellationPoll = this.timers.setInterval(() => {
@@ -258,17 +263,41 @@ export class JobScheduler {
     let timeout: unknown | null = null;
     try {
       await context.throwIfCancelled();
-      const result = await Promise.race([
-        definition.run(job.input, context),
-        new Promise<never>((_resolve, reject) => {
+      const execution = definition.run(job.input, context).then(
+        (value) => ({ kind: "result" as const, value }),
+        (error: unknown) => ({ kind: "error" as const, error }),
+      );
+      const first = await Promise.race([
+        execution,
+        new Promise<{ kind: "timeout" }>((resolve) => {
           timeout = this.timers.setTimeout(() => {
             if (abortReason !== null) return;
             abortReason = "timeout";
             controller.abort();
-            reject(new JobRetryableError(`job timed out after ${timeoutMs}ms`));
+            resolve({ kind: "timeout" });
           }, timeoutMs);
         }),
       ]);
+      if (first.kind === "timeout") {
+        const graceMs = Math.max(0, definition.terminationGraceMs ?? 10_000);
+        let graceTimer: unknown | null = null;
+        const settled = await Promise.race([
+          execution,
+          new Promise<{ kind: "grace-expired" }>((resolve) => {
+            graceTimer = this.timers.setTimeout(() => resolve({ kind: "grace-expired" }), graceMs);
+          }),
+        ]);
+        if (settled.kind !== "grace-expired" && graceTimer !== null) this.timers.clearTimeout(graceTimer);
+        if (settled.kind === "grace-expired") throw new JobFailureError({
+          code: ErrorCode.ProcessTerminationUnverified,
+          message: `job did not stop within ${graceMs}ms after timeout`,
+        }, { cleanupPending: true });
+        if (settled.kind === "error" && settled.error instanceof JobFailureError
+          && settled.error.error.code === ErrorCode.ProcessTerminationUnverified) throw settled.error;
+        throw new JobRetryableError(`job timed out after ${timeoutMs}ms`);
+      }
+      if (first.kind === "error") throw first.error;
+      const result: unknown = first.value;
       await context.throwIfCancelled();
       const outcome = isJobExecutionOutcome(result)
         ? result.outcome

@@ -51,13 +51,19 @@ export class FsRenderRootAdapter implements RenderRootPort {
     await mkdir(this.options.stagingRoot, { recursive: true, mode: 0o700 });
     const root = path.join(this.options.stagingRoot, jobId);
     await mkdir(root, { recursive: false, mode: 0o700 });
-    const marker: OwnerMarker = { jobId, createdAt: this.options.clock.now().toISOString() };
-    await writeAtomic(
-      path.join(root, RENDER_OWNER_MARKER) as ResolvedPath,
-      `${JSON.stringify(marker)}\n`,
-    );
-    await syncDirectory(root);
-    await syncDirectory(this.options.stagingRoot);
+    try {
+      const marker: OwnerMarker = { jobId, createdAt: this.options.clock.now().toISOString() };
+      await writeAtomic(
+        path.join(root, RENDER_OWNER_MARKER) as ResolvedPath,
+        `${JSON.stringify(marker)}\n`,
+      );
+      await syncDirectory(root);
+      await syncDirectory(this.options.stagingRoot);
+    } catch (error) {
+      await rm(root, { recursive: true, force: true }).catch(() => {});
+      await syncDirectory(this.options.stagingRoot).catch(() => {});
+      throw error;
+    }
     return {
       root: root as AbsolutePath,
       environment: {
@@ -77,10 +83,17 @@ export class FsRenderRootAdapter implements RenderRootPort {
       return { ok: false, error: "render root ownership marker is missing or invalid" };
     }
     try {
-      await rm(root, { recursive: true, force: true });
+      await rm(root, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 });
       await syncDirectory(this.options.stagingRoot);
       return { ok: true };
     } catch (error) {
+      try {
+        await writeAtomic(
+          path.join(root, RENDER_OWNER_MARKER) as ResolvedPath,
+          `${JSON.stringify(marker)}\n`,
+        );
+        await syncDirectory(root);
+      } catch { /* the root was removed after the failed rm */ }
       return { ok: false, error: error instanceof Error ? error.message : "render root release failed" };
     }
   }

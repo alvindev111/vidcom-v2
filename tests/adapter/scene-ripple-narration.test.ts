@@ -6,8 +6,8 @@ import { afterEach, describe, expect, it } from "vitest";
 
 import { initializeDatabase } from "@vidcom/adapter";
 import { type ContentHash, type ProjectId, type RelPath } from "@vidcom/contracts";
-import { createScene, setSceneScript, setSceneTiming, type AbsolutePath, type ProjectRef } from "@vidcom/core";
-import { createApplication, createInfrastructure } from "../../packages/cli/src/composition-root";
+import { createScene, patchNarrationCue, setSceneScript, setSceneTiming, type AbsolutePath, type ProjectRef } from "@vidcom/core";
+import { createApplication, createInfrastructure, hashContent } from "../../packages/cli/src/composition-root";
 
 import { dbRun } from "../support/database";
 
@@ -228,5 +228,77 @@ describe("Phase N scene ripple and narration on real SQLite/filesystem", () => {
       { cueId: "line-1", staleSince: now },
       { cueId: "line-2", staleSince: null },
     ]);
+  });
+
+  it("patches one generated cue without resetting sibling or audio metadata", async () => {
+    const value = await fixture("cue-patch", multiTrack);
+    await mkdir(path.join(value.projectRoot, "narration"), { recursive: true });
+    const sidecarPath = path.join(value.projectRoot, "narration/a.json");
+    const original = {
+      schemaVersion: 2,
+      sceneId: "a",
+      revision: 3,
+      updatedAt: "2026-08-03T00:00:00.000Z",
+      cues: [
+        { cueId: "line-1", text: "One", voice: "a", offsetSeconds: 0, durationSeconds: 1.25,
+          staleSince: null, status: "generated", audioPath: "narration/a/line-1.wav", command: "tts one",
+          provider: "vieneu", engine: { model: "v3", device: "cpu" },
+          words: [{ text: "One", startSeconds: 0, endSeconds: 1.25 }], wordTimingSource: "engine" },
+        { cueId: "line-2", text: "Two", voice: "b", offsetSeconds: 1.5, durationSeconds: 1,
+          staleSince: null, status: "generated", audioPath: "narration/a/line-2.wav", command: "tts two",
+          words: [{ text: "Two", startSeconds: 0, endSeconds: 1 }], wordTimingSource: "estimated" },
+      ],
+    };
+    const content = `${JSON.stringify(original, null, 2)}\n`;
+    await writeFile(sidecarPath, content);
+
+    const result = await patchNarrationCue(value.application.writeDependencies, {
+      projectId: value.id,
+      sceneId: "a",
+      cueId: "line-1",
+      patch: { text: "One updated" },
+      expectedContentHash: hashContent(content),
+    }, "user");
+    expect(result.ok).toBe(true);
+    const updatedContent = await readFile(sidecarPath, "utf8");
+    const updated = JSON.parse(updatedContent);
+    expect(updated.cues[0]).toEqual({ ...original.cues[0], text: "One updated", staleSince: now });
+    expect(updated.cues[1]).toEqual(original.cues[1]);
+
+    const offsetOnly = await patchNarrationCue(value.application.writeDependencies, {
+      projectId: value.id,
+      sceneId: "a",
+      cueId: "line-2",
+      patch: { offsetSeconds: 2 },
+      expectedContentHash: hashContent(updatedContent),
+    }, "user");
+    expect(offsetOnly.ok).toBe(true);
+    const offsetUpdated = JSON.parse(await readFile(sidecarPath, "utf8"));
+    expect(offsetUpdated.cues[0]).toEqual(updated.cues[0]);
+    expect(offsetUpdated.cues[1]).toEqual({ ...original.cues[1], offsetSeconds: 2 });
+
+    const legacy = {
+      sceneId: "a", text: "Legacy", voice: "legacy-voice", status: "generated",
+      audioPath: "narration/a.wav", command: "vidcom tts --scene a", revision: 7,
+      updatedAt: "2026-08-03T00:00:00.000Z", staleSince: null, provider: "vieneu",
+      durationSeconds: 1.5, words: [{ text: "Legacy", startSeconds: 0, endSeconds: 1.5 }],
+      wordTimingSource: "engine", engine: { model: "v3", device: "cpu" },
+    };
+    const legacyContent = `${JSON.stringify(legacy, null, 2)}\n`;
+    await writeFile(sidecarPath, legacyContent);
+    const legacyPatched = await patchNarrationCue(value.application.writeDependencies, {
+      projectId: value.id, sceneId: "a", cueId: "a", patch: { offsetSeconds: 0.25 },
+      expectedContentHash: hashContent(legacyContent),
+    }, "user");
+    expect(legacyPatched.ok).toBe(true);
+    const normalizedLegacy = JSON.parse(await readFile(sidecarPath, "utf8"));
+    expect(normalizedLegacy).toMatchObject({
+      status: "generated", audioPath: legacy.audioPath, command: legacy.command,
+      provider: legacy.provider, engine: legacy.engine, words: legacy.words, wordTimingSource: "engine",
+      cues: [{
+        status: "generated", audioPath: legacy.audioPath, command: legacy.command,
+        provider: legacy.provider, engine: legacy.engine, words: legacy.words, offsetSeconds: 0.25,
+      }],
+    });
   });
 });

@@ -48,6 +48,7 @@ class ProbeStore implements JobStorePort {
     this.record.finishedAt = now().toISOString();
   }
   async requestCancel(): Promise<void> { this.record.cancelRequested = true; }
+  async beginPublication(): Promise<boolean> { return !this.record.cancelRequested; }
   async isCancellationRequested(): Promise<boolean> { return this.record.cancelRequested; }
   async requeue(): Promise<void> { this.record.status = "queued"; }
   async listStale(): Promise<Job[]> { return []; }
@@ -98,4 +99,3 @@ console.log(JSON.stringify({
   cancelLatencyMs: Math.round(terminalAt - requestedAt),
   signalWasConnectedToPersistedCancellation: statusAfter500Ms !== "running",
 }, null, 2));
-

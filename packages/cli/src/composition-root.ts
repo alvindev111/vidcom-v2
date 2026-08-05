@@ -334,6 +334,7 @@ export function createMcpRegistry(
       jobs: infrastructure.jobs,
       ids: infrastructure.ids,
       hashContent,
+      binaries: infrastructure.renderBinaries,
     }, input),
     enqueueSnapshot: (input) => enqueueSnapshotJob({
       workspace: infrastructure.workspace,
@@ -342,6 +343,7 @@ export function createMcpRegistry(
       jobs: infrastructure.jobs,
       ids: infrastructure.ids,
       hashContent,
+      binaries: infrastructure.renderBinaries,
     }, input),
   });
   return registry;

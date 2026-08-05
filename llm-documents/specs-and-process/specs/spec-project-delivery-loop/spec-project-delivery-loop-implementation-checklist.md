@@ -3,7 +3,7 @@
 > **References**:
 > - [Detailed Goals](./spec-project-delivery-loop-detailed-goal.md) — bản 12, Approved 2026-08-04
 > - [Detailed Design](./spec-project-delivery-loop-detailed-design.md) — bản 6, Approved 2026-08-04
-> - [Main spec](./spec-project-delivery-loop-complete.md)
+> - [Main spec](./spec-project-delivery-loop-inprocess.md)
 > - Spike gate: [phase-3-checklist-gate](../../../../spikes/phase-3-checklist-gate/README.md) · [phase-3-detailed-design](../../../../spikes/phase-3-detailed-design/README.md) · [phase-3-render](../../../../spikes/phase-3-render/README.md) · [phase-3-agent-kit-host](../../../../spikes/phase-3-agent-kit-host/README.md)
 
 ## Context
@@ -28,14 +28,45 @@ Bốn trọng tâm rủi ro, và cả bốn đều **đã có bằng chứng ch�
 - **Status**: **✅ APPROVED 2026-08-04** — nội dung checklist được duyệt. **Code Execution CHƯA bắt đầu theo yêu cầu tường minh của người dùng** ("approve nhưng không thực hiện code").
 - **Confirmed by**: Người dùng
 - **Confirmation date**: 2026-08-04
-- **Trạng thái thực thi**: **✅ Hoàn tất 2026-08-05.** Đã thực thi đủ dependency order A→B→F→C→D→E→G→H→I→J→K→L→M→N→Q→O→P→R→S. Remediation commit `8ff32c4` xanh cả full CI và process-supervision; main spec chuyển sang `spec-project-delivery-loop-complete.md`.
+- **Full-review closeout status**: **🔄 Chờ remote matrix 2026-08-05.** Cả 26 finding đã được sửa và có focused regression; chỉ closeout sau khi exact commit xanh trên Linux, Windows và macOS.
+- **Trạng thái thực thi**: **🔄 Full review remediation đang thực thi 2026-08-05.** Nhóm Agent 1 đã sửa; audit lại xác nhận còn các finding Agent 2/3 về scheduler, process, publication và lifecycle/storage cần xử lý trước closeout.
 - **Notes**:
+- Full-review remediation: code fixes cho đủ 26 finding đã được triển khai; regression tập trung đã xanh cho narration/HTTP/agent-kit, lifecycle/storage/state, scheduler/render/snapshot/process supervision. Đang chờ full local gates và GitHub matrix ba OS trước khi đánh dấu hoàn tất.
+- Edge-case evidence bổ sung: Range số nguyên cực lớn, state projection sai shape/foreign project, MCP không tự tạo idempotency key, snapshot complete bị mất artifact phải render lại, PID identity/degraded enumeration và cancel chỉ terminal sau bounded cleanup.
   - Design bản 7 và Goals bản 12 đã duyệt; `steering/08` đã đồng bộ (§2.1 Design).
   - **Phase B, D, E, F là gate**: không sang phase sau khi gate còn đỏ. Lý do ở Dependency Order.
   - **Re-estimate đã làm** (Design §14 đòi): ~211 SP, không phải ~190 SP của Goals. Chi tiết ở §Estimate.
   - **Chín điểm vá executability đã đóng** (mục ngay dưới) — không còn quyết định nào phải hỏi lại giữa chừng.
   - Ba mục Design còn `[ ]` **không chặn** Code Execution: năm type chưa có shape (định nghĩa ở Phase K), số CI Linux/Windows (Phase S), và chính con số estimate này.
   - **Điểm bắt đầu khi được lệnh chạy**: Phase A, task A.1.
+
+## Review remediation 2026-08-05
+
+### Agent 2/3 remediation bổ sung
+
+- [x] Publication CAS chặn late cancel sau khi render/snapshot bắt đầu publish.
+- [x] Scheduler timeout đợi bounded termination/cleanup trước terminal; quá grace ghi `process_termination_unverified`.
+- [x] Process capture lưu PID + creation time; mọi Windows command và toàn verify protocol đều có deadline.
+- [x] MCP render/snapshot chỉ forward idempotency key do caller cấp.
+- [x] Preflight binary/document/remote asset chạy trước enqueue và worker, gồm local stylesheet và `@import`.
+- [x] Runtime guard dùng acknowledgement barrier trước publish.
+- [x] Render-root marker giữ ownership qua acquire/cleanup lỗi; clone dùng revalidation và `O_NOFOLLOW`.
+- [x] MP4 được stream vào staged asset; snapshot complete chỉ reuse khi mọi artifact còn tồn tại.
+- [x] Journal lưu staging/quarantine path trước filesystem transition và giữ cleanup obligation sau committed delete.
+- [x] Delete re-hash sau quarantine; create recovery xác minh exact journal hashes trước commit.
+- [x] Workspace marker/file reads không follow symlink.
+- [x] State reconcile chỉ ghi projection drift; state reader validate shape, số hữu hạn và project ownership.
+- [x] Exported lifecycle/state/coordinator APIs có doc comments theo steering.
+
+- [x] PATCH narration cue giữ nguyên metadata của cue không đổi; chỉ text/voice thay đổi mới stale đúng cue đích; offset-only giữ trạng thái generated/stale hiện hữu.
+- [x] Agent-kit recovery detail chỉ trả đường dẫn tương đối, không rò workspace tuyệt đối.
+- [x] Inspect lỗi sau khi commit trả `committed_response_error` với `committed: true` và danh sách file đã đổi, không khuyến khích retry mutation.
+- [x] Download Range trả `416` + `Content-Range: bytes */<size>` cho range không thỏa và gửi `Cache-Control: must-revalidate`.
+- [x] JSON media type và toàn bộ path params delivery-loop được parse tại HTTP boundary bằng schema dùng chung.
+- [x] O.8 so cùng operation qua HTTP/MCP trên fixture tương đương; O.9 gửi request thật qua `createServerApp().fetch()` cho bảng error/status.
+- [x] S.6 được sửa thành release/tag gate; không còn diễn giải evidence ba OS lịch sử thành guarantee cho mọi pull request.
+
+**Evidence remediation**: focused regression 23/23; MCP contract 71/71; golden 26/26; `typecheck`, `lint`, `test:boundaries`, `test:schema-drift`, `test:spec-paths`, `test:agent-kit` và `test:runtime-smoke` đều xanh. `bun run test` tổng hợp không terminalize; chạy riêng `tests/adapter/render-job.test.ts` tái hiện tiến trình supervision con còn sống. Vì vậy closeout này không claim full-suite local mới; caveat hiện hữu đó nằm ngoài 7 finding của review.
 
 ### Vá executability 2026-08-04 — chín điểm, sau khi đối chiếu checklist với repo thật
 
@@ -753,7 +784,7 @@ Mỗi phase chạy focused command dưới đây trên SQLite/filesystem thật,
 **Tasks — Tests**:
 - [x] N.6 Integration: ripple trên project **nhiều track** — track khác **không** dịch
 - [x] N.7 Integration: chèn scene đầu tiên → `empty → authored` trong một revision
-- [x] N.8 Integration: đọc sidecar một-cue cũ thành đúng một cue; nhiều `<audio>` đúng `data-start`
+- [x] N.8 Integration: đọc sidecar một-cue cũ thành đúng một cue; nhiều `<audio>` đúng `data-start`; PATCH giữ metadata cue không đổi và chỉ stale cue đổi text/voice
 
 **Deliverables**: `packages/core/src/usecase/project-writes.ts` (mở rộng `createScene`, `setSceneTiming`, vùng narration) · `packages/core/src/usecase/narration-cues.ts` (đọc/ghi cue, mới)
 
@@ -811,13 +842,13 @@ Mỗi phase chạy focused command dưới đây trên SQLite/filesystem thật,
 - [x] O.2 Route job: `POST .../renders` · `POST .../snapshots` (cả hai `idempotencyKey`) · `GET /v1/jobs/:jobId` (gồm `partial`, `warnings`, `cleanupPending`) · `POST /v1/jobs/:jobId/cancel` (202, idempotent) · `GET /v1/jobs/:jobId/termination-proof`
 - [x] O.3 Route nội dung: diagnostics · scenes · scene timing · narration-cues (GET/PUT/PATCH với `expectedContentHash`)
 - [x] O.4 Route recovery `entryId`: diagnostics · thay identity · rename · delete (backup + confirmation/grant)
-- [x] O.5 `GET /v1/renders/:jobId/download` — Range + ETag
+- [x] O.5 `GET /v1/renders/:jobId/download` — Range + ETag + `416` cho unsatisfiable range + `must-revalidate`
 - [x] O.6 `POST /v1/agent-kit/install`
 - [x] O.7 Error mapping theo §8.1 — giữ nguyên shape `ErrorDetail`, **không** thêm shape thứ hai
 
 **Tasks — Tests**:
-- [x] O.8 Integration: HTTP và MCP gọi **cùng** usecase (MP-2) — không có đường thứ hai
-- [x] O.9 Integration: mã lỗi đúng status theo bảng §8.1
+- [x] O.8 Integration: HTTP và MCP gọi **cùng một operation/usecase** trên fixture tương đương (MP-2) — không có đường thứ hai
+- [x] O.9 Integration: request thật qua `createServerApp().fetch()` map mã lỗi đúng status theo bảng §8.1
 - [x] O.10 Integration: SSE `job.progress`/`job.done` mang `partial` — assert **đúng shape payload**, không chỉ assert "có event": `payload` là `Record<string, unknown>` nên compiler không bảo vệ gì (_Vá executability #7_)
 
 **Deliverables**: `packages/server/src/routes/*`
@@ -886,7 +917,7 @@ Mỗi phase chạy focused command dưới đây trên SQLite/filesystem thật,
 - [x] S.3 Nếu Windows vừa **không** có enumerator `ppid` vừa leak với naive → **quay lại Design §5.9**, không tự xử trong implementation
 - [x] S.4 Mở rộng `test:golden` sang golden mới của spec này (tiền lệ: Phase 2 từng bỏ sót)
 - [x] S.5 Cập nhật `verify-spec-test-paths.mjs` cho Verification Matrix mới
-- [x] S.6 Release gate: `typecheck` · `lint` · `test:boundaries` · `test` · `test:golden` · `test:schema-drift` · `test:mcp-contract` · `test:runtime-smoke` · `spike:process-supervision` — tất cả xanh trên **cả ba** OS
+- [x] S.6 Release policy: `typecheck` · `lint` · `test:boundaries` · `test` · `test:golden` · `test:schema-drift` · `test:mcp-contract` · `test:runtime-smoke` · `spike:process-supervision` phải xanh trước release/tag. Workflow pull request hiện gate Linux + Windows; macOS chạy khi push `main` hoặc manual dispatch. Evidence ba OS lịch sử không phải guarantee cho mọi pull request; review remediation hiện tại không claim một full-suite local mới.
 
 ---
 
@@ -1160,6 +1191,14 @@ Chi tiết: §13 [Detailed Design](./spec-project-delivery-loop-detailed-design.
   - Council: SM xác nhận checklist A–S đã tick và log cả lần đỏ lẫn remediation; PO xác nhận budget warm vẫn `<100 ms` theo p50/3 mẫu và đường sản phẩm không đổi; Dev xác nhận SQLite/filesystem thật, không mock `node:fs`, portability ba OS và real render Windows.
   - Decisions: Không còn blocker. Spec chuyển lại `complete`; closeout docs commit vẫn phải nhận hai workflow xanh trên exact final HEAD trước báo hoàn tất.
   - Blockers: Không có.
+
+2026-08-05 — Delivery-loop review remediation và closeout
+  - Files: `packages/contracts/src/delivery-loop-http.ts`, `packages/core/src/usecase/{agent-kit-install,narration-cues,project-writes}.ts`, `packages/server/src/routes/delivery-loop.ts`, `tests/adapter/{agent-kit-installer,scene-ripple-narration}.test.ts`, `tests/server/delivery-loop-routes.test.ts`, checklist và implementation notes.
+  - Summary: Sửa đủ 7 nhóm finding: preserve narration metadata/stale semantics; che absolute path; phân biệt lỗi response sau commit; Range 416 + revalidation; strict JSON/path boundary; evidence HTTP/MCP và error/status thực; diễn đạt lại S.6 đúng workflow.
+  - Verification: focused regression 23/23; MCP contract 71/71; golden 26/26; typecheck, lint, boundaries, schema drift, spec paths, agent-kit và runtime smoke xanh. Full aggregate không terminalize; `render-job.test.ts` tái hiện orphan supervision process khi chạy riêng, nên không claim full-suite local mới.
+  - Council: SM xác nhận checklist và notes phản ánh đúng evidence/caveat; PO xác nhận cả 7 finding có regression coverage; Dev xác nhận thay đổi surgical, type-safe và không thêm dependency.
+  - Decisions: Hoàn tất remediation và chuyển spec về `complete`; giữ caveat supervision test riêng thay vì che bằng claim release mới.
+  - Blockers: Không có blocker đối với 7 finding của review.
 
 Format:
 ```

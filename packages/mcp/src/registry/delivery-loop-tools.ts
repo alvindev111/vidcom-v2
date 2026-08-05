@@ -12,7 +12,6 @@ import {
   type ProjectId,
 } from "@vidcom/contracts";
 import {
-  canonicalizeJobInput,
   ok,
   type AbsolutePath,
   type AgentKitInstaller,
@@ -35,11 +34,11 @@ export interface DeliveryLoopToolDependencies {
     projectId: ProjectId;
     bestEffort?: boolean;
     renderPresetId?: string;
-    idempotencyKey: string;
+    idempotencyKey?: string;
   }): Promise<Result<Job, DomainError>>;
   enqueueSnapshot(input: {
     projectId: ProjectId;
-    idempotencyKey: string;
+    idempotencyKey?: string;
   }): Promise<Result<Job, DomainError>>;
 }
 
@@ -79,9 +78,10 @@ export function startRenderTool(
         ...(raw.bestEffort === undefined ? {} : { bestEffort: raw.bestEffort }),
         ...(raw.renderPresetId === undefined ? {} : { renderPresetId: raw.renderPresetId }),
       };
-      const idempotencyKey = raw.idempotencyKey
-        ?? `render:${dependencies.hashContent(canonicalizeJobInput(input))}`;
-      const enqueued = await dependencies.enqueueRender({ ...input, idempotencyKey });
+      const enqueued = await dependencies.enqueueRender({
+        ...input,
+        ...(raw.idempotencyKey === undefined ? {} : { idempotencyKey: raw.idempotencyKey }),
+      });
       return enqueued.ok ? ok({ jobId: enqueued.value.id }) : enqueued;
     },
   };
@@ -102,9 +102,10 @@ export function startSnapshotTool(
     projectIdOf: (input) => input.projectId as ProjectId,
     handler: async (_context, input) => {
       const projectId = input.projectId as ProjectId;
-      const idempotencyKey = input.idempotencyKey
-        ?? `snapshot:${dependencies.hashContent(canonicalizeJobInput({ projectId }))}`;
-      const enqueued = await dependencies.enqueueSnapshot({ projectId, idempotencyKey });
+      const enqueued = await dependencies.enqueueSnapshot({
+        projectId,
+        ...(input.idempotencyKey === undefined ? {} : { idempotencyKey: input.idempotencyKey }),
+      });
       return enqueued.ok ? ok({ jobId: enqueued.value.id }) : enqueued;
     },
   };

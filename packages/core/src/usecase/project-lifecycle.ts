@@ -73,6 +73,7 @@ function identityFor(
 export class ProjectLifecycle {
   constructor(private readonly dependencies: ProjectLifecycleDependencies) {}
 
+  /** Validates a new project, journals its initial files, and commits one registry revision plus project event. */
   async create(input: { name: string; preset: PlatformConfig; actor?: Actor }): Promise<Result<{ projectId: ProjectId; slug: string }, DomainError>> {
     const slug = slugify(input.name);
     if (!slug) return err({ code: ErrorCode.SchemaInvalid, message: "project name cannot produce a valid slug", field: "name" });
@@ -99,6 +100,7 @@ export class ProjectLifecycle {
     return created.ok ? ok({ projectId, slug }) : created;
   }
 
+  /** Adopts an unowned marker-backed folder by writing identity and committing its registry/event atomically. */
   async adopt(input: { slug: string; actor?: Actor }): Promise<Result<{ projectId: ProjectId }, DomainError>> {
     const directories = await this.dependencies.workspace.listWorkspaceDirectories?.(this.dependencies.workspaceRoot) ?? [];
     const candidate = directories.find((entry) => entry.slug === input.slug);
@@ -136,6 +138,7 @@ export class ProjectLifecycle {
     return adopted.ok ? ok({ projectId }) : adopted;
   }
 
+  /** Replaces an invalid recovery identity under a hash precondition and revokes the session entry on success. */
   async replaceIdentity(input: {
     entryId: EntryId;
     identity: ProjectIdentity;
@@ -214,6 +217,7 @@ export class ProjectLifecycle {
     return ok({ ...core, planDigest: this.dependencies.hashContent(canonicalizeJson(core)) });
   }
 
+  /** Hashes every deletion target without writing files, revisions, events, grants, or backups. */
   async planRemove(locator: ProjectLocator): Promise<Result<{ binding: GrantBinding; summary: string }, DomainError>> {
     const target = await this.project(locator);
     if (!target.ok) return target;
@@ -230,6 +234,7 @@ export class ProjectLifecycle {
     return binding.ok ? ok({ binding: binding.value, summary: `Delete project ${target.value.slug}` }) : binding;
   }
 
+  /** Renames an idle project through the lifecycle journal and emits one project/workspace change event. */
   async rename(locator: ProjectLocator, nextName: string, actor: Actor = "user"): Promise<Result<{ slug: string }, DomainError>> {
     const ref = await this.project(locator);
     if (!ref.ok) return ref;
@@ -251,6 +256,7 @@ export class ProjectLifecycle {
     return renamed.ok ? ok({ slug }) : renamed;
   }
 
+  /** Requires confirmation/grant, verifies a backup, then journals quarantine and the delete revision/event. */
   async remove(locator: ProjectLocator, authority: ProjectRemovalAuthority): Promise<Result<{ backupId: string }, DomainError>> {
     if (!authority.confirmed) return err({
       code: ErrorCode.ConfirmationRequired,
@@ -299,6 +305,7 @@ export class ProjectLifecycle {
       projectId: ref.value.projectId,
       slug: ref.value.slug,
       verifiedBackupId: backup.id,
+      expectedTargetHashes: binding.value.targetHashes,
       actor: authority.actor,
       ...(grantId ? { grantId } : {}),
     });

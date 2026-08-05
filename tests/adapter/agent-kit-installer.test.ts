@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { mkdir, mkdtemp, readFile, realpath, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
@@ -220,7 +220,8 @@ describe("AgentKitInstaller with real SQLite and filesystem", () => {
     });
     if (!result.ok) throw new Error("install failed");
     expect(result.value.installationState.recovery.find((item) => item.host === "codex")?.detail)
-      .toContain(await realpath(path.join(workspaceRoot, "AGENTS.vidcom.md")));
+      .toBe("Merge AGENTS.vidcom.md into AGENTS.md");
+    expect(JSON.stringify(result.value)).not.toContain(workspaceRoot);
     expect(await readFile(path.join(workspaceRoot, "AGENTS.vidcom.md"), "utf8")).toBe(source("AGENTS.md"));
     expect(await readFile(path.join(workspaceRoot, "CLAUDE.vidcom.md"), "utf8")).toBe(source("CLAUDE.md"));
   });
@@ -314,5 +315,70 @@ describe("AgentKitInstaller with real SQLite and filesystem", () => {
     await expect(readFile(path.join(workspaceRoot, "AGENTS.md"), "utf8")).rejects.toMatchObject({ code: "ENOENT" });
     expect(dbOne(database, "SELECT COUNT(*) AS count FROM revision")).toEqual({ count: 0 });
     expect(dbAll(database, "SELECT status FROM workspace_operation")).toEqual([{ status: "recovered" }]);
+  });
+
+  it("reports a committed response error when post-commit inspection fails", async () => {
+    let committed = false;
+    const failing = new Proxy(workspace, {
+      get(target, property) {
+        if (property === "readFile") {
+          return async (...args: Parameters<WorkspaceFs["readFile"]>) => {
+            if (committed) throw new Error("injected post-commit read failure");
+            return target.readFile(...args);
+          };
+        }
+        const value = Reflect.get(target, property, target) as unknown;
+        return typeof value === "function" ? value.bind(target) : value;
+      },
+    }) as WorkspacePort;
+    const coordinator = new WorkspaceMutationCoordinator({
+      workspace: failing, journal, lease, leaseId, hashContent: hash,
+    });
+    const installer = new AgentKitInstaller({
+      workspace: failing,
+      bundle,
+      actor: "agent",
+      authority: {
+        mutateWorkspace: async (...args) => {
+          const result = await coordinator.mutate(...args);
+          if (result.ok) committed = true;
+          return result;
+        },
+      },
+    });
+
+    const audit = new ToolAuditService(
+      new SqliteToolAuditRepository(database),
+      clock,
+      { warn: () => undefined, error: () => undefined },
+      { increment: () => undefined, observeMilliseconds: () => undefined },
+      { isJournalOwned: journal.isJournalOwned.bind(journal) },
+    );
+    const registry = new ToolRegistry({ audit, approvals: { request: async () => "unused" } }, {
+      newInvocationId: () => "agent-kit-post-commit",
+      now: () => clock.now(),
+    });
+    registry.register(installAgentKitTool({ workspaceRoot, agentKit: installer } as unknown as Parameters<typeof installAgentKitTool>[0]));
+    const result = await registry.invoke("install_agent_kit", {
+      operation: "install",
+      hosts: ["codex"],
+    }, {
+      era: "modern",
+      protocolVersion: "2026-07-28",
+      credentialId: "credential-agent-kit",
+      requestInput: async (): Promise<never> => { throw new Error("input not expected"); },
+    });
+    expect(result).toMatchObject({
+      ok: false,
+      error: { code: "committed_response_error", details: { committed: true } },
+    });
+    if (result.ok) throw new Error("post-commit inspection unexpectedly succeeded");
+    expect(result.error.details?.changedFiles).toEqual(expect.arrayContaining([
+      expect.objectContaining({ relativePath: "AGENTS.md" }),
+    ]));
+    expect(await readFile(path.join(workspaceRoot, "AGENTS.md"), "utf8")).toBe(source("AGENTS.md"));
+    expect(dbAll(database, "SELECT status FROM workspace_operation")).toEqual([{ status: "committed" }]);
+    expect(dbAll(database, `SELECT outcome, error_code AS errorCode FROM audit_entry`))
+      .toEqual([{ outcome: "ok", errorCode: null }]);
   });
 });

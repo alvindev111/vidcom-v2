@@ -150,6 +150,7 @@ async function enqueueAndRun(
     jobs: value.jobs,
     ids: value.ids,
     hashContent,
+    binaries: value.binaries,
   }, { projectId: value.projectId });
   if (!queued.ok) throw new Error(queued.error.message);
   const scheduler = new JobScheduler(
@@ -234,7 +235,7 @@ describe("snapshot job with real SQLite and filesystem", () => {
       await writeFile(${JSON.stringify(counter)}, String(run));
       await appendFile(${JSON.stringify(invocations)}, values.join(",") + "\\n");
       await mkdir(output, { recursive: true });
-      const selected = run === 1 || run === 3 ? values.slice(0, 1) : values;
+      const selected = run === 1 || run === 4 ? values.slice(0, 1) : values;
       const png = Buffer.from(${JSON.stringify(pngBase64)}, "base64");
       for (const [index, value] of selected.entries()) {
         await writeFile(output + "/frame-" + String(index).padStart(2, "0") + "-at-" + Number(value) + "s.png", png);
@@ -261,6 +262,11 @@ describe("snapshot job with real SQLite and filesystem", () => {
       });
       const second = await enqueueAndRun(value, processPort);
       expect(second).toMatchObject({
+        status: "succeeded",
+        result: { complete: true, computedAtSourceRevision: 0, missingSceneIds: [] },
+      });
+      await rm(path.join(value.projectRoot, "snapshots", "scene-0001.png"));
+      await expect(enqueueAndRun(value, processPort)).resolves.toMatchObject({
         status: "succeeded",
         result: { complete: true, computedAtSourceRevision: 0, missingSceneIds: [] },
       });
@@ -303,10 +309,10 @@ describe("snapshot job with real SQLite and filesystem", () => {
       const fourth = await enqueueAndRun(value, processPort);
       expect(fourth).toMatchObject({
         status: "succeeded",
-        result: { complete: true, computedAtSourceRevision: 4, missingSceneIds: [] },
+        result: { complete: true, computedAtSourceRevision: 5, missingSceneIds: [] },
       });
       expect((await readFile(invocations, "utf8")).trim().split("\n"))
-        .toEqual(["0.5,1.5", "1.5", "0.5,1.5", "0.5,1.5"]);
+        .toEqual(["0.5,1.5", "1.5", "0.5,1.5", "0.5,1.5", "0.5,1.5"]);
       expect((await readFile(path.join(value.projectRoot, "snapshots", "contact-sheet.png"))).byteLength)
         .toBeGreaterThan(0);
     } finally {

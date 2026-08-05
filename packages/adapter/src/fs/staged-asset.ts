@@ -1,7 +1,8 @@
-import { constants } from "node:fs";
+import { constants, createReadStream } from "node:fs";
 import { copyFile, link, mkdir, open, readFile, rm, stat, unlink } from "node:fs/promises";
 import path from "node:path";
 import { createHash, randomUUID } from "node:crypto";
+import { pipeline } from "node:stream/promises";
 
 import type { ContentHash, RelPath } from "@vidcom/contracts";
 import type { ResolvedPath, StagedAsset, StagedAssetPort } from "@vidcom/core";
@@ -25,8 +26,61 @@ export class AppDataAssetStager implements StagedAssetPort {
     const handle = await open(temporaryPath, "wx", 0o600);
     try { await handle.writeFile(bytes); await handle.sync(); }
     finally { await handle.close(); }
-    let installed = false;
     const contentHash = `sha256:${createHash("sha256").update(bytes).digest("hex")}` as ContentHash;
+    return this.staged(target, targetPath, temporaryPath, contentHash);
+  }
+
+  async stageFile(
+    target: ResolvedPath,
+    targetPath: RelPath,
+    sourcePath: import("@vidcom/core").AbsolutePath,
+    expectedHash: ContentHash,
+  ): Promise<StagedAsset> {
+    try {
+      await stat(target);
+      throw new Error("asset target already exists");
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+    }
+    const directory = path.join(this.appDataRoot, "tmp");
+    await mkdir(directory, { recursive: true });
+    const temporaryPath = path.join(directory, `artifact-${randomUUID()}.tmp`);
+    const source = await open(sourcePath, constants.O_RDONLY | constants.O_NOFOLLOW);
+    let destination: Awaited<ReturnType<typeof open>> | null = null;
+    try {
+      destination = await open(temporaryPath, "wx", 0o600);
+      if (!(await source.stat()).isFile()) throw new Error("staged artifact source is not a regular file");
+      await pipeline(
+        source.createReadStream({ autoClose: false }),
+        destination.createWriteStream({ autoClose: false }),
+      );
+      await destination.sync();
+    } catch (error) {
+      if (destination) {
+        await destination.close();
+        destination = null;
+      }
+      await rm(temporaryPath, { force: true });
+      throw error;
+    } finally {
+      await source.close();
+      if (destination) await destination.close();
+    }
+    const actual = await hashFile(temporaryPath);
+    if (actual !== expectedHash) {
+      await rm(temporaryPath, { force: true });
+      throw new Error("staged artifact source hash changed during copy");
+    }
+    return this.staged(target, targetPath, temporaryPath, actual);
+  }
+
+  private staged(
+    target: ResolvedPath,
+    targetPath: RelPath,
+    temporaryPath: string,
+    contentHash: ContentHash,
+  ): StagedAsset {
+    let installed = false;
     return {
       temporaryPath,
       targetPath,
@@ -59,4 +113,10 @@ export class AppDataAssetStager implements StagedAssetPort {
       },
     };
   }
+}
+
+async function hashFile(pathname: string): Promise<ContentHash> {
+  const digest = createHash("sha256");
+  for await (const chunk of createReadStream(pathname)) digest.update(chunk as Buffer);
+  return `sha256:${digest.digest("hex")}` as ContentHash;
 }

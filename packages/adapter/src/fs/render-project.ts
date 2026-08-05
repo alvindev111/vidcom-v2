@@ -1,9 +1,19 @@
-import { copyFile, lstat, mkdir, readFile, readdir, realpath } from "node:fs/promises";
+import { constants } from "node:fs";
+import { createReadStream } from "node:fs";
+import { createHash } from "node:crypto";
+import { lstat, mkdir, open, readFile, readdir, realpath, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 import sharp from "sharp";
 
-import { checkPathSyntax, type AbsolutePath, type ProjectRef, type RenderProjectPort, type ResolvedPath } from "@vidcom/core";
+import {
+  checkPathSyntax,
+  type AbsolutePath,
+  type ProjectRef,
+  type RenderProjectPort,
+  type ResolvedPath,
+  type StagedFileSource,
+} from "@vidcom/core";
 
 import { writeAtomic } from "./atomic-write";
 import { syncDirectory } from "./durability";
@@ -16,6 +26,10 @@ function contained(root: string, target: string): boolean {
 }
 
 async function copyRegularTree(source: string, target: string, rootLevel = false): Promise<void> {
+  const sourceStat = await lstat(source);
+  if (!sourceStat.isDirectory() || sourceStat.isSymbolicLink() || await realpath(source) !== source) {
+    throw new Error("render clone source directory changed during traversal");
+  }
   await mkdir(target, { recursive: false, mode: 0o700 });
   for (const entry of await readdir(source, { withFileTypes: true })) {
     if (rootLevel && EXCLUDED_ROOTS.has(entry.name)) continue;
@@ -23,9 +37,19 @@ async function copyRegularTree(source: string, target: string, rootLevel = false
     const to = path.join(target, entry.name);
     if (entry.isSymbolicLink()) continue;
     if (entry.isDirectory()) {
+      const current = await lstat(from);
+      if (!current.isDirectory() || current.isSymbolicLink() || await realpath(from) !== from) {
+        throw new Error("render clone directory changed during traversal");
+      }
       await copyRegularTree(from, to);
     } else if (entry.isFile()) {
-      await copyFile(from, to);
+      const handle = await open(from, constants.O_RDONLY | constants.O_NOFOLLOW);
+      try {
+        if (!(await handle.stat()).isFile()) throw new Error("render clone source is not a regular file");
+        await writeFile(to, await handle.readFile(), { flag: "wx", mode: 0o600 });
+      } finally {
+        await handle.close();
+      }
     }
   }
   await syncDirectory(target);
@@ -60,8 +84,21 @@ export class FsRenderProjectAdapter implements RenderProjectPort {
     };
   }
 
-  async readArtifact(outputPath: AbsolutePath): Promise<Uint8Array> {
-    return new Uint8Array(await readFile(outputPath));
+  async artifactSource(outputPath: AbsolutePath): Promise<StagedFileSource> {
+    const handle = await open(outputPath, constants.O_RDONLY | constants.O_NOFOLLOW);
+    try {
+      if (!(await handle.stat()).isFile()) throw new Error("render artifact is not a regular file");
+      const digest = createHash("sha256");
+      for await (const chunk of createReadStream(outputPath, { fd: handle.fd, autoClose: false })) {
+        digest.update(chunk as Buffer);
+      }
+      return {
+        sourcePath: outputPath,
+        contentHash: `sha256:${digest.digest("hex")}` as import("@vidcom/contracts").ContentHash,
+      };
+    } finally {
+      await handle.close();
+    }
   }
 
   async readSnapshotArtifacts(outputRoot: AbsolutePath): Promise<Array<{ name: string; content: Uint8Array }>> {
