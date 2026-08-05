@@ -40,6 +40,19 @@
         </dl>
       </section>
 
+      <section class="mt-10 rounded-2xl border border-rose-500/30 bg-slate-900 p-6">
+        <div class="flex flex-wrap items-center justify-between gap-3">
+          <h2 class="text-2xl font-semibold">2026-08-05 · Remediation sau CI lần một</h2>
+          <span class="rounded-full bg-rose-400/10 px-3 py-1 text-sm text-rose-300">Đã sửa, chờ rerun</span>
+        </div>
+        <dl class="mt-6 grid gap-5 md:grid-cols-2">
+          <div><dt class="font-semibold text-slate-200">Triệu chứng</dt><dd class="mt-1 text-slate-300">Full test Linux/macOS timeout ở real render sau 120 giây, trong khi process-supervision matrix và real-render Windows riêng đều xanh.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Root cause</dt><dd class="mt-1 text-slate-300"><code>pipeline()</code> chờ sự kiện close nhưng hai stream từ FileHandle đặt <code>autoClose: false</code>, nên copy MP4 hoàn tất byte nhưng promise không settle.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Sửa</dt><dd class="mt-1 text-slate-300">Để pipeline sở hữu và đóng stream, sau đó mở lại file tạm chỉ để fsync. Thêm regression stream 1 MiB qua app-data staging và xác minh không còn open handle.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Bằng chứng local</dt><dd class="mt-1 text-slate-300">Regression mới 3/3 xanh; typecheck và lint xanh. Exact remediation commit tiếp theo phải chạy lại toàn matrix.</dd></div>
+        </dl>
+      </section>
+
       <section class="mt-10 rounded-2xl border border-emerald-500/30 bg-slate-900 p-6">
         <div class="flex flex-wrap items-center justify-between gap-3">
           <h2 class="text-2xl font-semibold">2026-08-05 · Mở lại để sửa delivery-loop review</h2>

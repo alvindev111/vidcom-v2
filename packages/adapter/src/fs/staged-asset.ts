@@ -50,21 +50,13 @@ export class AppDataAssetStager implements StagedAssetPort {
     try {
       destination = await open(temporaryPath, "wx", 0o600);
       if (!(await source.stat()).isFile()) throw new Error("staged artifact source is not a regular file");
-      await pipeline(
-        source.createReadStream({ autoClose: false }),
-        destination.createWriteStream({ autoClose: false }),
-      );
-      await destination.sync();
+      await pipeline(source.createReadStream(), destination.createWriteStream());
+      const durable = await open(temporaryPath, "r+");
+      try { await durable.sync(); } finally { await durable.close(); }
     } catch (error) {
-      if (destination) {
-        await destination.close();
-        destination = null;
-      }
+      await Promise.allSettled([source.close(), destination?.close()]);
       await rm(temporaryPath, { force: true });
       throw error;
-    } finally {
-      await source.close();
-      if (destination) await destination.close();
     }
     const actual = await hashFile(temporaryPath);
     if (actual !== expectedHash) {

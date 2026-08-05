@@ -5,8 +5,8 @@ import path from "node:path";
 import sharp from "sharp";
 import { afterEach, describe, expect, it } from "vitest";
 
-import { FsRenderProjectAdapter } from "@vidcom/adapter";
-import type { AbsolutePath, ProjectRef } from "@vidcom/core";
+import { AppDataAssetStager, FsRenderProjectAdapter } from "@vidcom/adapter";
+import type { AbsolutePath, ProjectRef, ResolvedPath } from "@vidcom/core";
 import type { ProjectId, RelPath } from "@vidcom/contracts";
 
 const roots: string[] = [];
@@ -92,5 +92,23 @@ describe("FsRenderProjectAdapter", () => {
       width: 640,
       height: 180,
     });
+  });
+
+  it("streams a render artifact through app-data staging without leaving open stream handles", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "vidcom-render-stream-"));
+    roots.push(root);
+    const sourcePath = path.join(root, "output.mp4");
+    const targetPath = path.join(root, "project", "renders", "output.mp4");
+    const bytes = Buffer.alloc(1024 * 1024, 0x5a);
+    await writeFile(sourcePath, bytes);
+    const source = await new FsRenderProjectAdapter().artifactSource(sourcePath as AbsolutePath);
+    const staged = await new AppDataAssetStager(path.join(root, "app-data")).stageFile(
+      targetPath as ResolvedPath,
+      "renders/output.mp4" as RelPath,
+      source.sourcePath,
+      source.contentHash,
+    );
+    await staged.commit();
+    await expect(readFile(targetPath)).resolves.toEqual(bytes);
   });
 });
