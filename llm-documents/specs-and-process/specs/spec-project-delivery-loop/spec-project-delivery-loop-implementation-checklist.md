@@ -3,7 +3,7 @@
 > **References**:
 > - [Detailed Goals](./spec-project-delivery-loop-detailed-goal.md) — bản 12, Approved 2026-08-04
 > - [Detailed Design](./spec-project-delivery-loop-detailed-design.md) — bản 6, Approved 2026-08-04
-> - [Main spec](./spec-project-delivery-loop-inprocess.md)
+> - [Main spec](./spec-project-delivery-loop-complete.md)
 > - Spike gate: [phase-3-checklist-gate](../../../../spikes/phase-3-checklist-gate/README.md) · [phase-3-detailed-design](../../../../spikes/phase-3-detailed-design/README.md) · [phase-3-render](../../../../spikes/phase-3-render/README.md) · [phase-3-agent-kit-host](../../../../spikes/phase-3-agent-kit-host/README.md)
 
 ## Context
@@ -41,6 +41,8 @@ Bốn trọng tâm rủi ro, và cả bốn đều **đã có bằng chứng ch�
   - **Điểm bắt đầu khi được lệnh chạy**: Phase A, task A.1.
 
 ## Review remediation 2026-08-05
+
+**Closeout cuối — ✅ COMPLETE**: exact commit `3007d04cf2ebc5383c0e93f5fac06780ebe4ff61` xanh [Process supervision gate #30985352303](https://github.com/dinh-ai-system-exe-com-vn/vidcom-v2/actions/runs/30985352303) 4/4 và [CI #30985352653](https://github.com/dinh-ai-system-exe-com-vn/vidcom-v2/actions/runs/30985352653) 3/3 trên Linux, Windows, macOS. Toàn bộ test, VieNeu sidecar, MCP, golden, schema drift, spec paths, production build và real runtime smoke đều pass.
 
 ### Agent 2/3 remediation bổ sung
 

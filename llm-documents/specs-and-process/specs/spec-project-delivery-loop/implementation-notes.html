@@ -58,6 +58,14 @@
         <p class="mt-4 text-slate-300">Full CI của follow-up đã xanh Linux/macOS; process-supervision Linux chỉ đỏ vì integration lifecycle HTTP chạm timeout mặc định 5 giây khi chạy bundle 30 file với hai worker (5,36 giây), trong khi assertion và production path đều hoàn tất đúng. Đồng bộ timeout 15 giây đã dùng cho integration kế bên; test file riêng 7/7, typecheck và lint xanh.</p>
       </section>
 
+      <section class="mt-10 rounded-2xl border border-emerald-500/40 bg-emerald-950/20 p-6">
+        <div class="flex flex-wrap items-center justify-between gap-3">
+          <h2 class="text-2xl font-semibold">2026-08-05 · Full review remediation hoàn tất</h2>
+          <span class="rounded-full bg-emerald-400/10 px-3 py-1 text-sm text-emerald-300">Linux · Windows · macOS xanh</span>
+        </div>
+        <p class="mt-4 text-slate-300">Exact commit <code>3007d04cf2ebc5383c0e93f5fac06780ebe4ff61</code>: process-supervision run <code>30985352303</code> xanh 4/4, CI run <code>30985352653</code> xanh 3/3. Council closeout: SM xác nhận đủ 26 finding và execution log; PO xác nhận edge-case behavior cùng public surfaces; Dev xác nhận type safety, boundaries, full tests, build và runtime smoke đa nền tảng.</p>
+      </section>
+
       <section class="mt-10 rounded-2xl border border-emerald-500/30 bg-slate-900 p-6">
         <div class="flex flex-wrap items-center justify-between gap-3">
           <h2 class="text-2xl font-semibold">2026-08-05 · Mở lại để sửa delivery-loop review</h2>
