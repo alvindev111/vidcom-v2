@@ -35,13 +35,15 @@ Không viết production code trước khi xong.
 | 0.3 | **PASS** — modern `2026-07-28` và legacy `2025-11-25` cùng PID; source và Bun executable đều gọi tool thành công | Dual-stack khả thi |
 | 0.4 | **PASS** — route cụ thể thắng optional catch-all trên Next 16.2.12 | Cutover D4 theo từng route đứng vững |
 
-**Gate kỹ thuật hiện tại: READY FOR DESIGN APPROVAL.** Spike thay thế đã chọn Node SEA và loại Bun native-loader rewrite. Phase 1 chưa tự động bắt đầu; phải xác nhận thay đổi thiết kế/runtime và checklist trước khi viết production code. Bằng chứng và lệnh tái hiện: [spikes/phase-0](../../spikes/phase-0/README.md).
+**Gate kỹ thuật: ĐÃ ĐÓNG.** Spike thay thế đã chọn Node SEA và loại Bun native-loader rewrite; Giai đoạn 1–3 đã chạy trên quyết định này. Mọi thay đổi toolchain sau này MUST chạy lại smoke test artifact (xem PK-1 ở §"Ba việc làm ngay"). Bằng chứng và lệnh tái hiện: [spikes/phase-0](../../spikes/phase-0/README.md).
 
 ---
 
 ## Giai đoạn 1 — Nền móng (3–4 tuần)
 
 Không có tính năng mới cho người dùng. Đây là phần không thể thêm sau.
+
+> **Hoàn tất 2026-08-01.** Checklist 118/118, toàn bộ finding trong `review.md` đã xử lý, GitHub Actions CI xanh. Chi tiết: [spec Core Backend Foundation](../specs-and-process/specs/spec-core-backend-foundation/spec-core-backend-foundation-complete.md).
 
 | # | Việc | ID |
 |---|---|---|
@@ -94,6 +96,10 @@ D1 là quyết định số một, nhưng nó cần nền móng ở giai đoạn
 
 Đây là lúc vidcom thành công cụ dùng được thay vì prototype. Re-baseline 2026-08-04 kéo agent-kit vào cùng vòng lặp vì harness phải **biết** quy trình trước khi có thể dùng MCP; chi tiết/AC authoritative nằm ở [spec Project Delivery Loop](../specs-and-process/specs/spec-project-delivery-loop/spec-project-delivery-loop-detailed-goal.md).
 
+> **Hoàn tất 2026-08-05** — checklist ✅, xem [spec Project Delivery Loop](../specs-and-process/specs/spec-project-delivery-loop/spec-project-delivery-loop-complete.md).
+>
+> **Nợ còn lại — 3.4 chỉ xong một nửa.** Cột "Vì sao ở đây" của 3.4 hứa *"`New video` thành luồng hoàn chỉnh"*, nhưng checklist map R5 vào E.3 + L.1–L.5 + Phase O — **toàn bộ là Core/adapter/HTTP, không có một task FE nào**. Kết quả: `POST /v1/projects` chạy được, còn nút `New video` trong UI vẫn `disabled`. Đã chuyển thành **5.0** để không mất dấu. Bài học đi kèm: một requirement có User Story nói về UI thì checklist của nó phải có task UI, nếu không "complete" chỉ đúng ở tầng dưới.
+
 | # | Việc | ID | Vì sao ở đây |
 |---|---|---|---|
 | 3.1 | Workspace chạy ở folder bất kỳ; `vidcom.json` là marker; state `empty`/`invalid` + recovery `entryId` | R1 | Bỏ giả định `projects/` và project luôn có composition |
@@ -124,7 +130,7 @@ D1 là quyết định số một, nhưng nó cần nền móng ở giai đoạn
 | 4.5 | Workspace lock/lease, single-writer daemon, MCP bridge qua IPC có xác thực | PK-4 |
 | 4.6 | `vidcom` CLI đủ mode + `doctor` | PK-5, PK-8 |
 | 4.7 | Node SEA: nhúng frontend asset, bỏ Next | PK-6 |
-| 4.8 | Giải nén sidecar runtime vào app-data lần chạy đầu | PK-7 |
+| 4.8 | Giải nén sidecar runtime vào app-data lần chạy đầu — **kèm cả thư viện motion**: `install_motion_library` đọc chúng từ `node_modules`, thứ không tồn tại trong artifact. Giải nén theo layout `<packageName>/<packagePath>` (giữ `package.json` để guard version còn chạy) rồi truyền đường dẫn qua `CompositionRootConfig.motionLibraryRoot`. Thiếu bước này thì vendor thư viện fail trên máy sạch, đúng tình huống nó tồn tại để phục vụ | PK-7 |
 | 4.9 | Import project có sẵn | PK-12 |
 | 4.10 | Smoke test trên artifact, máy sạch | — |
 
@@ -136,6 +142,7 @@ D1 là quyết định số một, nhưng nó cần nền móng ở giai đoạn
 
 | # | Việc | ID |
 |---|---|---|
+| 5.0 | **Nối UI tạo project** — bỏ `disabled` ở `new-project-card.tsx`, dialog nhập tên + chọn preset từ catalog (§4.3), `POST /v1/projects`, điều hướng sang studio. Backend đã xong ở 3.4; chỉ còn FE **và test cho route** (hiện chưa có) | R5 — nợ từ GĐ 3 |
 | 5.1 | Kéo bar / kéo mép trên timeline để đổi timing | SC-7 |
 | 5.2 | Kéo-thả đổi thứ tự scene | SC-6 |
 | 5.3 | Undo/redo cấp composition | CE-8 |
@@ -163,15 +170,17 @@ D1 là quyết định số một, nhưng nó cần nền móng ở giai đoạn
 
 ## Bảng tóm tắt
 
-| Giai đoạn | Nội dung | Ước lượng | Mốc |
-|---|---|---|---|
-| 0 | Spike | ~1 tuần | Biết D2 khả thi không |
-| 1 | Nền móng | 3–4 tuần | Backend 100% Hono, CI xanh |
-| 2 | MCP thật | 2–3 tuần | AI sửa được project qua tool |
-| 3 | Đóng vòng lặp | 3–4 tuần | Xuất được MP4 có tiếng |
-| 4 | Agent kit & đóng gói | 3–4 tuần | Một file thực thi |
-| 5 | Editing UX | 3–4 tuần | Studio dùng thoải mái |
-| 6 | AI Composer & hoàn thiện | — | Sản phẩm đầy đủ |
+| Giai đoạn | Nội dung | Ước lượng | Mốc | Trạng thái |
+|---|---|---|---|---|
+| 0 | Spike | ~1 tuần | Biết D2 khả thi không | ✅ 2026-08-01 — chọn Node SEA |
+| 1 | Nền móng | 3–4 tuần | Backend 100% Hono, CI xanh | ✅ 2026-08-01 — 118/118 |
+| 2 | MCP thật | 2–3 tuần | AI sửa được project qua tool | ✅ 2026-08-02 — 10 tool, 2 era |
+| 3 | Đóng vòng lặp | 7–8 tuần (re-baseline 2026-08-04) | Xuất được MP4 có tiếng | ✅ 2026-08-05 — còn nợ R5 UI → 5.0 |
+| 4 | Đóng gói & runtime phân phối | 3–4 tuần | Một file thực thi | ⬜ chưa mở spec |
+| 5 | Editing UX | 3–4 tuần | Studio dùng thoải mái | ⬜ chưa mở spec |
+| 6 | AI Composer & hoàn thiện | — | Sản phẩm đầy đủ | ⬜ chưa mở spec |
+
+> Giai đoạn 4 đã đổi tên từ "Agent kit & đóng gói" sau khi AK-1..3/4/5/6/8 chuyển lên 3.12 — phần còn lại thuần đóng gói.
 
 Ước lượng là **thứ tự tương đối**, không phải cam kết lịch.
 

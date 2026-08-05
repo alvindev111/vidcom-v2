@@ -527,6 +527,18 @@ describe("complete tool descriptor contract", () => {
           {
             "annotations": {
               "destructiveHint": false,
+              "idempotentHint": false,
+              "openWorldHint": false,
+              "readOnlyHint": false,
+            },
+            "description": "Use when a composition needs GSAP, Anime.js, Motion One, Lottie, or Three.js, before referencing it in source. Do not use to add a CDN script tag, to install an arbitrary npm package, or to write the composition markup itself. Preconditions: projectId comes from list_projects; the library version is pinned by the studio and is not caller-selectable. Side effects: copies the pinned library into assets/vendor/ as one atomic mutation and commits one revision; re-running returns already_installed without a write. Errors/recovery: returns the paste-ready scriptTag and entry path to use; on write_conflict re-read and retry; storage_unavailable means the studio install is incomplete, so report it instead of falling back to a CDN.",
+            "level": "write",
+            "name": "install_motion_library",
+            "title": "Vendor a motion library",
+          },
+          {
+            "annotations": {
+              "destructiveHint": false,
               "idempotentHint": true,
               "openWorldHint": false,
               "readOnlyHint": true,

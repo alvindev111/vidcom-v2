@@ -151,7 +151,7 @@ describe("AgentKitInstaller with real SQLite and filesystem", () => {
       FROM workspace_operation
       LEFT JOIN workspace_operation_step ON workspace_operation_step.operation_id = workspace_operation.id
       GROUP BY workspace_operation.id ORDER BY workspace_operation.id
-    `)).toEqual([{ id: 1, steps: 15 }, { id: 2, steps: 0 }]);
+    `)).toEqual([{ id: 1, steps: 17 }, { id: 2, steps: 0 }]);
   });
 
   it("installs only the selected host, then reports already_installed without another write", async () => {
@@ -184,11 +184,15 @@ describe("AgentKitInstaller with real SQLite and filesystem", () => {
   });
 
   it("classifies all six per-file states and never downgrades newer content", async () => {
+    // Derived from the shipped version so a kit bump cannot quietly turn these
+    // fixtures into no-ops and stop exercising `outdated` and `newer`.
+    const marker = (version: number) => `x-vidcom-agent-kit: ${version}`;
+    const current = marker(AGENT_KIT_VERSION);
     const entries = [
       ["AGENTS.md", `${source("AGENTS.md")}\nmodified`],
       [".agents/skills/vidcom/SKILL.md", source("skills/vidcom/SKILL.md")],
-      [".agents/skills/vidcom-project/SKILL.md", source("skills/vidcom-project/SKILL.md").replace("x-vidcom-agent-kit: 1", "x-vidcom-agent-kit: 0")],
-      [".agents/skills/vidcom-scene/SKILL.md", source("skills/vidcom-scene/SKILL.md").replace("x-vidcom-agent-kit: 1", "x-vidcom-agent-kit: 2")],
+      [".agents/skills/vidcom-project/SKILL.md", source("skills/vidcom-project/SKILL.md").replace(current, marker(AGENT_KIT_VERSION - 1))],
+      [".agents/skills/vidcom-scene/SKILL.md", source("skills/vidcom-scene/SKILL.md").replace(current, marker(AGENT_KIT_VERSION + 1))],
       [".agents/skills/vidcom-look/SKILL.md", "user owned skill"],
       [".agents/skills/vidcom-render/SKILL.md", source("skills/vidcom-render/SKILL.md")],
       [".agents/skills/vidcom-fix/SKILL.md", source("skills/vidcom-fix/SKILL.md")],
@@ -207,7 +211,7 @@ describe("AgentKitInstaller with real SQLite and filesystem", () => {
     ]));
     expect(states[".agents/skills/vidcom-scene/SKILL.md"]).toBe("newer");
     expect(await readFile(path.join(workspaceRoot, ".agents/skills/vidcom-scene/SKILL.md"), "utf8"))
-      .toContain("x-vidcom-agent-kit: 2");
+      .toContain(marker(AGENT_KIT_VERSION + 1));
   });
 
   it("reports two discoverable but incomplete hosts as partial, not blocked", async () => {

@@ -10,6 +10,7 @@ import type {
 } from "@vidcom/contracts";
 
 import type { AbsolutePath, BinaryContent, CompositionModel, CompositionOp, FileContent, FileNode, FileStat, ProjectRef } from "../domain/models";
+import type { MotionLibrary } from "../domain/motion-libraries";
 import type { Result } from "../error/result";
 import type {
   Job,
@@ -152,6 +153,11 @@ export interface BinaryProbePort {
 /** Adapter-owned HyperFrames check execution; non-zero finding exits remain available results. */
 export interface DiagnosticsLintPort {
   check(ref: ProjectRef): Promise<{ available: boolean; diagnostics: Diagnostic[] }>;
+}
+
+/** Reads a pinned motion library's source from wherever the adapter installs it. */
+export interface MotionLibraryFilesPort {
+  read(library: MotionLibrary): Promise<Result<Array<{ projectPath: RelPath; content: string }>, DomainError>>;
 }
 
 /** Filesystem access for the selected workspace; every method performs I/O. */

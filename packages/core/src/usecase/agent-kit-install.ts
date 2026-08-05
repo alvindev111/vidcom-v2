@@ -46,7 +46,10 @@ export interface InstallAgentKitOutput {
 }
 
 interface ManifestFile { path: RelPath; source: string; role: "main" | "auxiliary" | "router" | "skill" }
-const SKILLS = ["vidcom", "vidcom-project", "vidcom-scene", "vidcom-look", "vidcom-narration", "vidcom-render", "vidcom-fix"];
+const SKILLS = [
+  "vidcom", "vidcom-project", "vidcom-scene", "vidcom-motion",
+  "vidcom-look", "vidcom-narration", "vidcom-render", "vidcom-fix",
+];
 const EXACT_CLAUDE_LINK = "@CLAUDE.vidcom.md";
 
 export class AgentKitInstaller {

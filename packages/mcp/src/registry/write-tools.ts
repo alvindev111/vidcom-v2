@@ -3,6 +3,8 @@ import type { z } from "zod";
 import {
   CreateSceneInputSchema,
   CreateSceneOutputSchema,
+  InstallMotionLibraryInputSchema,
+  InstallMotionLibraryOutputSchema,
   SetSceneTimingInputSchema,
   SetSceneTimingOutputSchema,
   SetTextInputSchema,
@@ -15,16 +17,18 @@ import {
 } from "@vidcom/contracts";
 import {
   createScene,
+  installMotionLibrary,
   saveSourceFile,
   setSceneScript,
   setSceneTiming,
+  type MotionLibraryInstallDependencies,
   type ProjectWriteDependencies,
 } from "@vidcom/core";
 
 import { annotationsForLevel, ToolRegistry } from "./registry";
 import type { ToolDefinition } from "./types";
 
-export type WriteToolDependencies = ProjectWriteDependencies;
+export type WriteToolDependencies = ProjectWriteDependencies & MotionLibraryInstallDependencies;
 
 export function createSceneTool(
   dependencies: WriteToolDependencies,
@@ -146,7 +150,37 @@ export function saveFileTool(
   };
 }
 
+export function installMotionLibraryTool(
+  dependencies: WriteToolDependencies,
+): ToolDefinition<
+  z.infer<typeof InstallMotionLibraryInputSchema>,
+  z.infer<typeof InstallMotionLibraryOutputSchema>
+> {
+  return {
+    name: "install_motion_library",
+    title: "Vendor a motion library",
+    level: "write",
+    description: [
+      "Use when a composition needs GSAP, Anime.js, Motion One, Lottie, or Three.js, before referencing it in source.",
+      "Do not use to add a CDN script tag, to install an arbitrary npm package, or to write the composition markup itself.",
+      "Preconditions: projectId comes from list_projects; the library version is pinned by the studio and is not caller-selectable.",
+      "Side effects: copies the pinned library into assets/vendor/ as one atomic mutation and commits one revision; re-running returns already_installed without a write.",
+      "Errors/recovery: returns the paste-ready scriptTag and entry path to use; on write_conflict re-read and retry; storage_unavailable means the studio install is incomplete, so report it instead of falling back to a CDN.",
+    ].join(" "),
+    input: InstallMotionLibraryInputSchema,
+    output: InstallMotionLibraryOutputSchema,
+    annotations: annotationsForLevel("write"),
+    availableInLegacy: true,
+    projectIdOf: (input) => input.projectId as ProjectId,
+    handler: async (context, input) => installMotionLibrary(dependencies, {
+      projectId: input.projectId as ProjectId,
+      libraryId: input.libraryId,
+    }, context.actor, context.writeInvocation),
+  };
+}
+
 export function registerSourceWriteTools(registry: ToolRegistry, dependencies: WriteToolDependencies): void {
   registry.register(setTextTool(dependencies));
   registry.register(saveFileTool(dependencies));
+  registry.register(installMotionLibraryTool(dependencies));
 }

@@ -3,13 +3,14 @@ import path from "node:path";
 
 import { describe, expect, it } from "vitest";
 
-import { AGENT_KIT_FILES } from "@vidcom/agent-kit";
+import { AGENT_KIT_FILES, AGENT_KIT_VERSION } from "@vidcom/agent-kit";
 import type { Era } from "@vidcom/contracts";
 import { createContractMatrixRegistry } from "../mcp/support";
 
 const packageRoot = path.resolve("packages/agent-kit");
 const skillNames = [
-  "vidcom", "vidcom-project", "vidcom-scene", "vidcom-look", "vidcom-narration", "vidcom-render", "vidcom-fix",
+  "vidcom", "vidcom-project", "vidcom-scene", "vidcom-motion",
+  "vidcom-look", "vidcom-narration", "vidcom-render", "vidcom-fix",
 ];
 
 describe("agent-kit source and contract synchronization", () => {
@@ -30,7 +31,12 @@ describe("agent-kit source and contract synchronization", () => {
     for (const name of routed) expect(skillNames).toContain(name);
     for (const name of skillNames) {
       const content = await readFile(path.join(packageRoot, `skills/${name}/SKILL.md`), "utf8");
-      expect(content).toMatch(/^---\n[\s\S]*?^name:\s*[a-z0-9-]+\s*$[\s\S]*?^description:\s*.+$[\s\S]*?^x-vidcom-agent-kit:\s*1\s*$[\s\S]*?^---$/mu);
+      // The marker is asserted against the shipped version rather than a literal:
+      // a hardcoded number silently stops checking anything the moment it drifts.
+      expect(content).toMatch(new RegExp(
+        `^---\\n[\\s\\S]*?^name:\\s*[a-z0-9-]+\\s*$[\\s\\S]*?^description:\\s*.+$[\\s\\S]*?^x-vidcom-agent-kit:\\s*${AGENT_KIT_VERSION}\\s*$[\\s\\S]*?^---$`,
+        "m",
+      ));
       expect(content.split("\n").length).toBeLessThan(500);
     }
   });

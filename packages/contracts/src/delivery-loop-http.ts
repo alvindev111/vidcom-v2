@@ -2,6 +2,7 @@ import { z } from "zod";
 
 import { ContentHashSchema, IdentifierSchema } from "./dto";
 import { InstallAgentKitInputSchema } from "./agent-kit";
+import { MotionLibraryIdSchema } from "./motion-libraries";
 
 /** Strict path parameters for project adoption by workspace slug. */
 export const ProjectSlugParamsSchema = z.strictObject({ slug: IdentifierSchema });
@@ -60,6 +61,10 @@ export const PatchNarrationCueRequestSchema = z.strictObject({
   expectedContentHash: ContentHashSchema,
 }).refine((value) => value.text !== undefined || value.voice !== undefined || value.offsetSeconds !== undefined, {
   message: "at least one cue field is required",
+});
+/** Body for vendoring one pinned motion library into a project. */
+export const InstallMotionLibraryRequestSchema = z.strictObject({
+  libraryId: MotionLibraryIdSchema,
 });
 export const ReplaceRecoveryIdentityRequestSchema = z.strictObject({
   identity: z.record(z.string(), z.unknown()),

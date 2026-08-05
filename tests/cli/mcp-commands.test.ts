@@ -197,7 +197,7 @@ describe("VidCom CLI dispatch", () => {
         selectWorkspace: async () => workspace as AbsolutePath,
         startStdio: async (registry, _dependencies, options) => {
           expect(options).toEqual({ pinnedRevision: "2025-11-25" });
-          expect(registry.list("legacy").map((tool) => tool.name)).toHaveLength(17);
+          expect(registry.list("legacy").map((tool) => tool.name)).toHaveLength(18);
           return {
             close: async () => { stdioClosed = true; },
             closed: new Promise<void>(() => undefined),

@@ -14,6 +14,9 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // Pinned third-party motion libraries vendored into a project by
+    // install_motion_library. They are minified upstream builds, not our source.
+    "projects/*/assets/vendor/**",
   ]),
   {
     files: ["packages/**/*.ts", "packages/**/*.tsx"],

@@ -4,6 +4,7 @@ import path from "node:path";
 
 import { startVidcomFoundation } from "@vidcom/cli";
 import {
+  InstallMotionLibraryOutputSchema,
   LegacyGenerateResponseSchema,
   LegacyTtsResponseSchema,
   PatchPreviewSettingsResponseSchema,
@@ -143,6 +144,93 @@ describe("Phase N write cutover", () => {
         body: JSON.stringify({ action: "generate", prompt: "A concise closing scene" }),
       });
       expect(LegacyGenerateResponseSchema.parse(await generate.json()).transcript.length).toBeGreaterThan(0);
+    } finally {
+      await foundation.stop();
+    }
+  });
+
+  it("vendors a motion library through the same write authority the studio UI calls", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "vidcom-motion-route-"));
+    roots.push(root);
+    const workspace = path.join(root, "workspace");
+    await cp(path.resolve("projects/warm-grain"), path.join(workspace, "warm-grain"), { recursive: true });
+    const clock = { now: () => new Date("2026-08-01T00:00:00.000Z") };
+    const foundation = await startVidcomFoundation({
+      appDataRoot: path.join(root, "app-data"),
+      workspaceRoot: workspace as never,
+      holderId: "test:motion-route",
+      clock,
+      ids: createSequentialIdPort(),
+    }, {
+      async recoverJobs() {}, async startScheduler() {}, async startWatcher() {}, async openListener() { return null; },
+    });
+    const nonces = new InMemoryNonceStore(clock);
+    const sessions = new InMemorySessionStore(clock);
+    const port = 43213;
+    const app = createServerApp({
+      port,
+      uiOrigins: [],
+      nonces,
+      sessions,
+      projectReads: {
+        ...foundation.application.readDependencies,
+        runtimeSource: foundation.infrastructure.runtimeSource,
+        mimeFromPath: foundation.infrastructure.mimeFromPath,
+      },
+      projectWrites: { ...foundation.application.writeDependencies, reads: foundation.application.readDependencies },
+    });
+    const base = async (pathname: string, init: RequestInit = {}) => {
+      const headers = new Headers(init.headers);
+      headers.set("Host", `127.0.0.1:${port}`);
+      return app.request(`http://127.0.0.1:${port}${pathname}`, { ...init, headers });
+    };
+    const exchange = await base("/api/v1/auth/exchange", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ nonce: nonces.issue() }),
+    });
+    const cookie = exchange.headers.get("set-cookie")!.split(";", 1)[0]!;
+    let projectId = "" as ProjectId;
+    const install = (libraryId: string) => base(`/api/v1/projects/${projectId}/motion-libraries`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Cookie: cookie },
+      body: JSON.stringify({ libraryId }),
+    });
+    try {
+      projectId = (await foundation.infrastructure.workspace.listProjects())[0]!.id as ProjectId;
+
+      // warm-grain already ships the vendored GSAP, so the first call must cost
+      // no revision — the UI can offer it without risking a pointless write.
+      const already = await install("gsap");
+      expect(already.status).toBe(200);
+      expect(await already.json()).toMatchObject({
+        status: "already_installed",
+        library: { id: "gsap", loader: "global", globalName: "gsap", importSpecifier: null },
+        revision: null,
+      });
+
+      const three = await install("three");
+      expect(three.status).toBe(200);
+      const body = InstallMotionLibraryOutputSchema.parse(await three.json());
+      expect(body.status).toBe("installed");
+      expect(body.library.importSpecifier).toBe(`./${body.library.entry}`);
+      expect(body.files).toHaveLength(2);
+      expect(typeof body.revision).toBe("number");
+      for (const file of body.files) {
+        // Both halves must be readable back through the asset route, or the
+        // module's sibling import 404s in preview.
+        const served = await base(`/api/v1/projects/${projectId}/assets/${file.path}`, {
+          headers: { Cookie: cookie },
+        });
+        expect(served.status, file.path).toBe(200);
+        expect(Number(served.headers.get("content-length") ?? "0")).toBeGreaterThan(1_000);
+      }
+
+      const repeat = await install("three");
+      expect(await repeat.json()).toMatchObject({ status: "already_installed", revision: null });
+
+      const rejected = await install("matter-js");
+      expect(rejected.status).toBe(400);
+      expect(await rejected.json()).toMatchObject({ error: { code: "schema_invalid" } });
     } finally {
       await foundation.stop();
     }

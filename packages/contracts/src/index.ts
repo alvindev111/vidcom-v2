@@ -5,6 +5,7 @@ export * from "./dto";
 export * from "./delivery-loop-http";
 export * from "./errors";
 export * from "./mcp";
+export * from "./motion-libraries";
 export * from "./settings";
 export * from "./timeline-diagnostics";
 export * from "./tts";

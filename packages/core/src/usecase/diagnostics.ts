@@ -5,9 +5,12 @@ import {
   type Diagnostic,
   type DomainError,
   type ProjectId,
+  type RelPath,
   type SceneDto,
 } from "@vidcom/contracts";
 
+import type { CompositionSource, ProjectRef } from "../domain/models";
+import { findMotionLibrary, scanRemoteMotionLibraries } from "../domain/motion-libraries";
 import { err, ok, type Result } from "../error/result";
 import type { CompositionPort, DiagnosticsLintPort, MutationJournalPort, WorkspacePort } from "../port/ports";
 import { canonicalizeJson } from "../service/canonical-json";
@@ -95,6 +98,34 @@ function sceneDiagnostics(scene: SceneDto): Diagnostic[] {
 export class DiagnosticsService {
   constructor(private readonly dependencies: DiagnosticsServiceDependencies) {}
 
+  /**
+   * Flags motion libraries still loaded from a CDN. The render survives one, but
+   * it loses `reproducible` and stops resolving once the app runs offline, so the
+   * vendored copy is the fix rather than a preference.
+   */
+  private async remoteMotionLibraryDiagnostics(
+    ref: ProjectRef,
+    sources: readonly CompositionSource[],
+  ): Promise<Diagnostic[]> {
+    const documents: Array<{ path: RelPath; html: string }> = [];
+    for (const source of sources) {
+      if (!source.path.toLowerCase().endsWith(".html")) continue;
+      const resolved = await this.dependencies.workspace.resolve(ref, source.path, "read-source");
+      if (!resolved.ok) continue;
+      const file = await this.dependencies.workspace.readFile(resolved.value);
+      if (file) documents.push({ path: source.path, html: file.content });
+    }
+    return scanRemoteMotionLibraries(documents).map((use) => {
+      const library = findMotionLibrary(use.id)!;
+      return {
+        severity: "warning" as const,
+        code: "remote-motion-library",
+        file: use.file,
+        message: `${use.id} loads from ${use.url}; vendor it with install_motion_library and reference ${library.entry} so the render stays reproducible and works offline.`,
+      };
+    });
+  }
+
   async forEntry(entryId: EntryId): Promise<Result<DiagnosticsReport, DomainError>> {
     const entry = (await this.dependencies.scan()).find((item): item is Extract<WorkspaceEntry, {
       state: "invalid"; invalidKind: "identity";
@@ -146,6 +177,7 @@ export class DiagnosticsService {
           code: "platform-mismatch",
           message: `Declared ${platform.width}x${platform.height}@${platform.fps}fps differs from composition ${model.project.width}x${model.project.height}@${model.frameRate ?? 30}fps.`,
         });
+        diagnostics.push(...await this.remoteMotionLibraryDiagnostics(ref, model.sources));
         const sources = new Set(model.sources.map(({ path }) => path));
         for (const reference of model.references) {
           if (sources.has(reference.path)) continue;

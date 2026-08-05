@@ -1,7 +1,7 @@
 ---
 name: vidcom-render
 description: Create VidCom snapshots and renders and monitor their jobs. Use after edits are validated or when the user asks for preview frames or an exported video. Do not use to change scenes, styling, or narration content.
-x-vidcom-agent-kit: 1
+x-vidcom-agent-kit: 2
 ---
 
 # VidCom render

@@ -4,7 +4,12 @@ import path from "node:path";
 
 import { afterEach, describe, expect, it } from "vitest";
 
-import { initializeDatabase, NodeHyperframesDiagnosticsLint, NodeProcessRunner } from "@vidcom/adapter";
+import {
+  initializeDatabase,
+  NodeHyperframesDiagnosticsLint,
+  NodeModulesMotionLibraryFiles,
+  NodeProcessRunner,
+} from "@vidcom/adapter";
 import {
   ErrorCode,
   countStrandedTweens,
@@ -14,6 +19,8 @@ import {
 } from "@vidcom/contracts";
 import {
   DiagnosticsService,
+  findMotionLibrary,
+  installMotionLibrary,
   type AbsolutePath,
   type CompositionModel,
   type CompositionPort,
@@ -309,6 +316,78 @@ describe("Phase M diagnostics and thumbnails on real SQLite/filesystem", () => {
       state: "invalid", invalidKind: "identity", invalidReason: { code: "identity_parse_error" },
     } as const;
     expect(await resolver.resolve(identityInvalid, null, null)).toMatchObject({ seed: "broken", seedKind: "slug", invalid: true });
+  });
+
+  it("flags a CDN motion library and clears once the vendored copy is referenced", async () => {
+    const value = await fixture();
+    const id = "project_motion_cdn" as ProjectId;
+    const gsap = findMotionLibrary("gsap")!;
+    const cdnEntry = `<!doctype html><html><head>
+<script src="https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js"></script>
+</head><body>
+<main data-composition-id="root" data-width="320" data-height="180" data-fps="30" data-duration="0"></main>
+</body></html>\n`;
+    const { projectRoot } = await addProject(value, "motion-cdn", id, cdnEntry);
+    const model = {
+      project: {
+        id, slug: "motion-cdn", title: "Motion CDN", width: 320, height: 180,
+        duration: 0, updatedAt: now, sceneCount: 0, revision: 0,
+      },
+      frameRate: 30,
+      scenes: [],
+      rootTrack: null,
+      diagnostics: [],
+      sources: [{ path: "index.html" as RelPath, contentHash: hashContent(cdnEntry), byteSize: cdnEntry.length }],
+      references: [],
+    } as unknown as CompositionModel;
+    const composition = new Proxy(value.infrastructure.composition, {
+      get(target, property, receiver) {
+        if (property === "parseProject") return async () => model;
+        const member = Reflect.get(target, property, receiver) as unknown;
+        return typeof member === "function" ? member.bind(target) : member;
+      },
+    }) as CompositionPort;
+    const service = new DiagnosticsService({
+      scan: async () => [{
+        kind: "project", projectId: id, slug: "motion-cdn",
+        state: "authored", platform: null, sceneCount: 0,
+      }],
+      workspace: value.infrastructure.workspace,
+      composition,
+      identity: value.application.identity,
+      journal: value.infrastructure.journal,
+      authority: value.application.authority,
+      lint: { async check() { return { available: true, diagnostics: [] }; } },
+    });
+
+    const before = await service.forProject(id);
+    expect(before.ok).toBe(true);
+    if (!before.ok) return;
+    const flagged = before.value.diagnostics.find(({ code }) => code === "remote-motion-library");
+    expect(flagged).toMatchObject({ severity: "warning", file: "index.html" });
+    expect(flagged!.message).toContain(gsap.entry);
+
+    const installed = await installMotionLibrary({
+      workspace: value.infrastructure.workspace,
+      motionLibraries: new NodeModulesMotionLibraryFiles(),
+      authority: value.application.authority,
+    }, { projectId: id, libraryId: "gsap" }, "agent");
+    expect(installed.ok, JSON.stringify(installed.ok ? null : installed.error)).toBe(true);
+    if (!installed.ok) return;
+    expect(installed.value.status).toBe("installed");
+    // The real package bytes must land on disk: this is what makes the render
+    // reproducible and what keeps working with no network.
+    const vendored = await readFile(path.join(projectRoot, gsap.entry), "utf8");
+    expect(vendored).toContain(gsap.globalName!);
+    expect(vendored.length).toBeGreaterThan(1_000);
+
+    await writeFile(
+      path.join(projectRoot, "index.html"),
+      cdnEntry.replace(/<script src="https:[^"]+"><\/script>/u, installed.value.library.scriptTag),
+    );
+    const after = await service.forProject(id);
+    expect(after.ok).toBe(true);
+    if (after.ok) expect(after.value.diagnostics.some(({ code }) => code === "remote-motion-library")).toBe(false);
   });
 
   it("maps every HyperFrames finding group to lint:<rule> through a real child process", async () => {

@@ -1,7 +1,7 @@
 ---
 name: vidcom-fix
 description: Diagnose and repair VidCom project errors and warnings through MCP. Use after validation fails, a job reports a project problem, or assets/timing/narration are inconsistent. Do not use for unrelated creative direction or unvalidated destructive cleanup.
-x-vidcom-agent-kit: 1
+x-vidcom-agent-kit: 2
 ---
 
 # VidCom fix

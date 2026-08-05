@@ -80,6 +80,11 @@ const expectedSuccess: Record<string, object> = {
     operationResult: { status: "no_change", changedFiles: [] },
     installationState: { outcome: "already_installed", usableBy: { codex: "ready" } },
   },
+  install_motion_library: {
+    status: "installed",
+    library: { id: "gsap", loader: "global", globalName: "gsap" },
+    revision: 3,
+  },
 };
 
 async function exercise(client: LegacyClient | ModernClient): Promise<void> {

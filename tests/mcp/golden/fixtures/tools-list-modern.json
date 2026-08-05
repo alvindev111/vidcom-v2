@@ -2124,6 +2124,167 @@
       }
     },
     {
+      "name": "install_motion_library",
+      "title": "Vendor a motion library",
+      "description": "Use when a composition needs GSAP, Anime.js, Motion One, Lottie, or Three.js, before referencing it in source. Do not use to add a CDN script tag, to install an arbitrary npm package, or to write the composition markup itself. Preconditions: projectId comes from list_projects; the library version is pinned by the studio and is not caller-selectable. Side effects: copies the pinned library into assets/vendor/ as one atomic mutation and commits one revision; re-running returns already_installed without a write. Errors/recovery: returns the paste-ready scriptTag and entry path to use; on write_conflict re-read and retry; storage_unavailable means the studio install is incomplete, so report it instead of falling back to a CDN.",
+      "inputSchema": {
+        "type": "object",
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "projectId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 255
+          },
+          "libraryId": {
+            "type": "string",
+            "enum": [
+              "gsap",
+              "anime",
+              "motion-one",
+              "lottie",
+              "three"
+            ]
+          }
+        },
+        "required": [
+          "projectId",
+          "libraryId"
+        ],
+        "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": false
+      },
+      "outputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "installed",
+              "already_installed"
+            ]
+          },
+          "library": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "enum": [
+                  "gsap",
+                  "anime",
+                  "motion-one",
+                  "lottie",
+                  "three"
+                ]
+              },
+              "version": {
+                "type": "string"
+              },
+              "loader": {
+                "type": "string",
+                "enum": [
+                  "global",
+                  "module"
+                ]
+              },
+              "globalName": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "entry": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 4096
+              },
+              "scriptTag": {
+                "type": "string"
+              },
+              "importSpecifier": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "required": [
+              "id",
+              "version",
+              "loader",
+              "globalName",
+              "entry",
+              "scriptTag",
+              "importSpecifier"
+            ],
+            "additionalProperties": false
+          },
+          "files": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "path": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 4096
+                },
+                "contentHash": {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "pattern": "^sha256:[0-9a-f]{64}$"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              },
+              "required": [
+                "path",
+                "contentHash"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "revision": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "status",
+          "library",
+          "files",
+          "revision"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
       "name": "list_projects",
       "title": "List VidCom projects",
       "description": "Use when you need to discover a VidCom projectId and its summary or write-recovery status. Do not use for scene details, source content, or mutation preconditions. Preconditions: none; use limit/cursor to page and a returned projectId for project-scoped tools. Side effects: read-only; no project files or revisions are changed. Errors/recovery: resolve workspace or project read errors before retrying; if recovery is blocked, complete the configured recovery flow before writes.",

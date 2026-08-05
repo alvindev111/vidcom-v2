@@ -126,6 +126,7 @@ describe("all registered tool handlers", () => {
       start_snapshot: { projectId },
       start_render: { projectId },
       install_agent_kit: { operation: "install", hosts: ["codex"] },
+      install_motion_library: { projectId, libraryId: "gsap" },
     };
     expect(Object.keys(cases).sort()).toEqual(tools.list("modern").map((tool) => tool.name));
 

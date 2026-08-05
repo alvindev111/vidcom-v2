@@ -1,0 +1,5 @@
+# x-vidcom-agent-kit: 2
+interface:
+  display_name: "VidCom Motion"
+  short_description: "Animate a VidCom scene with a vendored motion library"
+  default_prompt: "Animate this scene with a vendored motion library through VidCom."

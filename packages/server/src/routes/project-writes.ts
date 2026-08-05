@@ -1,5 +1,6 @@
 import {
   ErrorCode,
+  InstallMotionLibraryRequestSchema,
   MAX_BGM_BYTES,
   MAX_SOURCE_BYTES,
   LegacySceneMutationRequestSchema,
@@ -14,6 +15,7 @@ import {
 } from "@vidcom/contracts";
 import {
   createScene,
+  installMotionLibrary,
   patchPreviewSettings,
   regenerateNarration,
   readSourceFile,
@@ -22,6 +24,7 @@ import {
   setSceneScript,
   setSceneTiming,
   uploadBgm,
+  type MotionLibraryInstallDependencies,
   type ProjectReadDependencies,
   type ProjectWriteDependencies,
 } from "@vidcom/core";
@@ -31,6 +34,8 @@ import { HttpBoundaryError } from "../middleware/error-mapper";
 
 export interface ProjectWriteRouteDependencies extends ProjectWriteDependencies {
   reads: ProjectReadDependencies;
+  /** Declared separately: the install use case narrows `authority` to the composite overload. */
+  motionLibraries: MotionLibraryInstallDependencies["motionLibraries"];
 }
 
 function fail(error: { code: ErrorCode; message: string; field?: string; details?: Record<string, unknown> }): never {
@@ -129,6 +134,15 @@ export function createProjectWriteRoutes(dependencies: ProjectWriteRouteDependen
     return c.json(valueOf(await uploadBgm(dependencies, {
       projectId: projectId(c), name: parsed.data.file.name, bytes,
       expectedRevision: parsed.data.expectedRevision,
+    }, "user")));
+  });
+  routes.post("/v1/projects/:id/motion-libraries", async (c) => {
+    const parsed = InstallMotionLibraryRequestSchema.safeParse(await json(c));
+    if (!parsed.success) {
+      fail({ code: ErrorCode.SchemaInvalid, message: "motion library payload is invalid", field: "libraryId" });
+    }
+    return c.json(valueOf(await installMotionLibrary(dependencies, {
+      projectId: projectId(c), libraryId: parsed.data.libraryId,
     }, "user")));
   });
   routes.patch("/v1/projects/:id/scenes/:sceneId", async (c) => {

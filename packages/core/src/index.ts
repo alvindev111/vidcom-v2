@@ -1,5 +1,6 @@
 export * from "./domain/invariants";
 export * from "./domain/models";
+export * from "./domain/motion-libraries";
 export * from "./domain/path-policy";
 export * from "./domain/platform-preset";
 export * from "./domain/preview-settings";
@@ -36,6 +37,7 @@ export * from "./usecase/restore-backup";
 export * from "./usecase/scene-deletion";
 export * from "./usecase/file-deletion";
 export * from "./usecase/list-tts-voices";
+export * from "./usecase/motion-library-install";
 export * from "./usecase/narration-cues";
 export * from "./usecase/diagnostics";
 export * from "./usecase/thumbnail";

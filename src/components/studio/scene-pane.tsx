@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { LayersIcon, SlidersHorizontalIcon } from "lucide-react";
+import { LayersIcon, SlidersHorizontalIcon, SparklesIcon } from "lucide-react";
 
 import {
   ResizableHandle,
@@ -12,6 +12,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { sceneSettings } from "@/lib/studio/preview-settings";
 import type { FileNode, Scene, SceneScriptLine, SourceFile } from "@/lib/studio/types";
+import { MotionLibraryPanel } from "./motion-library-panel";
 import { PreviewEditor } from "./preview-editor";
 import { SceneDetail } from "./scene-detail";
 import { SceneStoryboard } from "./scene-storyboard";
@@ -147,6 +148,10 @@ export function ScenePane({
               <SlidersHorizontalIcon className="size-3.5" />
               Preview editor
             </TabsTrigger>
+            <TabsTrigger value="motion" className="h-8 gap-1.5 text-xs">
+              <SparklesIcon className="size-3.5" />
+              Motion
+            </TabsTrigger>
           </TabsList>
 
           <TabsContent value="scene" className="min-h-0 flex-1">
@@ -203,6 +208,18 @@ export function ScenePane({
                 onPatch={preview.patch}
                 onUploadBgm={preview.uploadBgm}
               />
+            </ScrollArea>
+          </TabsContent>
+
+          <TabsContent value="motion" className="min-h-0 flex-1">
+            <ScrollArea className="h-full">
+              <div className="p-3">
+                <MotionLibraryPanel
+                  projectId={projectId}
+                  tree={tree}
+                  onProjectChanged={onProjectChanged}
+                />
+              </div>
             </ScrollArea>
           </TabsContent>
         </Tabs>

@@ -32,6 +32,7 @@ import {
   NodeProcessSupervisor,
   NodeRenderBinaryProbe,
   NodeHyperframesDiagnosticsLint,
+  NodeModulesMotionLibraryFiles,
   WorkspaceLease,
   hyperframesRuntimeSource,
   mimeFromPath,
@@ -97,6 +98,12 @@ export interface CompositionRootConfig {
   nativeDependenciesRoot?: AbsolutePath;
   /** Explicit render-sidecar paths; packaging may override the native-root convention. */
   renderBinaryPaths?: { ffmpegPath: AbsolutePath; ffprobePath: AbsolutePath };
+  /**
+   * Directory holding the distributed motion libraries, laid out as
+   * `<packageName>/<packagePath>`. The packaged runtime must set this: it has no
+   * `node_modules` to resolve, so vendoring would otherwise fail there.
+   */
+  motionLibraryRoot?: AbsolutePath;
   /**
    * User configuration from `~/.vidcom/setting.json`, already resolved.
    *
@@ -304,6 +311,7 @@ export function createInfrastructure(config: CompositionRootConfig) {
     resolveProjectRef,
     runtimeSource: hyperframesRuntimeSource,
     mimeFromPath,
+    motionLibraries: new NodeModulesMotionLibraryFiles(config.motionLibraryRoot),
   };
 }
 
@@ -405,6 +413,7 @@ export function createApplication(
     authority,
     clock: infrastructure.clock,
     identity,
+    motionLibraries: infrastructure.motionLibraries,
   };
   const state = new ProjectStateStore({
     workspace: infrastructure.workspace,

@@ -1,7 +1,7 @@
 ---
 name: vidcom-narration
 description: Author narration cues, choose voices, and generate VidCom TTS jobs. Use when scenes contain spoken copy or captions tied to speech. Do not use for BGM, scene layout, silent previews, or final rendering.
-x-vidcom-agent-kit: 1
+x-vidcom-agent-kit: 2
 ---
 
 # VidCom narration

@@ -20,6 +20,7 @@ import {
   TtsProviderSchema,
 } from "./tts";
 import { InstallAgentKitInputSchema, InstallAgentKitOutputSchema } from "./agent-kit";
+import { MotionLibraryIdSchema } from "./motion-libraries";
 
 const CanonicalRelativePathSchema = RelativePathSchema.regex(
   /^(?!\/)(?![A-Za-z]:)(?!.*\\)(?!.*\0)(?!.*\/\/)(?!\.{1,2}(?:\/|$))(?!.*\/\.{1,2}(?:\/|$)).+$/,
@@ -204,6 +205,30 @@ export const SaveFileInputSchema = z.strictObject({
 export const SaveFileOutputSchema = z.strictObject({
   file: z.strictObject({ path: RelativePathSchema, contentHash: ContentHashSchema }),
   envelope: WriteEnvelopeSchema,
+});
+
+/** Input for `install_motion_library`. */
+export const InstallMotionLibraryInputSchema = z.strictObject({
+  ...projectIdInput,
+  libraryId: MotionLibraryIdSchema,
+});
+/** Output for `install_motion_library`. */
+export const InstallMotionLibraryOutputSchema = z.strictObject({
+  status: z.enum(["installed", "already_installed"]),
+  library: z.strictObject({
+    id: MotionLibraryIdSchema,
+    version: z.string(),
+    loader: z.enum(["global", "module"]),
+    globalName: z.string().nullable(),
+    entry: RelativePathSchema,
+    scriptTag: z.string(),
+    importSpecifier: z.string().nullable(),
+  }),
+  files: z.array(z.strictObject({
+    path: RelativePathSchema,
+    contentHash: ContentHashSchema.nullable(),
+  })),
+  revision: z.number().int().nullable(),
 });
 
 /** Input for `delete_file`. */

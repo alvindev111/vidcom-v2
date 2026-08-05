@@ -1,7 +1,7 @@
 ---
 name: vidcom-scene
 description: Create scenes and change scene timing or text through VidCom MCP. Use for video beats, ordering, tracks, duration, and script edits. Do not use for tone, subtitles, BGM, narration generation, or rendering.
-x-vidcom-agent-kit: 1
+x-vidcom-agent-kit: 2
 ---
 
 # VidCom scene

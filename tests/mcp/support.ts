@@ -13,6 +13,7 @@ import {
   type AbsolutePath,
   type CompositionModel,
   type CompositeRequest,
+  type MotionLibrary,
   type MutationRequest,
   type ProjectRef,
   type ResolvedPath,
@@ -76,6 +77,7 @@ export const CONTRACT_MATRIX_CASES: Record<string, Record<string, unknown>> = {
   start_snapshot: { projectId: matrixProjectId },
   start_render: { projectId: matrixProjectId, bestEffort: true },
   install_agent_kit: { operation: "install", hosts: ["codex"] },
+  install_motion_library: { projectId: matrixProjectId, libraryId: "gsap" },
 };
 
 function createBaseRegistry(auditEntries: ToolAuditEntry[] = [], journalOwned = false): ToolRegistry {
@@ -299,6 +301,12 @@ export function createContractMatrixRegistry(): ToolRegistry {
         computedAtSourceRevision: 2,
         lintSourceAvailable: true,
       }),
+    },
+    motionLibraries: {
+      read: async (library: MotionLibrary) => ok(library.files.map(({ projectPath }) => ({
+        projectPath,
+        content: "/* contract matrix motion library */\n",
+      }))),
     },
     agentKit: {
       apply: async () => ok({
