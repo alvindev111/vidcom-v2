@@ -3,7 +3,7 @@
 > **Related Documents**:
 > - [Detailed Goals](./spec-project-delivery-loop-detailed-goal.md) — **✅ Approved 2026-08-04**
 > - [Detailed Design](./spec-project-delivery-loop-detailed-design.md) — **✅ Approved 2026-08-04**
-> - [Implementation Checklist](./spec-project-delivery-loop-implementation-checklist.md) — **S.6 mở lại 2026-08-05**
+> - [Implementation Checklist](./spec-project-delivery-loop-implementation-checklist.md) — **✅ Hoàn tất 2026-08-05**
 >
 > Spec này hiện thực **Giai đoạn 3** của [15-build-order](../../../product-features/15-build-order.md#giai-đoạn-3--đóng-vòng-lặp-sản-phẩm-34-tuần), đã **re-baseline** theo trạng thái code thật ngày 2026-08-04, và **kéo AK-1..3 từ Giai đoạn 4 lên** theo quyết định của người dùng cùng ngày.
 

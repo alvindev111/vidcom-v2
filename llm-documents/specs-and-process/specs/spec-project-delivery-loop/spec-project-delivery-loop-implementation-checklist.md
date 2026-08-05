@@ -3,7 +3,7 @@
 > **References**:
 > - [Detailed Goals](./spec-project-delivery-loop-detailed-goal.md) — bản 12, Approved 2026-08-04
 > - [Detailed Design](./spec-project-delivery-loop-detailed-design.md) — bản 6, Approved 2026-08-04
-> - [Main spec](./spec-project-delivery-loop-inprocess.md)
+> - [Main spec](./spec-project-delivery-loop-complete.md)
 > - Spike gate: [phase-3-checklist-gate](../../../../spikes/phase-3-checklist-gate/README.md) · [phase-3-detailed-design](../../../../spikes/phase-3-detailed-design/README.md) · [phase-3-render](../../../../spikes/phase-3-render/README.md) · [phase-3-agent-kit-host](../../../../spikes/phase-3-agent-kit-host/README.md)
 
 ## Context
@@ -28,7 +28,7 @@ Bốn trọng tâm rủi ro, và cả bốn đều **đã có bằng chứng ch�
 - **Status**: **✅ APPROVED 2026-08-04** — nội dung checklist được duyệt. **Code Execution CHƯA bắt đầu theo yêu cầu tường minh của người dùng** ("approve nhưng không thực hiện code").
 - **Confirmed by**: Người dùng
 - **Confirmation date**: 2026-08-04
-- **Trạng thái thực thi**: **Đang thực thi lại S.6.** Final closeout run `30966729860` đỏ vì một warm-scan outlier Windows; Design bản 45 khóa cách đo p50 trước khi sửa test. Main spec trở lại `spec-project-delivery-loop-inprocess.md` cho tới khi exact final HEAD xanh.
+- **Trạng thái thực thi**: **✅ Hoàn tất 2026-08-05.** Đã thực thi đủ dependency order A→B→F→C→D→E→G→H→I→J→K→L→M→N→Q→O→P→R→S. Remediation commit `8ff32c4` xanh cả full CI và process-supervision; main spec chuyển sang `spec-project-delivery-loop-complete.md`.
 - **Notes**:
   - Design bản 7 và Goals bản 12 đã duyệt; `steering/08` đã đồng bộ (§2.1 Design).
   - **Phase B, D, E, F là gate**: không sang phase sau khi gate còn đỏ. Lý do ở Dependency Order.
@@ -886,7 +886,7 @@ Mỗi phase chạy focused command dưới đây trên SQLite/filesystem thật,
 - [x] S.3 Nếu Windows vừa **không** có enumerator `ppid` vừa leak với naive → **quay lại Design §5.9**, không tự xử trong implementation
 - [x] S.4 Mở rộng `test:golden` sang golden mới của spec này (tiền lệ: Phase 2 từng bỏ sót)
 - [x] S.5 Cập nhật `verify-spec-test-paths.mjs` cho Verification Matrix mới
-- [ ] S.6 Release gate: `typecheck` · `lint` · `test:boundaries` · `test` · `test:golden` · `test:schema-drift` · `test:mcp-contract` · `test:runtime-smoke` · `spike:process-supervision` — tất cả xanh trên **cả ba** OS
+- [x] S.6 Release gate: `typecheck` · `lint` · `test:boundaries` · `test` · `test:golden` · `test:schema-drift` · `test:mcp-contract` · `test:runtime-smoke` · `spike:process-supervision` — tất cả xanh trên **cả ba** OS
 
 ---
 
@@ -1153,6 +1153,13 @@ Chi tiết: §13 [Detailed Design](./spec-project-delivery-loop-detailed-design.
   - Verification: perf file 6 lượt liên tiếp, mỗi lượt 5/5 xanh; focused perf + HTTP 2 file/10 test xanh. Exact process-supervision Vitest bundle `--maxWorkers=2` 30 file/158 test xanh sau remediation, dùng SQLite và filesystem thật.
   - Decisions: Design bản 45 được ghi trước test. Không mock `node:fs`, không cache canonical containment vĩnh viễn, không tăng budget.
   - Blockers: Không có; chờ remote matrix trên remediation commit trước khi tick lại S.6.
+
+2026-08-05 — Phase S, S.6 remediation remote và closeout lần hai
+  - Evidence: process-supervision run `30967371231` trên exact commit `8ff32c4` SUCCESS 4/4 trong 4m39s: Linux/macOS/Windows 30 file/156 test, Windows degraded proof 1 file/5 test, real render Windows xanh. Full CI run `30967371235` SUCCESS 3/3 trong 15m0s: Linux/macOS 109 file/798 test, Windows 108 file/797 test; MCP 9/71 và golden 9/26 trên cả ba OS.
+  - Gates: typecheck, embedded agent-kit drift, lint 0 error, invalid-boundary rejection, full test, VieNeu sidecar, MCP, golden, schema drift, spec paths, production build và real Next/SSE runtime smoke đều pass.
+  - Council: SM xác nhận checklist A–S đã tick và log cả lần đỏ lẫn remediation; PO xác nhận budget warm vẫn `<100 ms` theo p50/3 mẫu và đường sản phẩm không đổi; Dev xác nhận SQLite/filesystem thật, không mock `node:fs`, portability ba OS và real render Windows.
+  - Decisions: Không còn blocker. Spec chuyển lại `complete`; closeout docs commit vẫn phải nhận hai workflow xanh trên exact final HEAD trước báo hoàn tất.
+  - Blockers: Không có.
 
 Format:
 ```

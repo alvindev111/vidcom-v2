@@ -290,6 +290,19 @@
           <div><dt class="font-semibold text-slate-200">Timeout harness</dt><dd class="mt-1 text-slate-400">Bundle đầu làm HTTP delivery-loop test chạm 5007 ms; chạy riêng cũng chạm 5008 ms. Timeout integration được đặt 15 giây theo tiền lệ, không thay assertion hay code sản phẩm.</dd></div>
         </dl>
       </section>
+      <section class="mt-6 rounded-2xl border border-emerald-500/30 bg-slate-900 p-6">
+        <div class="flex flex-wrap items-center justify-between gap-3">
+          <h2 class="text-2xl font-semibold">2026-08-05 · S.6 remediation xanh</h2>
+          <span class="rounded-full bg-emerald-400/10 px-3 py-1 text-sm text-emerald-300">CI 3 OS · supervision 4/4</span>
+        </div>
+        <p class="mt-4 text-slate-300">Commit 8ff32c4 đã đóng lại release gate bằng cả full CI và process-supervision trên đúng HEAD remediation.</p>
+        <dl class="mt-6 grid gap-5 md:grid-cols-2">
+          <div><dt class="font-semibold text-slate-200">Process supervision #10</dt><dd class="mt-1 text-slate-400">4/4 xanh trong 4m39s; Linux/macOS/Windows 30 file/156 test, degraded Windows 5 test, real render Windows xanh.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Full CI #35</dt><dd class="mt-1 text-slate-400">3/3 xanh trong 15m; Linux/macOS 109 file/798 test, Windows 108 file/797 test; MCP 71 và golden 26 trên mỗi OS, build/runtime smoke xanh.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Council</dt><dd class="mt-1 text-slate-400">Checklist A–S đủ log; acceptance giữ nguyên; code chạy SQLite và filesystem thật, không mock node:fs, portability được chứng minh bằng GitHub Actions.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Closeout</dt><dd class="mt-1 text-slate-400">Spec chuyển complete. Commit docs cuối vẫn được yêu cầu chạy lại hai workflow trên exact HEAD trước khi báo hoàn tất.</dd></div>
+        </dl>
+      </section>
     </main>
   </body>
 </html>
