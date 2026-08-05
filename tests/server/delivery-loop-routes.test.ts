@@ -258,7 +258,7 @@ describe("project delivery HTTP routes on real SQLite and filesystem", () => {
     } finally {
       await value.infrastructure.database.destroy();
     }
-  });
+  }, 15_000);
 
   it("uses the application lifecycle, scene, narration, job and agent-kit use cases", async () => {
     const value = await fixture();

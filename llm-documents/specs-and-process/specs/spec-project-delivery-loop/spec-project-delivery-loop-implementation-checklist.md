@@ -53,6 +53,7 @@ Bốn trọng tâm rủi ro, và cả bốn đều **đã có bằng chứng ch�
 - [x] Render-root marker giữ ownership qua acquire/cleanup lỗi; clone dùng revalidation và `O_NOFOLLOW`.
 - [x] MP4 được stream vào staged asset với pipeline-owned close lifecycle; snapshot complete chỉ reuse khi mọi artifact còn tồn tại.
 - [x] CI lần một: process-supervision 4/4 xanh; full CI Linux/macOS tái hiện stream không settle. Đã sửa `autoClose` ownership và thêm regression 1 MiB không để open handle; chờ exact rerun.
+- [x] CI lần hai: full CI Linux/macOS xanh; process bundle Linux hoàn tất lifecycle HTTP sau 5,36 giây nhưng đụng timeout mặc định 5 giây. Dùng timeout integration 15 giây nhất quán với test kế bên; focused 7/7 xanh.
 - [x] Journal lưu staging/quarantine path trước filesystem transition và giữ cleanup obligation sau committed delete.
 - [x] Delete re-hash sau quarantine; create recovery xác minh exact journal hashes trước commit.
 - [x] Workspace marker/file reads không follow symlink.

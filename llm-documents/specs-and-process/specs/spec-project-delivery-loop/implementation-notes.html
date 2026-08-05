@@ -53,6 +53,11 @@
         </dl>
       </section>
 
+      <section class="mt-10 rounded-2xl border border-amber-500/30 bg-slate-900 p-6">
+        <h2 class="text-2xl font-semibold">2026-08-05 · Ổn định process-supervision bundle</h2>
+        <p class="mt-4 text-slate-300">Full CI của follow-up đã xanh Linux/macOS; process-supervision Linux chỉ đỏ vì integration lifecycle HTTP chạm timeout mặc định 5 giây khi chạy bundle 30 file với hai worker (5,36 giây), trong khi assertion và production path đều hoàn tất đúng. Đồng bộ timeout 15 giây đã dùng cho integration kế bên; test file riêng 7/7, typecheck và lint xanh.</p>
+      </section>
+
       <section class="mt-10 rounded-2xl border border-emerald-500/30 bg-slate-900 p-6">
         <div class="flex flex-wrap items-center justify-between gap-3">
           <h2 class="text-2xl font-semibold">2026-08-05 · Mở lại để sửa delivery-loop review</h2>
