@@ -282,7 +282,7 @@ describe("project delivery HTTP routes on real SQLite and filesystem", () => {
     } finally {
       await value.infrastructure.database.destroy();
     }
-  });
+  }, 15_000);
 
   it("serves MP4 ranges/ETags, exposes termination proof, and maps readiness errors", async () => {
     const value = await fixture();

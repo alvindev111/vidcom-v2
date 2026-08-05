@@ -277,6 +277,19 @@
           <div><dt class="font-semibold text-slate-200">Full CI</dt><dd class="mt-1 text-slate-400">Run 30965814507 SUCCESS 3/3 trong 14m56s. Linux/macOS: full 109 file/798 test; Windows: 108 file/797 test do một case platform-specific không áp dụng. Mỗi OS còn xanh MCP 9/71 và golden 9/26 cùng toàn bộ static, build và runtime smoke gates.</dd></div>
         </dl>
       </section>
+      <section class="mt-6 rounded-2xl border border-amber-500/30 bg-slate-900 p-6">
+        <div class="flex flex-wrap items-center justify-between gap-3">
+          <h2 class="text-2xl font-semibold">2026-08-05 · S.6 mở lại</h2>
+          <span class="rounded-full bg-amber-400/10 px-3 py-1 text-sm text-amber-300">Windows perf outlier · Design bản 45</span>
+        </div>
+        <p class="mt-4 text-slate-300">Final closeout run 30966729860 đỏ duy nhất ở warm scan Windows 147.23 ms. Spec trở lại inprocess; S.6 bỏ tick trước khi remediation.</p>
+        <dl class="mt-6 grid gap-5 md:grid-cols-2">
+          <div><dt class="font-semibold text-slate-200">Quyết định</dt><dd class="mt-1 text-slate-400">Giữ target dưới 100 ms, đo p50 của ba warm scan filesystem thật. Một outlier không quyết định release; hai trong ba lần chậm vẫn làm gate đỏ.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Không làm</dt><dd class="mt-1 text-slate-400">Không tăng threshold, không mock node:fs, không cache containment canonical vĩnh viễn và không dùng kết quả commit trước để đóng HEAD cuối.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Remediation local</dt><dd class="mt-1 text-slate-400">Perf file xanh 6 lượt liên tiếp; focused perf + HTTP 10/10; exact workflow bundle 30 file/158 test xanh với maxWorkers=2 trên SQLite và filesystem thật.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Timeout harness</dt><dd class="mt-1 text-slate-400">Bundle đầu làm HTTP delivery-loop test chạm 5007 ms; chạy riêng cũng chạm 5008 ms. Timeout integration được đặt 15 giây theo tiền lệ, không thay assertion hay code sản phẩm.</dd></div>
+        </dl>
+      </section>
     </main>
   </body>
 </html>

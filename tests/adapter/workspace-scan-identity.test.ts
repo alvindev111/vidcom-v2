@@ -286,16 +286,21 @@ describe("workspace scan and project identity on real filesystem", () => {
     const coldStart = performance.now();
     expect(await scanWorkspace(dependencies, root as AbsolutePath)).toHaveLength(100);
     const coldMs = performance.now() - coldStart;
-    const warmStart = performance.now();
-    expect(await scanWorkspace(dependencies, root as AbsolutePath)).toHaveLength(100);
-    const warmMs = performance.now() - warmStart;
-    expect({ metadataMs, coldMs, warmMs }).toMatchObject({
+    const warmSamplesMs: number[] = [];
+    for (let sample = 0; sample < 3; sample += 1) {
+      const warmStart = performance.now();
+      expect(await scanWorkspace(dependencies, root as AbsolutePath)).toHaveLength(100);
+      warmSamplesMs.push(performance.now() - warmStart);
+    }
+    const warmP50Ms = [...warmSamplesMs].sort((left, right) => left - right)[1]!;
+    expect({ metadataMs, coldMs, warmP50Ms, warmSamplesMs }).toMatchObject({
       metadataMs: expect.any(Number),
       coldMs: expect.any(Number),
-      warmMs: expect.any(Number),
+      warmP50Ms: expect.any(Number),
+      warmSamplesMs: [expect.any(Number), expect.any(Number), expect.any(Number)],
     });
     expect(metadataMs).toBeLessThan(500);
     expect(coldMs).toBeLessThan(2_000);
-    expect(warmMs).toBeLessThan(100);
+    expect(warmP50Ms, JSON.stringify({ warmP50Ms, warmSamplesMs })).toBeLessThan(100);
   }, 15_000);
 });

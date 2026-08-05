@@ -3,7 +3,7 @@
 > **References**:
 > - [Detailed Goals](./spec-project-delivery-loop-detailed-goal.md) — bản 12, Approved 2026-08-04
 > - [Detailed Design](./spec-project-delivery-loop-detailed-design.md) — bản 6, Approved 2026-08-04
-> - [Main spec](./spec-project-delivery-loop-complete.md)
+> - [Main spec](./spec-project-delivery-loop-inprocess.md)
 > - Spike gate: [phase-3-checklist-gate](../../../../spikes/phase-3-checklist-gate/README.md) · [phase-3-detailed-design](../../../../spikes/phase-3-detailed-design/README.md) · [phase-3-render](../../../../spikes/phase-3-render/README.md) · [phase-3-agent-kit-host](../../../../spikes/phase-3-agent-kit-host/README.md)
 
 ## Context
@@ -28,7 +28,7 @@ Bốn trọng tâm rủi ro, và cả bốn đều **đã có bằng chứng ch�
 - **Status**: **✅ APPROVED 2026-08-04** — nội dung checklist được duyệt. **Code Execution CHƯA bắt đầu theo yêu cầu tường minh của người dùng** ("approve nhưng không thực hiện code").
 - **Confirmed by**: Người dùng
 - **Confirmation date**: 2026-08-04
-- **Trạng thái thực thi**: **✅ Hoàn tất 2026-08-05.** Đã thực thi đủ dependency order A→B→F→C→D→E→G→H→I→J→K→L→M→N→Q→O→P→R→S; main spec chuyển sang `spec-project-delivery-loop-complete.md`.
+- **Trạng thái thực thi**: **Đang thực thi lại S.6.** Final closeout run `30966729860` đỏ vì một warm-scan outlier Windows; Design bản 45 khóa cách đo p50 trước khi sửa test. Main spec trở lại `spec-project-delivery-loop-inprocess.md` cho tới khi exact final HEAD xanh.
 - **Notes**:
   - Design bản 7 và Goals bản 12 đã duyệt; `steering/08` đã đồng bộ (§2.1 Design).
   - **Phase B, D, E, F là gate**: không sang phase sau khi gate còn đỏ. Lý do ở Dependency Order.
@@ -886,7 +886,7 @@ Mỗi phase chạy focused command dưới đây trên SQLite/filesystem thật,
 - [x] S.3 Nếu Windows vừa **không** có enumerator `ppid` vừa leak với naive → **quay lại Design §5.9**, không tự xử trong implementation
 - [x] S.4 Mở rộng `test:golden` sang golden mới của spec này (tiền lệ: Phase 2 từng bỏ sót)
 - [x] S.5 Cập nhật `verify-spec-test-paths.mjs` cho Verification Matrix mới
-- [x] S.6 Release gate: `typecheck` · `lint` · `test:boundaries` · `test` · `test:golden` · `test:schema-drift` · `test:mcp-contract` · `test:runtime-smoke` · `spike:process-supervision` — tất cả xanh trên **cả ba** OS
+- [ ] S.6 Release gate: `typecheck` · `lint` · `test:boundaries` · `test` · `test:golden` · `test:schema-drift` · `test:mcp-contract` · `test:runtime-smoke` · `spike:process-supervision` — tất cả xanh trên **cả ba** OS
 
 ---
 
@@ -1141,6 +1141,18 @@ Chi tiết: §13 [Detailed Design](./spec-project-delivery-loop-detailed-design.
   - Council: SM xác nhận mọi task A–S đã tick và có Execution Log; PO xác nhận AC cùng đường product/runtime và portability; Dev xác nhận SQLite/filesystem thật, không mock `node:fs`, boundary/schema/build/runtime và process containment đều xanh.
   - Decisions: Không có design drift ở closeout. Spec đổi từ `inprocess` sang `complete`; push commit closeout phải được xác minh lại bằng cả full CI và process-supervision trên exact final HEAD trước khi báo hoàn tất.
   - Blockers: Không có.
+
+2026-08-05 — Phase S, S.6 mở lại sau final closeout CI
+  - Evidence: process-supervision run `30966729860` trên commit docs-only `b9d903f` đỏ ở Windows K.15: warm scan 100 project `147.2289 ms` so với target `<100 ms`; Linux/macOS, Windows real render và các supervision contract khác đều xanh. Full CI run `30966729875` vẫn đang chạy.
+  - Decisions: Mở lại S.6 và main spec về `inprocess`. Detailed Design bản 45 được sửa trước test: giữ target `<100 ms`, đo p50 của ba warm scan liên tiếp trên filesystem thật để loại một outlier scheduler/antivirus nhưng vẫn đỏ khi regression ổn định.
+  - Blockers: Không có gate B/D/E/F đỏ; tiếp tục remediation Phase S.
+
+2026-08-05 — Phase S, S.6 remediation local
+  - Files: `tests/adapter/workspace-scan-identity.test.ts`, `tests/server/delivery-loop-routes.test.ts`, Detailed Design bản 45.
+  - Summary: K.15 đo ba warm sample filesystem thật và gate p50 `<100 ms`, không đổi threshold. HTTP delivery-loop integration nhận timeout 15 s vì chạy riêng cũng chạm 5008 ms ở default 5 s; không đổi assertion hoặc production path.
+  - Verification: perf file 6 lượt liên tiếp, mỗi lượt 5/5 xanh; focused perf + HTTP 2 file/10 test xanh. Exact process-supervision Vitest bundle `--maxWorkers=2` 30 file/158 test xanh sau remediation, dùng SQLite và filesystem thật.
+  - Decisions: Design bản 45 được ghi trước test. Không mock `node:fs`, không cache canonical containment vĩnh viễn, không tăng budget.
+  - Blockers: Không có; chờ remote matrix trên remediation commit trước khi tick lại S.6.
 
 Format:
 ```
