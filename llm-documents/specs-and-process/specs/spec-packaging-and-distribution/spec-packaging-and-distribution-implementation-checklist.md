@@ -130,13 +130,13 @@ tất cả ─→ M Packaged smoke ba nền tảng
 Mỗi phase chạy focused command dưới đây trên SQLite/filesystem thật, rồi `rtk bun run typecheck`, `rtk bun run lint`, `rtk bun run test:boundaries` khi chạm boundary, và `rtk git diff --check`. Phase M chạy toàn bộ gate trên ba OS qua GitHub Actions.
 
 > [!WARNING]
-> **Ba lệnh có dấu † chưa tồn tại trong [`package.json`](../../../../package.json).** Repo hôm nay có 20 script và không có script nào trong số đó. Task tạo chúng nằm ngay trong phase tương ứng và **phải làm trước** mọi task khác của phase đó, nếu không thì "verify" của phase là câu lệnh không chạy được.
+> **Bốn lệnh có dấu † chưa tồn tại trong [`package.json`](../../../../package.json).** Repo hôm nay có 20 script và không có script nào trong số đó. Task tạo chúng nằm ngay trong phase tương ứng và **phải làm trước** mọi task khác của phase đó, nếu không thì "verify" của phase là câu lệnh không chạy được. (Bản trước đếm ba vì bỏ sót `test:mcp-catalogue` của A.8 — Files Changed Summary vẫn đếm bốn, nên đây là chỗ lệch chứ không phải task mới.)
 >
 > Tương tự, `tests/frontend/` và `tests/build/` là **thư mục mới** — `tests/` hôm nay chỉ có `adapter, agent-kit, cli, contracts, core, e2e, golden, mcp, server, support`. [`vitest.config.ts`](../../../../vitest.config.ts) đặt `environment: "node"` **toàn cục** và repo **không có `jsdom`/`happy-dom`**, nên test nào cần `window`/`location` phải đi qua seam inject (xem G.2), MUST NOT giả định môi trường DOM.
 
 | Phase | Focused verification command | Lệnh/thư mục phải tạo trước |
 |---|---|---|
-| A | `rtk bunx vitest run tests/contracts/packaging-contracts.test.ts` **và** `rtk bun run test:mcp-contract` **và** `rtk bun run test:golden` — hai cái sau là gate hồi quy cho A.4 | — |
+| A | `rtk bunx vitest run tests/contracts/packaging-contracts.test.ts` **và** `rtk bun run test:mcp-catalogue` **†** (→ `tests/contracts/tool-schema-catalogue.test.ts`) **và** `rtk bun run test:mcp-contract` **và** `rtk bun run test:golden` — hai cái cuối là gate hồi quy cho A.4 | script `test:mcp-catalogue` → **A.8** |
 | B | `rtk bunx vitest run tests/adapter/runtime-archive.test.ts tests/adapter/runtime-asset-manager.test.ts` | — |
 | C | `rtk bunx vitest run tests/adapter/bootstrap-coordinator.test.ts tests/adapter/bridge-credential-lifecycle.test.ts tests/adapter/database-migration.test.ts` | — |
 | D | `rtk bunx vitest run tests/adapter/vidcom-node-shim.test.ts tests/adapter/compiler-guard.test.ts tests/adapter/render-binary-probe.test.ts tests/adapter/vieneu-frozen-interpreter.test.ts` | — |
@@ -198,6 +198,7 @@ Mỗi phase chạy focused command dưới đây trên SQLite/filesystem thật,
     } as const satisfies Record<string, ToolSchemaEntry>;
     ```
 
+  - `ToolSchemaEntry` khai **cùng file** [`packages/contracts/src/mcp.ts`](../../../../packages/contracts/src/mcp.ts), ngay trên catalogue: `{ input: z.ZodType; output: z.ZodType; level: ToolLevel }`. **`ToolLevel` đã tồn tại ở chính file đó** (`"read" | "write" | "job" | "destructive"`, dòng 47) và `ToolDefinition.level` ở [`mcp/src/registry/types.ts:54`](../../../../packages/mcp/src/registry/types.ts#L54) đang dùng đúng nó — MUST NOT khai union thứ hai, **đặc biệt đừng bỏ sót `job`**
   - **`ToolDefinition`/handler/annotations ở lại `packages/mcp`** — chỉ map schema đi ra. Registry SHALL đọc catalogue này thay vì khai lại, nếu không là hai nguồn sự thật cho cùng một tên tool
   - Kèm test: **mọi** tool trong `ToolRegistry` có entry trong catalogue và ngược lại. Thiếu chiều nào thì một tool mới sẽ lặng lẽ 404 ở route bridge trong khi vẫn chạy qua stdio
   - _Requirements: R2.3, R2.11_ — _Design: §5.0 hệ quả 1, §16 C-2_
@@ -247,6 +248,9 @@ Mỗi phase chạy focused command dưới đây trên SQLite/filesystem thật,
 - [ ] B.3 Script build archive theo `<os>-<arch>`
   - `.tar.gz` deterministic; **fail** nếu tập package Python lệch *(core 55 + phần phụ platform)*; `pip` **có mặt là fail**
   - Số đã đo: darwin 481 MB/145 MB · Windows 499/152 (+`colorama`,`tzdata`) · Linux 595/179
+  - **Danh sách kỳ vọng là file có sẵn, đừng gõ lại**: [`evidence/linux-package-set-pruned.txt`](../../../../spikes/phase-4/s9-windows-runtime/evidence/linux-package-set-pruned.txt) (55) · [`darwin-…`](../../../../spikes/phase-4/s9-windows-runtime/evidence/darwin-package-set-pruned.txt) (55) · [`win-…`](../../../../spikes/phase-4/s9-windows-runtime/evidence/win-package-set-pruned.txt) (58). Cách đối chiếu đã chạy thật ở [`phase4-python-stack.yml:130-136`](../../../../.github/workflows/phase4-python-stack.yml#L130) — dùng lại hình dạng đó
+  - **File evidence Windows chụp trước bước gỡ `pip`, đừng dùng thẳng làm kỳ vọng**: 58 dòng = 55 core + `colorama` + `tzdata` + **`pip`**. Bảng của [S9](../../../../spikes/phase-4/s9-windows-runtime/README.md) ghi **57** sau prune (dòng 55) trong khi §W-1 ghi file 58 dòng (dòng 252) — hai câu trong cùng một tài liệu, và câu đúng cho gate là **57**. Kỳ vọng: `linux/darwin = 55 core`, `windows = 55 core + colorama + tzdata`, `pip` vắng mặt ở **cả ba**
+  - **Normalize tên trước khi diff**, nếu không thì gate đỏ giả trên Windows: `pip list --format=freeze` in khác nhau giữa hai nền — `huggingface-hub`/`huggingface_hub`, `pydantic-core`/`pydantic_core`, `typing-extensions`/`typing_extensions`, `jinja2`/`Jinja2`, `pyyaml`/`PyYAML`, `markupsafe`/`MarkupSafe`. So bằng `name.lower().replace("_", "-")`, **version thì so nguyên xi** (56 version giữ lại đã đo là khớp tuyệt đối giữa darwin và Windows — lệch version là lỗi thật)
   - _Requirements: R5.1, R5.14_ — _Design: §5.13, DR-15_
 - [ ] B.4 Extractor an toàn
   - Từ chối absolute path, `..`, symlink/hardlink, special file; chỉ regular file/dir trong allowlist; áp lại mode từ manifest; Windows dùng ACL
@@ -593,6 +597,7 @@ Mỗi phase chạy focused command dưới đây trên SQLite/filesystem thật,
   - _Requirements: R4.1_ — _Design: DR-1_
 - [ ] H.5 Body limit theo route
   - 1 MiB mặc định, **20 MiB** cho route upload asset, ở đúng mắt xích `bodyLimit` của chuỗi middleware cố định. Vượt ⇒ `413 payload_too_large` kèm giới hạn thật
+  - **Route upload asset hôm nay là đúng một chỗ**, đã rà sẵn: `uploadBgm` trong [`packages/server/src/routes/project-writes.ts`](../../../../packages/server/src/routes/project-writes.ts#L134). Mọi route khác giữ 1 MiB. Nếu lúc làm thấy chỗ thứ hai nhận binary body thì **dừng và ghi vào Execution Log** — nghĩa là bề mặt upload đã đổi so với lần rà này, không phải cứ thế nới thêm một ngoại lệ
   - _Requirements: R4.6_ — _Design: §7_
 - [ ] H.6 Đo cold/warm + baseline hồi quy
   - Ghi baseline vào `.github/perf-baseline/<runner-label>.json`, **commit vào repo** — không dùng CI cache (cache hết hạn thì gate im lặng biến mất)
@@ -1037,6 +1042,7 @@ Chi tiết: [Detailed Goals](./spec-packaging-and-distribution-detailed-goal.md)
 | # | Món | Trạng thái |
 |---|---|---|
 | N-A | Ba nguồn nói khác nhau về `mcp` → `adapter`: bảng [steering/02](../../../steering/02-project-layout.md) §2 **cho phép**, ESLint **cho phép** (block `packages/mcp/**` không liệt `@vidcom/adapter`), gate [`verify-import-boundaries.mjs`](../../../../scripts/verify-import-boundaries.mjs) **cấm** | **Đóng 2026-08-07** — chọn hướng **thắt lại** cho khớp code hiện tại: steering §2 bảng + luật 3 + §2.1 (giải thích bất đối xứng `worker`) + §2.2 (hai gate phải khớp), và thêm `@vidcom/adapter` vào block ESLint của `packages/mcp/**`. Không sửa dòng code sản phẩm nào — `packages/mcp` vốn đã tuân thủ. `lint`, `typecheck`, `test:boundaries` xanh sau khi sửa |
+| N-C | [S9 §W-1](../../../../spikes/phase-4/s9-windows-runtime/README.md) tự mâu thuẫn về tập package Windows sau prune: bảng ghi **57**, §W-1 ghi file evidence **58 dòng** — vì `win-package-set-pruned.txt` chụp **trước** bước gỡ `pip` | **Đóng trong checklist** — B.3 chốt kỳ vọng là 57 (55 core + `colorama` + `tzdata`, không `pip`) và nói rõ đừng dùng thẳng file evidence. Sửa lại README của S9 thì tốt nhưng **không chặn code** |
 | N-B | Design bản 2 §5.0/§8.1 có 5 câu nói khác code; đã đính chính ở [§16](./spec-packaging-and-distribution-detailed-design.md) chứ không sửa tại chỗ để giữ dấu vết bản đã duyệt | **Đóng** — đọc §16 trước Phase A và Phase I |
 
 ---
