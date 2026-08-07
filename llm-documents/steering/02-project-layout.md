@@ -50,18 +50,38 @@ src/                         Next.js — chỉ UI
 | `core` | `contracts` | `hono`, `next`, `react`, `adapter/*`, `node:fs` trực tiếp |
 | `adapter/*` | `core` (để implement port), `contracts` | `server`, `mcp`, `next`, `react` |
 | `server` | `core`, `adapter`, `contracts` | `next`, `react`, `mcp` |
-| `mcp` | `core`, `adapter`, `contracts` | `next`, `react`, `server` |
+| `mcp` | `core`, `contracts` | `next`, `react`, `server`, **`adapter`** |
 | `worker` | `core`, `adapter`, `contracts` | `next`, `react`, `server`, `mcp` |
 | `contracts` | — | tất cả |
 | `agent-kit` | — (chỉ markdown, không có code) | tất cả |
 | `src/**` | `contracts` (chỉ type) | `core`, `adapter`, `server`, `mcp`, `node:*` |
 
-Hai luật quan trọng nhất:
+Ba luật quan trọng nhất:
 
 1. **`core` không import `adapter`.** Core khai báo port; adapter implement; composition root (`cli`) nối lại. Ngược chiều là sai.
 2. **`mcp` không gọi `server`.** Hai adapter ngang hàng, cùng gọi Core. MCP gọi HTTP nghĩa là nghiệp vụ đã rò lên tầng HTTP.
+3. **`mcp` cũng không import `adapter`.** Nó nhận mọi thứ cần qua tham số do `cli` inject (`createMcpRegistry(infrastructure, application)`), nên `packages/mcp/package.json` chỉ khai `contracts` + `core` + SDK + `zod`.
 
-MUST cấu hình ESLint `no-restricted-imports` theo bảng trên ngay khi tạo package, không để sau.
+### 2.1 Vì sao `worker` được import `adapter` mà `mcp` thì không
+
+Câu hỏi này sẽ được hỏi lại, nên trả lời một lần ở đây.
+
+`adapter/*` đã bị cấm import `mcp` và `server`. Luật 3 chỉ làm chiều còn lại đối xứng: **`mcp` là adapter giao thức, nó dịch chứ không thực thi.** Việc của nó là biến JSON-RPC thành lời gọi Core và biến `DomainError` thành mã lỗi MCP. Nó không mở file, không mở DB, không spawn process — nên nó không cần `adapter`, và không cần thì không mở.
+
+`worker` thì ngược lại: nó **là** chỗ infrastructure chạy. Một job render phải chạm filesystem, FFmpeg, Chromium. Cấm nó import `adapter` là biến `cli` thành nơi phải chuyển tiếp mọi thứ, không được gì.
+
+Cái giá của luật 3 là một interface mỏng: khi `mcp` cần gọi ra ngoài (ví dụ bridge gọi daemon), nó khai `interface` rồi để `cli` dựng hiện thực. Cái được là `packages/mcp` test được mà không cần dựng infrastructure, và `@vidcom/adapter` — vốn chỉ có **một** `exports: "./src/index.ts"`, tức mở là mở hết Drizzle, `node:fs`, `puppeteer-core`, TTS — không lọt vào tầng giao thức.
+
+> `cli` không có dòng trong bảng vì nó là composition root: nó được import **tất cả**, và là package duy nhất thấy được cả `mcp` lẫn `adapter`. Mọi chỗ hai bên cần gặp nhau thì gặp ở đây.
+
+### 2.2 Hai gate cưỡng chế, phải khớp nhau
+
+Bảng trên được cưỡng chế bởi **hai** thứ, và cả hai MUST nói cùng một câu:
+
+1. **ESLint** `no-restricted-imports`, một block cho mỗi `packages/*/**/*.ts` trong [`eslint.config.mjs`](../../eslint.config.mjs) — chạy bằng `bun run lint`.
+2. **[`scripts/verify-import-boundaries.mjs`](../../scripts/verify-import-boundaries.mjs)** — chạy bằng `bun run test:boundaries`. Nó bắt được thứ ESLint bỏ sót: import theo **đường dẫn tương đối** vượt biên package, và `packages/adapter/src/<bất kỳ>/**` cũng phân giải thành `@vidcom/adapter` nên không có thư mục con nào "lách" được luật.
+
+MUST cập nhật **cả hai** khi sửa bảng này, và MUST thêm fixture vào gate thứ hai để chính nó tự kiểm. Sửa một chỗ là tạo ra tình trạng `lint` xanh nhưng `test:boundaries` đỏ (hoặc ngược lại) — đúng loại lỗi làm người sửa tin rằng gate mới là thứ sai.
 
 ## 3. Vì sao `src/` chỉ còn UI
 

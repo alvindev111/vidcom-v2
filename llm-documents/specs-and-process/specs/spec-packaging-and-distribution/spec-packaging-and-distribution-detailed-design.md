@@ -457,27 +457,36 @@ Không job nào dùng artifact build từ OS khác. `useCodeCache` và `useSnaps
 | `BootstrapCoordinator`, `FoundationManager`, `LoopbackHost`, `SeaStaticAssetHost` | `cli` | Composition root. Chúng dựng infrastructure + application và sở hữu lock/listener cấp tiến trình — đúng việc của entrypoint, và `server` chỉ được export một Hono app |
 | `SeaAssetSource`, `RuntimeAssetManager`, `CompilerGuard`, `BrowseTokenStore` | `adapter/runtime` (`CompilerGuard` → `adapter/hyperframes`) | Hiện thực port; chạm filesystem, process, env |
 | `DaemonDiscoveryStore` | `adapter/fs` | File atomic + ACL, cùng họ với `credential-store.ts` |
-| `DaemonClient` / `BridgeClient` | **`adapter/daemon`** (mới) | Client IPC dùng chung bởi **cả** `mcp` (bridge) và `cli` (`render`). Cả hai đều được phép import `adapter`; đặt ở đây là cách duy nhất tránh `mcp` phải nhìn thấy `server` |
+| `DaemonClient` / `BridgeClient` | **`adapter/daemon`** (thư mục mới trong `@vidcom/adapter`, không phải package npm mới) | Hiện thực IPC: chạm `node:http`, filesystem discovery record, env. Người dùng là `cli` — cả `render` lẫn composition root của bridge. **`mcp` MUST NOT import nó**, xem hệ quả 4 |
 | Route `/api/bridge/v1/*` | `server/routes` | Chúng là route Hono phía daemon |
-| Remote `ToolInvoker` | `mcp` | Registry ở lại `mcp`; invoker gọi `adapter/daemon` |
+| **Interface** `ToolInvoker` | `mcp` (`registry/types.ts`) | Registry ở lại `mcp` và chỉ biết interface. Đây là chỗ duy nhất `mcp` nói về việc "gọi tool ở đâu đó" |
+| **Hiện thực** remote `ToolInvoker` | `cli` | `cli` là package duy nhất được phép nhìn thấy **cả** `mcp` lẫn `adapter` ([`cli/package.json`](../../../../packages/cli/package.json) khai đủ 7 workspace dep), và [`createMcpRegistry`](../../../../packages/cli/src/composition-root.ts) đã sống ở đây rồi |
 | `FilesystemBrowserService` (chính sách), `ProjectImportService`, `DoctorService` (tổng hợp + phân loại + exit code) | `core` (`usecase`/`service`) + port | Đây là **quyết định nghiệp vụ**: luật token, giới hạn phân trang, canonicalize, phân loại bắt buộc/tuỳ chọn. Adapter dịch, không quyết ([steering 03 §2.4](../../../steering/03-architecture-ddd.md)) |
 | Truy cập `node:fs` cho browse/import/doctor | `adapter/fs` | `core` **bị cấm** import `node:fs` trực tiếp |
 | Mọi DTO/schema mới | `contracts` | Một shape một nguồn; HTTP và bridge cùng dùng |
 
-**Ba hệ quả bắt buộc, không phải khuyến nghị:**
+**Bốn hệ quả bắt buộc, không phải khuyến nghị:**
 
-1. **`server` MUST NOT import `packages/mcp`.** §5.7 nói endpoint `/api/bridge/v1/tools/:name` validate bằng `ToolDefinition` — nhưng registry nằm ở `packages/mcp`, mà lint cấm `server` import `mcp`. Giải: **schema của tool nằm ở `contracts`** (đúng vai trò steering 02 §1 giao cho package đó: *"HTTP DTO, **MCP tool schema**, error code"*); route bên `server` validate bằng schema từ `contracts` và **thực thi qua một invoker do composition root inject**. Không có bước này, lần implement đầu tiên sẽ đâm lint và cách "sửa" tự nhiên nhất là nới boundary.
+1. **`server` MUST NOT import `packages/mcp`.** §5.7 nói endpoint `/api/bridge/v1/tools/:name` validate bằng `ToolDefinition` — nhưng registry nằm ở `packages/mcp`, mà lint cấm `server` import `mcp`. Giải: **schema của tool nằm ở `contracts`** (đúng vai trò steering 02 §1 giao cho package đó: *"HTTP DTO, **MCP tool schema**, error code"*); route bên `server` validate bằng schema từ `contracts` và **thực thi qua một invoker do composition root inject**.
+
+   **Đính chính so với bản 2** (kiểm ngày 2026-08-07 trên code thật): phần "chuyển schema" **đã xong từ trước Giai đoạn 4**. [`packages/mcp/src/registry/schemas.ts`](../../../../packages/mcp/src/registry/schemas.ts) chỉ `export * from "@vidcom/contracts"`, các file `*-tools.ts` import `…InputSchema`/`…OutputSchema` trực tiếp từ `contracts`, và **không có một `z.object` nào** trong `packages/mcp`. Việc còn lại của Giai đoạn 4 **không phải** di chuyển schema mà là: `contracts` phải xuất **một catalogue `tên tool → {input, output, level}`** để route bridge bên `server` map được `:name` sang schema mà không cần registry. Xem checklist A.4.
+
 2. **`core` trả `Result<T, DomainError>`, không throw** ([steering 03 §2.2](../../../steering/03-architecture-ddd.md)). Chữ ký ở §5.2 và §5.9 viết tắt cho dễ đọc; phần nằm trong `core` SHALL trả `Result`. `ProjectImportService` (§5.19) đã đúng dạng; `FilesystemBrowserService` và `DoctorCheck` SHALL theo cùng dạng.
 3. **`packages/worker` giữ nguyên, không đụng.** Nó tồn tại trong repo và steering 02 §1 còn liệt `worker` trong danh sách entrypoint của `cli`. Giai đoạn 4 **không** expose mode `worker` (OQ-9) nhưng cũng **không** xoá package — không tạo orphan, không sửa steering vì một thứ chỉ bị hoãn.
+4. **`mcp` MUST NOT import `adapter`.** [steering 02 §2](../../../steering/02-project-layout.md) luật 3 — `mcp` là adapter giao thức, nó dịch chứ không thực thi, nên nhận mọi thứ cần qua tham số do `cli` inject; §2.1 giải thích vì sao `worker` được import `adapter` mà `mcp` không. Luật được cưỡng chế ở **hai** chỗ (§2.2): block `packages/mcp/**` trong [`eslint.config.mjs`](../../../../eslint.config.mjs) và [`scripts/verify-import-boundaries.mjs`](../../../../scripts/verify-import-boundaries.mjs). Gate thứ hai cấm theo **prefix đường dẫn**: mọi thứ dưới `packages/adapter/` phân giải thành `@vidcom/adapter`, nên `adapter/daemon` không thoát được. Hệ quả cho Giai đoạn 4: remote `ToolInvoker` **không** đặt ở `mcp` — `mcp` khai interface, `cli` dựng hiện thực từ `adapter/daemon`. MUST NOT nới gate, MUST NOT thêm dep vào [`packages/mcp/package.json`](../../../../packages/mcp/package.json) (đang khai đúng 5: hai gói SDK, `contracts`, `core`, `zod`).
 
-**Bốn câu hỏi dependency của [steering 01 §3](../../../steering/01-backend-stack.md)** phải trả lời được trước khi thêm bất kỳ dependency nào. Giai đoạn 4 thêm hai:
+   **Lịch sử, để không ai đi lại đường cũ**: tới 2026-08-07 ba nguồn này nói khác nhau — bảng steering và ESLint *cho phép*, chỉ gate script *cấm*. Đó là lý do bản 2 của Design viết `DaemonClient` là thứ `mcp` dùng chung được: câu đó đọc đúng steering nhưng sẽ làm `test:boundaries` đỏ trong khi `lint` xanh. Mâu thuẫn đã được đóng bằng cách **thắt bảng steering + ESLint cho khớp gate** (khớp luôn code, vì `packages/mcp` vốn chưa từng import `adapter`).
 
-| | `tar@7.5.22` (nâng thành direct dependency) | `@hono/node-server` |
+**Bốn câu hỏi dependency của [steering 01 §3](../../../steering/01-backend-stack.md)** phải trả lời được trước khi thêm bất kỳ dependency nào. Giai đoạn 4 chỉ thêm **một** dependency thật:
+
+| | `tar@7.5.22` (nâng thành direct dependency) | `@hono/node-server@2.0.12` — **đã là dependency**, không phải món mới |
 |---|---|---|
 | Chạy trong binary đã compile? | **Có** — và đây là rủi ro D2 phải kiểm: pure JS, không native addon, không đọc `__dirname`. Packaged smoke là chỗ chứng minh | Có; pure JS, đã dùng trong spike S2/S7 |
 | Kéo theo bản thứ hai của thứ đã có? | Không — đã nằm trong lockfile, chỉ nâng lên direct | Không; nó là Node adapter **của chính Hono**, không phải HTTP framework thứ hai (steering 01 §1 cấm cái sau) |
 | Viết được bằng ~30 dòng? | Không — extraction an toàn (traversal, symlink, mode) là chỗ dễ sai kín | Không — graceful close + streaming request/response |
 | Cần network lúc runtime? | Không | Không |
+
+> **Đính chính so với bản 2**: bản 2 viết "Giai đoạn 4 thêm hai" dependency. Kiểm lại ngày 2026-08-07: [`packages/server/package.json`](../../../../packages/server/package.json) **đã khai `@hono/node-server@2.0.12`** từ trước, nên cột phải là *bằng chứng đã trả lời*, không phải việc phải làm. Không có task nào cần thêm nó. `puppeteer-core@25.4.0` (dùng cho harness browser ở Phase G) cũng **đã** là devDependency của repo và đã nằm trong danh sách được phép của [steering 01 §5](../../../steering/01-backend-stack.md), nên Phase G không mở dependency mới.
 
 ### 5.1 `BootstrapCoordinator`
 
@@ -599,8 +608,20 @@ interface DaemonSession {
 
 - **Purpose**: giữ tool schema/list/era ở bridge nhưng execution ở daemon.
 - `ToolDefinition` tiếp tục là nguồn duy nhất. `createMcpRegistry` nhận `ToolInvoker`; local invoker gọi Core, remote invoker gọi daemon allowlisted endpoint.
+- **Interface `ToolInvoker` ở `packages/mcp/src/registry/types.ts`; hiện thực remote ở `packages/cli`.** `mcp` MUST NOT import `adapter/daemon` (§5.0 hệ quả 4) — nó chỉ nhận invoker qua tham số, đúng như `createMcpRegistry(infrastructure, application)` đang được `cli` gọi hôm nay:
+
+```ts
+// packages/mcp/src/registry/types.ts — mcp chỉ biết đến shape này
+export interface ToolInvoker {
+  invoke(name: string, raw: unknown, request: ToolRequestContext): Promise<ToolInvocation>;
+}
+
+// packages/cli/src/bridge/remote-tool-invoker.ts — cli là chỗ duy nhất thấy cả hai bên
+export function createRemoteToolInvoker(client: DaemonClient): ToolInvoker;
+```
+
 - Bridge forward `protocolVersion`, credential/attachment id, request state và actor=`agent`; daemon sở hữu audit.
-- MUST NOT có generic `request(method,path,body)` trong bridge.
+- MUST NOT có generic `request(method,path,body)` trong bridge. Bề mặt của `DaemonClient` mà invoker được dùng chỉ gồm: `handshake`, `attach`/`renew`/`detach`, `invokeTool(name, payload)`.
 
 ### 5.8 CLI command dispatcher
 
@@ -1602,10 +1623,10 @@ Không step bắt buộc nào được skip. Linux job vắng mặt nghĩa là s
 | 21 | Tách việc ghi `active_workspace` ra khỏi `selectWorkspace` — đây là thay đổi hành vi có chủ ý | §7.13, §6.4 |
 | 22 | Hai chỗ Design đi khác steering được nêu tường minh thay vì đi vòng | §7.0 |
 | 23 | `runtime.caBundlePath` + `VIDCOM_CA_BUNDLE` phải vào schema strict của `setting.json` | §5.13 |
-| 24 | Bảng **component → package** cho mọi component mới; `adapter/daemon` là package mới để `mcp` không phải nhìn thấy `server` | §5.0 |
-| 25 | **Schema tool chuyển sang `contracts`** để route bridge bên `server` validate được mà không import `mcp` (lint cấm) | §5.0 |
+| 24 | Bảng **component → package** cho mọi component mới; `adapter/daemon` là thư mục mới trong `@vidcom/adapter`, `mcp` nhận `ToolInvoker` qua inject nên không thấy `server` **cũng không thấy `adapter`** | §5.0 hệ quả 4, §5.7 — *sửa 2026-08-07* |
+| 25 | Route bridge bên `server` validate bằng schema từ `contracts`, không import `mcp`. Phần **di chuyển** schema đã xong từ trước; việc còn lại là **catalogue tên tool → schema** trong `contracts` | §5.0 hệ quả 1 — *sửa 2026-08-07* |
 | 26 | `PUT /workspace/active` **chỉ nhận `selectionToken`** — bỏ nhánh `{path}`, vì không đường ghi nào được nhận absolute path từ client | §7.5 |
-| 27 | Bốn câu hỏi dependency (steering 01 §3) trả lời cho `tar@7.5.22` và `@hono/node-server`; `packages/worker` giữ nguyên, không expose | §5.0 |
+| 27 | Bốn câu hỏi dependency (steering 01 §3): Giai đoạn 4 thêm **đúng một** dependency thật là `tar@7.5.22`; `@hono/node-server@2.0.12` và `puppeteer-core@25.4.0` đã có sẵn trong repo. `packages/worker` giữ nguyên, không expose | §5.0 — *sửa 2026-08-07* |
 
 **Hai quyết định phạm vi — đã được người dùng chốt ngày 2026-08-07:**
 
@@ -1625,3 +1646,19 @@ Tổng ước lượng: **~170 → ~177 SP**.
 - **Đính chính**: phép đo giải nén 26,9 s **đã có AV quét on-access** (Sophos Intercept X real-time); Defender tắt vì Sophos giữ vai trò đó, không phải vì máy không có AV. Thứ còn thiếu là **hạng phần cứng runner**, không phải antivirus.
 - **darwin đã đo xong trên CI** (`macos-latest`, arm64): **481 MB / 145 MB** sau prune và gỡ `pip`, 55 package **trùng khít** Linux và trùng khít core trong §5.13 (`diff` rỗng). Cả ba nền tảng giờ đều là số đo thật, không còn ô suy diễn nào.
 - **Số đo còn thiếu duy nhất là thứ chỉ packaged smoke mới sinh ra được**: cold start thật trên phần cứng runner, và TTS ra WAV trên Windows (bị N-1 chặn ở máy phát triển). Cả hai đều nằm trong R8, không chặn phê duyệt Design.
+
+---
+
+## 16. Phụ lục sửa sau phê duyệt — 2026-08-07 (bản 2.1)
+
+> Bản 2 vẫn **APPROVED**. Phụ lục này không mở lại phạm vi, không thêm/bớt requirement và **không đổi ước lượng 177 SP**. Nó sửa năm chỗ mà bản 2 nói khác code thật trong repo, phát hiện khi review Implementation Checklist. Mỗi món nêu bằng chứng đã kiểm để không phải kiểm lại.
+
+| # | Bản 2 nói | Code thật | Đã sửa ở |
+|---|---|---|---|
+| C-1 | `mcp` và `cli` "cả hai đều được phép import `adapter`", nên đặt `DaemonClient` ở `adapter/daemon` là đủ | [`scripts/verify-import-boundaries.mjs`](../../../../scripts/verify-import-boundaries.mjs) **cấm** `packages/mcp/**` → `@vidcom/adapter` và cấm theo prefix đường dẫn; [`packages/mcp/package.json`](../../../../packages/mcp/package.json) không khai `adapter`; `packages/mcp` không import `adapter` ở bất kỳ file nào. **Đã chốt thành luật** ở [steering/02](../../../steering/02-project-layout.md) §2 luật 3 + §2.1 + §2.2 ngày 2026-08-07, và thêm `@vidcom/adapter` vào block ESLint của `packages/mcp/**` — trước đó ba nguồn nói khác nhau nên `lint` xanh mà `test:boundaries` đỏ | §5.0 bảng + hệ quả 4, §5.7 |
+| C-2 | "**Schema tool chuyển sang `contracts`**" là việc của Giai đoạn 4 | Đã xong từ trước: [`registry/schemas.ts`](../../../../packages/mcp/src/registry/schemas.ts) chỉ re-export `contracts`, và `packages/mcp` **không có `z.object` nào**. Việc còn lại là catalogue `tên tool → schema` cho route bridge | §5.0 hệ quả 1 |
+| C-3 | "Giai đoạn 4 thêm hai dependency": `tar` và `@hono/node-server` | [`packages/server/package.json`](../../../../packages/server/package.json) đã khai `@hono/node-server@2.0.12`. Chỉ `tar` là món mới | §5.0 bảng bốn câu hỏi |
+| C-4 | §8.1 liệt `workspace_lease_lost` trong nhóm mã lỗi phải thêm | [`packages/contracts/src/errors.ts`](../../../../packages/contracts/src/errors.ts) **đã có** `WorkspaceLeaseLost = "workspace_lease_lost"` | checklist A.1 |
+| C-5 | Harness browser cho W-1 là thứ phải dựng | `puppeteer-core@25.4.0` đã là devDependency; [`spikes/phase-4/s9-windows-runtime/cookie-probe.mjs`](../../../../spikes/phase-4/s9-windows-runtime/cookie-probe.mjs) là harness chạy được, chỉ cần đưa vào `tests/` | checklist G.0 |
+
+**Không có món nào trong năm món này làm thay đổi kiến trúc.** C-1 là món duy nhất đổi *chỗ đặt code* (remote `ToolInvoker`: `mcp` → `cli`), và nó đổi theo hướng **thắt lại**, không nới.

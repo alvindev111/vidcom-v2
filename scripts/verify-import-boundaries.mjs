@@ -33,6 +33,11 @@ function packageNameForImport(filename, specifier) {
   return relative.startsWith("..") ? null : `@vidcom/${packageName}`;
 }
 
+// These rules mirror the import table in llm-documents/steering/02-project-layout.md §2
+// and the per-package `no-restricted-imports` blocks in eslint.config.mjs. All three
+// MUST say the same thing: ESLint catches bare specifiers, this script also catches
+// relative imports that cross a package boundary, and the steering table is what
+// humans read. Changing one alone produces a green `lint` with a red `test:boundaries`.
 function assertPackageImportAllowed(filename, specifier) {
   const relative = path.relative(repositoryRoot, filename).split(path.sep).join("/");
   const targetPackage = packageNameForImport(filename, specifier);

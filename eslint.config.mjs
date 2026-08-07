@@ -167,6 +167,8 @@ const eslintConfig = defineConfig([
               group: [
                 "bun",
                 "bun:*",
+                "@vidcom/adapter",
+                "@vidcom/adapter/*",
                 "@vidcom/server",
                 "@vidcom/server/*",
                 "next",
@@ -174,7 +176,14 @@ const eslintConfig = defineConfig([
                 "react",
                 "react/*",
               ],
-              message: "MCP is a peer transport that calls Core directly, never through the HTTP server.",
+              // MCP translates JSON-RPC into Core calls; it never executes
+              // infrastructure itself. Anything it needs from the outside comes
+              // in as an injected interface from the `cli` composition root, so
+              // `packages/mcp` stays testable without a filesystem or a DB.
+              // `@vidcom/adapter` has a single export, so opening it would also
+              // expose Drizzle, node:fs and puppeteer-core to the protocol layer.
+              // Mirrors scripts/verify-import-boundaries.mjs — keep both in sync.
+              message: "MCP is a peer transport that calls Core directly, never through the HTTP server or sibling infrastructure.",
             },
           ],
         },

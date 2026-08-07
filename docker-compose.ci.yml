@@ -1,0 +1,51 @@
+# Runs the CI gates locally in a container that matches the Linux runner.
+# See docker/ci/README.md for what this does and does not cover.
+name: vidcom-ci
+
+services:
+  ci:
+    build:
+      context: docker/ci
+    image: vidcom-ci:local
+    # The supervision spike spawns process trees and kills them; without a real
+    # init as PID 1 the orphans it deliberately creates are never reaped, and
+    # the gate would be measuring the container instead of the algorithm.
+    init: true
+    working_dir: /work
+    # Chrome's default 64MB of shared memory is not enough for a headless page
+    # of any size; it crashes rather than fails, which reads as a flaky test.
+    shm_size: 1gb
+    environment:
+      CI: "true"
+    volumes:
+      - .:/work
+      # Every path below masks the bind mount. The host checkout carries
+      # Windows-resolved dependencies and build output; letting a Linux
+      # `bun install` or `next build` write through would leave the host tree
+      # unusable, and reusing the host's would fail on native modules (sharp,
+      # unrs-resolver) built for the wrong platform.
+      - node_modules:/work/node_modules
+      - next_build:/work/.next
+      - pkg_adapter:/work/packages/adapter/node_modules
+      - pkg_agent_kit:/work/packages/agent-kit/node_modules
+      - pkg_cli:/work/packages/cli/node_modules
+      - pkg_contracts:/work/packages/contracts/node_modules
+      - pkg_core:/work/packages/core/node_modules
+      - pkg_mcp:/work/packages/mcp/node_modules
+      - pkg_server:/work/packages/server/node_modules
+      - pkg_worker:/work/packages/worker/node_modules
+      # Survives `--rm`, so a re-run does not re-download the dependency graph.
+      - bun_cache:/root/.bun/install/cache
+
+volumes:
+  node_modules:
+  next_build:
+  bun_cache:
+  pkg_adapter:
+  pkg_agent_kit:
+  pkg_cli:
+  pkg_contracts:
+  pkg_core:
+  pkg_mcp:
+  pkg_server:
+  pkg_worker:
