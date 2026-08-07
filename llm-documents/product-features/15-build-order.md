@@ -119,20 +119,22 @@ D1 là quyết định số một, nhưng nó cần nền móng ở giai đoạn
 
 ---
 
-## Giai đoạn 4 — Đóng gói & runtime phân phối (3–4 tuần)
+## Giai đoạn 4 — Đóng gói & runtime phân phối (re-baseline 7–8 tuần)
+
+> **Detailed Goals đã duyệt 2026-08-07** — nguồn authoritative là [spec Packaging & Distribution Runtime](../specs-and-process/specs/spec-packaging-and-distribution/spec-packaging-and-distribution-detailed-goal.md). Scope hiện là khoảng **170 SP**: ba artifact native target (macOS arm64, Windows x64, Linux x64), packaged smoke trên runner cùng OS, Windows là release gate. `vidcom worker` bị loại khỏi Giai đoạn 4 vì daemon đã sở hữu scheduler; thêm mode này sẽ tạo đường điều phối job thứ hai. Nút `New video` mức tối thiểu được kéo từ 5.0 vào 4.4/R1.19 để artifact tự đi hết vòng demo.
 
 | # | Việc | ID |
 |---|---|---|
 | 4.1 | **Đã chuyển lên 3.12** — nội dung agent-kit | AK-1, AK-2, AK-3 |
 | 4.2 | **Đã chuyển lên 3.12** — cài tường minh ở gốc workspace theo host; không cài lúc tạo/mở project, không version trong `vidcom.json` | AK-4, AK-5, AK-6 |
 | 4.3 | **Đã chuyển lên 3.12** — 3 test đồng bộ agent-kit ↔ Tool Registry | AK-8 |
-| 4.4 | Directory picker server-driven + token flow | PK-3 |
+| 4.4 | Directory picker server-driven + token flow + UI chọn/đổi workspace + UI tạo project từ preset tối thiểu | PK-3 |
 | 4.5 | Workspace lock/lease, single-writer daemon, MCP bridge qua IPC có xác thực | PK-4 |
-| 4.6 | `vidcom` CLI đủ mode + `doctor` | PK-5, PK-8 |
+| 4.6 | `vidcom` CLI đủ mode + `doctor`; `render` là thin client của daemon; **không có mode `worker`** trong giai đoạn này | PK-5, PK-8 |
 | 4.7 | Node SEA: nhúng frontend asset, bỏ Next | PK-6 |
 | 4.8 | Giải nén sidecar runtime vào app-data lần chạy đầu — **kèm cả thư viện motion**: `install_motion_library` đọc chúng từ `node_modules`, thứ không tồn tại trong artifact. Giải nén theo layout `<packageName>/<packagePath>` (giữ `package.json` để guard version còn chạy) rồi truyền đường dẫn qua `CompositionRootConfig.motionLibraryRoot`. Thiếu bước này thì vendor thư viện fail trên máy sạch, đúng tình huống nó tồn tại để phục vụ | PK-7 |
 | 4.9 | Import project có sẵn | PK-12 |
-| 4.10 | Smoke test trên artifact, máy sạch | — |
+| 4.10 | Smoke test trên artifact, máy sạch, cùng OS với artifact: macOS arm64 + Windows x64 + Linux x64 | — |
 
 **Mốc:** một file tải xuống, chạy được trên máy chưa cài gì.
 
@@ -142,7 +144,7 @@ D1 là quyết định số một, nhưng nó cần nền móng ở giai đoạn
 
 | # | Việc | ID |
 |---|---|---|
-| 5.0 | **Nối UI tạo project** — bỏ `disabled` ở `new-project-card.tsx`, dialog nhập tên + chọn preset từ catalog (§4.3), `POST /v1/projects`, điều hướng sang studio. Backend đã xong ở 3.4; chỉ còn FE **và test cho route** (hiện chưa có) | R5 — nợ từ GĐ 3 |
+| 5.0 | **Đã chuyển lên Giai đoạn 4 / R1.19** — UI tạo project từ preset ở mức tối thiểu; CRUD file/folder, upload asset và agent generation vẫn ở 5.5/Giai đoạn 6 | R5 — nợ từ GĐ 3 |
 | 5.1 | Kéo bar / kéo mép trên timeline để đổi timing | SC-7 |
 | 5.2 | Kéo-thả đổi thứ tự scene | SC-6 |
 | 5.3 | Undo/redo cấp composition | CE-8 |
@@ -176,11 +178,11 @@ D1 là quyết định số một, nhưng nó cần nền móng ở giai đoạn
 | 1 | Nền móng | 3–4 tuần | Backend 100% Hono, CI xanh | ✅ 2026-08-01 — 118/118 |
 | 2 | MCP thật | 2–3 tuần | AI sửa được project qua tool | ✅ 2026-08-02 — 10 tool, 2 era |
 | 3 | Đóng vòng lặp | 7–8 tuần (re-baseline 2026-08-04) | Xuất được MP4 có tiếng | ✅ 2026-08-05 — còn nợ R5 UI → 5.0 |
-| 4 | Đóng gói & runtime phân phối | 3–4 tuần | Một file thực thi | ⬜ chưa mở spec |
+| 4 | Đóng gói & runtime phân phối | 7–8 tuần (re-baseline 2026-08-07) | Một file thực thi, smoke native trên 3 target | 🟡 Goals đã duyệt, Design chờ xác nhận |
 | 5 | Editing UX | 3–4 tuần | Studio dùng thoải mái | ⬜ chưa mở spec |
 | 6 | AI Composer & hoàn thiện | — | Sản phẩm đầy đủ | ⬜ chưa mở spec |
 
-> Giai đoạn 4 đã đổi tên từ "Agent kit & đóng gói" sau khi AK-1..3/4/5/6/8 chuyển lên 3.12 — phần còn lại thuần đóng gói.
+> Giai đoạn 4 đã đổi tên từ "Agent kit & đóng gói" sau khi AK-1..3/4/5/6/8 chuyển lên 3.12. Detailed Goals đã xác nhận phần còn lại **không thuần đóng gói**: còn single-writer daemon/MCP bridge, runtime artifact, UI workspace/project tối thiểu và packaged smoke native.
 
 Ước lượng là **thứ tự tương đối**, không phải cam kết lịch.
 

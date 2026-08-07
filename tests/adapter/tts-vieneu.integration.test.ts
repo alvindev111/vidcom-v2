@@ -104,6 +104,13 @@ describe.skipIf(!enabled)("VieNeu against the real engine", () => {
     for (const voice of described.voices) {
       expect(voice.id).toMatch(/^vieneu-v3-[a-z0-9-]+$/);
       expect(voice.computeDevices).toContain("cpu");
+      // The label IS the string handed back to `Vieneu.infer(voice=…)`, so a
+      // malformed one fails at synthesis rather than here. `list_preset_voices()`
+      // returns `(label, name)` pairs and the sidecar once stringified the whole
+      // tuple, which produced `"('Minh Đức — Nam · Bắc · …', 'Minh Đức')"` —
+      // and that mangled name still slugged into an id matching the pattern
+      // above, so the id assertion alone never caught it.
+      expect(voice.label, "voice label must be the bare engine name").not.toMatch(/^\(|[('"]\s*,/u);
     }
     process.stderr.write(`engine voices: ${described.voices.map((v) => v.id).join(", ")}\n`);
 

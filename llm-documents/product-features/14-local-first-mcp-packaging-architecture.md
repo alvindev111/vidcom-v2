@@ -266,7 +266,7 @@ vidcom approve <requestId>    # duyệt destructive request từ trusted local C
 vidcom credential ...         # issue/list/rotate/revoke bearer cho HTTP
 vidcom backup ...             # list/verify/restore backup
 vidcom recovery ...           # inspect/reconcile/resolve journal recovery
-vidcom worker                 # worker tách riêng nếu cần cô lập render/TTS
+vidcom worker                 # chưa thuộc Giai đoạn 4; chỉ thêm ở phase sau nếu có nhu cầu cô lập đã đo
 vidcom render <project>       # render headless cho CI/batch
 vidcom doctor                 # kiểm tra Chromium, FFmpeg, TTS model, quyền, workspace
 vidcom version
@@ -284,7 +284,7 @@ UI và MCP hoạt động đồng thời. Hai process cùng sửa composition ho
 
 1. **Hono daemon là single writer** cho workspace đang mở.
 2. `vidcom mcp` là bridge kết nối tới daemon qua local IPC **có xác thực**.
-3. Daemon chưa chạy → MCP khởi động headless daemon, hoặc từ chối kèm hướng dẫn rõ ràng.
+3. Daemon chưa chạy → MCP khởi động headless daemon; không chọn nhánh từ chối vì AI host không có UI đáng tin để chuyển hướng dẫn tới người dùng.
 4. Mỗi workspace có lock/lease ngăn hai daemon cùng sở hữu.
 5. Mọi file write: content hash + atomic temp-write & rename + revision/audit record.
 6. File watcher tiếp nhận thay đổi từ CLI/editor bên ngoài, invalidate cache, phát event cho UI.
@@ -527,14 +527,14 @@ Repo hiện **không có test nào** (R3). Toàn bộ giá trị của việc t�
 
 ---
 
-## 17. Câu hỏi còn mở
+## 17. Quyết định đã đóng và câu hỏi còn lại
 
-Đã chốt qua D1/D2/D3: interface chính (MCP), hình thức phát hành (một executable), cách chọn workspace (web + server-driven picker). Còn lại:
+Đã chốt qua D1/D2/D3: interface chính (MCP), hình thức phát hành (một executable), cách chọn workspace (web + server-driven picker). Danh sách dưới đây giữ cả quyết định đã đóng lẫn câu hỏi dành cho phase sau:
 
-1. Daemon luôn chạy cùng app, hay có background service độc lập tồn tại sau khi đóng UI?
-2. MCP bridge kết nối daemon qua loopback HTTP, Unix socket / named pipe, hay transport khác?
+1. **Đã đóng ở OQ-1:** daemon do bridge tự khởi động là headless và tự dừng khi bridge cuối cùng ngắt, trừ khi UI còn attach; không cài background service độc lập.
+2. **Đã đóng ở OQ-2:** MCP bridge dùng loopback HTTP + bearer + handshake `workspaceRoot`/instance id. Unix socket/named pipe là phương án dự phòng đã đo trên POSIX, chưa kiểm Windows.
 3. Workspace active là global (một tại một thời điểm) hay cho phép nhiều workspace đồng thời?
-4. Runtime nặng (Chromium, FFmpeg, TTS model) — bundle trong installer hay tải ở lần chạy đầu? Ảnh hưởng kích thước tải và khả năng chạy offline.
+4. **Đã đóng ở OQ-3/OQ-12:** FFmpeg/FFprobe, esbuild và CPython đóng băng được bundle; Chrome Headless Shell và weights VieNeu tải ở lần chạy đầu rồi cache. Mốc là máy chưa cài gì nhưng cần mạng ở lần chạy đầu.
 5. Database vận hành: một DB global hay một DB cho mỗi workspace?
 6. AI Composer đi hướng A (agent CLI + MCP) hay hướng B (model API + tool-use)?
 7. Tính năng nào bắt buộc offline, tính năng nào được phép gọi cloud?
@@ -576,7 +576,7 @@ Kết thúc Mức 1: `src/` không còn code server nào ngoài đúng một fil
 ### Mức 3 — Application bundle
 - Installer một file; giải nén sidecar/runtime asset vào app-data ở lần chạy đầu.
 - `vidcom doctor` kiểm tra và bổ sung runtime thiếu.
-- Code signing, notarization, update strategy, crash reporting.
+- Checksum + ad-hoc signature ở baseline; signing certificate/notarization thật, update strategy và crash reporting thuộc full release.
 - Import project có sẵn (R9).
 
 ### Mức 4 — Full release

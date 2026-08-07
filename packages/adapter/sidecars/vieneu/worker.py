@@ -87,6 +87,41 @@ def gpu_usable() -> bool:
         return False
 
 
+def engine_version() -> str:
+    """Installed `vieneu` version, or "" when it cannot be determined.
+
+    Read from package metadata, not from `vieneu.__version__`: upstream 3.2.4
+    does not define that attribute, so the previous `getattr` always returned ""
+    and left `vidcom doctor` with no version to report.
+    """
+    try:
+        from importlib.metadata import PackageNotFoundError, version as metadata_version
+
+        return metadata_version("vieneu")
+    except Exception:  # noqa: BLE001 - an unreportable version is not a failure
+        return ""
+
+
+def speaker_name(entry: object) -> str:
+    """The name `Vieneu.infer(voice=…)` accepts, from one `list_preset_voices()` entry.
+
+    Upstream returns `(label, name)` pairs — the label carries gender/region/style
+    ("Minh Đức — Nam · Bắc · Phong cách tin tức") and only the second element is
+    the name the engine will accept. The previous `str(entry)` stringified the
+    whole tuple, so VidCom's catalog held `"('Minh Đức — …', 'Minh Đức')"` and
+    every synthesis with a catalog-chosen voice failed with `Voice … not found`.
+
+    Written to survive an upstream that returns plain strings instead: a bare
+    string is used as-is, and any other sequence yields its last element, which
+    is where the engine name sits today.
+    """
+    if isinstance(entry, str):
+        return entry
+    if isinstance(entry, (list, tuple)) and entry:
+        return str(entry[-1])
+    return str(entry)
+
+
 def probe() -> int:
     """Report engine readiness, the preset voice list, and whether a GPU is usable.
 
@@ -104,12 +139,12 @@ def probe() -> int:
         model_cache_root()
         import vieneu
 
-        version = getattr(vieneu, "__version__", "")
+        version = engine_version()
         engine = vieneu.Vieneu(backend=CPU_BACKEND)
         # The catalog is the engine's own list, never a copy maintained in
         # TypeScript: a hard-coded list drifts the moment upstream adds a voice,
         # and a name VidCom offers but the engine rejects fails at synthesis.
-        voices = [str(name) for name in engine.list_preset_voices()]
+        voices = [speaker_name(entry) for entry in engine.list_preset_voices()]
         ready = bool(voices)
     except Exception as error:  # noqa: BLE001 - a missing dependency is a normal, reportable state
         log(f"vieneu sidecar is not ready: {error}")

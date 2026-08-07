@@ -1,0 +1,23 @@
+# Everything a spike *builds* is ignored; everything a spike *is* stays tracked.
+# The tracked set is the four probe sources, the S2 mini Next app, setup.sh, the
+# rendered WAV, and README.md — enough to rebuild every number in the report.
+
+# SEA binaries, bundles, blobs, embedded asset maps (~460 MB)
+.artifacts/
+node_modules/
+
+# S2 — Next build output
+s2-export/.next/
+s2-export/out/
+s2-export/next-env.d.ts
+
+# S3 — frozen interpreter (~800 MB), HF weights (~1.6 GB), and the scratch files
+# setup.sh writes on every run. `evidence/` is deliberately NOT ignored: the
+# rendered WAV is the proof the spike passed.
+s3-tts-no-python/python*/
+s3-tts-no-python/cache/
+s3-tts-no-python/fakehome/
+s3-tts-no-python/out/
+s3-tts-no-python/*.tar.gz
+s3-tts-no-python/req*.json
+s3-tts-no-python/resp*.json
