@@ -3,7 +3,6 @@ import { homedir } from "node:os";
 import path from "node:path";
 
 import {
-  DEFAULT_VIDCOM_SETTINGS,
   resolveVidcomSettings,
   VidcomSettingsSchema,
   type ResolvedVidcomSettings,
@@ -13,6 +12,12 @@ import {
 import { secureAppDataDirectorySync, secureCredentialFile } from "./credential-store";
 
 const SETTINGS_FILENAME = "setting.json";
+
+function resolveWithEnvironment(document: VidcomSettingsDto): ResolvedVidcomSettings {
+  return resolveVidcomSettings(document, {
+    caBundlePath: process.env.VIDCOM_CA_BUNDLE,
+  });
+}
 
 /** Raised when the settings file exists but cannot be honoured as written. */
 export class VidcomSettingsError extends Error {
@@ -60,10 +65,10 @@ export async function readVidcomSettings(
   try {
     raw = await readFile(pathname, "utf8");
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "ENOENT") return DEFAULT_VIDCOM_SETTINGS;
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return resolveWithEnvironment({});
     throw new VidcomSettingsError(pathname, "the file could not be opened", { cause: error });
   }
-  if (!raw.trim()) return DEFAULT_VIDCOM_SETTINGS;
+  if (!raw.trim()) return resolveWithEnvironment({});
 
   let document: unknown;
   try {
@@ -79,7 +84,7 @@ export async function readVidcomSettings(
     // invalid apiKey must not end up in a log line.
     throw new VidcomSettingsError(pathname, `${where} is invalid (${issue?.message ?? "unknown reason"})`);
   }
-  return resolveVidcomSettings(parsed.data);
+  return resolveWithEnvironment(parsed.data);
 }
 
 /**

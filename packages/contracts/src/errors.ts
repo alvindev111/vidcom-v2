@@ -53,6 +53,22 @@ export enum ErrorCode {
   TtsVoiceNotSupported = "tts_voice_not_supported",
   TtsQuotaExceeded = "tts_quota_exceeded",
   TtsSynthesisFailed = "tts_synthesis_failed",
+  BridgeCredentialUnavailable = "bridge_credential_unavailable",
+  /** The system bridge bearer is invalid; user MCP credentials use `credential_invalid`. */
+  BridgeCredentialInvalid = "bridge_credential_invalid",
+  BridgeRotationInProgress = "bridge_rotation_in_progress",
+  DownloadTlsUntrusted = "download_tls_untrusted",
+  /** An HTTP body crossed its route limit; project asset quotas use `too_large`. */
+  PayloadTooLarge = "payload_too_large",
+  DaemonIdentityMismatch = "daemon_identity_mismatch",
+  DaemonUnavailable = "daemon_unavailable",
+  CompilerUnavailable = "compiler_unavailable",
+  RuntimeManifestInvalid = "runtime_manifest_invalid",
+  RuntimeExtractionIncomplete = "runtime_extraction_incomplete",
+  BootstrapLockTimeout = "bootstrap_lock_timeout",
+  PathTimeout = "path_timeout",
+  BrowseTokenInvalid = "browse_token_invalid",
+  ProjectImportConflict = "project_import_conflict",
 }
 
 /** Stable machine-readable warning codes exposed with job results. */

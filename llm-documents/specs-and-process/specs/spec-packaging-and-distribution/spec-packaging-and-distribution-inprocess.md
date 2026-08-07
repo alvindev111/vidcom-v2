@@ -4,7 +4,7 @@
 > - [Detailed Goals](./spec-packaging-and-distribution-detailed-goal.md) — **Approved** (2026-08-07). 13/13 OQ đã đóng; ba bản sửa OQ-4/OQ-7/OQ-8 đã được duyệt lại
 > - [Spike Phase 4](../../../../spikes/phase-4/README.md) — **bốn vòng, mười spike**: S1a/S1b/S2/S3 mở gate kỹ thuật; S4/S5/S6/S7 đóng OQ bằng số đo; S8 kiểm worker trong SEA; [S9](../../../../spikes/phase-4/s9-windows-runtime/README.md) chạy trên Windows và đóng W-1/W-2/W-3 + blocker B1
 > - [Detailed Design](./spec-packaging-and-distribution-detailed-design.md) — **Approved** (2026-08-07), bản 2: sau vòng review Design, vòng đo Windows/Linux và số đo darwin trên CI
-> - [Implementation Checklist](./spec-packaging-and-distribution-implementation-checklist.md) — **đã tạo** (2026-08-07), 13 phase A–M, 177 SP. Approval Gate riêng của nó **chưa duyệt** ⇒ code execution vẫn bị chặn
+> - [Implementation Checklist](./spec-packaging-and-distribution-implementation-checklist.md) — **Approved** (2026-08-07), 13 phase A–M, 177 SP. Code execution đang ở Phase A
 >
 > Spec này hiện thực **Giai đoạn 4** của [15-build-order](../../../product-features/15-build-order.md#giai-đoạn-4--đóng-gói--runtime-phân-phối-re-baseline-78-tuần): mục 4.4–4.10 (4.1–4.3 đã chuyển lên 3.12 và **đã xong**). Mức đóng gói tương ứng: [doc 14 §18](../../../product-features/14-local-first-mcp-packaging-architecture.md) Mức 2 + Mức 3, cộng phần baseline của Mức 4 cho ba artifact native và packaged smoke; full 3 OS × 2 kiến trúc vẫn ở Giai đoạn 6.
 
@@ -81,7 +81,7 @@ Mục 2, 3 và 7 là ba chỗ đắt. Chúng không phải "bundle rồi ship" �
 - **Supplementary files**:
   - [Detailed Goals](./spec-packaging-and-distribution-detailed-goal.md) — **Approved** (2026-08-07). Spike gate đã mở, 13/13 OQ đã đóng, và ba bản sửa OQ-4/OQ-7/OQ-8 đã được duyệt lại.
   - [Detailed Design](./spec-packaging-and-distribution-detailed-design.md) — **Approved** (2026-08-07). 27 quyết định chốt ở §15; ~177 SP.
-  - Implementation Checklist — **chưa tạo** (Phase Gate `Design → Implement`).
+  - [Implementation Checklist](./spec-packaging-and-distribution-implementation-checklist.md) — **Approved** (2026-08-07), đang thực thi tuần tự A→M.
 - **Date**: chưa chốt. Ước lượng **7–8 tuần lịch** (bản 4), đã được đồng bộ sang build-order thay cho baseline cũ 3–4 tuần. Lý do lệch: baseline cũ được viết khi Giai đoạn 4 còn được hiểu là "bundle những gì đã chạy được"; thực tế nó chứa hai subsystem chưa tồn tại (MCP bridge của R2, thực thi toolchain trên artifact của R6), một mảng UI mới (R1), một thay đổi lifecycle mà bản 1 tính thiếu (tách `startVidcomFoundation` để đổi workspace lúc runtime — spike cho thấy phần *boot không-workspace* thì rẻ, phần *tách foundation* thì không), và — sau spike — một CPython đóng băng phải ship cùng artifact. Đây là thứ tự tương đối, không phải cam kết lịch. Spike đã chạy xong và **không** nằm trong estimate.
 - **Capacity**: **~177 SP** ước lượng planning qua 9 requirement (bản 1: ~120, bản 2: ~150, bản 4: ~165, sau vòng duyệt Goals: ~170). Vòng review Design + đo Windows cộng thêm **7 SP**: R2 34→37 (R2.14 được nới thành ba lối — người dùng duyệt 2026-08-07) và R6 21→25 (xử lý TLS inspection N-1, cộng ép UTF-8 cho sidecar — cả hai đo được ở [S9](../../../../spikes/phase-4/s9-windows-runtime/README.md)). Coi là **sàn**: Phase 2 (132 SP) và Phase 3 (190 SP) đều nở ra ở phase Design. Vòng spike thứ hai làm hai hạng mục rẻ đi (OQ-10 chỉ là một biến đổi được; OQ-13 chọn shim nên không phải ship thêm Node runtime) nhưng không đủ để hạ con số — phần đắt của R1 là tách `startVidcomFoundation`, thứ R1.12 cần dù thế nào. Vòng duyệt 2026-08-07 **cộng thêm 5 SP vào R1** (21→26): OQ-8 hứa "~5 SP cho nút New video" từ bản 2 nhưng **chưa bao giờ vào bảng** — R1.19 giờ ghi nó ra.
 
@@ -122,10 +122,10 @@ Thang cắt nếu velocity không tới: **R7** (8) → **R3 mode `worker`** (3)
 - **Detailed Goals**: **Approved** — người dùng duyệt ngày 2026-08-07 sau khi chấp nhận ba bản sửa OQ-4/OQ-7/OQ-8. OQ-7 chốt ba nền tảng target, Windows là release gate; defer Linux chỉ qua một scope change mới và phải tuyên bố hẹp lại.
   **Sửa sau khi duyệt (2026-08-07, cùng ngày, người dùng duyệt riêng):** R2.14 được nới từ hai lối lên **ba lối** — thêm "hạ xuống chưa-có-workspace, giữ listener" cho trường hợp có UI; headless vẫn dừng hẳn. Bất biến single-writer không đổi, nhưng trở thành nghĩa vụ chứng minh bằng test thay vì bằng việc đóng tiến trình.
 - **Detailed Design**: **Approved** — alvin0 duyệt ngày 2026-08-07 sau bốn vòng review (blocker P1, steering 14/14, đo ba nền tảng). Gate §15 đã mở; xem [Detailed Design](./spec-packaging-and-distribution-detailed-design.md).
-- **Implementation Checklist**: **Pending Confirmation** — đã tạo ngày 2026-08-07 ([13 phase A–M, 177 SP](./spec-packaging-and-distribution-implementation-checklist.md)). Production code vẫn bị chặn tới khi Approval Gate của chính checklist được duyệt.
+- **Implementation Checklist**: **Approved / In Progress** — người dùng yêu cầu thực thi trọn vẹn ngày 2026-08-07; hiện ở Phase A ([13 phase A–M, 177 SP](./spec-packaging-and-distribution-implementation-checklist.md)).
 
 ## During Spec
-- **Standups**: chưa bắt đầu.
+- **Standups**: bắt đầu 2026-08-07 tại Phase A; tiến độ và bằng chứng được ghi trong Execution Log của checklist.
 - **Impediments**: **ba món nợ kiểm chứng đã chạy trên máy Windows ngày 2026-08-07** — xem [S9](../../../../spikes/phase-4/s9-windows-runtime/README.md). Hai đóng hẳn, hai đóng một nửa với giá đã biết, và vòng đo sinh thêm hai món mới.
 
   | # | Trạng thái | Kết quả đo | Đi vào đâu |

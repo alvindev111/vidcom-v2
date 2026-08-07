@@ -1,4 +1,12 @@
-import { ErrorCode, type DomainError, type Era, type ProjectId, type ToolLevel } from "@vidcom/contracts";
+import {
+  ErrorCode,
+  TOOL_SCHEMA_CATALOGUE,
+  type DomainError,
+  type Era,
+  type ProjectId,
+  type ToolLevel,
+  type ToolSchemaEntry,
+} from "@vidcom/contracts";
 import type { ToolAuditEntry } from "@vidcom/core";
 
 import type {
@@ -20,6 +28,8 @@ const defaultRuntime: RegistryRuntime = {
   newInvocationId: () => crypto.randomUUID(),
   now: () => new Date(),
 };
+
+const publicToolSchemas: Readonly<Record<string, ToolSchemaEntry>> = TOOL_SCHEMA_CATALOGUE;
 
 function failure(code: ErrorCode, message: string, field?: string): { ok: false; error: DomainError } {
   return { ok: false, error: { code, message, ...(field ? { field } : {}) } };
@@ -81,6 +91,29 @@ export class ToolRegistry {
       annotations: annotationsForLevel(definition.level),
     };
     this.definitions.set(definition.name, canonical as ToolDefinition<unknown, unknown>);
+  }
+
+  /** Seals full public registration against the contracts catalogue in both directions. */
+  assertPublicCatalogue(): void {
+    const expectedNames = Object.keys(publicToolSchemas).sort();
+    const registeredNames = [...this.definitions.keys()].sort();
+    if (
+      expectedNames.length !== registeredNames.length
+      || expectedNames.some((name, index) => name !== registeredNames[index])
+    ) {
+      throw new TypeError("public tool registry does not match the contracts catalogue");
+    }
+    for (const name of expectedNames) {
+      const expected = publicToolSchemas[name];
+      const registered = this.definitions.get(name);
+      if (!expected || !registered || (
+        expected.input !== registered.input
+        || expected.output !== registered.output
+        || expected.level !== registered.level
+      )) {
+        throw new TypeError(`tool does not match its contracts catalogue entry: ${name}`);
+      }
+    }
   }
 
   list(era: Era): ToolDescriptor[] {

@@ -52,7 +52,12 @@ async function createResolvedCliArtifact(root: string): Promise<CliArtifact> {
   const packed = await executeFile(
     onWindows ? "npm.cmd" : "npm",
     ["pack", "--pack-destination", packDestination, "--json", "--ignore-scripts"],
-    { cwd: path.resolve("packages/cli"), encoding: "utf8", shell: onWindows },
+    {
+      cwd: path.resolve("packages/cli"),
+      encoding: "utf8",
+      env: { ...process.env, npm_config_cache: path.join(root, "npm-cache") },
+      shell: onWindows,
+    },
   );
   const [{ filename }] = JSON.parse(packed.stdout) as Array<{ filename: string }>;
   await executeFile("tar", ["-xzf", path.join(artifactRoot, filename), "-C", artifactRoot]);

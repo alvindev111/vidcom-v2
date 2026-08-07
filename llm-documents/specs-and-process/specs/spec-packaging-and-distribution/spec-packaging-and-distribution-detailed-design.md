@@ -1,7 +1,7 @@
 # Spec Packaging & Distribution Runtime — Detailed Design
 
 > **Reference**: [Detailed Goals](./spec-packaging-and-distribution-detailed-goal.md) — **Approved 2026-08-07**
-> **Main spec**: [Packaging & Distribution Runtime](./spec-packaging-and-distribution-pending.md)
+> **Main spec**: [Packaging & Distribution Runtime](./spec-packaging-and-distribution-inprocess.md)
 > **Next**: Implementation Checklist — **được phép tạo** (gate §15 đã mở)
 >
 > **Trạng thái**: **APPROVED** ngày 2026-08-07 bởi alvin0 — xem [§15 Approval Gate](#15-approval-gate). Phase tiếp theo là Implementation Checklist; **production code vẫn bị chặn** cho tới khi checklist đó được duyệt riêng.
@@ -1649,9 +1649,9 @@ Tổng ước lượng: **~170 → ~177 SP**.
 
 ---
 
-## 16. Phụ lục sửa sau phê duyệt — 2026-08-07 (bản 2.1)
+## 16. Phụ lục sửa sau phê duyệt — 2026-08-07 (bản 2.2)
 
-> Bản 2 vẫn **APPROVED**. Phụ lục này không mở lại phạm vi, không thêm/bớt requirement và **không đổi ước lượng 177 SP**. Nó sửa năm chỗ mà bản 2 nói khác code thật trong repo, phát hiện khi review Implementation Checklist. Mỗi món nêu bằng chứng đã kiểm để không phải kiểm lại.
+> Bản 2 vẫn **APPROVED**. Phụ lục này không mở lại phạm vi, không thêm/bớt requirement và **không đổi ước lượng 177 SP**. Nó sửa sáu chỗ mà bản 2 nói khác code hoặc contract đã phát hành trong repo, phát hiện khi review và thực thi Implementation Checklist. Mỗi món nêu bằng chứng đã kiểm để không phải kiểm lại.
 
 | # | Bản 2 nói | Code thật | Đã sửa ở |
 |---|---|---|---|
@@ -1660,5 +1660,6 @@ Tổng ước lượng: **~170 → ~177 SP**.
 | C-3 | "Giai đoạn 4 thêm hai dependency": `tar` và `@hono/node-server` | [`packages/server/package.json`](../../../../packages/server/package.json) đã khai `@hono/node-server@2.0.12`. Chỉ `tar` là món mới | §5.0 bảng bốn câu hỏi |
 | C-4 | §8.1 liệt `workspace_lease_lost` trong nhóm mã lỗi phải thêm | [`packages/contracts/src/errors.ts`](../../../../packages/contracts/src/errors.ts) **đã có** `WorkspaceLeaseLost = "workspace_lease_lost"` | checklist A.1 |
 | C-5 | Harness browser cho W-1 là thứ phải dựng | `puppeteer-core@25.4.0` đã là devDependency; [`spikes/phase-4/s9-windows-runtime/cookie-probe.mjs`](../../../../spikes/phase-4/s9-windows-runtime/cookie-probe.mjs) là harness chạy được, chỉ cần đưa vào `tests/` | checklist G.0 |
+| C-6 | Thêm 14 member vào `ErrorCode` không được mô tả là thay đổi wire MCP | `GetJobStatusOutputSchema` kế thừa `JobSchema.error`, nên enum dùng chung tự động đi vào JSON Schema `tools/list`. Người dùng chốt giữ snapshot legacy/modern nguyên byte: 14 mã packaging chỉ công bố qua domain/HTTP/bridge; public MCP job schema giữ allowlist trước Phase A, và tool-error MCP chuẩn hoá mọi mã ngoài allowlist thành `internal` không kèm message/details riêng | checklist A.8, `tests/contracts/packaging-contracts.test.ts`, `tests/mcp/error-map.test.ts` |
 
-**Không có món nào trong năm món này làm thay đổi kiến trúc.** C-1 là món duy nhất đổi *chỗ đặt code* (remote `ToolInvoker`: `mcp` → `cli`), và nó đổi theo hướng **thắt lại**, không nới.
+**Không có món nào trong sáu món này làm thay đổi kiến trúc.** C-1 là món duy nhất đổi *chỗ đặt code* (remote `ToolInvoker`: `mcp` → `cli`), và nó đổi theo hướng **thắt lại**, không nới. C-6 đóng băng vocabulary của một wire contract đã phát hành; nó không bỏ mã lỗi khỏi các boundary packaging cần chúng.

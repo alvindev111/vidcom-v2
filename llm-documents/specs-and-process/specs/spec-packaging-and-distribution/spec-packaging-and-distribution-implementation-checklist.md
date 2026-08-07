@@ -3,7 +3,7 @@
 > **References**:
 > - [Detailed Goals](./spec-packaging-and-distribution-detailed-goal.md) — bản 4, **Approved 2026-08-07** (R2.14 sửa sau khi duyệt, cùng ngày)
 > - [Detailed Design](./spec-packaging-and-distribution-detailed-design.md) — bản 2, **Approved 2026-08-07**, gate §15 · **+ phụ lục sửa §16 (bản 2.1, cùng ngày)** — 5 chỗ bản 2 nói khác code thật, đọc trước khi bắt đầu Phase A và Phase I
-> - [Main spec](./spec-packaging-and-distribution-pending.md)
+> - [Main spec](./spec-packaging-and-distribution-inprocess.md)
 > - Spike gate: [phase-4](../../../../spikes/phase-4/README.md) · [S9 Windows/Linux/darwin](../../../../spikes/phase-4/s9-windows-runtime/README.md)
 
 ## Context
@@ -54,7 +54,7 @@ Checklist chuyển Design bản 2 thành task 1–4 giờ, giữ đúng ranh gi�
 - **Confirmed by**: alvin0
 - **Confirmation date**: 2026-08-07
 - **Notes**: Design gate §15 đã mở (alvin0, 2026-08-07) nên checklist này được phép tồn tại. Gate thứ hai này — Code Execution — **đã duyệt cùng ngày**, sau vòng review cuối vá bốn chỗ (B.3 nguồn danh sách package Python + normalize tên, A.4 `ToolSchemaEntry` dùng lại `ToolLevel` sẵn có, H.5 nêu tên route upload `uploadBgm`, và `test:mcp-catalogue` lệch giữa Matrix và Files Changed Summary), cộng N-C vào bảng Nợ tài liệu.
-- **Trạng thái thực thi**: **chưa bắt đầu — người dùng chốt approve nhưng chưa cho implement**. Agent nào nhận việc: đọc Design §16 trước, làm A.8/G.0/H.0/M.0 trước trong phase tương ứng, L.6 sau cùng, và đổi tên [`spec-…-pending.md`](./spec-packaging-and-distribution-pending.md) → `-inprocess.md` **ngay khi** task đầu tiên bắt đầu, không phải bây giờ.
+- **Trạng thái thực thi**: **Phase A đã xanh local, đang chờ CI của đúng HEAD — bắt đầu 2026-08-07**. Design §16 đã được đọc trước Phase A; A.8 và toàn bộ A.1–A.7 đã hoàn tất. Main spec đã đổi sang [`-inprocess.md`](./spec-packaging-and-distribution-inprocess.md); MUST NOT sang Phase B trước khi push và GitHub Actions xanh.
 
 **Bản này (2026-08-07, sau review) đã đóng năm câu hỏi mà trước đó dev buộc phải hỏi lại giữa lúc code.** Duyệt mục này nghĩa là duyệt cả năm quyết định sau:
 
@@ -174,20 +174,20 @@ Mỗi phase chạy focused command dưới đây trên SQLite/filesystem thật,
 **Estimate**: 5 SP
 
 **Tasks**:
-- [ ] A.1 Thêm `ErrorCode` mới vào [`packages/contracts/src/errors.ts`](../../../../packages/contracts/src/errors.ts)
+- [x] A.1 Thêm `ErrorCode` mới vào [`packages/contracts/src/errors.ts`](../../../../packages/contracts/src/errors.ts)
   - `bridge_credential_unavailable`, `bridge_credential_invalid`, `bridge_rotation_in_progress`, `download_tls_untrusted`, `payload_too_large`, `daemon_identity_mismatch`, `daemon_unavailable`, `compiler_unavailable`, `runtime_manifest_invalid`, `runtime_extraction_incomplete`, `bootstrap_lock_timeout`, `path_timeout`, `browse_token_invalid`, `project_import_conflict` — **14 mã, không phải 15**
   - **`workspace_lease_lost` đã tồn tại** (`WorkspaceLeaseLost = "workspace_lease_lost"`, cùng file). Design §8.1 liệt nó như mã mới; đó là C-4 ở §16. Thêm lần nữa là lỗi biên dịch, nên đây không phải chi tiết vô hại
   - `ErrorCode` là **`enum`**, member PascalCase, value snake_case — theo đúng 56 member đang có, MUST NOT dùng union string cho mã mới
   - Hai cặp dễ nhập nhằng, ghi lý do vào chỗ khai báo để lần sau không ai gộp: `payload_too_large` (giới hạn **body HTTP**, kèm giới hạn thật trong `details`) khác `TooLarge = "too_large"` (**asset** vượt hạn mức của project); `bridge_credential_invalid` (bearer của **bridge**, có đường xoay ở C.6) khác `CredentialInvalid = "credential_invalid"` (credential MCP của người dùng)
   - _Requirements: R1.7, R2.7, R6.5_ — _Design: §8.1, §16 C-4_
-- [ ] A.2 Thêm DTO của R1 vào `contracts`
+- [x] A.2 Thêm DTO của R1 vào `contracts`
   - `BrowseRootDto`, `BrowseEntryDto`, `BrowsePage`, request/response của §7.1–§7.3, `SystemWorkspaceDto` với state union **gồm `reacquiring`**, `SystemRuntimeDto`
   - Mọi schema **`strict`** — field lạ bị từ chối, không bỏ qua âm thầm
   - _Requirements: R1.1, R1.2, R1.7_ — _Design: §7.1–§7.4, §7.7b_
-- [ ] A.3 Thêm DTO của bridge vào `contracts`
+- [x] A.3 Thêm DTO của bridge vào `contracts`
   - Handshake request/response, attachment create/renew, tool invoke envelope
   - _Requirements: R2.13, R2.15_ — _Design: §7.8–§7.10_
-- [ ] A.4 **Catalogue `tên tool → schema` trong `contracts`** — *không phải* di chuyển schema
+- [x] A.4 **Catalogue `tên tool → schema` trong `contracts`** — *không phải* di chuyển schema
   - **Đọc trước khi làm**: việc "chuyển schema sang `contracts`" mà Design bản 2 giao cho giai đoạn này **đã xong từ trước** (C-2 ở §16). Bằng chứng: [`packages/mcp/src/registry/schemas.ts`](../../../../packages/mcp/src/registry/schemas.ts) chỉ có `export * from "@vidcom/contracts"`; [`read-tools.ts`](../../../../packages/mcp/src/registry/read-tools.ts) đã import `ListProjectsInputSchema`/`ListProjectsOutputSchema` từ `contracts`; và **không có một `z.object`/`z.strictObject` nào** trong `packages/mcp`. Bắt đầu bằng cách "chuyển" là sửa thứ không hỏng
   - **Việc thật**: route `/api/bridge/v1/tools/:name` bên `server` nhận `:name` là **string lúc runtime** và phải map nó sang schema. Hôm nay chỉ `ToolRegistry.definitions` (ở `packages/mcp`) làm được việc đó, mà lint cấm `server` import `mcp`. Nên `contracts` phải xuất một map tường minh:
 
@@ -203,16 +203,17 @@ Mỗi phase chạy focused command dưới đây trên SQLite/filesystem thật,
   - **`ToolDefinition`/handler/annotations ở lại `packages/mcp`** — chỉ map schema đi ra. Registry SHALL đọc catalogue này thay vì khai lại, nếu không là hai nguồn sự thật cho cùng một tên tool
   - Kèm test: **mọi** tool trong `ToolRegistry` có entry trong catalogue và ngược lại. Thiếu chiều nào thì một tool mới sẽ lặng lẽ 404 ở route bridge trong khi vẫn chạy qua stdio
   - _Requirements: R2.3, R2.11_ — _Design: §5.0 hệ quả 1, §16 C-2_
-- [ ] A.5 Thêm `runtime.caBundlePath` vào schema `setting.json` + env `VIDCOM_CA_BUNDLE`
+- [x] A.5 Thêm `runtime.caBundlePath` vào schema `setting.json` + env `VIDCOM_CA_BUNDLE`
   - `setting.json` là **schema strict** ([steering/07](../../../steering/07-data-and-storage.md) §0): key lạ là **lỗi khởi động**, nên không thêm vào schema thì người dùng làm theo hướng dẫn của `doctor` sẽ không boot được
   - _Requirements: R6.5_ — _Design: §5.13_
-- [ ] A.6 Thêm event mới vào contract SSE
+- [x] A.6 Thêm event mới vào contract SSE
   - `workspace.lease_lost`, `workspace.reattached`, `runtime.preparing`, `runtime.ready`
   - _Requirements: R2.8, R5.11_ — _Design: §7.7_
-- [ ] A.7 Contract test
+- [x] A.7 Contract test
   - Mọi schema mới từ chối field lạ; state union có đủ 6 giá trị; error code round-trip
   - _Requirements: R1.7_
-- [ ] A.8 **Gate hồi quy cho A.4** — đây là chỗ Phase A có thể phá thứ đang chạy
+- [x] A.8 **Gate hồi quy cho A.4** — đây là chỗ Phase A có thể phá thứ đang chạy
+  - **Resolved 2026-08-07 theo lựa chọn 1 của người dùng**: public MCP giữ allowlist error code trước Phase A; 14 mã packaging bị từ chối ở `get_job_status` và được redaction thành `internal` nếu đi vào tool-error. Invariant catalogue chạy sau full registration; E2E `npm pack` dùng cache trong temp root. Golden 26/26, MCP contract 71/71, catalogue 2/2; hai fixture giữ đúng SHA-256 baseline và không đổi byte.
   - A.4 chạm nguồn sự thật của tool schema, mà repo đang pin shape đó bằng **mười** file test: [`tests/mcp/golden/tools-list.test.ts`](../../../../tests/mcp/golden/tools-list.test.ts) (snapshot `tools/list`) và 9 file trong `test:mcp-contract` (`contract-matrix`, `negative-contract-matrix`, `revision-pin`, `registry`, `ci-guards`, `legacy-transport`, `modern-transport`, `e2e/mcp-stdio-host`, `core/write-authority`)
   - Chạy `rtk bun run test:mcp-contract` và `rtk bun run test:golden` **trước** khi sửa để có mốc, rồi sau khi sửa. Snapshot `tools/list` MUST giữ **nguyên xi**: catalogue là refactor nội bộ, agent bên ngoài không được thấy gì khác
   - Nếu snapshot đổi thì **dừng và báo**, MUST NOT cập nhật snapshot cho khớp code mới — đó là cách một breaking change đi qua mà không ai duyệt
@@ -220,10 +221,10 @@ Mỗi phase chạy focused command dưới đây trên SQLite/filesystem thật,
   - _Requirements: R2.3, R2.11_ — _Design: §16 C-2_
 
 **Acceptance Criteria**:
-- [ ] `rtk bun run typecheck` xanh — mọi `switch` trên `ErrorCode` đã xử lý nhánh mới
-- [ ] `rtk bun run test:boundaries` xanh — `server` **không** import `mcp`, `mcp` **không** import `adapter`
-- [ ] `rtk bun run test:mcp-contract` và `rtk bun run test:golden` xanh, và snapshot `tools/list` **không đổi một byte** so với `HEAD` trước Phase A
-- [ ] [`packages/contracts/package.json`](../../../../packages/contracts/package.json) vẫn chỉ có `zod@4.4.3` — catalogue không được lôi thêm gì vào package mà mọi package khác đều import
+- [x] `rtk bun run typecheck` xanh — mọi `switch` trên `ErrorCode` đã xử lý nhánh mới
+- [x] `rtk bun run test:boundaries` xanh — `server` **không** import `mcp`, `mcp` **không** import `adapter`
+- [x] `rtk bun run test:mcp-contract` và `rtk bun run test:golden` xanh, và snapshot `tools/list` **không đổi một byte** so với `HEAD` trước Phase A
+- [x] [`packages/contracts/package.json`](../../../../packages/contracts/package.json) vẫn chỉ có `zod@4.4.3` — catalogue không được lôi thêm gì vào package mà mọi package khác đều import
 
 **Deliverables**: `packages/contracts/src/errors.ts` · `packages/contracts/src/mcp.ts` · `packages/contracts/src/dto.ts` · `tests/contracts/**`
 
@@ -486,7 +487,7 @@ Mỗi phase chạy focused command dưới đây trên SQLite/filesystem thật,
   - _Requirements: R1.5_ — _Design: §7.5, §7.13_
 - [ ] F.5b Bốn điểm phải sửa cùng lúc với F.5 — **breaking change, đã rà sẵn caller**
   - [`packages/server/src/routes/delivery-loop.ts`](../../../../packages/server/src/routes/delivery-loop.ts) (route `put("/v1/workspace/active")`, hiện `parse(ActivateWorkspaceRequestSchema, …)` rồi gọi `dependencies.activateWorkspace(input.path)`) — đổi cả **chữ ký dependency**, không chỉ schema
-  - `ActivateWorkspaceRequestSchema` trong `contracts` — đổi ở A.2, đây là chỗ tiêu thụ
+  - `ActivateWorkspaceRequestSchema` trong `contracts` — đổi **cùng F.5/F.5b sau khi F.3 đã có token store**; A.2 chỉ sở hữu DTO §7.1–§7.4 nên không được kéo breaking change này về Phase A
   - [`tests/server/delivery-loop-routes.test.ts`](../../../../tests/server/delivery-loop-routes.test.ts) — **ba** chỗ đang gửi `body: JSON.stringify({ path: … })` (khoảng dòng 141, 255, 585). Cả ba SHALL đổi sang `selectionToken`, nghĩa là harness test cần mint được token qua `BrowseTokenStore` (F.3) ⇒ **F.3 phải xong trước F.5**
   - Bất kỳ chỗ nào trong `src/**` gọi service `v1.workspace.activate` (G.1) — catalog phải khai `selectionToken`, không phải `path`
   - Ghi vào release notes: một client cũ gửi `{path}` giờ nhận `schema_invalid`, **không** phải im lặng bỏ qua field lạ ([steering/07](../../../steering/07-data-and-storage.md) §0 schema strict)
@@ -934,7 +935,7 @@ Mỗi phase chạy focused command dưới đây trên SQLite/filesystem thật,
 
 **Tổng ước lượng**: **177 SP** — A 5 · B 13 · C 16 · D 25 · E 17 · F 10 · G 12 · H 13 · I 19 · J 13 · K 8 · L 5 · M 21.
 
-> Con số này **phân hoạch lại** ước lượng theo R ở [main spec](./spec-packaging-and-distribution-pending.md) (R1 26 · R2 37 · R3 13 · R4 21 · R5 21 · R6 25 · R7 8 · R8 21 · R9 5), không phải một ước lượng thứ hai. Tổng giữ nguyên.
+> Con số này **phân hoạch lại** ước lượng theo R ở [main spec](./spec-packaging-and-distribution-inprocess.md) (R1 26 · R2 37 · R3 13 · R4 21 · R5 21 · R6 25 · R7 8 · R8 21 · R9 5), không phải một ước lượng thứ hai. Tổng giữ nguyên.
 
 **Vòng review 2026-08-07 tách bảy task và thêm bảy task; SP mỗi phase không đổi.** Task được tách thì SP chia lại trong cùng phase; task thêm là việc **đã ngầm nằm trong Acceptance Criteria cũ** (một AC đòi `rtk bun run build:artifact` thì cái script đó là việc phải làm, chỉ là chưa ai viết nó ra).
 
@@ -1053,7 +1054,113 @@ Chi tiết: [Detailed Goals](./spec-packaging-and-distribution-detailed-goal.md)
 > [!NOTE]
 > Mỗi phiên làm việc một entry: ngày, phase/task, file đã sửa, quyết định đáng ghi, blocker.
 
-_Chưa bắt đầu — Code Execution bị chặn cho tới khi Approval Gate ở trên được duyệt._
+2026-08-07 — Phase A, Task A.1
+  - Files: `packages/contracts/src/errors.ts`, `packages/mcp/src/error-map.ts`, `packages/server/src/middleware/error-mapper.ts`, `tests/contracts/packaging-contracts.test.ts`
+  - Summary: Thêm đúng 14 error code packaging, giữ `WorkspaceLeaseLost` hiện hữu, phân biệt hai cặp mã dễ nhập nhằng và cập nhật đầy đủ các mapper exhaustive.
+  - Decisions: `payload_too_large` map HTTP 413; các lỗi runtime/bridge khả dụng map 5xx hoặc 401/409 theo ý nghĩa contract. Không đổi Design.
+  - Blockers: Không có; focused test 1/1 và typecheck xanh.
+
+2026-08-07 — Phase A, Task A.4
+  - Files: `packages/contracts/src/mcp.ts`, `packages/mcp/src/registry/registry.ts`, `tests/contracts/tool-schema-catalogue.test.ts`
+  - Summary: Xuất catalogue schema/level đủ 18 tool public và buộc registry kiểm identity hai schema cùng level khi đăng ký.
+  - Decisions: Tool giả trong unit test vẫn được phép không có trong catalogue; gate hai chiều A.8 bảo đảm bề mặt public không thiếu hoặc thừa. Không đổi wire schema hay snapshot.
+  - Blockers: Không có; catalogue test 2/2 và typecheck xanh.
+
+2026-08-07 — Phase A, Task A.2
+  - Files: `packages/contracts/src/dto.ts`, `tests/contracts/packaging-contracts.test.ts`
+  - Summary: Thêm contract strict cho filesystem roots/entries/page/create-directory, workspace lifecycle sáu state và runtime archive state.
+  - Decisions: Entry chỉ mang metadata điều hướng (`name`, display path, token, `isDir`, `canWrite`), không có content hay size; page dùng cursor nullable và cờ `truncated` tường minh.
+  - Blockers: Không có; focused contract 2/2 và typecheck xanh.
+
+2026-08-07 — Phase A, Task A.3
+  - Files: `packages/contracts/src/dto.ts`, `tests/contracts/packaging-contracts.test.ts`
+  - Summary: Thêm handshake request/response, create/renew attachment và bridge tool invocation/result envelope dạng strict.
+  - Decisions: Attachment id khóa ở 256 bit dạng 64 ký tự hex; response tool giữ `Result` domain trước era stamping và không chứa transport metadata.
+  - Blockers: Không có; focused contract 3/3 và typecheck xanh.
+
+2026-08-07 — Phase A, Task A.5
+  - Files: `packages/contracts/src/settings.ts`, `packages/adapter/src/fs/settings-file.ts`, `tests/adapter/settings-file.test.ts`
+  - Summary: Thêm `runtime.caBundlePath` vào schema strict/resolved defaults và áp `VIDCOM_CA_BUNDLE` với ưu tiên cao hơn file, kể cả khi file vắng.
+  - Decisions: Contracts nhận override qua tham số thuần; adapter là lớp duy nhất đọc `process.env`, giữ package contracts không phụ thuộc Node runtime.
+  - Blockers: Không có; settings test 23/23 trên filesystem temp thật và typecheck xanh.
+
+2026-08-07 — Phase A, Task A.6
+  - Files: `packages/contracts/src/domain.ts`, `packages/contracts/src/dto.ts`, `packages/adapter/src/db/schema.ts`, `packages/adapter/src/db/event-outbox.ts`, `packages/adapter/drizzle/20260807144527_amazing_kitty_pryde/**`, `tests/contracts/packaging-contracts.test.ts`, `tests/server/events.test.ts`, `tests/adapter/database-migration.test.ts`
+  - Summary: Mở contract và outbox bền vững cho bốn event host mới; migration rebuild bảo toàn row cũ và cập nhật check constraint.
+  - Decisions: Event type có hai catalogue project/host dùng chung; host event bắt buộc `project_id=NULL`, project event bắt buộc có project id.
+  - Blockers: Không có; 10/10 focused tests xanh trên SQLite + filesystem temp thật, typecheck xanh.
+
+2026-08-07 — Phase A, Task A.7
+  - Files: `tests/contracts/packaging-contracts.test.ts`
+  - Summary: Audit strictness cho toàn bộ DTO mới, đủ sáu workspace state, đủ ba bridge client kind và round-trip 14 error code qua `ErrorDetailSchema`.
+  - Decisions: Kiểm từng nested schema trực tiếp thay vì chỉ kiểm response ngoài, để unknown key ở entry/archive cũng bị khóa.
+  - Blockers: Không có; focused contract 5/5 và typecheck xanh.
+
+2026-08-07 — Phase A, Task A.8 (blocked; A.4 reopened)
+  - Files: Không sửa snapshot; evidence từ `test:mcp-contract`, `test:golden`, `test:mcp-catalogue` và SHA-256 fixtures.
+  - Summary: Catalogue 2/2 xanh nhưng regression MCP 63/71 và golden 24/26; snapshot files vẫn đúng hash baseline, generated output thêm 14 enum value qua `JobSchema.error`.
+  - Decisions: Dừng theo gate; MUST NOT cập nhật fixture. Mở lại A.4 vì registry guard làm hỏng schema-probe definitions trùng tên trong unit test.
+  - Blockers: Wire-schema drift cần quyết định/fix không đổi snapshot; npm cache `~/.npm` không ghi được làm hai E2E smoke fail độc lập.
+
+2026-08-07 — Phase A, Task A.4 (resumed; complete)
+  - Files: `packages/contracts/src/mcp.ts`, `packages/mcp/src/registry/registry.ts`, `packages/mcp/src/registry/all-tools.ts`, `tests/contracts/tool-schema-catalogue.test.ts`
+  - Summary: Giữ catalogue đủ 18 tool và chuyển invariant identity/tập tên sang điểm kết thúc `registerVidcomTools`, sau khi bề mặt public đã đăng ký trọn vẹn.
+  - Decisions: `ToolRegistry.register` vẫn là primitive dùng được cho definition probe; chỉ full public registration mới bị seal hai chiều với catalogue. Không nới catalogue và không nới test registry.
+  - Blockers: Không có; catalogue 2/2, MCP contract 71/71 và typecheck xanh.
+
+2026-08-07 — Phase A, Task A.8 (complete after user decision)
+  - Files: `packages/contracts/src/mcp.ts`, `packages/mcp/src/error-map.ts`, `packages/mcp/src/registry/registry.ts`, `packages/mcp/src/registry/all-tools.ts`, `tests/contracts/packaging-contracts.test.ts`, `tests/mcp/error-map.test.ts`, `tests/e2e/mcp-stdio-host.test.ts`, Design §16
+  - Summary: Đóng wire drift mà không sửa fixture: `get_job_status` chỉ nhận error vocabulary đã phát hành; 14 mã packaging không thể xuất hiện trong structured output hay canonical MCP tool-error.
+  - Decisions: Thực thi lựa chọn 1 của người dùng và ghi thành C-6. `npm pack` dùng cache filesystem thật trong temp root để test độc lập với home; không mock `node:fs` và không nới gate.
+  - Blockers: Đã đóng; golden 26/26, MCP contract 71/71, catalogue 2/2. Fixture hashes giữ `283b32…c35bd` (legacy) và `011b16…b44c` (modern), `git diff --exit-code` xanh.
+
+2026-08-07 — Phase A, phase verification (local complete; CI pending)
+  - Files: `spikes/phase-4/s2-export/app/projects/[slug]/studio-client.tsx`, `spikes/phase-4/s7-bridge-transport/probe.mjs`, checklist và implementation notes
+  - Summary: Focused contracts 10/10, catalogue 2/2, typecheck, boundaries, MCP contract 71/71, golden 26/26 và lint exact đều xanh; `contracts` vẫn chỉ phụ thuộc `zod@4.4.3`.
+  - Decisions: Sửa hai lỗi lint tracked thay vì nới rule. Các build artifact/virtualenv Git-ignored được di chuyển tạm ra `/private/tmp` khi chạy `rtk bun run lint`, rồi khôi phục đủ đúng path; không đổi ESLint, script lint hay ignore list.
+  - Blockers: Local gate đã đóng. Chưa được sang Phase B cho tới khi commit/push Phase A và GitHub Actions của đúng HEAD xanh.
+
+2026-08-07 — Phase A, Task A.6 (migration preservation hardening)
+  - Files: `tests/adapter/database-migration.test.ts`, implementation notes
+  - Summary: Thêm đường upgrade từ toàn bộ migration trước A.6 trên SQLite file thật, seed hai row host/project cũ, rồi chứng minh rebuild giữ nguyên payload/project/seq và row mới tiếp tục ở seq 3.
+  - Decisions: Kiểm cả `pragma_foreign_key_check` sau upgrade; không chỉ dựa vào fresh-schema test hay đọc SQL migration.
+  - Blockers: Không có; migration + event integration 7/7 xanh trên temp filesystem thật.
+
+2026-08-07 — Phase A, council review (F.5b sequencing clarification)
+  - Files: `spec-packaging-and-distribution-implementation-checklist.md`, implementation notes
+  - Summary: Sửa cross-reference mâu thuẫn ở F.5b: schema token-only được đổi cùng F.5/F.5b, không phải A.2.
+  - Decisions: Giữ dependency order đã duyệt: F.3 phải mint được `selectionToken` trước khi route, dependency signature, schema và ba caller test cùng đổi nguyên tử. A.2 vẫn đúng phạm vi §7.1–§7.4; không kéo production code Phase F về Phase A chỉ để tạo trạng thái giữa chừng không typecheck.
+  - Blockers: Không có; Design §7.5/C-26 và nhiệm vụ F.5/F.5b không đổi phạm vi hay acceptance criteria.
+
+2026-08-07 — Phase A, Task A.2 (page-bound review hardening)
+  - Files: `packages/contracts/src/dto.ts`, `tests/contracts/packaging-contracts.test.ts`, implementation notes
+  - Summary: Cưỡng chế giới hạn contract tối đa 500 entry mỗi page thay vì chỉ mô tả “bounded”.
+  - Decisions: Đặt `.max(500)` ngay trên `BrowsePageSchema.entries`, là response boundary dùng chung; test khóa cả biên 500 hợp lệ và 501 bị từ chối.
+  - Blockers: Không có; focused packaging contracts 7/7 xanh.
+
+2026-08-07 — Phase A, Task A.5 (ambient-environment review hardening)
+  - Files: `tests/adapter/settings-file.test.ts`, implementation notes
+  - Summary: Cô lập `VIDCOM_CA_BUNDLE` ở mỗi test và chứng minh file-only fallback trên filesystem temp thật khi env không có.
+  - Decisions: Giữ nguyên production resolver `env > file > default`; harness lưu/khôi phục giá trị ambient để CI có CA bundle không làm thay đổi kỳ vọng default. Không mock `node:fs`.
+  - Blockers: Không có; settings 24/24 xanh cả khi process cha không có env và khi chạy với `VIDCOM_CA_BUNDLE=/ambient/ci-ca.pem`; ESLint scoped xanh.
+
+2026-08-07 — Phase A, Task A.6 (event-catalogue review hardening)
+  - Files: `packages/adapter/src/db/event-outbox.ts`, implementation notes
+  - Summary: Loại danh sách năm host event bị lặp trong type guard; mapper giờ lấy trực tiếp `HOST_DOMAIN_EVENT_TYPES` từ contracts.
+  - Decisions: Dùng Set nội bộ cho runtime narrowing. SQL CHECK và migration tiếp tục giữ literal snapshot xác định vì đó là schema lịch sử phải review được, không sinh động lúc runtime.
+  - Blockers: Không có; focused event/migration 7/7 và typecheck xanh sau thay đổi.
+
+2026-08-07 — Phase A, Task A.5 (pure-logic persistence coverage)
+  - Files: `tests/contracts/packaging-contracts.test.ts`, implementation notes
+  - Summary: Bổ sung logic test trực tiếp cho `resolveVidcomSettings`, tách khỏi adapter I/O để khóa precedence và normalization của CA bundle.
+  - Decisions: Chứng minh file-only; env override được trim và thắng file; blank/null override là absent, còn file `null` được giữ là cấu hình tường minh.
+  - Blockers: Không có; packaging contracts 10/10 và typecheck xanh. Cùng settings integration 24/24 trên filesystem temp thật, A.5 có đủ logic + integration theo rule persistence.
+
+2026-08-07 — Phase A, council-review local closeout
+  - Files: toàn bộ diff Phase A, checklist, implementation notes
+  - Summary: Chạy lại sau mọi review fix: focused contracts/settings/migration/events 41/41, catalogue 2/2, MCP 71/71, golden 26/26, typecheck và import boundaries đều xanh.
+  - Decisions: Exact `rtk bun run lint` chạy trong clean-checkout-equivalent sau khi tạm isolate đúng 13 artifact/virtualenv Git-ignored rồi khôi phục toàn bộ; 0 error/2 warning, không đổi ESLint/ignore. Snapshot không đổi byte.
+  - Blockers: Local không còn blocker; fixture SHA giữ legacy `283b32…c35bd`, modern `011b16…b44c`, `git diff --check` xanh. Phase A vẫn chờ commit/push và CI đúng HEAD.
 
 Format:
 ```

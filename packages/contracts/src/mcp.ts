@@ -20,6 +20,7 @@ import {
   TtsProviderSchema,
 } from "./tts";
 import { InstallAgentKitInputSchema, InstallAgentKitOutputSchema } from "./agent-kit";
+import { ErrorCode } from "./errors";
 import { MotionLibraryIdSchema } from "./motion-libraries";
 
 const CanonicalRelativePathSchema = RelativePathSchema.regex(
@@ -287,8 +288,78 @@ export const StartTtsOutputSchema = z.strictObject({
 
 /** Input for `get_job_status`. */
 export const GetJobStatusInputSchema = z.strictObject({ jobId: IdentifierSchema });
+/**
+ * Error codes already published by the MCP job contract before packaging support.
+ *
+ * Packaging-only failures remain available to HTTP, bridge, and internal callers,
+ * but adding them here would be a breaking `tools/list` schema change.
+ */
+export const MCP_PUBLIC_ERROR_CODES = [
+  ErrorCode.SchemaInvalid,
+  ErrorCode.PathRequired,
+  ErrorCode.PathInvalid,
+  ErrorCode.VersionFormatLegacy,
+  ErrorCode.PreconditionRequired,
+  ErrorCode.AuthRequired,
+  ErrorCode.AuthNonceInvalid,
+  ErrorCode.HostNotAllowed,
+  ErrorCode.OriginNotAllowed,
+  ErrorCode.AssetNotAllowed,
+  ErrorCode.PathOutsideProject,
+  ErrorCode.ProjectNotFound,
+  ErrorCode.ProjectInvalid,
+  ErrorCode.IdentityParseError,
+  ErrorCode.CompositionParseError,
+  ErrorCode.NoComposition,
+  ErrorCode.NoScenes,
+  ErrorCode.NotFound,
+  ErrorCode.WriteConflict,
+  ErrorCode.IdempotencyKeyReused,
+  ErrorCode.WorkspaceLeaseLost,
+  ErrorCode.TimingInvalid,
+  ErrorCode.DurationOverflow,
+  ErrorCode.SceneNotFound,
+  ErrorCode.SdkRejected,
+  ErrorCode.NoFile,
+  ErrorCode.TooLarge,
+  ErrorCode.UnsupportedMedia,
+  ErrorCode.Internal,
+  ErrorCode.StorageUnavailable,
+  ErrorCode.WorkspaceLeaseDenied,
+  ErrorCode.ApprovalRequired,
+  ErrorCode.ApprovalExpired,
+  ErrorCode.ApprovalInvalid,
+  ErrorCode.CredentialInvalid,
+  ErrorCode.ToolNotAvailableInEra,
+  ErrorCode.ReferencedByComposition,
+  ErrorCode.BackupFailed,
+  ErrorCode.BackupExpired,
+  ErrorCode.DuplicateMutationTarget,
+  ErrorCode.RecoveryRequired,
+  ErrorCode.RemoteAssetNotLocal,
+  ErrorCode.RenderBinaryMissing,
+  ErrorCode.SubTimelineReadinessTimeout,
+  ErrorCode.ProcessTerminationUnverified,
+  ErrorCode.ConfirmationRequired,
+  ErrorCode.RollbackPayloadPruned,
+  ErrorCode.CommittedResponseError,
+  ErrorCode.TtsProviderUnavailable,
+  ErrorCode.TtsCredentialMissing,
+  ErrorCode.TtsVoiceNotSupported,
+  ErrorCode.TtsQuotaExceeded,
+  ErrorCode.TtsSynthesisFailed,
+] as const;
+
+const McpPublicErrorDetailSchema = z.strictObject({
+  code: z.enum(MCP_PUBLIC_ERROR_CODES),
+  message: z.string().min(1),
+  field: z.string().min(1).optional(),
+  details: z.record(z.string(), z.unknown()).optional(),
+});
+
 /** Output for `get_job_status`. */
 export const GetJobStatusOutputSchema = JobSchema.extend({
+  error: McpPublicErrorDetailSchema.nullable(),
   outcome: z.enum(["succeeded", "partial", "failed", "cancelled"]).nullable(),
   pollAfterMs: z.union([z.literal(250), z.literal(1000)]).nullable(),
 });
@@ -311,5 +382,106 @@ export const StartSnapshotInputSchema = z.strictObject({
 });
 export const StartDeliveryJobOutputSchema = z.strictObject({ jobId: IdentifierSchema });
 export { InstallAgentKitInputSchema, InstallAgentKitOutputSchema };
+
+/** Runtime-resolvable contract for one public MCP tool. */
+export interface ToolSchemaEntry {
+  input: z.ZodType;
+  output: z.ZodType;
+  level: ToolLevel;
+}
+
+/** Canonical schema and authorization-level catalogue for every public MCP tool. */
+export const TOOL_SCHEMA_CATALOGUE = {
+  create_scene: {
+    input: CreateSceneInputSchema,
+    output: CreateSceneOutputSchema,
+    level: "write",
+  },
+  delete_file: {
+    input: DeleteFileInputSchema,
+    output: DeleteFileOutputSchema,
+    level: "destructive",
+  },
+  delete_scene: {
+    input: DeleteSceneInputSchema,
+    output: DeleteSceneOutputSchema,
+    level: "destructive",
+  },
+  get_job_status: {
+    input: GetJobStatusInputSchema,
+    output: GetJobStatusOutputSchema,
+    level: "read",
+  },
+  get_project_context: {
+    input: GetProjectContextInputSchema,
+    output: GetProjectContextOutputSchema,
+    level: "read",
+  },
+  install_agent_kit: {
+    input: InstallAgentKitInputSchema,
+    output: InstallAgentKitOutputSchema,
+    level: "write",
+  },
+  install_motion_library: {
+    input: InstallMotionLibraryInputSchema,
+    output: InstallMotionLibraryOutputSchema,
+    level: "write",
+  },
+  list_projects: {
+    input: ListProjectsInputSchema,
+    output: ListProjectsOutputSchema,
+    level: "read",
+  },
+  list_scenes: {
+    input: ListScenesInputSchema,
+    output: ListScenesOutputSchema,
+    level: "read",
+  },
+  list_tts_voices: {
+    input: ListTtsVoicesInputSchema,
+    output: ListTtsVoicesOutputSchema,
+    level: "read",
+  },
+  read_composition: {
+    input: ReadCompositionInputSchema,
+    output: ReadCompositionOutputSchema,
+    level: "read",
+  },
+  save_file: {
+    input: SaveFileInputSchema,
+    output: SaveFileOutputSchema,
+    level: "write",
+  },
+  set_scene_timing: {
+    input: SetSceneTimingInputSchema,
+    output: SetSceneTimingOutputSchema,
+    level: "write",
+  },
+  set_text: {
+    input: SetTextInputSchema,
+    output: SetTextOutputSchema,
+    level: "write",
+  },
+  start_render: {
+    input: StartRenderInputSchema,
+    output: StartDeliveryJobOutputSchema,
+    level: "job",
+  },
+  start_snapshot: {
+    input: StartSnapshotInputSchema,
+    output: StartDeliveryJobOutputSchema,
+    level: "job",
+  },
+  start_tts: {
+    input: StartTtsInputSchema,
+    output: StartTtsOutputSchema,
+    level: "job",
+  },
+  validate_project: {
+    input: ValidateProjectInputSchema,
+    output: ValidateProjectOutputSchema,
+    level: "read",
+  },
+} as const satisfies Record<string, ToolSchemaEntry>;
 
 export type SceneContext = z.infer<typeof SceneContextSchema>;

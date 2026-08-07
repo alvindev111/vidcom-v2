@@ -55,6 +55,20 @@ const ERROR_STATUS = {
   [ErrorCode.TtsVoiceNotSupported]: 422,
   [ErrorCode.TtsQuotaExceeded]: 429,
   [ErrorCode.TtsSynthesisFailed]: 502,
+  [ErrorCode.BridgeCredentialUnavailable]: 503,
+  [ErrorCode.BridgeCredentialInvalid]: 401,
+  [ErrorCode.BridgeRotationInProgress]: 409,
+  [ErrorCode.DownloadTlsUntrusted]: 502,
+  [ErrorCode.PayloadTooLarge]: 413,
+  [ErrorCode.DaemonIdentityMismatch]: 409,
+  [ErrorCode.DaemonUnavailable]: 503,
+  [ErrorCode.CompilerUnavailable]: 503,
+  [ErrorCode.RuntimeManifestInvalid]: 500,
+  [ErrorCode.RuntimeExtractionIncomplete]: 503,
+  [ErrorCode.BootstrapLockTimeout]: 503,
+  [ErrorCode.PathTimeout]: 504,
+  [ErrorCode.BrowseTokenInvalid]: 400,
+  [ErrorCode.ProjectImportConflict]: 409,
 } as const satisfies Record<ErrorCode, number>;
 
 export class HttpBoundaryError extends Error {

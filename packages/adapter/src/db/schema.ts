@@ -13,7 +13,10 @@ import {
   uniqueIndex,
 } from "drizzle-orm/sqlite-core";
 
+import { HOST_DOMAIN_EVENT_TYPES, PROJECT_DOMAIN_EVENT_TYPES } from "@vidcom/contracts";
+
 const actors = ["user", "agent", "cli-external", "system"] as const;
+const eventTypes = [...PROJECT_DOMAIN_EVENT_TYPES, ...HOST_DOMAIN_EVENT_TYPES] as const;
 const actorCheck = (column: { getSQL(): unknown }) =>
   sql`${column} IN ('user', 'agent', 'cli-external', 'system')`;
 
@@ -88,7 +91,7 @@ export const entityState = sqliteTable("entity_state", {
 
 export const eventOutbox = sqliteTable("event_outbox", {
   seq: integer().primaryKey({ autoIncrement: true }),
-  type: text({ enum: ["file.changed", "project.changed", "job.progress", "job.done", "workspace.changed"] }).notNull(),
+  type: text({ enum: eventTypes }).notNull(),
   projectId: text("project_id").references(() => projectRegistry.id),
   payload: text().notNull(),
   createdAt: text("created_at").notNull(),
@@ -96,8 +99,8 @@ export const eventOutbox = sqliteTable("event_outbox", {
   index("idx_event_type").on(table.type),
   index("idx_event_project").on(table.projectId),
   index("idx_event_created").on(table.createdAt),
-  check("ck_event_type", sql`${table.type} IN ('file.changed', 'project.changed', 'job.progress', 'job.done', 'workspace.changed')`),
-  check("ck_event_project_shape", sql`(${table.type} = 'workspace.changed' AND ${table.projectId} IS NULL) OR (${table.type} != 'workspace.changed' AND ${table.projectId} IS NOT NULL)`),
+  check("ck_event_type", sql`${table.type} IN ('file.changed', 'project.changed', 'job.progress', 'job.done', 'workspace.changed', 'workspace.lease_lost', 'workspace.reattached', 'runtime.preparing', 'runtime.ready')`),
+  check("ck_event_project_shape", sql`(${table.type} IN ('workspace.changed', 'workspace.lease_lost', 'workspace.reattached', 'runtime.preparing', 'runtime.ready') AND ${table.projectId} IS NULL) OR (${table.type} IN ('file.changed', 'project.changed', 'job.progress', 'job.done') AND ${table.projectId} IS NOT NULL)`),
 ]);
 
 export const revision = sqliteTable("revision", {

@@ -91,7 +91,7 @@ const close = (server) => new Promise((r) => server.close(r));
     // fetch() của Node nói được unix socket qua `unix:` prefix? Thử cả hai đường.
     try {
       const res = await fetch(`http://localhost/api/mcp/ping`, {
-        // @ts-ignore — Node 24 hỗ trợ `unix` trong dispatcher, thử đường undici.
+        // @ts-expect-error — Node 24 hỗ trợ `unix` trong dispatcher, thử đường undici.
         unix: socketPath,
       });
       out.B_unixSocket.fetchOverSocket = { status: res.status, body: await res.text() };

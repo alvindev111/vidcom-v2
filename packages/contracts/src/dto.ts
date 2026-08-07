@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 import { ErrorCode, WarningCode } from "./errors";
+import { HOST_DOMAIN_EVENT_TYPES, PROJECT_DOMAIN_EVENT_TYPES } from "./domain";
 
 const identifierSchema = z.string().min(1).max(255);
 const relativePathSchema = z.string().min(1).max(4096);
@@ -290,6 +291,157 @@ export const AuthExchangeRequestSchema = z.strictObject({
 });
 export const NoContentResponseSchema = z.undefined();
 
+const browseTokenSchema = z.string().min(1).max(4_096);
+const displayPathSchema = z.string().min(1).max(4_096);
+
+/** One safe starting point exposed by the authenticated filesystem browser. */
+export const BrowseRootSchema = z.strictObject({
+  name: z.string().min(1).max(255),
+  displayPath: displayPathSchema,
+  token: browseTokenSchema,
+  canWrite: z.boolean(),
+});
+
+/** Metadata-only directory entry; file contents and sizes are intentionally absent. */
+export const BrowseEntrySchema = z.strictObject({
+  name: z.string().min(1).max(255),
+  displayPath: displayPathSchema,
+  token: browseTokenSchema,
+  isDir: z.boolean(),
+  canWrite: z.boolean(),
+});
+
+/** Bounded page returned while navigating one tokenized directory. */
+export const BrowsePageSchema = z.strictObject({
+  directory: BrowseRootSchema,
+  parentToken: browseTokenSchema.nullable(),
+  entries: z.array(BrowseEntrySchema).max(500),
+  nextCursor: z.string().min(1).max(1_024).nullable(),
+  truncated: z.boolean(),
+});
+
+/** Response from `GET /api/v1/system/filesystem/roots`. */
+export const FilesystemRootsResponseSchema = z.strictObject({
+  roots: z.array(BrowseRootSchema),
+});
+
+/** Body for the bounded filesystem entries query. */
+export const FilesystemEntriesRequestSchema = z.strictObject({
+  token: browseTokenSchema,
+  cursor: z.string().min(1).max(1_024).optional(),
+});
+
+/** Response from the bounded filesystem entries query. */
+export const FilesystemEntriesResponseSchema = BrowsePageSchema;
+
+/** Body for creating exactly one child directory under a tokenized parent. */
+export const CreateSystemDirectoryRequestSchema = z.strictObject({
+  parentToken: browseTokenSchema,
+  name: z.string().min(1).max(255).regex(/^(?!\.{1,2}$)[^/\\\0]+$/),
+});
+
+/** Created directory metadata, including the token used to select or enter it. */
+export const CreateSystemDirectoryResponseSchema = z.strictObject({
+  entry: BrowseEntrySchema,
+});
+
+/** Six observable lifecycle states of the mutable workspace foundation. */
+export const SystemWorkspaceStateSchema = z.enum([
+  "none",
+  "starting",
+  "active",
+  "switching",
+  "reacquiring",
+  "failed",
+]);
+
+/** Browser-visible active workspace identity. */
+export const SystemWorkspaceInfoSchema = z.strictObject({
+  root: displayPathSchema,
+  name: z.string().min(1).max(255),
+});
+
+/** Current host workspace state, including a retained lease-loss explanation. */
+export const SystemWorkspaceSchema = z.strictObject({
+  state: SystemWorkspaceStateSchema,
+  workspace: SystemWorkspaceInfoSchema.optional(),
+  error: ErrorDetailSchema.optional(),
+});
+
+/** Runtime archive state visible to a newly connected browser session. */
+export const SystemRuntimeArchiveSchema = z.strictObject({
+  key: z.string().min(1).max(255),
+  status: z.enum(["ready", "preparing", "broken"]),
+  version: z.string().min(1).max(255),
+});
+
+/** Current embedded-runtime preparation state. */
+export const SystemRuntimeSchema = z.strictObject({
+  state: z.enum(["ready", "preparing", "broken"]),
+  archives: z.array(SystemRuntimeArchiveSchema),
+  startedAt: isoTimestampSchema.optional(),
+});
+
+const bridgeWorkspaceRootSchema = z.string().min(1).max(4_096);
+const bridgeProtocolVersionSchema = z.string().min(1).max(64);
+
+/** Client classes that may hold a short-lived daemon attachment. */
+export const BridgeClientKindSchema = z.enum(["bridge", "ui", "render"]);
+
+/** Identity proof requested before a bridge may invoke its first tool. */
+export const BridgeHandshakeRequestSchema = z.strictObject({
+  workspaceRoot: bridgeWorkspaceRootSchema,
+  expectedInstanceId: identifierSchema,
+  clientKind: BridgeClientKindSchema,
+  clientVersion: z.string().min(1).max(255),
+});
+
+/** Canonical daemon identity and supported protocol revisions. */
+export const BridgeHandshakeResponseSchema = z.strictObject({
+  workspaceRoot: bridgeWorkspaceRootSchema,
+  instanceId: identifierSchema,
+  protocolVersions: z.array(bridgeProtocolVersionSchema).min(1),
+  daemonVersion: z.string().min(1).max(255),
+});
+
+/** Body that creates one daemon-owned attachment lease. */
+export const BridgeAttachmentCreateRequestSchema = z.strictObject({
+  kind: BridgeClientKindSchema,
+});
+
+/** Lease identity and cadence returned to an attached client. */
+export const BridgeAttachmentCreateResponseSchema = z.strictObject({
+  attachmentId: z.string().regex(/^[0-9a-f]{64}$/),
+  heartbeatEveryMs: z.number().int().positive(),
+  expiresAt: isoTimestampSchema,
+});
+
+/** Path parameters shared by attachment renew and detach endpoints. */
+export const BridgeAttachmentParamsSchema = z.strictObject({
+  id: z.string().regex(/^[0-9a-f]{64}$/),
+});
+
+/** Renew has no mutable client-controlled fields; identity comes from the path. */
+export const BridgeAttachmentRenewRequestSchema = z.strictObject({});
+
+/** New expiry returned after a successful attachment heartbeat. */
+export const BridgeAttachmentRenewResponseSchema = z.strictObject({
+  expiresAt: isoTimestampSchema,
+});
+
+/** Protocol-neutral tool input carried from the MCP bridge to its daemon. */
+export const BridgeToolInvokeRequestSchema = z.strictObject({
+  input: z.unknown(),
+  protocolVersion: bridgeProtocolVersionSchema,
+  requestState: z.string().min(1).max(255).optional(),
+});
+
+/** Stable domain result returned before an MCP transport applies its era stamp. */
+export const BridgeToolInvokeResponseSchema = z.discriminatedUnion("ok", [
+  z.strictObject({ ok: z.literal(true), value: z.unknown() }),
+  z.strictObject({ ok: z.literal(false), error: ErrorDetailSchema }),
+]);
+
 export const ListProjectsResponseSchema = z.strictObject({
   projects: z.array(ProjectSummarySchema),
 });
@@ -387,13 +539,13 @@ export const EventsHeadersSchema = z.strictObject({
 export const DomainEventSchema = z.discriminatedUnion("type", [
   z.strictObject({
     id: z.number().int().positive(),
-    type: z.enum(["file.changed", "project.changed", "job.progress", "job.done"]),
+    type: z.enum(PROJECT_DOMAIN_EVENT_TYPES),
     projectId: identifierSchema,
     payload: z.record(z.string(), z.unknown()),
   }),
   z.strictObject({
     id: z.number().int().positive(),
-    type: z.literal("workspace.changed"),
+    type: z.enum(HOST_DOMAIN_EVENT_TYPES),
     projectId: z.null(),
     payload: z.record(z.string(), z.unknown()),
   }),
@@ -459,3 +611,13 @@ export type JobDto = z.infer<typeof JobSchema>;
 export type JobStatus = JobDto["status"];
 export type JobWarningDto = z.infer<typeof JobWarningSchema>;
 export type DomainEventDto = z.infer<typeof DomainEventSchema>;
+export type BrowseRootDto = z.infer<typeof BrowseRootSchema>;
+export type BrowseEntryDto = z.infer<typeof BrowseEntrySchema>;
+export type BrowsePage = z.infer<typeof BrowsePageSchema>;
+export type SystemWorkspaceDto = z.infer<typeof SystemWorkspaceSchema>;
+export type SystemRuntimeDto = z.infer<typeof SystemRuntimeSchema>;
+export type BridgeClientKind = z.infer<typeof BridgeClientKindSchema>;
+export type BridgeHandshakeRequest = z.infer<typeof BridgeHandshakeRequestSchema>;
+export type BridgeHandshakeResponse = z.infer<typeof BridgeHandshakeResponseSchema>;
+export type BridgeToolInvokeRequest = z.infer<typeof BridgeToolInvokeRequestSchema>;
+export type BridgeToolInvokeResponse = z.infer<typeof BridgeToolInvokeResponseSchema>;

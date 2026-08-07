@@ -36,4 +36,5 @@ export function registerVidcomTools(registry: ToolRegistry, dependencies: Vidcom
   registerDeleteFile(registry, dependencies);
   registerJobTools(registry, dependencies);
   registerDeliveryLoopTools(registry, dependencies);
+  registry.assertPublicCatalogue();
 }

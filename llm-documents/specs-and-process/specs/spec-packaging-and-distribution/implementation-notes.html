@@ -1,0 +1,189 @@
+<!doctype html>
+<html lang="vi">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Ghi chú thực thi — Packaging &amp; Distribution</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+  </head>
+  <body class="bg-slate-950 text-slate-100 antialiased">
+    <main class="mx-auto min-h-screen max-w-5xl px-6 py-12">
+      <header class="border-b border-slate-700 pb-8">
+        <p class="text-sm font-semibold uppercase tracking-widest text-cyan-400">VidCom · 177 SP</p>
+        <h1 class="mt-3 text-4xl font-bold">Ghi chú thực thi Packaging &amp; Distribution</h1>
+        <p class="mt-4 text-slate-300">Nhật ký quyết định, sai lệch thiết kế, đánh đổi, bất ngờ và blocker theo thứ tự bắt buộc A→M.</p>
+      </header>
+
+      <section class="mt-10 rounded-2xl border border-emerald-500/30 bg-slate-900 p-6">
+        <div class="flex flex-wrap items-center justify-between gap-3">
+          <h2 class="text-2xl font-semibold">2026-08-07 · A.1 — Error baseline</h2>
+          <span class="rounded-full bg-emerald-400/10 px-3 py-1 text-sm text-emerald-300">Focused 1/1 · typecheck xanh</span>
+        </div>
+        <dl class="mt-6 grid gap-5 md:grid-cols-2">
+          <div><dt class="font-semibold text-slate-200">Quyết định</dt><dd class="mt-1 text-slate-300">Thêm đúng 14 member vào enum hiện hữu; không khai lại <code>workspace_lease_lost</code>. Mapper HTTP và MCP được cập nhật exhaustive ngay khi typecheck chỉ ra các call site.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Phân biệt contract</dt><dd class="mt-1 text-slate-300"><code>payload_too_large</code> là body HTTP, khác hạn mức asset; <code>bridge_credential_invalid</code> là bearer nội bộ bridge, khác credential MCP người dùng.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Design drift</dt><dd class="mt-1 text-slate-300">Không có. Triển khai đúng §8.1 và đính chính C-4 ở §16.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Blocker</dt><dd class="mt-1 text-slate-300">Không có.</dd></div>
+        </dl>
+      </section>
+
+      <section class="mt-6 rounded-2xl border border-emerald-500/30 bg-slate-900 p-6">
+        <div class="flex flex-wrap items-center justify-between gap-3">
+          <h2 class="text-2xl font-semibold">2026-08-07 · A.4 — Tool schema catalogue</h2>
+          <span class="rounded-full bg-emerald-400/10 px-3 py-1 text-sm text-emerald-300">18 tool · catalogue 2/2 · MCP 71/71</span>
+        </div>
+        <dl class="mt-6 grid gap-5 md:grid-cols-2">
+          <div><dt class="font-semibold text-slate-200">Quyết định</dt><dd class="mt-1 text-slate-300">Catalogue trong <code>contracts</code> giữ identity input/output schema và đủ bốn level, kể cả <code>job</code>. Invariant được seal đúng một lần sau khi <code>registerVidcomTools</code> đăng ký đủ bề mặt public.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Đánh đổi</dt><dd class="mt-1 text-slate-300"><code>ToolRegistry.register</code> vẫn là primitive dùng được cho schema probe nội bộ; full public registration mới bắt buộc khớp catalogue cả tập tên lẫn identity schema/level.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Bất ngờ</dt><dd class="mt-1 text-slate-300">Không cần di chuyển schema: chúng đã nằm trong <code>contracts</code>; thay đổi chỉ thêm lookup runtime và invariant.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Blocker</dt><dd class="mt-1 text-slate-300">Đã đóng regression probe; snapshot chưa bị sửa.</dd></div>
+        </dl>
+      </section>
+
+      <section class="mt-6 rounded-2xl border border-emerald-500/30 bg-slate-900 p-6">
+        <div class="flex flex-wrap items-center justify-between gap-3">
+          <h2 class="text-2xl font-semibold">2026-08-07 · A.2 — DTO filesystem và host state</h2>
+          <span class="rounded-full bg-emerald-400/10 px-3 py-1 text-sm text-emerald-300">Strict schemas · 6 workspace state</span>
+        </div>
+        <dl class="mt-6 grid gap-5 md:grid-cols-2">
+          <div><dt class="font-semibold text-slate-200">Quyết định</dt><dd class="mt-1 text-slate-300">Filesystem page chỉ trả metadata điều hướng, cursor nullable và <code>truncated</code>; không có nội dung hay kích thước file.</dd></div>
+          <div><dt class="font-semibold text-slate-200">An toàn</dt><dd class="mt-1 text-slate-300">Tên directory là đúng một segment, chặn <code>.</code>, <code>..</code>, slash, backslash và NUL. Mọi object mới từ chối key lạ.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Design drift</dt><dd class="mt-1 text-slate-300">Không có. Field <code>reacquiring</code> được khóa trong enum sáu giá trị như §7.4.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Blocker</dt><dd class="mt-1 text-slate-300">Không có.</dd></div>
+        </dl>
+      </section>
+      <section class="mt-6 rounded-2xl border border-emerald-500/30 bg-slate-900 p-6">
+        <div class="flex flex-wrap items-center justify-between gap-3">
+          <h2 class="text-2xl font-semibold">2026-08-07 · A.3 — Bridge DTO</h2>
+          <span class="rounded-full bg-emerald-400/10 px-3 py-1 text-sm text-emerald-300">Handshake · attachment · invoke</span>
+        </div>
+        <dl class="mt-6 grid gap-5 md:grid-cols-2">
+          <div><dt class="font-semibold text-slate-200">Quyết định</dt><dd class="mt-1 text-slate-300">Handshake khóa canonical workspace và expected instance trước tool call; attachment id là token ngẫu nhiên 256-bit biểu diễn bằng 64 ký tự hex.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Ranh giới</dt><dd class="mt-1 text-slate-300">Tool response là <code>Result</code> domain ổn định; bridge chưa thêm MCP era metadata. Input vẫn được route kiểm tiếp bằng catalogue theo tên tool.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Design drift</dt><dd class="mt-1 text-slate-300">Không có.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Blocker</dt><dd class="mt-1 text-slate-300">Không có.</dd></div>
+        </dl>
+      </section>
+      <section class="mt-6 rounded-2xl border border-emerald-500/30 bg-slate-900 p-6">
+        <div class="flex flex-wrap items-center justify-between gap-3">
+          <h2 class="text-2xl font-semibold">2026-08-07 · A.5 — Cấu hình CA bundle</h2>
+          <span class="rounded-full bg-emerald-400/10 px-3 py-1 text-sm text-emerald-300">24 settings tests · fs thật</span>
+        </div>
+        <dl class="mt-6 grid gap-5 md:grid-cols-2">
+          <div><dt class="font-semibold text-slate-200">Quyết định</dt><dd class="mt-1 text-slate-300"><code>contracts</code> chỉ nhận override thuần qua tham số; adapter đọc <code>VIDCOM_CA_BUNDLE</code>. Env thắng file và vẫn có hiệu lực khi file không tồn tại.</dd></div>
+          <div><dt class="font-semibold text-slate-200">An toàn</dt><dd class="mt-1 text-slate-300">Runtime settings là strict object; key viết sai bị báo lỗi thay vì làm TLS remediation vô hiệu im lặng. Không có đường tắt tắt certificate verification.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Bằng chứng</dt><dd class="mt-1 text-slate-300">Đọc file thật trong temp directory; không mock <code>node:fs</code>.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Blocker</dt><dd class="mt-1 text-slate-300">Không có.</dd></div>
+        </dl>
+      </section>
+      <section class="mt-6 rounded-2xl border border-emerald-500/30 bg-slate-900 p-6">
+        <div class="flex flex-wrap items-center justify-between gap-3">
+          <h2 class="text-2xl font-semibold">2026-08-07 · A.6 — SSE host events</h2>
+          <span class="rounded-full bg-emerald-400/10 px-3 py-1 text-sm text-emerald-300">SQLite thật · upgrade bảo toàn row + seq</span>
+        </div>
+        <dl class="mt-6 grid gap-5 md:grid-cols-2">
+          <div><dt class="font-semibold text-slate-200">Quyết định</dt><dd class="mt-1 text-slate-300">Tách catalogue event project và event host trong contracts để Zod, Drizzle và mapper dùng cùng vocabulary.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Persistence</dt><dd class="mt-1 text-slate-300">Migration rebuild <code>event_outbox</code>, copy nguyên row cũ rồi khôi phục index. Check constraint buộc host event có project null và project event có project id.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Bằng chứng</dt><dd class="mt-1 text-slate-300">Bốn event append/read qua SQLite thật trong temp directory. Test upgrade seed hai row bằng schema trước A.6, migrate thật, giữ nguyên payload/project/seq, tiếp tục autoincrement ở 3 và không có foreign-key violation.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Blocker</dt><dd class="mt-1 text-slate-300">Không có.</dd></div>
+        </dl>
+      </section>
+      <section class="mt-6 rounded-2xl border border-emerald-500/30 bg-slate-900 p-6">
+        <div class="flex flex-wrap items-center justify-between gap-3">
+          <h2 class="text-2xl font-semibold">2026-08-07 · A.7 — Contract audit</h2>
+          <span class="rounded-full bg-emerald-400/10 px-3 py-1 text-sm text-emerald-300">5/5 focused · strictness khóa</span>
+        </div>
+        <dl class="mt-6 grid gap-5 md:grid-cols-2">
+          <div><dt class="font-semibold text-slate-200">Phạm vi</dt><dd class="mt-1 text-slate-300">Mỗi object schema mới được thử key lạ; nested entry/root/archive được thử riêng thay vì dựa vào response ngoài.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Round-trip</dt><dd class="mt-1 text-slate-300">Cả 14 error code mới qua JSON và <code>ErrorDetailSchema</code> vẫn giữ đúng code/message/details.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Union</dt><dd class="mt-1 text-slate-300">Workspace có đúng sáu state, gồm <code>reacquiring</code>; bridge có đúng ba client kind.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Blocker</dt><dd class="mt-1 text-slate-300">Không có.</dd></div>
+        </dl>
+      </section>
+      <section class="mt-6 rounded-2xl border border-emerald-500/30 bg-slate-900 p-6">
+        <div class="flex flex-wrap items-center justify-between gap-3">
+          <h2 class="text-2xl font-semibold">2026-08-07 · A.8 — Gate đã phục hồi</h2>
+          <span class="rounded-full bg-emerald-400/10 px-3 py-1 text-sm text-emerald-300">Golden 26/26 · MCP 71/71 · 0 byte drift</span>
+        </div>
+        <dl class="mt-6 grid gap-5 md:grid-cols-2">
+          <div><dt class="font-semibold text-slate-200">Quyết định người dùng</dt><dd class="mt-1 text-slate-300">Giữ snapshot <code>tools/list</code> nguyên byte và cấm 14 error code packaging khỏi mọi output MCP công khai. Quyết định vật chất đã ghi additively thành Design §16 C-6.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Contract</dt><dd class="mt-1 text-slate-300"><code>get_job_status</code> dùng allowlist trước Phase A; canonical tool-error đổi mọi mã ngoài allowlist thành <code>internal</code> với message chung và bỏ details riêng.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Test thật</dt><dd class="mt-1 text-slate-300">E2E <code>npm pack</code> dùng cache nằm trong temp root thật. Golden 26/26, MCP contract 71/71, catalogue 2/2; không mock <code>node:fs</code>.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Bằng chứng byte</dt><dd class="mt-1 text-slate-300">Legacy <code>283b32…c35bd</code>, modern <code>011b16…b44c</code>; <code>git diff --exit-code</code> trên cả hai fixture xanh. Blocker đã đóng.</dd></div>
+        </dl>
+      </section>
+      <section class="mt-6 rounded-2xl border border-cyan-500/30 bg-slate-900 p-6">
+        <div class="flex flex-wrap items-center justify-between gap-3">
+          <h2 class="text-2xl font-semibold">2026-08-07 · Council review — F.5b sequencing</h2>
+          <span class="rounded-full bg-cyan-400/10 px-3 py-1 text-sm text-cyan-300">Cross-reference đã sửa · không đổi scope</span>
+        </div>
+        <dl class="mt-6 grid gap-5 md:grid-cols-2">
+          <div><dt class="font-semibold text-slate-200">Phát hiện</dt><dd class="mt-1 text-slate-300">Một dòng F.5b nói schema đổi ở A.2, trong khi chính A.2 chỉ bao phủ §7.1–§7.4 và F.5 cần token store của F.3.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Quyết định</dt><dd class="mt-1 text-slate-300"><code>ActivateWorkspaceRequestSchema</code>, route, dependency signature và ba caller test sẽ đổi nguyên tử tại F.5/F.5b sau F.3; Phase A không tạo trạng thái token-only chưa có resolver.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Design</dt><dd class="mt-1 text-slate-300">Không đổi: endpoint cuối cùng vẫn chỉ nhận <code>selectionToken</code> như §7.5/C-26; đây chỉ là sửa allocation theo dependency order đã duyệt.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Blocker</dt><dd class="mt-1 text-slate-300">Đã đóng ở tài liệu; không kéo code Phase F về Phase A.</dd></div>
+        </dl>
+      </section>
+      <section class="mt-6 rounded-2xl border border-emerald-500/30 bg-slate-900 p-6">
+        <div class="flex flex-wrap items-center justify-between gap-3">
+          <h2 class="text-2xl font-semibold">2026-08-07 · A.2 review hardening — page bound</h2>
+          <span class="rounded-full bg-emerald-400/10 px-3 py-1 text-sm text-emerald-300">500 nhận · 501 từ chối</span>
+        </div>
+        <dl class="mt-6 grid gap-5 md:grid-cols-2">
+          <div><dt class="font-semibold text-slate-200">Phát hiện</dt><dd class="mt-1 text-slate-300">Response được mô tả là bounded nhưng array schema chưa cưỡng chế giới hạn 500 entry của Design §9.1.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Sửa</dt><dd class="mt-1 text-slate-300"><code>BrowsePageSchema.entries</code> dùng <code>.max(500)</code>, nên mọi consumer cùng nhận một contract cứng thay vì dựa vào implementation pagination.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Bằng chứng</dt><dd class="mt-1 text-slate-300">Focused packaging contracts 7/7 xanh; case 500 entry pass và 501 entry fail.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Blocker</dt><dd class="mt-1 text-slate-300">Không có.</dd></div>
+        </dl>
+      </section>
+      <section class="mt-6 rounded-2xl border border-emerald-500/30 bg-slate-900 p-6">
+        <div class="flex flex-wrap items-center justify-between gap-3">
+          <h2 class="text-2xl font-semibold">2026-08-07 · A.5 review hardening — ambient CA</h2>
+          <span class="rounded-full bg-emerald-400/10 px-3 py-1 text-sm text-emerald-300">24/24 · ambient env xanh</span>
+        </div>
+        <dl class="mt-6 grid gap-5 md:grid-cols-2">
+          <div><dt class="font-semibold text-slate-200">Phát hiện</dt><dd class="mt-1 text-slate-300">Một runner có sẵn <code>VIDCOM_CA_BUNDLE</code> làm bốn kỳ vọng default nhận override ambient và fail dù production đúng.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Sửa</dt><dd class="mt-1 text-slate-300">Mỗi test xóa CA env rồi khôi phục đúng giá trị process ban đầu; thêm case file-only để chứng minh <code>runtime.caBundlePath</code> không phụ thuộc env.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Bằng chứng thật</dt><dd class="mt-1 text-slate-300">24/24 test đọc file thật trong temp directory, xanh cả lượt thường và lượt inject ambient CI CA; không mock <code>node:fs</code>.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Blocker</dt><dd class="mt-1 text-slate-300">Không có; production precedence vẫn là env thắng file, file thắng default.</dd></div>
+        </dl>
+      </section>
+      <section class="mt-6 rounded-2xl border border-emerald-500/30 bg-slate-900 p-6">
+        <div class="flex flex-wrap items-center justify-between gap-3">
+          <h2 class="text-2xl font-semibold">2026-08-07 · A.6 review hardening — event catalogue</h2>
+          <span class="rounded-full bg-emerald-400/10 px-3 py-1 text-sm text-emerald-300">Một runtime source of truth</span>
+        </div>
+        <dl class="mt-6 grid gap-5 md:grid-cols-2">
+          <div><dt class="font-semibold text-slate-200">Phát hiện</dt><dd class="mt-1 text-slate-300">Outbox type guard lặp lại năm host event đã có trong <code>HOST_DOMAIN_EVENT_TYPES</code>, dễ drift khi catalogue mở rộng.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Sửa</dt><dd class="mt-1 text-slate-300">Runtime narrowing dùng Set tạo từ catalogue contracts; DTO, Drizzle enum và mapper cùng nhận một vocabulary.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Ngoại lệ có chủ ý</dt><dd class="mt-1 text-slate-300">Literal trong SQLite CHECK và file migration vẫn cố định: đó là schema history cần deterministic, không phải catalogue runtime thứ hai.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Bằng chứng</dt><dd class="mt-1 text-slate-300">Focused event/migration 7/7 và typecheck xanh sau thay đổi; SQLite vẫn kiểm project-shape và foreign key thật.</dd></div>
+        </dl>
+      </section>
+      <section class="mt-6 rounded-2xl border border-emerald-500/30 bg-slate-900 p-6">
+        <div class="flex flex-wrap items-center justify-between gap-3">
+          <h2 class="text-2xl font-semibold">2026-08-07 · A.5 — logic + integration persistence proof</h2>
+          <span class="rounded-full bg-emerald-400/10 px-3 py-1 text-sm text-emerald-300">Logic 10/10 · FS 24/24</span>
+        </div>
+        <dl class="mt-6 grid gap-5 md:grid-cols-2">
+          <div><dt class="font-semibold text-slate-200">Logic thuần</dt><dd class="mt-1 text-slate-300"><code>resolveVidcomSettings</code> được gọi trực tiếp để khóa file-only value, env precedence + trim, và blank/null fallback.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Integration thật</dt><dd class="mt-1 text-slate-300"><code>readVidcomSettings</code> đọc file trong temp directory thật, cả khi env vắng và khi runner có ambient CA; không mock <code>node:fs</code>.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Semantics</dt><dd class="mt-1 text-slate-300">Blank/null override không xóa file value; <code>runtime.caBundlePath: null</code> trong file vẫn là lựa chọn explicit và được giữ.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Blocker</dt><dd class="mt-1 text-slate-300">Không có; packaging contracts 10/10, settings integration 24/24 và typecheck xanh.</dd></div>
+        </dl>
+      </section>
+      <section class="mt-6 rounded-2xl border border-cyan-500/30 bg-slate-900 p-6">
+        <div class="flex flex-wrap items-center justify-between gap-3">
+          <h2 class="text-2xl font-semibold">2026-08-07 · Phase A — Local verification</h2>
+          <span class="rounded-full bg-cyan-400/10 px-3 py-1 text-sm text-cyan-300">Local xanh · chờ CI đúng HEAD</span>
+        </div>
+        <dl class="mt-6 grid gap-5 md:grid-cols-2">
+          <div><dt class="font-semibold text-slate-200">Gate</dt><dd class="mt-1 text-slate-300">Contracts 10/10; focused contracts/settings/migration/events 41/41; catalogue 2/2; MCP 71/71; golden 26/26; typecheck, boundaries và <code>git diff --check</code> đều xanh. Package contracts chỉ có <code>zod@4.4.3</code>.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Lint tracked</dt><dd class="mt-1 text-slate-300">Đổi <code>@ts-ignore</code> thành <code>@ts-expect-error</code> ở probe S7; shell route S2 dùng <code>useSyncExternalStore</code> thay synchronous setState trong effect.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Lint exact</dt><dd class="mt-1 text-slate-300"><code>rtk bun run lint</code> kết thúc 0 error/2 warning trong trạng thái clean-checkout-equivalent. Đúng 13 artifact/virtualenv Git-ignored được chuyển tạm ra temp rồi khôi phục đầy đủ; không thêm ignore hay nới rule.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Phase gate</dt><dd class="mt-1 text-slate-300">Phase A chưa mở Phase B: còn phải commit, push branch và xem GitHub Actions của đúng SHA xanh.</dd></div>
+        </dl>
+      </section>
+    </main>
+  </body>
+</html>

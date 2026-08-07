@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { ErrorCode, type DomainError } from "@vidcom/contracts";
+import { ErrorCode, MCP_PUBLIC_ERROR_CODES, type DomainError } from "@vidcom/contracts";
 import {
   mapMcpError,
   MCP_INTERNAL_ERROR,
@@ -52,10 +52,11 @@ describe("MCP domain error mapping", () => {
   });
 
   it("covers every domain code and emits one canonical tool-error shape", () => {
+    const publicCodes = new Set<ErrorCode>(MCP_PUBLIC_ERROR_CODES);
     for (const code of Object.values(ErrorCode)) {
       const mapped = mapMcpError(error(code), "modern");
       expect([-32602, -32603]).toContain(mapped.code);
-      expect(mapped.data.error.code).toBe(code);
+      expect(mapped.data.error.code).toBe(publicCodes.has(code) ? code : ErrorCode.Internal);
     }
     const toolError = mcpToolError(error(ErrorCode.TimingInvalid), "modern");
     expect(toolError).toMatchObject({
@@ -66,5 +67,21 @@ describe("MCP domain error mapping", () => {
       code: MCP_INVALID_PARAMS,
       data: { error: { code: ErrorCode.TimingInvalid } },
     });
+  });
+
+  it("redacts every packaging-only code from public MCP error payloads", () => {
+    const publicCodes = new Set<ErrorCode>(MCP_PUBLIC_ERROR_CODES);
+    const privateCodes = Object.values(ErrorCode).filter((code) => !publicCodes.has(code));
+    expect(privateCodes).toHaveLength(14);
+
+    for (const code of privateCodes) {
+      const toolError = mcpToolError(error(code, { originalCode: code }), "modern");
+      const serialized = JSON.stringify(toolError);
+      expect(toolError._meta["io.vidcom/error"].data.error).toEqual({
+        code: ErrorCode.Internal,
+        message: "tool failed outside the published MCP error contract",
+      });
+      expect(serialized).not.toContain(code);
+    }
   });
 });

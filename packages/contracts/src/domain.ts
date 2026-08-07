@@ -17,15 +17,32 @@ export type Actor = "user" | "agent" | "cli-external" | "system";
 /** Product resource guard, not an encoder limitation. */
 export const MAX_PROJECT_DURATION_SECONDS = 3_600;
 
+/** Project-scoped events whose rows must retain a project identity. */
+export const PROJECT_DOMAIN_EVENT_TYPES = [
+  "file.changed",
+  "project.changed",
+  "job.progress",
+  "job.done",
+] as const;
+
+/** Host-scoped events whose durable rows must never claim a project identity. */
+export const HOST_DOMAIN_EVENT_TYPES = [
+  "workspace.changed",
+  "workspace.lease_lost",
+  "workspace.reattached",
+  "runtime.preparing",
+  "runtime.ready",
+] as const;
+
 /** Event payload persisted to the outbox before delivery to connected clients. */
 export type DomainEvent =
   | {
-      type: "file.changed" | "project.changed" | "job.progress" | "job.done";
+      type: (typeof PROJECT_DOMAIN_EVENT_TYPES)[number];
       projectId: ProjectId;
       payload: Record<string, unknown>;
     }
   | {
-      type: "workspace.changed";
+      type: (typeof HOST_DOMAIN_EVENT_TYPES)[number];
       projectId: null;
       payload: Record<string, unknown>;
     };
