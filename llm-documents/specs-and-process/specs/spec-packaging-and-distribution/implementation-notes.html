@@ -181,7 +181,19 @@
           <div><dt class="font-semibold text-slate-200">Gate</dt><dd class="mt-1 text-slate-300">Contracts 10/10; focused contracts/settings/migration/events 41/41; catalogue 2/2; MCP 71/71; golden 26/26; typecheck, boundaries và <code>git diff --check</code> đều xanh. Package contracts chỉ có <code>zod@4.4.3</code>.</dd></div>
           <div><dt class="font-semibold text-slate-200">Lint tracked</dt><dd class="mt-1 text-slate-300">Đổi <code>@ts-ignore</code> thành <code>@ts-expect-error</code> ở probe S7; shell route S2 dùng <code>useSyncExternalStore</code> thay synchronous setState trong effect.</dd></div>
           <div><dt class="font-semibold text-slate-200">Lint exact</dt><dd class="mt-1 text-slate-300"><code>rtk bun run lint</code> kết thúc 0 error/2 warning trong trạng thái clean-checkout-equivalent. Đúng 13 artifact/virtualenv Git-ignored được chuyển tạm ra temp rồi khôi phục đầy đủ; không thêm ignore hay nới rule.</dd></div>
-          <div><dt class="font-semibold text-slate-200">Phase gate</dt><dd class="mt-1 text-slate-300">Phase A chưa mở Phase B: còn phải commit, push branch và xem GitHub Actions của đúng SHA xanh.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Phase gate</dt><dd class="mt-1 text-slate-300">Commit <code>00cf080</code> đã push nhưng CI đầu tiên đỏ ở full Test; Phase B vẫn đóng cho tới khi remediation có CI exact HEAD xanh.</dd></div>
+        </dl>
+      </section>
+      <section class="mt-6 rounded-2xl border border-amber-500/30 bg-slate-900 p-6">
+        <div class="flex flex-wrap items-center justify-between gap-3">
+          <h2 class="text-2xl font-semibold">2026-08-07 · Phase A — CI remediation</h2>
+          <span class="rounded-full bg-amber-400/10 px-3 py-1 text-sm text-amber-300">Run 31193565392 đỏ · fix 11/11</span>
+        </div>
+        <dl class="mt-6 grid gap-5 md:grid-cols-2">
+          <div><dt class="font-semibold text-slate-200">Exact HEAD</dt><dd class="mt-1 text-slate-300">Workflow dispatch bắt đúng <code>00cf08071865de7a3bfd8923465d7a351fca90e5</code> trên cả Windows, macOS và Linux.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Nguyên nhân</dt><dd class="mt-1 text-slate-300">Hai full-suite expectation cũ: <code>__drizzle_migrations</code> còn 11 thay vì 12; API vocabulary chưa liệt 14 error code mới.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Sửa</dt><dd class="mt-1 text-slate-300">Chỉ cập nhật hai test contract. Không sửa fixture <code>tools/list</code>, production code, workflow, ESLint hay boundary gate.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Bằng chứng</dt><dd class="mt-1 text-slate-300">Targeted 11/11; full test 852 pass / 3 skip; packaging 10/10; catalogue 2/2; MCP 71/71; golden 26/26; typecheck, boundaries và lint exact 0 error. Phase A vẫn blocked cho tới run exact HEAD kế tiếp xanh cả ba OS.</dd></div>
         </dl>
       </section>
     </main>

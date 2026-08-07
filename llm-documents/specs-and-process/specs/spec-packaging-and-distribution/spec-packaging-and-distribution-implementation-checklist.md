@@ -54,7 +54,7 @@ Checklist chuyển Design bản 2 thành task 1–4 giờ, giữ đúng ranh gi�
 - **Confirmed by**: alvin0
 - **Confirmation date**: 2026-08-07
 - **Notes**: Design gate §15 đã mở (alvin0, 2026-08-07) nên checklist này được phép tồn tại. Gate thứ hai này — Code Execution — **đã duyệt cùng ngày**, sau vòng review cuối vá bốn chỗ (B.3 nguồn danh sách package Python + normalize tên, A.4 `ToolSchemaEntry` dùng lại `ToolLevel` sẵn có, H.5 nêu tên route upload `uploadBgm`, và `test:mcp-catalogue` lệch giữa Matrix và Files Changed Summary), cộng N-C vào bảng Nợ tài liệu.
-- **Trạng thái thực thi**: **Phase A đã xanh local, đang chờ CI của đúng HEAD — bắt đầu 2026-08-07**. Design §16 đã được đọc trước Phase A; A.8 và toàn bộ A.1–A.7 đã hoàn tất. Main spec đã đổi sang [`-inprocess.md`](./spec-packaging-and-distribution-inprocess.md); MUST NOT sang Phase B trước khi push và GitHub Actions xanh.
+- **Trạng thái thực thi**: **Phase A đã xanh local; CI exact HEAD lần đầu đỏ và đang remediation — bắt đầu 2026-08-07**. Commit `00cf080` đã push; run `31193565392` bắt đúng SHA nhưng full `Test` phát hiện hai baseline expectation chưa cập nhật. Design §16 đã được đọc trước Phase A; A.8 và toàn bộ A.1–A.7 đã hoàn tất. Main spec đã đổi sang [`-inprocess.md`](./spec-packaging-and-distribution-inprocess.md); MUST NOT sang Phase B trước khi commit/push bản fix và GitHub Actions xanh.
 
 **Bản này (2026-08-07, sau review) đã đóng năm câu hỏi mà trước đó dev buộc phải hỏi lại giữa lúc code.** Duyệt mục này nghĩa là duyệt cả năm quyết định sau:
 
@@ -1161,6 +1161,12 @@ Chi tiết: [Detailed Goals](./spec-packaging-and-distribution-detailed-goal.md)
   - Summary: Chạy lại sau mọi review fix: focused contracts/settings/migration/events 41/41, catalogue 2/2, MCP 71/71, golden 26/26, typecheck và import boundaries đều xanh.
   - Decisions: Exact `rtk bun run lint` chạy trong clean-checkout-equivalent sau khi tạm isolate đúng 13 artifact/virtualenv Git-ignored rồi khôi phục toàn bộ; 0 error/2 warning, không đổi ESLint/ignore. Snapshot không đổi byte.
   - Blockers: Local không còn blocker; fixture SHA giữ legacy `283b32…c35bd`, modern `011b16…b44c`, `git diff --check` xanh. Phase A vẫn chờ commit/push và CI đúng HEAD.
+
+2026-08-07 — Phase A, CI remediation (run 31193565392)
+  - Files: `tests/adapter/mcp-database-migration.test.ts`, `tests/contracts/api-contracts.test.ts`, checklist, implementation notes
+  - Summary: Full matrix của exact SHA `00cf080` phát hiện hai baseline test cũ: migration count vẫn đòi 11 thay vì 12, và shared `ErrorCode` vocabulary chưa liệt 14 mã Phase A.
+  - Decisions: Cập nhật đúng hai contract expectation; đây không phải `tools/list` snapshot. Không sửa production code, workflow, ESLint hay import boundary. GH_KEY read-only dùng list/watch; keyring OAuth chỉ dùng dispatch vì fine-grained PAT trả 403 cho `actions:write`.
+  - Blockers: Local remediation xanh đầy đủ: targeted 11/11, full `bun run test` 852 pass / 3 skip, packaging 10/10, catalogue 2/2, MCP 71/71, golden 26/26, typecheck, boundaries và lint exact 0 error/2 warning. Phase A vẫn bị chặn cho tới khi fix được commit/push và một run exact HEAD mới xanh đủ Windows/macOS/Linux.
 
 Format:
 ```
