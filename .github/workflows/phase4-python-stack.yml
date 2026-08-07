@@ -16,6 +16,14 @@ on:
         description: python-build-standalone release tag
         required: false
         default: "20260805"
+  # Fallback path for a token that cannot dispatch. A fine-grained PAT needs
+  # `Actions: write` to create a dispatch event, but pushing a branch needs no
+  # API permission at all — so a throwaway `ci/measure-*` branch gets the same
+  # run. Scoped to that prefix so no ordinary branch pays for a macOS job, and
+  # the branch is meant to be deleted as soon as the numbers are read.
+  push:
+    branches:
+      - "ci/measure-*"
 
 permissions:
   contents: read
