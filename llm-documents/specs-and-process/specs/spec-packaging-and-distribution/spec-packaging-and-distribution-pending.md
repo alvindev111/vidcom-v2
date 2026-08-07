@@ -4,7 +4,7 @@
 > - [Detailed Goals](./spec-packaging-and-distribution-detailed-goal.md) — **Approved** (2026-08-07). 13/13 OQ đã đóng; ba bản sửa OQ-4/OQ-7/OQ-8 đã được duyệt lại
 > - [Spike Phase 4](../../../../spikes/phase-4/README.md) — **bốn vòng, mười spike**: S1a/S1b/S2/S3 mở gate kỹ thuật; S4/S5/S6/S7 đóng OQ bằng số đo; S8 kiểm worker trong SEA; [S9](../../../../spikes/phase-4/s9-windows-runtime/README.md) chạy trên Windows và đóng W-1/W-2/W-3 + blocker B1
 > - [Detailed Design](./spec-packaging-and-distribution-detailed-design.md) — **Approved** (2026-08-07), bản 2: sau vòng review Design, vòng đo Windows/Linux và số đo darwin trên CI
-> - Implementation Checklist — **chưa tạo**, nhưng Phase Gate `Design → Implement` **đã mở** (2026-08-07)
+> - [Implementation Checklist](./spec-packaging-and-distribution-implementation-checklist.md) — **đã tạo** (2026-08-07), 13 phase A–M, 177 SP. Approval Gate riêng của nó **chưa duyệt** ⇒ code execution vẫn bị chặn
 >
 > Spec này hiện thực **Giai đoạn 4** của [15-build-order](../../../product-features/15-build-order.md#giai-đoạn-4--đóng-gói--runtime-phân-phối-re-baseline-78-tuần): mục 4.4–4.10 (4.1–4.3 đã chuyển lên 3.12 và **đã xong**). Mức đóng gói tương ứng: [doc 14 §18](../../../product-features/14-local-first-mcp-packaging-architecture.md) Mức 2 + Mức 3, cộng phần baseline của Mức 4 cho ba artifact native và packaged smoke; full 3 OS × 2 kiến trúc vẫn ở Giai đoạn 6.
 
@@ -122,7 +122,7 @@ Thang cắt nếu velocity không tới: **R7** (8) → **R3 mode `worker`** (3)
 - **Detailed Goals**: **Approved** — người dùng duyệt ngày 2026-08-07 sau khi chấp nhận ba bản sửa OQ-4/OQ-7/OQ-8. OQ-7 chốt ba nền tảng target, Windows là release gate; defer Linux chỉ qua một scope change mới và phải tuyên bố hẹp lại.
   **Sửa sau khi duyệt (2026-08-07, cùng ngày, người dùng duyệt riêng):** R2.14 được nới từ hai lối lên **ba lối** — thêm "hạ xuống chưa-có-workspace, giữ listener" cho trường hợp có UI; headless vẫn dừng hẳn. Bất biến single-writer không đổi, nhưng trở thành nghĩa vụ chứng minh bằng test thay vì bằng việc đóng tiến trình.
 - **Detailed Design**: **Approved** — alvin0 duyệt ngày 2026-08-07 sau bốn vòng review (blocker P1, steering 14/14, đo ba nền tảng). Gate §15 đã mở; xem [Detailed Design](./spec-packaging-and-distribution-detailed-design.md).
-- **Implementation Checklist**: Pending Confirmation — **được phép tạo** từ 2026-08-07; production code vẫn bị chặn tới khi chính checklist được duyệt.
+- **Implementation Checklist**: **Pending Confirmation** — đã tạo ngày 2026-08-07 ([13 phase A–M, 177 SP](./spec-packaging-and-distribution-implementation-checklist.md)). Production code vẫn bị chặn tới khi Approval Gate của chính checklist được duyệt.
 
 ## During Spec
 - **Standups**: chưa bắt đầu.
