@@ -50,10 +50,11 @@ Checklist chuyển Design bản 2 thành task 1–4 giờ, giữ đúng ranh gi�
 
 > Không viết production code cho tới khi mục này được người dùng xác nhận tường minh.
 
-- **Status**: **Pending Confirmation**
-- **Confirmed by**: —
-- **Confirmation date**: —
-- **Notes**: Design gate §15 đã mở (alvin0, 2026-08-07) nên checklist này được phép tồn tại. Nhưng **Code Execution vẫn bị chặn** cho tới khi chính mục này được duyệt — đây là gate thứ hai và độc lập.
+- **Status**: **Approved**
+- **Confirmed by**: alvin0
+- **Confirmation date**: 2026-08-07
+- **Notes**: Design gate §15 đã mở (alvin0, 2026-08-07) nên checklist này được phép tồn tại. Gate thứ hai này — Code Execution — **đã duyệt cùng ngày**, sau vòng review cuối vá bốn chỗ (B.3 nguồn danh sách package Python + normalize tên, A.4 `ToolSchemaEntry` dùng lại `ToolLevel` sẵn có, H.5 nêu tên route upload `uploadBgm`, và `test:mcp-catalogue` lệch giữa Matrix và Files Changed Summary), cộng N-C vào bảng Nợ tài liệu.
+- **Trạng thái thực thi**: **chưa bắt đầu — người dùng chốt approve nhưng chưa cho implement**. Agent nào nhận việc: đọc Design §16 trước, làm A.8/G.0/H.0/M.0 trước trong phase tương ứng, L.6 sau cùng, và đổi tên [`spec-…-pending.md`](./spec-packaging-and-distribution-pending.md) → `-inprocess.md` **ngay khi** task đầu tiên bắt đầu, không phải bây giờ.
 
 **Bản này (2026-08-07, sau review) đã đóng năm câu hỏi mà trước đó dev buộc phải hỏi lại giữa lúc code.** Duyệt mục này nghĩa là duyệt cả năm quyết định sau:
 
