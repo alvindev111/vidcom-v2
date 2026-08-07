@@ -1,6 +1,7 @@
 # Spike Phase 4 — gate kỹ thuật trước Detailed Design
 
 > Chạy ngày **2026-08-06** trên `darwin arm64`, Node `v24.9.0`, commit `c9922fd`.
+> **Vòng 4 (2026-08-07) chạy trên `win32 x64`** — xem [S9](#vòng-4--s9-máy-windows-đóng-w-1w-2w-3--blocker-b1).
 > Mục đích: đóng bốn câu hỏi PASS/FAIL mà [Detailed Goals §5](../../llm-documents/specs-and-process/specs/spec-packaging-and-distribution/spec-packaging-and-distribution-detailed-goal.md) chặn Design lại để chờ. Không viết production code.
 
 | Spike | Câu hỏi | Kết quả |
@@ -363,6 +364,22 @@ Câu hỏi: Design né bằng "eval bundle" — né như thế có đủ không?
 | `Atomics.store/notify` + `SharedArrayBuffer` giữa main và worker | **OK**, đọc lại đúng `42` |
 
 **PASS cả ba.** Nên §5.2 khả thi — nhưng chỉ ở **dạng eval**. Điểm cần nói rõ trong Design: một implementer viết `new Worker(new URL("./browse-worker.js", import.meta.url))` — dạng thông thường nhất — sẽ đâm đúng cái bẫy đã hạ esbuild, và chế độ hỏng là **treo im lặng**, không phải lỗi. Ràng buộc này giờ là MUST NOT trong §5.2.
+
+---
+
+## Vòng 4 — S9: máy Windows (đóng W-1/W-2/W-3 + blocker B1)
+
+Chạy **2026-08-07** trên `win32 x64`. Ba vòng trước đều ở `darwin arm64`, nên mọi kết luận về Windows đến giờ là suy diễn. Vòng này đo thật. Báo cáo đầy đủ: [`s9-windows-runtime/README.md`](s9-windows-runtime/README.md).
+
+| Câu hỏi | Kết quả |
+|---|---|
+| **B1** — stack Python có giống darwin không | **KHÁC +2**: `colorama` (marker của `click`/`tqdm`) và `tzdata` (`pandas` không có tz của OS). 56 version giữ lại khớp tuyệt đối. 510 MB / 155,2 MB. |
+| **W-1** — cookie dev cross-origin | **ĐÓNG**. Cùng hostname → `SameSite=Strict` chạy qua port khác. Khác hostname → **hỏng im lặng** (200, cookie không bao giờ quay lại). SSE mang cookie y hệt fetch. |
+| **W-2** — named pipe | **Transport PASS** (cùng Hono app, `EADDRINUSE` cho luôn single-instance). **ACL thì không**: Node không có tham số đặt security descriptor ⇒ "tương đương 0600" cần native code. |
+| **W-3** — hỏng lúc tải | `HTTPS_PROXY` **bị lờ** (tải thật 202 MB qua proxy chết) ⇒ bước offline của R8.8 phải chặn ở tầng mạng. Cache **tải dở** được `browser path` báo ok exit 0 ⇒ **hỏng im lặng**. `HF_HUB_OFFLINE=1` + cache rỗng thì hỏng **đúng cách**: 1 s, có thông điệp, không treo. |
+| **N-1** (mới) | Mạng có **FortiGate TLS inspection** chỉ chặn `huggingface.co`; CA không nằm trong trust store. CPython đóng băng dùng `certifi` nên **không tải được weights** — chế độ hỏng thứ ba, không phải offline cũng không phải online. |
+
+Món duy nhất **không** đóng được: TTS ra WAV trên Windows, vì N-1. Bypass được, nhưng tin CA của firewall là quyết định của người dùng/IT chứ không phải của spike.
 
 ---
 

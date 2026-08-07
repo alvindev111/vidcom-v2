@@ -2,8 +2,8 @@
 
 > **Related Documents**:
 > - [Detailed Goals](./spec-packaging-and-distribution-detailed-goal.md) — **Approved** (2026-08-07). 13/13 OQ đã đóng; ba bản sửa OQ-4/OQ-7/OQ-8 đã được duyệt lại
-> - [Spike Phase 4](../../../../spikes/phase-4/README.md) — **hai vòng, chín spike**: S1a/S1b/S2/S3 mở gate kỹ thuật; S4/S5/S6/S7 đóng OQ bằng số đo
-> - [Detailed Design](./spec-packaging-and-distribution-detailed-design.md) — **Pending Confirmation**, phase Design đã mở
+> - [Spike Phase 4](../../../../spikes/phase-4/README.md) — **bốn vòng, mười spike**: S1a/S1b/S2/S3 mở gate kỹ thuật; S4/S5/S6/S7 đóng OQ bằng số đo; S8 kiểm worker trong SEA; [S9](../../../../spikes/phase-4/s9-windows-runtime/README.md) chạy trên Windows và đóng W-1/W-2/W-3 + blocker B1
+> - [Detailed Design](./spec-packaging-and-distribution-detailed-design.md) — **Pending Confirmation** bản 2, sau vòng review và vòng đo Windows
 > - Implementation Checklist — **chưa tạo**, bị Phase Gate `Design → Implement` chặn
 >
 > Spec này hiện thực **Giai đoạn 4** của [15-build-order](../../../product-features/15-build-order.md#giai-đoạn-4--đóng-gói--runtime-phân-phối-re-baseline-78-tuần): mục 4.4–4.10 (4.1–4.3 đã chuyển lên 3.12 và **đã xong**). Mức đóng gói tương ứng: [doc 14 §18](../../../product-features/14-local-first-mcp-packaging-architecture.md) Mức 2 + Mức 3, cộng phần baseline của Mức 4 cho ba artifact native và packaged smoke; full 3 OS × 2 kiến trúc vẫn ở Giai đoạn 6.
@@ -83,16 +83,16 @@ Mục 2, 3 và 7 là ba chỗ đắt. Chúng không phải "bundle rồi ship" �
   - [Detailed Design](./spec-packaging-and-distribution-detailed-design.md) — **Pending Confirmation**; phase Design đã mở.
   - Implementation Checklist — **chưa tạo** (Phase Gate `Design → Implement`).
 - **Date**: chưa chốt. Ước lượng **7–8 tuần lịch** (bản 4), đã được đồng bộ sang build-order thay cho baseline cũ 3–4 tuần. Lý do lệch: baseline cũ được viết khi Giai đoạn 4 còn được hiểu là "bundle những gì đã chạy được"; thực tế nó chứa hai subsystem chưa tồn tại (MCP bridge của R2, thực thi toolchain trên artifact của R6), một mảng UI mới (R1), một thay đổi lifecycle mà bản 1 tính thiếu (tách `startVidcomFoundation` để đổi workspace lúc runtime — spike cho thấy phần *boot không-workspace* thì rẻ, phần *tách foundation* thì không), và — sau spike — một CPython đóng băng phải ship cùng artifact. Đây là thứ tự tương đối, không phải cam kết lịch. Spike đã chạy xong và **không** nằm trong estimate.
-- **Capacity**: **~170 SP** ước lượng planning qua 9 requirement (bản 1: ~120, bản 2: ~150, bản 4: ~165). Coi là **sàn**: Phase 2 (132 SP) và Phase 3 (190 SP) đều nở ra ở phase Design. Vòng spike thứ hai làm hai hạng mục rẻ đi (OQ-10 chỉ là một biến đổi được; OQ-13 chọn shim nên không phải ship thêm Node runtime) nhưng không đủ để hạ con số — phần đắt của R1 là tách `startVidcomFoundation`, thứ R1.12 cần dù thế nào. Vòng duyệt 2026-08-07 **cộng thêm 5 SP vào R1** (21→26): OQ-8 hứa "~5 SP cho nút New video" từ bản 2 nhưng **chưa bao giờ vào bảng** — R1.19 giờ ghi nó ra.
+- **Capacity**: **~177 SP** ước lượng planning qua 9 requirement (bản 1: ~120, bản 2: ~150, bản 4: ~165, sau vòng duyệt Goals: ~170). Vòng review Design + đo Windows cộng thêm **7 SP**: R2 34→37 (R2.14 được nới thành ba lối — người dùng duyệt 2026-08-07) và R6 21→25 (xử lý TLS inspection N-1, cộng ép UTF-8 cho sidecar — cả hai đo được ở [S9](../../../../spikes/phase-4/s9-windows-runtime/README.md)). Coi là **sàn**: Phase 2 (132 SP) và Phase 3 (190 SP) đều nở ra ở phase Design. Vòng spike thứ hai làm hai hạng mục rẻ đi (OQ-10 chỉ là một biến đổi được; OQ-13 chọn shim nên không phải ship thêm Node runtime) nhưng không đủ để hạ con số — phần đắt của R1 là tách `startVidcomFoundation`, thứ R1.12 cần dù thế nào. Vòng duyệt 2026-08-07 **cộng thêm 5 SP vào R1** (21→26): OQ-8 hứa "~5 SP cho nút New video" từ bản 2 nhưng **chưa bao giờ vào bảng** — R1.19 giờ ghi nó ra.
 
 | R | Nội dung | ID | SP | Cắt được? |
 |---|---|---|---|---|
 | R1 | Directory picker server-driven + token flow + **UI chọn workspace** + boot không-workspace + đổi workspace runtime + **UI tạo project từ preset** (OQ-8 → R1.19) | PK-3 | 26 | Không — D3 chưa đạt, và không có nó thì "chạy file tải về" không có bước đầu tiên |
-| R2 | Single-writer daemon + MCP bridge qua IPC có xác thực (gồm handshake, mất lease, race auto-start) | PK-4 | 34 | Không — hôm nay UI và AI host loại trừ nhau |
+| R2 | Single-writer daemon + MCP bridge qua IPC có xác thực (gồm handshake, mất lease **ba lối**, race auto-start) | PK-4 | 37 | Không — hôm nay UI và AI host loại trừ nhau |
 | R3 | `vidcom` đủ mode + `doctor` | PK-5, PK-8 | 13 | Một phần — `worker` cắt được (OQ-9) |
 | R4 | Node SEA: bundle backend, **nhúng frontend static export**, http-driver, bỏ Next khỏi artifact | PK-6 | 21 | Không — đây là D2 |
 | R5 | Giải nén native runtime + **thư viện motion** + sidecar + **CPython đóng băng đã prune/pin** + binary esbuild vào app-data lần chạy đầu | PK-7 | 21 | Không — bẫy 4.8 |
-| R6 | Toolchain render/TTS chạy được **từ artifact**: hyperframes CLI **+ in-process**, hình dạng spawn mới, cây tiến trình, timeout compiler, Chromium, FFmpeg, VieNeu | PK-7, PK-8 | 21 | Không — không có nó thì artifact không render được, tức không có sản phẩm |
+| R6 | Toolchain render/TTS chạy được **từ artifact**: hyperframes CLI **+ in-process**, hình dạng spawn mới, cây tiến trình, timeout compiler, Chromium, FFmpeg, VieNeu, **UTF-8 ép cho sidecar + xử lý TLS inspection (N-1)** | PK-7, PK-8 | 25 | Không — không có nó thì artifact không render được, tức không có sản phẩm |
 | R7 | Import project có sẵn từ ngoài workspace | PK-12 | 8 | **Có** — ứng viên cắt số 1 |
 | R8 | Smoke test trên artifact, máy sạch, trong CI (ba nền tảng, cô lập PATH/HOME) | — | 21 | Không — MUST NOT cắt; đây là thứ duy nhất chứng minh mốc đạt |
 | R9 | Hygiene & provenance của artifact | PK-10 (một phần) | 5 | Một phần — chỉ giữ checksum + ad-hoc signature |
@@ -120,20 +120,26 @@ Thang cắt nếu velocity không tới: **R7** (8) → **R3 mode `worker`** (3)
 ## Phase Approvals
 
 - **Detailed Goals**: **Approved** — người dùng duyệt ngày 2026-08-07 sau khi chấp nhận ba bản sửa OQ-4/OQ-7/OQ-8. OQ-7 chốt ba nền tảng target, Windows là release gate; defer Linux chỉ qua một scope change mới và phải tuyên bố hẹp lại.
+  **Sửa sau khi duyệt (2026-08-07, cùng ngày, người dùng duyệt riêng):** R2.14 được nới từ hai lối lên **ba lối** — thêm "hạ xuống chưa-có-workspace, giữ listener" cho trường hợp có UI; headless vẫn dừng hẳn. Bất biến single-writer không đổi, nhưng trở thành nghĩa vụ chứng minh bằng test thay vì bằng việc đóng tiến trình.
 - **Detailed Design**: Pending Confirmation — phase Design đã mở; xem [Detailed Design](./spec-packaging-and-distribution-detailed-design.md).
 - **Implementation Checklist**: Pending Confirmation — chưa được phép tạo.
 
 ## During Spec
 - **Standups**: chưa bắt đầu.
-- **Impediments**: **ba món nợ kiểm chứng, chờ máy Windows.** Spike Phase 4 đóng được mọi câu hỏi trên `darwin arm64`; ba thứ dưới đây không kiểm được ở đó. Không cái nào chặn Design — nhưng cái nào cũng chặn *tin được vào kết luận tương ứng*, nên chúng là **todo có chủ**, không phải ghi chú.
+- **Impediments**: **ba món nợ kiểm chứng đã chạy trên máy Windows ngày 2026-08-07** — xem [S9](../../../../spikes/phase-4/s9-windows-runtime/README.md). Hai đóng hẳn, hai đóng một nửa với giá đã biết, và vòng đo sinh thêm hai món mới.
 
-  | # | Phải kiểm gì | Vì sao chưa kiểm | Nếu sai thì hỏng ở đâu | Chặn requirement |
-  |---|---|---|---|---|
-  | **W-1** | Cookie session cross-origin ở chế độ dev: FE `localhost:3000` ↔ daemon port động, `sameSite: "Strict"`, `credentials: "include"`, và luật **hai đầu cùng hostname** (`localhost` ≠ `127.0.0.1`) | SameSite chỉ browser cưỡng chế; `curl` không kiểm được. Cần một harness browser thật | Vòng lặp dev frontend mất session sau khi chuyển `output: 'export'` — đau lúc phát triển, **không** ảnh hưởng artifact | R4.10, R4.12 |
-  | **W-2** | Named pipe trên Windows: `http.createServer(getRequestListener(app.fetch)).listen("\\\\.\\pipe\\…")` và quyền tương đương `0600` | Không có máy Windows. POSIX đã kiểm: unix socket chạy với **cùng Hono app**, mode 600, HTTP 200 (S7) | Phương án **dự phòng** của OQ-2 đắt hơn dự tính. Đường mặc định (loopback HTTP + R2.13) không ảnh hưởng | OQ-2 (dự phòng), R2.5 |
-  | **W-3** | Chế độ hỏng khi **thật sự mất mạng** lúc tải Chromium: báo lỗi có mã, không treo | Không chặn được mạng đáng tin trên máy này, và HyperFrames **không có env override nguồn tải** (`PUPPETEER_DOWNLOAD_BASE_URL` bị lờ — S5) | `doctor` báo sai kiểu lỗi, hoặc job render treo thay vì fail. Bước offline của R8.8 sẽ bắt được nếu có | R6.5, R8.8 |
+  | # | Trạng thái | Kết quả đo | Đi vào đâu |
+  |---|---|---|---|
+  | **W-1** | **ĐÓNG** | Cùng hostname hai đầu ⇒ `SameSite=Strict` sống qua port khác, cả fetch lẫn SSE. Khác hostname ⇒ `exchange` trả 200 mà cookie **không bao giờ quay lại** — hỏng im lặng, đúng lý do R4.12 đòi fail tường minh | Design §5.11 |
+  | **W-2** | **ĐÓNG một nửa** | Transport PASS: cùng Hono app qua `\\.\pipe\…`, GET/POST 200, `EADDRINUSE` cho luôn single-instance. Nhưng **Node không có tham số đặt security descriptor** ⇒ "tương đương 0600" cần native code | D3 giữ deferred, giá đã biết |
+  | **W-3** | **ĐÓNG một nửa** | `HTTPS_PROXY` **bị lờ** (tải thật 202 MB qua proxy chết) ⇒ bước offline của R8.8 phải chặn ở **tầng mạng runner**. Cache **tải dở** được `browser path` báo ok exit 0 ⇒ hỏng im lặng. `HF_HUB_OFFLINE=1` + cache rỗng hỏng đúng cách: 1 s, có thông điệp, không treo | Design §5.9, §11.3 |
+  | **B1** (mới, từ review Design) | **ĐÓNG — cả ba nền tảng** | Windows resolve **79** package (thừa `colorama` + `tzdata`); **Linux resolve 77, trùng khít darwin**, prune còn đúng core 55. Version core khớp tuyệt đối ở cả ba. Luật "một danh sách, lệch là fail" sẽ tự làm fail build Windows ngày đầu. Kích thước sau prune: ~480 / 499 / **595 MB** | Design §5.13, DR-15 |
+  | **N-1** (mới) | **MỞ** | Mạng có FortiGate TLS inspection **chỉ với `huggingface.co`**; CA không có trong trust store. CPython đóng băng dùng `certifi` ⇒ **không tải được weights**. Không phải offline, không phải online | Design §5.13, mã lỗi `download_tls_untrusted` |
+  | **W-4** (mới) | **MỞ** | **TTS ra WAV trên Windows chưa chứng minh được** vì N-1. Không suy được từ darwin | Bước 8 của packaged smoke Windows |
 
-  Windows còn là nơi **OQ-7 nói không được cắt**: ACL thay `0700`/`0600` (R5.9, R2.5), `rename` qua thiết bị (R5.3, R7.12), khoá file khi `doctor` re-extract (R3.13), kill cây process qua `powershell-cim` thay `ps` (R6.8). Nên W-1..W-3 nên chạy **cùng lượt** với vòng kiểm Windows đầu tiên, không tách lẻ.
+  Thời gian giải nén đo được: **26,9 s** cho 510 MB (18 core, NVMe), **đã có AV quét on-access** — máy đo chạy Sophos Intercept X real-time (Defender tắt vì Sophos giữ vai trò đó). Thứ còn thiếu là **hạng phần cứng của runner**, không phải antivirus; lần smoke Windows đầu tiên chốt lại trần 180 s.
+
+  Windows còn là nơi **OQ-7 nói không được cắt**: ACL thay `0700`/`0600` (R5.9, R2.5), `rename` qua thiết bị (R5.3, R7.12), khoá file khi `doctor` re-extract (R3.13), kill cây process qua `powershell-cim` thay `ps` (R6.8). Những mục này **chưa** nằm trong vòng S9 và vẫn chờ vòng kiểm Windows tiếp theo.
 - **Adjustments**: **hai bug Phase 3 đã sửa trước khi vào Giai đoạn 4** (2026-08-07) — xem [Detailed Goals §1.8](./spec-packaging-and-distribution-detailed-goal.md). Chúng nằm ngoài phạm vi giai đoạn này về mặt nguồn gốc, nhưng R3.5 và R8.3 dựa vào chúng nên sửa trước rẻ hơn sửa sau.
 
 ## Spec Review

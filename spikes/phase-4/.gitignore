@@ -21,3 +21,22 @@ s3-tts-no-python/out/
 s3-tts-no-python/*.tar.gz
 s3-tts-no-python/req*.json
 s3-tts-no-python/resp*.json
+
+# S9 — Windows runtime round: frozen interpreter (~510 MB), its archive, the
+# scratch caches the probes fill, and the local node_modules for the harnesses.
+# `evidence/` stays tracked: the measured package sets ARE the finding.
+s9-windows-runtime/python/
+s9-windows-runtime/*.tar.gz
+s9-windows-runtime/cache/
+s9-windows-runtime/emptycache/
+s9-windows-runtime/emptyhf/
+s9-windows-runtime/fakehome/
+s9-windows-runtime/out/
+s9-windows-runtime/extract-test/
+s9-windows-runtime/*-names.txt
+s9-windows-runtime/*-norm.txt
+s9-windows-runtime/win-full.txt
+s9-windows-runtime/package.json
+s9-windows-runtime/bun.lock
+s9-windows-runtime/darwin-*.txt
+s9-windows-runtime/linux-out/

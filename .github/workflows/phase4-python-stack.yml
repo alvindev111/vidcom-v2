@@ -1,0 +1,155 @@
+name: Phase 4 — frozen Python stack size
+
+# Fills the one measurement the Phase 4 design still carries as an estimate: the
+# size of the pruned VieNeu stack on macOS arm64 after `pip` is removed. Windows
+# and Linux were measured locally (spikes/phase-4/s9-windows-runtime); darwin
+# wheels cannot be resolved off a Mac, and the design forbids deriving one
+# platform's number from another, so this is the only way to close it.
+#
+# Dispatch-only on purpose. This repo bills macOS at ten times the wall clock,
+# so a job that added itself to every push would cost more than the number is
+# worth. Run it once, paste the numbers into the design, and leave it idle.
+on:
+  workflow_dispatch:
+    inputs:
+      cpython_release:
+        description: python-build-standalone release tag
+        required: false
+        default: "20260805"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CPYTHON_VERSION: 3.12.13
+  VIENEU_VERSION: 3.2.4
+  # The 21 packages the design prunes. Kept as one list so the three platforms
+  # prune identically — a divergence here would silently change what is measured.
+  PRUNE_PACKAGES: >-
+    fastapi gradio gradio_client groovy hf-gradio llvmlite markdown-it-py mdurl
+    numba pillow pygments python-multipart rich safehttpx scikit-learn
+    semantic-version shellingham starlette tomlkit typer uvicorn
+
+jobs:
+  measure:
+    name: macOS arm64
+    runs-on: macos-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Confirm the runner really is arm64
+        # A silent switch to x86_64 would produce wheels for the wrong platform
+        # and a number that looks plausible and means nothing.
+        run: |
+          set -euo pipefail
+          arch="$(uname -m)"
+          echo "uname -m = ${arch}"
+          test "${arch}" = "arm64"
+
+      - name: Download and extract the frozen interpreter
+        run: |
+          set -euo pipefail
+          release="${{ inputs.cpython_release }}"
+          asset="cpython-${CPYTHON_VERSION}+${release}-aarch64-apple-darwin-install_only_stripped.tar.gz"
+          curl -sSLf -o cpython.tar.gz \
+            "https://github.com/astral-sh/python-build-standalone/releases/download/${release}/${asset}"
+          tar xzf cpython.tar.gz
+          ./python/bin/python3 -VV
+
+      - name: Measure the bare interpreter
+        run: echo "interpreter_mb=$(du -sm python | cut -f1)" | tee -a "$GITHUB_ENV"
+
+      - name: Install the speech stack
+        run: |
+          set -euo pipefail
+          ./python/bin/python3 -m pip install --disable-pip-version-check -q \
+            "vieneu==${VIENEU_VERSION}" "huggingface-hub>=0.24"
+          ./python/bin/python3 -m pip list --format=freeze | sort > darwin-package-set.txt
+          {
+            echo "full_mb=$(du -sm python | cut -f1)"
+            echo "full_count=$(wc -l < darwin-package-set.txt | tr -d ' ')"
+          } | tee -a "$GITHUB_ENV"
+
+      - name: Prune, then drop pip
+        # `pip` is a build tool, not a runtime dependency: the design ships the
+        # stack without it and verifies the installed set through the standard
+        # library instead. Dropping it last keeps the prune step itself simple.
+        run: |
+          set -euo pipefail
+          ./python/bin/python3 -m pip uninstall -y -q ${PRUNE_PACKAGES}
+          ./python/bin/python3 -m pip uninstall -y -q pip || true
+
+      - name: Verify the pruned stack still imports and enumerate it
+        # `importlib.metadata` is what the `runtime.python` doctor check uses, so
+        # exercising it here also proves the check works without pip present.
+        run: |
+          set -euo pipefail
+          ./python/bin/python3 - <<'PY' > darwin-package-set-pruned.txt
+          import importlib.metadata as metadata
+          names = sorted(
+              (dist.metadata["Name"] or "?").lower().replace("_", "-")
+              for dist in metadata.distributions()
+          )
+          assert "pip" not in names, "pip survived the prune"
+          print("\n".join(names))
+          PY
+          ./python/bin/python3 -c "import vieneu, huggingface_hub, onnxruntime, numpy, librosa, soundfile"
+          echo "pruned_count=$(wc -l < darwin-package-set-pruned.txt | tr -d ' ')" | tee -a "$GITHUB_ENV"
+
+      - name: Measure the pruned stack
+        run: |
+          set -euo pipefail
+          tar czf python-pruned.tar.gz python
+          {
+            echo "pruned_mb=$(du -sm python | cut -f1)"
+            echo "pruned_targz_mb=$(du -sm python-pruned.tar.gz | cut -f1)"
+          } | tee -a "$GITHUB_ENV"
+
+      - name: Compare the pruned set against the measured Linux core
+        # Linux pruned to exactly the 55-package core, so darwin must match it.
+        # A difference means the "core is shared, only Windows has extras" claim
+        # in the design is wrong and the manifest needs a third supplement.
+        run: |
+          set -euo pipefail
+          linux=spikes/phase-4/s9-windows-runtime/evidence/linux-package-set-pruned.txt
+          if diff -u "${linux}" darwin-package-set-pruned.txt > core-diff.txt; then
+            echo "core_matches_linux=yes" | tee -a "$GITHUB_ENV"
+          else
+            echo "core_matches_linux=NO" | tee -a "$GITHUB_ENV"
+            cat core-diff.txt
+          fi
+
+      - name: Write the job summary
+        run: |
+          {
+            echo "## Frozen Python stack — macOS arm64"
+            echo
+            echo "| Measurement | Value |"
+            echo "|---|---:|"
+            echo "| Bare interpreter | ${interpreter_mb} MB |"
+            echo "| Full stack | ${full_mb} MB / ${full_count} packages |"
+            echo "| **Pruned, no pip** | **${pruned_mb} MB / ${pruned_targz_mb} MB gz** |"
+            echo "| Pruned package count | ${pruned_count} |"
+            echo "| Matches the Linux core set | ${core_matches_linux} |"
+            echo
+            echo "Paste the pruned row into \`spec-packaging-and-distribution-detailed-design.md\` §5.13,"
+            echo "replacing the darwin estimate. Reference: Windows 499 MB / 152 MB, Linux 595 MB / 179 MB."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload the measured package sets
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: darwin-python-stack
+          path: |
+            darwin-package-set.txt
+            darwin-package-set-pruned.txt
+            core-diff.txt
+          if-no-files-found: warn
