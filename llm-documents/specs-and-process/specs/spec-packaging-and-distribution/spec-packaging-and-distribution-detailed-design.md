@@ -2,9 +2,9 @@
 
 > **Reference**: [Detailed Goals](./spec-packaging-and-distribution-detailed-goal.md) — **Approved 2026-08-07**
 > **Main spec**: [Packaging & Distribution Runtime](./spec-packaging-and-distribution-pending.md)
-> **Next**: Implementation Checklist — **chưa được phép tạo**
+> **Next**: Implementation Checklist — **được phép tạo** (gate §15 đã mở)
 >
-> **Trạng thái**: **Pending Confirmation**. Tài liệu này mở phase Design theo xác nhận của người dùng ngày 2026-08-07. Không có production code trong phase này.
+> **Trạng thái**: **APPROVED** ngày 2026-08-07 bởi alvin0 — xem [§15 Approval Gate](#15-approval-gate). Phase tiếp theo là Implementation Checklist; **production code vẫn bị chặn** cho tới khi checklist đó được duyệt riêng.
 
 ## 1. Overview
 
@@ -773,19 +773,21 @@ urllib3==2.7.0            vieneu==3.2.4
 colorama==0.4.6           tzdata==2026.3
 ```
 
-**Đã kiểm** — ba cột, và **cột nào cũng đo trên nền tảng của chính nó**:
+**Đã kiểm** — ba cột, và **cột nào cũng đo trên nền tảng của chính nó**. Không còn ô ước lượng nào:
 
 | | darwin arm64 | win32 x64 | linux x64 |
 |---|---|---|---|
 | Gỡ đủ 21 package, WAV vẫn ra | ✅ `worker.py --request`, voice từ catalogue | ⚠️ **chưa chứng minh** — xem N-1 dưới | ⚠️ chưa chạy TTS; chuỗi import PASS |
 | Interpreter trần | 66 MB | 68 MB | **104 MB** |
-| Không prune | 805 MB / 245 MB | 815 MB | **980 MB** |
-| **Sau prune, không `pip`** | ~480 MB / ~143 MB *(ước, chờ runner darwin)* | **499 MB / 152 MB** | **595 MB / 179 MB** |
-| Package sau prune | 55 | 57 | 55 |
+| Không prune | 806 MB / 77 pkg | 815 MB / 79 pkg | **980 MB / 77 pkg** |
+| **Sau prune, không `pip`** | **481 MB / 145 MB** | **499 MB / 152 MB** | **595 MB / 179 MB** |
+| Package sau prune | **55** | 57 | **55** |
 
-Chỉ ô darwin còn là ước lượng: nó được đo **khi còn `pip`** (492 MB / 145,9 MB), và không đo lại được ở đây vì wheel là của macOS arm64. Lần smoke darwin đầu tiên điền số thật — **MUST NOT** suy từ hai cột kia, đúng luật mục này đặt ra.
+Cột darwin đo trên runner `macos-latest` (arm64) của GitHub qua [`phase4-python-stack.yml`](../../../../.github/workflows/phase4-python-stack.yml) — job tự fail nếu runner không phải arm64, nếu `pip` sống sót qua prune, hoặc nếu chuỗi import gãy, nên xanh nghĩa là số dùng được.
 
-**Linux nặng hơn đáng kể, và đó là một hệ quả thiết kế chứ không phải một con số.** Interpreter Linux lớn hơn darwin **58 %** và stack sau prune lớn hơn ~24 % (595 so với ~480 MB). Nghĩa là artifact Linux tải về nặng hơn ~36 MB và **giải nén nhiều hơn ~115 MB** so với darwin — trong khi §9.1 đang cho hai nền tảng **cùng** trần cold 120 s. Trần Linux vì vậy là **tạm**, và lần smoke Linux đầu tiên là chỗ xác nhận hoặc nới nó kèm số đo.
+**Tập package của darwin trùng khít Linux và trùng khít core 55 trong tài liệu này** — kiểm bằng `diff`, kết quả rỗng. Ba nền tảng, một core, và Windows là ngoại lệ duy nhất với đúng hai package.
+
+**Linux nặng hơn đáng kể, và đó là một hệ quả thiết kế chứ không phải một con số.** Interpreter Linux lớn hơn darwin **58 %** và stack sau prune lớn hơn ~24 % (595 so với 481 MB). Nghĩa là artifact Linux tải về nặng hơn ~36 MB và **giải nén nhiều hơn ~115 MB** so với darwin — trong khi §9.1 đang cho hai nền tảng **cùng** trần cold 120 s. Trần Linux vì vậy là **tạm**, và lần smoke Linux đầu tiên là chỗ xác nhận hoặc nới nó kèm số đo.
 
 Build SHALL **fail** nếu tập package thực tế lệch khỏi *(core + phần phụ của platform đang build)* — thừa hay thiếu đều fail, vì thừa nghĩa là artifact phình mà không ai để ý và thiếu nghĩa là TTS chết trên máy người dùng. Danh sách + version là **một phần của checksum contract**, không phải tài liệu tham khảo. Đổi danh sách phải kèm số đo mới ở đây, **và số đo phải đến từ platform tương ứng** — suy từ platform khác là đúng cái sai mà bản trước mắc phải.
 
@@ -1189,7 +1191,7 @@ vidcom render <project-id-or-slug> [--workspace <path>] [--preset <id>]
 
 Cột thứ ba là flow chưa-có-workspace: nó dừng ở listener nên không gánh lease + foundation, vì vậy trần warm chặt hơn. Cold thì hai flow dùng chung cột đầu vì cùng chạy `extract → migrate`.
 
-Windows nới hơn vì antivirus quét file vừa giải nén — stack Python (**≈480 MB darwin / 499 MB Windows / 595 MB Linux** sau khi gỡ `pip`) là phần lớn thời gian cold. **Trần Linux 120 s là tạm**: nó đang bằng darwin trong khi Linux phải giải nén nhiều hơn ~24 % (§5.13), nên lần smoke Linux đầu tiên SHALL xác nhận hoặc nới nó **kèm số đo**, MUST NOT giữ nguyên chỉ vì bảng đã viết sẵn. Hai gate độc lập, cả hai đều fail được:
+Windows nới hơn vì antivirus quét file vừa giải nén — stack Python (**481 MB darwin / 499 MB Windows / 595 MB Linux** sau khi gỡ `pip`) là phần lớn thời gian cold. **Trần Linux 120 s là tạm**: nó đang bằng darwin trong khi Linux phải giải nén nhiều hơn ~24 % (§5.13), nên lần smoke Linux đầu tiên SHALL xác nhận hoặc nới nó **kèm số đo**, MUST NOT giữ nguyên chỉ vì bảng đã viết sẵn. Hai gate độc lập, cả hai đều fail được:
 
 1. **Trần cứng** — vượt bảng trên ⇒ packaged smoke **fail**. Đây là số duy nhất chặn release.
 2. **Chặn hồi quy** — mỗi runner ghi baseline ở lần smoke xanh đầu tiên; lần sau vượt **1,5 ×** baseline của chính runner đó ⇒ fail, kể cả khi còn dưới trần.
@@ -1566,9 +1568,10 @@ Không step bắt buộc nào được skip. Linux job vắng mặt nghĩa là s
 
 > Do not create the implementation checklist or write production code until this section is explicitly confirmed.
 
-- **Status**: **Pending Confirmation** — bản 2 (2026-08-07), sau vòng đo Windows [S9](../../../../spikes/phase-4/s9-windows-runtime/README.md)
-- **Confirmed by**: —
-- **Confirmation date**: —
+- **Status**: **APPROVED** — bản 2 (2026-08-07), sau vòng review Design, vòng đo Windows/Linux [S9](../../../../spikes/phase-4/s9-windows-runtime/README.md) và số đo darwin trên CI
+- **Confirmed by**: alvin0
+- **Confirmation date**: 2026-08-07
+- **Phạm vi được duyệt**: 27 quyết định ở bảng dưới, hai quyết định phạm vi (R2.14 nới, N-1 trong phạm vi), và ước lượng **~177 SP**. Implementation Checklist **được phép tạo**; production code vẫn bị chặn cho tới khi chính checklist đó được duyệt.
 
 **Đã chốt trong bản này** — không còn chờ quyết định, mọi thứ dưới đây đã có câu trả lời trong tài liệu:
 
@@ -1620,4 +1623,5 @@ Tổng ước lượng: **~170 → ~177 SP**.
 - **Mới (N-2)**: encoding của interpreter đóng băng — đã đo, đã có luật ở §4.6, không còn là ẩn số.
 - **Đã đo bổ sung (cùng ngày)**: `linux-x64` chạy trong container `linux/amd64` thật — **77 package, trùng khít darwin, prune còn đúng core 55**, nên phần phụ theo platform chỉ tồn tại ở Windows. Kích thước sau prune **595 MB / 179 MB**, nặng hơn darwin ~24 %, nên **trần cold 120 s của Linux ở §9.1 là tạm**.
 - **Đính chính**: phép đo giải nén 26,9 s **đã có AV quét on-access** (Sophos Intercept X real-time); Defender tắt vì Sophos giữ vai trò đó, không phải vì máy không có AV. Thứ còn thiếu là **hạng phần cứng runner**, không phải antivirus.
-- **Còn đúng một số đo chưa lấy được**: kích thước darwin sau khi gỡ `pip` — cần máy macOS arm64, không dựng lại được ở đây. Đang ghi là ước lượng (~480 MB / ~143 MB) kèm luật MUST NOT suy từ nền tảng khác. Nó là **số đo**, không phải quyết định, và không chặn phê duyệt Design.
+- **darwin đã đo xong trên CI** (`macos-latest`, arm64): **481 MB / 145 MB** sau prune và gỡ `pip`, 55 package **trùng khít** Linux và trùng khít core trong §5.13 (`diff` rỗng). Cả ba nền tảng giờ đều là số đo thật, không còn ô suy diễn nào.
+- **Số đo còn thiếu duy nhất là thứ chỉ packaged smoke mới sinh ra được**: cold start thật trên phần cứng runner, và TTS ra WAV trên Windows (bị N-1 chặn ở máy phát triển). Cả hai đều nằm trong R8, không chặn phê duyệt Design.

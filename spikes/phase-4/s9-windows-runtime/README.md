@@ -49,12 +49,14 @@ prune 21    → 55 package, đúng bằng core; imports OK; pip đã gỡ
 | | darwin arm64 | win32 x64 | linux x64 |
 |---|---:|---:|---:|
 | CPython trần | 66 MB | 68 MB | **104 MB** |
-| Stack đầy đủ | 805 MB | 815 MB | **980 MB** |
-| **Sau prune, không `pip`** | ~480 MB *(ước)* | **499 MB** | **595 MB** |
-| **tar.gz tương ứng** | ~143 MB *(ước)* | **152 MB** | **179 MB** |
+| Stack đầy đủ | 806 MB | 815 MB | **980 MB** |
+| **Sau prune, không `pip`** | **481 MB** | **499 MB** | **595 MB** |
+| **tar.gz tương ứng** | **145 MB** | **152 MB** | **179 MB** |
 | Package sau prune | 55 | 57 | 55 |
 
-Prune gỡ đủ 21 package trên cả Windows lẫn Linux (không package nào vắng mặt). Ô darwin còn là ước lượng vì bản đo gốc còn `pip` (492 MB / 145,9 MB) và wheel macOS arm64 không dựng lại được ở đây — lần smoke darwin điền số thật.
+Prune gỡ đủ 21 package trên cả ba (không package nào vắng mặt). Cột darwin đo trên runner `macos-latest` của GitHub qua [`phase4-python-stack.yml`](../../../.github/workflows/phase4-python-stack.yml) — không dựng lại được ở máy Windows vì wheel là của macOS arm64. **Tập package của darwin trùng khít Linux**, `diff` rỗng.
+
+> Ước lượng trước đó (~480 MB / ~143 MB, suy từ việc gỡ `pip` tốn 12 MB trên Windows) hoá ra lệch 1–2 MB. Nó đúng — nhưng nó đúng một cách may mắn, và luật "MUST NOT suy số của nền tảng này từ nền tảng khác" vẫn giữ nguyên: điều đáng tin là phép đo, không phải phép suy.
 
 **Linux là nền tảng nặng nhất, hơn darwin ~24 % sau prune.** Interpreter Linux một mình đã lớn hơn 58 %. Điều đó đụng thẳng vào §9.1 của Design, nơi Linux và macOS đang dùng **chung** trần cold 120 s — trần Linux vì vậy là tạm, chờ lần smoke đầu tiên.
 

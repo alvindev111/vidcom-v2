@@ -8,6 +8,19 @@ on:
   push:
     branches:
       - main
+    # Documentation-only pushes do not need three platforms of typecheck, lint,
+    # build and test. A spec round can be a dozen commits of markdown, and each
+    # one used to cost a full macOS-inclusive run — more quota than the entire
+    # change was worth. The one gate that does read these files,
+    # `test:spec-paths`, is a second of local work: run it before pushing docs.
+    # Anything under `packages/`, `src/`, `scripts/` or the workflows themselves
+    # still triggers the full matrix, so no code path loses coverage.
+    # `**.md`, not `**/*.md`: in GitHub's matcher `**` spans `/`, so `**/*.md`
+    # requires a directory segment and would skip root files — AGENTS.md and
+    # CLAUDE.md among them, which is exactly the kind of edit this is for.
+    paths-ignore:
+      - "llm-documents/**"
+      - "**.md"
   # Lets the full matrix be run against any branch on demand, which is how a
   # platform-specific change gets verified before it reaches main.
   workflow_dispatch:

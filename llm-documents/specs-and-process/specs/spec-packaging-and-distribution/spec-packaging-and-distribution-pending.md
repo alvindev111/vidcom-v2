@@ -3,8 +3,8 @@
 > **Related Documents**:
 > - [Detailed Goals](./spec-packaging-and-distribution-detailed-goal.md) — **Approved** (2026-08-07). 13/13 OQ đã đóng; ba bản sửa OQ-4/OQ-7/OQ-8 đã được duyệt lại
 > - [Spike Phase 4](../../../../spikes/phase-4/README.md) — **bốn vòng, mười spike**: S1a/S1b/S2/S3 mở gate kỹ thuật; S4/S5/S6/S7 đóng OQ bằng số đo; S8 kiểm worker trong SEA; [S9](../../../../spikes/phase-4/s9-windows-runtime/README.md) chạy trên Windows và đóng W-1/W-2/W-3 + blocker B1
-> - [Detailed Design](./spec-packaging-and-distribution-detailed-design.md) — **Pending Confirmation** bản 2, sau vòng review và vòng đo Windows
-> - Implementation Checklist — **chưa tạo**, bị Phase Gate `Design → Implement` chặn
+> - [Detailed Design](./spec-packaging-and-distribution-detailed-design.md) — **Approved** (2026-08-07), bản 2: sau vòng review Design, vòng đo Windows/Linux và số đo darwin trên CI
+> - Implementation Checklist — **chưa tạo**, nhưng Phase Gate `Design → Implement` **đã mở** (2026-08-07)
 >
 > Spec này hiện thực **Giai đoạn 4** của [15-build-order](../../../product-features/15-build-order.md#giai-đoạn-4--đóng-gói--runtime-phân-phối-re-baseline-78-tuần): mục 4.4–4.10 (4.1–4.3 đã chuyển lên 3.12 và **đã xong**). Mức đóng gói tương ứng: [doc 14 §18](../../../product-features/14-local-first-mcp-packaging-architecture.md) Mức 2 + Mức 3, cộng phần baseline của Mức 4 cho ba artifact native và packaged smoke; full 3 OS × 2 kiến trúc vẫn ở Giai đoạn 6.
 
@@ -80,7 +80,7 @@ Mục 2, 3 và 7 là ba chỗ đắt. Chúng không phải "bundle rồi ship" �
 
 - **Supplementary files**:
   - [Detailed Goals](./spec-packaging-and-distribution-detailed-goal.md) — **Approved** (2026-08-07). Spike gate đã mở, 13/13 OQ đã đóng, và ba bản sửa OQ-4/OQ-7/OQ-8 đã được duyệt lại.
-  - [Detailed Design](./spec-packaging-and-distribution-detailed-design.md) — **Pending Confirmation**; phase Design đã mở.
+  - [Detailed Design](./spec-packaging-and-distribution-detailed-design.md) — **Approved** (2026-08-07). 27 quyết định chốt ở §15; ~177 SP.
   - Implementation Checklist — **chưa tạo** (Phase Gate `Design → Implement`).
 - **Date**: chưa chốt. Ước lượng **7–8 tuần lịch** (bản 4), đã được đồng bộ sang build-order thay cho baseline cũ 3–4 tuần. Lý do lệch: baseline cũ được viết khi Giai đoạn 4 còn được hiểu là "bundle những gì đã chạy được"; thực tế nó chứa hai subsystem chưa tồn tại (MCP bridge của R2, thực thi toolchain trên artifact của R6), một mảng UI mới (R1), một thay đổi lifecycle mà bản 1 tính thiếu (tách `startVidcomFoundation` để đổi workspace lúc runtime — spike cho thấy phần *boot không-workspace* thì rẻ, phần *tách foundation* thì không), và — sau spike — một CPython đóng băng phải ship cùng artifact. Đây là thứ tự tương đối, không phải cam kết lịch. Spike đã chạy xong và **không** nằm trong estimate.
 - **Capacity**: **~177 SP** ước lượng planning qua 9 requirement (bản 1: ~120, bản 2: ~150, bản 4: ~165, sau vòng duyệt Goals: ~170). Vòng review Design + đo Windows cộng thêm **7 SP**: R2 34→37 (R2.14 được nới thành ba lối — người dùng duyệt 2026-08-07) và R6 21→25 (xử lý TLS inspection N-1, cộng ép UTF-8 cho sidecar — cả hai đo được ở [S9](../../../../spikes/phase-4/s9-windows-runtime/README.md)). Coi là **sàn**: Phase 2 (132 SP) và Phase 3 (190 SP) đều nở ra ở phase Design. Vòng spike thứ hai làm hai hạng mục rẻ đi (OQ-10 chỉ là một biến đổi được; OQ-13 chọn shim nên không phải ship thêm Node runtime) nhưng không đủ để hạ con số — phần đắt của R1 là tách `startVidcomFoundation`, thứ R1.12 cần dù thế nào. Vòng duyệt 2026-08-07 **cộng thêm 5 SP vào R1** (21→26): OQ-8 hứa "~5 SP cho nút New video" từ bản 2 nhưng **chưa bao giờ vào bảng** — R1.19 giờ ghi nó ra.
@@ -121,8 +121,8 @@ Thang cắt nếu velocity không tới: **R7** (8) → **R3 mode `worker`** (3)
 
 - **Detailed Goals**: **Approved** — người dùng duyệt ngày 2026-08-07 sau khi chấp nhận ba bản sửa OQ-4/OQ-7/OQ-8. OQ-7 chốt ba nền tảng target, Windows là release gate; defer Linux chỉ qua một scope change mới và phải tuyên bố hẹp lại.
   **Sửa sau khi duyệt (2026-08-07, cùng ngày, người dùng duyệt riêng):** R2.14 được nới từ hai lối lên **ba lối** — thêm "hạ xuống chưa-có-workspace, giữ listener" cho trường hợp có UI; headless vẫn dừng hẳn. Bất biến single-writer không đổi, nhưng trở thành nghĩa vụ chứng minh bằng test thay vì bằng việc đóng tiến trình.
-- **Detailed Design**: Pending Confirmation — phase Design đã mở; xem [Detailed Design](./spec-packaging-and-distribution-detailed-design.md).
-- **Implementation Checklist**: Pending Confirmation — chưa được phép tạo.
+- **Detailed Design**: **Approved** — alvin0 duyệt ngày 2026-08-07 sau bốn vòng review (blocker P1, steering 14/14, đo ba nền tảng). Gate §15 đã mở; xem [Detailed Design](./spec-packaging-and-distribution-detailed-design.md).
+- **Implementation Checklist**: Pending Confirmation — **được phép tạo** từ 2026-08-07; production code vẫn bị chặn tới khi chính checklist được duyệt.
 
 ## During Spec
 - **Standups**: chưa bắt đầu.
@@ -133,7 +133,7 @@ Thang cắt nếu velocity không tới: **R7** (8) → **R3 mode `worker`** (3)
   | **W-1** | **ĐÓNG** | Cùng hostname hai đầu ⇒ `SameSite=Strict` sống qua port khác, cả fetch lẫn SSE. Khác hostname ⇒ `exchange` trả 200 mà cookie **không bao giờ quay lại** — hỏng im lặng, đúng lý do R4.12 đòi fail tường minh | Design §5.11 |
   | **W-2** | **ĐÓNG một nửa** | Transport PASS: cùng Hono app qua `\\.\pipe\…`, GET/POST 200, `EADDRINUSE` cho luôn single-instance. Nhưng **Node không có tham số đặt security descriptor** ⇒ "tương đương 0600" cần native code | D3 giữ deferred, giá đã biết |
   | **W-3** | **ĐÓNG một nửa** | `HTTPS_PROXY` **bị lờ** (tải thật 202 MB qua proxy chết) ⇒ bước offline của R8.8 phải chặn ở **tầng mạng runner**. Cache **tải dở** được `browser path` báo ok exit 0 ⇒ hỏng im lặng. `HF_HUB_OFFLINE=1` + cache rỗng hỏng đúng cách: 1 s, có thông điệp, không treo | Design §5.9, §11.3 |
-  | **B1** (mới, từ review Design) | **ĐÓNG — cả ba nền tảng** | Windows resolve **79** package (thừa `colorama` + `tzdata`); **Linux resolve 77, trùng khít darwin**, prune còn đúng core 55. Version core khớp tuyệt đối ở cả ba. Luật "một danh sách, lệch là fail" sẽ tự làm fail build Windows ngày đầu. Kích thước sau prune: ~480 / 499 / **595 MB** | Design §5.13, DR-15 |
+  | **B1** (mới, từ review Design) | **ĐÓNG — cả ba nền tảng đã đo thật** | Windows resolve **79** package (thừa `colorama` + `tzdata`); **darwin và Linux đều 77**, prune còn đúng core **55** và `diff` giữa hai tập là rỗng. Luật "một danh sách, lệch là fail" sẽ tự làm fail build Windows ngày đầu. Sau prune, không `pip`: **481 / 499 / 595 MB** (darwin đo trên `macos-latest` của CI) | Design §5.13, DR-15 |
   | **N-1** (mới) | **MỞ** | Mạng có FortiGate TLS inspection **chỉ với `huggingface.co`**; CA không có trong trust store. CPython đóng băng dùng `certifi` ⇒ **không tải được weights**. Không phải offline, không phải online | Design §5.13, mã lỗi `download_tls_untrusted` |
   | **W-4** (mới) | **MỞ** | **TTS ra WAV trên Windows chưa chứng minh được** vì N-1. Không suy được từ darwin | Bước 8 của packaged smoke Windows |
 
