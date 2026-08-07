@@ -54,7 +54,7 @@ Checklist chuyển Design bản 2 thành task 1–4 giờ, giữ đúng ranh gi�
 - **Confirmed by**: alvin0
 - **Confirmation date**: 2026-08-07
 - **Notes**: Design gate §15 đã mở (alvin0, 2026-08-07) nên checklist này được phép tồn tại. Gate thứ hai này — Code Execution — **đã duyệt cùng ngày**, sau vòng review cuối vá bốn chỗ (B.3 nguồn danh sách package Python + normalize tên, A.4 `ToolSchemaEntry` dùng lại `ToolLevel` sẵn có, H.5 nêu tên route upload `uploadBgm`, và `test:mcp-catalogue` lệch giữa Matrix và Files Changed Summary), cộng N-C vào bảng Nợ tài liệu.
-- **Trạng thái thực thi**: **Phase A đã xanh local; CI exact HEAD lần đầu đỏ và đang remediation — bắt đầu 2026-08-07**. Commit `00cf080` đã push; run `31193565392` bắt đúng SHA nhưng full `Test` phát hiện hai baseline expectation chưa cập nhật. Design §16 đã được đọc trước Phase A; A.8 và toàn bộ A.1–A.7 đã hoàn tất. Main spec đã đổi sang [`-inprocess.md`](./spec-packaging-and-distribution-inprocess.md); MUST NOT sang Phase B trước khi commit/push bản fix và GitHub Actions xanh.
+- **Trạng thái thực thi**: **Phase A đã xanh local và implementation HEAD đã xanh CI cả ba OS; closeout docs đang chờ CI exact HEAD — bắt đầu 2026-08-07**. Commit remediation `3548562` đã push; run [`31194897230`](https://github.com/alvindev111/vidcom-v2/actions/runs/31194897230) bắt đúng SHA và xanh Linux x64, macOS arm64, Windows x64. Design §16 đã được đọc trước Phase A; A.8 và toàn bộ A.1–A.7 đã hoàn tất. Main spec đã đổi sang [`-inprocess.md`](./spec-packaging-and-distribution-inprocess.md); MUST NOT sang Phase B trước khi commit/push closeout docs và GitHub Actions của đúng HEAD mới xanh.
 
 **Bản này (2026-08-07, sau review) đã đóng năm câu hỏi mà trước đó dev buộc phải hỏi lại giữa lúc code.** Duyệt mục này nghĩa là duyệt cả năm quyết định sau:
 
@@ -1167,6 +1167,12 @@ Chi tiết: [Detailed Goals](./spec-packaging-and-distribution-detailed-goal.md)
   - Summary: Full matrix của exact SHA `00cf080` phát hiện hai baseline test cũ: migration count vẫn đòi 11 thay vì 12, và shared `ErrorCode` vocabulary chưa liệt 14 mã Phase A.
   - Decisions: Cập nhật đúng hai contract expectation; đây không phải `tools/list` snapshot. Không sửa production code, workflow, ESLint hay import boundary. GH_KEY read-only dùng list/watch; keyring OAuth chỉ dùng dispatch vì fine-grained PAT trả 403 cho `actions:write`.
   - Blockers: Local remediation xanh đầy đủ: targeted 11/11, full `bun run test` 852 pass / 3 skip, packaging 10/10, catalogue 2/2, MCP 71/71, golden 26/26, typecheck, boundaries và lint exact 0 error/2 warning. Phase A vẫn bị chặn cho tới khi fix được commit/push và một run exact HEAD mới xanh đủ Windows/macOS/Linux.
+
+2026-08-07 — Phase A, CI remediation verification (run 31194897230)
+  - Files: checklist và implementation notes
+  - Summary: Workflow `CI` dạng `workflow_dispatch` bắt đúng remediation SHA `3548562a7a717887f5cbc0c8f3a6ddcad472b6bc`; cả Linux x64, macOS arm64 và Windows x64 đều kết thúc `success`.
+  - Decisions: Xác thực bằng `GH_TOKEN=$GH_KEY gh run watch --exit-status` rồi đối chiếu metadata `headSha`, `status`, `conclusion` và từng job qua `gh run view`. Giữ Phase B đóng trong lúc commit/push chính entry closeout này để CI còn phải xanh trên exact docs HEAD.
+  - Blockers: Implementation HEAD không còn blocker. Closeout docs chưa được xem là gate cuối cho tới khi commit/push và run exact HEAD tiếp theo xanh đủ ba OS.
 
 Format:
 ```

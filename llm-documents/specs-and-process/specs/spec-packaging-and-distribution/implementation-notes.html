@@ -196,6 +196,18 @@
           <div><dt class="font-semibold text-slate-200">Bằng chứng</dt><dd class="mt-1 text-slate-300">Targeted 11/11; full test 852 pass / 3 skip; packaging 10/10; catalogue 2/2; MCP 71/71; golden 26/26; typecheck, boundaries và lint exact 0 error. Phase A vẫn blocked cho tới run exact HEAD kế tiếp xanh cả ba OS.</dd></div>
         </dl>
       </section>
+      <section class="mt-6 rounded-2xl border border-emerald-500/30 bg-slate-900 p-6">
+        <div class="flex flex-wrap items-center justify-between gap-3">
+          <h2 class="text-2xl font-semibold">2026-08-07 · Phase A — CI remediation verification</h2>
+          <span class="rounded-full bg-emerald-400/10 px-3 py-1 text-sm text-emerald-300">Run 31194897230 xanh · 3/3 OS</span>
+        </div>
+        <dl class="mt-6 grid gap-5 md:grid-cols-2">
+          <div><dt class="font-semibold text-slate-200">Exact HEAD</dt><dd class="mt-1 text-slate-300">Workflow <code>CI</code> bắt đúng <code>3548562a7a717887f5cbc0c8f3a6ddcad472b6bc</code> và kết thúc <code>success</code>.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Ba runner</dt><dd class="mt-1 text-slate-300">Linux x64 xanh trong 6m53s; macOS arm64 xanh trong 4m21s; Windows x64 xanh trong 15m57s. Mỗi job đều qua test, MCP/golden/schema/matrix, production build và real Next/SSE smoke.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Xác thực</dt><dd class="mt-1 text-slate-300"><code>GH_TOKEN=$GH_KEY gh run watch 31194897230 --exit-status</code> trả exit 0; <code>gh run view</code> xác nhận <code>headSha</code>, conclusion và từng job.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Phase gate</dt><dd class="mt-1 text-slate-300">Implementation HEAD đã xanh. Phase B vẫn đóng cho tới khi chính closeout docs này được commit/push và một run exact HEAD mới xanh đủ ba OS.</dd></div>
+        </dl>
+      </section>
     </main>
   </body>
 </html>
