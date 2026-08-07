@@ -35,6 +35,10 @@ concurrency:
 env:
   CPYTHON_VERSION: 3.12.13
   VIENEU_VERSION: 3.2.4
+  # The dispatch input's `default:` only applies to `workflow_dispatch`; on a
+  # branch push `inputs` is empty, which silently built a URL with no release
+  # segment and 404'd. The real default lives here so both triggers share it.
+  CPYTHON_RELEASE: "20260805"
   # The 21 packages the design prunes. Kept as one list so the three platforms
   # prune identically — a divergence here would silently change what is measured.
   PRUNE_PACKAGES: >-
@@ -65,6 +69,8 @@ jobs:
         run: |
           set -euo pipefail
           release="${{ inputs.cpython_release }}"
+          release="${release:-$CPYTHON_RELEASE}"
+          echo "Using python-build-standalone release ${release}"
           asset="cpython-${CPYTHON_VERSION}+${release}-aarch64-apple-darwin-install_only_stripped.tar.gz"
           curl -sSLf -o cpython.tar.gz \
             "https://github.com/astral-sh/python-build-standalone/releases/download/${release}/${asset}"
