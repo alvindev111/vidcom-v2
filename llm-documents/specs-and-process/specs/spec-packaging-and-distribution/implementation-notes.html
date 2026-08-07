@@ -208,6 +208,42 @@
           <div><dt class="font-semibold text-slate-200">Phase gate</dt><dd class="mt-1 text-slate-300">Implementation HEAD đã xanh. Phase B vẫn đóng cho tới khi chính closeout docs này được commit/push và một run exact HEAD mới xanh đủ ba OS.</dd></div>
         </dl>
       </section>
+      <section class="mt-6 rounded-2xl border border-rose-500/30 bg-slate-900 p-6">
+        <div class="flex flex-wrap items-center justify-between gap-3">
+          <h2 class="text-2xl font-semibold">2026-08-07 · Phase A — Closeout-doc CI failure</h2>
+          <span class="rounded-full bg-rose-400/10 px-3 py-1 text-sm text-rose-300">Run 31196365800 đỏ · Windows 1/855</span>
+        </div>
+        <dl class="mt-6 grid gap-5 md:grid-cols-2">
+          <div><dt class="font-semibold text-slate-200">Exact HEAD</dt><dd class="mt-1 text-slate-300"><code>23101b32704eaf7949fc2f011b2469a156d10de1</code>; Linux x64 và macOS arm64 xanh, Windows x64 đỏ ở full <code>Test</code>.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Lỗi duy nhất</dt><dd class="mt-1 text-slate-300"><code>tests/mcp/revision-pin.test.ts</code> case stdio allowlist chạm timeout 30s. Tổng Windows: 850 pass, 4 skip, 1 fail; không có contract mismatch.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Đối chứng</dt><dd class="mt-1 text-slate-300">Run trước cùng code pass case này trên Windows trong 3.049s; focused local chạy liên tiếp 5 lần đều xanh trong 197–293ms. Đây là race/lifecycle platform-specific dưới full-suite load.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Kỷ luật gate</dt><dd class="mt-1 text-slate-300">Không tăng timeout, retry mù, skip/disable hay nới gate. Phase A vẫn blocked trong lúc harden child-process/version-negotiation cleanup rồi chạy lại exact-HEAD CI ba OS.</dd></div>
+        </dl>
+      </section>
+      <section class="mt-6 rounded-2xl border border-cyan-500/30 bg-slate-900 p-6">
+        <div class="flex flex-wrap items-center justify-between gap-3">
+          <h2 class="text-2xl font-semibold">2026-08-07 · Phase A — Windows stdio lifecycle hardening</h2>
+          <span class="rounded-full bg-cyan-400/10 px-3 py-1 text-sm text-cyan-300">Focused xanh · giữ timeout 30s</span>
+        </div>
+        <dl class="mt-6 grid gap-5 md:grid-cols-2">
+          <div><dt class="font-semibold text-slate-200">Nguyên nhân cấu trúc</dt><dd class="mt-1 text-slate-300">Test cũ ghép modern probe sibling, modern session và legacy child; SDK v1 không await cleanup khi connect reject, còn stderr pipe không được drain.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Sửa</dt><dd class="mt-1 text-slate-300">Một raw real-stdio child nhận legacy <code>initialize</code> và trả <code>-32022</code>, sau đó cùng pipe nhận modern <code>server/discover</code> và <code>tools/call</code>. Closure thật được await trong <code>finally</code>.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Không nới gate</dt><dd class="mt-1 text-slate-300">Vẫn một test, timeout 30s, không retry/skip. Fixture chạy bằng Node hiện hành với loader <code>tsx@4.23.1</code> đã có trực tiếp ở <code>packages/cli</code>; package/lockfile không đổi.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Bằng chứng focused</dt><dd class="mt-1 text-slate-300">File 7/7, typecheck, scoped ESLint và diff check xanh; case real-child lặp 10/10 trong 197–311ms. Full local gate và CI exact HEAD vẫn còn phải chạy.</dd></div>
+        </dl>
+      </section>
+      <section class="mt-6 rounded-2xl border border-emerald-500/30 bg-slate-900 p-6">
+        <div class="flex flex-wrap items-center justify-between gap-3">
+          <h2 class="text-2xl font-semibold">2026-08-07 · Phase A — Stdio hardening full local verification</h2>
+          <span class="rounded-full bg-emerald-400/10 px-3 py-1 text-sm text-emerald-300">Local xanh · chờ CI exact HEAD</span>
+        </div>
+        <dl class="mt-6 grid gap-5 md:grid-cols-2">
+          <div><dt class="font-semibold text-slate-200">Full suite</dt><dd class="mt-1 text-slate-300"><code>rtk bun run test</code> xanh 852 pass / 3 skip trong 56,36s sau hardening; không còn timeout ở real-stdio case.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Phase matrix</dt><dd class="mt-1 text-slate-300">Packaging 10/10, catalogue 2/2, MCP contract 71/71, golden 26/26, typecheck và import boundaries đều xanh.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Exact lint</dt><dd class="mt-1 text-slate-300">0 error/2 warning sau khi isolate rồi khôi phục đủ 13 artifact/virtualenv ignored; không đổi ESLint, ignore hay boundary gate.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Integrity/gate</dt><dd class="mt-1 text-slate-300"><code>tools/list</code> nguyên byte: legacy <code>283b32…c35bd</code>, modern <code>011b16…b44c</code>. Phase B vẫn đóng cho tới commit/push và CI exact HEAD xanh đủ ba OS.</dd></div>
+        </dl>
+      </section>
     </main>
   </body>
 </html>

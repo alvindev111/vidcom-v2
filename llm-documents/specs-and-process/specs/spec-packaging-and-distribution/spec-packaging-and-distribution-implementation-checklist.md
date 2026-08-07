@@ -54,7 +54,7 @@ Checklist chuyển Design bản 2 thành task 1–4 giờ, giữ đúng ranh gi�
 - **Confirmed by**: alvin0
 - **Confirmation date**: 2026-08-07
 - **Notes**: Design gate §15 đã mở (alvin0, 2026-08-07) nên checklist này được phép tồn tại. Gate thứ hai này — Code Execution — **đã duyệt cùng ngày**, sau vòng review cuối vá bốn chỗ (B.3 nguồn danh sách package Python + normalize tên, A.4 `ToolSchemaEntry` dùng lại `ToolLevel` sẵn có, H.5 nêu tên route upload `uploadBgm`, và `test:mcp-catalogue` lệch giữa Matrix và Files Changed Summary), cộng N-C vào bảng Nợ tài liệu.
-- **Trạng thái thực thi**: **Phase A đã xanh local và implementation HEAD đã xanh CI cả ba OS; closeout docs đang chờ CI exact HEAD — bắt đầu 2026-08-07**. Commit remediation `3548562` đã push; run [`31194897230`](https://github.com/alvindev111/vidcom-v2/actions/runs/31194897230) bắt đúng SHA và xanh Linux x64, macOS arm64, Windows x64. Design §16 đã được đọc trước Phase A; A.8 và toàn bộ A.1–A.7 đã hoàn tất. Main spec đã đổi sang [`-inprocess.md`](./spec-packaging-and-distribution-inprocess.md); MUST NOT sang Phase B trước khi commit/push closeout docs và GitHub Actions của đúng HEAD mới xanh.
+- **Trạng thái thực thi**: **Phase A đã xanh toàn bộ local sau stdio closeout hardening; đang chờ commit/push và CI exact HEAD — cập nhật 2026-08-07**. Commit remediation `3548562` đã xanh ba OS ở run [`31194897230`](https://github.com/alvindev111/vidcom-v2/actions/runs/31194897230). Closeout-doc commit `23101b3` bắt đúng SHA ở run [`31196365800`](https://github.com/alvindev111/vidcom-v2/actions/runs/31196365800): Linux/macOS xanh, Windows fail 1/855 vì `revision-pin` stdio integration chạm timeout 30s. Test đã được cấu trúc lại thành một real child/pipe, không đổi timeout hay retry; full local suite 852 pass / 3 skip và toàn bộ Phase A matrix/gate đều xanh. Design §16 đã được đọc trước Phase A; A.8 và toàn bộ A.1–A.7 đã hoàn tất. Main spec đã đổi sang [`-inprocess.md`](./spec-packaging-and-distribution-inprocess.md); MUST NOT sang Phase B trước khi commit/push hardening và GitHub Actions exact HEAD xanh.
 
 **Bản này (2026-08-07, sau review) đã đóng năm câu hỏi mà trước đó dev buộc phải hỏi lại giữa lúc code.** Duyệt mục này nghĩa là duyệt cả năm quyết định sau:
 
@@ -1173,6 +1173,24 @@ Chi tiết: [Detailed Goals](./spec-packaging-and-distribution-detailed-goal.md)
   - Summary: Workflow `CI` dạng `workflow_dispatch` bắt đúng remediation SHA `3548562a7a717887f5cbc0c8f3a6ddcad472b6bc`; cả Linux x64, macOS arm64 và Windows x64 đều kết thúc `success`.
   - Decisions: Xác thực bằng `GH_TOKEN=$GH_KEY gh run watch --exit-status` rồi đối chiếu metadata `headSha`, `status`, `conclusion` và từng job qua `gh run view`. Giữ Phase B đóng trong lúc commit/push chính entry closeout này để CI còn phải xanh trên exact docs HEAD.
   - Blockers: Implementation HEAD không còn blocker. Closeout docs chưa được xem là gate cuối cho tới khi commit/push và run exact HEAD tiếp theo xanh đủ ba OS.
+
+2026-08-07 — Phase A, closeout-doc CI failure (run 31196365800)
+  - Files: `tests/mcp/revision-pin.test.ts`, checklist và implementation notes
+  - Summary: Exact SHA `23101b32704eaf7949fc2f011b2469a156d10de1` xanh Linux/macOS nhưng Windows fail 1/855: case stdio revision pin chạm timeout 30s; 850 test khác pass và contract expectation không lệch.
+  - Decisions: Không retry mù, không tăng timeout, skip/disable job hay nới gate. Đã lấy failed log, so với run trước cùng code (Windows pass 3.049s) và chạy focused local 5 lần (197–293ms) để xác nhận race/lifecycle platform-specific trước khi sửa.
+  - Blockers: Phase A tiếp tục bị chặn. Đang review lifecycle child process/version-negotiation và cleanup để tạo hardening cấu trúc, sau đó phải chạy lại local gates, commit/push và CI exact HEAD đủ ba OS.
+
+2026-08-07 — Phase A, Windows stdio lifecycle hardening
+  - Files: `tests/mcp/revision-pin.test.ts`, checklist và implementation notes
+  - Summary: Thay ba child process gián tiếp bằng một raw real-stdio child: cùng pinned server reject legacy `initialize` với `-32022`, rồi accept modern `server/discover` và `tools/call`; process close thật được await trong `finally`.
+  - Decisions: Giữ nguyên một test và timeout 30s; không retry/skip. Drain stderr chủ động, dùng Node hiện hành + loader `tsx@4.23.1` đã là direct dependency của `packages/cli`, không thêm dependency/lockfile. High-level SDK v1/v2 real-stdio vẫn được khóa ở contract matrix và transport suites.
+  - Blockers: Focused file 7/7, typecheck, scoped ESLint và `git diff --check` xanh; real-child case chạy lặp 10/10 trong 197–311ms. Chưa đóng Phase A cho tới khi full local matrix và exact-HEAD CI ba OS xanh.
+
+2026-08-07 — Phase A, stdio hardening full local verification
+  - Files: `tests/mcp/revision-pin.test.ts`, checklist và implementation notes
+  - Summary: Sau hardening, full `rtk bun run test` xanh 852 pass / 3 skip trong 56,36s; Phase A matrix xanh packaging 10/10, catalogue 2/2, MCP 71/71, golden 26/26, cùng typecheck và import boundaries.
+  - Decisions: Chạy exact `rtk bun run lint` trong clean-checkout-equivalent bằng cách tạm isolate đúng 13 artifact/virtualenv Git-ignored rồi khôi phục đủ; kết quả 0 error/2 warning. Không đổi ESLint, boundary gate, dependency/lockfile, timeout hay retry.
+  - Blockers: Local không còn blocker. `tools/list` giữ nguyên byte với SHA legacy `283b32a91410b83bd4c6134ee68cbe9ee34995f9ac9364ae9afa0db4120c35bd`, modern `011b16d1b465bff21d2fcc82e1d9771a581d96b9660bc0052b8d2171d456b44c`; Phase A vẫn chờ commit/push và CI exact HEAD xanh đủ ba OS.
 
 Format:
 ```

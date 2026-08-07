@@ -1,9 +1,14 @@
-import { fileURLToPath } from "node:url";
+import { createRequire } from "node:module";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
-import { Client as ModernClient, StreamableHTTPClientTransport } from "@modelcontextprotocol/client";
+import {
+  CLIENT_CAPABILITIES_META_KEY,
+  CLIENT_INFO_META_KEY,
+  Client as ModernClient,
+  PROTOCOL_VERSION_META_KEY,
+  StreamableHTTPClientTransport,
+} from "@modelcontextprotocol/client";
 import { StdioClientTransport as ModernStdio } from "@modelcontextprotocol/client/stdio";
-import { Client as LegacyClient } from "@modelcontextprotocol/sdk/client/index.js";
-import { StdioClientTransport as LegacyStdio } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { describe, expect, it } from "vitest";
 
 import { SUPPORTED_REVISIONS } from "@vidcom/contracts";
@@ -11,6 +16,9 @@ import { createMcpHttpHandlers, type McpFetchHandler } from "@vidcom/mcp";
 import { createTransportRegistry } from "./support";
 
 const stdioFixture = fileURLToPath(new URL("./fixtures/stdio-server.ts", import.meta.url));
+const tsxLoader = pathToFileURL(
+  createRequire(new URL("../../packages/cli/package.json", import.meta.url)).resolve("tsx"),
+).href;
 
 function parseResponse(body: string): unknown {
   const data = body.split("\n").find((line) => line.startsWith("data: "));
@@ -221,35 +229,102 @@ describe("revision-pinned MCP HTTP", () => {
   });
 
   it("pins stdio through the server factory allowlist", async () => {
-    const modernTransport = new ModernStdio({
-      command: "bun",
-      args: ["run", stdioFixture, "2026-07-28"],
+    const transport = new ModernStdio({
+      command: process.execPath,
+      args: ["--import", tsxLoader, stdioFixture, "2026-07-28"],
       cwd: process.cwd(),
       stderr: "pipe",
     });
-    const modern = new ModernClient(
-      { name: "modern-pin-test", version: "1.0.0" },
-      { versionNegotiation: { mode: { pin: "2026-07-28" } } },
-    );
-    await modern.connect(modernTransport);
-    expect(modern.getProtocolEra()).toBe("modern");
-    expect((await modern.callTool({
-      name: "echo_project",
-      arguments: { projectId: "canonical-project" },
-    })).structuredContent).toEqual({ projectId: "canonical-project" });
-    await modern.close();
-    expect(modernTransport.pid).toBeNull();
+    transport.stderr?.on("data", () => undefined);
+    type StdioMessage = Parameters<NonNullable<ModernStdio["onmessage"]>>[0];
+    type Pending = { resolve(message: StdioMessage): void; reject(error: unknown): void };
+    const pending = new Map<string | number, Pending>();
+    const rejectPending = (error: unknown) => {
+      for (const request of pending.values()) request.reject(error);
+      pending.clear();
+    };
+    let resolveClosed!: () => void;
+    const closed = new Promise<void>((resolve) => { resolveClosed = resolve; });
+    transport.onmessage = (message) => {
+      const id = "id" in message ? message.id : undefined;
+      if (typeof id !== "string" && typeof id !== "number") return;
+      const request = pending.get(id);
+      if (!request) return;
+      pending.delete(id);
+      request.resolve(message);
+    };
+    transport.onerror = rejectPending;
+    transport.onclose = () => {
+      rejectPending(new Error("pinned stdio transport closed before replying"));
+      resolveClosed();
+    };
+    const exchange = async (
+      message: Parameters<ModernStdio["send"]>[0] & { id: string | number },
+    ): Promise<StdioMessage> => {
+      const response = new Promise<StdioMessage>((resolve, reject) => {
+        pending.set(message.id, { resolve, reject });
+      });
+      try {
+        await transport.send(message);
+      } catch (error) {
+        pending.delete(message.id);
+        throw error;
+      }
+      return response;
+    };
+    const meta = {
+      [PROTOCOL_VERSION_META_KEY]: "2026-07-28",
+      [CLIENT_INFO_META_KEY]: { name: "revision-pin-test", version: "1.0.0" },
+      [CLIENT_CAPABILITIES_META_KEY]: {},
+    };
+    let started = false;
 
-    const legacyTransport = new LegacyStdio({
-      command: "bun",
-      args: ["run", stdioFixture, "2026-07-28"],
-      cwd: process.cwd(),
-      stderr: "pipe",
-    });
-    const legacy = new LegacyClient({ name: "legacy-mismatch-test", version: "1.0.0" });
-    await expect(legacy.connect(legacyTransport)).rejects.toMatchObject({ code: -32022 });
-    await legacy.close();
-    expect(legacyTransport.pid).toBeNull();
+    try {
+      await transport.start();
+      started = true;
+      await expect(exchange({
+        jsonrpc: "2.0",
+        id: 1,
+        method: "initialize",
+        params: {
+          protocolVersion: "2025-11-25",
+          capabilities: {},
+          clientInfo: { name: "legacy-mismatch-test", version: "1.0.0" },
+        },
+      })).resolves.toMatchObject({
+        id: 1,
+        error: {
+          code: -32022,
+          data: { requested: "2025-11-25", supported: ["2026-07-28"] },
+        },
+      });
+      await expect(exchange({
+        jsonrpc: "2.0",
+        id: 2,
+        method: "server/discover",
+        params: { _meta: meta },
+      })).resolves.toMatchObject({
+        id: 2,
+        result: { supportedVersions: ["2026-07-28"] },
+      });
+      await expect(exchange({
+        jsonrpc: "2.0",
+        id: 3,
+        method: "tools/call",
+        params: {
+          name: "echo_project",
+          arguments: { projectId: "canonical-project" },
+          _meta: meta,
+        },
+      })).resolves.toMatchObject({
+        id: 3,
+        result: { structuredContent: { projectId: "canonical-project" } },
+      });
+    } finally {
+      await transport.close();
+      if (started) await closed;
+    }
+    expect(transport.pid).toBeNull();
   });
 
   it("returns one canonical result through entry, exact modern and latest", async () => {
