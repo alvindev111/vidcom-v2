@@ -16,6 +16,8 @@ import { enqueueRenderJob, enqueueSnapshotJob } from "@vidcom/worker";
 
 import { createJobTypes, createMcpRegistry, createSystemClock, hashContent } from "./composition-root";
 import { startVidcomFoundation } from "./startup";
+import { BrowseTokenStore } from "@vidcom/core";
+import { ErrorCode } from "@vidcom/contracts";
 import { selectWorkspace } from "./workspace-selection";
 
 interface NextHostedRuntime {
@@ -36,6 +38,18 @@ interface RuntimeGlobal {
  * redirect one run without editing a file, and so an existing install keeps its
  * database when a settings file appears.
  */
+/**
+ * One browse token store per daemon process.
+ *
+ * The store must be shared: `/v1/system/*` mints the token and
+ * `PUT /v1/workspace/active` spends it, and two stores would mean a token
+ * minted by the browse could never be redeemed by the activation.
+ */
+export const hostBrowseTokens = new BrowseTokenStore();
+
+/** The single UI session this host serves; the bridge has its own sessions. */
+export const HOST_BROWSE_SESSION = "host";
+
 export function defaultAppDataRoot(settings?: ResolvedVidcomSettings): string {
   if (process.env.VIDCOM_APP_DATA) return path.resolve(process.env.VIDCOM_APP_DATA);
   if (settings?.appDataRoot) return path.resolve(settings.appDataRoot);
@@ -188,8 +202,18 @@ async function startNextHostedRuntime(port: number, explicitWorkspace?: string):
       deliveryLoop: {
         workspaceRoot,
         workspaceOverview,
+        // `requested` is a browse selection token, not a path. Resolving it is
+        // the only way an absolute path enters here, and the token was minted
+        // for this session against a directory the user walked to.
         activateWorkspace: async (requested) => {
-          const selected = await selectWorkspace({ explicit: requested, appDataRoot });
+          const held = hostBrowseTokens.peek(requested, HOST_BROWSE_SESSION);
+          if (!held) {
+            return { ok: false as const, error: {
+              code: ErrorCode.BrowseTokenInvalid,
+              message: "workspace selection token is not valid",
+            } };
+          }
+          const selected = await selectWorkspace({ explicit: held.canonicalPath, appDataRoot });
           foundation.infrastructure.entries.clear();
           await foundation.infrastructure.events.append({
             type: "workspace.changed",

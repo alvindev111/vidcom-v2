@@ -54,7 +54,8 @@ type BoundaryError = { code: ErrorCode; message: string; field?: string; details
 export interface DeliveryLoopRouteDependencies {
   workspaceRoot: AbsolutePath;
   workspaceOverview(): Promise<unknown>;
-  activateWorkspace(path: string): Promise<Result<{ workspaceRoot: AbsolutePath; reauthRequired: true }, DomainError>>;
+  /** Takes a browse selection token; no route accepts an absolute path from a client. */
+  activateWorkspace(selectionToken: string): Promise<Result<{ workspaceRoot: AbsolutePath; reauthRequired: true }, DomainError>>;
   lifecycle: ProjectLifecycle;
   diagnostics: DiagnosticsService;
   agentKit: AgentKitInstaller;
@@ -142,7 +143,7 @@ export function createDeliveryLoopRoutes(dependencies: DeliveryLoopRouteDependen
   routes.get("/v1/workspace", async (c) => c.json(await dependencies.workspaceOverview()));
   routes.put("/v1/workspace/active", async (c) => {
     const input = parse(ActivateWorkspaceRequestSchema, await json(c), "workspace activation payload is invalid");
-    return c.json(valueOf(await dependencies.activateWorkspace(input.path)));
+    return c.json(valueOf(await dependencies.activateWorkspace(input.selectionToken)));
   });
   routes.post("/v1/projects", async (c) => {
     const input = parse(CreateProjectRequestSchema, await json(c), "project create payload is invalid");

@@ -3,7 +3,12 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 
 import { initializeDatabase } from "@vidcom/adapter";
-import { getNextHostedRuntime, handleNextHostedRequest } from "@vidcom/cli";
+import {
+  getNextHostedRuntime,
+  handleNextHostedRequest,
+  hostBrowseTokens,
+  HOST_BROWSE_SESSION,
+} from "@vidcom/cli";
 import { ErrorCode, type ProjectId, type RelPath } from "@vidcom/contracts";
 import {
   canonicalizeJobInput,
@@ -123,6 +128,24 @@ async function fixture() {
   };
 }
 
+/**
+ * Mints a selection token the way a browse would.
+ *
+ * The route no longer accepts a path, so the harness has to produce a real
+ * token — which is why F.3 had to land before F.5. The stub activation ignores
+ * the value, but the request body has to be shaped like the real one or the
+ * strict schema rejects it.
+ */
+function mintSelection(canonicalPath: string): string {
+  // Minted into the store the host actually reads. A second store would produce
+  // a token the route could never redeem, which is the mistake this replaces.
+  return hostBrowseTokens.mint({
+    sessionId: HOST_BROWSE_SESSION,
+    canonicalPath,
+    identity: { device: "1", inode: canonicalPath },
+  }).token;
+}
+
 describe("project delivery HTTP routes on real SQLite and filesystem", () => {
   it("maps Phase-O errors through the real middleware and route pipeline", async () => {
     const value = await fixture();
@@ -140,7 +163,7 @@ describe("project delivery HTTP routes on real SQLite and filesystem", () => {
         value.setActivationError(code);
         const response = await value.request("/api/v1/workspace/active", {
           method: "PUT", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ path: value.workspaceRoot }),
+          body: JSON.stringify({ selectionToken: mintSelection(value.workspaceRoot) }),
         });
         expect(response.status, code).toBe(status);
         expect(await response.json()).toMatchObject({ error: { code } });
@@ -253,7 +276,7 @@ describe("project delivery HTTP routes on real SQLite and filesystem", () => {
         id: "project_replacement", schemaVersion: 1,
       });
       expect((await value.request("/api/v1/workspace/active", {
-        method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ path: value.workspaceRoot }),
+        method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ selectionToken: mintSelection(value.workspaceRoot) }),
       })).status).toBe(200);
     } finally {
       await value.infrastructure.database.destroy();
@@ -585,7 +608,7 @@ describe("project delivery HTTP routes on real SQLite and filesystem", () => {
       const activated = await handleNextHostedRequest(new Request(`http://${host}/api/v1/workspace/active`, {
         method: "PUT",
         headers: { Host: host, Cookie: cookie, "Content-Type": "application/json" },
-        body: JSON.stringify({ path: secondWorkspace }),
+        body: JSON.stringify({ selectionToken: mintSelection(secondWorkspace) }),
       }));
       expect(activated.status).toBe(200);
       expect(await activated.json()).toEqual({

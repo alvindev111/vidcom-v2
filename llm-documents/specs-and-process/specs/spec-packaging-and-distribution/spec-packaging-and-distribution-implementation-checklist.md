@@ -594,16 +594,18 @@ Mỗi phase chạy focused command dưới đây trên SQLite/filesystem thật,
   - `GET filesystem/roots`, `POST filesystem/entries` (POST để absolute path không nằm trong URL log), `POST directories`, `GET workspace`, `GET runtime`
   - Windows liệt kê **gốc ổ đĩa**; POSIX đi lên tới `/`
   - _Requirements: R1.1, R1.6, R1.9_ — _Design: §7.1–§7.4, §7.7b_
-- [ ] F.5 `PUT /v1/workspace/active` **chỉ nhận `selectionToken`**
+- [x] F.5 `PUT /v1/workspace/active` **chỉ nhận `selectionToken`**
   - Bỏ nhánh `{path}`: không đường ghi nào được nhận absolute path từ client ([steering/06](../../../steering/06-validation.md) §5). CLI truyền workspace bằng tham số tiến trình, không qua endpoint này
   - Lỗi `workspace_lease_held` kèm `details.holder = {pid, startedAt}`
   - _Requirements: R1.5_ — _Design: §7.5, §7.13_
-- [ ] F.5b Bốn điểm phải sửa cùng lúc với F.5 — **breaking change, đã rà sẵn caller**
+- [x] F.5b Bốn điểm phải sửa cùng lúc với F.5 — **breaking change, đã rà sẵn caller**
   - [`packages/server/src/routes/delivery-loop.ts`](../../../../packages/server/src/routes/delivery-loop.ts) (route `put("/v1/workspace/active")`, hiện `parse(ActivateWorkspaceRequestSchema, …)` rồi gọi `dependencies.activateWorkspace(input.path)`) — đổi cả **chữ ký dependency**, không chỉ schema
   - `ActivateWorkspaceRequestSchema` trong `contracts` — đổi **cùng F.5/F.5b sau khi F.3 đã có token store**; A.2 chỉ sở hữu DTO §7.1–§7.4 nên không được kéo breaking change này về Phase A
   - [`tests/server/delivery-loop-routes.test.ts`](../../../../tests/server/delivery-loop-routes.test.ts) — **ba** chỗ đang gửi `body: JSON.stringify({ path: … })` (khoảng dòng 141, 255, 585). Cả ba SHALL đổi sang `selectionToken`, nghĩa là harness test cần mint được token qua `BrowseTokenStore` (F.3) ⇒ **F.3 phải xong trước F.5**
   - Bất kỳ chỗ nào trong `src/**` gọi service `v1.workspace.activate` (G.1) — catalog phải khai `selectionToken`, không phải `path`
   - Ghi vào release notes: một client cũ gửi `{path}` giờ nhận `schema_invalid`, **không** phải im lặng bỏ qua field lạ ([steering/07](../../../steering/07-data-and-storage.md) §0 schema strict)
+  - Cả bốn điểm đã sửa **trong cùng một commit**: schema `contracts`, route + **chữ ký dependency** ở `delivery-loop.ts`, hiện thực ở `next-host.ts`, và ba chỗ trong `delivery-loop-routes.test.ts`
+  - **Một store, không phải hai**: `hostBrowseTokens` được export từ `next-host.ts` vì `/v1/system/*` mint token còn `PUT /v1/workspace/active` tiêu nó. Bản đầu của harness test dựng `BrowseTokenStore` **riêng** và route trả `400` — token mint ở store này không bao giờ đổi được ở store kia. Đó chính là lỗi mà việc export store ngăn lại
   - _Requirements: R1.5_ — _Design: §7.5_
 - [x] F.6 MUST NOT expose qua MCP
   - Test chứng minh Tool Registry không chứa bất kỳ tool nào của `/v1/system/*`

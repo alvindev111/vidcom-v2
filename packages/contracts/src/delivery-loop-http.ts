@@ -13,7 +13,18 @@ export const NarrationCueParamsSchema = SceneParamsSchema.extend({ cueId: Identi
 /** Strict path parameters for recovery-entry operations. */
 export const RecoveryEntryParamsSchema = z.strictObject({ entryId: IdentifierSchema });
 
-export const ActivateWorkspaceRequestSchema = z.strictObject({ path: z.string().min(1).max(4096) });
+/**
+ * Activation takes a browse selection token, never a path.
+ *
+ * An absolute path from a client is a path the client chose. The token names a
+ * directory the user actually walked to through an authenticated browse, and it
+ * is bound to that session, that canonical path and that directory's identity.
+ * Strict object, so an old client sending `{ path }` gets `schema_invalid`
+ * rather than having the field ignored.
+ */
+export const ActivateWorkspaceRequestSchema = z.strictObject({
+  selectionToken: z.string().min(1).max(256),
+});
 export const CreateProjectRequestSchema = z.strictObject({
   name: z.string().min(1).max(255),
   presetId: z.enum(["vertical-shorts", "horizontal-youtube", "custom"]),
