@@ -408,10 +408,12 @@ Mỗi phase chạy focused command dưới đây trên SQLite/filesystem thật,
   - `assertComplete` từ chối cả đường **tương đối**, không chỉ đường thiếu — một `motionLibraryRoot` tương đối sẽ resolve theo `cwd` của process và hỏng khác nhau tuỳ nơi gọi
   - Test chứng minh artifact không chạm `require.resolve` bằng cách truyền một resolver **ném lỗi** và chốt là không ném
   - _Requirements: R5.7, R6.3_ — _Design: §5.16_
-- [ ] D.3b Truyền `RuntimePaths` từ **mọi** entrypoint
+- [~] D.3b Truyền `RuntimePaths` từ **mọi** entrypoint — **một phần**
   - `app`, `serve`, `mcp`, `render`, `doctor` — mỗi cái một dòng, và đây là chỗ dễ làm sót đúng một cái rồi chỉ hỏng ở mode ít dùng nhất
   - `motionLibraryRoot` hôm nay **không entrypoint nào truyền** (bẫy 4.8): nó là lý do task này tách riêng khỏi D.3a. Resolver đúng mà không ai truyền thì `install_motion_library` vẫn hỏng y như cũ
   - Test: liệt kê entrypoint từ mode union của J.1 và chứng minh **không entrypoint nào** dựng `RuntimePaths` rỗng hay thiếu field
+  - **Đã làm**: `CompositionRootConfig.runtimePaths` nhận cả bộ đã resolve và **thắng** các field lẻ. Lý do phải thắng: mỗi field lẻ tự có default hợp lý — đúng chỗ nguy hiểm, vì bản đóng gói quên một cái sẽ nhận đường dẫn trông hợp lệ trỏ vào hư vô thay vì một lỗi. `NodeRenderBinaryProbe` nay nhận thẳng `hyperframesCliPath`/`hyperframesPackagePath`, nên fallback `require.resolve` của nó không còn nằm trên đường artifact. Thêm `caBundlePath` vào config cho nửa Node của D.7
+  - **Chưa làm, và vì sao**: `serve` (Phase E), `render` (J.3) và `doctor` (J) **chưa tồn tại**, và "mode union của J.1" cũng vậy — không thể liệt kê entrypoint từ một union chưa có. Hoàn tất cùng J.1; đến lúc đó test phải đếm đủ **năm** entrypoint chứ không phải hai
   - _Requirements: R5.8, R6.3_ — _Design: §5.16, §4.8_
 - [x] D.4 `CompilerGuard`
   - Đặt **cả hai** `ESBUILD_BINARY_PATH` và `ESBUILD_WORKER_THREADS=0`; timeout bắt buộc cho mọi lời gọi in-process chạm compiler. Thiếu **bất kỳ** cái nào ⇒ **treo vĩnh viễn, không một dòng stderr**

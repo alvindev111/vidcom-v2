@@ -37,6 +37,7 @@ import {
   hyperframesRuntimeSource,
   mimeFromPath,
   openVidcomDatabase,
+  type RuntimePaths,
 } from "@vidcom/adapter";
 import { DEFAULT_VIDCOM_SETTINGS, type ContentHash, type ProjectId, type ResolvedVidcomSettings } from "@vidcom/contracts";
 import {
@@ -94,6 +95,24 @@ export const DEFAULT_MCP_RUNTIME_CONFIG: McpRuntimeConfig = {
 export interface CompositionRootConfig {
   appDataRoot: string;
   workspaceRoot: AbsolutePath;
+  /**
+   * Every runtime location, already resolved by `resolveRuntimePaths`.
+   *
+   * Supplying this is how a packaged artifact stops relying on the individual
+   * optional fields below. Those fields each default to something reasonable on
+   * their own, which is exactly the problem: a packaged build that forgets one
+   * gets a plausible path pointing at nothing rather than an error. When this is
+   * present it decides, and the resolver has already proven all five are
+   * absolute and complete.
+   */
+  runtimePaths?: RuntimePaths;
+  /**
+   * Certificate bundle for child processes, from the extracted runtime.
+   *
+   * Reaches Node children as `NODE_EXTRA_CA_CERTS`; the sidecar receives its own
+   * pair through the TTS provider.
+   */
+  caBundlePath?: AbsolutePath;
   /** Phase 4 extraction root for native sidecars; never inferred from the source checkout. */
   nativeDependenciesRoot?: AbsolutePath;
   /** Explicit render-sidecar paths; packaging may override the native-root convention. */
@@ -128,7 +147,9 @@ function renderBinaryPaths(config: CompositionRootConfig): {
   ffprobePath: AbsolutePath;
 } {
   if (config.renderBinaryPaths) return config.renderBinaryPaths;
-  const nativeRoot = config.nativeDependenciesRoot ?? join(config.appDataRoot, "native") as AbsolutePath;
+  const nativeRoot = (config.runtimePaths?.nativeDependenciesRoot
+    ?? config.nativeDependenciesRoot
+    ?? join(config.appDataRoot, "native")) as AbsolutePath;
   const executableSuffix = process.platform === "win32" ? ".exe" : "";
   return {
     ffmpegPath: (process.env.HYPERFRAMES_FFMPEG_PATH?.trim()
@@ -202,7 +223,16 @@ export function createInfrastructure(config: CompositionRootConfig) {
   const renderProjects = new FsRenderProjectAdapter();
   const renderProcess = new NodeProcessSupervisor();
   const renderGuard = new LoopbackRuntimeAssetGuard();
-  const renderBinaries = new NodeRenderBinaryProbe(binaries);
+  // The probe falls back to require.resolve when a path is absent, which cannot
+  // work inside a packaged binary. Handing it the resolved paths is what keeps
+  // that fallback off the artifact path.
+  const renderBinaries = new NodeRenderBinaryProbe({
+    ...binaries,
+    ...config.runtimePaths ? {
+      hyperframesCliPath: config.runtimePaths.hyperframesCliPath as AbsolutePath,
+      hyperframesPackagePath: config.runtimePaths.hyperframesPackagePath as AbsolutePath,
+    } : {},
+  });
   const events = new SqliteEventOutbox(database, clock);
   const cache = new ProjectCache();
   const writtenHashes = new WrittenHashTracker();
@@ -242,7 +272,10 @@ export function createInfrastructure(config: CompositionRootConfig) {
       new ElevenLabsTtsProvider({ apiKey: elevenLabsApiKey(settings) }),
       new VieNeuTtsProvider({
         processes,
-        command: () => vieneuCommand(settings, config.nativeDependenciesRoot),
+        command: () => vieneuCommand(
+          settings,
+          config.runtimePaths?.nativeDependenciesRoot ?? config.nativeDependenciesRoot,
+        ),
         modelCacheRoot: join(config.appDataRoot, "models"),
         modelRevision: settings.tts.vieneu.modelRevision,
       }),
@@ -311,7 +344,9 @@ export function createInfrastructure(config: CompositionRootConfig) {
     resolveProjectRef,
     runtimeSource: hyperframesRuntimeSource,
     mimeFromPath,
-    motionLibraries: new NodeModulesMotionLibraryFiles(config.motionLibraryRoot),
+    motionLibraries: new NodeModulesMotionLibraryFiles(
+      (config.runtimePaths?.motionLibraryRoot ?? config.motionLibraryRoot) as AbsolutePath | undefined,
+    ),
   };
 }
 
