@@ -19,10 +19,13 @@ export const PROCESS_VERIFY_MAX_SWEEPS = 20;
 export const PROCESS_COMMAND_TIMEOUT_MS = 2_000;
 export const PROCESS_VERIFY_TIMEOUT_MS = 5_000;
 /**
- * The identity probe spawns PowerShell, which is far slower to answer than the
- * fast termination probes the 2s budget was sized for. A probe that merely runs
- * out of budget reports itself inconclusive, and an inconclusive self-probe
- * stops a directory lock from ever being published.
+ * Headroom for the identity probe, which spawns PowerShell and is answered in
+ * roughly 350ms once its environment is right.
+ *
+ * The budget is not what made this probe fail — a bad `PSModulePath` did — but
+ * it stays separate from the 2s termination budget: an inconclusive self-probe
+ * stops a directory lock from ever being published, so this one is worth
+ * waiting on rather than abandoning early.
  */
 export const PROCESS_IDENTITY_PROBE_TIMEOUT_MS = 15_000;
 
@@ -515,19 +518,26 @@ const WINDOWS_PROBE_PASSTHROUGH = [
   "ProgramData",
 ] as const;
 
-function windowsProbeEnvironment(windowsRoot: string, powershell: string): NodeJS.ProcessEnv {
+/**
+ * Builds the environment the Windows identity probe runs under.
+ *
+ * `PSModulePath` is deliberately empty. Pointing it at the single stock module
+ * directory made every process-inspecting cmdlet hang until it was killed —
+ * measured on CI at over 20s for `Get-Process` and `Get-CimInstance` alike,
+ * while the same shell answered `'ok'` in 244ms. Empty answers in ~320ms
+ * because module discovery never runs, and the cmdlets this probe needs are
+ * already in the default session. Empty is also the stricter setting: no
+ * directory on the module path can introduce code into the probe. Deleting the
+ * variable is NOT equivalent — PowerShell then computes its own default and
+ * hangs again.
+ */
+export function windowsProbeEnvironment(windowsRoot: string, powershell: string): NodeJS.ProcessEnv {
   const environment: NodeJS.ProcessEnv = {
     NODE_ENV: process.env.NODE_ENV,
     SystemRoot: windowsRoot,
     WINDIR: windowsRoot,
     PATH: `${path.win32.dirname(powershell)};${path.win32.join(windowsRoot, "System32")}`,
-    PSModulePath: path.win32.join(
-      windowsRoot,
-      "System32",
-      "WindowsPowerShell",
-      "v1.0",
-      "Modules",
-    ),
+    PSModulePath: "",
   };
   for (const name of WINDOWS_PROBE_PASSTHROUGH) {
     const value = process.env[name];

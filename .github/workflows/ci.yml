@@ -117,15 +117,6 @@ jobs:
       - name: Verify import boundaries reject an invalid dependency
         run: npm run test:boundaries
 
-      # Temporary measurement: the Windows identity probe hangs here and three
-      # targeted fixes all missed, so this times each variable on the runner
-      # itself. Diagnostics only, so it must never decide the job. Remove with
-      # the fix it is measuring.
-      - name: Measure the Windows process identity probe
-        if: runner.os == 'Windows'
-        continue-on-error: true
-        run: node scripts/diagnose-windows-probe.mjs
-
       # The flag turns a missing FFmpeg into a failure instead of a skip, so this
       # job cannot report green while the narration audio pipeline goes unrun.
       - name: Test

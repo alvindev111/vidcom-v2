@@ -21,6 +21,7 @@ import {
   RuntimeAssetManager,
   probeCurrentProcessIdentity,
   probeProcessIdentity,
+  windowsProbeEnvironment,
   type EmbeddedRuntimeManifest,
   type RuntimeAssetManagerHooks,
   type RuntimeAssetManagerPhase,
@@ -293,6 +294,31 @@ describe.skipIf(!HOST_SUPPORTED)("runtime app-data confinement", () => {
     expect(after).toEqual(before);
     expect(after[0]).toEqual([]);
     expect(after[1]).toEqual(["vidcom"]);
+  });
+});
+
+describe("windows identity probe environment", () => {
+  // Measured on CI: a PSModulePath naming the stock module directory made
+  // Get-Process and Get-CimInstance hang past 20s, while an empty one answered
+  // in ~320ms. Deleting the variable is not equivalent — PowerShell computes
+  // its own default and hangs again. Only Windows CI can catch a regression
+  // here, so the invariant is pinned on every platform instead.
+  it("disables module discovery rather than naming a module directory", () => {
+    const environment = windowsProbeEnvironment(
+      "C:\\Windows",
+      "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe",
+    );
+    expect(environment.PSModulePath).toBe("");
+    expect(Object.hasOwn(environment, "PSModulePath")).toBe(true);
+  });
+
+  it("forwards the variables PowerShell needs to start", () => {
+    const environment = windowsProbeEnvironment(
+      "C:\\Windows",
+      "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe",
+    );
+    expect(environment.SystemRoot).toBe("C:\\Windows");
+    expect(environment.PATH).toContain("System32");
   });
 });
 
