@@ -517,9 +517,13 @@ Mỗi phase chạy focused command dưới đây trên SQLite/filesystem thật,
   - Switch thứ hai đến giữa chừng bị **từ chối** chứ không xếp hàng: xếp hàng nghĩa là quyết định dựa trên một trạng thái sắp thay đổi
   - Hai cách viết của cùng một thư mục ⇒ **không** phải switch: không build, không stop, `swapped: false`
   - _Requirements: R1.12, R1.18_ — _Design: §4.3_
-- [ ] E.5 Lease loss ba lối
+- [x] E.5 Lease loss ba lối
   - Renew fail ⇒ từ chối ghi **ngay** + xoá discovery record **ngay** → re-acquire tối đa 2 lượt trong TTL 30 s → thành công thì `Active` với **`instanceId` cũ**; thất bại thì `NoWorkspace` (có UI attach) hoặc đóng listener + exit ≠ 0 (headless)
   - Phát `workspace.lease_lost` **trước** khi đổi trạng thái
+  - [`lease-loss.ts`](../../../../packages/cli/src/lease-loss.ts). **Thứ tự ba bước đầu không thương lượng**: từ chối ghi và gỡ discovery record **trước mọi** lần thử lấy lại — tiến trình đã cướp lease đang là writer rồi, nên mỗi khoảnh khắc tiến trình này còn nhận ghi hoặc còn quảng bá mình là một cửa sổ hai writer. Test chốt `reacquire` luôn đứng **sau** `removeDiscoveryRecord`
+  - Giữ **nguyên `instanceId`** khi lấy lại được: cấp id mới sẽ khiến một cú chớp đã hồi phục trông như restart với client nối lại
+  - Dừng theo **cả hai** giới hạn: hết 2 lượt, hoặc hết cửa sổ TTL 30 s — lease lấy lại sau TTL thì đã thuộc về người khác, thử tiếp là đua với một writer đang sống
+  - Hai đường hỏng khác nhau vì hai kiểu triển khai hỏng khác nhau: có UI attach thì giữ cổng mở để người dùng chọn workspace khác; headless thì không có ai để báo, và một daemon còn lắng nghe mà không có workspace là tiến trình mà supervisor tin là khoẻ
   - _Requirements: R2.14_ — _Design: §4.3, DR-14_
 - [x] E.6 Giữ nguyên perimeter
   - Loopback-only, kiểm `Host`, giới hạn origin — R1 MUST NOT nới bất kỳ luật nào

@@ -4,6 +4,7 @@ export * from "./node-sentinel";
 export * from "./foundation-state";
 export * from "./foundation-lifecycle";
 export * from "./workspace-activation";
+export * from "./lease-loss";
 export * from "./bootstrap-app";
 export * from "./loopback-host";
 export * from "./composition-root";
