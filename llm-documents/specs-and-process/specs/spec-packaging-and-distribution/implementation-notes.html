@@ -244,6 +244,105 @@
           <div><dt class="font-semibold text-slate-200">Integrity/gate</dt><dd class="mt-1 text-slate-300"><code>tools/list</code> nguyên byte: legacy <code>283b32…c35bd</code>, modern <code>011b16…b44c</code>. Phase B vẫn đóng cho tới commit/push và CI exact HEAD xanh đủ ba OS.</dd></div>
         </dl>
       </section>
+      <section class="mt-6 rounded-2xl border border-emerald-500/30 bg-slate-900 p-6">
+        <div class="flex flex-wrap items-center justify-between gap-3">
+          <h2 class="text-2xl font-semibold">2026-08-08 · Phase A — Stdio hardening CI verification</h2>
+          <span class="rounded-full bg-emerald-400/10 px-3 py-1 text-sm text-emerald-300">Run 31199182402 xanh · 3/3 OS</span>
+        </div>
+        <dl class="mt-6 grid gap-5 md:grid-cols-2">
+          <div><dt class="font-semibold text-slate-200">Exact HEAD</dt><dd class="mt-1 text-slate-300">Workflow <code>CI</code> bắt đúng <code>d754b2bdc1f83d50b6864dc39a1e8717f86209db</code> và kết thúc <code>success</code>.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Ba runner</dt><dd class="mt-1 text-slate-300">macOS arm64 4m06s; Linux x64 6m13s; Windows x64 16m08s. Windows full Test từng flake đã xanh sau 9m58s.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Toàn bộ gate</dt><dd class="mt-1 text-slate-300">Mỗi runner đều qua typecheck, lint, boundaries, full Test, MCP/golden/schema/matrix, production build và real Next/SSE smoke.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Kết luận</dt><dd class="mt-1 text-slate-300"><code>GH_TOKEN=$GH_KEY gh run watch 31199182402 --exit-status</code> trả 0. Phase A hoàn tất; Phase B chỉ bắt đầu sau activation và đọc nguồn bắt buộc.</dd></div>
+        </dl>
+      </section>
+      <section class="mt-6 rounded-2xl border border-cyan-500/30 bg-slate-900 p-6">
+        <div class="flex flex-wrap items-center justify-between gap-3">
+          <h2 class="text-2xl font-semibold">2026-08-08 · B.1 — Direct tar dependency</h2>
+          <span class="rounded-full bg-cyan-400/10 px-3 py-1 text-sm text-cyan-300">tar 7.5.22 exact · dependency duy nhất</span>
+        </div>
+        <dl class="mt-6 grid gap-5 md:grid-cols-2">
+          <div><dt class="font-semibold text-slate-200">Ownership</dt><dd class="mt-1 text-slate-300"><code>@vidcom/adapter</code> sở hữu <code>adapter/runtime</code>, nên khai trực tiếp <code>tar: "7.5.22"</code> tại package sẽ import extractor.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Lockfile</dt><dd class="mt-1 text-slate-300">Chỉ thêm workspace edge tới đúng <code>tar@7.5.22</code> đã có; không kéo bản thứ hai.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Không mở scope</dt><dd class="mt-1 text-slate-300"><code>hono@4.12.33</code> và <code>@hono/node-server@2.0.12</code> nguyên pin; không thêm dependency nào khác.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Bằng chứng</dt><dd class="mt-1 text-slate-300"><code>bun install --frozen-lockfile</code> báo no changes; diff check xanh. Bốn câu hỏi dependency dùng nguyên kết luận Design §5.0.</dd></div>
+        </dl>
+      </section>
+      <section class="mt-6 rounded-2xl border border-cyan-500/30 bg-slate-900 p-6">
+        <div class="flex flex-wrap items-center justify-between gap-3">
+          <h2 class="text-2xl font-semibold">2026-08-08 · B.2 — Embedded runtime manifest + sources</h2>
+          <span class="rounded-full bg-cyan-400/10 px-3 py-1 text-sm text-cyan-300">SEA + filesystem · strict manifest</span>
+        </div>
+        <dl class="mt-6 grid gap-5 md:grid-cols-2">
+          <div><dt class="font-semibold text-slate-200">Manifest authority</dt><dd class="mt-1 text-slate-300">Schema immutable pin Node, HyperFrames, esbuild, FFmpeg, CPython, VieNeu, 5 motion package và tập Python của ba platform.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Nguồn asset</dt><dd class="mt-1 text-slate-300"><code>SeaRuntimeAssetSource</code> gọi <code>node:sea.getRawAsset</code>; <code>FilesystemRuntimeAssetSource</code> đọc cùng layout ngoài SEA cho dev/test.</dd></div>
+          <div><dt class="font-semibold text-slate-200">An toàn từ biên</dt><dd class="mt-1 text-slate-300">Key, artifact version, target, entry path, SHA và mode đều canonical; key lạ hoặc manifest extra key bị từ chối.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Platform resolver</dt><dd class="mt-1 text-slate-300">Chọn đủ archive của host; thiếu archive trả requested + danh sách supported, không rơi vào lỗi file mơ hồ. Typecheck/lint scoped xanh.</dd></div>
+        </dl>
+      </section>
+      <section class="mt-6 rounded-2xl border border-cyan-500/30 bg-slate-900 p-6">
+        <div class="flex flex-wrap items-center justify-between gap-3">
+          <h2 class="text-2xl font-semibold">2026-08-08 · B.3 — Deterministic runtime archive builder</h2>
+          <span class="rounded-full bg-cyan-400/10 px-3 py-1 text-sm text-cyan-300">55 / 57 / 55 · pip bị cấm</span>
+        </div>
+        <dl class="mt-6 grid gap-5 md:grid-cols-2">
+          <div><dt class="font-semibold text-slate-200">Evidence-driven</dt><dd class="mt-1 text-slate-300">Builder đọc trực tiếp sáu file evidence measured; không chép lại 55 package vào code. Darwin/Linux cùng core 55, Windows thêm đúng <code>colorama</code> + <code>tzdata</code>.</dd></div>
+          <div><dt class="font-semibold text-slate-200">So sánh</dt><dd class="mt-1 text-slate-300">Tên được lowercase và đổi underscore thành hyphen; version giữ nguyên tuyệt đối. Một dòng thừa/thiếu/lệch version hoặc <code>pip</code> làm build fail.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Reproducible archive</dt><dd class="mt-1 text-slate-300">File sort ổn định, epoch mtime, portable gzip; symlink/hardlink/special source bị chặn; manifest ghi SHA, bytes, entry hash và mode.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Bằng chứng</dt><dd class="mt-1 text-slate-300">Hai build thật byte-identical, SHA <code>62c4d7…3872</code>; giữ mode 0755. Negative smoke từ chối package thừa và evidence Windows còn pip.</dd></div>
+        </dl>
+      </section>
+      <section class="mt-6 rounded-2xl border border-cyan-500/30 bg-slate-900 p-6">
+        <div class="flex flex-wrap items-center justify-between gap-3">
+          <h2 class="text-2xl font-semibold">2026-08-08 · B.4 — Safe runtime extractor</h2>
+          <span class="rounded-full bg-cyan-400/10 px-3 py-1 text-sm text-cyan-300">Preflight trước write · real filesystem</span>
+        </div>
+        <dl class="mt-6 grid gap-5 md:grid-cols-2">
+          <div><dt class="font-semibold text-slate-200">Archive boundary</dt><dd class="mt-1 text-slate-300">SHA, byte length, decompression budget và toàn bộ header được kiểm trước khi destination tồn tại; chỉ file/directory đúng manifest allowlist được nhận.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Publish an toàn</dt><dd class="mt-1 text-slate-300">Cây thật được walk lại, hash từng file, chặn hardlink/symlink/special/entry thừa rồi áp mode manifest; POSIX root/dir 0700, Windows dùng lại ACL helper hiện hữu.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Tương thích + lỗi</dt><dd class="mt-1 text-slate-300">Chờ sự kiện <code>end/error</code> của tar EventEmitter để chạy được cả Bun và Node; archive hỏng trả <code>runtime_manifest_invalid</code>, extract hoặc cleanup hỏng trả <code>runtime_extraction_incomplete</code>.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Bằng chứng thật</dt><dd class="mt-1 text-slate-300">Build→parse→extract trong temp directory giữ file 0755/root 0700; symlink, traversal và malformed tar không để lại destination. Typecheck, scoped ESLint và diff check xanh; formal matrix tiếp tục ở B.7/B.8.</dd></div>
+        </dl>
+      </section>
+      <section class="mt-6 rounded-2xl border border-amber-500/30 bg-slate-900 p-6">
+        <div class="flex flex-wrap items-center justify-between gap-3">
+          <h2 class="text-2xl font-semibold">2026-08-08 · B.2/B.3 review — Control namespace hardening</h2>
+          <span class="rounded-full bg-amber-400/10 px-3 py-1 text-sm text-amber-300">Chặn collision trước filesystem write</span>
+        </div>
+        <dl class="mt-6 grid gap-5 md:grid-cols-2">
+          <div><dt class="font-semibold text-slate-200">Phát hiện</dt><dd class="mt-1 text-slate-300">Manifest hợp lệ về cú pháp vẫn có thể dùng artifact version <code>current.json</code>, archive key <code>runtime-manifest.json</code> hoặc entry <code>.ready-*</code> để đè state do manager sở hữu.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Sửa</dt><dd class="mt-1 text-slate-300">Builder và strict parser cùng từ chối ba namespace; so case-insensitive để Windows không biến khác biệt hoa/thường thành collision.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Ranh giới</dt><dd class="mt-1 text-slate-300">Validation nằm ở input authority thay vì để B.5 dò sau khi đã tạo target, marker hay current pointer.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Bằng chứng</dt><dd class="mt-1 text-slate-300">Ba negative smoke trả đúng <code>runtime_manifest_invalid</code>; typecheck, scoped ESLint và diff check xanh.</dd></div>
+        </dl>
+      </section>
+      <section class="mt-6 rounded-2xl border border-rose-500/30 bg-slate-900 p-6">
+        <div class="flex flex-wrap items-center justify-between gap-3">
+          <h2 class="text-2xl font-semibold">2026-08-08 · B.5 — Manifest bound tách đôi + regression test</h2>
+          <span class="rounded-full bg-rose-400/10 px-3 py-1 text-sm text-rose-300">Blocker tái hiện 2 lần · 8 test</span>
+        </div>
+        <dl class="mt-6 grid gap-5 md:grid-cols-2">
+          <div><dt class="font-semibold text-slate-200">Triệu chứng</dt><dd class="mt-1 text-slate-300">Projection manifest thực tế vượt 1 MiB. Dùng chung <code>MAX_STATE_BYTES</code> cho cả marker, <code>current.json</code> lẫn manifest đã cài làm <code>readJson</code> trả <code>undefined</code> ngay sau khi manager vừa tự ghi file đó — installation xanh vẫn bị đọc thành <code>broken</code>, ném <code>runtime metadata publication did not produce a ready installation</code>.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Quyết định</dt><dd class="mt-1 text-slate-300">Bản active không đi qua trần cố định nữa: <code>exactRegularFileMatches</code> so byte-for-byte với projection kỳ vọng, nên bound thực chính là <code>Buffer.byteLength(expected)</code> — tự sinh, không thể vượt. Marker và pointer giữ 1 MiB vì schema cố định. Prune giữ trần riêng <code>MAX_INSTALLED_MANIFEST_BYTES</code> để không parse JSON persisted vô hạn.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Đảo lại nhận định về 64 MiB</dt><dd class="mt-1 text-slate-300">Đề xuất ban đầu là hạ trần prune xuống ~8 MiB cho bảo thủ. Ước lượng lại thì sai: projection chứa mọi entry của archive host (Node + CPython + FFmpeg dễ 30k–80k file, mỗi entry pretty-print ~150 byte) nên manifest thật có thể 5–12 MiB. 8 MiB sẽ cắt nhầm chính version hợp lệ. <strong>Giữ nguyên 64 MiB</strong> — khoảng 5× headroom.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Gotcha khi viết test</dt><dd class="mt-1 text-slate-300"><code>tar</code> chỉ resolve được từ <code>packages/adapter</code>, file test ở <code>tests/</code> import không ra. Tự viết ustar writer ~20 dòng + <code>gzipSync</code> thay vì thêm dependency root; entry phẳng nên không cần directory header. Fixture nhồi 48.000 python package pin để projection vượt 1 MiB, và test assert luôn <code>stat().size &gt; 1 MiB</code> để không âm thầm mất ý nghĩa nếu fixture co lại.</dd></div>
+          <div class="md:col-span-2"><dt class="font-semibold text-slate-200">Bằng chứng</dt><dd class="mt-1 text-slate-300"><code>tests/adapter/runtime-asset-manager.test.ts</code> 8/8 xanh, phủ <code>ensureAll</code> warm path, <code>inspect</code>, <code>repair</code> sau tamper payload, marker bị xoá, repair archive ngoài manifest host, crash trước marker commit, prune version cũ và version lạ. Regression được chứng minh bằng cách inject lại bound cũ vào source: thêm trần 1 MiB vào <code>exactRegularFileMatches</code> ⇒ 4/8 đỏ; bỏ <code>MAX_INSTALLED_MANIFEST_BYTES</code> khỏi <code>isOwnedVersion</code> ⇒ đúng test prune đỏ. Source đã restore nguyên trạng; <code>tsc --noEmit</code> và ESLint xanh.</dd></div>
+        </dl>
+      </section>
+      <section class="mt-6 rounded-2xl border border-emerald-500/30 bg-slate-900 p-6">
+        <div class="flex flex-wrap items-center justify-between gap-3">
+          <h2 class="text-2xl font-semibold">2026-08-08 · B.6–B.9 — Đóng Phase B bằng test trên filesystem thật</h2>
+          <span class="rounded-full bg-emerald-400/10 px-3 py-1 text-sm text-emerald-300">50 test · 2 file theo matrix</span>
+        </div>
+        <dl class="mt-6 grid gap-5 md:grid-cols-2">
+          <div><dt class="font-semibold text-slate-200">Fixture dùng chung</dt><dd class="mt-1 text-slate-300">Tách ustar writer + manifest builder ra <code>tests/support/runtime-fixture.ts</code>. Writer hỗ trợ cả typeflag <code>2/1/3</code> (symlink, hardlink, character device) nên archive độc hại dựng được ngay trong test mà không cần <code>tar</code> — package đó chỉ resolve từ <code>packages/adapter</code>.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Chỉ hai file test</dt><dd class="mt-1 text-slate-300">Phase Verification Matrix của B khai đúng <code>runtime-archive.test.ts</code> + <code>runtime-asset-manager.test.ts</code>. Mọi thứ của B.6–B.9 và cả AC builder đều nằm trong hai file đó thay vì tách file mới, để lệnh verify của phase không bỏ sót test nào.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Phát hiện: <code>afterMarker</code> khác bốn pha kia</dt><dd class="mt-1 text-slate-300">Ban đầu gộp cả năm pha vào một <code>it.each</code> và test đỏ: crash sau khi marker đã commit thì lần chạy sau <strong>reuse</strong>, chỉ publish lại <code>current.json</code>. Đó là hành vi đúng, không phải bug — tách test riêng assert <code>extracted: []</code>, <code>reused: ["node"]</code>, <code>inspect</code> trước đó là <code>broken</code> với <code>current: false</code> nhưng archive <code>ready</code>.</dd></div>
+          <div><dt class="font-semibold text-slate-200">B.9 làm hai tầng</dt><dd class="mt-1 text-slate-300">Tầng in-process: bốn manager với lock instance riêng chạy song song, đếm <code>observer.preparing</code> đúng 1. Tầng cross-process: spawn Node thật rồi tự ghi <code>owner.json</code> với PID + <code>processStartIdentity</code> lấy từ <code>probeProcessIdentity</code>, nên lock nhìn thấy chủ sở hữu <em>còn sống</em> và trả <code>bootstrap_lock_timeout</code> thay vì reclaim. Kill process xong thì lần sau reclaim đúng.</dd></div>
+          <div><dt class="font-semibold text-slate-200">AC builder chạy thật</dt><dd class="mt-1 text-slate-300"><code>loadExpectedPythonPackages</code> hard-code hình dạng 55/57 nên evidence giả không dùng được. Test lấy pin kỳ vọng từ chính loader của builder rồi mới đột biến một dòng, và gọi <code>build-runtime-archives.mjs</code> qua subprocess với evidence thật. Bốn biến thể (thiếu, thừa, lệch version, có <code>pip</code>) đều exit khác 0 và không sinh <code>runtime-manifest.json</code>.</dd></div>
+          <div><dt class="font-semibold text-slate-200">B.6 — không có đường thứ hai</dt><dd class="mt-1 text-slate-300"><code>icacls</code> chỉ tồn tại trong <code>credential-store.ts</code>; runtime gọi lại đúng <code>secureAppDataDirectorySync</code>. Test POSIX chốt thêm một ranh giới dễ hỏng: directory bị ép <code>0700</code> nhưng file phải giữ mode từ manifest (<code>0644</code>/<code>0755</code>).</dd></div>
+        </dl>
+      </section>
     </main>
   </body>
 </html>

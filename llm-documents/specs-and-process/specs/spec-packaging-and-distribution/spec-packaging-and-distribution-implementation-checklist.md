@@ -54,7 +54,7 @@ Checklist chuyển Design bản 2 thành task 1–4 giờ, giữ đúng ranh gi�
 - **Confirmed by**: alvin0
 - **Confirmation date**: 2026-08-07
 - **Notes**: Design gate §15 đã mở (alvin0, 2026-08-07) nên checklist này được phép tồn tại. Gate thứ hai này — Code Execution — **đã duyệt cùng ngày**, sau vòng review cuối vá bốn chỗ (B.3 nguồn danh sách package Python + normalize tên, A.4 `ToolSchemaEntry` dùng lại `ToolLevel` sẵn có, H.5 nêu tên route upload `uploadBgm`, và `test:mcp-catalogue` lệch giữa Matrix và Files Changed Summary), cộng N-C vào bảng Nợ tài liệu.
-- **Trạng thái thực thi**: **Phase A đã xanh toàn bộ local sau stdio closeout hardening; đang chờ commit/push và CI exact HEAD — cập nhật 2026-08-07**. Commit remediation `3548562` đã xanh ba OS ở run [`31194897230`](https://github.com/alvindev111/vidcom-v2/actions/runs/31194897230). Closeout-doc commit `23101b3` bắt đúng SHA ở run [`31196365800`](https://github.com/alvindev111/vidcom-v2/actions/runs/31196365800): Linux/macOS xanh, Windows fail 1/855 vì `revision-pin` stdio integration chạm timeout 30s. Test đã được cấu trúc lại thành một real child/pipe, không đổi timeout hay retry; full local suite 852 pass / 3 skip và toàn bộ Phase A matrix/gate đều xanh. Design §16 đã được đọc trước Phase A; A.8 và toàn bộ A.1–A.7 đã hoàn tất. Main spec đã đổi sang [`-inprocess.md`](./spec-packaging-and-distribution-inprocess.md); MUST NOT sang Phase B trước khi commit/push hardening và GitHub Actions exact HEAD xanh.
+- **Trạng thái thực thi**: **Phase A và Phase B hoàn tất, B.1–B.9 cùng cả ba Acceptance Criteria đã xanh — cập nhật 2026-08-08**. Stdio hardening commit `d754b2bdc1f83d50b6864dc39a1e8717f86209db` đã push và workflow [`31199182402`](https://github.com/alvindev111/vidcom-v2/actions/runs/31199182402) kết thúc `success`: macOS arm64 4m06s, Linux x64 6m13s, Windows x64 16m08s. Trước Phase B đã activate lại Bun skill và đọc FULL `credential-store.ts` + spike Phase 4 theo bảng Skill Activation. Focused command của Phase B (`vitest run tests/adapter/runtime-archive.test.ts tests/adapter/runtime-asset-manager.test.ts`) chạy **50 test xanh** trên filesystem thật; typecheck, ESLint và `test:boundaries` xanh. Phase C là gate kế tiếp. Main spec đang là [`-inprocess.md`](./spec-packaging-and-distribution-inprocess.md).
 
 **Bản này (2026-08-07, sau review) đã đóng năm câu hỏi mà trước đó dev buộc phải hỏi lại giữa lúc code.** Duyệt mục này nghĩa là duyệt cả năm quyết định sau:
 
@@ -238,45 +238,54 @@ Mỗi phase chạy focused command dưới đây trên SQLite/filesystem thật,
 **Estimate**: 13 SP
 
 **Tasks**:
-- [ ] B.1 Nâng `tar@7.5.22` thành dependency trực tiếp — **món dependency mới duy nhất của cả giai đoạn**
+- [x] B.1 Nâng `tar@7.5.22` thành dependency trực tiếp — **món dependency mới duy nhất của cả giai đoạn**
   - Bốn câu hỏi của [steering/01](../../../steering/01-backend-stack.md) §3 đã trả lời ở Design §5.0 — chép kết luận vào commit message, không trả lời lại
   - `@hono/node-server` **không phải việc phải làm**: [`packages/server/package.json`](../../../../packages/server/package.json) đã khai `2.0.12`. Design bản 2 viết "thêm hai" là C-3 ở §16. Đừng thêm lần nữa, và nhất là đừng để `bun add` nới pin `hono@4.12.33` — spike S9 đã ghi lại đúng cái bẫy đó
   - Pin **chính xác** `7.5.22`, không `^`: nó chạy trong binary đã compile
   - _Requirements: R5.1_ — _Design: §5.0, §4.5, §16 C-3_
-- [ ] B.2 `EmbeddedRuntimeManifest` + `RuntimeAssetSource`
+- [x] B.2 `EmbeddedRuntimeManifest` + `RuntimeAssetSource`
   - Đọc qua `node:sea.getRawAsset`; manifest pin Node, HyperFrames, esbuild, FFmpeg, CPython, VieNeu, motion
   - Dev/test dùng nguồn filesystem để chạy được ngoài SEA
   - _Requirements: R5.1, R5.5_ — _Design: §5.13_
-- [ ] B.3 Script build archive theo `<os>-<arch>`
+- [x] B.3 Script build archive theo `<os>-<arch>`
   - `.tar.gz` deterministic; **fail** nếu tập package Python lệch *(core 55 + phần phụ platform)*; `pip` **có mặt là fail**
   - Số đã đo: darwin 481 MB/145 MB · Windows 499/152 (+`colorama`,`tzdata`) · Linux 595/179
   - **Danh sách kỳ vọng là file có sẵn, đừng gõ lại**: [`evidence/linux-package-set-pruned.txt`](../../../../spikes/phase-4/s9-windows-runtime/evidence/linux-package-set-pruned.txt) (55) · [`darwin-…`](../../../../spikes/phase-4/s9-windows-runtime/evidence/darwin-package-set-pruned.txt) (55) · [`win-…`](../../../../spikes/phase-4/s9-windows-runtime/evidence/win-package-set-pruned.txt) (58). Cách đối chiếu đã chạy thật ở [`phase4-python-stack.yml:130-136`](../../../../.github/workflows/phase4-python-stack.yml#L130) — dùng lại hình dạng đó
   - **File evidence Windows chụp trước bước gỡ `pip`, đừng dùng thẳng làm kỳ vọng**: 58 dòng = 55 core + `colorama` + `tzdata` + **`pip`**. Bảng của [S9](../../../../spikes/phase-4/s9-windows-runtime/README.md) ghi **57** sau prune (dòng 55) trong khi §W-1 ghi file 58 dòng (dòng 252) — hai câu trong cùng một tài liệu, và câu đúng cho gate là **57**. Kỳ vọng: `linux/darwin = 55 core`, `windows = 55 core + colorama + tzdata`, `pip` vắng mặt ở **cả ba**
   - **Normalize tên trước khi diff**, nếu không thì gate đỏ giả trên Windows: `pip list --format=freeze` in khác nhau giữa hai nền — `huggingface-hub`/`huggingface_hub`, `pydantic-core`/`pydantic_core`, `typing-extensions`/`typing_extensions`, `jinja2`/`Jinja2`, `pyyaml`/`PyYAML`, `markupsafe`/`MarkupSafe`. So bằng `name.lower().replace("_", "-")`, **version thì so nguyên xi** (56 version giữ lại đã đo là khớp tuyệt đối giữa darwin và Windows — lệch version là lỗi thật)
   - _Requirements: R5.1, R5.14_ — _Design: §5.13, DR-15_
-- [ ] B.4 Extractor an toàn
+- [x] B.4 Extractor an toàn
   - Từ chối absolute path, `..`, symlink/hardlink, special file; chỉ regular file/dir trong allowlist; áp lại mode từ manifest; Windows dùng ACL
   - _Requirements: R5.2, R5.4_ — _Design: §4.5_
-- [ ] B.5 `RuntimeAssetManager`: `ensureAll`/`inspect`/`repair`/`pruneOldVersions`
+- [x] B.5 `RuntimeAssetManager`: `ensureAll`/`inspect`/`repair`/`pruneOldVersions`
   - Target `<app-data>/native/<artifact-version>/<archive-key>/`; giải nén vào temp **cùng filesystem** rồi rename; `.ready-<sha>` viết **sau cùng**; `current.json` atomic
+  - **Bound đọc state tách làm hai, đừng gộp lại**: manifest đã cài được đối chiếu **byte-for-byte** với projection kỳ vọng (`exactRegularFileMatches`, không có trần cố định) — dùng `MAX_STATE_BYTES` 1 MiB ở đây làm manager tự ghi manifest lớn rồi tự báo `broken` (blocker B.5, đã tái hiện hai lần). Marker + `current.json` giữ trần 1 MiB; `pruneOldVersions` đọc manifest persisted qua trần riêng `MAX_INSTALLED_MANIFEST_BYTES`
+  - Verify: [`tests/adapter/runtime-asset-manager.test.ts`](../../../../tests/adapter/runtime-asset-manager.test.ts) — 8 test xanh. Regression được chứng minh bằng cách inject lại bound cũ: thêm trần 1 MiB vào `exactRegularFileMatches` ⇒ 4/8 đỏ với `runtime metadata publication did not produce a ready installation`; bỏ `MAX_INSTALLED_MANIFEST_BYTES` khỏi `isOwnedVersion` ⇒ đúng test prune đỏ
   - _Requirements: R5.2, R5.3, R5.10_ — _Design: §5.14_
-- [ ] B.6 App-data `0700`/ACL
+- [x] B.6 App-data `0700`/ACL
   - Dùng lại `secureAppDataDirectorySync` đang có, MUST NOT viết đường thứ hai
+  - Đã xác nhận **không có đường thứ hai**: `icacls` chỉ xuất hiện trong [`credential-store.ts`](../../../../packages/adapter/src/fs/credential-store.ts); `runtime-asset-manager.prepareRoot` và `runtime-asset-extractor` đều gọi lại đúng helper đó
+  - Verify (POSIX): app-data root, `native/`, version root, archive root và directory lồng nhau đều `0700`; file giữ **mode từ manifest** (`0644` và `0755`), không bị helper ép về `0700`
   - _Requirements: R5.9_ — _Design: §9.2_
-- [ ] B.7 Logic test
+- [x] B.7 Logic test
   - Manifest parse/verify; resolver chọn đúng archive theo platform; thiếu archive ⇒ lỗi nói rõ nền tảng nào được hỗ trợ
+  - Verify: [`tests/adapter/runtime-archive.test.ts`](../../../../tests/adapter/runtime-archive.test.ts) — 13 negative case của strict parser (extra key, schema version, `current.json`, archive key `runtime-manifest.json`, entry `.ready-*`, `..`, hash sai, platform lạ, python pin không exact/không sorted/rỗng) đều trả `runtime_manifest_invalid`; resolver lọc đúng archive của host; host không có archive ⇒ message chứa cả `requested` lẫn danh sách `supported`
   - _Requirements: R5.5_
-- [ ] B.8 Integration test trên filesystem thật
+- [x] B.8 Integration test trên filesystem thật
   - Traversal/symlink/special-file bị từ chối; kill giữa chừng ở **từng pha** (extract, validate, rename, marker) ⇒ lần sau coi là chưa giải nén và làm lại; xoá `native/**` bằng tay ⇒ dựng lại được
+  - Extractor: absolute path, `..`, symlink, hardlink, character device, file không khai trong manifest, sai SHA, sai byte length, thiếu entry, content drift — mỗi case **không để lại destination**
+  - **Pha `afterMarker` không giống bốn pha kia**: marker đã commit nên lần chạy sau `reused` chứ không re-extract, chỉ `current.json` được publish lại. Test tách riêng và assert `extracted: []` — nếu ép nó cũng phải re-extract là hiểu sai thiết kế
   - _Requirements: R5.3, R5.4, R5.10_ — _Design: §11.2_
-- [ ] B.9 Integration test: hai tiến trình cold-start đồng thời
+- [x] B.9 Integration test: hai tiến trình cold-start đồng thời
   - Đúng **một** tiến trình giải nén; tiến trình kia chờ hoặc dùng kết quả, MUST NOT ghi chồng
+  - Bốn `RuntimeAssetManager` (lock instance riêng) chạy `ensureAll` song song: `observer.preparing` được gọi **đúng 1 lần**, đúng một kết quả có `extracted` khác rỗng, cả bốn cùng `versionRoot`
+  - Cross-process thật: spawn một process Node sống, ghi `owner.json` của lock trỏ vào PID + `processStartIdentity` **đo bằng `probeProcessIdentity`**, `ensureAll` trả `bootstrap_lock_timeout` và **không** ghi đè; kill process đó xong thì lần sau reclaim được lock và cài thành công
   - _Requirements: R5.6_
 
 **Acceptance Criteria**:
-- [ ] Giải nén không ghi gì vào workspace hay cạnh artifact (R5.12)
-- [ ] Warm path không giải nén lại — chỉ đọc manifest/marker
-- [ ] Build fail khi tập package Python lệch một dòng
+- [x] Giải nén không ghi gì vào workspace hay cạnh artifact (R5.12) — test snapshot `readdir` của workspace và thư mục cạnh artifact trước/sau `ensureAll`, không đổi
+- [x] Warm path không giải nén lại — chỉ đọc manifest/marker — `ensureAll` lần hai trả `extracted: []`, `reused: ["node"]`
+- [x] Build fail khi tập package Python lệch một dòng — chạy thật `scripts/build-runtime-archives.mjs` với evidence thật: thiếu 1 package / thừa 1 package / lệch 1 version / có `pip` đều exit khác 0 và **không** ghi `runtime-manifest.json`; bản khớp tuyệt đối thì build ra manifest 55 pin
 
 **Deliverables**: `packages/adapter/src/runtime/runtime-asset-source.ts` · `runtime-asset-manager.ts` · `scripts/build-runtime-archives.mjs`
 
@@ -1191,6 +1200,42 @@ Chi tiết: [Detailed Goals](./spec-packaging-and-distribution-detailed-goal.md)
   - Summary: Sau hardening, full `rtk bun run test` xanh 852 pass / 3 skip trong 56,36s; Phase A matrix xanh packaging 10/10, catalogue 2/2, MCP 71/71, golden 26/26, cùng typecheck và import boundaries.
   - Decisions: Chạy exact `rtk bun run lint` trong clean-checkout-equivalent bằng cách tạm isolate đúng 13 artifact/virtualenv Git-ignored rồi khôi phục đủ; kết quả 0 error/2 warning. Không đổi ESLint, boundary gate, dependency/lockfile, timeout hay retry.
   - Blockers: Local không còn blocker. `tools/list` giữ nguyên byte với SHA legacy `283b32a91410b83bd4c6134ee68cbe9ee34995f9ac9364ae9afa0db4120c35bd`, modern `011b16d1b465bff21d2fcc82e1d9771a581d96b9660bc0052b8d2171d456b44c`; Phase A vẫn chờ commit/push và CI exact HEAD xanh đủ ba OS.
+
+2026-08-08 — Phase A, stdio hardening CI verification (run 31199182402)
+  - Files: checklist và implementation notes
+  - Summary: Workflow `CI` bắt đúng SHA `d754b2bdc1f83d50b6864dc39a1e8717f86209db`; macOS arm64, Linux x64 và Windows x64 đều kết thúc `success`, gồm full Test, focused MCP/golden/schema/matrix, production build và real Next/SSE smoke.
+  - Decisions: Xác thực bằng `GH_TOKEN=$GH_KEY gh run watch 31199182402 --exit-status` (exit 0), rồi đối chiếu `headSha`, conclusion và từng job qua `gh run view`. Thời lượng: macOS 4m06s, Linux 6m13s, Windows 16m08s; Windows full Test riêng xanh sau 9m58s.
+  - Blockers: Không có; Phase A hoàn tất. Phase B được phép bắt đầu theo dependency order sau khi activate skill và đọc trọn nguồn bắt buộc của phase.
+
+2026-08-08 — Phase B, Task B.1
+  - Files: `packages/adapter/package.json`, `bun.lock`, checklist và implementation notes
+  - Summary: Nâng `tar@7.5.22` từ dependency bắc cầu đã có trong lockfile thành dependency trực tiếp, pin exact tại `@vidcom/adapter` — package sở hữu `adapter/runtime` và sẽ import extractor.
+  - Decisions: Dùng lại đúng lock entry `tar@7.5.22`, không tạo version thứ hai. Không thêm lại `@hono/node-server`, không nới `hono`; bốn câu hỏi dependency giữ nguyên câu trả lời ở Design §5.0 và sẽ được chép vào commit message Phase B.
+  - Blockers: Không có; `bun install --frozen-lockfile` báo 885 installs/1048 packages, no changes; `hono@4.12.33` và `@hono/node-server@2.0.12` giữ nguyên, `git diff --check` xanh.
+
+2026-08-08 — Phase B, Task B.2
+  - Files: `packages/adapter/src/runtime/runtime-asset-source.ts`, `packages/adapter/src/index.ts`, checklist và implementation notes
+  - Summary: Thêm manifest runtime strict/immutable, SEA source đọc qua `node:sea.getRawAsset`, filesystem source cho dev/test, và resolver chọn toàn bộ archive theo `<os>-<arch>`.
+  - Decisions: Manifest pin Node, HyperFrames, esbuild, FFmpeg, CPython, VieNeu, đúng 5 motion package và package Python của đủ ba platform. Archive key/target/entry/hash/mode/artifact version đều canonical để không biến dữ liệu build thành path traversal; missing platform trả mã `runtime_manifest_invalid` kèm requested/supported rõ ràng.
+  - Blockers: Không có; `rtk bun run typecheck`, ESLint scoped và `git diff --check` xanh. Logic matrix chi tiết được khóa ở B.7 theo đúng thứ tự checklist.
+
+2026-08-08 — Phase B, Task B.3
+  - Files: `scripts/build-runtime-archives.mjs`, `package.json`, checklist và implementation notes
+  - Summary: Thêm builder `.tar.gz` deterministic theo config `<os>-<arch>`, sinh manifest hash/bytes/entry/mode và gate package Python từ evidence có sẵn thay vì chép lại danh sách.
+  - Decisions: Normalize đúng `lowercase + underscore→hyphen`, nhưng so version nguyên xi theo evidence từng platform. Core darwin/Linux bắt buộc trùng 55; Windows bắt buộc core + `colorama` + `tzdata` = 57; `pip` luôn fail. Source symlink/hardlink/special-file bị chặn từ build, tar dùng sorted files + epoch mtime + portable gzip.
+  - Blockers: Không có; deterministic smoke build hai lần cho byte-identical SHA `62c4d7bc1d763adf00578c773a6790d1a4e5d0b9195b214831c68294aadc3872`, giữ 2 entry và mode 0755. Gate negative từ chối một package thừa và từ chối `pip`; ESLint, typecheck, diff check xanh.
+
+2026-08-08 — Phase B, Task B.4
+  - Files: `packages/adapter/src/runtime/runtime-asset-extractor.ts`, `packages/adapter/src/index.ts`, checklist và implementation notes
+  - Summary: Thêm extractor preflight toàn bộ tar header trước khi tạo destination, chỉ nhận file/directory đúng allowlist, kiểm archive SHA/bytes, expansion budget, exact file set, hash cây sau extract và áp lại mode manifest.
+  - Decisions: Dùng event completion của `tar@7.5.22` thay `node:stream.finished` vì Parser/Unpack là EventEmitter trên Bun; cùng decompression budget được áp ở cả list/extract. Windows đi qua đúng `secureAppDataDirectorySync`; lỗi archive hỏng map `runtime_manifest_invalid`, lỗi extract/cleanup map `runtime_extraction_incomplete`.
+  - Blockers: Không có; Bun real-FS build→parse→extract giữ file 0755 và root 0700, symlink/malformed bị từ chối trước khi destination tồn tại. Node/tsx smoke safe/traversal/malformed cũng xanh; typecheck, ESLint scoped và `git diff --check` xanh. Negative matrix chính thức nằm ở B.7/B.8.
+
+2026-08-08 — Phase B, B.2/B.3 review hardening
+  - Files: `packages/adapter/src/runtime/runtime-asset-source.ts`, `scripts/build-runtime-archives.mjs`, checklist và implementation notes
+  - Summary: Khóa ba namespace filesystem mà B.5 sẽ sở hữu: artifact version không được đè `current.json`, archive key không được đè installed `runtime-manifest.json`, entry gốc không được chiếm `.ready-*`.
+  - Decisions: Chặn ngay ở cả build config/source walk và strict embedded-manifest parser, không đẩy collision xuống manager sau khi filesystem đã bị ghi. So tên control case-insensitive để giữ đúng trên Windows.
+  - Blockers: Không có; ba negative smoke đều trả `runtime_manifest_invalid`; typecheck, ESLint scoped và `git diff --check` xanh.
 
 Format:
 ```

@@ -10,6 +10,7 @@
     "dev": "next dev",
     "build": "next build",
     "build:agent-kit": "bun run --cwd packages/agent-kit build",
+    "build:runtime-archives": "node scripts/build-runtime-archives.mjs",
     "start": "next start",
     "cli": "node packages/cli/bin/vidcom.mjs",
     "lint": "eslint",

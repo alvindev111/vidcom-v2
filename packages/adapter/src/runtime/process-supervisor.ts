@@ -1,4 +1,6 @@
 import { execFile, spawn } from "node:child_process";
+import { readFile } from "node:fs/promises";
+import path from "node:path";
 import { promisify } from "node:util";
 
 import { ErrorCode } from "@vidcom/contracts";
@@ -24,12 +26,37 @@ const execFileAsync = promisify(execFile);
 interface ProcessRow { pid: number; ppid: number | null; pgid: number | null; startedAt: string }
 interface CaptureState { pids: Map<number, string>; groups: Map<number, string>; exhaustive: boolean }
 
+/** One exact operating-system process instance, including its start identity. */
+export interface ProcessIdentity {
+  pid: number;
+  startedAt: string;
+}
+
+/** Result of one OS process-table probe; non-exhaustive results cannot prove death or PID reuse. */
+export interface ProcessIdentityProbeResult {
+  identity: ProcessIdentity | undefined;
+  exhaustive: boolean;
+}
+
 /** True only when a numeric PID still names the exact process instance captured earlier. */
 export function processIdentityMatches(
   captured: { pid: number; startedAt: string },
   current: { pid: number; startedAt: string } | undefined,
 ): boolean {
   return current?.pid === captured.pid && current.startedAt === captured.startedAt;
+}
+
+/**
+ * Reads the exact OS start identity currently assigned to `pid`, if any.
+ *
+ * An absent identity proves death only with `exhaustive: true`; malformed or
+ * unavailable probe output returns `exhaustive: false` and remains unknown.
+ */
+export async function probeProcessIdentity(pid: number): Promise<ProcessIdentityProbeResult> {
+  if (!Number.isSafeInteger(pid) || pid <= 0) throw new TypeError("process pid must be a positive safe integer");
+  if (process.platform === "linux") return probeLinuxProcessIdentity(pid);
+  if (process.platform === "win32") return probeWindowsProcessIdentity(pid);
+  return probePosixProcessIdentity(pid);
 }
 
 /** Error raised when direct PID probes still find survivors after the sweep budget. */
@@ -244,6 +271,182 @@ export function descendantsOf(rows: readonly ProcessRow[], rootPid: number): Pro
     }
   }
   return result;
+}
+
+const LINUX_BOOT_ID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/u;
+const POSIX_START_PATTERN = /^(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun) (?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec) [ 0-3][0-9] [0-2][0-9]:[0-5][0-9]:[0-6][0-9] [0-9]{4}$/u;
+
+async function probeLinuxProcessIdentity(pid: number): Promise<ProcessIdentityProbeResult> {
+  let bootId: string;
+  try {
+    bootId = (await readFile("/proc/sys/kernel/random/boot_id", "utf8")).trim();
+  } catch {
+    return { identity: undefined, exhaustive: false };
+  }
+  if (!LINUX_BOOT_ID_PATTERN.test(bootId)) return { identity: undefined, exhaustive: false };
+
+  let stat: string;
+  try {
+    stat = await readFile(`/proc/${pid}/stat`, "utf8");
+  } catch (error) {
+    return hasErrorCode(error, "ENOENT")
+      ? { identity: undefined, exhaustive: true }
+      : { identity: undefined, exhaustive: false };
+  }
+  const prefix = `${pid} (`;
+  const close = stat.lastIndexOf(") ");
+  if (!stat.startsWith(prefix) || close < prefix.length) return { identity: undefined, exhaustive: false };
+  const fields = stat.slice(close + 2).trim().split(/\s+/u);
+  const state = fields[0];
+  const startTicks = fields[19];
+  if (!state || !/^[A-Za-z]$/u.test(state) || !startTicks || !/^[0-9]+$/u.test(startTicks)) {
+    return { identity: undefined, exhaustive: false };
+  }
+  return {
+    identity: { pid, startedAt: `linux-proc:${bootId}:${startTicks}` },
+    exhaustive: true,
+  };
+}
+
+async function probePosixProcessIdentity(pid: number): Promise<ProcessIdentityProbeResult> {
+  let stdout: string;
+  try {
+    const result = await execFileAsync("/bin/ps", ["-p", String(pid), "-o", "pid=,lstart="], {
+      encoding: "utf8",
+      timeout: PROCESS_COMMAND_TIMEOUT_MS,
+      env: {
+        NODE_ENV: process.env.NODE_ENV,
+        PATH: "/usr/bin:/bin",
+        LANG: "C",
+        LC_ALL: "C",
+        TZ: "UTC",
+      },
+    });
+    if (result.stderr !== "") return { identity: undefined, exhaustive: false };
+    stdout = result.stdout;
+  } catch (error) {
+    return posixProbeProvesAbsent(error)
+      ? { identity: undefined, exhaustive: true }
+      : { identity: undefined, exhaustive: false };
+  }
+  const lines = stdout.trim().split(/\r?\n/u);
+  if (lines.length !== 1) return { identity: undefined, exhaustive: false };
+  const match = /^\s*([0-9]+)\s+(.+?)\s*$/u.exec(lines[0] ?? "");
+  if (!match || Number(match[1]) !== pid || !POSIX_START_PATTERN.test(match[2] ?? "")) {
+    return { identity: undefined, exhaustive: false };
+  }
+  return {
+    identity: { pid, startedAt: `posix-ps-utc:${match[2]}` },
+    exhaustive: true,
+  };
+}
+
+async function probeWindowsProcessIdentity(pid: number): Promise<ProcessIdentityProbeResult> {
+  const disabled = new Set((process.env.VIDCOM_DISABLE_ENUMERATORS ?? "")
+    .split(",").map((value) => value.trim()).filter(Boolean));
+  if (disabled.has("powershell-cim")) return { identity: undefined, exhaustive: false };
+  const windowsRoot = process.env.SystemRoot;
+  if (
+    !windowsRoot
+    || !path.win32.isAbsolute(windowsRoot)
+    || path.win32.normalize(windowsRoot) !== windowsRoot
+    || path.win32.basename(windowsRoot).toLowerCase() !== "windows"
+  ) return { identity: undefined, exhaustive: false };
+  const powershell = path.win32.join(
+    windowsRoot,
+    "System32",
+    "WindowsPowerShell",
+    "v1.0",
+    "powershell.exe",
+  );
+  let stdout: string;
+  try {
+    const command = "$ErrorActionPreference = 'Stop'; "
+      + `$p = Get-CimInstance Win32_Process -Filter "ProcessId = ${pid}" -ErrorAction Stop; `
+      + "if ($null -eq $p) { 'VIDCOM_ABSENT' } else { "
+      + "$created = $p.CreationDate.ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ss.fffffffZ', "
+      + "[System.Globalization.CultureInfo]::InvariantCulture); "
+      + "$json = [ordered]@{ ProcessId = [int]$p.ProcessId; CreationDate = $created } | ConvertTo-Json -Compress; "
+      + "'VIDCOM_FOUND ' + $json }";
+    const result = await execFileAsync(powershell, [
+      "-NoProfile", "-NonInteractive", "-Command", command,
+    ], {
+      encoding: "utf8",
+      timeout: PROCESS_COMMAND_TIMEOUT_MS,
+      env: windowsProbeEnvironment(windowsRoot, powershell),
+    });
+    if (result.stderr !== "") return { identity: undefined, exhaustive: false };
+    stdout = result.stdout.trim();
+  } catch {
+    return { identity: undefined, exhaustive: false };
+  }
+  if (stdout === "VIDCOM_ABSENT") return { identity: undefined, exhaustive: true };
+  if (!stdout.startsWith("VIDCOM_FOUND ") || stdout.includes("\n") || stdout.includes("\r")) {
+    return { identity: undefined, exhaustive: false };
+  }
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(stdout.slice("VIDCOM_FOUND ".length)) as unknown;
+  } catch {
+    return { identity: undefined, exhaustive: false };
+  }
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+    return { identity: undefined, exhaustive: false };
+  }
+  const record = parsed as Record<string, unknown>;
+  const keys = Object.keys(record).sort();
+  if (
+    keys.length !== 2
+    || keys[0] !== "CreationDate"
+    || keys[1] !== "ProcessId"
+    || record.ProcessId !== pid
+    || typeof record.CreationDate !== "string"
+    || !canonicalWindowsCreationDate(record.CreationDate)
+  ) return { identity: undefined, exhaustive: false };
+  return {
+    identity: { pid, startedAt: `windows-cim:${record.CreationDate}` },
+    exhaustive: true,
+  };
+}
+
+function windowsProbeEnvironment(windowsRoot: string, powershell: string): NodeJS.ProcessEnv {
+  return {
+    NODE_ENV: process.env.NODE_ENV,
+    SystemRoot: windowsRoot,
+    WINDIR: windowsRoot,
+    PATH: `${path.win32.dirname(powershell)};${path.win32.join(windowsRoot, "System32")}`,
+    PSModulePath: path.win32.join(
+      windowsRoot,
+      "System32",
+      "WindowsPowerShell",
+      "v1.0",
+      "Modules",
+    ),
+  };
+}
+
+function canonicalWindowsCreationDate(value: string): boolean {
+  if (!/^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\.[0-9]{7}Z$/u.test(value)) {
+    return false;
+  }
+  const milliseconds = `${value.slice(0, 23)}Z`;
+  const parsed = new Date(milliseconds);
+  return Number.isFinite(parsed.getTime()) && parsed.toISOString() === milliseconds;
+}
+
+function posixProbeProvesAbsent(error: unknown): boolean {
+  if (!error || typeof error !== "object") return false;
+  const failure = error as { code?: unknown; stdout?: unknown; stderr?: unknown };
+  return failure.code === 1
+    && failure.stdout === ""
+    && failure.stderr === "";
+}
+
+function hasErrorCode(error: unknown, code: string): boolean {
+  return error !== null
+    && typeof error === "object"
+    && "code" in error
+    && (error as { code?: unknown }).code === code;
 }
 
 async function enumerateProcesses(): Promise<{ rows: ProcessRow[]; exhaustive: boolean }> {
