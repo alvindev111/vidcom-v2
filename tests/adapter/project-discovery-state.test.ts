@@ -6,7 +6,12 @@ import { promisify } from "node:util";
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { initializeDatabase } from "@vidcom/adapter";
+import {
+  AppSettingsStore,
+  initializeDatabase,
+  migrateDatabase,
+  openVidcomDatabase,
+} from "@vidcom/adapter";
 import { type ProjectId, type RelPath } from "@vidcom/contracts";
 import {
   EntryRegistry,
@@ -102,7 +107,16 @@ describe("workspace discovery and project state on real SQLite/filesystem", () =
     const cwd = path.join(root, "cwd");
     const appData = path.join(root, "app-data");
     await Promise.all([mkdir(active), mkdir(cwd)]);
-    await selectWorkspace({ explicit: active, appDataRoot: appData });
+    // Recorded directly: resolving a workspace no longer writes one, so the
+    // saved value has to be planted rather than produced as a side effect.
+    // Only FoundationManager.activate records an active workspace now.
+    const database = openVidcomDatabase(appData);
+    try {
+      await migrateDatabase(database);
+      new AppSettingsStore(database).set("active_workspace", active);
+    } finally {
+      await database.destroy();
+    }
     await rm(active, { recursive: true });
     const warning = vi.spyOn(process, "emitWarning").mockImplementation(() => {});
     await expect(selectWorkspace({ appDataRoot: appData, cwd })).resolves.toBe(cwd);

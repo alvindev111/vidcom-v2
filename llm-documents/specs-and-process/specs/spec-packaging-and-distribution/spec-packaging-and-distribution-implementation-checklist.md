@@ -316,17 +316,22 @@ Mỗi phase chạy focused command dưới đây trên SQLite/filesystem thật,
   - Luật thứ tự được **cưỡng chế chứ không giả định**: trước khi lấy khoá credential, coordinator gọi `bootstrapLease.assertHeld()`. Khoá credential khai `timeoutCode: bridge_rotation_in_progress`, khoá bootstrap khai `bootstrap_lock_timeout` — hai chế độ hỏng phân biệt được từ mã lỗi
   - Verify: khoá credential chỉ tồn tại **trong lúc** reconcile và biến mất ngay sau; hai `prepare()` song song bị serialize; reconcile ném lỗi thì khoá bootstrap vẫn được nhả
   - _Requirements: R5.6, R5.13_ — _Design: §5.15_
-- [ ] C.3 Migration đúng một lần mỗi boot
+- [~] C.3 Migration đúng một lần mỗi boot — **một phần**
   - Hôm nay `selectWorkspace` migrate **hai** lần rồi foundation migrate lần ba ([`workspace-selection.ts:23-30`](../../../../packages/cli/src/workspace-selection.ts#L23), [`:57-60`](../../../../packages/cli/src/workspace-selection.ts#L57))
+  - **Đã làm**: `selectWorkspace` gom về **một** `withSettings` duy nhất — đọc `active_workspace`, resolve, rồi trả kết quả trong cùng một lần mở DB. Hai lần thành một
+  - **Chưa làm, và vì sao**: lần thứ ba ở foundation chỉ gỡ được khi `BootstrapCoordinator.prepare()` chạy **trước** `selectWorkspace` và cấp DB đã migrate xuống dưới. Nhưng [`main.ts:110`](../../../../packages/cli/src/main.ts#L110) gọi `selectWorkspace` đầu tiên, và `prepare()` cần một `RuntimeAssetSource` mà **dev/test chưa có** — `FilesystemRuntimeAssetSource` cần thư mục runtime đã build, SEA source chỉ có trong artifact (Phase H). Đảo thứ tự boot phải sửa `main.ts`, `next-host.ts` (2 chỗ), `commands/mcp.ts`, `commands/recovery.ts` cộng một đường asset source cho dev. **Gỡ khi coordinator được lắp vào entrypoint ở E/J**
+  - AC "đo bằng counter" chưa tick: seam để đếm chỉ tồn tại sau khi coordinator sở hữu migration. Đừng tick bằng một test đếm giả
   - _Requirements: R5.13_ — _Design: §4.5_
-- [ ] C.4 **Tách việc ghi `active_workspace` khỏi `selectWorkspace`**
+- [x] C.4 **Tách việc ghi `active_workspace` khỏi `selectWorkspace`**
   - Hôm nay resolve nào cũng `set("active_workspace", …)` ([`workspace-selection.ts:58`](../../../../packages/cli/src/workspace-selection.ts#L58)), nên `vidcom render --workspace X` **đổi luôn workspace mặc định của UI**. Chỉ `FoundationManager.activate` thành công mới được ghi
   - Đây là **thay đổi hành vi có chủ ý**, không phải bất biến giữ nguyên
   - _Requirements: R1.5_ — _Design: §6.4, §7.13_
-- [ ] C.4b Rà **toàn bộ** người đọc/ghi `active_workspace` trước khi đổi — danh sách đã rà sẵn, đừng tự tìm lại
+- [x] C.4b Rà **toàn bộ** người đọc/ghi `active_workspace` trước khi đổi — danh sách đã rà sẵn, đừng tự tìm lại
   - **Ghi**: `workspace-selection.ts:58` (chỗ bị lấy đi) → chuyển sang `FoundationManager.activate` (E.4)
   - **Đọc**: `activeWorkspace()` ở [`workspace-selection.ts:23-28`](../../../../packages/cli/src/workspace-selection.ts#L23) (giữ nguyên — đọc vẫn đúng), [`workspace-resolver.ts`](../../../../packages/core/src/domain/workspace-resolver.ts) qua `input.active` + cảnh báo `active_workspace_unreadable`, và doctor check `workspace.active` (J.6)
   - **Test đang chốt hành vi cũ**: [`tests/adapter/project-discovery-state.test.ts:109-112`](../../../../tests/adapter/project-discovery-state.test.ts#L109) và [`tests/core/workspace-and-path-policy.test.ts:47-50`](../../../../tests/core/workspace-and-path-policy.test.ts#L47). Cả hai kiểm nhánh **đọc**, nên chúng SHALL vẫn xanh không cần sửa — **nếu phải sửa một trong hai thì dừng lại**: nghĩa là đã đổi luôn cả đường resolve chứ không chỉ đường ghi
+  - **Đính chính câu trên — nó sai một nửa, đã dừng và xác nhận trước khi sửa**: `workspace-and-path-policy.test.ts` đúng là thuần đọc (gọi thẳng `resolveWorkspace`, không chạm DB) và **không phải sửa**. Nhưng `project-discovery-state.test.ts` dòng 105 dùng **chính tác dụng phụ ghi** làm fixture: `await selectWorkspace({ explicit: active, … })` để nhét `active_workspace` rồi mới xoá thư mục và kiểm cảnh báo. Bỏ đường ghi thì fixture không còn nguồn. Đã sửa **fixture** thành ghi thẳng qua `AppSettingsStore`, giữ nguyên phần assert nhánh đọc — không đụng `resolveWorkspace`, đúng tinh thần điều kiện dừng
+  - **Khoảng trống có ý thức**: từ C tới E.4 **không ai** ghi `active_workspace`. Đây là hệ quả đã lường trước của việc tách, không phải sót
   - Ghi một dòng vào release notes cùng chỗ với L.4. Help của `render` nói rõ `--workspace` **không** đổi mặc định của UI nữa — câu đó thực thi ở **J.3** vì `commands/render.ts` chưa tồn tại; ở đây chỉ chốt nội dung
   - _Requirements: R1.5_ — _Design: §7.13_
 - [ ] C.5 Mint/load bridge bearer
