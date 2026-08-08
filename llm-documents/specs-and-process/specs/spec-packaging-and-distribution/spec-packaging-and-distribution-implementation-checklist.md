@@ -506,8 +506,10 @@ Mỗi phase chạy focused command dưới đây trên SQLite/filesystem thật,
   - Renew fail ⇒ từ chối ghi **ngay** + xoá discovery record **ngay** → re-acquire tối đa 2 lượt trong TTL 30 s → thành công thì `Active` với **`instanceId` cũ**; thất bại thì `NoWorkspace` (có UI attach) hoặc đóng listener + exit ≠ 0 (headless)
   - Phát `workspace.lease_lost` **trước** khi đổi trạng thái
   - _Requirements: R2.14_ — _Design: §4.3, DR-14_
-- [ ] E.6 Giữ nguyên perimeter
+- [x] E.6 Giữ nguyên perimeter
   - Loopback-only, kiểm `Host`, giới hạn origin — R1 MUST NOT nới bất kỳ luật nào
+  - [`perimeter-invariants.test.ts`](../../../../tests/server/perimeter-invariants.test.ts) chốt allowlist đúng **hai** cách viết trên **đúng** cổng, và từ chối tám biến thể — trong đó ba cái đáng chú ý: DNS rebinding `127.0.0.1.nip.io` (phân giải về loopback nhưng không nằm trong allowlist), IPv6 `[::1]` (là loopback nhưng **không** được khai), và `evil-127.0.0.1` (chỉ *chứa* chuỗi được phép)
+  - Mọi thứ Phase 4 thêm — bridge, daemon, đổi workspace — đều nằm **sau** kiểm tra này, nên một luật bị nới ở đây mở lại daemon cho bất cứ ai chạm được cổng
   - _Requirements: R1.13_ — _Design: §9.2_
 - [x] E.7 Logic test
   - State machine: mọi transition hợp lệ và mọi transition bị cấm
