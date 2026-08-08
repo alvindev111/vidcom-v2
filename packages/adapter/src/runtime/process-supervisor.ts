@@ -19,12 +19,40 @@ export const PROCESS_VERIFY_MAX_SWEEPS = 20;
 export const PROCESS_COMMAND_TIMEOUT_MS = 2_000;
 export const PROCESS_VERIFY_TIMEOUT_MS = 5_000;
 /**
- * The Windows identity probe pays a PowerShell cold start before CIM answers,
- * which routinely exceeds the 2s budget the fast termination probes use. That
- * budget turned a slow probe into a non-exhaustive one, and a non-exhaustive
- * self-probe stops a directory lock from ever being published.
+ * The identity probe spawns PowerShell, which is far slower to answer than the
+ * fast termination probes the 2s budget was sized for. A probe that merely runs
+ * out of budget reports itself inconclusive, and an inconclusive self-probe
+ * stops a directory lock from ever being published.
  */
 export const PROCESS_IDENTITY_PROBE_TIMEOUT_MS = 15_000;
+
+/**
+ * Scheme prefix on every Windows start identity.
+ *
+ * Identities are compared as opaque strings, so changing how one is measured
+ * would make an identity written by another build look like a different
+ * process — and a live lock owner would be reclaimed as if it had died. The
+ * prefix names the measurement, and a prefix this build did not produce is
+ * treated as unknown rather than dead. `windows-cim:` was the WMI-backed
+ * predecessor; it must never be re-used for a different measurement.
+ */
+export const WINDOWS_IDENTITY_SCHEME = "windows-start";
+
+/** The measurement that produced an identity, or undefined when unlabelled. */
+export function identityScheme(startedAt: string): string | undefined {
+  const separator = startedAt.indexOf(":");
+  return separator <= 0 ? undefined : startedAt.slice(0, separator);
+}
+
+/**
+ * True when two identities were measured the same way and can be compared.
+ *
+ * Identities from different schemes carry no information about each other: they
+ * are neither a match nor a mismatch.
+ */
+export function identitySchemesAgree(left: string, right: string): boolean {
+  return identityScheme(left) === identityScheme(right);
+}
 
 const DEFAULT_TIMEOUT_MS = 5 * 60 * 1_000;
 const MAX_CAPTURE_BYTES = 64 * 1024;
@@ -377,7 +405,7 @@ async function probeWindowsProcessIdentity(pid: number): Promise<ProcessIdentity
     ({ identity: undefined, exhaustive: false, reason });
   const disabled = new Set((process.env.VIDCOM_DISABLE_ENUMERATORS ?? "")
     .split(",").map((value) => value.trim()).filter(Boolean));
-  if (disabled.has("powershell-cim")) return blind("powershell-cim probe disabled by VIDCOM_DISABLE_ENUMERATORS");
+  if (disabled.has("powershell-cim")) return blind("powershell probe disabled by VIDCOM_DISABLE_ENUMERATORS");
   const windowsRoot = process.env.SystemRoot;
   if (
     !windowsRoot
@@ -394,12 +422,15 @@ async function probeWindowsProcessIdentity(pid: number): Promise<ProcessIdentity
   );
   let stdout: string;
   try {
+    // `Get-Process` reads the process object directly through .NET. The former
+    // `Get-CimInstance` query went through WMI, which hung past every budget on
+    // CI runners and left this probe permanently inconclusive.
     const command = "$ErrorActionPreference = 'Stop'; "
-      + `$p = Get-CimInstance Win32_Process -Filter "ProcessId = ${pid}" -ErrorAction Stop; `
+      + `$p = Get-Process -Id ${pid} -ErrorAction SilentlyContinue; `
       + "if ($null -eq $p) { 'VIDCOM_ABSENT' } else { "
-      + "$created = $p.CreationDate.ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ss.fffffffZ', "
+      + "$started = $p.StartTime.ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ss.fffffffZ', "
       + "[System.Globalization.CultureInfo]::InvariantCulture); "
-      + "$json = [ordered]@{ ProcessId = [int]$p.ProcessId; CreationDate = $created } | ConvertTo-Json -Compress; "
+      + "$json = [ordered]@{ ProcessId = [int]$p.Id; StartTime = $started } | ConvertTo-Json -Compress; "
       + "'VIDCOM_FOUND ' + $json }";
     const result = await execFileAsync(powershell, [
       "-NoProfile", "-NonInteractive", "-Command", command,
@@ -411,8 +442,6 @@ async function probeWindowsProcessIdentity(pid: number): Promise<ProcessIdentity
     if (result.stderr !== "") return blind(`powershell wrote to stderr: ${truncateReason(result.stderr)}`);
     stdout = result.stdout.trim();
   } catch (error) {
-    // Naming the forwarded variables distinguishes a starved environment from a
-    // hung WMI service; both look identical as a bare timeout.
     const forwarded = WINDOWS_PROBE_PASSTHROUGH.filter((name) => process.env[name] !== undefined);
     return blind(
       `powershell probe failed: ${probeFailureDetail(error)}`
@@ -436,14 +465,14 @@ async function probeWindowsProcessIdentity(pid: number): Promise<ProcessIdentity
   const keys = Object.keys(record).sort();
   if (
     keys.length !== 2
-    || keys[0] !== "CreationDate"
-    || keys[1] !== "ProcessId"
+    || keys[0] !== "ProcessId"
+    || keys[1] !== "StartTime"
     || record.ProcessId !== pid
-    || typeof record.CreationDate !== "string"
-    || !canonicalWindowsCreationDate(record.CreationDate)
+    || typeof record.StartTime !== "string"
+    || !canonicalWindowsCreationDate(record.StartTime)
   ) return blind("probe output did not describe the requested process canonically");
   return {
-    identity: { pid, startedAt: `windows-cim:${record.CreationDate}` },
+    identity: { pid, startedAt: `${WINDOWS_IDENTITY_SCHEME}:${record.StartTime}` },
     exhaustive: true,
   };
 }

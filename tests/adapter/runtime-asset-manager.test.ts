@@ -310,6 +310,29 @@ describe("runtime bootstrap lock identity", () => {
     expect(Date.now() - started).toBeLessThan(200);
   });
 
+  it("never reclaims a live owner recorded under an older identity scheme", async () => {
+    const appDataRoot = await temporaryRoot();
+    const lockPath = path.join(appDataRoot, LOCK_FILENAME);
+    await mkdir(lockPath, { recursive: true, mode: 0o700 });
+    // This process is alive, but its identity is stamped with a scheme this
+    // build no longer produces. Comparing across schemes would read as a
+    // mismatch and hand the lock to someone else while the owner still runs.
+    await writeFile(path.join(lockPath, "owner.json"), `${JSON.stringify({
+      pid: process.pid,
+      processStartIdentity: "legacy-scheme:2020-01-01T00:00:00.0000000Z",
+      nonce: randomBytes(32).toString("base64url"),
+      createdAt: new Date().toISOString(),
+    })}\n`, "utf8");
+
+    const lock = new AtomicDirectoryLock(lockPath, { timeoutMs: 600, pollIntervalMs: 50 });
+    const failure = await lock.acquire().catch((error: unknown) => error);
+    expect(failure).toBeInstanceOf(RuntimeAssetError);
+    expect((failure as RuntimeAssetError).code).toBe(ErrorCode.BootstrapLockTimeout);
+    // The owner record must survive: waiting is correct, stealing is not.
+    expect(JSON.parse(await readFile(path.join(lockPath, "owner.json"), "utf8")))
+      .toMatchObject({ processStartIdentity: "legacy-scheme:2020-01-01T00:00:00.0000000Z" });
+  });
+
   // Only the Windows probe honours the disable switch, and the identity cache is
   // module-scoped, so a blind probe needs both a fresh module graph and win32.
   it.skipIf(POSIX)("fails fast with an identity error, not a timeout, when the probe is blind", async () => {

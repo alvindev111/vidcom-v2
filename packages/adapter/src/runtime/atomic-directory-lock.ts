@@ -8,6 +8,7 @@ import { ErrorCode } from "@vidcom/contracts";
 
 import { syncDirectory } from "../fs/durability";
 import {
+  identitySchemesAgree,
   probeCurrentProcessIdentity,
   probeProcessIdentity,
   processIdentityMatches,
@@ -309,6 +310,14 @@ export class AtomicDirectoryLock {
   private async ownerIsProvenStale(owner: DirectoryLockOwner): Promise<boolean> {
     const probe = await probeProcessIdentity(owner.pid);
     if (!probe.exhaustive) return false;
+    // An absent PID proves death regardless of how identities are measured. A
+    // present one only disproves it when both sides were measured the same way:
+    // an owner recorded under an older scheme would otherwise read as a
+    // mismatch, and a live process would have its lock taken away.
+    if (
+      probe.identity !== undefined
+      && !identitySchemesAgree(owner.processStartIdentity, probe.identity.startedAt)
+    ) return false;
     return !processIdentityMatches(
       { pid: owner.pid, startedAt: owner.processStartIdentity },
       probe.identity,
