@@ -692,8 +692,12 @@ Mỗi phase chạy focused command dưới đây trên SQLite/filesystem thật,
   - `serviceStream` dùng `fetch` chứ **không** `EventSource`: `EventSource` không gửi được credential cross-origin và không abort được. Cả hai đều cần — session là cookie, và một stream sống lâu hơn component giữ nó sẽ giữ luôn kết nối cùng subscription phía server sau khi người dùng đã rời đi
   - `Last-Event-ID` chỉ gửi khi có, để stream mới không xin resume từ một vị trí không tồn tại
   - _Requirements: R4.10, R4.6_ — _Design: §5.11_
-- [ ] G.5 Tách page dynamic route
+- [x] G.5 Tách page dynamic route
   - Server component xuất `generateStaticParams` (trả sentinel `__shell`) + client component mang thân page; slug đọc từ `location`, MUST NOT từ `params`
+  - `page.tsx` (server) → `composer-client.tsx` (thân page) → `shell-sentinel.ts` (hằng)
+  - **Hằng phải nằm ở module riêng, không có `"use client"`** — bản đầu tôi export `SHELL_SENTINEL` từ chính client component và `next build` đỏ: `A required parameter (slug) was not provided as a string received function`. Import một giá trị từ module `"use client"` vào server component trả về **client reference**, tức một function, chứ không phải chuỗi. `next build` là thứ duy nhất bắt được điều này — typecheck và test đều xanh
+  - Slug đọc trong **lazy initializer của `useState`**, không phải trong effect: effect set state lúc mount tốn thêm một lần render và đúng là thứ `react-hooks/set-state-in-effect` sinh ra để chặn. `window` vắng mặt lúc prerender shell, và `null` là câu trả lời trung thực ở đó
+  - Sentinel `__shell` được coi là **không có project**: fetch một project tên `__shell` sẽ 404 theo kiểu trông như project bị thiếu
   - _Requirements: R4.13, R4.5_ — _Design: DR-3_
 - [~] G.6 Bỏ catch-all route handler khỏi build export — **`trailingSlash` xong, lật `output: "export"` còn lại**
   - `src/app/api/[[...route]]/route.ts` với `dynamic = "force-dynamic"` làm `next build` fail; `trailingSlash: false` chốt tường minh
