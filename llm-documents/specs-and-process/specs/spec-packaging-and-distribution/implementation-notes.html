@@ -413,6 +413,20 @@
           <div><dt class="font-semibold text-slate-200">Hai task treo có lý do</dt><dd class="mt-1 text-slate-300">D.3b và nửa Node của D.7 cần <code>serve</code>/<code>render</code>/<code>doctor</code> và "mode union của J.1" — <strong>chưa tồn tại</strong>. Không thể đếm entrypoint từ một union chưa có. Hoàn tất cùng J.1, khi đó test phải đếm đủ năm chứ không phải hai.</dd></div>
         </dl>
       </section>
+      <section class="mt-6 rounded-2xl border border-emerald-500/30 bg-slate-900 p-6">
+        <div class="flex flex-wrap items-center justify-between gap-3">
+          <h2 class="text-2xl font-semibold">2026-08-08 · Phase E — Host/foundation split</h2>
+          <span class="rounded-full bg-emerald-400/10 px-3 py-1 text-sm text-emerald-300">8/9 task · 2/2 AC · 1070 test</span>
+        </div>
+        <dl class="mt-6 grid gap-5 md:grid-cols-2">
+          <div><dt class="font-semibold text-slate-200">Bug ba mặt, test một chỗ</dt><dd class="mt-1 text-slate-300">Bug cũ chỉ lộ <em>một</em> vế tại một thời điểm nên đọc thành lỗi phân quyền. E.9 kiểm cả ba trong <strong>cùng một test</strong>: route trả <code>404</code> vì <em>không tồn tại</em>, foundation đã stop, discovery record vắng mặt.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Thứ tự là nội dung, không phải hình thức</dt><dd class="mt-1 text-slate-300">E.5: từ chối ghi và gỡ discovery <strong>trước</strong> mọi lần thử lấy lại — kẻ cướp lease đã là writer. E.4: canonicalize và build <strong>trước</strong> khi chạm foundation cũ, ghi <code>active_workspace</code> <strong>sau cùng</strong>. Test assert thứ tự chứ không tin nó.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Trả nợ C.4</dt><dd class="mt-1 text-slate-300"><code>recordActive</code> chỉ chạy khi swap thành công. Ghi lúc resolve khiến <code>render --workspace X</code> đổi workspace mặc định của UI, và activate hỏng để lại con trỏ chỉ vào workspace chưa bao giờ lên.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Ba mã lỗi lại thiếu</dt><dd class="mt-1 text-slate-300"><code>workspace_busy</code>, <code>workspace_switching</code>, <code>workspace_unavailable</code> không có trong <code>ErrorCode</code> dù checklist gọi tên trực tiếp — lần thứ hai sau <code>download_unavailable</code>. Thêm, map 409/503/503, redact khỏi MCP công khai; <code>tools/list</code> nguyên vẹn.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Audit tự bắt mình lần hai</dt><dd class="mt-1 text-slate-300">Regex compiler có <code>\bbuild\(</code> bắt nhầm <code>build(canonical)</code> của foundation builder — cùng kiểu quá rộng như <code>exec(</code>. Siết về tên esbuild thay vì khai miễn trừ: sai hai lần cùng kiểu là tín hiệu về cách viết pattern, không phải về code bị bắt.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Bẫy unhandled rejection</dt><dd class="mt-1 text-slate-300">Hai test viết liên tiếp lúc context cạn đều rò rejection: <code>workspaceRoot: /workspace</code> không tồn tại, và throw thoát khỏi <code>app.request</code>. Xanh local, <strong>đỏ cả ba OS</strong>. Từ đó mọi lần kiểm đều chạy <code>grep -c "Unhandled Errors"</code> và đòi <code>0</code> — <code>PASS (n) FAIL (0)</code> không đủ.</dd></div>
+        </dl>
+      </section>
     </main>
   </body>
 </html>

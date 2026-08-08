@@ -536,17 +536,22 @@ Mỗi phase chạy focused command dưới đây trên SQLite/filesystem thật,
   - Test **liệt kê đủ 6 × 11 tổ hợp** chứ không lấy mẫu — trạng thái sai chỉ tới được bằng một nước đi không nằm trong bảng
   - Ba bất biến được chốt riêng: mất lease **không** dừng foundation (giữ object để re-acquire không phải dựng lại); rollback switch về `active` chứ không rơi xuống `no-workspace`; `servesBridgeRoutes` sai ở `reacquiring` — route phải **vắng mặt**, vì một route trả 403 vẫn chứng minh daemon tin nó đang sở hữu workspace
   - _Requirements: R1.12, R2.14_
-- [ ] E.8 Integration test: đổi workspace
+- [x] E.8 Integration test: đổi workspace
   - Nhả lease cũ, lấy lease mới, refresh project **không restart tiến trình**; `active_workspace` chỉ ghi **sau** swap thành công; job đang chạy ⇒ từ chối có lý do
+  - [`workspace-switch-and-lease-loss.test.ts`](../../../../tests/cli/workspace-switch-and-lease-loss.test.ts) trên **SQLite thật + filesystem thật** trong temp directory, không mock `node:fs`
+  - Chốt **không lúc nào giữ hai lease**: sau switch, danh sách lease đúng bằng `[two]`, không phải `[one, two]` rồi mới rút — hai foundation sống cùng lúc là hai writer
+  - Switch bị từ chối **không được** dịch con trỏ `active_workspace`, và `process.pid` không đổi qua switch — cổng và session sống sót chính vì đây vẫn là một tiến trình
   - _Requirements: R1.12, R1.18_
-- [ ] E.9 Integration test: mất lease — **ba vế của bug cũ phải cùng lúc sai**
+- [x] E.9 Integration test: mất lease — **ba vế của bug cũ phải cùng lúc sai**
   - `POST /api/bridge/v1/tools/*` trả **404 vì route không tồn tại** (không phải 403/503 từ route còn đăng ký) · foundation đã stop · discovery record vắng mặt
   - Nhánh headless ⇒ listener đóng, exit ≠ 0. Và: tiến trình **đã cướp lease** là writer duy nhất
+  - Ba vế được kiểm **trong cùng một test**, không tách ra ba test: bug cũ chỉ lộ một vế tại một thời điểm, nên đọc thành lỗi phân quyền. Test chốt cùng lúc `404` (route **không tồn tại**), `heldLeases` rỗng, `discovery` rỗng
+  - Vế "writer duy nhất" được chốt bằng thứ tự: `refuseWrites` đã chạy **trước** mọi bước sau, assert ngay bên trong `removeDiscoveryRecord`, `emitLeaseLost` và `reacquire` — không có khoảnh khắc nào tiến trình này còn nhận ghi trong khi kẻ thắng cũng đang ghi
   - _Requirements: R2.14, R2.1_ — _Design: §11.3_
 
 **Acceptance Criteria**:
-- [ ] Đổi workspace không đóng cổng, không mất session
-- [ ] Không có cửa sổ nào tồn tại hai writer
+- [x] Đổi workspace không đóng cổng, không mất session — router đọc target lúc gọi (E.2) nên listener sống qua swap; test E.8 chốt `process.pid` không đổi
+- [x] Không có cửa sổ nào tồn tại hai writer — E.4 rollback khi foundation cũ từ chối dừng; E.5 từ chối ghi **trước** mọi lần thử lấy lại; E.8 chốt danh sách lease không bao giờ có hai phần tử
 
 **Deliverables**: `packages/cli/src/foundation-manager.ts` · `loopback-host.ts` · `startup.ts` · `next-host.ts`
 
