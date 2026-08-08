@@ -868,10 +868,16 @@ Mỗi phase chạy focused command dưới đây trên SQLite/filesystem thật,
   - Ghi truncate cũng trả `null`: client đọc JSON dở dang mà coi là "không có daemon" thì nó khởi **daemon thứ hai** cho cùng workspace — đúng kết cục temp+fsync+rename tồn tại để chặn
   - [`daemon-discovery.test.ts`](../../../../tests/adapter/daemon-discovery.test.ts) 13 test trên filesystem thật trong temp directory: mode `0600`/`0700` thật, **khoá đúng tám field** (không secret/attachment/lease), không sót file `.tmp`, và ca daemon cũ xoá nhầm record daemon mới
   - _Requirements: R2.13_ — _Design: §5.5, §6.2_
-- [ ] I.2 `DaemonClient` trong `packages/adapter/src/daemon/**`
+- [x] I.2 `DaemonClient` trong `packages/adapter/src/daemon/**`
   - Là **thư mục mới trong `@vidcom/adapter`**, không phải package npm mới: `packages/adapter` chỉ có một entry `exports: "./src/index.ts"`, nên `adapter/daemon` là cách đặt tên trong Design chứ không phải subpath export. Đừng tạo `packages/adapter/src/daemon/package.json`
   - Bề mặt **đóng**: `handshake`, `attach`/`renew`/`detach`, `invokeTool(name, payload)`. MUST NOT có `request(method, path, body)` tuỳ ý (DR-6) — một khi có, bridge biến thành HTTP proxy và mọi luật allowlist thành trang trí
   - Người dùng: `cli` — cả `render` (J.3) và composition root của bridge (I.2b). **`mcp` MUST NOT import nó**, xem I.2b
+  - [`daemon-client.ts`](../../../../packages/adapter/src/daemon/daemon-client.ts) — đúng năm method, và test **liệt kê khoá của object** để bề mặt mở rộng sẽ lộ ra tại đó chứ không lộ khi ai đó dùng nó
+  - **Không retry mù, và lý do phải viết ra**: mọi route trừ handshake đều đổi trạng thái daemon. Request timeout **có thể đã được áp dụng**, nên retry mù biến một attachment thành hai, hoặc một tool call thành hai side effect
+  - Deadline cho mọi call: daemon nhận socket rồi treo là ca hỏng mà không có deadline thì không bao giờ trả lời
+  - Giữ **mã lỗi của daemon** thay vì suy từ status: status không phân biệt được "bearer sai" với "workspace thuộc instance khác", mà hai cái đó đòi caller phản ứng ngược nhau
+  - Handshake kiểm identity **ở cả phía client**: daemon có thể đã restart giữa lúc đọc discovery và lúc gọi, và nó trả lời rất vui vẻ như chính nó. Client mới là bên biết nó định gọi instance nào
+  - Tên tool được `encodeURIComponent`: một tool không tồn tại phải quay về là **tool không tồn tại**, không phải một request được route đi chỗ khác
   - _Requirements: R2.2_ — _Design: §5.0, §7.0_
 - [ ] I.2b **Seam `ToolInvoker`: interface ở `mcp`, hiện thực remote ở `cli`** — đọc kỹ, đây là chỗ bản trước của checklist sai và làm CI đỏ ngay task này
   - **Luật**: `mcp` **bị cấm** import `adapter` — [steering/02](../../../steering/02-project-layout.md) §2 luật 3, và §2.1 giải thích vì sao `worker` được mà `mcp` không. Cưỡng chế ở **hai** chỗ (steering §2.2): ESLint block `packages/mcp/**` trong [`eslint.config.mjs`](../../../../eslint.config.mjs), và [`scripts/verify-import-boundaries.mjs`](../../../../scripts/verify-import-boundaries.mjs) với `throw "MCP must not import sibling infrastructure"`
@@ -1519,6 +1525,12 @@ Chi tiết: [Detailed Goals](./spec-packaging-and-distribution-detailed-goal.md)
   - Summary: Thêm discovery store atomic temp+fsync+rename, đặt tên file theo hash workspace, `remove` so `instanceId`.
   - Decisions: Dùng lại nguyên `secureAppDataDirectorySync`/`secureCredentialFile` của credential store thay vì dựng đường ACL Windows thứ hai. `read` validate đủ tám field chứ không chỉ `JSON.parse`: một record sai workspace sẽ chỉ client tới daemon khác và mọi kiểm tra sau đó đều pass vì nó nói chuyện với tiến trình thật. Ghi truncate trả `null` — client coi là "không có daemon" rồi khởi daemon thứ hai, đúng kết cục rename tồn tại để chặn.
   - Blockers: Không có; 13/13 test trên filesystem thật (mode `0600`/`0700` thật, đúng tám field, không sót `.tmp`), typecheck, lint 0 error, `test:boundaries` xanh.
+
+2026-08-09 — Phase I, Task I.2
+  - Files: `packages/adapter/src/daemon/daemon-client.ts`, `packages/adapter/src/index.ts`, `tests/adapter/daemon-client.test.ts`, checklist và implementation notes
+  - Summary: `DaemonClient` bề mặt đóng năm method — handshake, attach, renew, detach, invokeTool — có deadline, không retry mù, giữ mã lỗi của daemon.
+  - Decisions: Không có `request(method, path, body)` (DR-6), và test **liệt kê khoá object** để bề mặt phình ra lộ ngay tại đó. Không retry vì mọi route trừ handshake đổi trạng thái daemon và một request timeout có thể đã được áp dụng. Handshake kiểm identity ở cả phía client vì daemon có thể restart giữa lúc đọc discovery và lúc gọi. `encodeURIComponent` tên tool để một tool không tồn tại quay về đúng là không tồn tại chứ không thành request route đi chỗ khác.
+  - Blockers: Không có; 11/11 test, typecheck, lint 0 error, `test:boundaries` xanh. Thư mục `packages/adapter/src/daemon/` không có `package.json` riêng — nó là cách đặt tên trong Design, không phải subpath export.
 
 Format:
 ```

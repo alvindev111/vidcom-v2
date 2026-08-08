@@ -18,6 +18,7 @@ export * from "./fs/atomic-write";
 export * from "./fs/atomic-delete";
 export * from "./fs/backup-store";
 export * from "./fs/credential-store";
+export * from "./daemon/daemon-client";
 export * from "./fs/daemon-discovery";
 export * from "./fs/browse-worker";
 export * from "./fs/filesystem-browser-adapter";
