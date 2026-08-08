@@ -667,13 +667,19 @@ Mỗi phase chạy focused command dưới đây trên SQLite/filesystem thật,
   - Mỗi ứng viên đều bị **thực thi `--version`** trước khi nhận, dùng lại `verifyBrowserExecutable` của D.11: đường dẫn không phải bằng chứng, và S9 đã đo được công cụ tải báo thành công cho một binary không chạy nổi
   - [`browser-harness.ts`](../../../../tests/support/browser-harness.ts): thiếu Chrome ⇒ **skip có in lý do** trên máy dev, **fail** trong CI (`process.env.CI`). Hai luật khác nhau có chủ ý — không ai nên phải tải 200 MB để chạy unit suite, và không gì nên báo xanh cho test chưa từng chạy
   - _Requirements: R4.12, R1.10_ — _Design: §5.11, §16 C-5_
-- [ ] G.1 Service catalog + http-driver
+- [x] G.1 Service catalog + http-driver
   - Một catalog `src/lib/api/services.ts`, id `v1.<domain>.<action>`; **không** bật automatic version injection (URL đã chứa `api/v1`, tránh `/v1/v1`)
+  - Test quét **toàn bộ** catalog chốt không URL nào chứa `/v1/v1/` — version injection chồng lên đây sinh 404 trông như route thiếu chứ không như prefix nhân đôi
+  - `credentials: "include"` trên **mọi** lời gọi: session là cookie, request thiếu nó bị trả lời như ẩn danh — đọc thành lỗi phân quyền chứ không phải thiếu header
+  - **`serviceRequest` trả `{ url, init }` chứ không trả `Request`**: base cùng origin là chuỗi rỗng, và `new Request("/api/...")` **ném trong Node** dù chạy được trong trình duyệt. Dựng object ở đây làm mọi call site không test được ngoài trình duyệt — và cách "sửa" tự nhiên nhất lại là thêm một DOM environment không ai duyệt
   - _Requirements: R4.10_ — _Design: §5.11_
-- [ ] G.2 Base URL là **runtime config**
+- [x] G.2 Base URL là **runtime config**
   - `resolveApiBaseUrl()` đọc `window.__VIDCOM_API_BASE_URL__`, mặc định `location.origin`. Script chèn global chỉ render khi `NODE_ENV !== "production"` → production dead-code-eliminate. MUST NOT dùng `NEXT_PUBLIC_*`
   - **Chữ ký phải test được dưới `environment: "node"`**: [`vitest.config.ts`](../../../../vitest.config.ts) đặt node toàn cục và repo **không có `jsdom`/`happy-dom`**, nên hàm SHALL nhận nguồn qua tham số có mặc định — `resolveApiBaseUrl(source: { __VIDCOM_API_BASE_URL__?: string; location: { origin: string } } = globalThis as never)`. Đọc `window` trực tiếp trong thân hàm ⇒ `tests/frontend/api-driver.test.ts` không viết được, và cách "sửa" tự nhiên nhất là thêm `jsdom` — một dependency không ai duyệt
   - Chỉ **hai** test cần browser thật (G.0): cookie `SameSite` và SSE. Phần còn lại của driver là logic thuần, chạy dưới node
+  - [`base-url.ts`](../../../../src/lib/api/base-url.ts) đúng chữ ký checklist yêu cầu — nguồn là tham số có mặc định. Test `is callable without any browser globals at all` chốt chính điều đó
+  - Không có `NEXT_PUBLIC_*`: giá trị đó bị inline lúc build và sai với mọi lần chạy trừ đúng lần nó được build. Daemon chọn cổng loopback trống lúc chạy nên origin không thể biết trước
+  - Chuỗi rỗng khi không có nguồn nào ⇒ request tương đối cùng origin: đúng trong trình duyệt, và trung thực ở nơi không có origin
   - _Requirements: R4.10_ — _Design: §5.11_
 - [ ] G.3 Dev host fail lúc boot khi hostname lệch
   - Đo ở S9: `localhost:3000` → `127.0.0.1:<port>` thì `exchange` trả **200** mà cookie **không bao giờ quay lại** — hỏng im lặng. Cùng hostname giữ được `SameSite=Strict` qua port khác
