@@ -798,14 +798,20 @@ Mỗi phase chạy focused command dưới đây trên SQLite/filesystem thật,
   - Raw bytes chứ không base64: host đọc thẳng từ executable thành immutable view; base64 tốn thêm một phần ba dung lượng **trong binary** cộng một lần decode toàn bộ frontend trước byte đầu tiên
   - [`frontend-pack.test.ts`](../../../../tests/build/frontend-pack.test.ts) đọc lại **từng** asset tại offset đã ghi trên filesystem thật và so cả nội dung lẫn SHA-256; chốt **không kẽ hở, không chồng lấn** (chồng lấn phục vụ đuôi asset này thành đầu asset kia); chốt thứ tự sort ổn định để hai lần build ra byte giống hệt; và chốt hai ca hỏng — chưa export, và export rỗng (artifact chạy được nhưng 404 mọi trang, đọc như lỗi routing)
   - _Requirements: R4.1, R4.2_ — _Design: §5.10_
-- [~] H.3 `SeaStaticAssetHost` — **resolver xong, phần đọc pack còn lại**
+- [x] H.3 `SeaStaticAssetHost`
   - `getRawAsset` + immutable view, không ghi pack ra đĩa. Resolver normalize URL, reject encoded traversal, map `/projects/<slug>` **và payload RSC `.txt`** sang `projects/__shell*`
   - HTML/RSC `no-store`; `/_next/static/**` immutable
   - [`sea-static-host.ts`](../../../../packages/cli/src/sea-static-host.ts) — resolver thuần, 14 test
   - **Hai lỗi thật do test bắt, không phải do đọc lại code**: (1) `new URL()` **tự resolve `..` khi parse**, nên mọi kiểm tra đặt *sau* nó đều nhìn thấy path đã sạch — traversal lọt qua trông như đường dẫn thường. Phải kiểm trên **path thô** trước. (2) `//projects/x` bị URL parser đọc `//projects` thành **authority**, nuốt mất segment đầu. Đã **bỏ hẳn `new URL`** và dựng path từ chính các segment đã decode — xoá cả một lớp phân kỳ parser
   - Decode **đúng một lần**; còn `%` sau đó là từ chối, không decode tiếp: double-encode ở đây chỉ tồn tại để lách một kiểm tra decode một lần
   - `/projects/<slug>` và payload RSC `.txt` **cùng** về `projects/__shell*`: thiếu vế `.txt` thì điều hướng trong app 404 trong khi tải lại trang vẫn chạy — hỏng theo kiểu chỉ một nửa
-  - **Còn lại**: `getRawAsset` + immutable view (không ghi pack ra đĩa) — cần `frontend.pack` của **H.2**
+  - **`createSeaStaticAssetHost` đã xong**: đọc hai asset nhúng qua seam `SeaAssetSource.getRawAsset`, mỗi response body là **subarray view** trên pack — không copy, không ghi ra đĩa. Copy nghĩa là giữ hai bản frontend trong RAM; ghi ra nghĩa là đặt một bản app **sửa được** cạnh artifact, đúng thư mục mà thiết kế này tồn tại để tránh
+  - Seam thay vì gọi thẳng `node:sea`: một test chỉ chạy được bên trong executable đã đóng gói là test không ai chạy
+  - Kiểm biên **một lần lúc dựng**, không phải mỗi request: entry vượt quá pack nghĩa là manifest và pack đến từ hai lần build khác nhau, và lúc trung thực để nói là trước request đầu tiên chứ không phải ở trang nào tình cờ tải asset bị cắt cụt
+  - **Phát hiện phải ghi lại vì nó ngược với trực giác từ test của resolver**: ở tầng `Request`, traversal **không bao giờ tới nơi** — WHATWG URL resolve cả `..` lẫn bản percent-encode `%2e%2e` ngay lúc parse, nên cả hai URL đó hỏi host `/index.html` và được `/index.html`. Không có gì thoát ra: pack không có thư mục, và mọi key mà một path đã normalize chạm tới đều là asset export đã publish. Resolver **vẫn** từ chối traversal cho caller đưa raw path — mà dòng request của `node:http` chính là raw path
+  - `requestPath` cắt chuỗi thay vì parse lần hai: `//projects/x` bị URL parser đọc `//projects` thành authority và nuốt segment đầu — đúng lỗi (2) đã ghi ở trên, giữ nguyên chỗ nó có thể quay lại
+  - Chốt cấu trúc "không ghi ra đĩa" bằng test đọc chính source module và đòi **không có import `node:fs`**: module không với tới filesystem được thì không trôi vào đó được
+  - GET/HEAD phục vụ, method khác trả `405` kèm `allow` — asset host không có đường ghi nào
   - _Requirements: R4.2, R4.5_ — _Design: §5.10_
 - [ ] H.4 Build SEA native theo runner
   - `useCodeCache=false`, `useSnapshot=false`, postject pinned, không cross-build
@@ -1469,6 +1475,12 @@ Chi tiết: [Detailed Goals](./spec-packaging-and-distribution-detailed-goal.md)
   - Summary: Nối `out/` thành `frontend.pack` raw bytes cộng manifest `path/offset/length/sha256/mime/cachePolicy`; chạy thật ra 57 asset, 2.379.699 byte.
   - Decisions: `cachePolicy` và `mime` lấy từ chính `resolveAsset`/`mimeTypeFor` của H.3 thay vì khai lại trong script build — quyết hai lần là cách build và host lệch nhau, và bảng MIME đóng chỉ được có một bản. Hệ quả: bước pack trong `planSteps()` chạy dưới `bun` chứ không `node`, vì nó phải import thẳng module TypeScript đó; test ghim luôn `command === "bun"` kèm lý do. Đi bộ thư mục chỉ nhận regular file: symlink trong export nghĩa là pack trỏ ra ngoài chính nó.
   - Blockers: Không có; `tests/build` 22/22 xanh, gồm đọc lại từng asset tại offset trên filesystem thật, chốt không kẽ hở/chồng lấn, và hai lần build ra pack byte giống hệt. Typecheck, lint 0 error, `test:boundaries` xanh.
+
+2026-08-09 — Phase H, Task H.3 (nửa còn lại)
+  - Files: `packages/cli/src/sea-static-host.ts`, `tests/adapter/sea-static-host.test.ts`, checklist và implementation notes
+  - Summary: Thêm `createSeaStaticAssetHost` đọc pack + manifest qua seam `getRawAsset`, phục vụ bằng subarray view, kiểm biên manifest lúc dựng, GET/HEAD only.
+  - Decisions: Seam `SeaAssetSource` thay vì gọi thẳng `node:sea` để test chạy được ngoài executable. Header cache đọc lại từ manifest — giá trị đó do H.2 lấy từ chính resolver này, nên không phải quyết định thứ hai. `requestPath` cắt chuỗi thay vì `new URL` vì `//projects/x` bị đọc thành authority.
+  - Blockers: Không có. **Phát hiện ngược trực giác, đã ghi thành test**: ở tầng `Request`, cả `..` lẫn `%2e%2e` đều bị WHATWG URL resolve lúc parse, nên host không bao giờ thấy traversal; không có gì thoát ra vì pack không có thư mục và mọi key chạm tới đều là asset đã publish. Resolver vẫn giữ nguyên từ chối cho caller raw-path (`node:http`). 23/23 test file này, golden 26/26, `tests/build` 22/22; typecheck, lint 0 error, boundaries xanh.
 
 Format:
 ```

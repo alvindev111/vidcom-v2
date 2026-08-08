@@ -129,3 +129,112 @@ export function mimeTypeFor(assetPath: string): string {
   const extension = dot === -1 ? "" : assetPath.slice(dot).toLowerCase();
   return MIME_TYPES[extension] ?? "application/octet-stream";
 }
+
+export interface FrontendManifestEntry {
+  path: string;
+  offset: number;
+  length: number;
+  sha256: string;
+  mime: string;
+  cachePolicy: CachePolicy;
+}
+
+/** The two blobs the build embeds, addressed by the names it wrote them under. */
+export const MANIFEST_ASSET = "frontend-manifest.json";
+export const PACK_ASSET = "frontend.pack";
+
+/**
+ * Reads an embedded asset.
+ *
+ * A seam rather than a direct `node:sea` call: the host has to be exercised
+ * outside a packaged executable, and a test that can only run inside one is a
+ * test nobody runs.
+ */
+export interface SeaAssetSource {
+  getRawAsset(key: string): ArrayBuffer;
+}
+
+export interface SeaStaticAssetHost {
+  handle(request: Request): Response;
+}
+
+/**
+ * Takes the path out of an absolute request URL by cutting, not by parsing.
+ *
+ * `new URL()` is avoided for the reason `resolveAsset` avoids it: a path
+ * opening with `//` is read as an authority, so `//projects/x` would arrive
+ * with its first segment silently taken as a hostname. Percent-encoding is
+ * left exactly as it came in — the resolver decodes once and refuses anything
+ * still encoded after that, which is where an encoded traversal is caught.
+ *
+ * A literal `..` never reaches here: the Request constructor resolves it while
+ * parsing the URL, long before this runs. That is the runtime's behaviour, not
+ * a guarantee this host provides, which is why the resolver still refuses `..`
+ * for callers that hand it a raw path.
+ */
+export function requestPath(url: string): string {
+  const scheme = url.indexOf("://");
+  const afterAuthority = scheme === -1 ? url : url.slice(scheme + 3);
+  const slash = afterAuthority.indexOf("/");
+  return slash === -1 ? "/" : afterAuthority.slice(slash);
+}
+
+function parseManifest(source: SeaAssetSource, packBytes: number): Map<string, FrontendManifestEntry> {
+  const raw = new TextDecoder().decode(new Uint8Array(source.getRawAsset(MANIFEST_ASSET)));
+  const parsed = JSON.parse(raw) as { entries?: FrontendManifestEntry[] };
+  const entries = parsed.entries ?? [];
+  if (entries.length === 0) throw new Error("frontend manifest is empty");
+
+  const byPath = new Map<string, FrontendManifestEntry>();
+  for (const entry of entries) {
+    // Checked once at start-up rather than per request. An entry reaching past
+    // the pack is a build that produced a manifest and a pack from different
+    // runs, and the honest moment to say so is before the first request, not on
+    // whichever page happens to load the truncated asset.
+    if (entry.offset < 0 || entry.length < 0 || entry.offset + entry.length > packBytes) {
+      throw new Error(`frontend manifest entry is outside the pack: ${entry.path}`);
+    }
+    byPath.set(entry.path, entry);
+  }
+  return byPath;
+}
+
+/**
+ * Serves the exported frontend out of the executable.
+ *
+ * The pack is never written to disk and never copied: each response body is a
+ * view onto the embedded bytes. Copying would mean holding a second full
+ * frontend in memory, and writing it out would put a mutable copy of the app
+ * next to the artifact, which is exactly the directory this design exists to
+ * avoid.
+ */
+export function createSeaStaticAssetHost(source: SeaAssetSource): SeaStaticAssetHost {
+  const pack = new Uint8Array(source.getRawAsset(PACK_ASSET));
+  const entries = parseManifest(source, pack.byteLength);
+
+  return {
+    handle(request: Request): Response {
+      if (request.method !== "GET" && request.method !== "HEAD") {
+        return new Response(null, { status: 405, headers: { allow: "GET, HEAD" } });
+      }
+
+      const resolution = resolveAsset(requestPath(request.url));
+      const entry = resolution === null ? undefined : entries.get(resolution.assetPath);
+      if (entry === undefined) return new Response(null, { status: 404 });
+
+      const headers = {
+        "content-type": entry.mime,
+        "content-length": String(entry.length),
+        // The manifest carries the policy the build derived from this same
+        // resolver, so the two cannot drift; reading it back is not a second
+        // decision.
+        "cache-control": cacheControlFor(entry.cachePolicy),
+      };
+      if (request.method === "HEAD") return new Response(null, { status: 200, headers });
+      return new Response(pack.subarray(entry.offset, entry.offset + entry.length), {
+        status: 200,
+        headers,
+      });
+    },
+  };
+}
