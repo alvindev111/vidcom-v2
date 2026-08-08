@@ -401,17 +401,23 @@ Mỗi phase chạy focused command dưới đây trên SQLite/filesystem thật,
   - `RenderBinaryProbeResult.hyperframesCommand` phải nới từ `[string, string]` sang `[string, ...string[]]`: kiểu cũ khoá cứng đúng hai phần tử nên không chứa nổi sentinel
   - Test chốt **chính cái bẫy**: `parseVidcomCommand([NODE_SENTINEL, script])` trả `{ name: "app" }` — bằng chứng sống rằng hình dạng spawn cũ không sinh lỗi mà lặng lẽ khởi động app
   - _Requirements: R6.2, R6.4_ — _Design: §4.6_
-- [ ] D.3a Kiểu `RuntimePaths` + resolver hai chế độ
+- [x] D.3a Kiểu `RuntimePaths` + resolver hai chế độ
   - Một chỗ duy nhất trả `hyperframesCliPath`, `hyperframesPackagePath`, `motionLibraryRoot`, `nativeDependenciesRoot`, `browserCacheRoot`. Chế độ artifact: **bắt buộc đủ cả năm**, thiếu một là lỗi có mã lúc bootstrap, không phải lúc render. Chế độ dev/test: `require.resolve` như hôm nay
   - `require.resolve` MUST NOT còn xuất hiện trên đường artifact — test D.10 chứng minh bằng cách chạy resolver với `require.resolve` bị stub thành throw
+  - [`runtime-paths.ts`](../../../../packages/adapter/src/runtime/runtime-paths.ts): hai chế độ **rời hẳn nhau**, không phải một chế độ có fallback. Artifact lấy đủ năm đường từ `archiveRoots` mà `RuntimeAssetManager` đã publish; thiếu archive nào ⇒ `runtime_manifest_invalid` **lúc bootstrap**, kèm `details.missing`
+  - `assertComplete` từ chối cả đường **tương đối**, không chỉ đường thiếu — một `motionLibraryRoot` tương đối sẽ resolve theo `cwd` của process và hỏng khác nhau tuỳ nơi gọi
+  - Test chứng minh artifact không chạm `require.resolve` bằng cách truyền một resolver **ném lỗi** và chốt là không ném
   - _Requirements: R5.7, R6.3_ — _Design: §5.16_
 - [ ] D.3b Truyền `RuntimePaths` từ **mọi** entrypoint
   - `app`, `serve`, `mcp`, `render`, `doctor` — mỗi cái một dòng, và đây là chỗ dễ làm sót đúng một cái rồi chỉ hỏng ở mode ít dùng nhất
   - `motionLibraryRoot` hôm nay **không entrypoint nào truyền** (bẫy 4.8): nó là lý do task này tách riêng khỏi D.3a. Resolver đúng mà không ai truyền thì `install_motion_library` vẫn hỏng y như cũ
   - Test: liệt kê entrypoint từ mode union của J.1 và chứng minh **không entrypoint nào** dựng `RuntimePaths` rỗng hay thiếu field
   - _Requirements: R5.8, R6.3_ — _Design: §5.16, §4.8_
-- [ ] D.4 `CompilerGuard`
+- [x] D.4 `CompilerGuard`
   - Đặt **cả hai** `ESBUILD_BINARY_PATH` và `ESBUILD_WORKER_THREADS=0`; timeout bắt buộc cho mọi lời gọi in-process chạm compiler. Thiếu **bất kỳ** cái nào ⇒ **treo vĩnh viễn, không một dòng stderr**
+  - Preflight chạy **trước** operation: thiếu biến thì trả `compiler_unavailable` ngay, không bắt caller chờ hết budget rồi mới biết. Test chốt cả hai điều: đúng mã lỗi, và trả về trong dưới 1s dù budget là 30s
+  - Timeout **không được tuỳ chọn**: `run()` ném `TypeError` khi timeout ≤ 0. Timeout tuỳ chọn là một cú treo đang chờ được tái sinh
+  - Test dùng operation `new Promise(() => {})` — **đúng hình dạng lỗi thật**: không error, không stderr, không trả về
   - _Requirements: R6.10, R6.11_ — _Design: §5.17_
 - [x] D.5 **Ép** `PYTHONUTF8`/`PYTHONIOENCODING`
   - Đổi `??=` thành ghi đè vô điều kiện trong [`allowlistedEnvironment`](../../../../packages/adapter/src/runtime/process-environment.ts#L19); mọi child (sidecar, shim, FFmpeg, Chromium) đi qua helper đó
