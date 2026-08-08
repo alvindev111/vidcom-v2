@@ -344,8 +344,10 @@ Mỗi phase chạy focused command dưới đây trên SQLite/filesystem thật,
 - [ ] C.7 Reconciliation mọi boot
   - Bất biến: **file là secret duy nhất, DB/settings là projection**. Bốn nhánh theo bảng §4.4; replacement mồ côi nhận qua `rotated_from`; row `active` label `system:bridge` không phải `S` bị revoke
   - _Requirements: R2.5_ — _Design: §4.4, §5.1_
-- [ ] C.8 Migration `workspace_operation.kind += project_import`
+- [x] C.8 Migration `workspace_operation.kind += project_import`
   - Forward-only; rebuild bảng nếu check constraint đòi; giữ nguyên id/status
+  - `20260808073614_normal_stature` — check constraint buộc rebuild bảng, và drizzle sinh đúng hình dạng `INSERT … SELECT` giữ nguyên `id`, `status` cùng mọi cột khác
+  - `test:schema-drift` xanh sau khi sinh; **một test khác phải sửa**: [`mcp-database-migration.test.ts`](../../../../tests/adapter/mcp-database-migration.test.ts) chốt cứng số migration đã áp (12 → 13). Đây là assert đếm, không phải hành vi
   - _Requirements: R7.6_ — _Design: §6.5_
 - [ ] C.9 Logic test
   - Thứ tự bốn bước; bảng bốn nhánh reconciliation; luật thứ tự khoá
@@ -357,8 +359,11 @@ Mỗi phase chạy focused command dưới đây trên SQLite/filesystem thật,
 - [ ] C.11 Integration test: hai `rotate --bridge` song song + reconciliation đè lên rotate đang dở
   - Khoá serialize; kẻ chờ quá hạn nhận `bridge_rotation_in_progress`
   - _Requirements: R2.5_
-- [ ] C.12 Integration test: migration trên fixture DB Phase 3 thật
+- [x] C.12 Integration test: migration trên fixture DB Phase 3 thật
   - Row count/kind distribution trước-sau, `foreign_key_check=0`, schema drift
+  - DB được dựng bằng **đúng tập migration trước** `20260808073614`, không phải DB hiện tại rồi giả vờ cũ. Bốn row phủ bốn `kind` cũ và bốn `status` khác nhau; sau migration `id`/`kind`/`status` khớp **nguyên vẹn** từng dòng
+  - Chốt cả hai chiều của check constraint: trước migration `project_import` bị **từ chối**, sau migration được nhận, và một `kind` bịa ra vẫn bị từ chối. `foreign_key_check = 0`; id tiếp tục từ 5 chứ không restart — bảng rebuild mà renumber id sẽ đụng row khác đang tham chiếu
+  - Helper `databaseBefore(boundary, label)` tách ra từ `databaseBeforeHostEvents` để migration sau dùng lại cùng khuôn
   - _Requirements: R7.6_ — _Design: §6.5_
 
 **Acceptance Criteria**:

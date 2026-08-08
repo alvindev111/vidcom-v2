@@ -8,6 +8,7 @@ import { createSqliteClient, initializeDatabase, inspectDatabase, migrateDatabas
 import { dbAll, dbOne, dbRun } from "../support/database";
 
 const HOST_EVENT_MIGRATION = "20260807144527_amazing_kitty_pryde";
+const PROJECT_IMPORT_MIGRATION = "20260808073614_normal_stature";
 
 let root: string;
 let appData: string;
@@ -29,18 +30,23 @@ const insertProject = (database: Awaited<ReturnType<typeof initializeDatabase>>,
     (id, workspace_root, slug, first_seen_at, last_seen_at) VALUES (?, ?, ?, ?, ?)`,
   id, workspace, slug, "2026-08-01T00:00:00.000Z", "2026-08-01T00:00:00.000Z");
 
-async function databaseBeforeHostEvents() {
-  const migrations = path.join(root, "prior-host-event-migrations");
+/** Builds a database migrated only up to (not including) `boundary`. */
+async function databaseBefore(boundary: string, label: string) {
+  const migrations = path.join(root, label);
   const source = new URL("../../packages/adapter/drizzle/", import.meta.url);
   await mkdir(appData, { recursive: true });
   await mkdir(migrations, { recursive: true });
   for (const entry of await readdir(source, { withFileTypes: true })) {
-    if (!entry.isDirectory() || entry.name >= HOST_EVENT_MIGRATION) continue;
+    if (!entry.isDirectory() || entry.name >= boundary) continue;
     await cp(new URL(`${entry.name}/`, source), path.join(migrations, entry.name), { recursive: true });
   }
   const database = createSqliteClient(path.join(appData, "vidcom.sqlite"));
   await migrateDatabase(database, migrations);
   return database;
+}
+
+function databaseBeforeHostEvents() {
+  return databaseBefore(HOST_EVENT_MIGRATION, "prior-host-event-migrations");
 }
 
 describe("Drizzle migrations", () => {
@@ -66,6 +72,50 @@ describe("Drizzle migrations", () => {
       expect(Number(appended.lastInsertRowid)).toBe(3);
       expect(dbOne(database, "SELECT count(*) AS violations FROM pragma_foreign_key_check"))
         .toEqual({ violations: 0 });
+    } finally {
+      await database.destroy();
+    }
+  });
+
+  it("adds project_import without disturbing existing workspace operations", async () => {
+    // The kind check constraint forces a table rebuild, which is the migration
+    // shape most able to lose rows, renumber ids or drop a status silently.
+    const database = await databaseBefore(PROJECT_IMPORT_MIGRATION, "prior-project-import-migrations");
+    const now = "2026-08-07T00:00:00.000Z";
+    try {
+      insertProject(database, "p1", "one");
+      const kinds = ["agent_kit_files", "project_create", "project_rename", "project_delete"] as const;
+      const statuses = ["pending", "committed", "aborted", "recovered"] as const;
+      kinds.forEach((kind, index) => {
+        dbRun(database, `INSERT INTO workspace_operation
+          (workspace_root, kind, project_id, status, actor, action, created_at)
+          VALUES (?, ?, 'p1', ?, 'user', 'test', ?)`,
+        workspace, kind, statuses[index] ?? "pending", now);
+      });
+      const before = dbAll(database, `SELECT id, kind, status FROM workspace_operation ORDER BY id`);
+      expect(before).toHaveLength(4);
+
+      // Before the migration the new kind is rejected by the old constraint.
+      expect(() => dbRun(database, `INSERT INTO workspace_operation
+        (workspace_root, kind, project_id, status, actor, action, created_at)
+        VALUES (?, 'project_import', 'p1', 'pending', 'user', 'test', ?)`, workspace, now)).toThrow();
+
+      await migrateDatabase(database);
+
+      expect(dbAll(database, `SELECT id, kind, status FROM workspace_operation ORDER BY id`))
+        .toEqual(before);
+      expect(dbOne(database, "SELECT count(*) AS violations FROM pragma_foreign_key_check"))
+        .toEqual({ violations: 0 });
+
+      const imported = dbRun(database, `INSERT INTO workspace_operation
+        (workspace_root, kind, project_id, status, actor, action, created_at)
+        VALUES (?, 'project_import', 'p1', 'pending', 'user', 'test', ?)`, workspace, now);
+      // Ids continue rather than restart, so a rebuilt table cannot collide with
+      // an id some other row already references.
+      expect(Number(imported.lastInsertRowid)).toBe(5);
+      expect(() => dbRun(database, `INSERT INTO workspace_operation
+        (workspace_root, kind, project_id, status, actor, action, created_at)
+        VALUES (?, 'project_teleport', 'p1', 'pending', 'user', 'test', ?)`, workspace, now)).toThrow();
     } finally {
       await database.destroy();
     }

@@ -289,7 +289,7 @@ export const job = sqliteTable("job", {
 export const workspaceOperation = sqliteTable("workspace_operation", {
   id: integer().primaryKey({ autoIncrement: true }),
   workspaceRoot: text("workspace_root").notNull(),
-  kind: text({ enum: ["agent_kit_files", "project_create", "project_rename", "project_delete"] }).notNull(),
+  kind: text({ enum: ["agent_kit_files", "project_create", "project_rename", "project_delete", "project_import"] }).notNull(),
   projectId: text("project_id"),
   fromPath: text("from_path"),
   toPath: text("to_path"),
@@ -306,7 +306,7 @@ export const workspaceOperation = sqliteTable("workspace_operation", {
   index("idx_workspace_operation_pending").on(table.status, table.createdAt),
   index("idx_workspace_operation_project").on(table.projectId, table.status),
   uniqueIndex("uq_workspace_operation_grant").on(table.grantId).where(sql`${table.grantId} IS NOT NULL`),
-  check("ck_workspace_operation_kind", sql`${table.kind} IN ('agent_kit_files', 'project_create', 'project_rename', 'project_delete')`),
+  check("ck_workspace_operation_kind", sql`${table.kind} IN ('agent_kit_files', 'project_create', 'project_rename', 'project_delete', 'project_import')`),
   check("ck_workspace_operation_status", sql`${table.status} IN ('pending', 'committed', 'aborted', 'recovered', 'orphaned')`),
   check("ck_workspace_operation_actor", actorCheck(table.actor)),
   check("ck_workspace_operation_tool_audit_json", sql`${table.toolAuditJson} IS NULL OR json_valid(${table.toolAuditJson})`),
