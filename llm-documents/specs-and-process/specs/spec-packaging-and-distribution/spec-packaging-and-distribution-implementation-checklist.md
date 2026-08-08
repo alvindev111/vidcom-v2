@@ -490,8 +490,11 @@ Mỗi phase chạy focused command dưới đây trên SQLite/filesystem thật,
 **Estimate**: 17 SP
 
 **Tasks**:
-- [ ] E.1 Tách `startVidcomFoundation`
+- [~] E.1 Tách `startVidcomFoundation` — **lifecycle handle xong, tách prepareFoundation còn lại**
   - Thành `prepareFoundation` (không listener) + lifecycle handle `stop()` idempotent. `createInfrastructure(config)` nướng `workspaceRoot` và `createApplication(infra, leaseId)` nướng `leaseId` ([`startup.ts:154`](../../../../packages/cli/src/startup.ts#L154), [`:216`](../../../../packages/cli/src/startup.ts#L216)) — đổi workspace là tear-down + rebuild toàn bộ
+  - **Đã làm**: [`foundation-lifecycle.ts`](../../../../packages/cli/src/foundation-lifecycle.ts) rút mẫu "năm promise once-only" đang nằm rải trong `startup.ts:164-200` thành một handle có test. Hai bất biến quan trọng hơn cơ chế: **(1) mỗi bước chạy đúng một lần** qua mọi lời gọi `stop()` — các đường tắt máy chồng nhau (signal, mất lease, stop tường minh có thể đến cùng lúc), nhả lease hai lần biến shutdown thành lỗi; **(2) một bước ném KHÔNG huỷ các bước sau** — lease phải được nhả kể cả khi watcher hỏng, vì foundation tháo dở mà còn giữ lease chính là trạng thái cả Phase E sinh ra để chống. Lỗi được gom và ném cùng lúc bằng `AggregateError`
+  - Chốt thêm: bước **đã hỏng không được thử lại** ở lần `stop()` sau (thử lại sẽ nhân đôi tác dụng phụ nó kịp gây ra), và `stopping` trả `true` **ngay** khi gọi chứ không đợi teardown xong — caller quyết định có nhận việc nữa hay không cần câu trả lời tức thì
+  - **Còn lại**: tách `prepareFoundation` (không listener) khỏi `startVidcomFoundation` và lắp handle này vào. Đây là phần đụng vòng đời thật, làm cùng E.4/E.5 để không tháo ra rồi lắp lại hai lần
   - _Requirements: R1.12_ — _Design: §5.3_
 - [x] E.2 `LoopbackHost` + `currentApp` đổi được
   - Listener đọc `currentApp` mỗi request; swap là assignment đồng bộ; `/api/**` vào Hono app, còn lại vào static host

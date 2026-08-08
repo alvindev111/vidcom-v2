@@ -2,6 +2,7 @@ export * from "./bootstrap-coordinator";
 export * from "./bridge-credential";
 export * from "./node-sentinel";
 export * from "./foundation-state";
+export * from "./foundation-lifecycle";
 export * from "./bootstrap-app";
 export * from "./loopback-host";
 export * from "./composition-root";
