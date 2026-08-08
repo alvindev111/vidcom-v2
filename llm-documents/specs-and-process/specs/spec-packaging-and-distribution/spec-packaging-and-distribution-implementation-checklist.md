@@ -474,9 +474,9 @@ Mỗi phase chạy focused command dưới đây trên SQLite/filesystem thật,
   - _Requirements: R6.8_ — _Design: §4.6, §11.4_
 
 **Acceptance Criteria**:
-- [ ] Render MP4 **từ artifact** trên máy không có Node và không có Python trên PATH
-- [ ] `install_motion_library` vendor được mà không cần `node_modules`, version khớp catalogue
-- [ ] Không đường nào chạm compiler mà thiếu timeout
+- [ ] Render MP4 **từ artifact** trên máy không có Node và không có Python trên PATH — **chưa kiểm được ở D**: cần một artifact thật, tức [`build:artifact`](../../../../package.json) của **H.0**. Đây là AC duy nhất của D không thể chứng minh bằng test đơn vị; nó là gate thật của Phase H
+- [ ] `install_motion_library` vendor được mà không cần `node_modules`, version khớp catalogue — chờ **D.3b** nối `motionLibraryRoot` từ mọi entrypoint. Resolver đã đúng (D.3a) nhưng resolver đúng mà không ai truyền thì vẫn hỏng y như bẫy §4.8 mô tả
+- [x] Không đường nào chạm compiler mà thiếu timeout — [`compiler-timeout-audit.test.ts`](../../../../tests/adapter/compiler-timeout-audit.test.ts) quét bốn package, fail nếu có file chạm compiler mà không qua `CompilerGuard` cũng không tự khai timeout. Miễn trừ phải kèm lý do và phải còn trỏ vào file thật. Audit bắt được một false positive đúng như thiết kế: `runtime-asset-source.ts` khai `esbuild: string` là **field version trong manifest**, không phải lời gọi compiler
 
 **Deliverables**: `packages/cli/src/main.ts` · `binary-probe.ts` · `compiler-guard.ts` · `vieneu-sidecar-path.ts` · `tts-vieneu.ts` · `process-environment.ts`
 
