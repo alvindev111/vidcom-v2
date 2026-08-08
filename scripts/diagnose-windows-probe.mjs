@@ -50,19 +50,39 @@ function restrictedEnvironment() {
   return environment;
 }
 
-const TRIVIAL = "'ok'";
 const GET_PROCESS = `$p = Get-Process -Id ${process.pid} -ErrorAction SilentlyContinue; if ($null -eq $p) { 'absent' } else { $p.StartTime.ToUniversalTime().ToString('o') }`;
-const GET_CIM = `$p = Get-CimInstance Win32_Process -Filter "ProcessId = ${process.pid}"; $p.CreationDate.ToUniversalTime().ToString('o')`;
+
+// PowerShell itself starts fine under the restricted environment (216ms) while
+// any process-inspecting cmdlet hangs, with both .NET and WMI. So one missing
+// variable is responsible; this bisects which.
+function withOverrides(overrides) {
+  const environment = restrictedEnvironment();
+  for (const [name, value] of Object.entries(overrides)) {
+    if (value === undefined) delete environment[name];
+    else environment[name] = value;
+  }
+  return environment;
+}
+
+const IDENTITY_NAMES = ["USERNAME", "USERDOMAIN", "COMPUTERNAME", "ALLUSERSPROFILE"];
+const identityOverrides = Object.fromEntries(
+  IDENTITY_NAMES.map((name) => [name, process.env[name]]).filter(([, value]) => value !== undefined),
+);
 
 const cases = [
-  { name: "trivial + inherited env + PATH binary", exe: "powershell.exe", command: TRIVIAL, env: undefined },
-  { name: "trivial + inherited env + absolute binary", exe: powershell, command: TRIVIAL, env: undefined },
-  { name: "trivial + restricted env", exe: powershell, command: TRIVIAL, env: restrictedEnvironment() },
-  { name: "Get-Process + inherited env", exe: powershell, command: GET_PROCESS, env: undefined },
-  { name: "Get-Process + restricted env", exe: powershell, command: GET_PROCESS, env: restrictedEnvironment() },
-  { name: "Get-CimInstance + inherited env", exe: powershell, command: GET_CIM, env: undefined },
-  { name: "Get-CimInstance + restricted env", exe: powershell, command: GET_CIM, env: restrictedEnvironment() },
-];
+  { name: "baseline restricted", command: GET_PROCESS, env: restrictedEnvironment() },
+  { name: "trivial + restricted (control)", command: "'ok'", env: restrictedEnvironment() },
+  { name: "restricted + inherited PSModulePath", command: GET_PROCESS, env: withOverrides({ PSModulePath: process.env.PSModulePath }) },
+  { name: "restricted, PSModulePath deleted", command: GET_PROCESS, env: withOverrides({ PSModulePath: undefined }) },
+  { name: "restricted, PSModulePath empty", command: GET_PROCESS, env: withOverrides({ PSModulePath: "" }) },
+  { name: "restricted + inherited PATH", command: GET_PROCESS, env: withOverrides({ PATH: process.env.PATH }) },
+  { name: `restricted + ${IDENTITY_NAMES.join("/")}`, command: GET_PROCESS, env: withOverrides(identityOverrides) },
+  { name: "restricted + PROCESSOR/NUMBER_OF_PROCESSORS", command: GET_PROCESS, env: withOverrides({
+    PROCESSOR_ARCHITECTURE: process.env.PROCESSOR_ARCHITECTURE,
+    NUMBER_OF_PROCESSORS: process.env.NUMBER_OF_PROCESSORS,
+  }) },
+  { name: "inherited env (control)", command: GET_PROCESS, env: undefined },
+].map((item) => ({ ...item, exe: powershell }));
 
 function describe(error) {
   if (error?.killed === true || error?.signal) return `TIMEOUT after ${TIMEOUT_MS}ms`;
