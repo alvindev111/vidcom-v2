@@ -1495,6 +1495,12 @@ Chi tiết: [Detailed Goals](./spec-packaging-and-distribution-detailed-goal.md)
   - Decisions: `postject@1.0.0-alpha.6` ghim và gọi qua package runner; nó là công cụ build, không dòng nào trong sản phẩm import nó, nên `package.json`/lockfile không đổi. Hai bước `codesign` nằm trong H.4 chứ không đợi L.3 vì Mach-O arm64 không chữ ký bị kernel giết lúc launch — không có chúng thì không có gì để kiểm chứng. Test giữ ở mức logic: build thật tốn 127 MB và cần mạng cho `bunx`, nên nó thuộc packaged smoke của M.
   - Blockers: **`build:artifact` toàn chuỗi vẫn chưa chạy được**: bước 1 (`build-runtime-archives.mjs`) đòi config pin version + hash ba OS chưa có trong repo, và bước cuối `verify-artifact.mjs` là L.1 chưa viết. Bốn bước giữa (export, pack, bundle, sea) đã chạy tay liên tiếp và ra artifact thật. `tests/build` 30/30, typecheck, lint 0 error, boundaries xanh.
 
+2026-08-09 — Phase G, G.6 CI remediation (run 31283969261)
+  - Files: `scripts/runtime-smoke-host.mjs`, `scripts/verify-next-runtime.mjs`, `.github/workflows/ci.yml`, checklist và implementation notes
+  - Summary: Exact SHA `6ee93ba` đỏ **cả ba OS** ở đúng một step — `test:runtime-smoke` khởi `next start`, mà `"next start" does not work with "output: export" configuration`. Đổi host của smoke sang chính listener daemon.
+  - Decisions: Không skip step, không disable job, không nới gate. Mọi khẳng định của smoke — nonce exchange, session cookie, project list, MCP legacy + modern exact/latest, credential audit, SSE `Last-Event-ID` resume — đều thuộc **API của daemon**; `next start` chỉ là process chứa nó. `runtime-smoke-host.mjs` bind `handleNextHostedRequest` qua `bindLoopback` của E. Bỏ probe `GET /` (frontend giờ là file tĩnh, không thuộc process này): readiness đọc dòng `listening` trên stdout, nên một route trả lời là việc của khẳng định kế tiếp chứ không che mất bên nào hỏng. Đổi tên step CI cho khớp thực tế.
+  - Blockers: Bun **không host được** cái này — `No such built-in module: node:sqlite`, mà SQLite là nền của cả stack. Chạy dưới Node với loader `tsx@4.23.1` đã là direct dependency của `packages/cli`, đúng cách các suite MCP đang làm. Smoke xanh cục bộ: `SSE 1 -> 2`, MCP legacy + modern ok. Chờ CI exact HEAD ba OS.
+
 Format:
 ```
 YYYY-MM-DD — Phase X, Task X.Y

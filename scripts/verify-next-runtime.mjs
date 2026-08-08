@@ -1,10 +1,12 @@
 import { execFile as execFileCallback, spawn } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import { cp, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { createRequire } from "node:module";
 import net from "node:net";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
+import { pathToFileURL } from "node:url";
 import { promisify } from "node:util";
 
 import { Client as ModernClient, StreamableHTTPClientTransport as ModernHttp } from "@modelcontextprotocol/client";
@@ -167,8 +169,17 @@ function verifyCredentialAudit(appData, credentialId) {
 await cp(path.join(root, "projects", "swiss-grid"), projectRoot, { recursive: true });
 const port = await freePort();
 const baseUrl = `http://127.0.0.1:${port}`;
-const nextBin = path.join(root, "node_modules", "next", "dist", "bin", "next");
-const child = spawn(process.execPath, [nextBin, "start", "-H", "127.0.0.1", "-p", String(port)], {
+// `next start` used to host this. The frontend is a static export now, so Next
+// has no server to run and no API to carry: the daemon owns the API, the MCP
+// transports and the event stream, which is everything this smoke asserts. The
+// host runs under Node, which is what ships, with the loader the MCP suites
+// already use to run TypeScript directly. Bun cannot host it: it has no
+// `node:sqlite`, which is the database this whole stack is built on.
+const host = path.join(root, "scripts", "runtime-smoke-host.mjs");
+const tsxLoader = pathToFileURL(
+  createRequire(new URL("../packages/cli/package.json", import.meta.url)).resolve("tsx"),
+).href;
+const child = spawn(process.execPath, ["--import", tsxLoader, host, String(port)], {
   cwd: root,
   env: { ...process.env, VIDCOM_APP_DATA: appData, VIDCOM_WORKSPACE: workspace, VIDCOM_BOOTSTRAP_NONCE: nonce },
   stdio: ["ignore", "pipe", "pipe"],
@@ -179,9 +190,11 @@ child.stderr.on("data", (chunk) => { output += chunk; });
 
 try {
   await eventually(async () => {
-    if (child.exitCode !== null) throw new Error(`Next exited early (${child.exitCode})\n${output}`);
-    const response = await fetch(baseUrl);
-    if (!response.ok) throw new Error(`Next root returned ${response.status}`);
+    if (child.exitCode !== null) throw new Error(`host exited early (${child.exitCode})\n${output}`);
+    // Readiness is the bound listener, not a route: a request that answers is
+    // the next assertion's job, and probing one here would only hide which of
+    // the two failed.
+    if (!output.includes("listening")) throw new Error(`host has not bound yet\n${output}`);
   });
   const exchange = await fetch(`${baseUrl}/api/v1/auth/exchange`, {
     method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ nonce }),

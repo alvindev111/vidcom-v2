@@ -497,6 +497,18 @@
           <div><dt class="font-semibold text-slate-200">Chuỗi build vẫn hở hai đầu</dt><dd class="mt-1 text-slate-300">Bốn bước giữa (export, pack, bundle, sea) chạy tay liên tiếp ra artifact thật. Bước 1 (runtime archives) thiếu config pin hash ba OS, bước cuối (<code>verify-artifact</code>) là L.1 chưa viết.</dd></div>
         </dl>
       </section>
+      <section class="mt-6 rounded-2xl border border-orange-500/30 bg-slate-900 p-6">
+        <div class="flex flex-wrap items-center justify-between gap-3">
+          <h2 class="text-2xl font-semibold">2026-08-09 · CI đỏ ba OS sau G.6</h2>
+          <span class="rounded-full bg-orange-400/10 px-3 py-1 text-sm text-orange-300">run 31283969261 · 1 step</span>
+        </div>
+        <dl class="mt-6 grid gap-5 md:grid-cols-2">
+          <div><dt class="font-semibold text-slate-200">Lỗi nói thẳng</dt><dd class="mt-1 text-slate-300"><code>"next start" does not work with "output: export" configuration</code>. Một step, ba OS, cùng một câu. Không phải flake.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Smoke vốn không kiểm Next</dt><dd class="mt-1 text-slate-300">Nonce exchange, session cookie, project list, MCP legacy + modern, credential audit, SSE resume — tất cả là <strong>API của daemon</strong>. <code>next start</code> chỉ là process chứa nó. Đổi process, giữ nguyên từng khẳng định.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Bun không host được</dt><dd class="mt-1 text-slate-300"><code>No such built-in module: node:sqlite</code> — và SQLite là nền của cả stack. Chạy dưới Node với loader <code>tsx</code> đã là direct dependency của <code>packages/cli</code>, đúng cách các suite MCP đang làm.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Bỏ probe <code>GET /</code></dt><dd class="mt-1 text-slate-300">Frontend giờ là file tĩnh, không thuộc process này. Readiness đọc dòng <code>listening</code> trên stdout: một route trả lời là việc của khẳng định kế tiếp, probe ở đây chỉ che mất bên nào hỏng.</dd></div>
+        </dl>
+      </section>
     </main>
   </body>
 </html>
