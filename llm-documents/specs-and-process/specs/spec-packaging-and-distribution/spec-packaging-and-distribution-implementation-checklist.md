@@ -778,8 +778,13 @@ Mỗi phase chạy focused command dưới đây trên SQLite/filesystem thật,
   - `stderr` mang tiến trình, `stdout` để trống cho `--json` — pipe được mà không phải lọc
   - **Còn lại**: bốn bước `planSteps()` gọi tới chưa tồn tại (`build-frontend-pack.mjs` H.2, `build-cli-bundle.mjs` H.1, `build-sea.mjs` H.4, `verify-artifact.mjs` L.1). Test ghim **đúng thứ tự và tên chủ sở hữu** của từng bước, nên một bước thiếu hiện ra ở đây thay vì lúc chạy build
   - _Requirements: R4.1, R4.14_ — _Design: DR-1, §5.10_
-- [ ] H.1 Bundle CJS **không top-level await**
+- [ ] H.1 Bundle CJS **không top-level await** — **CHẶN: chưa có bundler khai báo ở build time**
   - Node SEA nhận main CJS và esbuild từ chối TLA ở format `cjs`; mọi khởi tạo bất đồng bộ nằm trong `main()`. Vi phạm ⇒ build fail, không degrade
+  - > [!WARNING]
+    > **`esbuild` không phải dependency được khai ở bất kỳ package nào.** `node -e "require.resolve('esbuild')"` fail từ repo root, từ `packages/adapter`, và từ `node_modules/hyperframes`. Nó chỉ tồn tại trong bun store như transitive (`node_modules/.bun/esbuild@0.25.12`, `@0.28.1` — **hai bản**).
+    > Dùng bản hoisted đó là phụ thuộc vào một transitive không khai báo, và có hai bản thì không xác định lấy bản nào. Khai `esbuild` thành devDependency thì **vi phạm luật 6** (dependency mới duy nhất là `tar@7.5.22`).
+    > **Hướng giải quyết đề xuất, cần duyệt**: dùng chính `esbuild` mà runtime archive của **B.3** đã ship. `build:artifact` chạy bước runtime archives **trước** bước bundle, nên tới lúc cần thì binary đã có trên máy build, và nó đúng bản mà manifest pin — bản build ra artifact và bản artifact chạy là một. Không thêm dependency nào.
+    > Chưa hiện thực vì chưa kiểm chứng được: cần một runtime tree đã build để chạy thật, và đoán một hiện thực không kiểm được là đúng kiểu lỗi đã ghi ba lần trong phiên này.
   - _Requirements: R4.14_ — _Design: DR-1_
 - [ ] H.2 Frontend pack + manifest
   - `frontend-manifest.json` (`path, offset, length, sha256, mime, cachePolicy`) + `frontend.pack` raw bytes, **không base64**
