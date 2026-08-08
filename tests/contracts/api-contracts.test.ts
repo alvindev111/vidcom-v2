@@ -207,8 +207,11 @@ describe("API response contracts", () => {
       "tts_voice_not_supported",
       "unsupported_media",
       "version_format_legacy",
+      "workspace_busy",
       "workspace_lease_denied",
       "workspace_lease_lost",
+      "workspace_switching",
+      "workspace_unavailable",
       "write_conflict",
     ]);
   });

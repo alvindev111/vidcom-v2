@@ -75,7 +75,7 @@ describe("MCP domain error mapping", () => {
     // 15 since download_unavailable joined: Design §5.18 requires it and Phase A
     // shipped only download_tls_untrusted. It stays private, like every other
     // packaging-only code.
-    expect(privateCodes).toHaveLength(15);
+    expect(privateCodes).toHaveLength(18);
 
     for (const code of privateCodes) {
       const toolError = mcpToolError(error(code, { originalCode: code }), "modern");

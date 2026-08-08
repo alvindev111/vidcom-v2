@@ -11,7 +11,10 @@ const SOURCE_ROOTS = ["packages/adapter/src", "packages/cli/src", "packages/serv
  * `hyperframes` compiles through esbuild, so a call into it is a compiler call
  * whether or not the word esbuild appears at the call site.
  */
-const COMPILER_TOUCH = /\b(esbuild|transformSync|buildSync|\bbuild\(|hyperframesCommand)/u;
+// A bare `build(` is far too generic — it matched a foundation builder that
+// never touches a compiler. Same over-reach as matching bare `exec(` in the
+// spawn audit: the names to look for have to be esbuild-specific.
+const COMPILER_TOUCH = /\b(esbuild|transformSync|buildSync|hyperframesCommand)/u;
 
 /**
  * Files that may mention the compiler without going through CompilerGuard.

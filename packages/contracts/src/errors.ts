@@ -31,6 +31,12 @@ export enum ErrorCode {
   Internal = "internal",
   StorageUnavailable = "storage_unavailable",
   WorkspaceLeaseDenied = "workspace_lease_denied",
+  /** A switch was refused because work is still running in the current workspace. */
+  WorkspaceBusy = "workspace_busy",
+  /** A mutation arrived while a switch was mid-flight; the caller should retry. */
+  WorkspaceSwitching = "workspace_switching",
+  /** The requested workspace could not be brought up at all. */
+  WorkspaceUnavailable = "workspace_unavailable",
   ApprovalRequired = "approval_required",
   ApprovalExpired = "approval_expired",
   ApprovalInvalid = "approval_invalid",

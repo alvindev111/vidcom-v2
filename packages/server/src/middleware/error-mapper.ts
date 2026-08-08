@@ -58,6 +58,11 @@ const ERROR_STATUS = {
   [ErrorCode.BridgeCredentialUnavailable]: 503,
   [ErrorCode.BridgeCredentialInvalid]: 401,
   [ErrorCode.BridgeRotationInProgress]: 409,
+  // 409: the workspace is doing something else, and retrying later can succeed.
+  [ErrorCode.WorkspaceBusy]: 409,
+  // 503: mid-switch is explicitly temporary, so it advertises a retry.
+  [ErrorCode.WorkspaceSwitching]: 503,
+  [ErrorCode.WorkspaceUnavailable]: 503,
   [ErrorCode.DownloadTlsUntrusted]: 502,
   // A dependency the daemon could not fetch, not a fault in the request.
   [ErrorCode.DownloadUnavailable]: 502,

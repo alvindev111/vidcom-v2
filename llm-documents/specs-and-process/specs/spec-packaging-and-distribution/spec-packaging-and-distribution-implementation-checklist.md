@@ -509,8 +509,13 @@ Mỗi phase chạy focused command dưới đây trên SQLite/filesystem thật,
   - `reacquiring` cũng **vắng** route bridge: đang giành lại lease thì process này không phải writer, route còn đăng ký sẽ nói ngược lại
   - `/v1/health` sống ở **mọi** state — đó là cách quan sát được chính cái hỏng
   - _Requirements: R1.17_ — _Design: §4.5_
-- [ ] E.4 `FoundationManager.activate` + switch có rollback
+- [x] E.4 `FoundationManager.activate` + switch có rollback
   - Mutex; canonicalize trước khi đụng foundation cũ; job non-terminal ⇒ `workspace_busy`; `503 workspace_switching` cho mutation; swap một lần; rollback về foundation cũ, thất bại thì `NoWorkspace`
+  - [`workspace-activation.ts`](../../../../packages/cli/src/workspace-activation.ts). **Thứ tự chính là toàn bộ task**: canonicalize và build xảy ra **trước** khi chạm foundation cũ, nên đường hỏng hay build thất bại không tốn gì — workspace cũ vẫn phục vụ. Test chốt đúng điều đó: build lần hai hỏng thì `activeWorkspace` vẫn là `/w/one`
+  - **Trả nợ C.4**: `recordActive` chạy **sau cùng**, chỉ khi swap đã thành công. Ghi lúc resolve (hành vi cũ) khiến `render --workspace X` đổi workspace mặc định của UI, và một lần activate hỏng để lại con trỏ chỉ vào workspace chưa bao giờ lên
+  - Foundation cũ **từ chối dừng** ⇒ rollback: hạ foundation mới xuống, giữ cái cũ active. Hai foundation sống cùng lúc là hai writer — đúng thứ AC thứ hai của phase cấm
+  - Switch thứ hai đến giữa chừng bị **từ chối** chứ không xếp hàng: xếp hàng nghĩa là quyết định dựa trên một trạng thái sắp thay đổi
+  - Hai cách viết của cùng một thư mục ⇒ **không** phải switch: không build, không stop, `swapped: false`
   - _Requirements: R1.12, R1.18_ — _Design: §4.3_
 - [ ] E.5 Lease loss ba lối
   - Renew fail ⇒ từ chối ghi **ngay** + xoá discovery record **ngay** → re-acquire tối đa 2 lượt trong TTL 30 s → thành công thì `Active` với **`instanceId` cũ**; thất bại thì `NoWorkspace` (có UI attach) hoặc đóng listener + exit ≠ 0 (headless)
