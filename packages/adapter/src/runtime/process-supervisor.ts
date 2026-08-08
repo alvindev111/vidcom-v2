@@ -43,6 +43,12 @@ export interface ProcessIdentity {
 export interface ProcessIdentityProbeResult {
   identity: ProcessIdentity | undefined;
   exhaustive: boolean;
+  /**
+   * Why an inconclusive probe gave up. Diagnostics only — never a control flow
+   * input. A blind probe stops a directory lock from being published, and
+   * without this the failure is indistinguishable from lock contention.
+   */
+  reason?: string;
 }
 
 /** True only when a numeric PID still names the exact process instance captured earlier. */
@@ -367,16 +373,18 @@ async function probePosixProcessIdentity(pid: number): Promise<ProcessIdentityPr
 }
 
 async function probeWindowsProcessIdentity(pid: number): Promise<ProcessIdentityProbeResult> {
+  const blind = (reason: string): ProcessIdentityProbeResult =>
+    ({ identity: undefined, exhaustive: false, reason });
   const disabled = new Set((process.env.VIDCOM_DISABLE_ENUMERATORS ?? "")
     .split(",").map((value) => value.trim()).filter(Boolean));
-  if (disabled.has("powershell-cim")) return { identity: undefined, exhaustive: false };
+  if (disabled.has("powershell-cim")) return blind("powershell-cim probe disabled by VIDCOM_DISABLE_ENUMERATORS");
   const windowsRoot = process.env.SystemRoot;
   if (
     !windowsRoot
     || !path.win32.isAbsolute(windowsRoot)
     || path.win32.normalize(windowsRoot) !== windowsRoot
     || path.win32.basename(windowsRoot).toLowerCase() !== "windows"
-  ) return { identity: undefined, exhaustive: false };
+  ) return blind(`SystemRoot is not a canonical Windows directory: ${windowsRoot ?? "<unset>"}`);
   const powershell = path.win32.join(
     windowsRoot,
     "System32",
@@ -400,23 +408,29 @@ async function probeWindowsProcessIdentity(pid: number): Promise<ProcessIdentity
       timeout: PROCESS_IDENTITY_PROBE_TIMEOUT_MS,
       env: windowsProbeEnvironment(windowsRoot, powershell),
     });
-    if (result.stderr !== "") return { identity: undefined, exhaustive: false };
+    if (result.stderr !== "") return blind(`powershell wrote to stderr: ${truncateReason(result.stderr)}`);
     stdout = result.stdout.trim();
-  } catch {
-    return { identity: undefined, exhaustive: false };
+  } catch (error) {
+    // Naming the forwarded variables distinguishes a starved environment from a
+    // hung WMI service; both look identical as a bare timeout.
+    const forwarded = WINDOWS_PROBE_PASSTHROUGH.filter((name) => process.env[name] !== undefined);
+    return blind(
+      `powershell probe failed: ${probeFailureDetail(error)}`
+      + ` (forwarded: ${forwarded.join(",") || "none"})`,
+    );
   }
   if (stdout === "VIDCOM_ABSENT") return { identity: undefined, exhaustive: true };
   if (!stdout.startsWith("VIDCOM_FOUND ") || stdout.includes("\n") || stdout.includes("\r")) {
-    return { identity: undefined, exhaustive: false };
+    return blind(`unexpected probe output: ${truncateReason(stdout)}`);
   }
   let parsed: unknown;
   try {
     parsed = JSON.parse(stdout.slice("VIDCOM_FOUND ".length)) as unknown;
   } catch {
-    return { identity: undefined, exhaustive: false };
+    return blind("probe output was not valid JSON");
   }
   if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
-    return { identity: undefined, exhaustive: false };
+    return blind("probe output was not a JSON object");
   }
   const record = parsed as Record<string, unknown>;
   const keys = Object.keys(record).sort();
@@ -427,15 +441,53 @@ async function probeWindowsProcessIdentity(pid: number): Promise<ProcessIdentity
     || record.ProcessId !== pid
     || typeof record.CreationDate !== "string"
     || !canonicalWindowsCreationDate(record.CreationDate)
-  ) return { identity: undefined, exhaustive: false };
+  ) return blind("probe output did not describe the requested process canonically");
   return {
     identity: { pid, startedAt: `windows-cim:${record.CreationDate}` },
     exhaustive: true,
   };
 }
 
+function truncateReason(value: string): string {
+  const single = value.replace(/\s+/gu, " ").trim();
+  return single.length > 200 ? `${single.slice(0, 200)}…` : single;
+}
+
+/** Names the mechanical cause: a timeout, a kill signal, an exit code, or a spawn error. */
+function probeFailureDetail(error: unknown): string {
+  if (!error || typeof error !== "object") return String(error);
+  const failure = error as { killed?: boolean; signal?: string; code?: unknown; message?: string };
+  if (failure.killed === true || failure.signal) {
+    return `timed out after ${PROCESS_IDENTITY_PROBE_TIMEOUT_MS}ms (signal ${failure.signal ?? "none"})`;
+  }
+  if (failure.code !== undefined) return `exit ${String(failure.code)}: ${truncateReason(failure.message ?? "")}`;
+  return truncateReason(failure.message ?? String(error));
+}
+
+/**
+ * Variables PowerShell itself needs to start, forwarded verbatim when present.
+ *
+ * The allowlist exists so the probe cannot be steered by an attacker-controlled
+ * environment, but trimming it to five entries starved PowerShell of its
+ * temp directory and drive layout and it hung until the probe timed out. These
+ * names are read, never interpreted, by this process.
+ */
+const WINDOWS_PROBE_PASSTHROUGH = [
+  "SystemDrive",
+  "COMSPEC",
+  "PATHEXT",
+  "TEMP",
+  "TMP",
+  "USERPROFILE",
+  "HOMEDRIVE",
+  "HOMEPATH",
+  "LOCALAPPDATA",
+  "APPDATA",
+  "ProgramData",
+] as const;
+
 function windowsProbeEnvironment(windowsRoot: string, powershell: string): NodeJS.ProcessEnv {
-  return {
+  const environment: NodeJS.ProcessEnv = {
     NODE_ENV: process.env.NODE_ENV,
     SystemRoot: windowsRoot,
     WINDIR: windowsRoot,
@@ -448,6 +500,11 @@ function windowsProbeEnvironment(windowsRoot: string, powershell: string): NodeJ
       "Modules",
     ),
   };
+  for (const name of WINDOWS_PROBE_PASSTHROUGH) {
+    const value = process.env[name];
+    if (value !== undefined) environment[name] = value;
+  }
+  return environment;
 }
 
 function canonicalWindowsCreationDate(value: string): boolean {

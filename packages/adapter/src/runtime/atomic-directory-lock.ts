@@ -151,13 +151,15 @@ export class AtomicDirectoryLock {
     // Own identity is established before the clock starts: the timeout bounds
     // waiting for a contended lock, and charging a one-off OS probe against that
     // budget reported contention on a lock nobody held.
-    const owner = await this.ownerForCurrentProcess(nonce);
-    if (owner === undefined) {
+    const probe = await probeCurrentProcessIdentity();
+    if (!probe.exhaustive || probe.identity === undefined) {
       this.ownershipError(
         "this process could not probe its own OS identity exhaustively; "
-        + "refusing to publish a directory lock that cannot be proven stale later",
+        + "refusing to publish a directory lock that cannot be proven stale later: "
+        + (probe.reason ?? "no reason reported"),
       );
     }
+    const owner = ownerRecord(probe.identity, nonce);
     const deadline = performance.now() + this.timeoutMs;
 
     await mkdir(path.dirname(this.lockPath), { recursive: true, mode: 0o700 });
@@ -232,17 +234,6 @@ export class AtomicDirectoryLock {
   /** @internal Produces the configured stable error without exposing deletion primitives. */
   ownershipError(message: string): never {
     throw new RuntimeAssetError(this.timeoutCode, message, { lockPath: this.lockPath });
-  }
-
-  private async ownerForCurrentProcess(nonce: string): Promise<DirectoryLockOwner | undefined> {
-    const probe = await probeCurrentProcessIdentity();
-    if (!probe.exhaustive || probe.identity === undefined) return undefined;
-    return Object.freeze({
-      pid: probe.identity.pid,
-      processStartIdentity: probe.identity.startedAt,
-      nonce,
-      createdAt: new Date().toISOString(),
-    });
   }
 
   private async tryPublishClaim(
@@ -479,6 +470,15 @@ export class AtomicDirectoryLock {
       cause: error instanceof Error ? error.message : String(error),
     });
   }
+}
+
+function ownerRecord(identity: { pid: number; startedAt: string }, nonce: string): DirectoryLockOwner {
+  return Object.freeze({
+    pid: identity.pid,
+    processStartIdentity: identity.startedAt,
+    nonce,
+    createdAt: new Date().toISOString(),
+  });
 }
 
 function positiveDuration(value: number | undefined, fallback: number, label: string): number {
