@@ -695,8 +695,11 @@ Mỗi phase chạy focused command dưới đây trên SQLite/filesystem thật,
 - [ ] G.5 Tách page dynamic route
   - Server component xuất `generateStaticParams` (trả sentinel `__shell`) + client component mang thân page; slug đọc từ `location`, MUST NOT từ `params`
   - _Requirements: R4.13, R4.5_ — _Design: DR-3_
-- [ ] G.6 Bỏ catch-all route handler khỏi build export
+- [~] G.6 Bỏ catch-all route handler khỏi build export — **`trailingSlash` xong, lật `output: "export"` còn lại**
   - `src/app/api/[[...route]]/route.ts` với `dynamic = "force-dynamic"` làm `next build` fail; `trailingSlash: false` chốt tường minh
+  - **Đã làm**: `trailingSlash: false` khai tường minh trong [`next.config.ts`](../../../../next.config.ts) thay vì dựa vào mặc định. Static export ghi `/a/b.html` hay `/a/b/index.html` **tuỳ cờ này**, và SEA asset host ánh xạ request path lên đúng những file đó — hai bên phải khớp, và khớp do tình cờ là cách chúng trôi ra khỏi nhau về sau. `npm run build` xanh sau khi đổi
+  - [`next-export-config.test.ts`](../../../../tests/frontend/next-export-config.test.ts) **ghim danh sách route handler** hiện có (`src/app/api/[[...route]]/route.ts`). Khi bật `output: "export"` thì mọi handler `force-dynamic` làm build fail, nên danh sách được chốt ở đây: một handler thêm vào giữa chừng sẽ hiện ra tại test này thay vì thành một build fail không ai ngờ
+  - **Chưa làm — lật `output: "export"` và dời catch-all**: đây là thay đổi chạm chính `npm run build` mà CI chạy mỗi vòng, và nó đi cùng **H.0/H.1** (SEA static asset host) vì host đó mới là thứ tiêu thụ output. Lật trước khi có host là tạo một build không ai phục vụ được
   - _Requirements: R4.11, R4.5_ — _Design: §5.10_
 - [ ] G.7 `WorkspacePickerPage`
   - Roots, breadcrumb, entry phân trang, tạo thư mục, chọn, trạng thái lỗi R1.7. Chưa có workspace ⇒ app vào màn này trước Home
