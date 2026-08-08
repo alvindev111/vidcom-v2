@@ -303,12 +303,18 @@ Mỗi phase chạy focused command dưới đây trên SQLite/filesystem thật,
 **Estimate**: 16 SP
 
 **Tasks**:
-- [ ] C.1 `BootstrapCoordinator.prepare()`
+- [x] C.1 `BootstrapCoordinator.prepare()`
   - Thứ tự khoá: `extract → migrate (một lần) → credential reconciliation → release`. Callers MUST NOT tự gọi migration/extraction
+  - **Lệch có chủ ý so với Design §5.1**: `PreparedRuntime` **chưa có** field `paths`. `RuntimePaths` và resolver hai chế độ là **D.3a**; dựng một shape tạm ở đây sẽ tạo đúng cái "chỗ thứ hai quyết đường dẫn runtime" mà D.3a sinh ra để chặn. Thay vào đó trả `versionRoot` + `archiveRoots` do `RuntimeAssetManager` đã tính. **D.3b thêm `paths` khi resolver là nguồn duy nhất** — đừng thêm sớm hơn
+  - `reconcileCredential` là tham số inject, không phải hiện thực cứng: C.5–C.7 lắp vào chỗ này mà không phải sửa coordinator
+  - Verify: [`tests/adapter/bootstrap-coordinator.test.ts`](../../../../tests/adapter/bootstrap-coordinator.test.ts) — 7 test trên SQLite + filesystem thật
   - _Requirements: R5.13_ — _Design: §5.1_
-- [ ] C.2 Hai lock atomic-mkdir + stale probe
+- [x] C.2 Hai lock atomic-mkdir + stale probe
   - `runtime-bootstrap.lock` (extraction+migration) và `credential.lock` (bearer). Thứ tự lấy **luôn** `bootstrap → credential`, không bao giờ ngược — đây là **luật**, không phải hệ quả của thứ tự code hôm nay
   - Windows không dựa vào unlink file đang mở; rename lock dir sang quarantine
+  - Dùng lại **đúng** `AtomicDirectoryLock` của B.9, MUST NOT viết cơ chế thứ hai. Bug `PSModulePath` sửa ở B.9 là điều kiện tiên quyết: `credential.lock` chạy trên cùng class đó, nên trước khi sửa thì C.5–C.7 cũng chết trên Windows y hệt
+  - Luật thứ tự được **cưỡng chế chứ không giả định**: trước khi lấy khoá credential, coordinator gọi `bootstrapLease.assertHeld()`. Khoá credential khai `timeoutCode: bridge_rotation_in_progress`, khoá bootstrap khai `bootstrap_lock_timeout` — hai chế độ hỏng phân biệt được từ mã lỗi
+  - Verify: khoá credential chỉ tồn tại **trong lúc** reconcile và biến mất ngay sau; hai `prepare()` song song bị serialize; reconcile ném lỗi thì khoá bootstrap vẫn được nhả
   - _Requirements: R5.6, R5.13_ — _Design: §5.15_
 - [ ] C.3 Migration đúng một lần mỗi boot
   - Hôm nay `selectWorkspace` migrate **hai** lần rồi foundation migrate lần ba ([`workspace-selection.ts:23-30`](../../../../packages/cli/src/workspace-selection.ts#L23), [`:57-60`](../../../../packages/cli/src/workspace-selection.ts#L57))

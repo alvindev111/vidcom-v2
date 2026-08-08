@@ -1,3 +1,4 @@
+export * from "./bootstrap-coordinator";
 export * from "./composition-root";
 export * from "./startup";
 export * from "./next-host";

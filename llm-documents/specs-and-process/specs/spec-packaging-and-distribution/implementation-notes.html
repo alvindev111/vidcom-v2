@@ -372,6 +372,19 @@
           <div><dt class="font-semibold text-slate-200">An toàn khi đổi cách đo danh tính</dt><dd class="mt-1 text-slate-300">Danh tính được so như chuỗi nguyên văn, nên đổi nguồn đo sẽ khiến <code>owner.json</code> của bản cũ không khớp probe của cùng process đang sống ⇒ <code>ownerIsProvenStale</code> kết luận đã chết ⇒ <strong>cướp lock của process còn chạy</strong>. Danh tính nay mang prefix scheme; scheme lạ tính là <em>không chứng minh được đã chết</em>. PID vắng mặt vẫn chứng minh đã chết, không phụ thuộc scheme. Kiểm chứng bằng mutation: gỡ guard ra thì test đỏ ngay.</dd></div>
         </dl>
       </section>
+      <section class="mt-6 rounded-2xl border border-cyan-500/30 bg-slate-900 p-6">
+        <div class="flex flex-wrap items-center justify-between gap-3">
+          <h2 class="text-2xl font-semibold">2026-08-08 · C.1/C.2 — BootstrapCoordinator và khoá thứ hai</h2>
+          <span class="rounded-full bg-cyan-400/10 px-3 py-1 text-sm text-cyan-300">7 test · SQLite + fs thật</span>
+        </div>
+        <dl class="mt-6 grid gap-5 md:grid-cols-2">
+          <div><dt class="font-semibold text-slate-200">Lệch có chủ ý so với Design §5.1</dt><dd class="mt-1 text-slate-300"><code>PreparedRuntime</code> chưa có field <code>paths</code>. Design khai nó, nhưng <code>RuntimePaths</code> và resolver hai chế độ là <strong>D.3a</strong>. Dựng một shape tạm ở C sẽ tạo đúng cái "chỗ thứ hai quyết đường dẫn runtime" mà D.3a sinh ra để chặn — nên trả <code>versionRoot</code> + <code>archiveRoots</code> mà manager đã tính, và để D.3b thêm <code>paths</code> khi resolver là nguồn duy nhất.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Reconciler là seam, không phải hiện thực</dt><dd class="mt-1 text-slate-300"><code>reconcileCredential</code> được inject. C.5–C.7 lắp logic bốn nhánh vào chỗ đó mà không phải sửa coordinator, và test C.1 chứng minh được thứ tự khoá mà chưa cần credential thật.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Thứ tự khoá được cưỡng chế</dt><dd class="mt-1 text-slate-300">Trước khi lấy <code>credential.lock</code>, coordinator gọi <code>bootstrapLease.assertHeld()</code>. Luật <code>bootstrap → credential</code> vì thế là điều kiện được kiểm, không phải hệ quả của thứ tự dòng code. Hai khoá khai <code>timeoutCode</code> khác nhau nên hai chế độ hỏng phân biệt được ngay từ mã lỗi.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Nợ từ B trả ngay tại đây</dt><dd class="mt-1 text-slate-300"><code>credential.lock</code> chạy trên <strong>đúng</strong> <code>AtomicDirectoryLock</code> vừa sửa ở B.9. Nếu bug <code>PSModulePath</code> không được truy tới gốc mà chỉ né bằng skip test, thì C.5–C.7 sẽ chết trên Windows y hệt — và lần đó sẽ khó hơn vì lẫn với logic credential.</dd></div>
+          <div class="md:col-span-2"><dt class="font-semibold text-slate-200">Đường thất bại được test</dt><dd class="mt-1 text-slate-300">Reconcile ném lỗi ⇒ khoá bootstrap vẫn được nhả. Một lần boot hỏng mà giữ khoá sẽ làm kẹt mọi lần khởi động sau, nên đây là nhánh đáng test hơn cả nhánh thành công.</dd></div>
+        </dl>
+      </section>
     </main>
   </body>
 </html>
