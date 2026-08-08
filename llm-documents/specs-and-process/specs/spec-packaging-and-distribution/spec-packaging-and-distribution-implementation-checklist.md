@@ -829,8 +829,9 @@ Mỗi phase chạy focused command dưới đây trên SQLite/filesystem thật,
   - **Cơ chế đã có sẵn từ trước** ở [`app.ts:70-82`](../../../../packages/server/src/app.ts#L70): 1 MiB mặc định, `MAX_SOURCE_BYTES` cho `/files`, `MAX_BGM_BYTES` (20 MiB) cho `/assets/bgm`, đúng một mắt xích `bodyLimit` cố định, và [`payload-limits.test.ts`](../../../../tests/server/payload-limits.test.ts) đã chốt 413 ở byte kế tiếp
   - **Thứ còn thiếu là cái gác cho lần rà đó**: [`upload-surface-audit.test.ts`](../../../../tests/server/upload-surface-audit.test.ts) quét toàn bộ `packages/server/src` tìm `arrayBuffer()` — cách một route biến request thành bytes — và fail nếu xuất hiện chỗ thứ hai. Kết quả rà hôm nay **khớp**: đúng một file. Không có test này thì câu "đã rà sẵn" hết hạn ngay khi có người thêm route
   - _Requirements: R4.6_ — _Design: §7_
-- [ ] H.6 Đo cold/warm + baseline hồi quy
+- [ ] H.6 Đo cold/warm + baseline hồi quy — **CHẶN NGƯỢC: cần J.2**
   - Ghi baseline vào `.github/perf-baseline/<runner-label>.json`, **commit vào repo** — không dùng CI cache (cache hết hạn thì gate im lặng biến mất)
+  - **Vì sao chưa làm**: §9.1 đo trên hai flow **`serve --workspace`** và **`app`**, cả hai là mode của **J.1/J.2** chưa tồn tại. Cột cold còn cần extract runtime archive thật, tức cùng blocker tài sản phát hành. Đo một con số không phải hai flow đó là ghi một baseline cho thứ không ai chạy
   - _Requirements: R4.9_ — _Design: §9.1_
 - [x] H.7 Golden test static host
   - Exact/implicit `.html`/sentinel/RSC mapping, MIME, cache header, 404, traversal
@@ -838,8 +839,9 @@ Mỗi phase chạy focused command dưới đây trên SQLite/filesystem thật,
   - MIME là **bảng đóng**: pack chỉ chứa thứ export ghi ra, nên một đuôi ngoài danh sách nghĩa là build sinh ra thứ không ai dự tính. Trả `application/octet-stream` để trình duyệt **tải về thay vì chạy** — cách sai an toàn
   - Traversal trả `null`, tức rơi vào đường 404 của host, chứ không tìm thấy một manifest key khác
   - _Requirements: R4.5_
-- [ ] H.8 Integration test artifact
+- [ ] H.8 Integration test artifact — **CHẶN NGƯỢC: cần J.2**
   - Chạy với `cwd` là thư mục tạm **rỗng**; cạnh artifact không xuất hiện thư mục asset nào; SSE không bị buffer; upload 20 MB đi qua; 21 MB trả 413
+  - **Đã kiểm được một nửa bằng tay ở H.4**: artifact chạy trong thư mục tạm rỗng, exit theo contract CLI, **không sinh file nào cạnh nó**. Ba khẳng định còn lại cần artifact **mở listener**, tức mode `serve`/`app` của J.2
   - _Requirements: R4.3, R4.2, R4.6_
 
 **Acceptance Criteria**:
@@ -1500,6 +1502,12 @@ Chi tiết: [Detailed Goals](./spec-packaging-and-distribution-detailed-goal.md)
   - Summary: Exact SHA `6ee93ba` đỏ **cả ba OS** ở đúng một step — `test:runtime-smoke` khởi `next start`, mà `"next start" does not work with "output: export" configuration`. Đổi host của smoke sang chính listener daemon.
   - Decisions: Không skip step, không disable job, không nới gate. Mọi khẳng định của smoke — nonce exchange, session cookie, project list, MCP legacy + modern exact/latest, credential audit, SSE `Last-Event-ID` resume — đều thuộc **API của daemon**; `next start` chỉ là process chứa nó. `runtime-smoke-host.mjs` bind `handleNextHostedRequest` qua `bindLoopback` của E. Bỏ probe `GET /` (frontend giờ là file tĩnh, không thuộc process này): readiness đọc dòng `listening` trên stdout, nên một route trả lời là việc của khẳng định kế tiếp chứ không che mất bên nào hỏng. Đổi tên step CI cho khớp thực tế.
   - Blockers: Bun **không host được** cái này — `No such built-in module: node:sqlite`, mà SQLite là nền của cả stack. Chạy dưới Node với loader `tsx@4.23.1` đã là direct dependency của `packages/cli`, đúng cách các suite MCP đang làm. Smoke xanh cục bộ: `SSE 1 -> 2`, MCP legacy + modern ok. Chờ CI exact HEAD ba OS.
+
+2026-08-09 — Lệch thứ tự phase, ghi lại để không trôi
+  - Files: checklist (H.6, H.8), implementation notes
+  - Summary: H.1–H.4 xong; H.6 và H.8 **phụ thuộc ngược vào J.2**, nên Phase H không đóng được theo thứ tự A→M như viết.
+  - Decisions: H.6 đo hai flow `serve --workspace` và `app` — đều là mode của J.1/J.2 chưa tồn tại; H.8 cần artifact **mở listener**, cũng J.2. Đây là vòng phụ thuộc trong chính checklist, không phải phạm vi bị nới. Đi tiếp I rồi J, sau J.2 quay lại đóng H.6/H.8 cùng phần cold cần runtime archive thật. Không tick sớm và không đo thay bằng một flow khác: baseline cho thứ không ai chạy còn tệ hơn không có baseline.
+  - Blockers: H.6 chặn kép — J.2 **và** config runtime archive (cột cold phải extract thật). H.8 chặn bởi J.2; nửa "chạy trong cwd rỗng, không sinh file cạnh artifact" đã kiểm tay ở H.4.
 
 Format:
 ```
