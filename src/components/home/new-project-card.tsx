@@ -19,8 +19,13 @@ export function NewProjectCard() {
         <span className="text-studio-accent text-sm">New video</span>
       </button>
 
+      {/*
+        The card creates an empty project; generation happens through an agent
+        connected over MCP, which is a separate thing the user sets up. Promising
+        it here made the button look like it would write the video.
+      */}
       <span className="text-muted-foreground border-t px-3 py-2.5 text-xs">
-        Generate with an AI agent
+        Or ask a connected AI agent to build one
       </span>
     </div>
   );
