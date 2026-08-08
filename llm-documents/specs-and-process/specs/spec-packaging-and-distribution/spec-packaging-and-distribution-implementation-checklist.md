@@ -801,9 +801,11 @@ Mỗi phase chạy focused command dưới đây trên SQLite/filesystem thật,
 - [ ] H.4 Build SEA native theo runner
   - `useCodeCache=false`, `useSnapshot=false`, postject pinned, không cross-build
   - _Requirements: R4.1_ — _Design: DR-1_
-- [ ] H.5 Body limit theo route
+- [x] H.5 Body limit theo route
   - 1 MiB mặc định, **20 MiB** cho route upload asset, ở đúng mắt xích `bodyLimit` của chuỗi middleware cố định. Vượt ⇒ `413 payload_too_large` kèm giới hạn thật
   - **Route upload asset hôm nay là đúng một chỗ**, đã rà sẵn: `uploadBgm` trong [`packages/server/src/routes/project-writes.ts`](../../../../packages/server/src/routes/project-writes.ts#L134). Mọi route khác giữ 1 MiB. Nếu lúc làm thấy chỗ thứ hai nhận binary body thì **dừng và ghi vào Execution Log** — nghĩa là bề mặt upload đã đổi so với lần rà này, không phải cứ thế nới thêm một ngoại lệ
+  - **Cơ chế đã có sẵn từ trước** ở [`app.ts:70-82`](../../../../packages/server/src/app.ts#L70): 1 MiB mặc định, `MAX_SOURCE_BYTES` cho `/files`, `MAX_BGM_BYTES` (20 MiB) cho `/assets/bgm`, đúng một mắt xích `bodyLimit` cố định, và [`payload-limits.test.ts`](../../../../tests/server/payload-limits.test.ts) đã chốt 413 ở byte kế tiếp
+  - **Thứ còn thiếu là cái gác cho lần rà đó**: [`upload-surface-audit.test.ts`](../../../../tests/server/upload-surface-audit.test.ts) quét toàn bộ `packages/server/src` tìm `arrayBuffer()` — cách một route biến request thành bytes — và fail nếu xuất hiện chỗ thứ hai. Kết quả rà hôm nay **khớp**: đúng một file. Không có test này thì câu "đã rà sẵn" hết hạn ngay khi có người thêm route
   - _Requirements: R4.6_ — _Design: §7_
 - [ ] H.6 Đo cold/warm + baseline hồi quy
   - Ghi baseline vào `.github/perf-baseline/<runner-label>.json`, **commit vào repo** — không dùng CI cache (cache hết hạn thì gate im lặng biến mất)
