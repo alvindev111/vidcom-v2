@@ -1,12 +1,13 @@
+import { spawnSync } from "node:child_process";
 import { realpathSync } from "node:fs";
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, rm, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
 import {
-  assertEsbuildAvailable,
-  esbuildBinaryPath,
-  esbuildEnvironment,
+  CLI_ENTRY,
+  bundleCommand,
+  buildCliBundle,
   findTopLevelAwait,
 } from "../../scripts/build-cli-bundle.mjs";
 import { afterEach, describe, expect, it } from "vitest";
@@ -17,37 +18,33 @@ afterEach(async () => {
   await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
 });
 
-async function runtimeRoot(withEsbuild: boolean): Promise<string> {
+async function scratchDirectory(): Promise<string> {
   const root = realpathSync(await mkdtemp(path.join(tmpdir(), "vidcom-bundle-")));
   roots.push(root);
-  if (withEsbuild) {
-    await mkdir(path.join(root, "node", "bin"), { recursive: true });
-    await writeFile(esbuildBinaryPath(root), "#!/bin/sh\nexit 0\n", "utf8");
-  }
   return root;
 }
 
-describe("cjs bundle preflight", () => {
-  it("finds esbuild inside the extracted runtime, not in node_modules", async () => {
-    // No bundler is declared as a dependency here, and the only copies on disk
-    // are transitive ones at two different versions. The runtime archive ships
-    // the pinned one, so the compiler that builds the artifact is the compiler
-    // the artifact runs.
-    const root = await runtimeRoot(true);
-    expect(assertEsbuildAvailable(root)).toBe(esbuildBinaryPath(root));
-    expect(esbuildBinaryPath(root)).not.toContain("node_modules");
-  });
-
-  it("says what to run first when the runtime has not been extracted", async () => {
-    const root = await runtimeRoot(false);
-    expect(() => assertEsbuildAvailable(root)).toThrow(/has not been extracted/u);
+describe("cjs bundle", () => {
+  it("bundles with the toolchain the repository already runs on", () => {
+    // No bundler is declared as a dependency of any package here, and the only
+    // copies of esbuild on disk are transitive ones at two different versions.
+    // Bun is what every script and every test already runs through, so it costs
+    // no dependency and no lockfile entry.
+    const { command, args } = bundleCommand("entry.ts", "out.cjs");
+    expect(command).toBe("bun");
+    expect(args).toContain("--target=node");
+    // Node SEA takes a CommonJS main; ESM is not an option.
+    expect(args).toContain("--format=cjs");
+    // Sourcemaps carry the build machine's absolute paths and the full original
+    // source, both of which L.1 forbids in the artifact.
+    expect(args).toContain("--sourcemap=none");
   });
 
   it.each([
     ["await start();", "a bare top-level await"],
     ["  await start();", "an indented one"],
   ])("rejects %s (%s)", (line) => {
-    // esbuild cannot emit top-level await in cjs at all, so this is a build
+    // Top-level await cannot be expressed in cjs at all, so this is a build
     // failure either way; catching it here names the line.
     expect(findTopLevelAwait(`import x from "y";\n${line}\n`)).not.toBeNull();
   });
@@ -67,22 +64,25 @@ describe("cjs bundle preflight", () => {
     expect(findTopLevelAwait(source)).toBe(3);
   });
 
-  it("keeps esbuild off the worker thread that never starts in a SEA", async () => {
-    // Spike s1b measured this: esbuild's sync API starts a worker from
-    // `__filename`, which is not a real file inside a SEA, so `Atomics.wait`
-    // blocks forever with no error and no output. Both settings are needed —
-    // disabling the worker forces the child_process path, and that path can no
-    // longer locate esbuild by itself.
-    const root = await runtimeRoot(true);
-    const environment = esbuildEnvironment(root, { PATH: "/usr/bin" });
-    expect(environment.ESBUILD_WORKER_THREADS).toBe("0");
-    expect(environment.ESBUILD_BINARY_PATH).toBe(esbuildBinaryPath(root));
-    expect(environment.PATH).toBe("/usr/bin");
+  it("keeps the real CLI entry free of top-level await", async () => {
+    expect(findTopLevelAwait(await readFile(CLI_ENTRY, "utf8"))).toBeNull();
   });
 
-  it("keeps the real CLI entry free of top-level await", async () => {
-    const { readFile } = await import("node:fs/promises");
-    const entry = await readFile(path.resolve("packages/cli/src/main.ts"), "utf8");
-    expect(findTopLevelAwait(entry)).toBeNull();
-  });
+  it("emits a bundle the embedded Node loads with nothing else on disk", async () => {
+    // The whole point of the bundle is that the SEA has no `node_modules` to
+    // fall back on. Building into a temp directory and loading it from there
+    // puts it outside every `node_modules` in this checkout, so an import the
+    // bundler left external fails here instead of in the packaged smoke.
+    const root = await scratchDirectory();
+    const outfile = path.join(root, "main.cjs");
+    await buildCliBundle(CLI_ENTRY, outfile);
+    expect((await stat(outfile)).size).toBeGreaterThan(0);
+
+    const loaded = spawnSync(process.execPath, ["-e", "require(process.argv[1])", outfile], {
+      cwd: root,
+      encoding: "utf8",
+    });
+    expect(loaded.stderr).not.toMatch(/MODULE_NOT_FOUND|Cannot find module/u);
+    expect(loaded.status).toBe(0);
+  }, 120_000);
 });

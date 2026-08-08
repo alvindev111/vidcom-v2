@@ -427,6 +427,20 @@
           <div><dt class="font-semibold text-slate-200">Bẫy unhandled rejection</dt><dd class="mt-1 text-slate-300">Hai test viết liên tiếp lúc context cạn đều rò rejection: <code>workspaceRoot: /workspace</code> không tồn tại, và throw thoát khỏi <code>app.request</code>. Xanh local, <strong>đỏ cả ba OS</strong>. Từ đó mọi lần kiểm đều chạy <code>grep -c "Unhandled Errors"</code> và đòi <code>0</code> — <code>PASS (n) FAIL (0)</code> không đủ.</dd></div>
         </dl>
       </section>
+      <section class="mt-6 rounded-2xl border border-amber-500/30 bg-slate-900 p-6">
+        <div class="flex flex-wrap items-center justify-between gap-3">
+          <h2 class="text-2xl font-semibold">2026-08-09 · Phase H — H.1 gỡ chặn bundler</h2>
+          <span class="rounded-full bg-amber-400/10 px-3 py-1 text-sm text-amber-300">9/9 test · 0 dependency mới</span>
+        </div>
+        <dl class="mt-6 grid gap-5 md:grid-cols-2">
+          <div><dt class="font-semibold text-slate-200">Blocker cũ là tài sản, không phải quyết định</dt><dd class="mt-1 text-slate-300">Đường "lấy <code>esbuild</code> từ runtime archive" đòi <code>build-runtime-archives.mjs</code> có config pin version + hash ba OS — file đó <strong>không tồn tại trong repo</strong>. Không bịa hash được, nên đường đó không kiểm chứng được, tức không dùng được.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Bun không phải dependency mới</dt><dd class="mt-1 text-slate-300">Mọi script và mọi test của repo đã chạy qua Bun. <code>bun build --target=node --format=cjs</code> thêm <strong>0 dòng</strong> vào <code>package.json</code> và lockfile, nên luật 6 giữ nguyên. Ghi thành C-7 ở Design §16 thay vì sửa DR-1 đã duyệt.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Phase 0 loại Bun ở vai trò khác</dt><dd class="mt-1 text-slate-300">Spike loại <code>bun --compile</code> vì <code>onnxruntime-node</code>/<code>sharp</code> không load được từ executable — đó là chuyện <em>cái gì chạy artifact</em>. Đây là <em>cái gì biên dịch artifact</em>, và output vẫn là CJS chạy dưới Node binary nhúng.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Chặn TLA ở source, không ở bundle</dt><dd class="mt-1 text-slate-300">Bundle là một file 14 MB đã dịch dòng: báo lỗi ở đó ra một số dòng không ai sửa được. Quét theo độ sâu ngoặc trên entry gốc chỉ đúng câu lệnh phải chuyển vào <code>main()</code>.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Test load ngoài mọi <code>node_modules</code></dt><dd class="mt-1 text-slate-300">Build thật rồi <code>require</code> bundle bằng Node trong thư mục tạm không có <code>node_modules</code> ở bất kỳ cấp cha nào. Một import bị để external hỏng <strong>tại đây</strong> chứ không phải ở packaged smoke — <code>MODULE_NOT_FOUND</code> là khẳng định riêng vì đó là hình dạng lỗi thật.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Papercut lint, không nới gate</dt><dd class="mt-1 text-slate-300"><code>dist/</code> bị <code>.gitignore</code> nhưng không nằm trong ignore của ESLint, nên build cục bộ làm <code>lint</code> đỏ 308 error — toàn bộ từ bundle 14 MB. CI checkout sạch nên xanh. Giữ tiền lệ Phase A: isolate artifact khi cần đo, MUST NOT đổi config.</dd></div>
+        </dl>
+      </section>
     </main>
   </body>
 </html>
