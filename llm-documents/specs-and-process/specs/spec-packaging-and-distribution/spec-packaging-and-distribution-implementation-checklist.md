@@ -496,8 +496,12 @@ Mỗi phase chạy focused command dưới đây trên SQLite/filesystem thật,
 - [ ] E.2 `LoopbackHost` + `currentApp` đổi được
   - Listener đọc `currentApp` mỗi request; swap là assignment đồng bộ; `/api/**` vào Hono app, còn lại vào static host
   - _Requirements: R1.17, R4.4_ — _Design: §5.4_
-- [ ] E.3 Trạng thái "chưa chọn workspace"
+- [x] E.3 Trạng thái "chưa chọn workspace"
   - Bootstrap app chỉ đăng ký `/v1/auth/*`, `/v1/system/*`, `/v1/health` — **không** `/api/bridge/**`. MUST NOT im lặng nhận `cwd` làm workspace
+  - [`bootstrap-app.ts`](../../../../packages/cli/src/bootstrap-app.ts) dựng route surface **theo state**, dùng lại `servesBridgeRoutes` của E.7 nên không có hai nguồn sự thật
+  - Test chốt **404 chứ không 403/503** — đây là vế đầu của bug ba mặt ở E.9, và là phân biệt quan trọng nhất: route từ chối vẫn nói với caller rằng daemon tin nó đang sở hữu workspace, khiến lỗi mất lease đọc thành lỗi phân quyền
+  - `reacquiring` cũng **vắng** route bridge: đang giành lại lease thì process này không phải writer, route còn đăng ký sẽ nói ngược lại
+  - `/v1/health` sống ở **mọi** state — đó là cách quan sát được chính cái hỏng
   - _Requirements: R1.17_ — _Design: §4.5_
 - [ ] E.4 `FoundationManager.activate` + switch có rollback
   - Mutex; canonicalize trước khi đụng foundation cũ; job non-terminal ⇒ `workspace_busy`; `503 workspace_switching` cho mutation; swap một lần; rollback về foundation cũ, thất bại thì `NoWorkspace`
