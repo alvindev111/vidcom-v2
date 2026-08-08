@@ -388,12 +388,18 @@ Mỗi phase chạy focused command dưới đây trên SQLite/filesystem thật,
 **Estimate**: 25 SP
 
 **Tasks**:
-- [ ] D.1 Sentinel `--vidcom-node`
+- [x] D.1 Sentinel `--vidcom-node`
   - Dispatch **trước** parser công khai, chỉnh `process.argv` rồi dynamic-import **chỉ** script dưới verified `native/hyperframes` root. MUST NOT xuất hiện trong help hay danh sách mode của R3.11
   - Hôm nay [`parseVidcomCommand`](../../../../packages/cli/src/main.ts#L34) coi mọi argv bắt đầu bằng `--` là `vidcom app` — sentinel rơi thẳng vào đó
+  - [`node-sentinel.ts`](../../../../packages/cli/src/node-sentinel.ts) dispatch trong `runVidcomCli` **trước** `parseVidcomCommand`; không vào `COMMAND_NAMES` nên không lộ ra help hay mode list
+  - Chỉ import script **trong** verified runtime root. Test chốt ba đường thoát: thư mục anh em `${root}-evil` (tên có tiền tố nhưng không nằm trong), traversal `..` leo ngược, và thiếu hẳn script
+  - `process.argv` được viết lại thành hình dạng của node (`execPath, script, …args`) rồi **khôi phục kể cả khi script ném** — để nguyên sentinel sẽ lệch mọi index phía sau đúng một vị trí
   - _Requirements: R6.2_ — _Design: §4.6, §5.16_
-- [ ] D.2 Sửa **cả hai** chỗ spawn
+- [x] D.2 Sửa **cả hai** chỗ spawn
   - `NodeRenderBinaryProbe` trả `[execPath, "--vidcom-node", cliPath]`; và chỗ thứ hai `[execPath, cliPath, "browser", "path"]` ([`binary-probe.ts:66-70`](../../../../packages/adapter/src/hyperframes/binary-probe.ts#L66)) — **cả hai** đều làm artifact chạy lại `main` của chính nó, và **không sinh lỗi**
+  - Cả hai chỗ đi qua `nodeArgv()`, và sentinel **chỉ** được thêm khi `process.isSEA` — ngoài artifact thì `execPath` đúng là node, thêm sentinel sẽ hỏng dev
+  - `RenderBinaryProbeResult.hyperframesCommand` phải nới từ `[string, string]` sang `[string, ...string[]]`: kiểu cũ khoá cứng đúng hai phần tử nên không chứa nổi sentinel
+  - Test chốt **chính cái bẫy**: `parseVidcomCommand([NODE_SENTINEL, script])` trả `{ name: "app" }` — bằng chứng sống rằng hình dạng spawn cũ không sinh lỗi mà lặng lẽ khởi động app
   - _Requirements: R6.2, R6.4_ — _Design: §4.6_
 - [ ] D.3a Kiểu `RuntimePaths` + resolver hai chế độ
   - Một chỗ duy nhất trả `hyperframesCliPath`, `hyperframesPackagePath`, `motionLibraryRoot`, `nativeDependenciesRoot`, `browserCacheRoot`. Chế độ artifact: **bắt buộc đủ cả năm**, thiếu một là lỗi có mã lúc bootstrap, không phải lúc render. Chế độ dev/test: `require.resolve` như hôm nay
@@ -407,9 +413,10 @@ Mỗi phase chạy focused command dưới đây trên SQLite/filesystem thật,
 - [ ] D.4 `CompilerGuard`
   - Đặt **cả hai** `ESBUILD_BINARY_PATH` và `ESBUILD_WORKER_THREADS=0`; timeout bắt buộc cho mọi lời gọi in-process chạm compiler. Thiếu **bất kỳ** cái nào ⇒ **treo vĩnh viễn, không một dòng stderr**
   - _Requirements: R6.10, R6.11_ — _Design: §5.17_
-- [ ] D.5 **Ép** `PYTHONUTF8`/`PYTHONIOENCODING`
+- [x] D.5 **Ép** `PYTHONUTF8`/`PYTHONIOENCODING`
   - Đổi `??=` thành ghi đè vô điều kiện trong [`allowlistedEnvironment`](../../../../packages/adapter/src/runtime/process-environment.ts#L19); mọi child (sidecar, shim, FFmpeg, Chromium) đi qua helper đó
   - Đo được ở S9/N-2: interpreter đóng băng lấy encoding từ codepage ANSI (`cp932` trên máy đo) ⇒ in tiếng Việt là `UnicodeEncodeError`
+  - `??=` giữ nguyên giá trị **kế thừa từ cha**, tức chính codepage cần chặn — đó là lý do phải ghi đè. Cha không bao giờ thắng; caller tường minh vẫn thắng, nhờ đó D.11 dựng được ca hỏng `PYTHONUTF8=""`
   - _Requirements: R6.7_ — _Design: §4.6, §5.16_
 - [ ] D.6 VieNeu chạy interpreter đóng băng
   - `defaultVieNeuCommand` hôm nay trả `["python3"|"python", worker.py]`; đổi sang đường dẫn tuyệt đối tới interpreter đã giải nén. Giữ override `~/.vidcom/setting.json`

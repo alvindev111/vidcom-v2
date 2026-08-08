@@ -11,6 +11,7 @@ import { runApproveCommand } from "./commands/approve";
 import { runCredentialCommand } from "./commands/credential";
 import { runBackupCommand } from "./commands/backup";
 import { runRecoveryCommand } from "./commands/recovery";
+import { isNodeSentinel, runNodeSentinel } from "./node-sentinel";
 import { CliInputError } from "./cli-error";
 
 export { CliInputError } from "./cli-error";
@@ -145,6 +146,14 @@ export async function runVidcomApp(options: AppCommandOptions = {}): Promise<voi
 
 /** Dispatches the public CLI command tree while preserving bare invocation as the app alias. */
 export async function runVidcomCli(argv: readonly string[] = process.argv.slice(2)): Promise<void> {
+  // Dispatched ahead of the public parser on purpose. `parseVidcomCommand`
+  // reads any argv starting with `--` as `vidcom app`, so the sentinel would
+  // otherwise start the whole application instead of running a script — and
+  // silently, since that path raises nothing.
+  if (isNodeSentinel(argv)) {
+    await runNodeSentinel(argv, path.join(defaultAppDataRoot(), "native"));
+    return;
+  }
   const command = parseVidcomCommand(argv);
   if (command.name === "app") {
     await runVidcomApp(parseAppCommandArgs(command.args));

@@ -34,6 +34,24 @@ function sameMajorMinor(left: string, right: string): boolean {
   return left.split(".").slice(0, 2).join(".") === right.split(".").slice(0, 2).join(".");
 }
 
+/**
+ * Argv that runs `script` under this executable, whatever this executable is.
+ *
+ * In an artifact `process.execPath` is the vidcom binary, not node. Passing a
+ * script path straight to it re-enters vidcom's own command parser, which reads
+ * anything beginning with `--` as `vidcom app` and starts the app instead —
+ * with no error to notice. The sentinel is what makes the artifact behave like
+ * node here. Outside an artifact execPath really is node and the sentinel is
+ * not needed, so it is only added when this process is a packaged binary.
+ */
+function nodeArgv(script: string): string[] {
+  const packaged = (process as NodeJS.Process & { isSEA?: boolean }).isSEA === true;
+  return packaged ? [VIDCOM_NODE_SENTINEL, script] : [script];
+}
+
+/** The internal sentinel that makes the packaged binary act as a node runner. */
+export const VIDCOM_NODE_SENTINEL = "--vidcom-node";
+
 /** Resolves the exact render toolchain before Chromium can be launched. */
 export class NodeRenderBinaryProbe implements BinaryProbePort {
   constructor(private readonly paths: {
@@ -66,7 +84,7 @@ export class NodeRenderBinaryProbe implements BinaryProbePort {
       if (await executable(this.paths.browserPath)) browserPath = this.paths.browserPath;
     } else if (cliPath) {
       try {
-        const result = await execFileAsync(process.execPath, [cliPath, "browser", "path"], {
+        const result = await execFileAsync(process.execPath, [...nodeArgv(cliPath), "browser", "path"], {
           encoding: "utf8",
           timeout: 10_000,
           windowsHide: true,
@@ -95,7 +113,9 @@ export class NodeRenderBinaryProbe implements BinaryProbePort {
         }]
       : [];
     return ok({
-      hyperframesCommand: [process.execPath, cliPath] as const,
+      // Second spawn site, same trap: the render supervisor runs this command
+      // array directly, so it needs the sentinel for exactly the same reason.
+      hyperframesCommand: [process.execPath, ...nodeArgv(cliPath)] as const,
       browserPath: browserPath as AbsolutePath,
       ffmpegPath: this.paths.ffmpegPath,
       ffprobePath: this.paths.ffprobePath,

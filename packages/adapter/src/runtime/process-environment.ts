@@ -16,7 +16,12 @@ export function allowlistedEnvironment(
     const value = parent[name];
     if (value !== undefined) environment[name] = value;
   }
-  environment.PYTHONIOENCODING ??= "utf-8";
-  environment.PYTHONUTF8 ??= "1";
+  // Forced, not defaulted. A frozen interpreter takes its encoding from the ANSI
+  // codepage when these are absent, and inheriting the parent's value carries
+  // that codepage straight through — measured as cp932 on a Windows host, where
+  // printing Vietnamese raises UnicodeEncodeError. The parent never wins here;
+  // an explicit caller still can, which is how the failure mode stays testable.
+  environment.PYTHONIOENCODING = "utf-8";
+  environment.PYTHONUTF8 = "1";
   return { NODE_ENV: parent.NODE_ENV, ...environment, ...supplied };
 }

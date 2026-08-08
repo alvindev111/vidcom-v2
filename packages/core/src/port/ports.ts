@@ -139,7 +139,14 @@ export interface RenderProjectPort {
 }
 
 export interface RenderBinaryProbeResult {
-  hyperframesCommand: readonly [string, string];
+  /**
+   * Executable plus its arguments, already in the right shape to spawn.
+   *
+   * Not a fixed pair: a packaged artifact has to pass an internal sentinel
+   * before the script path, because its execPath is the vidcom binary rather
+   * than node.
+   */
+  hyperframesCommand: readonly [string, ...string[]];
   browserPath: AbsolutePath;
   ffmpegPath: AbsolutePath;
   ffprobePath: AbsolutePath;
