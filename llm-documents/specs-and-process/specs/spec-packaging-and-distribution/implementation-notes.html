@@ -509,6 +509,20 @@
           <div><dt class="font-semibold text-slate-200">Bỏ probe <code>GET /</code></dt><dd class="mt-1 text-slate-300">Frontend giờ là file tĩnh, không thuộc process này. Readiness đọc dòng <code>listening</code> trên stdout: một route trả lời là việc của khẳng định kế tiếp, probe ở đây chỉ che mất bên nào hỏng.</dd></div>
         </dl>
       </section>
+      <section class="mt-6 rounded-2xl border border-teal-500/30 bg-slate-900 p-6">
+        <div class="flex flex-wrap items-center justify-between gap-3">
+          <h2 class="text-2xl font-semibold">2026-08-09 · Phase I — I.1 discovery store</h2>
+          <span class="rounded-full bg-teal-400/10 px-3 py-1 text-sm text-teal-300">13 test · fs thật</span>
+        </div>
+        <dl class="mt-6 grid gap-5 md:grid-cols-2">
+          <div><dt class="font-semibold text-slate-200">Record sai còn tệ hơn không có record</dt><dd class="mt-1 text-slate-300">Sai <code>workspaceRoot</code> mà vẫn parse được thì client được chỉ tới một daemon <strong>khác</strong> — và mọi kiểm tra sau đó đều pass, vì nó đang nói chuyện với một tiến trình thật, khoẻ mạnh. Nên <code>read</code> validate đủ tám field, không chỉ <code>JSON.parse</code>.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Ghi dở dang = daemon thứ hai</dt><dd class="mt-1 text-slate-300">Client đọc JSON cụt coi là "không có daemon" rồi tự khởi một daemon nữa cho cùng workspace. Đó chính là kết cục temp+fsync+rename tồn tại để chặn.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Tên file là hash, không phải path</dt><dd class="mt-1 text-slate-300">Workspace root chứa separator, khoảng trắng và ký tự Windows từ chối. Encode chúng thì hai root khác nhau va nhau ngay khi encoding mất mát.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Daemon cũ không được xoá record daemon mới</dt><dd class="mt-1 text-slate-300"><code>remove</code> so <code>instanceId</code>. Không có nó, một lần shutdown chậm làm bản thay thế hoàn toàn khoẻ mạnh trở nên vô hình — không lỗi, không log, không tìm thấy.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Dùng lại đường ACL đã có</dt><dd class="mt-1 text-slate-300">Gọi thẳng <code>secureAppDataDirectorySync</code>/<code>secureCredentialFile</code> của credential store. Một đường ACL Windows thứ hai là chỗ để hai đường lệch nhau.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Test khoá tám field</dt><dd class="mt-1 text-slate-300">Không phải "có secret không" mà là <em>đúng tập field nào</em>. Thêm bất cứ gì — attachment count, lease id — sẽ hiện ra ngay tại đó.</dd></div>
+        </dl>
+      </section>
     </main>
   </body>
 </html>

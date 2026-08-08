@@ -860,8 +860,13 @@ Mỗi phase chạy focused command dưới đây trên SQLite/filesystem thật,
 **Estimate**: 19 SP
 
 **Tasks**:
-- [ ] I.1 `DaemonDiscoveryStore`
+- [x] I.1 `DaemonDiscoveryStore`
   - `<app-data>/daemon/<workspaceHash>.json`, atomic temp+fsync+rename, `0600`/ACL. `remove` so `instanceId` để daemon cũ không xoá record daemon mới. **Không** secret, không attachment count, không lease id trong file
+  - [`daemon-discovery.ts`](../../../../packages/adapter/src/fs/daemon-discovery.ts) dùng lại đúng `secureAppDataDirectorySync`/`secureCredentialFile` của credential store — cùng đường ACL Windows, không dựng đường thứ hai
+  - Tên file là **hash** chứ không phải path: workspace root chứa separator, khoảng trắng và ký tự Windows từ chối, mà encode chúng thì hai root khác nhau va nhau ngay khi encoding mất mát
+  - `read` **validate** record chứ không chỉ parse: sai `workspaceRoot`, sai hash, sai schemaVersion, host không phải `127.0.0.1`, port ngoài `1..65535` đều trả `null`. Mỗi ca đó nếu lọt sẽ chỉ client tới một daemon **khác**, rồi mọi kiểm tra sau đều pass vì nó đang nói chuyện với một tiến trình thật, khoẻ mạnh
+  - Ghi truncate cũng trả `null`: client đọc JSON dở dang mà coi là "không có daemon" thì nó khởi **daemon thứ hai** cho cùng workspace — đúng kết cục temp+fsync+rename tồn tại để chặn
+  - [`daemon-discovery.test.ts`](../../../../tests/adapter/daemon-discovery.test.ts) 13 test trên filesystem thật trong temp directory: mode `0600`/`0700` thật, **khoá đúng tám field** (không secret/attachment/lease), không sót file `.tmp`, và ca daemon cũ xoá nhầm record daemon mới
   - _Requirements: R2.13_ — _Design: §5.5, §6.2_
 - [ ] I.2 `DaemonClient` trong `packages/adapter/src/daemon/**`
   - Là **thư mục mới trong `@vidcom/adapter`**, không phải package npm mới: `packages/adapter` chỉ có một entry `exports: "./src/index.ts"`, nên `adapter/daemon` là cách đặt tên trong Design chứ không phải subpath export. Đừng tạo `packages/adapter/src/daemon/package.json`
@@ -1508,6 +1513,12 @@ Chi tiết: [Detailed Goals](./spec-packaging-and-distribution-detailed-goal.md)
   - Summary: H.1–H.4 xong; H.6 và H.8 **phụ thuộc ngược vào J.2**, nên Phase H không đóng được theo thứ tự A→M như viết.
   - Decisions: H.6 đo hai flow `serve --workspace` và `app` — đều là mode của J.1/J.2 chưa tồn tại; H.8 cần artifact **mở listener**, cũng J.2. Đây là vòng phụ thuộc trong chính checklist, không phải phạm vi bị nới. Đi tiếp I rồi J, sau J.2 quay lại đóng H.6/H.8 cùng phần cold cần runtime archive thật. Không tick sớm và không đo thay bằng một flow khác: baseline cho thứ không ai chạy còn tệ hơn không có baseline.
   - Blockers: H.6 chặn kép — J.2 **và** config runtime archive (cột cold phải extract thật). H.8 chặn bởi J.2; nửa "chạy trong cwd rỗng, không sinh file cạnh artifact" đã kiểm tay ở H.4.
+
+2026-08-09 — Phase I, Task I.1
+  - Files: `packages/adapter/src/fs/daemon-discovery.ts`, `packages/adapter/src/index.ts`, `tests/adapter/daemon-discovery.test.ts`, checklist và implementation notes
+  - Summary: Thêm discovery store atomic temp+fsync+rename, đặt tên file theo hash workspace, `remove` so `instanceId`.
+  - Decisions: Dùng lại nguyên `secureAppDataDirectorySync`/`secureCredentialFile` của credential store thay vì dựng đường ACL Windows thứ hai. `read` validate đủ tám field chứ không chỉ `JSON.parse`: một record sai workspace sẽ chỉ client tới daemon khác và mọi kiểm tra sau đó đều pass vì nó nói chuyện với tiến trình thật. Ghi truncate trả `null` — client coi là "không có daemon" rồi khởi daemon thứ hai, đúng kết cục rename tồn tại để chặn.
+  - Blockers: Không có; 13/13 test trên filesystem thật (mode `0600`/`0700` thật, đúng tám field, không sót `.tmp`), typecheck, lint 0 error, `test:boundaries` xanh.
 
 Format:
 ```
