@@ -1,5 +1,5 @@
 import { realpathSync } from "node:fs";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
@@ -54,9 +54,14 @@ describe("runtime path wiring", () => {
         node: path.join(appDataRoot, "native", "1.0.0", "node"),
       },
     });
+    // A real directory: the workspace watcher realpaths it asynchronously, and a
+    // path that does not exist rejects after the test has already finished —
+    // green locally, an unhandled rejection on CI.
+    const workspaceRoot = path.join(appDataRoot, "workspace");
+    await mkdir(workspaceRoot, { recursive: true });
     const infrastructure = createInfrastructure({
       appDataRoot,
-      workspaceRoot: path.resolve("/workspace") as AbsolutePath,
+      workspaceRoot: workspaceRoot as AbsolutePath,
       runtimePaths: paths,
       // Deliberately wrong: if these ever win, the artifact silently renders
       // with a toolchain from somewhere else.
