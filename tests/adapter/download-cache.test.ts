@@ -92,19 +92,27 @@ describe("download cache coordinator", () => {
 
   it("keeps separate components independent", async () => {
     const { cache } = await coordinator();
-    let browserRunning = false;
-    // A slow model download must not block a browser fetch.
-    const model = cache.download("models", async () => {
-      await new Promise((resolve) => { setTimeout(resolve, 120); });
-      return browserRunning;
-    }, 10_000);
-    await new Promise((resolve) => { setTimeout(resolve, 20); });
-    await cache.download("chromium", () => {
-      browserRunning = true;
-      return Promise.resolve();
-    }, 10_000);
+    let releaseModel = () => {};
+    const modelHeld = new Promise<void>((resolve) => { releaseModel = resolve; });
+    let modelStarted = () => {};
+    const modelRunning = new Promise<void>((resolve) => { modelStarted = resolve; });
 
-    expect(await model).toBe(true);
+    // A slow model download holds its own lock. Synchronised explicitly rather
+    // than by sleeping: on a loaded runner a sleep proves nothing about order.
+    const model = cache.download("models", async () => {
+      modelStarted();
+      await modelHeld;
+      return "model";
+    }, 10_000);
+    await modelRunning;
+
+    // This completes while the model is provably still in flight, which is the
+    // property being tested: separate components do not block each other.
+    expect(await cache.download("chromium", () => Promise.resolve("browser"), 10_000))
+      .toBe("browser");
+
+    releaseModel();
+    expect(await model).toBe("model");
   });
 
   it("discards a partial component so the next attempt starts clean", async () => {

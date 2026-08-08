@@ -441,7 +441,7 @@ Mỗi phase chạy focused command dưới đây trên SQLite/filesystem thật,
   - Per-component lock, partial marker, timeout. Partial marker là **nguồn sự thật duy nhất**: `hyperframes browser path` trả exit 0 cho binary 1 MB (đo ở S9)
   - Marker ghi **trước** byte đầu tiên và chỉ xoá khi download báo thành công. Thất bại, timeout, hay crash đều để lại trạng thái `partial` **qua cả restart** — test dựng một coordinator mới như lần boot sau và chốt vẫn đọc ra `partial`
   - Marker **hỏng/không đọc được vẫn tính là `partial`**, không phải `ready`: marker tồn tại nghĩa là đã có ai đó bắt đầu tải. Đây là hướng bảo thủ đúng
-  - Khoá **theo từng component**: hai lần tải cùng component bị serialize, nhưng `models` tải chậm **không** chặn `chromium` — test chốt cả hai chiều
+  - Khoá **theo từng component**: hai lần tải cùng component bị serialize, nhưng `models` tải chậm **không** chặn `chromium` — test chốt cả hai chiều, **đồng bộ tường minh** bằng promise chứ không bằng `sleep`. Bản đầu dùng `sleep(20)` rồi kỳ vọng thứ tự: xanh local, **đỏ trên Linux CI** khi runner tải nặng
   - **Thiếu `ErrorCode.DownloadUnavailable`** — xem ghi chú ngay dưới
   - _Requirements: R6.5_ — _Design: §5.18_
   - > [!WARNING]
