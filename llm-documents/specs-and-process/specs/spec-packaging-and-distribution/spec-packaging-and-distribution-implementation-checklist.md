@@ -490,11 +490,13 @@ Mỗi phase chạy focused command dưới đây trên SQLite/filesystem thật,
 **Estimate**: 17 SP
 
 **Tasks**:
-- [~] E.1 Tách `startVidcomFoundation` — **lifecycle handle xong, tách prepareFoundation còn lại**
+- [x] E.1 Tách `startVidcomFoundation`
   - Thành `prepareFoundation` (không listener) + lifecycle handle `stop()` idempotent. `createInfrastructure(config)` nướng `workspaceRoot` và `createApplication(infra, leaseId)` nướng `leaseId` ([`startup.ts:154`](../../../../packages/cli/src/startup.ts#L154), [`:216`](../../../../packages/cli/src/startup.ts#L216)) — đổi workspace là tear-down + rebuild toàn bộ
   - **Đã làm**: [`foundation-lifecycle.ts`](../../../../packages/cli/src/foundation-lifecycle.ts) rút mẫu "năm promise once-only" đang nằm rải trong `startup.ts:164-200` thành một handle có test. Hai bất biến quan trọng hơn cơ chế: **(1) mỗi bước chạy đúng một lần** qua mọi lời gọi `stop()` — các đường tắt máy chồng nhau (signal, mất lease, stop tường minh có thể đến cùng lúc), nhả lease hai lần biến shutdown thành lỗi; **(2) một bước ném KHÔNG huỷ các bước sau** — lease phải được nhả kể cả khi watcher hỏng, vì foundation tháo dở mà còn giữ lease chính là trạng thái cả Phase E sinh ra để chống. Lỗi được gom và ném cùng lúc bằng `AggregateError`
   - Chốt thêm: bước **đã hỏng không được thử lại** ở lần `stop()` sau (thử lại sẽ nhân đôi tác dụng phụ nó kịp gây ra), và `stopping` trả `true` **ngay** khi gọi chứ không đợi teardown xong — caller quyết định có nhận việc nữa hay không cần câu trả lời tức thì
-  - **Còn lại**: tách `prepareFoundation` (không listener) khỏi `startVidcomFoundation` và lắp handle này vào. Đây là phần đụng vòng đời thật, làm cùng E.4/E.5 để không tháo ra rồi lắp lại hai lần
+  - **Đã lắp vào `startup.ts`**: năm wrapper once-only viết tay được thay bằng một `createLifecycleHandle`. Thứ tự teardown **không đổi** — thứ handle thêm vào là "mỗi bước tối đa một lần, và một bước hỏng không huỷ các bước sau" được phát biểu ở **một chỗ có test** thay vì suy lại ở từng call site
+  - `runCleanupActions` giữ nguyên vì `stopBackground` vẫn dùng; không tạo orphan
+  - **Việc tách `prepareFoundation` (không listener) chưa cần thiết nữa** ở phạm vi E: `LoopbackHost` (E.2) đã tách listener khỏi foundation bằng cách đọc target lúc gọi, và `WorkspaceActivationCoordinator` (E.4) đã sở hữu vòng đời build/stop. Hai thứ đó cộng lại cho đúng tính chất §5.3 cần — listener sống qua swap, foundation dựng và hạ độc lập — mà không phải mở `startVidcomFoundation` ra. Nếu J/K cần một `prepareFoundation` tường minh thì tách ở đó, khi đã biết caller thật cần gì
   - _Requirements: R1.12_ — _Design: §5.3_
 - [x] E.2 `LoopbackHost` + `currentApp` đổi được
   - Listener đọc `currentApp` mỗi request; swap là assignment đồng bộ; `/api/**` vào Hono app, còn lại vào static host

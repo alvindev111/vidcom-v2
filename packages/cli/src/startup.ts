@@ -11,6 +11,7 @@ import {
 } from "@vidcom/core";
 
 import { createApplication, createInfrastructure, hashContent, type CompositionRootConfig } from "./composition-root";
+import { createLifecycleHandle } from "./foundation-lifecycle";
 
 /**
  * 1 hour. Long enough that a legitimately slow batch in another daemon is never
@@ -186,18 +187,23 @@ export async function startVidcomFoundation<Listener>(
     [stopSchedulerOnce, closeWatcherOnce],
     "VidCom background shutdown failed",
   );
+  // One handle rather than five hand-rolled once-only wrappers. The ordering is
+  // unchanged; what the handle adds is that "each step at most once, and a
+  // failing step does not cancel the rest" is stated in one tested place
+  // instead of re-derived at each call site.
+  const lifecycle = createLifecycleHandle([
+    { name: "listener", run: closeListenerOnce },
+    { name: "scheduler", run: stopSchedulerOnce },
+    { name: "watcher", run: closeWatcherOnce },
+    { name: "lease", run: releaseLeaseOnce },
+    { name: "database", run: destroyDatabaseOnce },
+  ]);
   const cleanup = () => cleanupPromise ??= (async () => {
     if (leaseRenewal) {
       clearInterval(leaseRenewal);
       leaseRenewal = null;
     }
-    await runCleanupActions([
-      closeListenerOnce,
-      stopSchedulerOnce,
-      closeWatcherOnce,
-      releaseLeaseOnce,
-      destroyDatabaseOnce,
-    ], "VidCom shutdown failed");
+    await lifecycle.stop();
   })();
   try {
     const listener = await runStartupSequence({
