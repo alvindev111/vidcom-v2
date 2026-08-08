@@ -16,18 +16,18 @@ async function allows(host: string | undefined): Promise<boolean> {
   const app = new Hono();
   app.use("*", hostCheck(PORT));
   app.get("/v1/health", (c) => c.json({ ok: true }));
+  // Handled inside the app rather than caught outside it. Letting the throw
+  // escape `app.request` leaves an unhandled rejection that passes locally and
+  // fails CI, which is a worse bug than the one being tested for.
+  app.onError(() => new Response(null, { status: 403 }));
   // Any refusal counts: the middleware signals it by throwing, and the error
   // mapper turns that into 403 further out. Asserting here keeps the test about
   // the perimeter rule rather than about the mapper.
-  try {
-    const response = await app.request(
-      "http://127.0.0.1/v1/health",
-      host === undefined ? {} : { headers: { Host: host } },
-    );
-    return response.status === 200;
-  } catch {
-    return false;
-  }
+  const response = await app.request(
+    "http://127.0.0.1/v1/health",
+    host === undefined ? {} : { headers: { Host: host } },
+  );
+  return response.status === 200;
 }
 
 /**
