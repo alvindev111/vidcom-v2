@@ -789,9 +789,14 @@ Mỗi phase chạy focused command dưới đây trên SQLite/filesystem thật,
 - [ ] H.2 Frontend pack + manifest
   - `frontend-manifest.json` (`path, offset, length, sha256, mime, cachePolicy`) + `frontend.pack` raw bytes, **không base64**
   - _Requirements: R4.1, R4.2_ — _Design: §5.10_
-- [ ] H.3 `SeaStaticAssetHost`
+- [~] H.3 `SeaStaticAssetHost` — **resolver xong, phần đọc pack còn lại**
   - `getRawAsset` + immutable view, không ghi pack ra đĩa. Resolver normalize URL, reject encoded traversal, map `/projects/<slug>` **và payload RSC `.txt`** sang `projects/__shell*`
   - HTML/RSC `no-store`; `/_next/static/**` immutable
+  - [`sea-static-host.ts`](../../../../packages/cli/src/sea-static-host.ts) — resolver thuần, 14 test
+  - **Hai lỗi thật do test bắt, không phải do đọc lại code**: (1) `new URL()` **tự resolve `..` khi parse**, nên mọi kiểm tra đặt *sau* nó đều nhìn thấy path đã sạch — traversal lọt qua trông như đường dẫn thường. Phải kiểm trên **path thô** trước. (2) `//projects/x` bị URL parser đọc `//projects` thành **authority**, nuốt mất segment đầu. Đã **bỏ hẳn `new URL`** và dựng path từ chính các segment đã decode — xoá cả một lớp phân kỳ parser
+  - Decode **đúng một lần**; còn `%` sau đó là từ chối, không decode tiếp: double-encode ở đây chỉ tồn tại để lách một kiểm tra decode một lần
+  - `/projects/<slug>` và payload RSC `.txt` **cùng** về `projects/__shell*`: thiếu vế `.txt` thì điều hướng trong app 404 trong khi tải lại trang vẫn chạy — hỏng theo kiểu chỉ một nửa
+  - **Còn lại**: `getRawAsset` + immutable view (không ghi pack ra đĩa) — cần `frontend.pack` của **H.2**
   - _Requirements: R4.2, R4.5_ — _Design: §5.10_
 - [ ] H.4 Build SEA native theo runner
   - `useCodeCache=false`, `useSnapshot=false`, postject pinned, không cross-build
