@@ -27,7 +27,8 @@
     "test:vieneu-sidecar": "node scripts/verify-vieneu-sidecar.mjs",
     "test:vieneu-real": "vitest run tests/adapter/tts-vieneu.integration.test.ts",
     "db:generate": "drizzle-kit generate",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test:browser-session": "vitest run tests/frontend/browser-session.test.ts"
   },
   "dependencies": {
     "@alvin0/http-driver": "^0.4.0",

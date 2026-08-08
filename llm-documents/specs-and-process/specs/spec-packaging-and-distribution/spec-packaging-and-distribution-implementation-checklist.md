@@ -656,12 +656,16 @@ Mỗi phase chạy focused command dưới đây trên SQLite/filesystem thật,
 **Estimate**: 12 SP
 
 **Tasks**:
-- [ ] G.0 **Harness browser + script `test:browser-session`** — làm trước G.1, vì nó là thứ verify mọi task còn lại của phase
+- [x] G.0 **Harness browser + script `test:browser-session`** — làm trước G.1, vì nó là thứ verify mọi task còn lại của phase
   - **Công nghệ đã chốt, không mở lại**: `puppeteer-core@25.4.0` (**đã** là devDependency của repo) lái `chrome-headless-shell` thật. Không thêm Playwright, không thêm `jsdom`. `SameSite` **chỉ browser cưỡng chế được** — S9 đã chứng minh `curl` trả kết quả sai ở đây, nên không có đường thay thế nhẹ hơn
   - **Port từ [`spikes/phase-4/s9-windows-runtime/cookie-probe.mjs`](../../../../spikes/phase-4/s9-windows-runtime/cookie-probe.mjs)**, đừng viết lại: nó đã có sẵn daemon Hono trên port động + "next dev" giả trên `localhost:3000` + chuỗi `exchange → system/workspace → SSE` với `credentials: "include"`
   - Đường tới Chrome: **dùng `browserCacheRoot` của `RuntimePaths`** (D.3a, đã xong trước G) + thực thi `--version` để xác nhận binary chạy được, MUST NOT tin đường dẫn suông (bẫy S9/W-3). Env `CHROME_PATH` override cho máy dev. Tách helper này ra một chỗ vì **J.5c dùng lại đúng nó** cho check `chrome.cache` — hai đường resolve Chrome là hai chỗ để hỏng khác nhau
   - Chrome vắng mặt ⇒ test **`skipped` có lý do in ra**, MUST NOT xanh im lặng. Trong CI (`process.env.CI`) thì vắng mặt là **fail**, cùng luật với `VIDCOM_DOCTOR_STRICT` ở M.5
   - Thêm `"test:browser-session": "vitest run tests/frontend/browser-session.test.ts"` vào [`package.json`](../../../../package.json) và tạo `tests/frontend/`
+  - [`chrome-resolver.ts`](../../../../packages/adapter/src/hyperframes/chrome-resolver.ts) tách riêng đúng như checklist yêu cầu, vì **J.5c dùng lại chính nó**. Hai đường resolve Chrome sẽ bất đồng đúng lúc quan trọng nhất
+  - **Duyệt cây thay vì đoán đường dẫn**: layout tải về lồng thư mục version rồi thư mục platform, và **cả hai tên đổi theo mỗi bản phát hành** — đường dẫn cứng như trong `cookie-probe.mjs` chỉ đúng trên đúng một máy
+  - Mỗi ứng viên đều bị **thực thi `--version`** trước khi nhận, dùng lại `verifyBrowserExecutable` của D.11: đường dẫn không phải bằng chứng, và S9 đã đo được công cụ tải báo thành công cho một binary không chạy nổi
+  - [`browser-harness.ts`](../../../../tests/support/browser-harness.ts): thiếu Chrome ⇒ **skip có in lý do** trên máy dev, **fail** trong CI (`process.env.CI`). Hai luật khác nhau có chủ ý — không ai nên phải tải 200 MB để chạy unit suite, và không gì nên báo xanh cho test chưa từng chạy
   - _Requirements: R4.12, R1.10_ — _Design: §5.11, §16 C-5_
 - [ ] G.1 Service catalog + http-driver
   - Một catalog `src/lib/api/services.ts`, id `v1.<domain>.<action>`; **không** bật automatic version injection (URL đã chứa `api/v1`, tránh `/v1/v1`)
