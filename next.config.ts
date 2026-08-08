@@ -1,6 +1,11 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
+  // The artifact serves the frontend from a pack embedded in the executable,
+  // with no Node rendering anything at request time. The API is not part of
+  // that output: the daemon owns it, and the browser reaches it over the same
+  // loopback origin in the artifact or a configured one in development.
+  output: "export",
   // Stated rather than left to the default. A static export writes `/a/b.html`
   // or `/a/b/index.html` depending on this flag, and the SEA asset host maps
   // request paths to those files — so the two have to agree, and agreeing by

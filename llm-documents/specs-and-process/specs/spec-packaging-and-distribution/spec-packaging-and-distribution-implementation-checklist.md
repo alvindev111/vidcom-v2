@@ -715,11 +715,14 @@ Mỗi phase chạy focused command dưới đây trên SQLite/filesystem thật,
   - Slug đọc trong **lazy initializer của `useState`**, không phải trong effect: effect set state lúc mount tốn thêm một lần render và đúng là thứ `react-hooks/set-state-in-effect` sinh ra để chặn. `window` vắng mặt lúc prerender shell, và `null` là câu trả lời trung thực ở đó
   - Sentinel `__shell` được coi là **không có project**: fetch một project tên `__shell` sẽ 404 theo kiểu trông như project bị thiếu
   - _Requirements: R4.13, R4.5_ — _Design: DR-3_
-- [~] G.6 Bỏ catch-all route handler khỏi build export — **`trailingSlash` xong, lật `output: "export"` còn lại**
+- [x] G.6 Bỏ catch-all route handler khỏi build export
   - `src/app/api/[[...route]]/route.ts` với `dynamic = "force-dynamic"` làm `next build` fail; `trailingSlash: false` chốt tường minh
   - **Đã làm**: `trailingSlash: false` khai tường minh trong [`next.config.ts`](../../../../next.config.ts) thay vì dựa vào mặc định. Static export ghi `/a/b.html` hay `/a/b/index.html` **tuỳ cờ này**, và SEA asset host ánh xạ request path lên đúng những file đó — hai bên phải khớp, và khớp do tình cờ là cách chúng trôi ra khỏi nhau về sau. `npm run build` xanh sau khi đổi
   - [`next-export-config.test.ts`](../../../../tests/frontend/next-export-config.test.ts) **ghim danh sách route handler** hiện có (`src/app/api/[[...route]]/route.ts`). Khi bật `output: "export"` thì mọi handler `force-dynamic` làm build fail, nên danh sách được chốt ở đây: một handler thêm vào giữa chừng sẽ hiện ra tại test này thay vì thành một build fail không ai ngờ
-  - **Chưa làm — lật `output: "export"` và dời catch-all**: đây là thay đổi chạm chính `npm run build` mà CI chạy mỗi vòng, và nó đi cùng **H.0/H.1** (SEA static asset host) vì host đó mới là thứ tiêu thụ output. Lật trước khi có host là tạo một build không ai phục vụ được
+  - **Đã lật `output: "export"` sau khi H.1 có bundler thật**: `next build` xanh, sinh 57 file gồm `projects/__shell.html` **và** `projects/__shell.txt` — đúng cặp mà resolver H.3 đã map. Route (app) chỉ còn `/`, `/_not-found`, `/projects/[slug]`, không route nào render lúc request
+  - **`src/app/api/[[...route]]/route.ts` bị xoá, không phải dời**: export fail trên *mọi* route handler chứ không riêng `force-dynamic`, và API vốn thuộc về daemon — trình duyệt gọi nó qua cùng origin loopback trong artifact, qua origin cấu hình ở dev (§5.11). `handleNextHostedRequest` **giữ nguyên** trong `packages/cli`: nó là hàm, và các suite server đang dùng nó làm harness
+  - **Cửa sổ hồi quy có chủ ý, đóng ở J.2**: từ lúc này tới khi `serve`/`app` nối listener của E vào static host, source checkout không còn đường tự phục vụ API qua Next. Đó là chiều đúng — Next-hosted API là di sản chuyển tiếp, không phải đích
+  - `tests/server/next-routing.test.ts` **bị xoá**: cả hai case chỉ mô tả bề mặt Next-hosted API (thứ tự exact route vs catch-all, và catch-all là route server duy nhất còn lại). Bất biến thay thế — **không còn route handler nào** — nằm ở [`next-export-config.test.ts`](../../../../tests/frontend/next-export-config.test.ts), nên giữ file cũ là giữ hai chỗ nói về cùng một thứ mà một chỗ đã sai
   - _Requirements: R4.11, R4.5_ — _Design: §5.10_
 - [x] G.7 `WorkspacePickerPage`
   - Roots, breadcrumb, entry phân trang, tạo thư mục, chọn, trạng thái lỗi R1.7. Chưa có workspace ⇒ app vào màn này trước Home
@@ -751,7 +754,7 @@ Mỗi phase chạy focused command dưới đây trên SQLite/filesystem thật,
 
 **Acceptance Criteria**:
 - [ ] Cùng một bundle chạy same-origin (artifact) và cross-origin (dev) chỉ bằng cấu hình
-- [ ] `next build` với `output: "export"` xanh
+- [x] `next build` với `output: "export"` xanh
 - [ ] `rtk bun run test:browser-session` **chạy được** (script tồn tại, Chrome resolve được) và xanh
 - [ ] Không thêm dependency nào vào [`package.json`](../../../../package.json) cho phase này ngoài script
 
@@ -1449,6 +1452,12 @@ Chi tiết: [Detailed Goals](./spec-packaging-and-distribution-detailed-goal.md)
   - Summary: Bundler đổi sang `bun build --target=node --format=cjs`; script emit `dist/sea/main.cjs` thật, chặn TLA trên source entry, và test build thật rồi load bundle bằng Node ở thư mục tạm không có `node_modules`.
   - Decisions: Bỏ đường "esbuild từ runtime archive" vì nó chặn H.1 sau một tài sản phát hành chưa tồn tại — config pin version/hash ba OS cho `build-runtime-archives.mjs` không có trong repo, và MUST NOT bịa hash. Bun không phải dependency mới: nó đã là toolchain bắt buộc, `package.json` và lockfile không đổi một dòng, nên luật 6 giữ nguyên. Phase 0 loại Bun ở vai trò **runtime**; đây là vai trò build-time và output vẫn là CJS chạy dưới Node. Ghi thành C-7 trong Design §16 thay vì sửa DR-1 đã duyệt. Ba helper `esbuild*` cũ của script bị xoá vì chỉ test của chính nó dùng; `CompilerGuard` (D.4) vẫn sở hữu `ESBUILD_BINARY_PATH`/`ESBUILD_WORKER_THREADS` lúc chạy.
   - Blockers: Không có cho H.1. `tests/build/cli-bundle.test.ts` 9/9 xanh (bundle 5581 module, 14,23 MB, load được ngoài mọi `node_modules`); typecheck, `test:boundaries`, `git diff --check` xanh; `lint` 0 error / 3 warning **sau khi xoá `dist/`** — `dist/` gitignored nhưng không nằm trong ignore của ESLint, nên build cục bộ làm lint đỏ. Không nới ESLint, giữ tiền lệ Phase A. Runtime-archive config vẫn là blocker của H.2/H.4/H.6/H.8 ở phần cần binary phát hành thật.
+
+2026-08-09 — Phase G, Task G.6 (lật static export)
+  - Files: `next.config.ts`, `src/app/api/**` (xoá), `tests/frontend/next-export-config.test.ts`, `tests/server/next-routing.test.ts` (xoá), checklist và implementation notes
+  - Summary: Bật `output: "export"`, xoá catch-all route handler, và chuyển bất biến "không còn route handler nào" sang test cấu hình export.
+  - Decisions: Lật được vì H.1 đã có bundler thật — trước đó lật là tạo một build không ai phục vụ được. Xoá thay vì dời route: export fail trên mọi route handler chứ không riêng `force-dynamic`, và API vốn thuộc daemon (§5.11). Giữ `handleNextHostedRequest` trong `packages/cli` vì các suite server dùng nó làm harness. Xoá `tests/server/next-routing.test.ts` vì cả hai case chỉ mô tả bề mặt Next-hosted API; giữ lại là giữ hai chỗ nói cùng một thứ mà một chỗ đã sai.
+  - Blockers: Cửa sổ hồi quy có chủ ý — source checkout không còn tự phục vụ API qua Next cho tới khi J.2 nối `serve`/`app` vào listener của E. `next build` xanh, sinh 57 file gồm cặp `projects/__shell.html` + `.txt` mà resolver H.3 map. Full suite 1223 pass / 4 skip, 0 "Unhandled Errors"; typecheck, lint 0 error, `test:boundaries` xanh.
 
 Format:
 ```

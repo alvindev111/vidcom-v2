@@ -38,17 +38,24 @@ describe("static export configuration", () => {
     expect(config).toContain("@hyperframes/core");
   });
 
-  it("records every route handler that a static export would have to drop", async () => {
+  it("builds a static export, with no Node rendering at request time", async () => {
+    // The artifact serves the frontend out of a pack embedded in the
+    // executable. Anything the export cannot emit ahead of time has no way to
+    // be served there at all.
+    const config = await readFile(path.resolve("next.config.ts"), "utf8");
+    expect(config).toContain("output: \"export\"");
+  });
+
+  it("has no route handler left in the frontend", async () => {
     const handlers = (await routeFiles("src/app"))
       .map((file) => path.relative(process.cwd(), file).split(path.sep).join("/"))
       .sort();
 
-    // `output: "export"` fails on any force-dynamic route handler. These are the
-    // ones that have to move before the export can be switched on, so the list
-    // is pinned: a new handler added meanwhile shows up here rather than as a
+    // `output: "export"` fails on any route handler, so this list has to stay
+    // empty: the API belongs to the daemon, which the browser reaches over the
+    // same loopback origin in the artifact and a configured one in
+    // development. A handler added meanwhile shows up here rather than as a
     // build failure nobody expected.
-    expect(handlers).toEqual([
-      "src/app/api/[[...route]]/route.ts",
-    ]);
+    expect(handlers).toEqual([]);
   });
 });

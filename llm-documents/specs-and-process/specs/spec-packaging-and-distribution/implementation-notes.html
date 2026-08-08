@@ -441,6 +441,20 @@
           <div><dt class="font-semibold text-slate-200">Papercut lint, không nới gate</dt><dd class="mt-1 text-slate-300"><code>dist/</code> bị <code>.gitignore</code> nhưng không nằm trong ignore của ESLint, nên build cục bộ làm <code>lint</code> đỏ 308 error — toàn bộ từ bundle 14 MB. CI checkout sạch nên xanh. Giữ tiền lệ Phase A: isolate artifact khi cần đo, MUST NOT đổi config.</dd></div>
         </dl>
       </section>
+      <section class="mt-6 rounded-2xl border border-sky-500/30 bg-slate-900 p-6">
+        <div class="flex flex-wrap items-center justify-between gap-3">
+          <h2 class="text-2xl font-semibold">2026-08-09 · Phase G — G.6 lật static export</h2>
+          <span class="rounded-full bg-sky-400/10 px-3 py-1 text-sm text-sky-300">1223 test · 57 file export</span>
+        </div>
+        <dl class="mt-6 grid gap-5 md:grid-cols-2">
+          <div><dt class="font-semibold text-slate-200">Xoá, không dời</dt><dd class="mt-1 text-slate-300"><code>output: "export"</code> fail trên <strong>mọi</strong> route handler chứ không riêng <code>force-dynamic</code>. Và API vốn thuộc daemon: trình duyệt gọi nó qua cùng origin loopback trong artifact, qua origin cấu hình ở dev. Next-hosted API là di sản chuyển tiếp.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Cặp <code>.html</code> + <code>.txt</code> khớp resolver</dt><dd class="mt-1 text-slate-300">Export sinh <code>projects/__shell.html</code> <strong>và</strong> <code>projects/__shell.txt</code> — đúng cặp H.3 map. Thiếu vế <code>.txt</code> thì điều hướng trong app 404 trong khi tải lại trang vẫn chạy, hỏng theo kiểu chỉ một nửa.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Xoá một test, không sửa nó</dt><dd class="mt-1 text-slate-300"><code>next-routing.test.ts</code> chốt "catch-all là route server duy nhất còn lại" — bất biến của một thiết kế vừa biến mất. Bất biến thay thế là <em>không còn route handler nào</em>, và nó đã nằm ở test cấu hình export. Giữ file cũ là giữ hai chỗ nói cùng một thứ mà một chỗ đã sai.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Cửa sổ hồi quy có chủ ý</dt><dd class="mt-1 text-slate-300">Từ đây tới J.2, source checkout không tự phục vụ API qua Next được. Ghi ra thành lời thay vì để ai đó phát hiện: đóng lại khi <code>serve</code>/<code>app</code> nối listener của E vào static host.</dd></div>
+          <div><dt class="font-semibold text-slate-200"><code>.next</code> cũ nói dối typecheck</dt><dd class="mt-1 text-slate-300">Sau khi xoá route, <code>tsc</code> đỏ ở <code>.next/dev/types/validator.ts</code> — type sinh ra cho một file không còn tồn tại. Không phải lỗi source; xoá <code>.next</code> là xong. Đáng nhớ vì thông báo trỏ vào đường dẫn <code>src/</code> nên đọc như lỗi thật.</dd></div>
+          <div><dt class="font-semibold text-slate-200"><code>handleNextHostedRequest</code> ở lại</dt><dd class="mt-1 text-slate-300">Route đi nhưng hàm ở lại: nhiều suite server dùng chính nó làm harness gửi request thật. Xoá theo sẽ là dọn quá tay đúng nghĩa.</dd></div>
+        </dl>
+      </section>
     </main>
   </body>
 </html>
