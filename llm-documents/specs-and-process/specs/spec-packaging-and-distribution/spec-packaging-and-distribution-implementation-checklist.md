@@ -509,8 +509,11 @@ Mỗi phase chạy focused command dưới đây trên SQLite/filesystem thật,
 - [ ] E.6 Giữ nguyên perimeter
   - Loopback-only, kiểm `Host`, giới hạn origin — R1 MUST NOT nới bất kỳ luật nào
   - _Requirements: R1.13_ — _Design: §9.2_
-- [ ] E.7 Logic test
+- [x] E.7 Logic test
   - State machine: mọi transition hợp lệ và mọi transition bị cấm
+  - [`foundation-state.ts`](../../../../packages/cli/src/foundation-state.ts) viết bảng transition thành **dữ liệu**, không rải `if`. Bug đang được chặn là một trạng thái nhìn từ góc này là đã dừng, góc kia là đang chạy: route còn đăng ký, discovery record còn publish, lease đã mất
+  - Test **liệt kê đủ 6 × 11 tổ hợp** chứ không lấy mẫu — trạng thái sai chỉ tới được bằng một nước đi không nằm trong bảng
+  - Ba bất biến được chốt riêng: mất lease **không** dừng foundation (giữ object để re-acquire không phải dựng lại); rollback switch về `active` chứ không rơi xuống `no-workspace`; `servesBridgeRoutes` sai ở `reacquiring` — route phải **vắng mặt**, vì một route trả 403 vẫn chứng minh daemon tin nó đang sở hữu workspace
   - _Requirements: R1.12, R2.14_
 - [ ] E.8 Integration test: đổi workspace
   - Nhả lease cũ, lấy lease mới, refresh project **không restart tiến trình**; `active_workspace` chỉ ghi **sau** swap thành công; job đang chạy ⇒ từ chối có lý do

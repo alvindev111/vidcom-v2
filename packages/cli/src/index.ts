@@ -1,6 +1,7 @@
 export * from "./bootstrap-coordinator";
 export * from "./bridge-credential";
 export * from "./node-sentinel";
+export * from "./foundation-state";
 export * from "./composition-root";
 export * from "./startup";
 export * from "./next-host";
