@@ -20,3 +20,4 @@ export * from "./commands/backup";
 export * from "./commands/recovery";
 export * from "./cli-error";
 export * from "./output";
+export * from "./bridge/remote-tool-invoker";

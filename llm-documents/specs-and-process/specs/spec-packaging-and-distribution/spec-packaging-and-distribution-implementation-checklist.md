@@ -879,7 +879,7 @@ Mỗi phase chạy focused command dưới đây trên SQLite/filesystem thật,
   - Handshake kiểm identity **ở cả phía client**: daemon có thể đã restart giữa lúc đọc discovery và lúc gọi, và nó trả lời rất vui vẻ như chính nó. Client mới là bên biết nó định gọi instance nào
   - Tên tool được `encodeURIComponent`: một tool không tồn tại phải quay về là **tool không tồn tại**, không phải một request được route đi chỗ khác
   - _Requirements: R2.2_ — _Design: §5.0, §7.0_
-- [ ] I.2b **Seam `ToolInvoker`: interface ở `mcp`, hiện thực remote ở `cli`** — đọc kỹ, đây là chỗ bản trước của checklist sai và làm CI đỏ ngay task này
+- [x] I.2b **Seam `ToolInvoker`: interface ở `mcp`, hiện thực remote ở `cli`** — đọc kỹ, đây là chỗ bản trước của checklist sai và làm CI đỏ ngay task này
   - **Luật**: `mcp` **bị cấm** import `adapter` — [steering/02](../../../steering/02-project-layout.md) §2 luật 3, và §2.1 giải thích vì sao `worker` được mà `mcp` không. Cưỡng chế ở **hai** chỗ (steering §2.2): ESLint block `packages/mcp/**` trong [`eslint.config.mjs`](../../../../eslint.config.mjs), và [`scripts/verify-import-boundaries.mjs`](../../../../scripts/verify-import-boundaries.mjs) với `throw "MCP must not import sibling infrastructure"`
   - Gate thứ hai phân giải package theo **prefix đường dẫn**, nên `packages/adapter/src/daemon/**` cũng là `@vidcom/adapter` — `adapter/daemon` **không** thoát được luật, kể cả qua import tương đối hay dynamic `import()`. Nó quét mọi file `.ts/.tsx/.js/.mjs/.json` dưới `packages/`
   - **Quyết định (đã duyệt cùng Approval Gate)**: `mcp` giữ nguyên trạng thái không-có-infrastructure như hôm nay ([`packages/mcp/package.json`](../../../../packages/mcp/package.json) khai đúng 5 dep: hai gói SDK, `@vidcom/contracts`, `@vidcom/core`, `zod`). Cụ thể:
@@ -889,10 +889,12 @@ Mỗi phase chạy focused command dưới đây trên SQLite/filesystem thật,
   - **MUST NOT**: nới bất kỳ gate nào; thêm `@vidcom/adapter` vào `packages/mcp/package.json`; đặt `DaemonClient` vào `core` để "lách" (`core` bị cấm `node:*` — sẽ đỏ ở một fixture khác của cùng gate)
   - Nếu phải sửa luật này, sửa **cả ba** chỗ cùng lúc (steering §2 bảng + `eslint.config.mjs` + gate script) theo đúng steering §2.2. Sửa một chỗ tạo ra `lint` xanh mà `test:boundaries` đỏ — đó chính là tình trạng đã tồn tại trong repo tới 2026-08-07 và là lý do Design bản 2 viết sai chỗ đặt `DaemonClient`
   - _Requirements: R2.2, R2.3_ — _Design: §5.0 hệ quả 4, §5.7, §16 C-1_
-- [ ] I.2c Test ranh giới, để hình dạng sai không quay lại
+- [x] I.2c Test ranh giới, để hình dạng sai không quay lại
   - `tests/cli/remote-tool-invoker.test.ts`: invoker remote thoả cùng contract như local (dùng lại harness của I.10)
   - Fixture ranh giới: một file giả dưới `packages/mcp/` import `@vidcom/adapter` **phải** bị `assertPackageImportAllowed` từ chối — thêm vào mảng `packageBoundaryFixtures` đang có nếu chưa đủ chặt cho dynamic `import()`
   - `rtk bun run test:boundaries` vào AC của phase, không phải chạy cho vui
+  - [`remote-tool-invoker.test.ts`](../../../../tests/cli/remote-tool-invoker.test.ts) 5 test: invoker remote trả **đúng hình dạng `Result`** mà registry trả — thay thế được cho nhau chính là toàn bộ điểm của seam; forward `protocolVersion`; giữ mã lỗi daemon; lỗi lạ thành `daemon_unavailable`; và đọc thẳng `packages/mcp/src/registry/types.ts` + `packages/mcp/package.json` để một lần dời code sang `mcp` hỏng thành **test đỏ** chứ không thành pipeline đỏ
+  - Thêm **một** fixture vào `packageBoundaryFixtures`: import **tương đối** từ `packages/mcp/` sang `adapter/src/daemon/**`. Đó là cách người ta thử sau khi bare specifier bị từ chối, và `adapter/daemon` là thư mục bên trong `@vidcom/adapter` chứ không phải package riêng — cùng một import đội mũ khác. `git diff` script chỉ có **9 dòng thêm, 0 dòng xoá**: siết, không nới
   - _Requirements: R2.2_ — _Design: §5.0 hệ quả 4_
 - [ ] I.3 Handshake
   - So canonical root **và** instance id; PID/port sống không đủ. Mismatch ⇒ 409 `daemon_identity_mismatch`, không tiếp tục call
@@ -1531,6 +1533,12 @@ Chi tiết: [Detailed Goals](./spec-packaging-and-distribution-detailed-goal.md)
   - Summary: `DaemonClient` bề mặt đóng năm method — handshake, attach, renew, detach, invokeTool — có deadline, không retry mù, giữ mã lỗi của daemon.
   - Decisions: Không có `request(method, path, body)` (DR-6), và test **liệt kê khoá object** để bề mặt phình ra lộ ngay tại đó. Không retry vì mọi route trừ handshake đổi trạng thái daemon và một request timeout có thể đã được áp dụng. Handshake kiểm identity ở cả phía client vì daemon có thể restart giữa lúc đọc discovery và lúc gọi. `encodeURIComponent` tên tool để một tool không tồn tại quay về đúng là không tồn tại chứ không thành request route đi chỗ khác.
   - Blockers: Không có; 11/11 test, typecheck, lint 0 error, `test:boundaries` xanh. Thư mục `packages/adapter/src/daemon/` không có `package.json` riêng — nó là cách đặt tên trong Design, không phải subpath export.
+
+2026-08-09 — Phase I, Task I.2b + I.2c
+  - Files: `packages/mcp/src/registry/types.ts`, `packages/cli/src/bridge/remote-tool-invoker.ts`, `packages/cli/src/index.ts`, `scripts/verify-import-boundaries.mjs`, `tests/cli/remote-tool-invoker.test.ts`, checklist và implementation notes
+  - Summary: `interface ToolInvoker` ở `mcp`, `createRemoteToolInvoker` ở `cli`; thêm một fixture ranh giới cho import tương đối sang `adapter/src/daemon/**`.
+  - Decisions: `mcp` giữ nguyên 5 dependency, không thêm `@vidcom/adapter`. Invoker giữ **mã lỗi của daemon** thay vì gộp về một lỗi transport — gộp lại là xoá mất khác biệt giữa "tool từ chối input" và "daemon không trả lời", đúng hai thứ caller cần phân biệt nhất. Fixture mới chỉ thêm, không sửa dòng nào có sẵn của gate.
+  - Blockers: Không có; 5/5 test, `test:boundaries` xanh với `git diff` 9 dòng thêm / 0 dòng xoá, typecheck và lint 0 error.
 
 Format:
 ```

@@ -78,4 +78,18 @@ export interface ToolRegistryDependencies extends RegistryApprovalDependencies {
 
 export type ToolInvocation = Result<unknown, DomainError>;
 
+/**
+ * Whoever actually runs a tool.
+ *
+ * The registry owns the schema, the list and the era rules; this is the one
+ * thing it does not own. `ToolRegistry` satisfies it directly for the local
+ * case, and the bridge supplies an implementation that forwards to a daemon —
+ * so `mcp` never learns that a daemon exists. It cannot: `mcp` is forbidden
+ * from importing `adapter`, enforced by both ESLint and the boundary script,
+ * and receiving the invoker as a parameter is what keeps that true.
+ */
+export interface ToolInvoker {
+  invoke(name: string, raw: unknown, request: ToolRequestContext): Promise<ToolInvocation>;
+}
+
 export type { ToolLevel } from "@vidcom/contracts";
