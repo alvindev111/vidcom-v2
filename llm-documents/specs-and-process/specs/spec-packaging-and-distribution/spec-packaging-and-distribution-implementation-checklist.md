@@ -681,11 +681,16 @@ Mỗi phase chạy focused command dưới đây trên SQLite/filesystem thật,
   - Không có `NEXT_PUBLIC_*`: giá trị đó bị inline lúc build và sai với mọi lần chạy trừ đúng lần nó được build. Daemon chọn cổng loopback trống lúc chạy nên origin không thể biết trước
   - Chuỗi rỗng khi không có nguồn nào ⇒ request tương đối cùng origin: đúng trong trình duyệt, và trung thực ở nơi không có origin
   - _Requirements: R4.10_ — _Design: §5.11_
-- [ ] G.3 Dev host fail lúc boot khi hostname lệch
+- [x] G.3 Dev host fail lúc boot khi hostname lệch
   - Đo ở S9: `localhost:3000` → `127.0.0.1:<port>` thì `exchange` trả **200** mà cookie **không bao giờ quay lại** — hỏng im lặng. Cùng hostname giữ được `SameSite=Strict` qua port khác
+  - [`dev-host-check.ts`](../../../../src/lib/api/dev-host-check.ts). **Fail lúc boot, không phải lúc request đầu** — đây là toàn bộ điểm của task: hỏng ở request đọc thành lỗi xác thực và đẩy người gặp nó đi lục code session, còn hỏng lúc boot nêu đúng nguyên nhân một lần, trước khi thứ gì kịp trông như hỏng
+  - Thông điệp lỗi **phải nêu phần im lặng** (`exchange` trả 200) — test chốt chuỗi đó, vì thiếu nó thì thông điệp vẫn dẫn người đọc đi sai hướng
+  - Port khác nhau **không** phải lệch: port không thuộc về site, nên `SameSite=Strict` sống sót
   - _Requirements: R4.12_ — _Design: §5.11_
-- [ ] G.4 SSE gửi credential + abort khi dispose
+- [x] G.4 SSE gửi credential + abort khi dispose
   - `execServiceByStream` nhận cùng request options gồm `credentials: "include"` và `AbortSignal`
+  - `serviceStream` dùng `fetch` chứ **không** `EventSource`: `EventSource` không gửi được credential cross-origin và không abort được. Cả hai đều cần — session là cookie, và một stream sống lâu hơn component giữ nó sẽ giữ luôn kết nối cùng subscription phía server sau khi người dùng đã rời đi
+  - `Last-Event-ID` chỉ gửi khi có, để stream mới không xin resume từ một vị trí không tồn tại
   - _Requirements: R4.10, R4.6_ — _Design: §5.11_
 - [ ] G.5 Tách page dynamic route
   - Server component xuất `generateStaticParams` (trả sentinel `__shell`) + client component mang thân page; slug đọc từ `location`, MUST NOT từ `params`

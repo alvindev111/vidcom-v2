@@ -2,6 +2,7 @@ import { resolveApiBaseUrl } from "../../src/lib/api/base-url";
 import {
   SERVICE_CATALOG,
   serviceRequest,
+  serviceStream,
   serviceUrl,
   type ServiceId,
 } from "../../src/lib/api/services";
@@ -84,6 +85,28 @@ describe("service catalog", () => {
 
     expect(serviceRequest("v1.system.roots").init.headers).toBeUndefined();
     expect(serviceRequest("v1.system.roots").init.body).toBeUndefined();
+  });
+
+  it("streams with credentials and an abort signal", () => {
+    const controller = new AbortController();
+    const stream = serviceStream("v1.events.stream", {
+      signal: controller.signal,
+      lastEventId: "42",
+    });
+
+    // EventSource cannot do either of these: no cross-origin credentials, and
+    // no way to abort. A stream that outlives its component holds the
+    // connection and the server-side subscription open.
+    expect(stream.init.credentials).toBe("include");
+    expect(stream.init.signal).toBe(controller.signal);
+    const headers = stream.init.headers as Record<string, string>;
+    expect(headers.Accept).toBe("text/event-stream");
+    expect(headers["Last-Event-ID"]).toBe("42");
+  });
+
+  it("omits Last-Event-ID on a fresh stream", () => {
+    const headers = serviceStream("v1.events.stream").init.headers as Record<string, string>;
+    expect(headers["Last-Event-ID"]).toBeUndefined();
   });
 
   it("keeps browsing on POST so directory names stay out of the request line", () => {

@@ -30,6 +30,7 @@ export const SERVICE_CATALOG = {
   "v1.projects.create": { method: "POST", path: "/api/v1/projects" },
   "v1.auth.exchange": { method: "POST", path: "/api/v1/auth/exchange" },
   "v1.health": { method: "GET", path: "/api/v1/health" },
+  "v1.events.stream": { method: "GET", path: "/api/v1/events" },
 } as const satisfies Record<string, ServiceDefinition>;
 
 export type ServiceId = keyof typeof SERVICE_CATALOG;
@@ -72,6 +73,33 @@ export function serviceRequest(
         body: JSON.stringify(init.body),
       },
       ...init.signal ? { signal: init.signal } : {},
+    },
+  };
+}
+
+/**
+ * Opens a server-sent event stream for one catalog entry.
+ *
+ * `fetch` rather than `EventSource`: `EventSource` cannot send credentials
+ * cross-origin and cannot be aborted, and both matter here — the session is a
+ * cookie, and a stream that outlives the component holding it keeps the
+ * connection and the server-side subscription alive after the user has moved
+ * on.
+ */
+export function serviceStream(
+  id: ServiceId,
+  init: ServiceRequestInit & { lastEventId?: string } = {},
+): { url: string; init: RequestInit } {
+  const base = serviceRequest(id, init);
+  return {
+    url: base.url,
+    init: {
+      ...base.init,
+      headers: {
+        ...base.init.headers as Record<string, string> | undefined,
+        Accept: "text/event-stream",
+        ...init.lastEventId ? { "Last-Event-ID": init.lastEventId } : {},
+      },
     },
   };
 }
