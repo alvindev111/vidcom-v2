@@ -42,9 +42,18 @@ export async function browserAvailability(browserCacheRoot?: string): Promise<Br
   };
 }
 
-/** True when a missing browser must fail rather than skip. */
+/**
+ * True when a missing browser must fail rather than skip.
+ *
+ * Keyed on its own flag rather than on `CI`, mirroring `VIDCOM_DOCTOR_STRICT`
+ * at M.5. Using `CI` alone made every CI run red the moment this harness
+ * existed, because no job installs `chrome-headless-shell` — a gate that fails
+ * for a missing tool rather than a missing behaviour teaches people to ignore
+ * it. The CI job sets this flag in the same change that installs the browser.
+ */
 export function browserIsRequired(): boolean {
-  return process.env.CI === "true" || process.env.CI === "1";
+  const flag = process.env.VIDCOM_REQUIRE_BROWSER;
+  return flag === "true" || flag === "1";
 }
 
 /**

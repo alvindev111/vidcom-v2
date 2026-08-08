@@ -23,11 +23,13 @@ describe("browser session harness", () => {
     expect(availability.reason).toContain("chrome-headless-shell");
   });
 
-  it("treats a missing browser as fatal in CI and skippable elsewhere", () => {
-    // The rule differs by environment on purpose: nobody should download 200 MB
-    // to run the unit suite, and nothing should report green for tests that
-    // never ran.
-    expect(browserIsRequired()).toBe(process.env.CI === "true" || process.env.CI === "1");
+  it("treats a missing browser as fatal only where it was installed", () => {
+    // Keyed on its own flag, not on CI: no job installs the browser yet, and a
+    // gate that fails for a missing tool rather than a missing behaviour is a
+    // gate people learn to ignore. Nobody should download 200 MB to run the
+    // unit suite either.
+    const flag = process.env.VIDCOM_REQUIRE_BROWSER;
+    expect(browserIsRequired()).toBe(flag === "true" || flag === "1");
   });
 
   it("never skips silently", async () => {
