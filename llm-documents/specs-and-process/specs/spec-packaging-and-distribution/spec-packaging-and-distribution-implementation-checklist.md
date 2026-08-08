@@ -452,19 +452,25 @@ Mỗi phase chạy focused command dưới đây trên SQLite/filesystem thật,
   - Chỉ **báo**, không sửa. Test đọc lại `hyperframes.json` sau khi phát hiện và chốt **byte-for-byte không đổi** — sửa file người dùng để dập chính cảnh báo về ý định của họ là che mất thứ đang được báo
   - **Vắng mặt không phải drift**: không có file, không khai version, khai chuỗi rỗng, hay JSON hỏng đều trả `null`. Project không khai gì là đang chấp nhận bản đang ship, và một khai báo hỏng không phải bằng chứng lệch
   - _Requirements: R6.9_ — _Design: §5.18_
-- [ ] D.10 Logic test
+- [x] D.10 Logic test
   - Shim từ chối script ngoài runtime root; hình dạng spawn cũ bị test bắt (nếu không có test thì nó quay lại mà CI vẫn xanh)
+  - [`node-sentinel.test.ts`](../../../../tests/adapter/node-sentinel.test.ts): từ chối thư mục anh em `${root}-evil`, traversal `..`, và thiếu script. Hình dạng cũ bị chốt bằng `parseVidcomCommand([NODE_SENTINEL, script])` trả `{ name: "app" }` — chính sự im lặng đó là thứ được ghi lại
   - _Requirements: R6.2, R6.4_
-- [ ] D.11 Integration test — ba chế độ hỏng im lặng
+- [x] D.11 Integration test — ba chế độ hỏng im lặng
   - Thiếu **mỗi** env của esbuild ⇒ lỗi có mã trong timeout, **không bao giờ treo**; Chrome cắt cụt ⇒ check fail (thực thi `--version`, không hỏi CLI); sidecar in tiếng Việt với `PYTHONUTF8=""` ⇒ fail có mã, không ra chuỗi hỏng
+  - esbuild: [`compiler-guard.test.ts`](../../../../tests/adapter/compiler-guard.test.ts) — thiếu từng biến một, operation dùng `new Promise(() => {})` đúng hình dạng lỗi thật
+  - Chrome: [`silent-failure-modes.test.ts`](../../../../tests/adapter/silent-failure-modes.test.ts) dựng **binary thật** cắt cụt trên đĩa. Test then chốt: một "reporter" giả lập `hyperframes browser path` in đường dẫn và exit 0 cho đúng binary hỏng đó — rồi chốt `verifyBrowserExecutable` vẫn nói không dùng được. Công cụ quản lý download không thể là trọng tài cho chính download của nó
+  - Sidecar: child thật in `Xin chào thế giới`, và env cha mang `PYTHONUTF8=0`/`PYTHONIOENCODING=cp932` vẫn tới child thành `1:utf-8`
   - _Requirements: R6.11, R6.5, R6.7_ — _Design: §11.3_
 - [x] D.12 Integration test: mọi điểm spawn đi qua `allowlistedEnvironment`
   - Liệt kê điểm spawn và chứng minh không điểm nào tự dựng env — nếu không, hai bảo vệ UTF-8 và caBundlePath biến mất mà không ai thấy
   - Quét bốn package source; **miễn trừ phải khai kèm lý do**, và test thứ hai chốt mọi miễn trừ vẫn trỏ vào file còn spawn thật — miễn trừ sống lâu hơn cái spawn của nó là một lỗ để ngỏ cho lần sau
   - **Bẫy khi viết audit**: regex `\bexec\s*\(` bắt nhầm `client.exec(` của SQLite và `pattern.exec(` của regex, báo 5 điểm spawn không hề tồn tại. Phải dùng lookbehind `(?<![.\w])` — một audit báo động giả sẽ bị người ta tắt đi
   - _Requirements: R6.7, R6.8_
-- [ ] D.13 Integration test: huỷ giữa chừng
+- [x] D.13 Integration test: huỷ giữa chừng
   - **Termination proof có cờ `exhaustive`**, MUST NOT phát biểu thành "không còn tiến trình con" ([steering/08](../../../steering/08-jobs-and-queue.md) §6.1 đã rút lại bảo đảm đó). Còn survivor sau khi cạn lượt ⇒ `process_termination_unverified`, MUST NOT ghi `cancelled`. Workdir có marker thu hồi được thứ lọt qua
+  - [`termination-proof-contract.test.ts`](../../../../tests/adapter/termination-proof-contract.test.ts): proof không exhaustive vẫn `terminated` nhưng **kèm warning**, không im lặng; có survivor thì ném `process_termination_unverified` **bất kể** exhaustive hay không, và message nêu đích danh pid để người vận hành có cái mà xử lý
+  - Chốt luôn PID reuse: cùng pid, khác `startedAt` ⇒ **không** khớp. Coi là khớp chính là cách một lượt quét kết luận người lạ đang sống là đứa con nó vừa giết
   - _Requirements: R6.8_ — _Design: §4.6, §11.4_
 
 **Acceptance Criteria**:

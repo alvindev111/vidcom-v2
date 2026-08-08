@@ -399,6 +399,20 @@
           <div><dt class="font-semibold text-slate-200">C.8 rebuild bảng</dt><dd class="mt-1 text-slate-300">Check constraint buộc rebuild — hình dạng migration dễ mất row, renumber id hoặc rụng status nhất. Test dựng DB từ đúng tập migration trước đó rồi so từng dòng <code>id</code>/<code>kind</code>/<code>status</code>, chốt cả hai chiều constraint, và xác nhận id tiếp tục từ 5 chứ không restart.</dd></div>
         </dl>
       </section>
+      <section class="mt-6 rounded-2xl border border-cyan-500/30 bg-slate-900 p-6">
+        <div class="flex flex-wrap items-center justify-between gap-3">
+          <h2 class="text-2xl font-semibold">2026-08-08 · Phase D — Toolchain từ artifact</h2>
+          <span class="rounded-full bg-cyan-400/10 px-3 py-1 text-sm text-cyan-300">1005 test · 12/14 task</span>
+        </div>
+        <dl class="mt-6 grid gap-5 md:grid-cols-2">
+          <div><dt class="font-semibold text-slate-200">Bẫy im lặng số 1: sentinel</dt><dd class="mt-1 text-slate-300"><code>parseVidcomCommand</code> đọc mọi argv bắt đầu bằng <code>--</code> thành <code>vidcom app</code>. Không có sentinel, artifact tự khởi động app thay vì chạy script — <strong>không một lỗi nào</strong>. Test chốt chính sự im lặng đó chứ không chỉ chốt bản vá.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Bẫy im lặng số 2: esbuild</dt><dd class="mt-1 text-slate-300">Thiếu một trong hai biến ⇒ treo vĩnh viễn, không stderr. Preflight chạy <strong>trước</strong> operation nên lỗi tới ngay, không bắt chờ hết budget. Timeout không được tuỳ chọn — <code>run()</code> ném <code>TypeError</code> khi ≤ 0.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Bẫy im lặng số 3: download cắt cụt</dt><dd class="mt-1 text-slate-300">Test dựng "reporter" giả lập <code>hyperframes browser path</code>: in đường dẫn, exit 0, cho đúng cái binary hỏng. Rồi chốt <code>verifyBrowserExecutable</code> vẫn nói không dùng được. Công cụ quản lý download không thể là trọng tài cho chính download của nó.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Audit tự bắt mình nói dối</dt><dd class="mt-1 text-slate-300">Regex <code>\bexec\s*\(</code> báo 5 điểm spawn — tất cả giả: <code>client.exec(</code> của SQLite và <code>pattern.exec(</code> của regex. Phải dùng lookbehind. Một audit báo động giả là một audit sẽ bị xoá.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Lệch contract, sửa chứ không né</dt><dd class="mt-1 text-slate-300">Design §5.18 cần <code>download_unavailable</code>; <code>ErrorCode</code> chỉ có <code>download_tls_untrusted</code> — Phase A sót. Đã thêm, map 502, và gộp vào nhánh redact để không lọt vào vocabulary MCP công khai. <strong><code>tools/list</code> không đổi một byte</strong>: golden và catalogue xanh không cần sửa.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Hai task treo có lý do</dt><dd class="mt-1 text-slate-300">D.3b và nửa Node của D.7 cần <code>serve</code>/<code>render</code>/<code>doctor</code> và "mode union của J.1" — <strong>chưa tồn tại</strong>. Không thể đếm entrypoint từ một union chưa có. Hoàn tất cùng J.1, khi đó test phải đếm đủ năm chứ không phải hai.</dd></div>
+        </dl>
+      </section>
     </main>
   </body>
 </html>
