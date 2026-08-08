@@ -424,12 +424,16 @@ Mỗi phase chạy focused command dưới đây trên SQLite/filesystem thật,
   - Đo được ở S9/N-2: interpreter đóng băng lấy encoding từ codepage ANSI (`cp932` trên máy đo) ⇒ in tiếng Việt là `UnicodeEncodeError`
   - `??=` giữ nguyên giá trị **kế thừa từ cha**, tức chính codepage cần chặn — đó là lý do phải ghi đè. Cha không bao giờ thắng; caller tường minh vẫn thắng, nhờ đó D.11 dựng được ca hỏng `PYTHONUTF8=""`
   - _Requirements: R6.7_ — _Design: §4.6, §5.16_
-- [ ] D.6 VieNeu chạy interpreter đóng băng
+- [x] D.6 VieNeu chạy interpreter đóng băng
   - `defaultVieNeuCommand` hôm nay trả `["python3"|"python", worker.py]`; đổi sang đường dẫn tuyệt đối tới interpreter đã giải nén. Giữ override `~/.vidcom/setting.json`
   - `HF_HOME` trỏ app-data; warm offline đặt `HF_HUB_OFFLINE=1` — hôm nay [`tts-vieneu.ts:322-327`](../../../../packages/adapter/src/tts/tts-vieneu.ts#L322) **không** đặt cờ này
+  - `vieneuInterpreterPath()` quyết theo **sự tồn tại trên đĩa**, không theo cấu hình: production luôn truyền root, nhưng source checkout chưa giải nén gì ở đó nên phải rơi về interpreter môi trường
+  - Đặt cả `HF_HUB_OFFLINE` lẫn `TRANSFORMERS_OFFLINE` khi `offline`. Thiếu cờ thì một lần chạy warm vẫn ra mạng hỏi revision mới, biến "máy không có mạng" thành treo hoặc timeout dài thay vì trả lời sạch từ cache đã có
   - _Requirements: R6.5, R6.7_ — _Design: §4.6_
-- [ ] D.7 `runtime.caBundlePath` xuống cả hai loại child
+- [~] D.7 `runtime.caBundlePath` xuống cả hai loại child — **một nửa**
   - `SSL_CERT_FILE` + `REQUESTS_CA_BUNDLE` cho sidecar; `NODE_EXTRA_CA_CERTS` cho child Node. MUST NOT tắt xác minh chứng chỉ, MUST NOT tự nhặt CA từ trust store OS
+  - **Đã làm nửa sidecar**: `VieNeuTtsProviderOptions.caBundlePath` đặt `SSL_CERT_FILE` + `REQUESTS_CA_BUNDLE`. Interpreter đóng băng không mang trust store riêng, nên truyền bundle là đường được hỗ trợ; tắt xác minh hay nhặt từ store OS chỉ đổi một lỗi tải thành một lỗi im lặng
+  - **Chưa làm nửa Node**: `NODE_EXTRA_CA_CERTS` cần `runtime.caBundlePath` có mặt trong `RuntimePaths`, mà D.3b chưa truyền. Làm cùng D.3b
   - _Requirements: R6.5_ — _Design: §5.13_
 - [ ] D.8 Download cache coordinator
   - Per-component lock, partial marker, timeout. Partial marker là **nguồn sự thật duy nhất**: `hyperframes browser path` trả exit 0 cho binary 1 MB (đo ở S9)

@@ -33,10 +33,38 @@ export function vieneuSidecarRoot(extractionRoot?: string): string {
   return existsSync(join(extracted, WORKER_SCRIPT)) ? extracted : checkout;
 }
 
-/** Default sidecar invocation: the ambient interpreter running the shipped worker. */
+/** Relative location of the frozen interpreter inside an extracted runtime. */
+const FROZEN_INTERPRETER = process.platform === "win32"
+  ? join("python", "python.exe")
+  : join("python", "bin", "python3");
+
+/**
+ * Absolute path to the frozen interpreter under an extraction root, when present.
+ *
+ * Existence decides, not configuration: production always names a root, but in a
+ * source checkout nothing has been extracted there.
+ */
+export function vieneuInterpreterPath(extractionRoot?: string): string | null {
+  if (!extractionRoot) return null;
+  const candidate = join(extractionRoot, FROZEN_INTERPRETER);
+  return existsSync(candidate) ? candidate : null;
+}
+
+/**
+ * Default sidecar invocation.
+ *
+ * An artifact runs the interpreter it shipped, by absolute path. Resolving
+ * `python3` through `PATH` there would run whatever the machine happens to
+ * have — a different version, a different set of packages, or nothing at all —
+ * and the whole point of freezing the interpreter is that none of that varies.
+ * A source checkout has no extracted interpreter, so it keeps using the ambient
+ * one. A user override in `~/.vidcom/setting.json` still wins over both, and is
+ * applied by the caller.
+ */
 export function defaultVieNeuCommand(extractionRoot?: string): readonly string[] {
   return [
-    process.platform === "win32" ? "python" : "python3",
+    vieneuInterpreterPath(extractionRoot)
+      ?? (process.platform === "win32" ? "python" : "python3"),
     join(vieneuSidecarRoot(extractionRoot), WORKER_SCRIPT),
   ];
 }

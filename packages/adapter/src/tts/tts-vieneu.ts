@@ -86,6 +86,22 @@ export interface VieNeuTtsProviderOptions {
    */
   modelCacheRoot: string;
   /**
+   * Absolute path to the certificate bundle the runtime shipped.
+   *
+   * A frozen interpreter carries no trust store of its own. Passing the bundle
+   * is the supported way to make TLS work; disabling verification or harvesting
+   * the OS store instead would trade a download failure for a silent one.
+   */
+  caBundlePath?: string;
+  /**
+   * Refuses every network read when the cache is already warm.
+   *
+   * Without it a warm run still reaches out to check for a newer revision, so a
+   * machine that is merely offline turns into a hang or a long timeout rather
+   * than a clean answer from the cache it already has.
+   */
+  offline?: boolean;
+  /**
    * Hugging Face revision to pin the weights to, from `~/.vidcom/setting.json`.
    *
    * `null` lets the sidecar take the repository's current head and report which
@@ -324,6 +340,10 @@ export class VieNeuTtsProvider implements TtsProviderAdapter {
       TORCH_HOME: join(this.options.modelCacheRoot, "torch"),
       HF_HUB_DISABLE_TELEMETRY: "1",
       TOKENIZERS_PARALLELISM: "false",
+      ...(this.options.offline ? { HF_HUB_OFFLINE: "1", TRANSFORMERS_OFFLINE: "1" } : {}),
+      ...(this.options.caBundlePath
+        ? { SSL_CERT_FILE: this.options.caBundlePath, REQUESTS_CA_BUNDLE: this.options.caBundlePath }
+        : {}),
       ...(this.options.modelRevision ? { VIDCOM_VIENEU_REVISION: this.options.modelRevision } : {}),
     };
   }
