@@ -741,9 +741,12 @@ Mỗi phase chạy focused command dưới đây trên SQLite/filesystem thật,
   - `canSubmit` được kiểm **cả ở handler lẫn ở thuộc tính `disabled`**: submit bằng bàn phím không đi qua `disabled`
   - Dòng phụ ở [`new-project-card.tsx`](../../../../src/components/home/new-project-card.tsx) đổi từ "Generate with an AI agent" sang "Or ask a connected AI agent to build one" — bản cũ khiến nút trông như sẽ tự viết video, trong khi generation xảy ra qua agent nối bằng MCP, thứ người dùng phải tự thiết lập
   - _Requirements: R1.19_ — _Design: §5.12, §7.6_
-- [ ] G.9 Kịch bản trên harness của G.0
+- [~] G.9 Kịch bản trên harness của G.0 — **ma trận cookie + workflow xong, kịch bản UI còn lại**
   - Nonce → session → xoá token khỏi URL; picker; New video **cả hai nhánh** thành công và thất bại; cross-origin dev giữ cookie ở fetch **và** SSE
   - Ma trận cookie lấy **đúng** bảng đã đo ở S9 làm kỳ vọng: `localhost:3000 → localhost:<port>` giữ được `SameSite=Strict`; `localhost:3000 → 127.0.0.1:<port>` **mất cookie dù `exchange` trả 200**. Vế thứ hai là test của G.3, và nó phải fail-at-boot chứ không phải fail-ở-request đầu
+  - [`cookie-matrix.test.ts`](../../../../tests/frontend/cookie-matrix.test.ts) giữ **cả hai dòng cạnh nhau** để đọc thành một cặp: đổi port thì được, đổi hostname thì không, và cái hỏng thì im lặng. Kiểm tra lúc boot phải khớp **chính xác** bảng đo — nếu nó từng chấp nhận dòng thứ hai thì sản phẩm ship một cấu hình mà `exchange` trả 200 còn session không bao giờ tới
+  - **Workflow riêng, không nhồi vào CI chính**: [`phase4-browser-session.yml`](../../../../.github/workflows/phase4-browser-session.yml) cài `chrome-headless-shell` rồi set `VIDCOM_REQUIRE_BROWSER=1`. Browser là ~200 MB mỗi job và CI chính đã 13–16 phút trên Windows; trả giá đó mỗi lần push để mua hai khẳng định là đánh đổi sai. Repo đã có tiền lệ tách dependency nặng ở `phase4-python-stack.yml`
+  - **Còn lại**: kịch bản UI đầy đủ (nonce → session → xoá token khỏi URL; picker; New video cả hai nhánh) — cần daemon chạy thật cộng static host, tức **H.1** phải có trước
   - _Requirements: R1.10, R1.19, R4.10, R4.12_
 
 **Acceptance Criteria**:
