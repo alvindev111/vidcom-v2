@@ -41,7 +41,10 @@ jobs:
   static-checks:
     name: ${{ matrix.name }}
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 40
+    # Temporarily 60. A cancelled job uploads no logs, so a Windows run that
+    # overruns 40 minutes tells us nothing about which suite is slow. Restore 40
+    # once the Windows timings are known.
+    timeout-minutes: 60
 
     strategy:
       # Report every platform on a failure: a defect is usually specific to one

@@ -51,8 +51,19 @@ const POSIX = process.platform !== "win32";
 const roots: string[] = [];
 const children: ChildProcess[] = [];
 
+/** Kills a child and waits a bounded time; a survivor must not hold the suite open. */
+async function stopChild(child: ChildProcess): Promise<void> {
+  if (child.exitCode !== null || child.signalCode !== null) return;
+  const exited = new Promise<void>((resolve) => child.once("exit", () => { resolve(); }));
+  child.kill("SIGKILL");
+  await Promise.race([exited, new Promise<void>((resolve) => {
+    setTimeout(resolve, 5_000).unref();
+  })]);
+  child.unref();
+}
+
 afterEach(async () => {
-  for (const child of children.splice(0)) child.kill("SIGKILL");
+  await Promise.all(children.splice(0).map(stopChild));
   await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
 });
 
@@ -390,11 +401,17 @@ describe.skipIf(!HOST_SUPPORTED)("runtime concurrent cold start", () => {
   it("extracts exactly once across four concurrent cold starts", async () => {
     const appDataRoot = await temporaryRoot();
     let prepared = 0;
-    // Separate instances, separate locks: exclusion has to come from the filesystem.
+    // Separate instances, separate locks: exclusion has to come from the
+    // filesystem. The wait budget is generous because the losers are waiting on
+    // a real extraction, and Windows pays an ACL subprocess per directory.
     const managers = Array.from({ length: 4 }, () => new RuntimeAssetManager({
       appDataRoot,
       source: fixture("1.0.0").source,
       observer: { preparing: () => { prepared += 1; } },
+      lock: new AtomicDirectoryLock(path.join(appDataRoot, LOCK_FILENAME), {
+        timeoutMs: 60_000,
+        pollIntervalMs: 50,
+      }),
     }));
 
     const results = await Promise.all(managers.map((instance) => instance.ensureAll()));
@@ -431,10 +448,9 @@ describe.skipIf(!HOST_SUPPORTED)("runtime concurrent cold start", () => {
     expect((failure as RuntimeAssetError).code).toBe(ErrorCode.BootstrapLockTimeout);
     expect((await manager(appDataRoot, source).inspect()).state).not.toBe("ready");
 
-    child.kill("SIGKILL");
-    await new Promise((resolve) => child.once("exit", resolve));
+    await stopChild(child);
 
-    const installed = await manager(appDataRoot, source, { lockTimeoutMs: 10_000 }).ensureAll();
+    const installed = await manager(appDataRoot, source, { lockTimeoutMs: 30_000 }).ensureAll();
     expect(installed.extracted).toEqual([ARCHIVE_KEY]);
     expect((await manager(appDataRoot, source).inspect()).state).toBe("ready");
   });

@@ -308,7 +308,12 @@ export class AtomicDirectoryLock {
   }
 
   private async ownerIsProvenStale(owner: DirectoryLockOwner): Promise<boolean> {
-    const probe = await probeProcessIdentity(owner.pid);
+    // A lock this process already owns is probed once per process, not once per
+    // poll. Contention otherwise spawns an OS probe every poll interval, which
+    // on Windows is a PowerShell start each time.
+    const probe = owner.pid === process.pid
+      ? await probeCurrentProcessIdentity()
+      : await probeProcessIdentity(owner.pid);
     if (!probe.exhaustive) return false;
     // An absent PID proves death regardless of how identities are measured. A
     // present one only disproves it when both sides were measured the same way:
