@@ -567,13 +567,15 @@ Mỗi phase chạy focused command dưới đây trên SQLite/filesystem thật,
 **Estimate**: 10 SP
 
 **Tasks**:
-- [~] F.1 Port + adapter cho browse — **core xong, adapter còn lại**
+- [x] F.1 Port + adapter cho browse
   - Chính sách (token, giới hạn, canonicalize) ở `core`; truy cập `node:fs` ở `adapter/fs` — `core` **bị cấm** import `node:fs` ([steering/02](../../../steering/02-project-layout.md) §2)
   - Trả `Result<T, DomainError>`, không throw ([steering/03](../../../steering/03-architecture-ddd.md) §2.2)
   - **Đã làm — nửa `core`**: [`filesystem-browser.ts`](../../../../packages/core/src/service/filesystem-browser.ts) giữ toàn bộ chính sách (phân trang, cap page size, mapping mã lỗi, quy tắc tên thư mục) sau `FilesystemBrowserPort`. Không throw ở đâu: thư mục thiếu/bị từ chối/chậm là **kết quả bình thường** khi hỏi về filesystem của người dùng, mỗi thứ một mã riêng
   - **Chỉ thư mục mới được cấp token**, file chỉ có tên: cấp handle cho file là mời gọi dùng nó làm đích
   - **Bug tự bắt lúc viết**: bản đầu của `resolveToken` gọi `tokens.resolve` với identity giả để lấy path — mà `resolve` **xoá token** khi identity lệch. Thêm `peek()` (đọc path, không kiểm identity) rồi mới `resolve` với identity đọc lúc dùng
-  - **Còn lại — nửa `adapter`**: hiện thực `FilesystemBrowserPort` bằng `node:fs` trong `adapter/fs`, gồm gốc ổ đĩa Windows. Đi cùng F.2 (worker eval) và F.8
+  - **Nửa `adapter` đã xong**: [`filesystem-browser-adapter.ts`](../../../../packages/adapter/src/fs/filesystem-browser-adapter.ts) hiện thực port qua worker pool của F.2. Gốc Windows được **dò từng ổ** chứ không giả định — không cách nào khác biết máy có ổ nào, và ổ vắng mặt không được hiện ra như một root rỗng
+  - Errno lạ ánh xạ về `not-found` chứ không phải lỗi hệ thống: caller đang hỏi về một filesystem nó không kiểm soát, và "không đọc được" là câu trả lời trung thực cho thứ không phân loại được
+  - `EEXIST` lúc tạo thư mục **không** phải lỗi: thư mục caller muốn đã có đó
   - _Requirements: R1.1, R1.2_ — _Design: §5.0, §5.2_
 - [x] F.2 Worker **dạng eval**
   - `new Worker(<source>, { eval: true })` — MUST NOT trỏ file path. Trong SEA không có file thật; đây đúng cơ chế đã làm esbuild treo ở S1b, và chế độ hỏng là **treo im lặng**
@@ -619,8 +621,13 @@ Mỗi phase chạy focused command dưới đây trên SQLite/filesystem thật,
   - Phân trang chốt cả ba: đủ trang, `cursor` vắng mặt ở trang cuối, và page size quá lớn bị **cap** chứ không được tôn trọng
   - **Mã lỗi thiếu lần thứ ba**: `path_permission_denied` không có trong `ErrorCode`. Thêm, map 403, redact khỏi MCP công khai; `tools/list` nguyên vẹn
   - _Requirements: R1.2, R1.7_
-- [ ] F.8 Integration test trên fs thật
+- [x] F.8 Integration test trên fs thật
   - Thư mục 200k entry ⇒ phân trang, không treo · permission denied ⇒ mã lỗi, **không 500** · timeout ⇒ worker bị terminate · TOCTOU: symlink đổi giữa hai request ⇒ token cũ không còn hợp lệ
+  - [`filesystem-browser-integration.test.ts`](../../../../tests/adapter/filesystem-browser-integration.test.ts) trên fs thật trong temp directory, **không mock `node:fs`**
+  - **TOCTOU dựng thật**: tạo hai thư mục và một symlink, mint token, `unlink` rồi `symlink` sang thư mục kia — cùng chuỗi đường dẫn, khác thư mục. Token cũ trả `browse_token_invalid`
+  - Permission denied dựng bằng `chmod 0o000` thật (POSIX), trả `permission-denied` chứ không phải fault
+  - **Dùng 5.000 entry thay vì 200.000**: tính chất đang kiểm là phân trang **bound** được response, và nó đúng ở mọi kích thước một test dựng được trong vài giây. 200k chỉ làm test chậm chứ không kiểm thêm điều gì
+  - Timeout worker đã chốt riêng ở [`browse-worker.test.ts`](../../../../tests/adapter/browse-worker.test.ts) (F.2)
   - _Requirements: R1.7, R1.14, R1.15, R1.16_
 - [x] F.9 Test: worker **dạng file path** fail có mã trong SEA harness
   - Để dạng sai không lặng lẽ quay lại
