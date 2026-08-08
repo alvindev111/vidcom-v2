@@ -767,11 +767,16 @@ Mỗi phase chạy focused command dưới đây trên SQLite/filesystem thật,
 **Estimate**: 13 SP
 
 **Tasks**:
-- [ ] H.0 Script `build:artifact` — làm trước H.1, vì mọi task sau đo bằng nó
+- [~] H.0 Script `build:artifact` — **khung + luật xong; các bước H.1/H.2/H.4/L.1 chưa tồn tại**
   - Thêm `"build:artifact": "node scripts/build-artifact.mjs"` vào [`package.json`](../../../../package.json) — cùng dạng với các script `node scripts/*.mjs` đang có (`test:boundaries`, `test:schema-drift`, `test:spec-paths`, …). Nó SHALL gọi lần lượt: `scripts/build-runtime-archives.mjs` (B.3) → `next build` với `output: "export"` (G.6) → frontend pack (H.2) → bundle CJS (H.1) → SEA native (H.4) → `scripts/verify-artifact.mjs` (L.1/L.2)
   - **Fail-fast từng bước**, MUST NOT tiếp tục sang bước sau khi bước trước lỗi: một `frontend.pack` cũ đi cùng bundle mới là loại lỗi chỉ lộ ra ở packaged smoke
   - In ra đường dẫn artifact + platform tag ở `stderr`; `stdout` chỉ để `artifact-manifest.json` (L.2) nếu có `--json`
   - MUST NOT cross-build (DR-1): script chạy trên OS nào thì chỉ sinh artifact của OS đó, và **fail có mã** nếu được gọi với target khác `process.platform`
+  - [`build-artifact.mjs`](../../../../scripts/build-artifact.mjs) + script trong `package.json`, cùng dạng `node scripts/*.mjs` với các script sẵn có
+  - **Fail-fast là nội dung, không phải sở thích**: một `frontend.pack` cũ đi qua bước pack hỏng rồi được bundle cùng code mới sinh ra artifact chỉ hỏng khi có người chạy nó — chỗ đắt nhất để phát hiện
+  - Từ chối cross-build với lý do cụ thể: artifact nhúng Node binary và runtime native **của chính máy build**, nên một "bản Linux" dựng trên macOS là file không chạy được ở đâu cả
+  - `stderr` mang tiến trình, `stdout` để trống cho `--json` — pipe được mà không phải lọc
+  - **Còn lại**: bốn bước `planSteps()` gọi tới chưa tồn tại (`build-frontend-pack.mjs` H.2, `build-cli-bundle.mjs` H.1, `build-sea.mjs` H.4, `verify-artifact.mjs` L.1). Test ghim **đúng thứ tự và tên chủ sở hữu** của từng bước, nên một bước thiếu hiện ra ở đây thay vì lúc chạy build
   - _Requirements: R4.1, R4.14_ — _Design: DR-1, §5.10_
 - [ ] H.1 Bundle CJS **không top-level await**
   - Node SEA nhận main CJS và esbuild từ chối TLA ở format `cjs`; mọi khởi tạo bất đồng bộ nằm trong `main()`. Vi phạm ⇒ build fail, không degrade

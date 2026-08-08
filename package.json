@@ -28,7 +28,8 @@
     "test:vieneu-real": "vitest run tests/adapter/tts-vieneu.integration.test.ts",
     "db:generate": "drizzle-kit generate",
     "typecheck": "tsc --noEmit",
-    "test:browser-session": "vitest run tests/frontend/browser-session.test.ts tests/frontend/cookie-matrix.test.ts"
+    "test:browser-session": "vitest run tests/frontend/browser-session.test.ts tests/frontend/cookie-matrix.test.ts",
+    "build:artifact": "node scripts/build-artifact.mjs"
   },
   "dependencies": {
     "@alvin0/http-driver": "^0.4.0",
