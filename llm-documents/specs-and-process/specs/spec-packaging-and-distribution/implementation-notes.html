@@ -358,6 +358,20 @@
           <div class="md:col-span-2"><dt class="font-semibold text-slate-200">Hai lỗi test là của tôi, không phải của product</dt><dd class="mt-1 text-slate-300">Assert mode <code>0700</code> chạy cả trên Windows (nơi không có POSIX mode) — đã guard theo nền tảng. Assert cứng 55 python package trong khi Windows kỳ vọng 57 (core + <code>colorama</code> + <code>tzdata</code>) — nay lấy kỳ vọng từ chính evidence và chốt 55/57 theo nền tảng.</dd></div>
         </dl>
       </section>
+      <section class="mt-6 rounded-2xl border border-amber-500/30 bg-slate-900 p-6">
+        <div class="flex flex-wrap items-center justify-between gap-3">
+          <h2 class="text-2xl font-semibold">2026-08-08 · Năm vòng CI để tìm một biến môi trường</h2>
+          <span class="rounded-full bg-amber-400/10 px-3 py-1 text-sm text-amber-300">PSModulePath · ba giả thuyết sai</span>
+        </div>
+        <dl class="mt-6 grid gap-5 md:grid-cols-2">
+          <div><dt class="font-semibold text-slate-200">Nguyên nhân gốc</dt><dd class="mt-1 text-slate-300"><code>windowsProbeEnvironment</code> đặt <code>PSModulePath</code> trỏ vào thư mục module gốc của Windows. PowerShell khởi động bình thường (244ms) nhưng <strong>mọi cmdlet duyệt process treo quá 20s</strong> — cả <code>Get-Process</code> lẫn <code>Get-CimInstance</code>. <code>PSModulePath=""</code> trả lời trong 324ms và <em>chặt hơn</em>: không thư mục nào trên module path đưa được code vào probe. Xoá biến thì PowerShell tự tính mặc định và treo lại — rỗng và xoá <strong>không</strong> tương đương.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Vì sao mất năm vòng</dt><dd class="mt-1 text-slate-300">Tôi suy từ "<code>process-supervisor.test.ts</code> xanh trên Windows" ra "<code>Get-CimInstance</code> chạy được", trong khi test đó <em>cố ý chấp nhận cả hai kết quả</em> (<code>termination_proof_not_exhaustive</code>). Một suy luận sai từ bằng chứng không đủ mạnh, kéo theo ba giả thuyết sai liên tiếp: budget 2s, env bị cắt, WMI.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Cái đã cứu</dt><dd class="mt-1 text-slate-300">Thay <code>bootstrap_lock_timeout</code> giả bằng lỗi nói đúng nguyên nhân, kèm <code>reason</code> ghi timeout/stderr/exit và cả danh sách biến đã chuyển tiếp. Từ đó mỗi vòng đỏ <strong>loại trừ</strong> được một khả năng thay vì lặp lại cùng một thông báo vô nghĩa. Bài học: khi chẩn đoán sai ba lần, thứ cần sửa trước là chất lượng thông báo lỗi, không phải thêm giả thuyết.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Đo thay vì đoán</dt><dd class="mt-1 text-slate-300">Vòng cuối là một step CI Windows-only đo ma trận spawn, đặt sớm trong job nên trả lời sau ~3 phút chứ không phải 16. Bisect từng nhóm biến một, cùng một lệnh <code>Get-Process</code>, tìm ra <code>PSModulePath</code> trong một vòng. Step và script đã gỡ cùng lúc với fix.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Bẫy: job cancelled không có log</dt><dd class="mt-1 text-slate-300">Một vòng chạm <code>timeout-minutes: 40</code> và GitHub <strong>không upload log</strong> — vòng đó cho zero dữ liệu. Thủ phạm là test spawn process con rồi <code>await</code> exit không giới hạn: kill không ăn thì await treo vĩnh viễn, và child còn sống giữ vitest worker mở qua mọi test timeout. Cleanup nay có trần 5s và <code>unref()</code>. Timeout được nâng tạm lên 60 để lấy được log, rồi trả về 40 khi biết Test thật sự tốn 494s.</dd></div>
+          <div><dt class="font-semibold text-slate-200">An toàn khi đổi cách đo danh tính</dt><dd class="mt-1 text-slate-300">Danh tính được so như chuỗi nguyên văn, nên đổi nguồn đo sẽ khiến <code>owner.json</code> của bản cũ không khớp probe của cùng process đang sống ⇒ <code>ownerIsProvenStale</code> kết luận đã chết ⇒ <strong>cướp lock của process còn chạy</strong>. Danh tính nay mang prefix scheme; scheme lạ tính là <em>không chứng minh được đã chết</em>. PID vắng mặt vẫn chứng minh đã chết, không phụ thuộc scheme. Kiểm chứng bằng mutation: gỡ guard ra thì test đỏ ngay.</dd></div>
+        </dl>
+      </section>
     </main>
   </body>
 </html>
