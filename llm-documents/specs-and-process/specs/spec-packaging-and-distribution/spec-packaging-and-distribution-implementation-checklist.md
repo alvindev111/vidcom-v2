@@ -593,8 +593,11 @@ Mỗi phase chạy focused command dưới đây trên SQLite/filesystem thật,
   - Bất kỳ chỗ nào trong `src/**` gọi service `v1.workspace.activate` (G.1) — catalog phải khai `selectionToken`, không phải `path`
   - Ghi vào release notes: một client cũ gửi `{path}` giờ nhận `schema_invalid`, **không** phải im lặng bỏ qua field lạ ([steering/07](../../../steering/07-data-and-storage.md) §0 schema strict)
   - _Requirements: R1.5_ — _Design: §7.5_
-- [ ] F.6 MUST NOT expose qua MCP
+- [x] F.6 MUST NOT expose qua MCP
   - Test chứng minh Tool Registry không chứa bất kỳ tool nào của `/v1/system/*`
+  - [`system-routes-not-exposed.test.ts`](../../../../tests/mcp/system-routes-not-exposed.test.ts) chốt ba lớp: tên cụ thể vắng mặt trong `TOOL_SCHEMA_CATALOGUE`; **không tên nào khớp** `(filesystem|directories|browse)` — để một tool thêm sau dưới tên khác vẫn đỏ chứ không lọt; và **không module nào** trong `packages/mcp/src/registry` nhắc tới `/v1/system/`
+  - Lớp thứ tư chống pass rỗng: catalogue phải còn > 10 tool. Không có nó, xoá sạch tool sẽ làm mọi assert trên xanh
+  - Lý do: `/v1/system/*` cho phép đi khắp cây thư mục của máy. Nó thuộc về phiên loopback đã xác thực của UI; một agent gọi được qua tool sẽ có năng lực người dùng chưa từng cấp
   - _Requirements: R1.4_ — _Design: §7.0_
 - [ ] F.7 Logic test
   - Browse entry mapping; token binding; phân trang; lỗi có mã cho từng nhánh R1.7
