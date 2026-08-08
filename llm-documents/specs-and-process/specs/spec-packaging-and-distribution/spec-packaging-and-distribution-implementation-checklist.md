@@ -810,8 +810,11 @@ Mỗi phase chạy focused command dưới đây trên SQLite/filesystem thật,
 - [ ] H.6 Đo cold/warm + baseline hồi quy
   - Ghi baseline vào `.github/perf-baseline/<runner-label>.json`, **commit vào repo** — không dùng CI cache (cache hết hạn thì gate im lặng biến mất)
   - _Requirements: R4.9_ — _Design: §9.1_
-- [ ] H.7 Golden test static host
+- [x] H.7 Golden test static host
   - Exact/implicit `.html`/sentinel/RSC mapping, MIME, cache header, 404, traversal
+  - [`static-host-mapping.test.ts`](../../../../tests/golden/static-host-mapping.test.ts) viết **cả bảng ra một chỗ** thay vì suy ra từng dòng: mỗi dòng là một request trình duyệt thật sự gửi, và để cạnh nhau thì sửa resolver cho một dòng sẽ lộ ngay nếu nó làm xê dịch dòng khác
+  - MIME là **bảng đóng**: pack chỉ chứa thứ export ghi ra, nên một đuôi ngoài danh sách nghĩa là build sinh ra thứ không ai dự tính. Trả `application/octet-stream` để trình duyệt **tải về thay vì chạy** — cách sai an toàn
+  - Traversal trả `null`, tức rơi vào đường 404 của host, chứ không tìm thấy một manifest key khác
   - _Requirements: R4.5_
 - [ ] H.8 Integration test artifact
   - Chạy với `cwd` là thư mục tạm **rỗng**; cạnh artifact không xuất hiện thư mục asset nào; SSE không bị buffer; upload 20 MB đi qua; 21 MB trả 413

@@ -97,3 +97,35 @@ export function cacheControlFor(policy: CachePolicy): string {
     ? "public, max-age=31536000, immutable"
     : "no-store";
 }
+
+/**
+ * MIME type for an embedded asset, from its extension.
+ *
+ * A closed table rather than a lookup library: the pack only ever contains what
+ * the export wrote, so an extension outside this list means the build produced
+ * something nobody planned for. `application/octet-stream` makes a browser
+ * download it instead of running it, which is the safe way to be wrong.
+ */
+const MIME_TYPES: Readonly<Record<string, string>> = {
+  ".html": "text/html; charset=utf-8",
+  ".txt": "text/plain; charset=utf-8",
+  ".js": "text/javascript; charset=utf-8",
+  ".mjs": "text/javascript; charset=utf-8",
+  ".css": "text/css; charset=utf-8",
+  ".json": "application/json; charset=utf-8",
+  ".svg": "image/svg+xml",
+  ".png": "image/png",
+  ".jpg": "image/jpeg",
+  ".jpeg": "image/jpeg",
+  ".webp": "image/webp",
+  ".ico": "image/x-icon",
+  ".woff2": "font/woff2",
+  ".woff": "font/woff",
+  ".map": "application/json; charset=utf-8",
+};
+
+export function mimeTypeFor(assetPath: string): string {
+  const dot = assetPath.lastIndexOf(".");
+  const extension = dot === -1 ? "" : assetPath.slice(dot).toLowerCase();
+  return MIME_TYPES[extension] ?? "application/octet-stream";
+}
