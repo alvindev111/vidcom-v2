@@ -66,6 +66,19 @@ Checklist chuyển Design bản 2 thành task 1–4 giờ, giữ đúng ranh gi�
 | A.4 chuyển schema tool — chuyển cái gì khi chúng đã ở `contracts`? | **Rescope**: không di chuyển gì; thêm catalogue `tên tool → schema` + gate hồi quy `test:mcp-catalogue`/`test:golden` (A.4, A.8) | Việc thật là làm route bridge map được `:name`, không phải di chuyển file |
 | Hai breaking change C.4 và F.5 ảnh hưởng ai? | Danh sách caller cụ thể nằm ngay trong task (C.4b, F.5b), kèm 3 điểm test đang dùng nhánh `{path}` | Đã rà trên code, không để dev tự tìm |
 
+## Flake Windows đã quan sát được — chưa sửa, cần đo trước
+
+Hai test **có sẵn từ trước Giai đoạn 4** đỏ ngẫu nhiên trên Windows CI rồi xanh khi chạy lại **cùng commit**. Cả hai cùng họ: crash-recovery phụ thuộc thời điểm, chạm filesystem thật.
+
+| Test | Triệu chứng | Quan sát ở |
+|---|---|---|
+| `tests/adapter/bridge-credential-lifecycle.test.ts` — waiter nhận `bridge_rotation_in_progress` | `ENOENT ... mkdir '…\.credential.lock.claim-…'` | `5b85578` |
+| `tests/adapter/journal-recovery.test.ts` — abort khi bị kill giữa lúc ghi | `child did not reach mid-write`, rồi `EBUSY ... unlink vidcom.sqlite` | `df56f42` |
+
+`EBUSY` khi `unlink` một file SQLite vừa đóng là dấu hiệu Windows **giữ handle lâu hơn lời hứa `close()` trả về**. Nghi ngờ cả hai cùng một gốc: cleanup của `afterEach` (`rm -r`) chạy trong khi handle chưa thực sự được nhả.
+
+**Đừng sửa bằng cách thêm retry hay nới timeout** — đó là cách biến một flake thành một flake chậm hơn. Cần đo trước: in mốc thời gian giữa lúc `close()` trả về, lúc `rm` bắt đầu, và lúc `EBUSY` xảy ra.
+
 ## Sequencing Strategy
 
 **Chosen strategy**: **Hybrid — Foundation-First + Risk-First**.
