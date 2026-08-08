@@ -813,8 +813,15 @@ Mỗi phase chạy focused command dưới đây trên SQLite/filesystem thật,
   - Chốt cấu trúc "không ghi ra đĩa" bằng test đọc chính source module và đòi **không có import `node:fs`**: module không với tới filesystem được thì không trôi vào đó được
   - GET/HEAD phục vụ, method khác trả `405` kèm `allow` — asset host không có đường ghi nào
   - _Requirements: R4.2, R4.5_ — _Design: §5.10_
-- [ ] H.4 Build SEA native theo runner
+- [x] H.4 Build SEA native theo runner
   - `useCodeCache=false`, `useSnapshot=false`, postject pinned, không cross-build
+  - [`build-sea.mjs`](../../../../scripts/build-sea.mjs) chạy thật trên darwin-arm64: blob → copy Node đang chạy → `codesign --remove-signature` → postject → ad-hoc sign. Ra **`dist/artifact/darwin-arm64/vidcom`, 127 MB**, chạy được trong thư mục tạm rỗng và **không sinh file nào cạnh nó**
+  - **Cả hai cờ V8 tắt là nội dung**: code cache và snapshot đều nướng byte gắn với một bản V8. Cache do Node này ghi mà Node khác đọc thì **fail lúc khởi động chứ không fallback**, và Node ghi blob là Node của máy build, chỉ trùng bản Node nhúng theo quy ước
+  - `postject@1.0.0-alpha.6` **ghim**: nó sửa thẳng định dạng executable, nên đổi version là đổi byte ship tới người dùng. Gọi qua package runner chứ không khai dependency — nó là công cụ build, không dòng nào trong sản phẩm import nó, nên `package.json` và lockfile không đổi (luật 6)
+  - `--macho-segment-name NODE_SEA` chỉ trên darwin: thiếu nó thì blob rơi vào chỗ runtime không đọc — executable build xong, chạy được, rồi báo **không có main nhúng**
+  - **Hai bước `codesign` là bắt buộc, không phải hardening**: chữ ký gốc của bản copy hết khớp ngay khi có segment được tiêm, và Mach-O arm64 không chữ ký hợp lệ bị kernel giết lúc launch — thiếu bước này thì artifact không chạy nổi trên chính máy vừa build nó. L.3 chốt lại bằng test
+  - **Bẫy đã trả giá**: path trong `sea-config.json` tính theo **working directory** của bước blob, không phải theo vị trí file config. Đặt sai chiều báo `Cannot read main script`, đọc y hệt lỗi thiếu bundle. Test chốt mọi path là relative và không mở đầu bằng `.`
+  - Test giữ ở mức logic + một lần chạy tay: build thật tốn ~127 MB mỗi lần và cần mạng cho `bunx`, nên nó thuộc packaged smoke của M chứ không thuộc suite mỗi lần push
   - _Requirements: R4.1_ — _Design: DR-1_
 - [x] H.5 Body limit theo route
   - 1 MiB mặc định, **20 MiB** cho route upload asset, ở đúng mắt xích `bodyLimit` của chuỗi middleware cố định. Vượt ⇒ `413 payload_too_large` kèm giới hạn thật
@@ -1481,6 +1488,12 @@ Chi tiết: [Detailed Goals](./spec-packaging-and-distribution-detailed-goal.md)
   - Summary: Thêm `createSeaStaticAssetHost` đọc pack + manifest qua seam `getRawAsset`, phục vụ bằng subarray view, kiểm biên manifest lúc dựng, GET/HEAD only.
   - Decisions: Seam `SeaAssetSource` thay vì gọi thẳng `node:sea` để test chạy được ngoài executable. Header cache đọc lại từ manifest — giá trị đó do H.2 lấy từ chính resolver này, nên không phải quyết định thứ hai. `requestPath` cắt chuỗi thay vì `new URL` vì `//projects/x` bị đọc thành authority.
   - Blockers: Không có. **Phát hiện ngược trực giác, đã ghi thành test**: ở tầng `Request`, cả `..` lẫn `%2e%2e` đều bị WHATWG URL resolve lúc parse, nên host không bao giờ thấy traversal; không có gì thoát ra vì pack không có thư mục và mọi key chạm tới đều là asset đã publish. Resolver vẫn giữ nguyên từ chối cho caller raw-path (`node:http`). 23/23 test file này, golden 26/26, `tests/build` 22/22; typecheck, lint 0 error, boundaries xanh.
+
+2026-08-09 — Phase H, Task H.4
+  - Files: `scripts/build-sea.mjs`, `tests/build/sea.test.ts`, checklist và implementation notes
+  - Summary: Dựng SEA native thật trên darwin-arm64 — blob, copy Node đang chạy, remove signature, postject, ad-hoc sign — ra `dist/artifact/darwin-arm64/vidcom` 127 MB chạy được trong thư mục tạm rỗng, không sinh file nào cạnh nó.
+  - Decisions: `postject@1.0.0-alpha.6` ghim và gọi qua package runner; nó là công cụ build, không dòng nào trong sản phẩm import nó, nên `package.json`/lockfile không đổi. Hai bước `codesign` nằm trong H.4 chứ không đợi L.3 vì Mach-O arm64 không chữ ký bị kernel giết lúc launch — không có chúng thì không có gì để kiểm chứng. Test giữ ở mức logic: build thật tốn 127 MB và cần mạng cho `bunx`, nên nó thuộc packaged smoke của M.
+  - Blockers: **`build:artifact` toàn chuỗi vẫn chưa chạy được**: bước 1 (`build-runtime-archives.mjs`) đòi config pin version + hash ba OS chưa có trong repo, và bước cuối `verify-artifact.mjs` là L.1 chưa viết. Bốn bước giữa (export, pack, bundle, sea) đã chạy tay liên tiếp và ra artifact thật. `tests/build` 30/30, typecheck, lint 0 error, boundaries xanh.
 
 Format:
 ```

@@ -483,6 +483,20 @@
           <div><dt class="font-semibold text-slate-200">405 chứ không 404</dt><dd class="mt-1 text-slate-300">GET/HEAD phục vụ, còn lại <code>405</code> kèm <code>allow</code>. Asset host không có đường ghi nào, và nói đúng lý do rẻ hơn để người gọi tự đoán.</dd></div>
         </dl>
       </section>
+      <section class="mt-6 rounded-2xl border border-lime-500/30 bg-slate-900 p-6">
+        <div class="flex flex-wrap items-center justify-between gap-3">
+          <h2 class="text-2xl font-semibold">2026-08-09 · Phase H — H.4 SEA native</h2>
+          <span class="rounded-full bg-lime-400/10 px-3 py-1 text-sm text-lime-300">127 MB · chạy thật · 30 test</span>
+        </div>
+        <dl class="mt-6 grid gap-5 md:grid-cols-2">
+          <div><dt class="font-semibold text-slate-200">Đường dẫn trong <code>sea-config.json</code></dt><dd class="mt-1 text-slate-300">Tính theo <strong>working directory</strong> của bước blob, không theo vị trí file config. Đặt sai chiều báo <code>Cannot read main script</code> — đọc y hệt lỗi thiếu bundle. Mất một vòng để tìm ra; test giờ chốt mọi path là relative.</dd></div>
+          <div><dt class="font-semibold text-slate-200"><code>codesign</code> không phải hardening</dt><dd class="mt-1 text-slate-300">Chữ ký gốc của bản copy hết khớp ngay khi tiêm segment, và Mach-O arm64 không chữ ký hợp lệ bị <strong>kernel giết lúc launch</strong>. Thiếu hai bước này thì artifact không chạy nổi trên chính máy vừa build nó — nên nó nằm trong H.4, không đợi L.3.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Thiếu tên segment = hỏng im lặng</dt><dd class="mt-1 text-slate-300">Không có <code>--macho-segment-name NODE_SEA</code> thì blob rơi vào chỗ runtime không đọc: executable build xong, khởi động được, rồi báo không có main nhúng.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Hai cờ V8 tắt</dt><dd class="mt-1 text-slate-300">Code cache và snapshot đều nướng byte gắn với một bản V8. Cache do Node này ghi mà Node khác đọc thì fail lúc khởi động chứ <em>không</em> fallback — và Node ghi blob là Node máy build, chỉ trùng Node nhúng theo quy ước.</dd></div>
+          <div><dt class="font-semibold text-slate-200">postject ghim, không khai dependency</dt><dd class="mt-1 text-slate-300">Nó sửa thẳng định dạng executable, nên đổi version là đổi byte ship tới người dùng. Gọi qua package runner: công cụ build, không dòng nào trong sản phẩm import nó.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Chuỗi build vẫn hở hai đầu</dt><dd class="mt-1 text-slate-300">Bốn bước giữa (export, pack, bundle, sea) chạy tay liên tiếp ra artifact thật. Bước 1 (runtime archives) thiếu config pin hash ba OS, bước cuối (<code>verify-artifact</code>) là L.1 chưa viết.</dd></div>
+        </dl>
+      </section>
     </main>
   </body>
 </html>
