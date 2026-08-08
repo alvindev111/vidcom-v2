@@ -1437,6 +1437,12 @@ Chi tiết: [Detailed Goals](./spec-packaging-and-distribution-detailed-goal.md)
   - Decisions: Chặn ngay ở cả build config/source walk và strict embedded-manifest parser, không đẩy collision xuống manager sau khi filesystem đã bị ghi. So tên control case-insensitive để giữ đúng trên Windows.
   - Blockers: Không có; ba negative smoke đều trả `runtime_manifest_invalid`; typecheck, ESLint scoped và `git diff --check` xanh.
 
+2026-08-08 — Phase H, Task H.1 (preflight, CHƯA tick)
+  - Files: `scripts/build-cli-bundle.mjs`, `tests/build/cli-bundle.test.ts`
+  - Summary: Phân giải bundler và cổng chặn top-level await. Nửa emit bundle chưa làm được vì cần runtime archive đã giải nén trên đĩa.
+  - Decisions: Lấy `esbuild` từ runtime archive B.3 thay vì `node_modules`. Luật 6 loại hai đường kia — không có bundler nào được khai dependency, và bản duy nhất trên đĩa là transitive ở **hai version khác nhau**, nên hoisted copy vừa không khai vừa nhập nhằng. Đường này thêm 0 dependency và làm compiler build artifact **chính là** compiler artifact chạy. Chặn top-level await trước khi esbuild thấy: SEA nhận CJS main và esbuild từ chối TLA ở format `cjs`, nên build hỏng đằng nào cũng hỏng — chỉ ra file và số dòng biến lỗi mù thành lỗi sửa được. Quét theo độ sâu ngoặc để `await` trong hàm và biến tên `awaited` không bị bắt nhầm.
+  - Blockers: **H.2/H.4/H.6/H.8 chặn bởi dữ liệu, không phải quyết định.** `build-runtime-archives.mjs` đòi `--config <file>` pin `node`/`hyperframes`/`esbuild`/`ffmpeg`/`cpython`/`vieneu`/`motion` cộng `pythonPackages` từng platform và `archives` ba OS — file đó **không tồn tại trong repo**. B.3 chứng minh builder đúng và deterministic bằng smoke config; thứ thiếu là binary phát hành thật + hash pin, tức tài sản phát hành chứ không suy được từ code. MUST NOT bịa hash: sẽ ra artifact trông như build thật nhưng ship version không ai duyệt. 9 test mới xanh; typecheck, ESLint, `test:boundaries` xanh; CI `ad7b868` xanh cả ba OS.
+
 Format:
 ```
 YYYY-MM-DD — Phase X, Task X.Y
