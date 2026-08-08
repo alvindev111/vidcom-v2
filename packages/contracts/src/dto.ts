@@ -621,3 +621,20 @@ export type BridgeHandshakeRequest = z.infer<typeof BridgeHandshakeRequestSchema
 export type BridgeHandshakeResponse = z.infer<typeof BridgeHandshakeResponseSchema>;
 export type BridgeToolInvokeRequest = z.infer<typeof BridgeToolInvokeRequestSchema>;
 export type BridgeToolInvokeResponse = z.infer<typeof BridgeToolInvokeResponseSchema>;
+
+/**
+ * Entry listing is a POST, not a GET.
+ *
+ * The body carries a browse token rather than a path, but the response names
+ * real directories, and a GET puts its input in the request line — where access
+ * logs, proxies and browser history all keep it.
+ */
+export const BrowseEntriesRequestSchema = z.strictObject({
+  token: z.string().min(1).max(256),
+  cursor: z.string().max(64).optional(),
+});
+
+export const CreateDirectoryRequestSchema = z.strictObject({
+  parentToken: z.string().min(1).max(256),
+  name: z.string().min(1).max(255),
+});

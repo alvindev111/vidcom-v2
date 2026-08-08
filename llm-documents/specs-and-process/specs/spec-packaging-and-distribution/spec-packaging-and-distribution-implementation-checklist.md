@@ -592,9 +592,12 @@ Mỗi phase chạy focused command dưới đây trên SQLite/filesystem thật,
   - Token vắng mặt, hết hạn, và của session khác đều trả **cùng một mã**: phân biệt chúng là nói cho caller biết token nào tồn tại
   - Token đã bị từ chối vì lệch identity **không sống lại** khi thư mục cũ quay về — nó đã từng trỏ sang chỗ khác
   - _Requirements: R1.8, R1.16_ — _Design: §5.2_
-- [ ] F.4 Endpoint `/v1/system/*`
+- [x] F.4 Endpoint `/v1/system/*`
   - `GET filesystem/roots`, `POST filesystem/entries` (POST để absolute path không nằm trong URL log), `POST directories`, `GET workspace`, `GET runtime`
   - Windows liệt kê **gốc ổ đĩa**; POSIX đi lên tới `/`
+  - [`system.ts`](../../../../packages/server/src/routes/system.ts) — cả năm. `POST` cho entries dù body chỉ mang token: **response** nêu tên thư mục thật, và GET đặt input vào request line nơi access log, proxy và lịch sử trình duyệt đều giữ lại
+  - **Schema phải nằm ở `contracts`, không phải `server`**: bản đầu tôi khai `z.strictObject` ngay trong `system.ts` và typecheck đỏ — `zod` không phải dependency của `server`. Đó là ranh giới package tự bảo vệ chính nó, đúng steering "mọi DTO/schema mới → `contracts`"
+  - Test chốt `strictObject` thật sự chặn: gửi kèm `path` ⇒ `schema_invalid`, không phải im lặng bỏ field
   - _Requirements: R1.1, R1.6, R1.9_ — _Design: §7.1–§7.4, §7.7b_
 - [x] F.5 `PUT /v1/workspace/active` **chỉ nhận `selectionToken`**
   - Bỏ nhánh `{path}`: không đường ghi nào được nhận absolute path từ client ([steering/06](../../../steering/06-validation.md) §5). CLI truyền workspace bằng tham số tiến trình, không qua endpoint này
