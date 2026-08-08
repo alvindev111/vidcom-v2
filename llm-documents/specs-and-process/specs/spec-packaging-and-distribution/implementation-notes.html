@@ -385,6 +385,20 @@
           <div class="md:col-span-2"><dt class="font-semibold text-slate-200">Đường thất bại được test</dt><dd class="mt-1 text-slate-300">Reconcile ném lỗi ⇒ khoá bootstrap vẫn được nhả. Một lần boot hỏng mà giữ khoá sẽ làm kẹt mọi lần khởi động sau, nên đây là nhánh đáng test hơn cả nhánh thành công.</dd></div>
         </dl>
       </section>
+      <section class="mt-6 rounded-2xl border border-emerald-500/30 bg-slate-900 p-6">
+        <div class="flex flex-wrap items-center justify-between gap-3">
+          <h2 class="text-2xl font-semibold">2026-08-08 · C.3–C.12 — Bearer, reconciliation và migration</h2>
+          <span class="rounded-full bg-emerald-400/10 px-3 py-1 text-sm text-emerald-300">929 test · 2 AC/3</span>
+        </div>
+        <dl class="mt-6 grid gap-5 md:grid-cols-2">
+          <div><dt class="font-semibold text-slate-200">C.4b: câu trong checklist sai một nửa</dt><dd class="mt-1 text-slate-300">Checklist ghi cả hai test chốt hành vi cũ đều thuần đọc và "nếu phải sửa thì dừng lại". Đúng với <code>workspace-and-path-policy</code>. Sai với <code>project-discovery-state</code>: dòng 105 dùng <strong>chính tác dụng phụ ghi</strong> làm fixture. Đã dừng, xác nhận, rồi chỉ sửa fixture sang ghi thẳng qua <code>AppSettingsStore</code> — phần assert nhánh đọc không đụng.</dd></div>
+          <div><dt class="font-semibold text-slate-200">C.3 dừng ở 2→1, có lý do</dt><dd class="mt-1 text-slate-300">Lần migrate thứ ba ở foundation chỉ gỡ được khi <code>prepare()</code> chạy trước <code>selectWorkspace</code>. Nhưng <code>main.ts</code> chọn workspace trước, và <code>prepare()</code> cần một <code>RuntimeAssetSource</code> mà dev/test chưa có. AC "đo bằng counter" để trống thay vì tick bằng một test đếm thứ không có thật.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Lệch ở nhánh mồ côi §4.4</dt><dd class="mt-1 text-slate-300">Design ghi "xoay lại từ credential trong file", nhưng credential đó đang <code>rotating</code> và <code>rotate()</code> chỉ nhận <code>active</code> — làm đúng chữ thì ném <code>credential_invalid</code>. Dùng <code>issue()</code>: cùng trạng thái cuối, và bản cũ giữ nốt phần overlap thay vì bị cắt, đúng mục đích overlap. Không thêm cổng mới vào <code>core</code> chỉ để hợp chữ.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Bug do clock tiêm mới lộ</dt><dd class="mt-1 text-slate-300">Id credential ban đầu sinh từ <code>clock().getTime()</code>. Test tiêm đồng hồ đứng yên, hai lần xoay trong cùng thời điểm đụng primary key. Đổi sang <code>randomUUID</code>. Production với đồng hồ thật sẽ giấu lỗi này rất lâu — đây là lợi ích trực tiếp của việc test tiêm clock.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Race nguy hiểm được test thật</dt><dd class="mt-1 text-slate-300">DB một mình không serialize được: kẻ thua bị <code>UPDATE … WHERE status = 'active'</code> loại, nhưng không gì chặn reconciliation lúc boot "chữa" một lần xoay đang cố ý dở dang. Test dừng một rotate giữa DB commit và ghi file trong lúc giữ khoá, rồi cho reconciliation chạy đè — nhận <code>bridge_rotation_in_progress</code>.</dd></div>
+          <div><dt class="font-semibold text-slate-200">C.8 rebuild bảng</dt><dd class="mt-1 text-slate-300">Check constraint buộc rebuild — hình dạng migration dễ mất row, renumber id hoặc rụng status nhất. Test dựng DB từ đúng tập migration trước đó rồi so từng dòng <code>id</code>/<code>kind</code>/<code>status</code>, chốt cả hai chiều constraint, và xác nhận id tiếp tục từ 5 chứ không restart.</dd></div>
+        </dl>
+      </section>
     </main>
   </body>
 </html>

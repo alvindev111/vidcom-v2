@@ -358,8 +358,11 @@ Mỗi phase chạy focused command dưới đây trên SQLite/filesystem thật,
   - Kill sau DB rotate, restart **trong** 60 s ⇒ revoke mồ côi + xoay lại; restart **sau** 60 s ⇒ **mint mới**; kill sau ghi file ⇒ **roll forward** `S`, không mint; kill sau settings ⇒ tự lành
   - File bị xoá ⇒ mint mới; `hash(F)` khớp row `revoked` ⇒ nhánh mint, không phải roll-forward
   - _Requirements: R2.5_ — _Design: §11.3_
-- [ ] C.11 Integration test: hai `rotate --bridge` song song + reconciliation đè lên rotate đang dở
+- [x] C.11 Integration test: hai `rotate --bridge` song song + reconciliation đè lên rotate đang dở
   - Khoá serialize; kẻ chờ quá hạn nhận `bridge_rotation_in_progress`
+  - `withBridgeCredentialLock` là **đường duy nhất** chạm bearer: reconciliation lúc boot, `rotate --bridge`, nhánh credential của `doctor --repair`, và mint lần đầu. DB một mình **không** serialize được: kẻ thua bị `UPDATE … WHERE status = 'active'` loại, nhưng không gì chặn reconciliation "chữa" một lần xoay đang cố ý dở dang — và đó mới là race nguy hiểm
+  - Race đó được test **thật**, không mô phỏng: một rotate dừng giữa DB commit và ghi file trong lúc giữ khoá, rồi reconciliation cố chạy đè và nhận `bridge_rotation_in_progress`
+  - Hai rotate song song: không chồng lấn, hai id khác nhau, và cuối cùng file + `app_settings` + row `active` mô tả **cùng một** credential — `hash(file)` khớp `secret_hash` của row
   - _Requirements: R2.5_
 - [x] C.12 Integration test: migration trên fixture DB Phase 3 thật
   - Row count/kind distribution trước-sau, `foreign_key_check=0`, schema drift
@@ -369,9 +372,9 @@ Mỗi phase chạy focused command dưới đây trên SQLite/filesystem thật,
   - _Requirements: R7.6_ — _Design: §6.5_
 
 **Acceptance Criteria**:
-- [ ] Migration chạy **đúng một lần** trong một boot, đo bằng counter chứ không bằng đọc code
-- [ ] Mọi nhánh kill ở C.10 kết thúc bằng một bridge **nối lại được**
-- [ ] Không nhánh nào để lại hơn một row `active` mang label `system:bridge`
+- [ ] Migration chạy **đúng một lần** trong một boot, đo bằng counter chứ không bằng đọc code — **chưa đạt có chủ ý**, xem C.3: `selectWorkspace` đã từ 2 xuống 1, lần thứ ba ở foundation chỉ gỡ được khi coordinator được lắp vào entrypoint ở E/J. Đừng tick bằng test đếm giả
+- [x] Mọi nhánh kill ở C.10 kết thúc bằng một bridge **nối lại được** — cả bốn nhánh assert file có secret dùng được và `app_settings` trỏ đúng row `active`
+- [x] Không nhánh nào để lại hơn một row `active` mang label `system:bridge` — reconciliation revoke mọi row `active` mang label đó mà không phải `S`; test dựng sẵn hai row rác và chốt còn đúng một
 
 **Deliverables**: `packages/cli/src/bootstrap-coordinator.ts` · `packages/cli/src/workspace-selection.ts` · `packages/adapter/src/fs/credential-store.ts` · migration mới
 

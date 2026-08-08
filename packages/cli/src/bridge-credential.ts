@@ -1,14 +1,19 @@
 import { randomUUID } from "node:crypto";
+import path from "node:path";
 
 import {
   AppSettingsStore,
+  AtomicDirectoryLock,
   BridgeCredentialStore,
   NodeMcpCredentialCrypto,
   SqliteMcpCredentialStore,
+  type DirectoryLockLease,
   type VidcomDatabase,
 } from "@vidcom/adapter";
 import { ErrorCode } from "@vidcom/contracts";
 import { McpCredentialService, type McpCredentialRecord } from "@vidcom/core";
+
+import { CREDENTIAL_LOCK_FILENAME } from "./bootstrap-coordinator";
 
 export const BRIDGE_CREDENTIAL_LABEL = "system:bridge";
 export const BRIDGE_CREDENTIAL_SETTING = "bridge_credential_id";
@@ -180,6 +185,30 @@ export async function rotateBridgeCredential(
   settings.set(BRIDGE_CREDENTIAL_SETTING, rotated.id);
   await revokeAttachments?.(rotated.id);
   return { id: rotated.id };
+}
+
+/**
+ * Runs one bridge credential operation under `<app-data>/credential.lock`.
+ *
+ * Every path that touches the bearer — boot reconciliation, `rotate --bridge`,
+ * the credential branch of `doctor --repair`, and the first mint — goes through
+ * here. The database alone does not serialize them: a losing rotation is
+ * rejected by `UPDATE … WHERE status = 'active'`, but nothing stops boot
+ * reconciliation from "repairing" a rotation that is deliberately half-applied,
+ * and that is the dangerous race.
+ *
+ * The bootstrap lock, when held, MUST already have been taken: the order is
+ * always `bootstrap → credential`.
+ */
+export function withBridgeCredentialLock<T>(
+  appDataRoot: string,
+  operation: (lease: DirectoryLockLease) => Promise<T>,
+  options: { timeoutMs?: number } = {},
+): Promise<T> {
+  return new AtomicDirectoryLock(path.join(appDataRoot, CREDENTIAL_LOCK_FILENAME), {
+    ...options.timeoutMs === undefined ? {} : { timeoutMs: options.timeoutMs },
+    timeoutCode: ErrorCode.BridgeRotationInProgress,
+  }).runExclusive(operation);
 }
 
 /** Refuses to revoke the bridge bearer, which would leave the daemon unreachable. */

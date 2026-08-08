@@ -17,8 +17,21 @@ import {
   reconcileBridgeCredential,
   rotateBridgeCredential,
   assertRevocable,
+  withBridgeCredentialLock,
 } from "@vidcom/cli";
+import { ErrorCode } from "@vidcom/contracts";
+import { McpCredentialService } from "@vidcom/core";
 import { afterEach, describe, expect, it } from "vitest";
+
+/** A credential service over one database, for planting half-applied states. */
+function service(database: VidcomDatabase): McpCredentialService {
+  return new McpCredentialService({
+    credentials: new SqliteMcpCredentialStore(database),
+    crypto: new NodeMcpCredentialCrypto(),
+    clock: { now: () => new Date() },
+    ids: { newId: (prefix: string) => `${prefix}_${Math.random().toString(36).slice(2)}` },
+  });
+}
 
 const roots: string[] = [];
 const databases: VidcomDatabase[] = [];
@@ -216,6 +229,80 @@ describe("bridge credential rotation", () => {
   it("refuses to rotate before a bearer exists", async () => {
     const value = await fixture();
     await expect(rotateBridgeCredential(value.dependencies)).rejects.toThrow(/no bridge credential/u);
+  });
+
+  it("serializes two concurrent rotations instead of interleaving them", async () => {
+    const value = await fixture();
+    await reconcileBridgeCredential(value.dependencies);
+    let active = 0;
+    let overlapped = false;
+
+    const rotate = () => withBridgeCredentialLock(value.appDataRoot, async () => {
+      active += 1;
+      if (active > 1) overlapped = true;
+      const result = await rotateBridgeCredential(value.dependencies);
+      await new Promise((resolve) => { setTimeout(resolve, 30); });
+      active -= 1;
+      return result;
+    }, { timeoutMs: 30_000 });
+
+    const [first, second] = await Promise.all([rotate(), rotate()]);
+
+    expect(overlapped).toBe(false);
+    expect(first.id).not.toBe(second.id);
+    // The file and the pointer describe the same credential, and it is the one
+    // that finished last. A half-applied interleave would break exactly this.
+    const settled = value.settings.get(BRIDGE_CREDENTIAL_SETTING);
+    const secret = await value.store.read();
+    const record = await value.credentials.read(settled ?? "");
+    expect(record?.status).toBe("active");
+    expect(new NodeMcpCredentialCrypto().hash(secret)).toBe(record?.secretHash);
+  });
+
+  it("reports bridge_rotation_in_progress to a waiter that gives up", async () => {
+    const value = await fixture();
+    await reconcileBridgeCredential(value.dependencies);
+    let release = () => {};
+    const held = new Promise<void>((resolve) => { release = resolve; });
+
+    const holder = withBridgeCredentialLock(value.appDataRoot, async () => { await held; });
+    await new Promise((resolve) => { setTimeout(resolve, 50); });
+
+    const failure = await withBridgeCredentialLock<unknown>(
+      value.appDataRoot,
+      () => Promise.resolve("unreachable"),
+      { timeoutMs: 300 },
+    ).catch((error: unknown) => error);
+    expect((failure as { code?: ErrorCode }).code).toBe(ErrorCode.BridgeRotationInProgress);
+
+    release();
+    await holder;
+  });
+
+  it("blocks boot reconciliation from repairing a rotation that is still running", async () => {
+    const value = await fixture();
+    const first = await reconcileBridgeCredential(value.dependencies);
+    let release = () => {};
+    const held = new Promise<void>((resolve) => { release = resolve; });
+
+    // A rotation deliberately stopped between its database commit and its file
+    // write. Reconciliation would read that as an orphaned replacement and
+    // "repair" a state that is mid-change on purpose.
+    const rotation = withBridgeCredentialLock(value.appDataRoot, async () => {
+      await service(value.database).rotate(first.credentialId, BRIDGE_ROTATION_OVERLAP_MS);
+      await held;
+    });
+    await new Promise((resolve) => { setTimeout(resolve, 50); });
+
+    const blocked = await withBridgeCredentialLock<unknown>(
+      value.appDataRoot,
+      () => reconcileBridgeCredential(value.dependencies),
+      { timeoutMs: 300 },
+    ).catch((error: unknown) => error);
+    expect((blocked as { code?: ErrorCode }).code).toBe(ErrorCode.BridgeRotationInProgress);
+
+    release();
+    await rotation;
   });
 
   it("refuses to revoke the bridge bearer and allows revoking any other", async () => {
