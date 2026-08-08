@@ -899,14 +899,20 @@ Mỗi phase chạy focused command dưới đây trên SQLite/filesystem thật,
 - [ ] I.3 Handshake
   - So canonical root **và** instance id; PID/port sống không đủ. Mismatch ⇒ 409 `daemon_identity_mismatch`, không tiếp tục call
   - _Requirements: R2.13_ — _Design: §7.8_
-- [ ] I.4 Attachment lease
+- [x] I.4 Attachment lease
   - Heartbeat 5 s, TTL 20 s, deadline 5 s, grace 60 s. Id random 256-bit bound credential+instance. Attach/renew so `credentialId` với `app_settings.bridge_credential_id`
+  - [`attachments.ts`](../../../../packages/server/src/bridge/attachments.ts) theo đúng mẫu `packages/server/src/auth/**` đang có: state trong memory, `ClockPort` inject, random inject để test đọc được
+  - `renew`/`detach` so **cả** `credentialId` **và** `instanceId`: id là thứ duy nhất client trình ra và nó mang đi được, nên thiếu kiểm tra này thì một id cũ replay vào daemon vừa restart sẽ giữ sống attachment cho một client đã biến mất từ lâu
   - _Requirements: R2.15_ — _Design: §4.4, §7.9_
-- [ ] I.5 `activeWorkHold` suy từ job store
+- [x] I.5 `activeWorkHold` suy từ job store
   - Job non-terminal thuộc workspace ⇒ hold còn; không heartbeat, không biến mất khi client thoát
+  - Registry nhận `hasActiveWork()` chứ không tự đếm: đây **đúng là** chỗ bản trước tự mâu thuẫn — `--detach` cho CLI thoát ngay, attachment của nó hết hạn sau 20 s, và một refcount chỉ đếm attachment sẽ tắt daemon **giữa lúc render**
   - _Requirements: R2.15_ — _Design: §4.4_
-- [ ] I.6 Luật `autoStarted`
+- [x] I.6 Luật `autoStarted`
   - Chỉ daemon `serve --ensure` được auto-shutdown; `app`/`serve` tay thì **không bao giờ**; từng nhận attachment `kind: "ui"` ⇒ mất quyền tự tắt **vĩnh viễn**. State trong memory, MUST NOT vào discovery record
+  - "Vĩnh viễn" chứ không phải "trong lúc còn attach": cửa sổ UI đóng một nhịp lúc đổi workspace không được biến thành lý do để daemon biến mất
+  - Grace period tính từ lúc daemon **bắt đầu rỗi**, không phải từ lúc bị hỏi: caller chỉ hỏi một lần sẽ không bao giờ thấy period trôi qua. Test chốt cả biên `-1`/`0` và ca có người quay lại giữa chừng
+  - [`attachments.test.ts`](../../../../tests/server/attachments.test.ts) 11 test cho cả I.4/I.5/I.6
   - _Requirements: R2.15_ — _Design: §4.4_
 - [ ] I.7a `createMcpRegistry` nhận `ToolInvoker`
   - Sửa [`composition-root.ts`](../../../../packages/cli/src/composition-root.ts) để registry được dựng quanh một invoker thay vì nối cứng vào `application`. `ToolDefinition` vẫn là nguồn duy nhất cho schema/list/era — invoker chỉ đổi **chỗ thực thi**
@@ -1539,6 +1545,12 @@ Chi tiết: [Detailed Goals](./spec-packaging-and-distribution-detailed-goal.md)
   - Summary: `interface ToolInvoker` ở `mcp`, `createRemoteToolInvoker` ở `cli`; thêm một fixture ranh giới cho import tương đối sang `adapter/src/daemon/**`.
   - Decisions: `mcp` giữ nguyên 5 dependency, không thêm `@vidcom/adapter`. Invoker giữ **mã lỗi của daemon** thay vì gộp về một lỗi transport — gộp lại là xoá mất khác biệt giữa "tool từ chối input" và "daemon không trả lời", đúng hai thứ caller cần phân biệt nhất. Fixture mới chỉ thêm, không sửa dòng nào có sẵn của gate.
   - Blockers: Không có; 5/5 test, `test:boundaries` xanh với `git diff` 9 dòng thêm / 0 dòng xoá, typecheck và lint 0 error.
+
+2026-08-09 — Phase I, Task I.4 + I.5 + I.6
+  - Files: `packages/server/src/bridge/attachments.ts`, `packages/server/src/index.ts`, `tests/server/attachments.test.ts`, checklist và implementation notes
+  - Summary: Attachment registry trong memory của daemon — heartbeat 5 s, TTL 20 s, grace 60 s, id 256-bit, cộng bốn điều kiện auto-shutdown.
+  - Decisions: Đặt ở `packages/server/src/bridge/` theo đúng mẫu `auth/nonce.ts`/`auth/session.ts` (memory + `ClockPort` inject + random inject). `renew` so cả `credentialId` lẫn `instanceId` vì id mang đi được. `hasActiveWork()` được inject thay vì registry tự đếm — work hold suy từ job store là cách duy nhất đúng khi `--detach` cho CLI thoát ngay. Quyền tự tắt mất **vĩnh viễn** sau attachment `ui`. Grace period chạy từ lúc bắt đầu rỗi, không từ lúc bị hỏi.
+  - Blockers: Không có; 11/11 test, typecheck, lint 0 error, boundaries xanh. Nối vào route và job store thật là I.7b/I.8.
 
 Format:
 ```

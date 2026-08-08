@@ -3,6 +3,7 @@ export * from "./routes/delivery-loop";
 export * from "./routes/system";
 export * from "./auth/nonce";
 export * from "./auth/session";
+export * from "./bridge/attachments";
 export * from "./listener";
 export * from "./middleware/error-mapper";
 export * from "./middleware/perimeter";
