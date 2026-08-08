@@ -575,8 +575,12 @@ Mỗi phase chạy focused command dưới đây trên SQLite/filesystem thật,
   - `new Worker(<source>, { eval: true })` — MUST NOT trỏ file path. Trong SEA không có file thật; đây đúng cơ chế đã làm esbuild treo ở S1b, và chế độ hỏng là **treo im lặng**
   - Concurrency 2, timeout terminate worker
   - _Requirements: R1.14, R1.15_ — _Design: §5.2_
-- [ ] F.3 `BrowseTokenStore`
+- [x] F.3 `BrowseTokenStore`
   - In-memory, TTL ngắn, bind session + canonical path + stat identity. Dùng lại **đúng một** hàm canonicalize đã có ([steering/06](../../../steering/06-validation.md) §5), MUST NOT dựng hàm resolve thứ hai
+  - [`browse-token-store.ts`](../../../../packages/core/src/service/browse-token-store.ts) ở `core` và **không resolve đường dẫn nào**: nhận `canonicalPath` và `identity` đã do adapter tính. Đó là cách tuân luật "không dựng hàm resolve thứ hai" mà vẫn giữ `core` không chạm `node:fs`
+  - **Ba ràng buộc, kiểm cả ba lúc dùng**: session (một session không tiêu token của session khác), canonical path, và **identity của thư mục** — symlink bị trỏ lại giữa hai request làm token vô hiệu thay vì lặng lẽ chỉ sang chỗ mới. Đây là TOCTOU mà F.8 yêu cầu
+  - Token vắng mặt, hết hạn, và của session khác đều trả **cùng một mã**: phân biệt chúng là nói cho caller biết token nào tồn tại
+  - Token đã bị từ chối vì lệch identity **không sống lại** khi thư mục cũ quay về — nó đã từng trỏ sang chỗ khác
   - _Requirements: R1.8, R1.16_ — _Design: §5.2_
 - [ ] F.4 Endpoint `/v1/system/*`
   - `GET filesystem/roots`, `POST filesystem/entries` (POST để absolute path không nằm trong URL log), `POST directories`, `GET workspace`, `GET runtime`
