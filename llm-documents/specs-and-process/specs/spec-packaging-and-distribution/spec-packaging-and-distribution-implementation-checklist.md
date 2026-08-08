@@ -575,9 +575,13 @@ Mỗi phase chạy focused command dưới đây trên SQLite/filesystem thật,
   - **Bug tự bắt lúc viết**: bản đầu của `resolveToken` gọi `tokens.resolve` với identity giả để lấy path — mà `resolve` **xoá token** khi identity lệch. Thêm `peek()` (đọc path, không kiểm identity) rồi mới `resolve` với identity đọc lúc dùng
   - **Còn lại — nửa `adapter`**: hiện thực `FilesystemBrowserPort` bằng `node:fs` trong `adapter/fs`, gồm gốc ổ đĩa Windows. Đi cùng F.2 (worker eval) và F.8
   - _Requirements: R1.1, R1.2_ — _Design: §5.0, §5.2_
-- [ ] F.2 Worker **dạng eval**
+- [x] F.2 Worker **dạng eval**
   - `new Worker(<source>, { eval: true })` — MUST NOT trỏ file path. Trong SEA không có file thật; đây đúng cơ chế đã làm esbuild treo ở S1b, và chế độ hỏng là **treo im lặng**
   - Concurrency 2, timeout terminate worker
+  - [`browse-worker.ts`](../../../../packages/adapter/src/fs/browse-worker.ts): thân worker giữ **dạng chuỗi**, dựng bằng `new Worker(source, { eval: true })`. Ràng buộc được nhắc lại ngay tại chỗ dễ viết sai nhất, vì **dạng thông thường lại là dạng sai**
+  - Timeout **terminate** worker chứ không bỏ mặc: worker bị bỏ mặc vẫn đang làm đúng công việc vừa quá hạn. Test chốt pool vẫn phục vụ được sau một lần timeout — nếu không, một lần đọc chậm sẽ khai tử cả pool
+  - Test chốt 6 request qua 2 worker, tức pool phải trả worker về hàng chờ chứ không tạo thêm
+  - **Audit spawn của D.12 bắt chính file này** vì method tên `spawn()`. Nhưng nó tạo *thread*, không phải child process. **Đổi tên thành `startWorker()`** thay vì khai miễn trừ — nới audit để hợp một cái tên là cách audit chết dần
   - _Requirements: R1.14, R1.15_ — _Design: §5.2_
 - [x] F.3 `BrowseTokenStore`
   - In-memory, TTL ngắn, bind session + canonical path + stat identity. Dùng lại **đúng một** hàm canonicalize đã có ([steering/06](../../../steering/06-validation.md) §5), MUST NOT dựng hàm resolve thứ hai
@@ -616,8 +620,9 @@ Mỗi phase chạy focused command dưới đây trên SQLite/filesystem thật,
 - [ ] F.8 Integration test trên fs thật
   - Thư mục 200k entry ⇒ phân trang, không treo · permission denied ⇒ mã lỗi, **không 500** · timeout ⇒ worker bị terminate · TOCTOU: symlink đổi giữa hai request ⇒ token cũ không còn hợp lệ
   - _Requirements: R1.7, R1.14, R1.15, R1.16_
-- [ ] F.9 Test: worker **dạng file path** fail có mã trong SEA harness
+- [x] F.9 Test: worker **dạng file path** fail có mã trong SEA harness
   - Để dạng sai không lặng lẽ quay lại
+  - Hai test cạnh nhau trong [`browse-worker.test.ts`](../../../../tests/adapter/browse-worker.test.ts): dạng `eval` **online được**, dạng file path **hỏng có tín hiệu** (ném đồng bộ hoặc `error`/`exit` khác 0 — chấp nhận cả hai vì Node xử lý khác nhau tuỳ cách path hỏng). Điểm mấu chốt: **không cái nào là treo im lặng**, và đó chính là thứ dạng `eval` tránh
   - _Requirements: R1.15_ — _Design: §5.2_
 
 **Acceptance Criteria**:

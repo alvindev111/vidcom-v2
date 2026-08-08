@@ -18,6 +18,7 @@ export * from "./fs/atomic-write";
 export * from "./fs/atomic-delete";
 export * from "./fs/backup-store";
 export * from "./fs/credential-store";
+export * from "./fs/browse-worker";
 export * from "./fs/durability";
 export * from "./fs/large-content-store";
 export * from "./fs/mime";
