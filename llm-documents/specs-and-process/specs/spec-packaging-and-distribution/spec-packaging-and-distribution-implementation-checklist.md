@@ -705,12 +705,21 @@ Mỗi phase chạy focused command dưới đây trên SQLite/filesystem thật,
   - [`next-export-config.test.ts`](../../../../tests/frontend/next-export-config.test.ts) **ghim danh sách route handler** hiện có (`src/app/api/[[...route]]/route.ts`). Khi bật `output: "export"` thì mọi handler `force-dynamic` làm build fail, nên danh sách được chốt ở đây: một handler thêm vào giữa chừng sẽ hiện ra tại test này thay vì thành một build fail không ai ngờ
   - **Chưa làm — lật `output: "export"` và dời catch-all**: đây là thay đổi chạm chính `npm run build` mà CI chạy mỗi vòng, và nó đi cùng **H.0/H.1** (SEA static asset host) vì host đó mới là thứ tiêu thụ output. Lật trước khi có host là tạo một build không ai phục vụ được
   - _Requirements: R4.11, R4.5_ — _Design: §5.10_
-- [ ] G.7 `WorkspacePickerPage`
+- [~] G.7 `WorkspacePickerPage` — **logic xong, component render còn lại**
   - Roots, breadcrumb, entry phân trang, tạo thư mục, chọn, trạng thái lỗi R1.7. Chưa có workspace ⇒ app vào màn này trước Home
+  - [`workspace-picker/state.ts`](../../../../src/lib/workspace-picker/state.ts) — reducer thuần, **tách khỏi render** vì `environment: "node"` toàn cục và không có jsdom: hành vi chỉ tồn tại bên trong component là hành vi không bao giờ được test
+  - Ba quyết định UX chốt bằng test: breadcrumb **cắt tại crumb được bấm** chứ không pop một cấp (bấm lên ba cấp phải tới đúng đó); thư mục xếp **trước** file (folder lẫn giữa file là folder người dùng phải đi tìm); và một bước hỏng **giữ nguyên** danh sách đã tải (dọn sạch pane đang đọc biến một thư mục bị từ chối thành một app trông như hỏng)
+  - Lỗi cũ được xoá lúc **bắt đầu** lần thử mới, không phải lúc thành công — để nguyên trong lúc retry là hiển thị một thất bại không còn xảy ra
+  - **Còn lại**: component render + điều hướng "chưa có workspace ⇒ vào màn này trước Home"
   - _Requirements: R1.11_ — _Design: §5.12_
-- [ ] G.8 `NewProjectDialog`
+- [~] G.8 `NewProjectDialog` — **logic xong, component render còn lại**
   - Tên + preset đóng sẵn; chặn double-submit; lỗi validation và trùng slug; thành công thì refresh/điều hướng. Sửa dòng phụ "Generate with an AI agent" ở [`new-project-card.tsx`](../../../../src/components/home/new-project-card.tsx)
   - MUST NOT thêm file/folder CRUD, upload asset, agent generation
+  - [`new-project/state.ts`](../../../../src/lib/new-project/state.ts) — cùng lý do tách như G.7
+  - **Chặn double-submit** là `canSubmit` trả `false` khi đang bay: cú bấm thứ hai trong lúc request chạy không phân biệt được với cú đầu, và hai cú bấm không được tạo hai project
+  - Hỏng thì `submitting` về `false` để người dùng sửa và thử lại — dialog kẹt disabled sau một tên bị từ chối là dialog phải đóng đi mở lại
+  - Preset là **tập đóng**: danh sách mở là chỗ cho một giá trị render pipeline chưa từng thấy
+  - **Còn lại**: component render + sửa dòng phụ "Generate with an AI agent" ở `new-project-card.tsx`
   - _Requirements: R1.19_ — _Design: §5.12, §7.6_
 - [ ] G.9 Kịch bản trên harness của G.0
   - Nonce → session → xoá token khỏi URL; picker; New video **cả hai nhánh** thành công và thất bại; cross-origin dev giữ cookie ở fetch **và** SSE
