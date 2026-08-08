@@ -343,6 +343,21 @@
           <div><dt class="font-semibold text-slate-200">B.6 — không có đường thứ hai</dt><dd class="mt-1 text-slate-300"><code>icacls</code> chỉ tồn tại trong <code>credential-store.ts</code>; runtime gọi lại đúng <code>secureAppDataDirectorySync</code>. Test POSIX chốt thêm một ranh giới dễ hỏng: directory bị ép <code>0700</code> nhưng file phải giữ mode từ manifest (<code>0644</code>/<code>0755</code>).</dd></div>
         </dl>
       </section>
+      <section class="mt-6 rounded-2xl border border-rose-500/30 bg-slate-900 p-6">
+        <div class="flex flex-wrap items-center justify-between gap-3">
+          <h2 class="text-2xl font-semibold">2026-08-08 · Windows CI đỏ — bug lock thật, không phải flake</h2>
+          <span class="rounded-full bg-rose-400/10 px-3 py-1 text-sm text-rose-300">Bootstrap chết trên 1/3 nền tảng</span>
+        </div>
+        <dl class="mt-6 grid gap-5 md:grid-cols-2">
+          <div><dt class="font-semibold text-slate-200">Triệu chứng</dt><dd class="mt-1 text-slate-300">16/17 test manager đỏ trên Windows với <code>timed out waiting 10000ms for directory lock</code> — trên thư mục temp rỗng, không hề có tranh chấp. Linux và macOS xanh hoàn toàn.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Nguyên nhân gốc</dt><dd class="mt-1 text-slate-300">Trên thư mục rỗng chỉ một nhánh khiến vòng lặp không publish: <code>ownerForCurrentProcess</code> trả <code>undefined</code> khi probe danh tính không <code>exhaustive</code>. Probe Windows spawn <code>powershell.exe</code> + <code>Get-CimInstance</code> với budget 2s; PowerShell khởi động nguội trên runner vượt 2s ⇒ <code>execFileAsync</code> giết tiến trình ⇒ <code>catch</code> ⇒ non-exhaustive. Đây là lần đầu <code>atomic-directory-lock.ts</code> chạy trên Windows, và <code>probeProcessIdentity</code> trước đó không có test nào.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Vì sao nghiêm trọng hơn CI</dt><dd class="mt-1 text-slate-300">Không process nào lấy được bootstrap lock trên Windows ⇒ bootstrap không bao giờ hoàn tất. R5.6/R5.13 vỡ trên một trong ba nền tảng shipped. Gate Windows sinh ra đúng để bắt loại này.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Lỗi che mất nguyên nhân</dt><dd class="mt-1 text-slate-300">Thông báo <code>bootstrap_lock_timeout</code> đổ lỗi cho tranh chấp trong khi thư mục rỗng — mất công truy ngược. Nay probe chạy <strong>trước</strong> khi bấm giờ deadline và fail nhanh với câu nói đúng nguyên nhân: deadline dùng để bound việc <em>chờ lock</em>, không phải để bound một probe OS một lần.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Ba sửa</dt><dd class="mt-1 text-slate-300"><code>probeCurrentProcessIdentity()</code> cache danh tính của chính process (chỉ cache câu trả lời exhaustive, câu mù vẫn retry được); <code>PROCESS_IDENTITY_PROBE_TIMEOUT_MS</code> 15s tách khỏi 2s của probe kết thúc process; fail nhanh với lỗi riêng. Cộng thêm cache <code>whoami</code> trong <code>credential-store</code> — SID không đổi trong vòng đời process, nhưng mỗi file/thư mục được bảo vệ đang trả tiền một subprocess.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Giữ nguyên seam của test</dt><dd class="mt-1 text-slate-300">Cache <code>whoami</code> chỉ nằm trong <em>default runner</em>, không nằm trong hàm. Runner được inject vẫn thấy đủ chuỗi lệnh, nên <code>tests/server/security.test.ts</code> vốn assert đúng thứ tự <code>whoami</code> rồi <code>icacls</code> không phải sửa một dòng.</dd></div>
+          <div class="md:col-span-2"><dt class="font-semibold text-slate-200">Hai lỗi test là của tôi, không phải của product</dt><dd class="mt-1 text-slate-300">Assert mode <code>0700</code> chạy cả trên Windows (nơi không có POSIX mode) — đã guard theo nền tảng. Assert cứng 55 python package trong khi Windows kỳ vọng 57 (core + <code>colorama</code> + <code>tzdata</code>) — nay lấy kỳ vọng từ chính evidence và chốt 55/57 theo nền tảng.</dd></div>
+        </dl>
+      </section>
     </main>
   </body>
 </html>

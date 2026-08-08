@@ -30,11 +30,43 @@ function windowsCredentialAcl(stdout: string): string {
   return `${windowsCurrentUserSid(stdout)}:(R,W)`;
 }
 
+let cachedWhoamiOutput: string | undefined;
+
+/**
+ * Default runners answer `whoami` from a per-process cache.
+ *
+ * The current user's SID cannot change while the process lives, yet every
+ * protected file and directory used to pay a fresh subprocess for it — the
+ * dominant cost of securing a tree on Windows. Injected runners are left
+ * untouched so callers that assert the exact command sequence still see it.
+ */
+function isWhoami(executable: string): boolean {
+  return executable === "whoami";
+}
+
+const defaultSyncRunner: SyncCredentialCommandRunner = (executable, args) => {
+  if (isWhoami(executable) && cachedWhoamiOutput !== undefined) {
+    return { stdout: cachedWhoamiOutput };
+  }
+  const stdout = execFileSync(executable, [...args], { encoding: "utf8" });
+  if (isWhoami(executable)) cachedWhoamiOutput = stdout;
+  return { stdout };
+};
+
+const defaultAsyncRunner: CredentialCommandRunner = async (executable, args) => {
+  if (isWhoami(executable) && cachedWhoamiOutput !== undefined) {
+    return { stdout: cachedWhoamiOutput };
+  }
+  const { stdout } = await execFileAsync(executable, [...args]);
+  if (isWhoami(executable)) cachedWhoamiOutput = stdout;
+  return { stdout };
+};
+
 /** Applies POSIX 0600 or a Windows ACL containing only the current user. */
 export async function secureCredentialFile(
   pathname: string,
   platform: NodeJS.Platform = process.platform,
-  run: CredentialCommandRunner = (executable, args) => execFileAsync(executable, [...args]),
+  run: CredentialCommandRunner = defaultAsyncRunner,
 ): Promise<void> {
   if (platform !== "win32") {
     await chmod(pathname, 0o600);
@@ -49,9 +81,7 @@ export async function secureCredentialFile(
 export function secureCredentialFileSync(
   pathname: string,
   platform: NodeJS.Platform = process.platform,
-  run: SyncCredentialCommandRunner = (executable, args) => ({
-    stdout: execFileSync(executable, [...args], { encoding: "utf8" }),
-  }),
+  run: SyncCredentialCommandRunner = defaultSyncRunner,
 ): void {
   if (platform !== "win32") {
     chmodSync(pathname, 0o600);
@@ -65,9 +95,7 @@ export function secureCredentialFileSync(
 export function secureAppDataDirectorySync(
   pathname: string,
   platform: NodeJS.Platform = process.platform,
-  run: SyncCredentialCommandRunner = (executable, args) => ({
-    stdout: execFileSync(executable, [...args], { encoding: "utf8" }),
-  }),
+  run: SyncCredentialCommandRunner = defaultSyncRunner,
 ): void {
   if (platform !== "win32") {
     chmodSync(pathname, 0o700);

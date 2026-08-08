@@ -8,6 +8,7 @@ import { ErrorCode } from "@vidcom/contracts";
 
 import { syncDirectory } from "../fs/durability";
 import {
+  probeCurrentProcessIdentity,
   probeProcessIdentity,
   processIdentityMatches,
 } from "./process-supervisor";
@@ -146,9 +147,18 @@ export class AtomicDirectoryLock {
   }
 
   private async acquireWithinDeadline(): Promise<DirectoryLockLease> {
-    const deadline = performance.now() + this.timeoutMs;
     const nonce = randomBytes(32).toString("base64url");
-    let owner: DirectoryLockOwner | undefined;
+    // Own identity is established before the clock starts: the timeout bounds
+    // waiting for a contended lock, and charging a one-off OS probe against that
+    // budget reported contention on a lock nobody held.
+    const owner = await this.ownerForCurrentProcess(nonce);
+    if (owner === undefined) {
+      this.ownershipError(
+        "this process could not probe its own OS identity exhaustively; "
+        + "refusing to publish a directory lock that cannot be proven stale later",
+      );
+    }
+    const deadline = performance.now() + this.timeoutMs;
 
     await mkdir(path.dirname(this.lockPath), { recursive: true, mode: 0o700 });
     while (performance.now() <= deadline) {
@@ -168,12 +178,8 @@ export class AtomicDirectoryLock {
         continue;
       }
 
-      owner ??= await this.ownerForCurrentProcess(nonce);
-      if (performance.now() > deadline) break;
-      if (owner !== undefined) {
-        const lease = await this.tryPublishClaim(owner, deadline);
-        if (lease !== undefined) return lease;
-      }
+      const lease = await this.tryPublishClaim(owner, deadline);
+      if (lease !== undefined) return lease;
       await this.poll(deadline);
     }
     return await this.timeout();
@@ -229,7 +235,7 @@ export class AtomicDirectoryLock {
   }
 
   private async ownerForCurrentProcess(nonce: string): Promise<DirectoryLockOwner | undefined> {
-    const probe = await probeProcessIdentity(process.pid);
+    const probe = await probeCurrentProcessIdentity();
     if (!probe.exhaustive || probe.identity === undefined) return undefined;
     return Object.freeze({
       pid: probe.identity.pid,

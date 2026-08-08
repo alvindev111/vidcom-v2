@@ -18,6 +18,13 @@ export const PROCESS_VERIFY_SWEEP_INTERVAL_MS = 100;
 export const PROCESS_VERIFY_MAX_SWEEPS = 20;
 export const PROCESS_COMMAND_TIMEOUT_MS = 2_000;
 export const PROCESS_VERIFY_TIMEOUT_MS = 5_000;
+/**
+ * The Windows identity probe pays a PowerShell cold start before CIM answers,
+ * which routinely exceeds the 2s budget the fast termination probes use. That
+ * budget turned a slow probe into a non-exhaustive one, and a non-exhaustive
+ * self-probe stops a directory lock from ever being published.
+ */
+export const PROCESS_IDENTITY_PROBE_TIMEOUT_MS = 15_000;
 
 const DEFAULT_TIMEOUT_MS = 5 * 60 * 1_000;
 const MAX_CAPTURE_BYTES = 64 * 1024;
@@ -57,6 +64,24 @@ export async function probeProcessIdentity(pid: number): Promise<ProcessIdentity
   if (process.platform === "linux") return probeLinuxProcessIdentity(pid);
   if (process.platform === "win32") return probeWindowsProcessIdentity(pid);
   return probePosixProcessIdentity(pid);
+}
+
+let currentProcessIdentity: { pid: number; result: ProcessIdentityProbeResult } | undefined;
+
+/**
+ * Probes this process's own identity at most once.
+ *
+ * A live process cannot change its own PID or start time, so repeating the probe
+ * only repeats its cost — on Windows a PowerShell spawn per call. Only an
+ * exhaustive answer is cached; an inconclusive probe stays retryable.
+ */
+export async function probeCurrentProcessIdentity(): Promise<ProcessIdentityProbeResult> {
+  if (currentProcessIdentity?.pid === process.pid) return currentProcessIdentity.result;
+  const result = await probeProcessIdentity(process.pid);
+  if (result.exhaustive && result.identity !== undefined) {
+    currentProcessIdentity = { pid: process.pid, result };
+  }
+  return result;
 }
 
 /** Error raised when direct PID probes still find survivors after the sweep budget. */
@@ -372,7 +397,7 @@ async function probeWindowsProcessIdentity(pid: number): Promise<ProcessIdentity
       "-NoProfile", "-NonInteractive", "-Command", command,
     ], {
       encoding: "utf8",
-      timeout: PROCESS_COMMAND_TIMEOUT_MS,
+      timeout: PROCESS_IDENTITY_PROBE_TIMEOUT_MS,
       env: windowsProbeEnvironment(windowsRoot, powershell),
     });
     if (result.stderr !== "") return { identity: undefined, exhaustive: false };

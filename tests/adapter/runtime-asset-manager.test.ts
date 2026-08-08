@@ -19,6 +19,7 @@ import {
   RUNTIME_MANIFEST_FILENAME,
   RuntimeAssetError,
   RuntimeAssetManager,
+  probeCurrentProcessIdentity,
   probeProcessIdentity,
   type EmbeddedRuntimeManifest,
   type RuntimeAssetManagerHooks,
@@ -26,7 +27,7 @@ import {
   type RuntimeAssetSource,
 } from "@vidcom/adapter";
 import { ErrorCode } from "@vidcom/contracts";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
   archiveFor,
@@ -292,6 +293,47 @@ describe.skipIf(!HOST_SUPPORTED)("runtime app-data confinement", () => {
     expect(after).toEqual(before);
     expect(after[0]).toEqual([]);
     expect(after[1]).toEqual(["vidcom"]);
+  });
+});
+
+describe("runtime bootstrap lock identity", () => {
+  it("probes its own identity once and reuses the exhaustive answer", async () => {
+    const first = await probeCurrentProcessIdentity();
+    expect(first.exhaustive).toBe(true);
+    expect(first.identity?.pid).toBe(process.pid);
+
+    // A live process cannot change its own PID or start time, so the cached
+    // answer must be the identical object rather than a fresh OS probe.
+    const started = Date.now();
+    const second = await probeCurrentProcessIdentity();
+    expect(second).toBe(first);
+    expect(Date.now() - started).toBeLessThan(200);
+  });
+
+  // Only the Windows probe honours the disable switch, and the identity cache is
+  // module-scoped, so a blind probe needs both a fresh module graph and win32.
+  it.skipIf(POSIX)("fails fast with an identity error, not a timeout, when the probe is blind", async () => {
+    const appDataRoot = await temporaryRoot();
+    const previous = process.env.VIDCOM_DISABLE_ENUMERATORS;
+    process.env.VIDCOM_DISABLE_ENUMERATORS = "powershell-cim";
+    vi.resetModules();
+    try {
+      const fresh = await import("@vidcom/adapter");
+      const lock = new fresh.AtomicDirectoryLock(path.join(appDataRoot, LOCK_FILENAME), {
+        timeoutMs: 30_000,
+        pollIntervalMs: 50,
+      });
+      const started = Date.now();
+      const failure = await lock.acquire().catch((error: unknown) => error);
+      expect(failure).toBeInstanceOf(Error);
+      expect((failure as Error).message).toContain("probe its own OS identity");
+      // The old code spent the whole lock budget and then blamed contention.
+      expect(Date.now() - started).toBeLessThan(30_000);
+    } finally {
+      if (previous === undefined) delete process.env.VIDCOM_DISABLE_ENUMERATORS;
+      else process.env.VIDCOM_DISABLE_ENUMERATORS = previous;
+      vi.resetModules();
+    }
   });
 });
 

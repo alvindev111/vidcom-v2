@@ -280,7 +280,8 @@ Mỗi phase chạy focused command dưới đây trên SQLite/filesystem thật,
   - Đúng **một** tiến trình giải nén; tiến trình kia chờ hoặc dùng kết quả, MUST NOT ghi chồng
   - Bốn `RuntimeAssetManager` (lock instance riêng) chạy `ensureAll` song song: `observer.preparing` được gọi **đúng 1 lần**, đúng một kết quả có `extracted` khác rỗng, cả bốn cùng `versionRoot`
   - Cross-process thật: spawn một process Node sống, ghi `owner.json` của lock trỏ vào PID + `processStartIdentity` **đo bằng `probeProcessIdentity`**, `ensureAll` trả `bootstrap_lock_timeout` và **không** ghi đè; kill process đó xong thì lần sau reclaim được lock và cài thành công
-  - _Requirements: R5.6_
+  - **Bug Windows do gate này bắt được — đừng để tái phát**: `AtomicDirectoryLock` probe danh tính của *chính process mình* mỗi lần `acquire`, và trên Windows đó là một lần spawn `powershell.exe` chạy `Get-CimInstance` với budget `PROCESS_COMMAND_TIMEOUT_MS` 2s. PowerShell khởi động nguội trên runner vượt 2s ⇒ probe `exhaustive: false` ⇒ `ownerForCurrentProcess` trả `undefined` ⇒ vòng lặp poll tới hết hạn ⇒ **mọi** `ensureAll` trên Windows chết với `bootstrap_lock_timeout` dù không có tranh chấp nào. Ba sửa: (1) `probeCurrentProcessIdentity()` cache danh tính của chính process (PID và start time không đổi trong vòng đời), (2) budget riêng `PROCESS_IDENTITY_PROBE_TIMEOUT_MS` 15s cho probe danh tính — **không** đụng 2s của probe kết thúc process, (3) probe danh tính chạy **trước** khi bấm giờ deadline và fail nhanh với lỗi nói đúng nguyên nhân, thay vì tiêu hết budget rồi đổ lỗi cho tranh chấp không tồn tại
+  - _Requirements: R5.6_ — _liên quan C.2_
 
 **Acceptance Criteria**:
 - [x] Giải nén không ghi gì vào workspace hay cạnh artifact (R5.12) — test snapshot `readdir` của workspace và thư mục cạnh artifact trước/sau `ensureAll`, không đổi

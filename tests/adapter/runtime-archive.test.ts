@@ -187,8 +187,10 @@ describe.skipIf(!HOST_SUPPORTED)("runtime archive extraction on a real filesyste
     const result = await extractRuntimeArchive({ bytes: Uint8Array.from(bytes), archive, destination });
     expect(result.files).toBe(2);
     expect(result.bytes).toBe(BODY.byteLength + SCRIPT_BODY.byteLength);
-    expect((await lstat(destination)).mode & 0o777).toBe(0o700);
+    // Windows has no POSIX mode bits; confinement there is the ACL applied by
+    // `secureAppDataDirectorySync`, which this suite does not assert.
     if (process.platform !== "win32") {
+      expect((await lstat(destination)).mode & 0o777).toBe(0o700);
       expect((await lstat(path.join(destination, SCRIPT_PATH))).mode & 0o777).toBe(SCRIPT_MODE);
     }
   });
@@ -326,14 +328,18 @@ function runBuilder(project: { config: string; output: string }): Promise<{ stdo
 
 describe.skipIf(!HOST_SUPPORTED)("runtime archive builder python package gate", () => {
   it("builds when the shipped package set matches the measured evidence exactly", async () => {
-    const project = await builderProject(await expectedPins());
+    // 55 on darwin/Linux, 57 on Windows (core plus colorama and tzdata), so the
+    // expectation comes from the evidence rather than a hard-coded count.
+    const pins = await expectedPins();
+    const project = await builderProject(pins);
     await runBuilder(project);
 
     const manifest = JSON.parse(
       await readFile(path.join(project.output, "runtime-manifest.json"), "utf8"),
     ) as { archives: Array<{ key: string }>; pythonPackages: Record<string, string[]> };
     expect(manifest.archives.map((archive) => archive.key)).toEqual(["node"]);
-    expect(manifest.pythonPackages[HOST_TAG]).toHaveLength(55);
+    expect(manifest.pythonPackages[HOST_TAG]).toEqual([...pins]);
+    expect(pins.length).toBe(HOST_TAG === "win32-x64" ? 57 : 55);
   });
 
   it.each([
