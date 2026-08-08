@@ -11,6 +11,8 @@ export enum ErrorCode {
   OriginNotAllowed = "origin_not_allowed",
   AssetNotAllowed = "asset_not_allowed",
   PathOutsideProject = "path_outside_project",
+  /** The operating system refused to read a path. An answer, not a fault. */
+  PathPermissionDenied = "path_permission_denied",
   ProjectNotFound = "project_not_found",
   ProjectInvalid = "project_invalid",
   IdentityParseError = "identity_parse_error",

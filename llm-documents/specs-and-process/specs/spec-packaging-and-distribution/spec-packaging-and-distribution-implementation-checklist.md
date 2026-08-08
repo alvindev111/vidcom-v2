@@ -567,9 +567,13 @@ Mỗi phase chạy focused command dưới đây trên SQLite/filesystem thật,
 **Estimate**: 10 SP
 
 **Tasks**:
-- [ ] F.1 Port + adapter cho browse
+- [~] F.1 Port + adapter cho browse — **core xong, adapter còn lại**
   - Chính sách (token, giới hạn, canonicalize) ở `core`; truy cập `node:fs` ở `adapter/fs` — `core` **bị cấm** import `node:fs` ([steering/02](../../../steering/02-project-layout.md) §2)
   - Trả `Result<T, DomainError>`, không throw ([steering/03](../../../steering/03-architecture-ddd.md) §2.2)
+  - **Đã làm — nửa `core`**: [`filesystem-browser.ts`](../../../../packages/core/src/service/filesystem-browser.ts) giữ toàn bộ chính sách (phân trang, cap page size, mapping mã lỗi, quy tắc tên thư mục) sau `FilesystemBrowserPort`. Không throw ở đâu: thư mục thiếu/bị từ chối/chậm là **kết quả bình thường** khi hỏi về filesystem của người dùng, mỗi thứ một mã riêng
+  - **Chỉ thư mục mới được cấp token**, file chỉ có tên: cấp handle cho file là mời gọi dùng nó làm đích
+  - **Bug tự bắt lúc viết**: bản đầu của `resolveToken` gọi `tokens.resolve` với identity giả để lấy path — mà `resolve` **xoá token** khi identity lệch. Thêm `peek()` (đọc path, không kiểm identity) rồi mới `resolve` với identity đọc lúc dùng
+  - **Còn lại — nửa `adapter`**: hiện thực `FilesystemBrowserPort` bằng `node:fs` trong `adapter/fs`, gồm gốc ổ đĩa Windows. Đi cùng F.2 (worker eval) và F.8
   - _Requirements: R1.1, R1.2_ — _Design: §5.0, §5.2_
 - [ ] F.2 Worker **dạng eval**
   - `new Worker(<source>, { eval: true })` — MUST NOT trỏ file path. Trong SEA không có file thật; đây đúng cơ chế đã làm esbuild treo ở S1b, và chế độ hỏng là **treo im lặng**
@@ -603,8 +607,11 @@ Mỗi phase chạy focused command dưới đây trên SQLite/filesystem thật,
   - Lớp thứ tư chống pass rỗng: catalogue phải còn > 10 tool. Không có nó, xoá sạch tool sẽ làm mọi assert trên xanh
   - Lý do: `/v1/system/*` cho phép đi khắp cây thư mục của máy. Nó thuộc về phiên loopback đã xác thực của UI; một agent gọi được qua tool sẽ có năng lực người dùng chưa từng cấp
   - _Requirements: R1.4_ — _Design: §7.0_
-- [ ] F.7 Logic test
+- [x] F.7 Logic test
   - Browse entry mapping; token binding; phân trang; lỗi có mã cho từng nhánh R1.7
+  - [`filesystem-browser.test.ts`](../../../../tests/core/filesystem-browser.test.ts) 16 test trên cây in-memory — **không chạm `node:fs`**, vì thứ đang kiểm là chính sách. Bốn nhánh R1.7 mỗi nhánh một mã; `permission-denied` ⇒ `path_permission_denied` (**403, không 500**): bị hệ điều hành của chính người dùng từ chối là một câu trả lời, không phải lỗi hệ thống
+  - Phân trang chốt cả ba: đủ trang, `cursor` vắng mặt ở trang cuối, và page size quá lớn bị **cap** chứ không được tôn trọng
+  - **Mã lỗi thiếu lần thứ ba**: `path_permission_denied` không có trong `ErrorCode`. Thêm, map 403, redact khỏi MCP công khai; `tools/list` nguyên vẹn
   - _Requirements: R1.2, R1.7_
 - [ ] F.8 Integration test trên fs thật
   - Thư mục 200k entry ⇒ phân trang, không treo · permission denied ⇒ mã lỗi, **không 500** · timeout ⇒ worker bị terminate · TOCTOU: symlink đổi giữa hai request ⇒ token cũ không còn hợp lệ

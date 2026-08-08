@@ -177,6 +177,7 @@ describe("API response contracts", () => {
       "origin_not_allowed",
       "path_invalid",
       "path_outside_project",
+      "path_permission_denied",
       "path_required",
       "path_timeout",
       "payload_too_large",

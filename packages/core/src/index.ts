@@ -16,6 +16,7 @@ export * from "./service/write-authority";
 export * from "./service/workspace-mutation-coordinator";
 export * from "./service/canonical-json";
 export * from "./service/browse-token-store";
+export * from "./service/filesystem-browser";
 export * from "./service/composite-recovery";
 export * from "./service/approval-service";
 export * from "./service/job-scheduler";

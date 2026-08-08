@@ -113,6 +113,19 @@ export class BrowseTokenStore {
     return ok(held);
   }
 
+  /**
+   * Reads a token's path without checking the directory's identity.
+   *
+   * Needed because the identity comparison requires stat'ing the path, and the
+   * path is only known from the token. Callers MUST follow this with `resolve`;
+   * peeking alone proves nothing about what the path names now.
+   */
+  peek(token: string, sessionId: string): BrowseToken | undefined {
+    this.evictExpired();
+    const held = this.tokens.get(token);
+    return held && held.sessionId === sessionId ? held : undefined;
+  }
+
   /** Drops every token belonging to a session that has ended. */
   revokeSession(sessionId: string): void {
     for (const [key, held] of this.tokens) {

@@ -59,6 +59,8 @@ const ERROR_STATUS = {
   [ErrorCode.BridgeCredentialInvalid]: 401,
   [ErrorCode.BridgeRotationInProgress]: 409,
   // 409: the workspace is doing something else, and retrying later can succeed.
+  // 403: the user's own operating system said no; the request was well formed.
+  [ErrorCode.PathPermissionDenied]: 403,
   [ErrorCode.WorkspaceBusy]: 409,
   // 503: mid-switch is explicitly temporary, so it advertises a retry.
   [ErrorCode.WorkspaceSwitching]: 503,
