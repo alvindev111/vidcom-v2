@@ -896,8 +896,11 @@ Mỗi phase chạy focused command dưới đây trên SQLite/filesystem thật,
   - [`remote-tool-invoker.test.ts`](../../../../tests/cli/remote-tool-invoker.test.ts) 5 test: invoker remote trả **đúng hình dạng `Result`** mà registry trả — thay thế được cho nhau chính là toàn bộ điểm của seam; forward `protocolVersion`; giữ mã lỗi daemon; lỗi lạ thành `daemon_unavailable`; và đọc thẳng `packages/mcp/src/registry/types.ts` + `packages/mcp/package.json` để một lần dời code sang `mcp` hỏng thành **test đỏ** chứ không thành pipeline đỏ
   - Thêm **một** fixture vào `packageBoundaryFixtures`: import **tương đối** từ `packages/mcp/` sang `adapter/src/daemon/**`. Đó là cách người ta thử sau khi bare specifier bị từ chối, và `adapter/daemon` là thư mục bên trong `@vidcom/adapter` chứ không phải package riêng — cùng một import đội mũ khác. `git diff` script chỉ có **9 dòng thêm, 0 dòng xoá**: siết, không nới
   - _Requirements: R2.2_ — _Design: §5.0 hệ quả 4_
-- [ ] I.3 Handshake
+- [x] I.3 Handshake
   - So canonical root **và** instance id; PID/port sống không đủ. Mismatch ⇒ 409 `daemon_identity_mismatch`, không tiếp tục call
+  - [`bridge.ts`](../../../../packages/server/src/routes/bridge.ts) so cả hai **trước** mọi việc khác. PID sống trên port sống chỉ chứng minh *có thứ gì đó* đang nghe — sau một lần restart thứ đang nghe là một daemon khác, và nó sẽ trả lời mọi call sau đó rất thuyết phục
+  - `/bridge/v1/ready` trả `leaseHeld`, và discovery validate bằng nó chứ không bằng `/v1/health`: tiến trình sống và trả lời được trong khi **không giữ lease nào**, client attach vào đó nhận một daemon không ghi được
+  - **Chỉ credential bridge hệ thống** qua được: credential MCP của người dùng là bearer hợp lệ cho `/api/mcp`, nhận nó ở đây là trao quyền điều khiển vòng đời daemon cho bất kỳ agent nào đã cấu hình
   - _Requirements: R2.13_ — _Design: §7.8_
 - [x] I.4 Attachment lease
   - Heartbeat 5 s, TTL 20 s, deadline 5 s, grace 60 s. Id random 256-bit bound credential+instance. Attach/renew so `credentialId` với `app_settings.bridge_credential_id`
@@ -918,12 +921,15 @@ Mỗi phase chạy focused command dưới đây trên SQLite/filesystem thật,
   - Sửa [`composition-root.ts`](../../../../packages/cli/src/composition-root.ts) để registry được dựng quanh một invoker thay vì nối cứng vào `application`. `ToolDefinition` vẫn là nguồn duy nhất cho schema/list/era — invoker chỉ đổi **chỗ thực thi**
   - Đường local (stdio hôm nay, `vidcom app`) MUST giữ nguyên hành vi: đây là refactor, không phải tính năng
   - _Requirements: R2.2, R2.3_ — _Design: §5.7_
-- [ ] I.7b Route `/api/bridge/v1/tools/:name` phía daemon
+- [x] I.7b Route `/api/bridge/v1/tools/:name` phía daemon
   - Validate bằng catalogue của A.4 (`server` không được import `mcp`), rồi thực thi qua invoker local do composition root inject
   - Tên tool không có trong catalogue ⇒ lỗi có mã, MUST NOT chuyển tiếp xuống Core
+  - Dùng `TOOL_SCHEMA_CATALOGUE` của `@vidcom/contracts` — `server` **không** import `mcp`, boundary giữ nguyên. Test chốt cả hai vế: tên lạ trả 404 **và** invoker **không được gọi lần nào**. Chuyển tiếp một tên lạ là để bridge chạm tới bất kỳ thứ gì daemon tình cờ đăng ký, tức allowlist chỉ còn cái tên
   - _Requirements: R2.3, R2.11_ — _Design: §7.10, §5.0 hệ quả 1_
-- [ ] I.7c Bridge forward danh tính, daemon sở hữu audit
+- [x] I.7c Bridge forward danh tính, daemon sở hữu audit
   - Forward `protocolVersion`, credential id, attachment id, actor=`agent`. Audit **ghi ở daemon**, không ở bridge — bridge chết giữa lời gọi thì audit vẫn phải đúng
+  - Route đọc `credentialId` từ chính perimeter rồi truyền xuống invoker; nó **không tự tạo** danh tính nào. Audit do `ToolRegistry` của daemon ghi (actor `agent` đã cố định ở đó), nên bridge chết giữa lời gọi không mang theo bản ghi của lời gọi
+  - [`bridge-routes.test.ts`](../../../../tests/server/bridge-routes.test.ts) 14 test trên `createServerApp` thật, gồm cả hai ca từ chối bearer và ca forward danh tính
   - _Requirements: R2.9_ — _Design: §5.7, DR-6_
 - [ ] I.8 Auto-start + race
   - `ensure` spawn `serve --ensure` khi cần; kẻ thua race lease **chuyển thành client**, không throw rồi chết. Daemon sinh theo đường này MUST NOT mở browser
@@ -1551,6 +1557,12 @@ Chi tiết: [Detailed Goals](./spec-packaging-and-distribution-detailed-goal.md)
   - Summary: Attachment registry trong memory của daemon — heartbeat 5 s, TTL 20 s, grace 60 s, id 256-bit, cộng bốn điều kiện auto-shutdown.
   - Decisions: Đặt ở `packages/server/src/bridge/` theo đúng mẫu `auth/nonce.ts`/`auth/session.ts` (memory + `ClockPort` inject + random inject). `renew` so cả `credentialId` lẫn `instanceId` vì id mang đi được. `hasActiveWork()` được inject thay vì registry tự đếm — work hold suy từ job store là cách duy nhất đúng khi `--detach` cho CLI thoát ngay. Quyền tự tắt mất **vĩnh viễn** sau attachment `ui`. Grace period chạy từ lúc bắt đầu rỗi, không từ lúc bị hỏi.
   - Blockers: Không có; 11/11 test, typecheck, lint 0 error, boundaries xanh. Nối vào route và job store thật là I.7b/I.8.
+
+2026-08-09 — Phase I, Task I.3 + I.7b + I.7c
+  - Files: `packages/server/src/routes/bridge.ts`, `packages/server/src/app.ts`, `packages/server/src/index.ts`, `tests/server/bridge-routes.test.ts`, checklist và implementation notes
+  - Summary: Route bridge phía daemon — handshake, ready, attachments, tools — cắm vào chuỗi middleware cố định của `createServerApp`.
+  - Decisions: Bridge dùng **bearer** như MCP chứ không dùng session trình duyệt (client là agent host), nhưng siết thêm: chỉ `app_settings.bridge_credential_id` qua được, vì credential MCP người dùng là bearer hợp lệ cho `/api/mcp` và nhận nó ở đây là trao quyền vòng đời daemon cho agent bất kỳ. Validate tên tool bằng `TOOL_SCHEMA_CATALOGUE` của `contracts` để `server` không phải import `mcp`. Renew một attachment đã hết hạn trả **404** chứ không 401: nó không phải vấn đề phân quyền, và "attach lại đi" là câu trả lời duy nhất dùng được. `DELETE` một attachment đã biến mất trả 204 vì đó đúng là trạng thái caller muốn.
+  - Blockers: Không có; 14/14 test bridge, toàn `tests/server` 117/117, typecheck, lint 0 error, boundaries xanh. Nối invoker thật vào composition root là I.7a.
 
 Format:
 ```

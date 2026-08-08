@@ -21,6 +21,7 @@ import { createJobRoutes } from "./routes/jobs";
 import { createNarrationRoutes, type NarrationRouteDependencies } from "./routes/narration";
 import { createEventRoutes } from "./routes/events";
 import { createProjectWriteRoutes, type ProjectWriteRouteDependencies } from "./routes/project-writes";
+import { createBridgeRoutes, type BridgeRouteDependencies } from "./routes/bridge";
 import { createMcpRoutes, type McpRouteDependencies } from "./routes/mcp";
 import { createDeliveryLoopRoutes, type DeliveryLoopRouteDependencies } from "./routes/delivery-loop";
 import { ErrorCode, MAX_BGM_BYTES, MAX_SOURCE_BYTES } from "@vidcom/contracts";
@@ -32,6 +33,7 @@ export interface ServerAppDependencies {
   sessions: SessionPort;
   mcpCredentials?: McpCredentialVerifier;
   mcp?: McpRouteDependencies;
+  bridge?: BridgeRouteDependencies;
   log?: (line: string) => void;
   trace?: (step: string) => void;
   projectReads?: ProjectReadRouteDependencies;
@@ -64,7 +66,12 @@ export function createServerApp(deps: ServerAppDependencies) {
   register("cors", strictCors(deps.uiOrigins));
   const browserAuth = sessionAuth(deps.sessions);
   const mcpAuth = mcpBearerAuth(deps.mcpCredentials ?? { verify: async () => null });
+  // The bridge authenticates the same way MCP does — a bearer, not a browser
+  // session — because the client is an agent host, not a page. Which bearer is
+  // acceptable there is narrower, and the bridge routes enforce that
+  // themselves.
   app.use("*", observed("auth", (c, next) => c.req.path.startsWith("/api/mcp")
+    || c.req.path.startsWith("/api/bridge")
     ? mcpAuth(c, next)
     : browserAuth(c, next), deps.trace));
   const limits = {
@@ -84,6 +91,7 @@ export function createServerApp(deps: ServerAppDependencies) {
 
   app.route("/v1", createAuthRoutes(deps.nonces, deps.sessions, deps.trace));
   if (deps.mcp) app.route("/", createMcpRoutes(deps.mcp));
+  if (deps.bridge) app.route("/", createBridgeRoutes(deps.bridge));
   if (deps.projectReads) app.route("/", createProjectReadRoutes(deps.projectReads));
   if (deps.jobs) app.route("/v1", createJobRoutes(deps.jobs));
   if (deps.events) app.route("/v1", createEventRoutes(deps.events));
