@@ -334,25 +334,27 @@ Mỗi phase chạy focused command dưới đây trên SQLite/filesystem thật,
   - **Khoảng trống có ý thức**: từ C tới E.4 **không ai** ghi `active_workspace`. Đây là hệ quả đã lường trước của việc tách, không phải sót
   - Ghi một dòng vào release notes cùng chỗ với L.4. Help của `render` nói rõ `--workspace` **không** đổi mặc định của UI nữa — câu đó thực thi ở **J.3** vì `commands/render.ts` chưa tồn tại; ở đây chỉ chốt nội dung
   - _Requirements: R1.5_ — _Design: §7.13_
-- [ ] C.5 Mint/load bridge bearer
+- [x] C.5 Mint/load bridge bearer
   - Dùng lại [`BridgeCredentialStore`](../../../../packages/adapter/src/fs/credential-store.ts#L86) và đường dẫn `<app-data>/credentials` **đang có** — MUST NOT tạo file mới. Ghi id vào `app_settings.bridge_credential_id`; label `system:bridge` chỉ để hiển thị
   - _Requirements: R2.5_ — _Design: §4.4, §6.4_
-- [ ] C.6 Xoay bearer bốn bước
+- [x] C.6 Xoay bearer bốn bước
   - `rotate(id, 60_000)` → ghi file atomic → cập nhật `app_settings` → revoke attachment. Overlap **60 s, không phải 0** (0 mở cửa sổ giữa DB commit và rename file, nơi client tiêu hết một lần đọc lại rồi chết)
   - `credential rotate --bridge` tra id từ `app_settings`; `credential revoke <id-bridge>` **bị từ chối**
   - _Requirements: R2.5_ — _Design: §4.4_
-- [ ] C.7 Reconciliation mọi boot
+- [x] C.7 Reconciliation mọi boot
   - Bất biến: **file là secret duy nhất, DB/settings là projection**. Bốn nhánh theo bảng §4.4; replacement mồ côi nhận qua `rotated_from`; row `active` label `system:bridge` không phải `S` bị revoke
+  - **Lệch có chủ ý ở nhánh mồ côi**: §4.4 ghi "revoke replacement mồ côi rồi **xoay lại** từ credential trong file". Nhưng credential trong file lúc đó đang `rotating`, mà [`McpCredentialService.rotate`](../../../../packages/core/src/service/mcp-credential-service.ts#L84) chỉ nhận `active` — gọi đúng chữ sẽ ném `credential_invalid`. Dùng `issue()` thay thế: cùng trạng thái cuối, file có secret dùng được, và bản cũ **giữ nguyên phần overlap còn lại** thay vì bị cắt — đúng mục đích của overlap. Không thêm cổng mới vào `core` chỉ để hợp chữ
+  - Id credential **không sinh từ đồng hồ**: test tiêm clock đứng yên, hai lần xoay trong cùng một thời điểm sẽ đụng primary key. Dùng `randomUUID`
   - _Requirements: R2.5_ — _Design: §4.4, §5.1_
 - [x] C.8 Migration `workspace_operation.kind += project_import`
   - Forward-only; rebuild bảng nếu check constraint đòi; giữ nguyên id/status
   - `20260808073614_normal_stature` — check constraint buộc rebuild bảng, và drizzle sinh đúng hình dạng `INSERT … SELECT` giữ nguyên `id`, `status` cùng mọi cột khác
   - `test:schema-drift` xanh sau khi sinh; **một test khác phải sửa**: [`mcp-database-migration.test.ts`](../../../../tests/adapter/mcp-database-migration.test.ts) chốt cứng số migration đã áp (12 → 13). Đây là assert đếm, không phải hành vi
   - _Requirements: R7.6_ — _Design: §6.5_
-- [ ] C.9 Logic test
+- [x] C.9 Logic test
   - Thứ tự bốn bước; bảng bốn nhánh reconciliation; luật thứ tự khoá
   - _Requirements: R5.13, R2.5_
-- [ ] C.10 Integration test trên SQLite + fs thật — **kill ở từng ranh giới**
+- [x] C.10 Integration test trên SQLite + fs thật — **kill ở từng ranh giới**
   - Kill sau DB rotate, restart **trong** 60 s ⇒ revoke mồ côi + xoay lại; restart **sau** 60 s ⇒ **mint mới**; kill sau ghi file ⇒ **roll forward** `S`, không mint; kill sau settings ⇒ tự lành
   - File bị xoá ⇒ mint mới; `hash(F)` khớp row `revoked` ⇒ nhánh mint, không phải roll-forward
   - _Requirements: R2.5_ — _Design: §11.3_

@@ -1,4 +1,5 @@
 export * from "./bootstrap-coordinator";
+export * from "./bridge-credential";
 export * from "./composition-root";
 export * from "./startup";
 export * from "./next-host";
