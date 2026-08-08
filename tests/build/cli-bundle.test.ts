@@ -6,6 +6,7 @@ import path from "node:path";
 import {
   assertEsbuildAvailable,
   esbuildBinaryPath,
+  esbuildEnvironment,
   findTopLevelAwait,
 } from "../../scripts/build-cli-bundle.mjs";
 import { afterEach, describe, expect, it } from "vitest";
@@ -64,6 +65,19 @@ describe("cjs bundle preflight", () => {
     // Every asynchronous start-up step belongs inside main(); pointing at the
     // line is what turns that rule into an actionable message.
     expect(findTopLevelAwait(source)).toBe(3);
+  });
+
+  it("keeps esbuild off the worker thread that never starts in a SEA", async () => {
+    // Spike s1b measured this: esbuild's sync API starts a worker from
+    // `__filename`, which is not a real file inside a SEA, so `Atomics.wait`
+    // blocks forever with no error and no output. Both settings are needed —
+    // disabling the worker forces the child_process path, and that path can no
+    // longer locate esbuild by itself.
+    const root = await runtimeRoot(true);
+    const environment = esbuildEnvironment(root, { PATH: "/usr/bin" });
+    expect(environment.ESBUILD_WORKER_THREADS).toBe("0");
+    expect(environment.ESBUILD_BINARY_PATH).toBe(esbuildBinaryPath(root));
+    expect(environment.PATH).toBe("/usr/bin");
   });
 
   it("keeps the real CLI entry free of top-level await", async () => {

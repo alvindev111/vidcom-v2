@@ -38,6 +38,25 @@ export function assertEsbuildAvailable(runtimeRoot) {
   return binary;
 }
 
+/**
+ * Environment that keeps esbuild off its worker thread.
+ *
+ * esbuild's synchronous API runs through a worker started from `__filename`,
+ * which is not a real file inside a SEA — the worker never comes up and
+ * `Atomics.wait` blocks forever, with no error and no output. Phase 4 spike
+ * s1b measured this. Disabling the worker drops esbuild onto its
+ * `child_process` path, which then needs an explicit binary because it can no
+ * longer locate itself. Both settings are required; either one alone still
+ * hangs.
+ */
+export function esbuildEnvironment(runtimeRoot, base = process.env) {
+  return {
+    ...base,
+    ESBUILD_BINARY_PATH: esbuildBinaryPath(runtimeRoot),
+    ESBUILD_WORKER_THREADS: "0",
+  };
+}
+
 const TOP_LEVEL_AWAIT = /^\s*await\s/mu;
 
 /**
