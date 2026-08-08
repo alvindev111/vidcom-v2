@@ -493,8 +493,11 @@ Mỗi phase chạy focused command dưới đây trên SQLite/filesystem thật,
 - [ ] E.1 Tách `startVidcomFoundation`
   - Thành `prepareFoundation` (không listener) + lifecycle handle `stop()` idempotent. `createInfrastructure(config)` nướng `workspaceRoot` và `createApplication(infra, leaseId)` nướng `leaseId` ([`startup.ts:154`](../../../../packages/cli/src/startup.ts#L154), [`:216`](../../../../packages/cli/src/startup.ts#L216)) — đổi workspace là tear-down + rebuild toàn bộ
   - _Requirements: R1.12_ — _Design: §5.3_
-- [ ] E.2 `LoopbackHost` + `currentApp` đổi được
+- [x] E.2 `LoopbackHost` + `currentApp` đổi được
   - Listener đọc `currentApp` mỗi request; swap là assignment đồng bộ; `/api/**` vào Hono app, còn lại vào static host
+  - [`loopback-host.ts`](../../../../packages/cli/src/loopback-host.ts) đọc target **lúc gọi**, không capture lúc dựng. Nếu listener đóng kín một target thì đổi workspace phải dựng listener mới ⇒ cổng mới ⇒ mất session, đúng thứ nó sinh ra để tránh
+  - Test chốt request đang bay **không** straddle được swap: request cũ hoàn tất trên target cũ, còn request mới đã thấy target mới ngay
+  - Chốt cả `/apixyz` và `/api` (không có dấu `/` cuối) đi vào **static**, không phải API — định tuyến nhầm sẽ lộ bề mặt cần xác thực ở một đường dẫn ngoài ý định
   - _Requirements: R1.17, R4.4_ — _Design: §5.4_
 - [x] E.3 Trạng thái "chưa chọn workspace"
   - Bootstrap app chỉ đăng ký `/v1/auth/*`, `/v1/system/*`, `/v1/health` — **không** `/api/bridge/**`. MUST NOT im lặng nhận `cwd` làm workspace

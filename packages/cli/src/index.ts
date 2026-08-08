@@ -3,6 +3,7 @@ export * from "./bridge-credential";
 export * from "./node-sentinel";
 export * from "./foundation-state";
 export * from "./bootstrap-app";
+export * from "./loopback-host";
 export * from "./composition-root";
 export * from "./startup";
 export * from "./next-host";
