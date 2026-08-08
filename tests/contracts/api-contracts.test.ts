@@ -163,6 +163,7 @@ describe("API response contracts", () => {
       "daemon_identity_mismatch",
       "daemon_unavailable",
       "download_tls_untrusted",
+      "download_unavailable",
       "duplicate_mutation_target",
       "duration_overflow",
       "host_not_allowed",

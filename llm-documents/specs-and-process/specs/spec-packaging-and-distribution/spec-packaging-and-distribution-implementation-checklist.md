@@ -437,9 +437,16 @@ Mỗi phase chạy focused command dưới đây trên SQLite/filesystem thật,
   - **Đã làm nửa sidecar**: `VieNeuTtsProviderOptions.caBundlePath` đặt `SSL_CERT_FILE` + `REQUESTS_CA_BUNDLE`. Interpreter đóng băng không mang trust store riêng, nên truyền bundle là đường được hỗ trợ; tắt xác minh hay nhặt từ store OS chỉ đổi một lỗi tải thành một lỗi im lặng
   - **Chưa làm nửa Node**: `NODE_EXTRA_CA_CERTS` cần `runtime.caBundlePath` có mặt trong `RuntimePaths`, mà D.3b chưa truyền. Làm cùng D.3b
   - _Requirements: R6.5_ — _Design: §5.13_
-- [ ] D.8 Download cache coordinator
+- [x] D.8 Download cache coordinator
   - Per-component lock, partial marker, timeout. Partial marker là **nguồn sự thật duy nhất**: `hyperframes browser path` trả exit 0 cho binary 1 MB (đo ở S9)
+  - Marker ghi **trước** byte đầu tiên và chỉ xoá khi download báo thành công. Thất bại, timeout, hay crash đều để lại trạng thái `partial` **qua cả restart** — test dựng một coordinator mới như lần boot sau và chốt vẫn đọc ra `partial`
+  - Marker **hỏng/không đọc được vẫn tính là `partial`**, không phải `ready`: marker tồn tại nghĩa là đã có ai đó bắt đầu tải. Đây là hướng bảo thủ đúng
+  - Khoá **theo từng component**: hai lần tải cùng component bị serialize, nhưng `models` tải chậm **không** chặn `chromium` — test chốt cả hai chiều
+  - **Thiếu `ErrorCode.DownloadUnavailable`** — xem ghi chú ngay dưới
   - _Requirements: R6.5_ — _Design: §5.18_
+  - > [!WARNING]
+    > **Lệch contract phát hiện ở D.8, đã sửa chứ không né.** Design §5.18 yêu cầu adapter ánh xạ sang `download_unavailable`, nhưng `ErrorCode` chỉ có `download_tls_untrusted` — Phase A sót. Đã thêm `DownloadUnavailable` vào [`errors.ts`](../../../../packages/contracts/src/errors.ts), map 502 ở `error-mapper.ts`, và gộp vào nhánh redact của `mcp/error-map.ts` để nó **không** lọt vào vocabulary MCP công khai.
+    > Hai test đếm phải cập nhật: `api-contracts` (danh sách vocabulary) và `error-map` (14 → 15 mã private). **`tools/list` không đổi một byte** — `test:golden` và `test:mcp-catalogue` xanh không cần sửa, nên đây không phải trường hợp "sửa snapshot cho khớp code" mà luật cấm.
 - [ ] D.9 Cảnh báo version skew HyperFrames
   - Project khai version khác artifact ⇒ cảnh báo có mã, MUST NOT im lặng render bằng version khác, MUST NOT tự nâng file người dùng
   - _Requirements: R6.9_ — _Design: §5.18_

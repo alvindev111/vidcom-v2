@@ -59,6 +59,8 @@ const ERROR_STATUS = {
   [ErrorCode.BridgeCredentialInvalid]: 401,
   [ErrorCode.BridgeRotationInProgress]: 409,
   [ErrorCode.DownloadTlsUntrusted]: 502,
+  // A dependency the daemon could not fetch, not a fault in the request.
+  [ErrorCode.DownloadUnavailable]: 502,
   [ErrorCode.PayloadTooLarge]: 413,
   [ErrorCode.DaemonIdentityMismatch]: 409,
   [ErrorCode.DaemonUnavailable]: 503,

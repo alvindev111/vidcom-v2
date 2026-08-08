@@ -58,6 +58,12 @@ export enum ErrorCode {
   BridgeCredentialInvalid = "bridge_credential_invalid",
   BridgeRotationInProgress = "bridge_rotation_in_progress",
   DownloadTlsUntrusted = "download_tls_untrusted",
+  /**
+   * A runtime download could not complete: unreachable, timed out, or left
+   * partial. Distinct from `download_tls_untrusted`, which names a trust
+   * failure the user can fix by supplying a bundle.
+   */
+  DownloadUnavailable = "download_unavailable",
   /** An HTTP body crossed its route limit; project asset quotas use `too_large`. */
   PayloadTooLarge = "payload_too_large",
   DaemonIdentityMismatch = "daemon_identity_mismatch",

@@ -56,6 +56,7 @@ function protocolCode(error: DomainError, era: Era): number {
     case ErrorCode.BridgeCredentialInvalid:
     case ErrorCode.BridgeRotationInProgress:
     case ErrorCode.DownloadTlsUntrusted:
+    case ErrorCode.DownloadUnavailable:
     case ErrorCode.DaemonIdentityMismatch:
     case ErrorCode.DaemonUnavailable:
     case ErrorCode.CompilerUnavailable:
