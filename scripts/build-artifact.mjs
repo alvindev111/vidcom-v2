@@ -74,7 +74,11 @@ export function planSteps() {
   return [
     { name: "runtime archives (B.3)", command: process.execPath, args: ["scripts/build-runtime-archives.mjs"] },
     { name: "static export (G.6)", command: "npm", args: ["run", "build"] },
-    { name: "frontend pack (H.2)", command: process.execPath, args: ["scripts/build-frontend-pack.mjs"] },
+    // The pack step runs under Bun so it can read the resolver in
+    // `sea-static-host.ts` directly. The manifest's cache policy has to be the
+    // one the host applies at runtime, and the only way to guarantee that is to
+    // ask the same function rather than restate its rules here.
+    { name: "frontend pack (H.2)", command: "bun", args: ["scripts/build-frontend-pack.mjs"] },
     { name: "cjs bundle (H.1)", command: process.execPath, args: ["scripts/build-cli-bundle.mjs"] },
     { name: "sea native (H.4)", command: process.execPath, args: ["scripts/build-sea.mjs"] },
     { name: "verify artifact (L.1)", command: process.execPath, args: ["scripts/verify-artifact.mjs"] },

@@ -455,6 +455,20 @@
           <div><dt class="font-semibold text-slate-200"><code>handleNextHostedRequest</code> ở lại</dt><dd class="mt-1 text-slate-300">Route đi nhưng hàm ở lại: nhiều suite server dùng chính nó làm harness gửi request thật. Xoá theo sẽ là dọn quá tay đúng nghĩa.</dd></div>
         </dl>
       </section>
+      <section class="mt-6 rounded-2xl border border-violet-500/30 bg-slate-900 p-6">
+        <div class="flex flex-wrap items-center justify-between gap-3">
+          <h2 class="text-2xl font-semibold">2026-08-09 · Phase H — H.2 frontend pack</h2>
+          <span class="rounded-full bg-violet-400/10 px-3 py-1 text-sm text-violet-300">57 asset · 2,38 MB · 22 test</span>
+        </div>
+        <dl class="mt-6 grid gap-5 md:grid-cols-2">
+          <div><dt class="font-semibold text-slate-200">Một nguồn sự thật cho cache policy</dt><dd class="mt-1 text-slate-300">Manifest hỏi chính <code>resolveAsset</code> thay vì khai lại luật. Quyết hai lần là cách build và host lệch nhau, và cái lệch đáng sợ là một asset cache vĩnh viễn theo luật host chưa bao giờ áp.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Đổi runtime của một bước build</dt><dd class="mt-1 text-slate-300">Hệ quả trực tiếp: bước pack chạy dưới <code>bun</code> chứ không <code>node</code>, vì nó phải import thẳng module TypeScript. Test ghim <code>command === "bun"</code> kèm lý do, để lần sau ai đó "sửa cho đồng bộ" sẽ đọc được vì sao không.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Không kẽ hở, không chồng lấn</dt><dd class="mt-1 text-slate-300">Chồng lấn phục vụ đuôi asset này thành đầu asset kia; kẽ hở phình binary mà không ai thấy. Test cộng dồn offset và so với kích thước pack thật.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Raw bytes, không base64</dt><dd class="mt-1 text-slate-300">Base64 tốn thêm một phần ba dung lượng <strong>bên trong binary</strong> cộng một lần decode toàn bộ frontend trước byte đầu tiên được phục vụ.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Export rỗng là lỗi, không phải pack rỗng</dt><dd class="mt-1 text-slate-300">Pack rỗng cho ra artifact khởi động được, 404 mọi trang, và đọc như lỗi routing. Fail ở build rẻ hơn nhiều.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Chỉ regular file</dt><dd class="mt-1 text-slate-300">Symlink trong export nghĩa là pack trỏ ra ngoài chính nó — mà cả điểm của pack là tự chứa.</dd></div>
+        </dl>
+      </section>
     </main>
   </body>
 </html>

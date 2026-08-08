@@ -790,8 +790,13 @@ Mỗi phase chạy focused command dưới đây trên SQLite/filesystem thật,
   - Test build **thật** rồi `require` bundle bằng Node trong thư mục tạm **không có `node_modules` ở bất kỳ cấp cha nào**: một import mà bundler để external hỏng ngay tại đây thay vì ở packaged smoke. `MODULE_NOT_FOUND` là khẳng định riêng vì đó là hình dạng lỗi thật
   - **Papercut đã biết, không sửa bằng cách nới ESLint**: `dist/` bị `.gitignore` nhưng **không** nằm trong ignore của ESLint, nên `lint` cục bộ đỏ sau khi build (bundle 14 MB bị quét). CI checkout sạch nên xanh. Giữ đúng tiền lệ Phase A — isolate artifact khi cần chạy lint chính xác, MUST NOT đổi config
   - _Requirements: R4.14_ — _Design: DR-1, §16 C-7_
-- [ ] H.2 Frontend pack + manifest
+- [x] H.2 Frontend pack + manifest
   - `frontend-manifest.json` (`path, offset, length, sha256, mime, cachePolicy`) + `frontend.pack` raw bytes, **không base64**
+  - [`build-frontend-pack.mjs`](../../../../scripts/build-frontend-pack.mjs) đọc `out/` của G.6, nối raw bytes vào `dist/sea/frontend.pack` và ghi manifest offset. Chạy thật: **57 asset, 2.379.699 byte**
+  - **`cachePolicy` hỏi chính `resolveAsset`, không tự quyết**: quyết hai lần là cách build và host lệch nhau, và cái lệch đáng sợ là một asset được cache vĩnh viễn theo luật host chưa bao giờ áp. `mime` cũng lấy từ `mimeTypeFor` của H.3 — bảng MIME đóng chỉ có **một** bản
+  - Vì thế bước pack chạy dưới **`bun`** chứ không phải `node`: nó cần đọc thẳng resolver trong `sea-static-host.ts`. Chép luật resolver sang script build là đúng loại trùng lặp H.7 tồn tại để chặn
+  - Raw bytes chứ không base64: host đọc thẳng từ executable thành immutable view; base64 tốn thêm một phần ba dung lượng **trong binary** cộng một lần decode toàn bộ frontend trước byte đầu tiên
+  - [`frontend-pack.test.ts`](../../../../tests/build/frontend-pack.test.ts) đọc lại **từng** asset tại offset đã ghi trên filesystem thật và so cả nội dung lẫn SHA-256; chốt **không kẽ hở, không chồng lấn** (chồng lấn phục vụ đuôi asset này thành đầu asset kia); chốt thứ tự sort ổn định để hai lần build ra byte giống hệt; và chốt hai ca hỏng — chưa export, và export rỗng (artifact chạy được nhưng 404 mọi trang, đọc như lỗi routing)
   - _Requirements: R4.1, R4.2_ — _Design: §5.10_
 - [~] H.3 `SeaStaticAssetHost` — **resolver xong, phần đọc pack còn lại**
   - `getRawAsset` + immutable view, không ghi pack ra đĩa. Resolver normalize URL, reject encoded traversal, map `/projects/<slug>` **và payload RSC `.txt`** sang `projects/__shell*`
@@ -1458,6 +1463,12 @@ Chi tiết: [Detailed Goals](./spec-packaging-and-distribution-detailed-goal.md)
   - Summary: Bật `output: "export"`, xoá catch-all route handler, và chuyển bất biến "không còn route handler nào" sang test cấu hình export.
   - Decisions: Lật được vì H.1 đã có bundler thật — trước đó lật là tạo một build không ai phục vụ được. Xoá thay vì dời route: export fail trên mọi route handler chứ không riêng `force-dynamic`, và API vốn thuộc daemon (§5.11). Giữ `handleNextHostedRequest` trong `packages/cli` vì các suite server dùng nó làm harness. Xoá `tests/server/next-routing.test.ts` vì cả hai case chỉ mô tả bề mặt Next-hosted API; giữ lại là giữ hai chỗ nói cùng một thứ mà một chỗ đã sai.
   - Blockers: Cửa sổ hồi quy có chủ ý — source checkout không còn tự phục vụ API qua Next cho tới khi J.2 nối `serve`/`app` vào listener của E. `next build` xanh, sinh 57 file gồm cặp `projects/__shell.html` + `.txt` mà resolver H.3 map. Full suite 1223 pass / 4 skip, 0 "Unhandled Errors"; typecheck, lint 0 error, `test:boundaries` xanh.
+
+2026-08-09 — Phase H, Task H.2
+  - Files: `scripts/build-frontend-pack.mjs`, `scripts/build-artifact.mjs`, `tests/build/frontend-pack.test.ts`, `tests/build/build-artifact.test.ts`, checklist và implementation notes
+  - Summary: Nối `out/` thành `frontend.pack` raw bytes cộng manifest `path/offset/length/sha256/mime/cachePolicy`; chạy thật ra 57 asset, 2.379.699 byte.
+  - Decisions: `cachePolicy` và `mime` lấy từ chính `resolveAsset`/`mimeTypeFor` của H.3 thay vì khai lại trong script build — quyết hai lần là cách build và host lệch nhau, và bảng MIME đóng chỉ được có một bản. Hệ quả: bước pack trong `planSteps()` chạy dưới `bun` chứ không `node`, vì nó phải import thẳng module TypeScript đó; test ghim luôn `command === "bun"` kèm lý do. Đi bộ thư mục chỉ nhận regular file: symlink trong export nghĩa là pack trỏ ra ngoài chính nó.
+  - Blockers: Không có; `tests/build` 22/22 xanh, gồm đọc lại từng asset tại offset trên filesystem thật, chốt không kẽ hở/chồng lấn, và hai lần build ra pack byte giống hệt. Typecheck, lint 0 error, `test:boundaries` xanh.
 
 Format:
 ```

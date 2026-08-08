@@ -29,6 +29,14 @@ describe("build:artifact", () => {
     ]);
   });
 
+  it("runs the pack step under the runtime that can read the resolver", () => {
+    // The manifest records the cache policy the host applies at runtime, and
+    // the only way to guarantee they agree is to call the same function. That
+    // function lives in TypeScript, which Bun runs directly.
+    const pack = planSteps().find((entry) => entry.name.startsWith("frontend pack"));
+    expect(pack?.command).toBe("bun");
+  });
+
   it("names the checklist task that owns each step", () => {
     // A step that has no owner is a step nobody notices is missing.
     for (const entry of planSteps()) {
