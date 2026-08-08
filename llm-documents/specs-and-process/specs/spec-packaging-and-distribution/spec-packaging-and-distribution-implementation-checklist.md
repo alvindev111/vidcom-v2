@@ -447,8 +447,10 @@ Mỗi phase chạy focused command dưới đây trên SQLite/filesystem thật,
   - > [!WARNING]
     > **Lệch contract phát hiện ở D.8, đã sửa chứ không né.** Design §5.18 yêu cầu adapter ánh xạ sang `download_unavailable`, nhưng `ErrorCode` chỉ có `download_tls_untrusted` — Phase A sót. Đã thêm `DownloadUnavailable` vào [`errors.ts`](../../../../packages/contracts/src/errors.ts), map 502 ở `error-mapper.ts`, và gộp vào nhánh redact của `mcp/error-map.ts` để nó **không** lọt vào vocabulary MCP công khai.
     > Hai test đếm phải cập nhật: `api-contracts` (danh sách vocabulary) và `error-map` (14 → 15 mã private). **`tools/list` không đổi một byte** — `test:golden` và `test:mcp-catalogue` xanh không cần sửa, nên đây không phải trường hợp "sửa snapshot cho khớp code" mà luật cấm.
-- [ ] D.9 Cảnh báo version skew HyperFrames
+- [x] D.9 Cảnh báo version skew HyperFrames
   - Project khai version khác artifact ⇒ cảnh báo có mã, MUST NOT im lặng render bằng version khác, MUST NOT tự nâng file người dùng
+  - Chỉ **báo**, không sửa. Test đọc lại `hyperframes.json` sau khi phát hiện và chốt **byte-for-byte không đổi** — sửa file người dùng để dập chính cảnh báo về ý định của họ là che mất thứ đang được báo
+  - **Vắng mặt không phải drift**: không có file, không khai version, khai chuỗi rỗng, hay JSON hỏng đều trả `null`. Project không khai gì là đang chấp nhận bản đang ship, và một khai báo hỏng không phải bằng chứng lệch
   - _Requirements: R6.9_ — _Design: §5.18_
 - [ ] D.10 Logic test
   - Shim từ chối script ngoài runtime root; hình dạng spawn cũ bị test bắt (nếu không có test thì nó quay lại mà CI vẫn xanh)
@@ -456,8 +458,10 @@ Mỗi phase chạy focused command dưới đây trên SQLite/filesystem thật,
 - [ ] D.11 Integration test — ba chế độ hỏng im lặng
   - Thiếu **mỗi** env của esbuild ⇒ lỗi có mã trong timeout, **không bao giờ treo**; Chrome cắt cụt ⇒ check fail (thực thi `--version`, không hỏi CLI); sidecar in tiếng Việt với `PYTHONUTF8=""` ⇒ fail có mã, không ra chuỗi hỏng
   - _Requirements: R6.11, R6.5, R6.7_ — _Design: §11.3_
-- [ ] D.12 Integration test: mọi điểm spawn đi qua `allowlistedEnvironment`
+- [x] D.12 Integration test: mọi điểm spawn đi qua `allowlistedEnvironment`
   - Liệt kê điểm spawn và chứng minh không điểm nào tự dựng env — nếu không, hai bảo vệ UTF-8 và caBundlePath biến mất mà không ai thấy
+  - Quét bốn package source; **miễn trừ phải khai kèm lý do**, và test thứ hai chốt mọi miễn trừ vẫn trỏ vào file còn spawn thật — miễn trừ sống lâu hơn cái spawn của nó là một lỗ để ngỏ cho lần sau
+  - **Bẫy khi viết audit**: regex `\bexec\s*\(` bắt nhầm `client.exec(` của SQLite và `pattern.exec(` của regex, báo 5 điểm spawn không hề tồn tại. Phải dùng lookbehind `(?<![.\w])` — một audit báo động giả sẽ bị người ta tắt đi
   - _Requirements: R6.7, R6.8_
 - [ ] D.13 Integration test: huỷ giữa chừng
   - **Termination proof có cờ `exhaustive`**, MUST NOT phát biểu thành "không còn tiến trình con" ([steering/08](../../../steering/08-jobs-and-queue.md) §6.1 đã rút lại bảo đảm đó). Còn survivor sau khi cạn lượt ⇒ `process_termination_unverified`, MUST NOT ghi `cancelled`. Workdir có marker thu hồi được thứ lọt qua

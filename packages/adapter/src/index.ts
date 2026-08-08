@@ -50,6 +50,7 @@ export * from "./fs/staged-asset";
 export * from "./hyperframes/document";
 export * from "./hyperframes/binary-probe";
 export * from "./hyperframes/compiler-guard";
+export * from "./hyperframes/version-skew";
 export * from "./hyperframes/check";
 export * from "./motion/motion-library-files";
 export * from "./hyperframes/dom";
