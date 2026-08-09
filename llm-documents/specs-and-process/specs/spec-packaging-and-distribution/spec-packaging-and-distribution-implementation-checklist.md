@@ -1146,7 +1146,10 @@ Mỗi phase chạy focused command dưới đây trên SQLite/filesystem thật,
   - Không có đường serialize identity thứ hai. `ProjectId` trùng ⇒ cấp id mới, ghi lại `vidcom.json`, log sự kiện
   - Import **không** viết đường ghi identity nào: cây đã copy xong là một project directory bình thường, và `bootstrapProject` đã xử lý đúng ca `ProjectId` trùng — cấp id mới, ghi lại `vidcom.json`, ghi journal. Thêm một đường serialize thứ hai ở đây là tạo chỗ để hai đường lệch nhau
   - _Requirements: R7.5, R7.7_ — _Design: §5.19_
-- [x] K.6 `POST /v1/projects/imports` trả **202 `{jobId}`**
+- [ ] K.6 `POST /v1/projects/imports` trả **202 `{jobId}`** — **MỞ LẠI: endpoint chết trong mọi mode**
+  - **Bỏ tick sau khi packaged smoke chạm tới nó.** Route tồn tại và khai `startProjectImport` là dependency **tuỳ chọn**, nhưng **không nơi nào trong composition cung cấp** — nên nó trả `404 not_found` ở mọi mode, kể cả `serve` trong source checkout. `planProjectImport` (core) và staging copier (adapter) đã có; **job type và phần nối thì chưa**. `createJobTypes` không có import job nào
+  - Để tick lại cần: một job type import, service dựng quanh `planProjectImport` + staging copier + backfill qua `bootstrapProject`, và nối vào `createJobTypes`/`createServerApp`
+  - Ghi lại vì nó đắt: mỗi mảnh đều đúng khi đứng riêng nên không unit test nào đỏ; chỉ một lần gọi endpoint thật mới lộ ra
   - Request `{sourceToken, targetName?}` — token từ browser, **không** raw path. Idempotency khoá ở **application layer** theo `(workspaceRoot, sourceCanonicalIdentity, targetName)`: `uniqueIndex("uq_job_idempotency")` scope theo `(project_id, type, key)` mà `project_id` **NULL** tới khi xong, và SQLite coi mọi NULL là khác nhau
   - Ba thành phần khoá nối bằng **NUL**: nối bằng thứ mà path chứa được thì hai request khác nhau dựng ra cùng một material
   - _Requirements: R7.1, R7.8_ — _Design: §7.15_

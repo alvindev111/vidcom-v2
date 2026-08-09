@@ -1297,6 +1297,22 @@
           <div><dt class="font-semibold text-slate-200">Focused gate xanh, artifact gate còn mở</dt><dd class="mt-1 text-slate-300">Combined 84/84; SEA 22/22; typecheck, lint 0 error/3 warning không liên quan, boundaries và full diff-check xanh; không còn <code>.compiler-bundle</code>. Binary <code>5b111f…e2bc0</code> chỉ là lịch sử: artifact AC tiếp tục <code>[ ]</code>, full matrix, exact-HEAD build/render-smoke và CI ba OS vẫn mở trước Phase E.</dd></div>
         </dl>
       </section>
+      <section class="mt-6 rounded-2xl border border-fuchsia-500/30 bg-slate-900 p-6">
+        <div class="flex flex-wrap items-center justify-between gap-3">
+          <h2 class="text-2xl font-semibold">2026-08-09 · Phase L + M — artifact thật và bốn lỗi sản phẩm</h2>
+          <span class="rounded-full bg-fuchsia-400/10 px-3 py-1 text-sm text-fuchsia-300">smoke 9/13 · artifact 322 MB</span>
+        </div>
+        <dl class="mt-6 grid gap-5 md:grid-cols-2">
+          <div><dt class="font-semibold text-slate-200">Blocker thật là tài sản, không phải hash</dt><dd class="mt-1 text-slate-300">Ghi chú cũ nói "phải bịa hash". Đọc <code>parseConfig</code> thì builder <strong>tự tính hash từ byte nó tar</strong> — không có trường hash nào để bịa. Thứ thiếu là cây FFmpeg/CPython/VieNeu thật. Mô tả sai một blocker giữ nó đứng yên lâu hơn chính nó đáng.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Tái lập, không sáng tác</dt><dd class="mt-1 text-slate-300">Evidence trong repo <em>chính là</em> đáp án: cài VieNeu ra <strong>77 gói</strong> đúng số Design đo, prune còn <strong>55/55 khớp tuyệt đối</strong>, cây 481 MB so với 481 MB đã ghi. Ba gói trôi version được ghim <em>về</em> evidence — evidence là cái đã review, không phải cái tiện sửa.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Một dấu <code>;</code> làm hỏng cả chuỗi</dt><dd class="mt-1 text-slate-300">Script build x265 nuốt lỗi bằng <code>;</code>, nên nó hỏng âm thầm và FFmpeg lặng lẽ link <code>libx265</code> dylib của homebrew — binary "static" mang dep không máy nào có. <code>PKG_CONFIG_LIBDIR</code> chứ không chỉ <code>PKG_CONFIG_PATH</code>: pkg-config giữ danh sách mặc định riêng.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Luật phát hành áp nhầm lên đầu vào</dt><dd class="mt-1 text-slate-300"><code>nlink === 1</code> giữ provenance cho thứ build <em>phát hành</em>. Bun <strong>hardlink</strong> từ cache toàn cục trên Linux, nên áp luật đó lên thứ build <em>đọc vào</em> làm cả stage không chạy được ở đó trong khi macOS xanh — cùng installer, macOS copy. Hai lần, hai hàm khác nhau.</dd></div>
+          <div><dt class="font-semibold text-slate-200">PATH rỗng phơi ra giả định ẩn</dt><dd class="mt-1 text-slate-300">Smoke cố tình đưa artifact một PATH rỗng, và extraction chết với <code>spawnSync icacls ENOENT</code>. Để PATH quyết định chương trình nào <strong>đặt ACL</strong> cũng chính là hình dạng một cú thay thế PATH-injection. Đổi sang đường tuyệt đối.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Hai biện pháp đúng, gặp nhau ở chỗ trống</dt><dd class="mt-1 text-slate-300">L.1 rewrite <code>import.meta.url</code> thành <code>/vidcom</code> để đường dẫn máy build không ship. C.3 gom migration về một coordinator. <code>credential</code> tự mở database, bỏ qua coordinator ⇒ migrate theo folder vừa bị rewrite ⇒ <code>internal_error</code>. Không ai sai; chỗ hai bên gặp nhau thì không ai kiểm.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Route sống trong code, chết trong hệ thống</dt><dd class="mt-1 text-slate-300"><code>POST /v1/projects/imports</code> trả 404 ở <strong>mọi</strong> mode: route khai <code>startProjectImport</code> là dependency tuỳ chọn và không nơi nào cung cấp. K.6 đã bị <strong>bỏ tick</strong>. Mỗi mảnh đúng khi đứng riêng nên không unit test nào đỏ.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Thân bước không được nói dối</dt><dd class="mt-1 text-slate-300">Năm thân viết trước khi có artifact đều <strong>ném <code>NotWrittenYet</code></strong> thay vì trả pass. Tiêu chí phase là "không step nào bị skip", và một thân trả pass mà không điều khiển gì sẽ thoả mãn tiêu chí đó trong khi không chứng minh gì.</dd></div>
+        </dl>
+      </section>
     </main>
   </body>
 </html>
