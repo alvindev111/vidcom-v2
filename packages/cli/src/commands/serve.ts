@@ -138,9 +138,13 @@ export async function startServing(options: ServeCommandOptions = {}): Promise<S
   const runtime = await pending;
 
   const assets = resolveStaticAssets(path.join(process.cwd(), "dist", "sea"));
-  const staticTarget: FetchTarget = assets === null
+  // Built once, not per request. The host parses the manifest and bounds-checks
+  // every entry when it is constructed, and doing that on each request would
+  // repeat the whole thing for every image on a page.
+  const assetHost = assets === null ? null : createSeaStaticAssetHost(assets);
+  const staticTarget: FetchTarget = assetHost === null
     ? unbuiltFrontendTarget()
-    : (request) => createSeaStaticAssetHost(assets).handle(request);
+    : (request) => assetHost.handle(request);
   const router = createRequestRouter({
     api: (request) => runtime.app.fetch(request),
     static: staticTarget,

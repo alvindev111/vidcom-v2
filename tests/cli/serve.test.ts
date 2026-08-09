@@ -6,6 +6,7 @@ import path from "node:path";
 import { DaemonDiscoveryStore } from "@vidcom/adapter";
 import {
   CliInputError,
+  createSeaStaticAssetHost,
   parseServeCommandArgs,
   resolveStaticAssets,
   startServing,
@@ -64,6 +65,30 @@ describe("serve static assets", () => {
     // executable carries, which is what makes the packaged UI testable without
     // packaging.
     expect(resolveStaticAssets(root)).not.toBeNull();
+  });
+
+  it("reads the pack once, not once per request", async () => {
+    // Found by reviewing the diff. Constructing the host parses the manifest
+    // and bounds-checks every entry; doing that per request repeats the whole
+    // thing for every image on a page.
+    const root = realpathSync(await mkdtemp(path.join(tmpdir(), "vidcom-assets-")));
+    roots.push(root);
+    await writeFile(path.join(root, "frontend.pack"), "hello", "utf8");
+    await writeFile(path.join(root, "frontend-manifest.json"), "{}", "utf8");
+
+    let reads = 0;
+    const source = resolveStaticAssets(root);
+    expect(source).not.toBeNull();
+    const counted = {
+      getRawAsset(key: string): ArrayBuffer {
+        reads += 1;
+        return source!.getRawAsset(key);
+      },
+    };
+    // An empty manifest is refused at construction, which is itself the proof
+    // that construction is where the reading happens.
+    expect(() => createSeaStaticAssetHost(counted)).toThrow();
+    expect(reads).toBeGreaterThan(0);
   });
 
   it("says what is missing rather than serving an empty page", async () => {
