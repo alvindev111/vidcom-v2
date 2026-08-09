@@ -34,27 +34,37 @@ function linuxCut() {
   };
 }
 
-function macCut() {
-  const routes = [
+export function macNetworkCutRoutes() {
+  return [
     ["-net", "0.0.0.0/1", "127.0.0.1"],
     ["-net", "128.0.0.0/1", "127.0.0.1"],
     ["-inet6", "-net", "::/1", "::1"],
     ["-inet6", "-net", "8000::/1", "::1"],
-  ];
+  ].map((route) => ({
+    // RTF_REJECT makes external requests fail immediately. Routing them to a
+    // loopback gateway without this flag can leave Chromium waiting on a
+    // connection for the full page-navigation timeout.
+    add: [...route, "-reject"],
+    delete: route,
+  }));
+}
+
+function macCut() {
+  const routes = macNetworkCutRoutes();
   const installed = [];
   try {
     for (const route of routes) {
-      unix("route", ["-n", "add", ...route]);
+      unix("route", ["-n", "add", ...route.add]);
       installed.push(route);
     }
   } catch (error) {
     for (const route of installed.reverse()) {
-      try { unix("route", ["-n", "delete", ...route]); } catch { /* retain the first error */ }
+      try { unix("route", ["-n", "delete", ...route.delete]); } catch { /* retain the first error */ }
     }
     throw error;
   }
   return () => {
-    for (const route of installed.reverse()) unix("route", ["-n", "delete", ...route]);
+    for (const route of installed.reverse()) unix("route", ["-n", "delete", ...route.delete]);
   };
 }
 
@@ -72,7 +82,7 @@ function windowsCut() {
 
 export function networkCutPlan(platform = process.platform) {
   if (platform === "linux") return "iptables OUTPUT reject except loopback";
-  if (platform === "darwin") return "two IPv4 and two IPv6 runner blackhole routes, loopback preserved";
+  if (platform === "darwin") return "two IPv4 and two IPv6 runner reject routes, loopback preserved";
   if (platform === "win32") return "Windows outbound firewall rule for Internet remote addresses";
   throw new Error(`packaged smoke has no runner network cut for ${platform}`);
 }

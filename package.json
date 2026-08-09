@@ -75,6 +75,7 @@
     "drizzle-kit": "1.0.0-rc.4",
     "eslint": "^9",
     "eslint-config-next": "16.2.12",
+    "postject": "1.0.0-alpha.6",
     "puppeteer-core": "25.4.0",
     "tailwindcss": "^4",
     "typescript": "^5",

@@ -2694,6 +2694,24 @@ Chi tiết: [Detailed Goals](./spec-packaging-and-distribution-detailed-goal.md)
   - Decisions: Typecheck, boundaries, 115 spec paths và diff-check xanh; ESLint 0 error/4 warning cũ. Không stage/chạm thay đổi người dùng ở `tests/adapter/remote-asset-browser.test.ts`.
   - Blockers: Exact-head Actions ba OS vẫn là authority; production supply-chain human gate vẫn mở.
 
+2026-08-10 — Phase H/M CI Linux: postject phải chạy bằng Node đã pin
+  - Files: `package.json`, `bun.lock`, `scripts/build-sea.mjs`, `tests/build/sea.test.ts`, Design §16 và implementation notes
+  - Summary: Exact-head `da0fb06` đã stage/archive runtime xong nhưng `bunx` dùng Bun chạy postject Emscripten rồi abort khi inject `NODE_SEA_BLOB` trên Linux.
+  - Decisions: Ghim postject exact trong devDependencies/lockfile, resolve CLI đã cài và chạy bằng chính `process.execPath` 24.9.0 dùng để tạo SEA; không tải tool động, không đổi injector version hay verification bytes. Focused SEA/provenance 59/59 xanh cục bộ.
+  - Blockers: Chờ macOS/Windows run hiện tại kết thúc để thu evidence; sau đó push/rerun exact-head Linux. Production supply-chain human gate vẫn mở độc lập.
+
+2026-08-10 — Phase M CI macOS: network cut phải reject thay vì loop external qua localhost
+  - Files: `scripts/packaged-smoke/network-cut.mjs`, `tests/build/packaged-smoke.test.ts`, Design §16 và implementation notes
+  - Summary: Evidence `packaged-smoke-darwin-arm64` của `da0fb06` xanh identify/UI/import/bridge/VieNeu/online MP4/CLI cancel/lease-loss nhưng offline `page.goto(http://localhost:49672)` treo đúng 60 giây; bounded suffix C-44 lộ nguyên nhân.
+  - Decisions: Giữ bốn route phủ external IPv4/IPv6 nhưng thêm cờ kernel `RTF_REJECT`; loopback host route cụ thể vẫn được giữ, external TCP fail ngay thay vì được route vòng về loopback rồi chờ timeout. Regression buộc đủ bốn add command mang `-reject`; focused 75/75 và typecheck xanh.
+  - Blockers: Chờ packaged-smoke macOS exact-head rerun chứng minh network-layer cut + offline TTS/MP4. Production supply-chain human gate vẫn mở độc lập.
+
+2026-08-10 — Phase M: local council gate cho C-46–C-47
+  - Files: toàn bộ batch postject/runtime-of-build-tool và macOS network-cut, checklist và implementation notes
+  - Summary: Full suite xanh 202 file pass + 1 intentional skip, 1821 test pass + 5 intentional skip; focused SEA/provenance/network-cut 75/75.
+  - Decisions: Typecheck, boundaries, 115 spec paths và diff-check xanh; lint 0 error/4 warning cũ. Không stage/chạm thay đổi người dùng ở `tests/adapter/remote-asset-browser.test.ts`.
+  - Blockers: Exact-head packaged smoke ba OS vẫn là authority; production supply-chain human gate vẫn mở.
+
 Format:
 ```
 YYYY-MM-DD — Phase X, Task X.Y

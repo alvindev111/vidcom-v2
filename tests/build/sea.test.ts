@@ -7,6 +7,7 @@ import path from "node:path";
 import {
   MACHO_SEGMENT,
   POSTJECT,
+  POSTJECT_CLI,
   SEA_FUSE,
   SEA_INTEGRITY_ARGUMENT,
   SEA_PRIMARY_BUNDLE_ASSET,
@@ -484,6 +485,7 @@ describe("sea build", () => {
 
   it("pins the injector, because it edits the shipped bytes", () => {
     expect(POSTJECT).toMatch(/@\d/u);
+    expect(POSTJECT_CLI).toMatch(/node_modules[/\\]postject[/\\]dist[/\\]cli\.js$/u);
   });
 
   it("refuses Node manifest drift before SEA output work begins", () => {
@@ -783,7 +785,7 @@ describe("sea build", () => {
       if (process.platform === "darwin") {
         runChecked("codesign", ["--remove-signature", executable], `${label} remove signature`);
       }
-      runChecked("bunx", ["--yes", POSTJECT, ...postjectArguments(executable, blob)], `${label} inject`);
+      runChecked(process.execPath, [POSTJECT_CLI, ...postjectArguments(executable, blob)], `${label} inject`);
       if (process.platform === "darwin") {
         runChecked("codesign", ["--sign", "-", "--force", executable], `${label} sign`);
       }

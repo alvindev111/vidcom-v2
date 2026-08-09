@@ -49,11 +49,16 @@ export const PRODUCT_RUNTIME_ARCHIVES = ["hyperframes", "node"];
  * The exact postject the build uses.
  *
  * Pinned rather than floating: it edits the executable format directly, so a
- * version change is a change to the bytes shipped to users. It is invoked
- * through the package runner rather than declared as a dependency — it is a
- * build tool, and nothing in the product ever imports it.
+ * version change is a change to the bytes shipped to users. Keep the CLI in
+ * the lockfile and run it with the pinned Node executable. Package runners may
+ * substitute Bun for a `#!/usr/bin/env node` binary, and postject's Emscripten
+ * injector aborts on Linux under that substituted runtime.
  */
 export const POSTJECT = "postject@1.0.0-alpha.6";
+export const POSTJECT_CLI = path.join(
+  path.dirname(fileURLToPath(import.meta.resolve("postject"))),
+  "cli.js",
+);
 
 /** Node's own sentinel. The runtime looks for this exact fuse to find the blob. */
 export const SEA_FUSE = "fce680ab2cc467b6e072b8b5df1996b2";
@@ -722,7 +727,7 @@ export async function buildSea(target, options = {}) {
   await assertSnapshotAuthority();
   await assertOwnedRegularFile(output, buildDirectory, assertBuildAuthority);
   await assertOwnedRegularFile(blob, buildDirectory, assertBuildAuthority);
-  run("inject blob", "bunx", ["--yes", POSTJECT, ...postjectArguments(output, blob)]);
+  run("inject blob", process.execPath, [POSTJECT_CLI, ...postjectArguments(output, blob)]);
   await assertOwnedRegularFile(output, buildDirectory, assertBuildAuthority);
   await assertSnapshotAuthority();
 

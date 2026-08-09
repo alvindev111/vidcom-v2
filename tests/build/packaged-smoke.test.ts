@@ -10,7 +10,10 @@ import {
   smokeExitCode,
   stepIds,
 } from "../../scripts/packaged-smoke/steps.mjs";
-import { networkCutPlan } from "../../scripts/packaged-smoke/network-cut.mjs";
+import {
+  macNetworkCutRoutes,
+  networkCutPlan,
+} from "../../scripts/packaged-smoke/network-cut.mjs";
 import { copyCacheContents } from "../../scripts/packaged-smoke/environment.mjs";
 import { browsePathSegments, browseSegmentMatches } from "../../scripts/packaged-smoke/bodies.mjs";
 import { PACKAGED_RUNTIME_SOURCES } from "../../scripts/prepare-packaged-runtime.mjs";
@@ -128,10 +131,19 @@ describe("native packaged-smoke inputs", () => {
   });
 
   it("has an explicit runner-level network cut for each release platform", () => {
-    expect(networkCutPlan("darwin")).toContain("blackhole routes");
+    expect(networkCutPlan("darwin")).toContain("reject routes");
     expect(networkCutPlan("linux")).toContain("iptables");
     expect(networkCutPlan("win32")).toContain("firewall rule");
     expect(() => networkCutPlan("freebsd")).toThrow(/no runner network cut/u);
+  });
+
+  it("makes macOS external routes reject immediately instead of looping until browser timeout", () => {
+    const routes = macNetworkCutRoutes();
+    expect(routes).toHaveLength(4);
+    for (const route of routes) {
+      expect(route.add.at(-1)).toBe("-reject");
+      expect(route.delete).not.toContain("-reject");
+    }
   });
 });
 
