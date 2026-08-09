@@ -2757,6 +2757,18 @@ Chi tiết: [Detailed Goals](./spec-packaging-and-distribution-detailed-goal.md)
   - Decisions: Typecheck, boundaries, 115 spec paths và diff-check xanh; lint 0 error/4 warning cũ. Không stage/chạm thay đổi người dùng ở `tests/adapter/remote-asset-browser.test.ts`.
   - Blockers: Exact-head Actions phải chứng minh ba baseline được load và regression gate chạy trên cả ba runner; production supply-chain human gate vẫn mở độc lập.
 
+2026-08-10 — Phase M CI Windows: handle lifetime và cold Python budget C-50
+  - Files: `scripts/inject-elf-sea.mjs`, `tests/{build/sea,adapter/vieneu-model-probe}.test.ts`, Design §16 và implementation notes
+  - Summary: CI `31337022362` đỏ ba ca dù packaged artifact xanh: Windows cấm replace ELF fixture khi source handle còn mở, AV giữ SEA executable ngắn sau spawn, và cold Python probe vượt timeout 10 s dưới full suite.
+  - Decisions: Đóng authenticated input handles ngay trước atomic leaf replace; cleanup dùng bounded `removeTree`; VieNeu probe Windows có child budget 60 s/outer heavy-E2E 180 s nhưng giữ nguyên output/ready assertions. Không skip test và không nới production gate.
+  - Blockers: Cần focused/local council rồi exact-head CI Windows; production supply-chain human gate vẫn mở độc lập.
+
+2026-08-10 — Phase M: local council gate cho C-50
+  - Files: toàn bộ batch handle lifetime/cold Python budget, checklist và implementation notes
+  - Summary: Full suite đơn lẻ xanh 203 test file, 1825 test pass + 5 intentional skip; focused SEA/VieNeu/baseline/smoke 51/51.
+  - Decisions: Typecheck, boundaries, 115 spec paths và diff-check xanh; lint 0 error/4 warning cũ. Không stage/chạm `tests/adapter/remote-asset-browser.test.ts` của người dùng.
+  - Blockers: Exact-head Windows CI và packaged baseline matrix vẫn là authority; production supply-chain human gate vẫn mở độc lập.
+
 Format:
 ```
 YYYY-MM-DD — Phase X, Task X.Y

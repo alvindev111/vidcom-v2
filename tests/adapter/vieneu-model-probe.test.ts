@@ -5,7 +5,10 @@ import path from "node:path";
 import { NodeProcessRunner } from "@vidcom/adapter";
 import { afterEach, describe, expect, it } from "vitest";
 
+import { heavyE2eTimeout } from "../support/platform";
+
 const roots: string[] = [];
+const probeTimeoutMs = process.platform === "win32" ? 60_000 : 10_000;
 
 afterEach(async () => {
   await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
@@ -56,7 +59,7 @@ class cuda:
 }
 
 async function probe(modules: string, cacheRoot: string, offline: boolean) {
-  return await new NodeProcessRunner(10_000).run({
+  return await new NodeProcessRunner(probeTimeoutMs).run({
     command: [
       process.platform === "win32" ? "python" : "python3",
       path.resolve("packages/adapter/sidecars/vieneu/worker.py"),
@@ -69,7 +72,7 @@ async function probe(modules: string, cacheRoot: string, offline: boolean) {
       PYTHONPATH: modules,
       ...(offline ? { HF_HUB_OFFLINE: "1", TRANSFORMERS_OFFLINE: "1" } : {}),
     },
-    timeoutMs: 10_000,
+    timeoutMs: probeTimeoutMs,
   });
 }
 
@@ -86,7 +89,7 @@ describe("VieNeu model probe child", () => {
     const warm = await probe(modules, cacheRoot, true);
     expect(warm).toMatchObject({ exitCode: 0, timedOut: false });
     expect(JSON.parse(warm.stdout)).toMatchObject({ ready: true, voices: ["Phạm Tuyên"] });
-  });
+  }, heavyE2eTimeout);
 
   it("does not claim ready for an empty offline cache", async () => {
     const { modules, root } = await fixture();
@@ -97,5 +100,5 @@ describe("VieNeu model probe child", () => {
     expect(result).toMatchObject({ exitCode: 0, timedOut: false });
     expect(JSON.parse(result.stdout)).toMatchObject({ ready: false, voices: [] });
     expect(result.stderr).toContain("offline cache is empty");
-  });
+  }, heavyE2eTimeout);
 });

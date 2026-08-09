@@ -47,6 +47,7 @@ import {
   parseSeaBuildSeal,
   serializeSeaBuildSeal,
 } from "../../scripts/sea-build-seal.mjs";
+import { removeTree } from "../support/platform";
 import { describe, expect, it } from "vitest";
 
 const HOST_TAG = { darwin: "darwin-arm64", win32: "win32-x64", linux: "linux-x64" }[
@@ -965,7 +966,7 @@ describe("sea build", () => {
         "fixture.txt",
       ]);
     } finally {
-      await rm(root, { recursive: true, force: true });
+      await removeTree(root);
     }
   }, 300_000);
 });

@@ -301,6 +301,11 @@ export async function injectElfSea(executable, blob, sentinelFuse) {
     if (!sameIdentity(target.metadata, sourceAfter) || !sameIdentity(resource.metadata, blobAfter)) {
       fail("an injection input changed while it was being streamed");
     }
+    // Windows does not allow replacing a file while this process still holds
+    // the source handle open. Closing both authenticated inputs here does not
+    // weaken publication: rename replaces the exact leaf and never follows a
+    // destination symlink or writes through a destination hardlink.
+    await Promise.all([source.close(), blobHandle.close()]);
     await rename(temporary, target.path);
   } finally {
     await Promise.allSettled([source.close(), blobHandle.close(), output?.close()]);
