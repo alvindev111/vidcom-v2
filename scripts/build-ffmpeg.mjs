@@ -165,15 +165,37 @@ export function ffmpegConfigureArgs(prefix) {
 }
 
 /**
- * How x265 is configured, and why the version moved to get here.
+ * The two lines of x265 that current CMake refuses to read.
  *
- * x265 3.6 sets two CMake policies to OLD, and CMake 4 refuses those outright —
- * not a warning, a hard "Configuring incomplete". Worth recording because of
- * what it cost: the first build swallowed that failure, FFmpeg then found the
- * system libx265 through pkg-config's default search path, and the result was a
+ * Every x265 release, 4.1 included, sets these policies to OLD, and CMake 4
+ * rejects that outright — not a warning, a hard "Configuring incomplete". Both
+ * are cosmetic (how Apple's Clang is reported, and `if()` quoting), so moving
+ * them to NEW is what upstream will have to do anyway and is two reviewable
+ * substitutions rather than a patch file nobody reads.
+ */
+export const X265_POLICY_SUBSTITUTIONS = Object.freeze([
+  ["cmake_policy(SET CMP0025 OLD)", "cmake_policy(SET CMP0025 NEW)"],
+  ["cmake_policy(SET CMP0054 OLD)", "cmake_policy(SET CMP0054 NEW)"],
+]);
+
+/**
+ * How x265 is configured.
+ *
+ * `CMAKE_POLICY_VERSION_MINIMUM` is separate from the substitutions above and
+ * fixes a different refusal: `cmake_minimum_required` still names a version
+ * CMake 4 dropped support for. Worth recording what missing all this cost — the
+ * first build swallowed the x265 failure, FFmpeg then found the *system*
+ * libx265 through pkg-config's default search path, and the result was a
  * "static" binary linking a dylib no user machine has.
  */
 export const X265_CMAKE_ARGS = Object.freeze([
+  "-DCMAKE_POLICY_VERSION_MINIMUM=3.5",
+  // Assembly off, and this one is a real trade rather than a build detail:
+  // x265's aarch64 NEON sources do not compile under current Apple clang, and
+  // turning them off costs HEVC encode speed. It is the narrower loss —
+  // H.264 through x264 keeps its assembly, and that is the codec the render
+  // pipeline reaches for by default. Revisit when upstream fixes aarch64.
+  "-DENABLE_ASSEMBLY=OFF",
   "-DENABLE_SHARED=OFF",
   "-DENABLE_CLI=OFF",
   "-DCMAKE_BUILD_TYPE=Release",
