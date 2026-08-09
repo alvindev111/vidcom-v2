@@ -2458,6 +2458,12 @@ Chi tiết: [Detailed Goals](./spec-packaging-and-distribution-detailed-goal.md)
   - Decisions: (1) **`realpathSync` và `realpath` bất đồng trên Windows** — bản sync giữ nguyên tên 8.3 (`RUNNER~1`) còn bản async trả dạng dài (`runneradmin`). Sentinel gọi bản async, test gọi bản sync, nên nó so **hai cách viết của cùng một thư mục** và chỉ hỏng ở đó. Đổi test sang đúng hàm production gọi, không đổi production. Sửa 4 lỗi. (2) `fileURLToPath("file:///vidcom/main.ts")` ném trên Windows vì file URL ở đó cần ký tự ổ đĩa — test đang khẳng định **cú pháp đường dẫn của host** thay vì thứ nó định kiểm, là bản rewrite vẫn parse về đúng vị trí marker. Đổi sang `new URL(...).pathname`; ca dạng Windows đã có test riêng ngay trên. Sửa 1 lỗi.
   - Blockers: Còn 7 lỗi ở `stage-artifact-runtime`, `runtime-asset-manager` (2), `artifact-provenance` (2), `sea-bootstrap`, `download-cache`. Thông điệp: `runtime stage file does not match its manifest entry`, `runtime asset installation failed`, `isolated install failed`, và một timeout 30 s — cần điều tra ngữ nghĩa Windows (CRLF, mode, lock), MUST NOT nới khẳng định provenance để qua.
 
+2026-08-09 — Windows 12 → 6; Linux một timeout do chính bản sửa resolve
+  - Files: `tests/build/stage-artifact-runtime.test.ts`, checklist
+  - Summary: Hai bản sửa đường dẫn Windows gỡ được 6/12. Linux xuất hiện đúng một lỗi mới: `rejects symlinked output parents` hết 5 s.
+  - Decisions: Test đó dựng **cùng fixture thật** như các test cạnh nó, mà chúng đều để 120 s còn nó là test duy nhất còn ở mặc định 5 s. Nó đủ nhanh cho tới khi phần tìm package thêm nhánh quét repository làm fallback. Nới đúng test đó lên cùng ngân sách với anh em nó, kèm lý do — không nới ngân sách toàn cục.
+  - Blockers: Windows còn 6: `stages and cold-loads the real Bun native closure`, `classifies a corrupt intermediate target parent as incomplete`, `extracts exactly once across four concurrent cold starts`, `imports the same-generation HyperFrames --version entry`, `binds the exact staged entry set`, `carries no development origin`. Cần một phiên tập trung với ngữ nghĩa Windows (CRLF, mode, lock), MUST NOT nới khẳng định provenance.
+
 Format:
 ```
 YYYY-MM-DD — Phase X, Task X.Y

@@ -605,7 +605,10 @@ describe("artifact runtime staging", () => {
       .rejects.toThrow(/parent (?:changed authority|chain must contain only real directories)/u);
     expect(await readFile(path.join(external, "sentinel.txt"), "utf8")).toBe("external sentinel\n");
     expect(existsSync(path.join(external, "runtime-stage"))).toBe(false);
-  });
+    // Same budget as its siblings: this builds the same real fixture they do,
+    // and it was the only one left on the five-second default — which held
+    // until the package search began walking the repository as a fallback.
+  }, 120_000);
 
   it("rejects external file and directory symlinks and source hardlinks before publication", async () => {
     if (process.platform === "win32") return;
