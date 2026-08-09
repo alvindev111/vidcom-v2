@@ -23,6 +23,7 @@ import {
   runNodeSentinel,
 } from "./node-sentinel";
 import { CliInputError } from "./cli-error";
+import { runtimeAssetSourceForProcess } from "./runtime-paths-source";
 
 export { CliInputError } from "./cli-error";
 
@@ -233,10 +234,28 @@ export async function runVidcomCli(argv: readonly string[] = process.argv.slice(
     return 0;
   }
   if (command.name === "version") {
+    // Read from the embedded manifest, which only a packaged build carries.
+    // Leaving it out made the artifact answer `null` to "which runtime is
+    // this?" — the one question this command exists for, and the packaged smoke
+    // is what noticed.
+    const runtimeManifest = (() => {
+      try {
+        const manifest = runtimeAssetSourceForProcess()?.readManifest();
+        return manifest
+          ? { manifestVersion: manifest.artifactVersion, hyperframes: manifest.versions.hyperframes }
+          : null;
+      } catch {
+        // A manifest this build cannot read is reported as absent rather than
+        // taking `version` down: the command's job is to describe the build,
+        // and refusing to answer at all is the least useful reply.
+        return null;
+      }
+    })();
     await runVersionCommand(command.args, {
       // The version is read from the package rather than injected at build
       // time, so a source checkout reports the same number it was built from.
       vidcom: VIDCOM_VERSION,
+      runtime: runtimeManifest,
       buildCommit: process.env.VIDCOM_BUILD_COMMIT ?? null,
     });
     return 0;

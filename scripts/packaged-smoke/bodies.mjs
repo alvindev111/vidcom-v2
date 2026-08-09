@@ -165,7 +165,9 @@ export const STEP_BODIES = {
       const created = await fetch(`${serving.baseUrl}/api/v1/projects`, {
         method: "POST",
         headers: { "content-type": "application/json", Cookie: cookie },
-        body: JSON.stringify({ name: "Smoke", preset: "vertical-shorts" }),
+        // `presetId`, not `preset`: the request schema is strict, so a near-miss
+        // field name is a 400 that reads like a server fault.
+        body: JSON.stringify({ name: "Smoke", presetId: "vertical-shorts" }),
       });
       if (!created.ok) throw new Error(`creating a project returned ${String(created.status)}`);
 
