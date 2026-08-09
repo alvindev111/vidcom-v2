@@ -41,7 +41,23 @@ let cachedWhoamiOutput: string | undefined;
  * untouched so callers that assert the exact command sequence still see it.
  */
 function isWhoami(executable: string): boolean {
-  return executable === "whoami";
+  return executable === "whoami" || executable.toLowerCase().endsWith("\\whoami.exe");
+}
+
+/**
+ * Windows system tools, addressed absolutely.
+ *
+ * Two reasons, and the second is why this changed. Resolving `icacls` through
+ * PATH means whatever PATH happens to hold decides which program sets an ACL —
+ * the shape of a PATH-injection substitution. And a process given a trimmed
+ * PATH cannot find it at all: the packaged smoke hands the artifact an empty
+ * one on purpose, and extraction failed there with `spawnSync icacls ENOENT`
+ * while every developer machine kept working.
+ */
+export function systemTool(name: string, platform: NodeJS.Platform = process.platform): string {
+  if (platform !== "win32") return name;
+  const root = process.env["SystemRoot"] ?? process.env["windir"] ?? "C:\\Windows";
+  return `${root}\\System32\\${name}.exe`;
 }
 
 const defaultSyncRunner: SyncCredentialCommandRunner = (executable, args) => {
@@ -73,8 +89,11 @@ export async function secureCredentialFile(
     return;
   }
 
-  const { stdout } = await run("whoami", ["/user", "/fo", "csv", "/nh"]);
-  await run("icacls", [pathname, "/inheritance:r", "/grant:r", windowsCredentialAcl(stdout)]);
+  const { stdout } = await run(systemTool("whoami", platform), ["/user", "/fo", "csv", "/nh"]);
+  await run(
+    systemTool("icacls", platform),
+    [pathname, "/inheritance:r", "/grant:r", windowsCredentialAcl(stdout)],
+  );
 }
 
 /** Synchronous variant for resources, such as SQLite, opened by synchronous Node APIs. */
@@ -87,8 +106,11 @@ export function secureCredentialFileSync(
     chmodSync(pathname, 0o600);
     return;
   }
-  const { stdout } = run("whoami", ["/user", "/fo", "csv", "/nh"]);
-  run("icacls", [pathname, "/inheritance:r", "/grant:r", windowsCredentialAcl(stdout)]);
+  const { stdout } = run(systemTool("whoami", platform), ["/user", "/fo", "csv", "/nh"]);
+  run(
+    systemTool("icacls", platform),
+    [pathname, "/inheritance:r", "/grant:r", windowsCredentialAcl(stdout)],
+  );
 }
 
 /** Restricts an app-data directory before any credential, database or audit bytes are created. */
@@ -101,8 +123,8 @@ export function secureAppDataDirectorySync(
     chmodSync(pathname, 0o700);
     return;
   }
-  const { stdout } = run("whoami", ["/user", "/fo", "csv", "/nh"]);
-  run("icacls", [
+  const { stdout } = run(systemTool("whoami", platform), ["/user", "/fo", "csv", "/nh"]);
+  run(systemTool("icacls", platform), [
     pathname,
     "/inheritance:r",
     "/grant:r",

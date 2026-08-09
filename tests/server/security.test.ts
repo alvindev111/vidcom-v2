@@ -8,6 +8,7 @@ import {
   BridgeCredentialStore,
   secureAppDataDirectorySync,
   secureCredentialFile,
+  systemTool,
 } from "@vidcom/adapter";
 import {
   bindLoopback,
@@ -332,13 +333,17 @@ describe("bridge credential file", () => {
     const calls: Array<{ executable: string; args: readonly string[] }> = [];
     const run = async (executable: string, args: readonly string[]) => {
       calls.push({ executable, args });
-      return { stdout: executable === "whoami" ? '"DESKTOP\\user","S-1-5-21-42"\r\n' : "" };
+      return { stdout: executable.includes("whoami") ? '"DESKTOP\\user","S-1-5-21-42"\r\n' : "" };
     };
     await secureCredentialFile("C:\\VidCom Data\\credentials", "win32", run);
     expect(calls).toEqual([
-      { executable: "whoami", args: ["/user", "/fo", "csv", "/nh"] },
+      { executable: systemTool("whoami", "win32"), args: ["/user", "/fo", "csv", "/nh"] },
       {
-        executable: "icacls",
+        // Absolute, so PATH cannot decide which program sets an ACL — and so a
+        // process handed a trimmed PATH can still find it. The packaged smoke
+        // gives the artifact an empty PATH on purpose, and extraction died
+        // there with `spawnSync icacls ENOENT`.
+        executable: systemTool("icacls", "win32"),
         // The `*` prefix is required: icacls resolves a bare principal as an
         // account name and fails with error 1332 on a raw SID.
         args: ["C:\\VidCom Data\\credentials", "/inheritance:r", "/grant:r", "*S-1-5-21-42:(R,W)"],
@@ -348,12 +353,12 @@ describe("bridge credential file", () => {
     const directoryCalls: Array<{ executable: string; args: readonly string[] }> = [];
     secureAppDataDirectorySync("C:\\VidCom Data", "win32", (executable, args) => {
       directoryCalls.push({ executable, args });
-      return { stdout: executable === "whoami" ? '"DESKTOP\\user","S-1-5-21-42"\r\n' : "" };
+      return { stdout: executable.includes("whoami") ? '"DESKTOP\\user","S-1-5-21-42"\r\n' : "" };
     });
     expect(directoryCalls).toEqual([
-      { executable: "whoami", args: ["/user", "/fo", "csv", "/nh"] },
+      { executable: systemTool("whoami", "win32"), args: ["/user", "/fo", "csv", "/nh"] },
       {
-        executable: "icacls",
+        executable: systemTool("icacls", "win32"),
         args: ["C:\\VidCom Data", "/inheritance:r", "/grant:r", "*S-1-5-21-42:(OI)(CI)(F)"],
       },
     ]);
