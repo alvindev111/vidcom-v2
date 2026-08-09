@@ -89,7 +89,7 @@ function runtimeMap(): Map<number, Promise<NextHostedRuntime>> {
   return shared.__vidcomNextRuntimes ??= new Map();
 }
 
-async function startNextHostedRuntime(port: number, explicitWorkspace?: string): Promise<NextHostedRuntime> {
+export async function startNextHostedRuntime(port: number, explicitWorkspace?: string): Promise<NextHostedRuntime> {
   const clock = createSystemClock();
   const nonces = new InMemoryNonceStore(clock);
   const bootstrapNonce = process.env.VIDCOM_BOOTSTRAP_NONCE;
@@ -296,6 +296,17 @@ async function startNextHostedRuntime(port: number, explicitWorkspace?: string):
       },
     }),
   };
+}
+
+/**
+ * Registers a runtime under the port it serves.
+ *
+ * `handleNextHostedRequest` looks a runtime up by the port in the Host header,
+ * so a daemon that built its own runtime without registering it would answer
+ * its own requests while that lookup started a second one beside it.
+ */
+export function registerHostedRuntime(port: number, runtime: Promise<NextHostedRuntime>): void {
+  runtimeMap().set(port, runtime);
 }
 
 export function getNextHostedRuntime(port: number): Promise<NextHostedRuntime> {

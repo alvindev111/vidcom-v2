@@ -18,6 +18,7 @@ export * from "./commands/approve";
 export * from "./commands/credential";
 export * from "./commands/backup";
 export * from "./commands/recovery";
+export * from "./commands/serve";
 export * from "./commands/version";
 export * from "./cli-error";
 export * from "./output";

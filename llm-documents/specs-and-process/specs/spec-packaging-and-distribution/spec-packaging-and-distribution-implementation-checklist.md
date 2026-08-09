@@ -993,8 +993,15 @@ Mỗi phase chạy focused command dưới đây trên SQLite/filesystem thật,
   - `VIDCOM_COMMAND_NAMES` export ra thành **một danh sách có thứ tự**, để D.3b sau này đếm entrypoint từ chính union này thay vì từ một bản chép tay
   - Đổi hành vi có chủ ý: message `unknown command` giờ liệt kê đủ mười mode. [`mcp-commands.test.ts`](../../../../tests/cli/mcp-commands.test.ts) ghim chuỗi cũ nên đã cập nhật — đây là hành vi J.1 yêu cầu, **không phải** snapshot sửa cho khớp code
   - _Requirements: R3.1, R3.11_ — _Design: §5.8_
-- [ ] J.2 `serve` và `app`
+- [x] J.2 `serve` và `app`
   - `serve` headless, in địa chỉ qua `stderr`/log; `app` = `serve` + mở browser + token một lần
+  - [`serve.ts`](../../../../packages/cli/src/commands/serve.ts): một listener, một workspace, một discovery record. Router của E chia `/api/*` cho app đã compose và phần còn lại cho static host của H.3 — **cùng một port**, tức cùng origin, tức UI đóng gói giữ được cookie `SameSite=Strict` mà không cần cấu hình cross-origin nào
+  - **`app` không còn spawn `next start`**: frontend là static export nên không có Next server nào để spawn. `app` giờ đúng bằng `serve` cộng hai thứ — mở browser và mint nonce một lần. Đây là chỗ đóng cửa sổ hồi quy mà G.6 mở ra
+  - Record publish **sau khi** mọi thứ phía sau đã trả lời được, và xoá **trước khi** nhả lease: record xuất hiện sớm chỉ client tới một daemon sắp từ chối họ, record ở lại muộn chỉ client tới hư vô
+  - `stop()` chạy **đúng một lần** dù bao nhiêu caller: signal handler và đường lỗi cùng gọi nó, và teardown hai lần là nhả một lease tiến trình này không còn giữ
+  - Địa chỉ in ra `stderr`: `stdout` thuộc về thứ mà caller pipe vào, và một daemon in banner ở đó làm hỏng ngay lần dùng đầu tiên
+  - Nguồn static tự phân giải: asset nhúng khi là SEA, `dist/sea/**` khi checkout đã chạy `build:artifact`, còn lại trả **503 nói rõ chạy lệnh gì**. Trang trắng đọc như app hỏng
+  - [`serve.test.ts`](../../../../tests/cli/serve.test.ts) 8 test trên SQLite thật + filesystem thật trong temp directory
   - _Requirements: R3.2, R1.10_ — _Design: §5.8_
 - [ ] J.3 `render` thin client
   - Phân biệt id/slug bằng `^project_[0-9a-f-]{36}$`, MUST NOT thử id rồi fallback slug. Thứ tự workspace: explicit(`--workspace`|`VIDCOM_WORKSPACE`) > **`cwd` có marker** > `active_workspace` > `cwd` không marker (nhánh cuối **bị cấm** cho render ⇒ exit 2)
@@ -1613,6 +1620,12 @@ Chi tiết: [Detailed Goals](./spec-packaging-and-distribution-detailed-goal.md)
   - Summary: Mở union mode lên đủ mười, message lỗi liệt kê mode hợp lệ, và thêm `vidcom version` có `--json`.
   - Decisions: Không thêm mode `worker` (OQ-9). Message `unknown command` đổi để liệt kê mode — test cũ ghim chuỗi cũ đã cập nhật, đây là hành vi J.1 yêu cầu chứ không phải snapshot sửa cho khớp code. `version` trả `null`/`not packaged` cho thứ source checkout không biết thay vì giá trị trông hợp lý, vì một version đoán bừa đẩy bug report sang release khác.
   - Blockers: `serve`, `render`, `doctor` mới chỉ có trong union; thân lệnh là J.2/J.3/J.5. `tests/cli` + `tests/e2e` 151/151, typecheck, lint 0 error.
+
+2026-08-09 — Phase J, Task J.2
+  - Files: `packages/cli/src/commands/serve.ts`, `packages/cli/src/main.ts`, `packages/cli/src/next-host.ts`, `packages/server/src/routes/bridge.ts`, `packages/adapter/src/db/job-store.ts`, `packages/core/src/port/ports.ts`, `tests/cli/serve.test.ts`, `tests/server/bridge-routes.test.ts`, checklist và implementation notes
+  - Summary: `serve` chạy in-process — listener loopback, router API/static, discovery record — và `app` trở thành `serve` + browser + nonce, không còn spawn `next start`.
+  - Decisions: Cắm bridge vào chính runtime đã compose, `instanceId` mới mỗi lần start (daemon restart mà tái dùng id sẽ thoả một handshake dành cho tiến trình đã chết). Work hold đọc từ job store qua `hasNonTerminalJob` mới thay vì đếm attachment. `stop()` idempotent. Xoá `freePort`/`waitUntilReady` khỏi `main.ts` vì chính thay đổi này làm chúng thành mồ côi.
+  - Blockers: Không có. **Bug thật do runtime smoke bắt**: sub-app bridge dùng `use("*")` mà lại mount ở gốc app API, nên nó đòi credential bridge hệ thống trên **mọi** request của sản phẩm — hiện ra thành 503 ở `/v1/projects`, không dính gì tới bridge. Không unit test nào bắt được vì app trong test không có route nào khác để hỏng. Đã siết về `/bridge/v1/*` và thêm regression test. Full suite 1352 pass / 4 skip, 0 unhandled; typecheck, lint 0 error, boundaries xanh.
 
 Format:
 ```

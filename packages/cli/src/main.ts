@@ -1,16 +1,15 @@
 #!/usr/bin/env node
 import { spawn } from "node:child_process";
 import { randomBytes } from "node:crypto";
-import net from "node:net";
 import path from "node:path";
 
 import { defaultAppDataRoot } from "./next-host";
-import { selectWorkspace } from "./workspace-selection";
 import { runMcpCommand } from "./commands/mcp";
 import { runApproveCommand } from "./commands/approve";
 import { runCredentialCommand } from "./commands/credential";
 import { runBackupCommand } from "./commands/backup";
 import { runRecoveryCommand } from "./commands/recovery";
+import { runServeCommand, startServing, waitForShutdown } from "./commands/serve";
 import { VIDCOM_VERSION, runVersionCommand } from "./commands/version";
 import { isNodeSentinel, runNodeSentinel } from "./node-sentinel";
 import { CliInputError } from "./cli-error";
@@ -94,31 +93,6 @@ export function parseAppCommandArgs(argv: readonly string[]): AppCommandOptions 
   return options;
 }
 
-async function freePort(): Promise<number> {
-  return new Promise((resolve, reject) => {
-    const server = net.createServer();
-    server.once("error", reject);
-    server.listen(0, "127.0.0.1", () => {
-      const address = server.address();
-      if (!address || typeof address === "string") return reject(new Error("could not allocate loopback port"));
-      server.close((error) => error ? reject(error) : resolve(address.port));
-    });
-  });
-}
-
-async function waitUntilReady(url: string, child: ReturnType<typeof spawn>): Promise<void> {
-  const deadline = Date.now() + 30_000;
-  while (Date.now() < deadline) {
-    if (child.exitCode !== null) throw new Error(`VidCom UI exited with code ${child.exitCode}`);
-    try {
-      const response = await fetch(url);
-      if (response.ok) return;
-    } catch { /* listener is not ready yet */ }
-    await new Promise((resolve) => setTimeout(resolve, 100));
-  }
-  throw new Error("VidCom UI did not become ready within 30 seconds");
-}
-
 function openBrowser(url: string): void {
   const command = process.platform === "darwin" ? "open" : process.platform === "win32" ? "cmd" : "xdg-open";
   const args = process.platform === "win32" ? ["/c", "start", "", url] : [url];
@@ -131,46 +105,25 @@ export function createBootstrapNonce(): string {
   return randomBytes(32).toString("base64url");
 }
 
-/** Selects an explicit workspace, launches the production Next host, and opens an authenticated browser handoff. */
+/**
+ * Serves the workspace and hands the browser an authenticated session.
+ *
+ * `app` is `serve` plus two things: it opens a browser, and it mints a
+ * single-use bootstrap nonce for that browser to exchange. It used to spawn
+ * `next start`; the frontend is a static export now, so there is no Next server
+ * to spawn and the daemon serves the exported pack itself.
+ */
 export async function runVidcomApp(options: AppCommandOptions = {}): Promise<void> {
-  const appDataRoot = defaultAppDataRoot();
-  const workspaceRoot = await selectWorkspace({
-    explicit: options.workspace ?? process.env.VIDCOM_WORKSPACE,
-    appDataRoot,
-  });
-  const port = options.port ?? await freePort();
   const nonce = createBootstrapNonce();
-  const nextBin = path.join(process.cwd(), "node_modules", "next", "dist", "bin", "next");
-  const child = spawn(process.execPath, [nextBin, "start", "-p", String(port), "-H", "127.0.0.1"], {
-    cwd: process.cwd(),
-    env: {
-      ...process.env,
-      VIDCOM_APP_DATA: appDataRoot,
-      VIDCOM_WORKSPACE: workspaceRoot,
-      VIDCOM_BOOTSTRAP_NONCE: nonce,
-    },
-    stdio: "inherit",
-  });
-  const baseUrl = `http://127.0.0.1:${port}`;
-  try {
-    await waitUntilReady(baseUrl, child);
-    openBrowser(`${baseUrl}/?t=${encodeURIComponent(nonce)}`);
-    process.stdout.write(`VidCom is running at ${baseUrl}\n`);
-    await new Promise<void>((resolve, reject) => {
-      child.once("exit", (code, signal) => code === 0 || signal === "SIGTERM"
-        ? resolve()
-        : reject(new Error(`VidCom UI exited with code ${code ?? signal}`)));
-      const shutdown = () => child.kill("SIGTERM");
-      process.once("SIGINT", shutdown);
-      process.once("SIGTERM", shutdown);
-    });
-  } catch (error) {
-    child.kill("SIGTERM");
-    throw error;
-  }
+  // Read by the host while it builds its nonce store, and deleted there. It is
+  // an environment variable rather than an argument because the host is the
+  // only reader and nothing should be able to pass it in from a command line.
+  process.env.VIDCOM_BOOTSTRAP_NONCE = nonce;
+  const daemon = await startServing(options);
+  openBrowser(`${daemon.baseUrl}/?t=${encodeURIComponent(nonce)}`);
+  process.stdout.write(`VidCom is running at ${daemon.baseUrl}\n`);
+  await waitForShutdown(daemon);
 }
-
-/** Dispatches the public CLI command tree while preserving bare invocation as the app alias. */
 export async function runVidcomCli(argv: readonly string[] = process.argv.slice(2)): Promise<void> {
   // Dispatched ahead of the public parser on purpose. `parseVidcomCommand`
   // reads any argv starting with `--` as `vidcom app`, so the sentinel would
@@ -183,6 +136,10 @@ export async function runVidcomCli(argv: readonly string[] = process.argv.slice(
   const command = parseVidcomCommand(argv);
   if (command.name === "app") {
     await runVidcomApp(parseAppCommandArgs(command.args));
+    return;
+  }
+  if (command.name === "serve") {
+    await runServeCommand(command.args);
     return;
   }
   if (command.name === "version") {
