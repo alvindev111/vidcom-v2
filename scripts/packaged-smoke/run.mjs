@@ -2,8 +2,8 @@ import { existsSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { PLATFORM_TAGS } from "../build-artifact.mjs";
 import { artifactPath } from "../build-sea.mjs";
+import { hostPlatformTag } from "../stage-artifact-runtime.mjs";
 import {
   failedStepIds,
   parseSmokeArgs,
@@ -21,13 +21,28 @@ const REPOSITORY_ROOT = path.resolve(fileURLToPath(new URL("../..", import.meta.
  * between a smoke that is honestly incomplete and one that looks green.
  */
 function blockedReason() {
-  const tag = PLATFORM_TAGS[process.platform];
-  if (!tag) return `there is no artifact for ${process.platform}`;
+  // `hostPlatformTag()` resolves platform *and* architecture. The build's own
+  // table is keyed by both, so indexing it with the platform alone yields an
+  // object that reads as a tag right up until something tries to use it.
+  let tag;
+  try {
+    tag = hostPlatformTag();
+  } catch {
+    return `there is no artifact for ${process.platform}-${process.arch}`;
+  }
   const artifact = artifactPath(tag);
   if (!existsSync(artifact)) {
     return `no artifact at ${path.relative(REPOSITORY_ROOT, artifact)}; run \`bun run build:artifact\``;
   }
   return null;
+}
+
+function hostArtifactTag() {
+  try {
+    return hostPlatformTag();
+  } catch {
+    return `${process.platform}-${process.arch}`;
+  }
 }
 
 async function runStep(step) {
@@ -68,7 +83,7 @@ async function main(argv) {
 
   process.stdout.write(`${JSON.stringify({
     version: 1,
-    platform: PLATFORM_TAGS[process.platform] ?? `${process.platform}-${process.arch}`,
+    platform: hostArtifactTag(),
     strict: options.strict === true,
     steps: results,
   }, null, 2)}\n`);
