@@ -836,9 +836,13 @@ Mỗi phase chạy focused command dưới đây trên SQLite/filesystem thật,
   - **Cơ chế đã có sẵn từ trước** ở [`app.ts:70-82`](../../../../packages/server/src/app.ts#L70): 1 MiB mặc định, `MAX_SOURCE_BYTES` cho `/files`, `MAX_BGM_BYTES` (20 MiB) cho `/assets/bgm`, đúng một mắt xích `bodyLimit` cố định, và [`payload-limits.test.ts`](../../../../tests/server/payload-limits.test.ts) đã chốt 413 ở byte kế tiếp
   - **Thứ còn thiếu là cái gác cho lần rà đó**: [`upload-surface-audit.test.ts`](../../../../tests/server/upload-surface-audit.test.ts) quét toàn bộ `packages/server/src` tìm `arrayBuffer()` — cách một route biến request thành bytes — và fail nếu xuất hiện chỗ thứ hai. Kết quả rà hôm nay **khớp**: đúng một file. Không có test này thì câu "đã rà sẵn" hết hạn ngay khi có người thêm route
   - _Requirements: R4.6_ — _Design: §7_
-- [ ] H.6 Đo cold/warm + baseline hồi quy — **CHẶN NGƯỢC: cần J.2**
+- [~] H.6 Đo cold/warm + baseline hồi quy — **cơ chế xong, số cold cần runtime archive**
   - Ghi baseline vào `.github/perf-baseline/<runner-label>.json`, **commit vào repo** — không dùng CI cache (cache hết hạn thì gate im lặng biến mất)
-  - **Vì sao chưa làm**: §9.1 đo trên hai flow **`serve --workspace`** và **`app`**, cả hai là mode của **J.1/J.2** chưa tồn tại. Cột cold còn cần extract runtime archive thật, tức cùng blocker tài sản phát hành. Đo một con số không phải hai flow đó là ghi một baseline cho thứ không ai chạy
+  - [`measure-startup.mjs`](../../../../scripts/measure-startup.mjs) giữ **hai gate độc lập**: trần cứng §9.1 là số duy nhất chặn release, còn baseline riêng từng runner bắt một lần khởi động **tăng gấp rưỡi** dù vẫn nằm dưới trần
+  - Baseline chỉ ghi khi **chưa có**: ghi đè mỗi lần chạy làm gate hồi quy vô nghĩa — mỗi lần đo tự trở thành baseline của chính nó và không gì trôi được nữa. Đổi baseline là đổi ngưỡng, và ngưỡng đi qua pull request
+  - Trần Windows cao hơn vì phần lớn cold start ở đó là bị quét: riêng stack Python đã khoảng nửa GB trên đĩa. Ép nó theo số macOS là làm fail một máy đang chạy bình thường
+  - Đo một thứ **không có trần** trả `unknown` chứ không tính là đạt: đó là một lỗ hổng, và report gọi tên nó
+  - **Còn lại**: chạy đo thật. Cột cold theo định nghĩa là `extract → migrate → lease → foundation → listener`, nên nó cần runtime archive thật — cùng blocker tài sản phát hành. Ghi một baseline không có bước extract là ghi baseline cho một flow không ai chạy
   - _Requirements: R4.9_ — _Design: §9.1_
 - [x] H.7 Golden test static host
   - Exact/implicit `.html`/sentinel/RSC mapping, MIME, cache header, 404, traversal
@@ -1748,6 +1752,12 @@ Chi tiết: [Detailed Goals](./spec-packaging-and-distribution-detailed-goal.md)
   - Summary: Đóng ba AC còn lại của Phase G bằng bằng chứng đã có.
   - Decisions: "Một bundle, hai môi trường" nằm ở `resolveApiBaseUrl` — đọc global runtime rồi mặc định `location.origin`, không `NEXT_PUBLIC_*` nào bị inline lúc build; test routing của J.2 chứng minh vế same-origin trên cùng một port. `test:browser-session` chạy 7/7. `git diff main -- package.json` chỉ thêm **script**, không dependency; `bun.lock` đúng một dòng `tar@7.5.22` — đúng dependency duy nhất được phép.
   - Blockers: Không có cho ba AC này.
+
+2026-08-09 — Phase H, Task H.6 (cơ chế)
+  - Files: `scripts/measure-startup.mjs`, `tests/build/startup-baseline.test.ts`, checklist và implementation notes
+  - Summary: Hai gate startup — trần cứng §9.1 và chặn hồi quy 1,5× theo baseline từng runner — cộng luật ghi baseline.
+  - Decisions: Baseline chỉ ghi khi chưa có; ghi đè mỗi lần chạy làm gate tự vô hiệu vì mỗi lần đo trở thành baseline của chính nó. Đo không có trần trả `unknown` và **không** tính là fail — nó là lỗ hổng cần gọi tên, không phải một lần pass. Runner lạ cũng `unknown` thay vì đoán trần.
+  - Blockers: Số cold thật cần runtime archive đã giải nén (cột cold theo định nghĩa gồm bước extract), cùng blocker tài sản phát hành. Cơ chế và test đã xong: 8/8.
 
 Format:
 ```
