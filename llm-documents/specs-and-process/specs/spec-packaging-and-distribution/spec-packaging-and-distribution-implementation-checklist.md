@@ -2556,6 +2556,12 @@ Chi tiết: [Detailed Goals](./spec-packaging-and-distribution-detailed-goal.md)
   - Decisions: URL + digest đủ để smoke reproducible nhưng không biến nguồn thành được duyệt. Workflow chỉ upload JSON/manifest/checksum evidence, không publish binary. Production release supply chain vẫn giữ human approval gate như checklist đã yêu cầu.
   - Blockers: Muốn đánh dấu toàn bộ task/release complete vẫn cần người dùng duyệt một trong hai: nguồn binary production, hoặc source-build policy/tradeoff x265. Không tự chọn thay.
 
+2026-08-10 — Phase M: exact-ref GitHub Actions orchestration
+  - Files: `.github/workflows/{ci,packaged-smoke,phase4-browser-session}.yml`, checklist và implementation notes
+  - Summary: Hai workflow heavy chưa tồn tại trên default branch nên GitHub không đăng ký direct dispatch. Chúng nay nhận `workflow_call`; CI đã đăng ký gọi đúng phiên bản cùng branch khi manual dispatch, trong khi push/PR path giữ nguyên.
+  - Decisions: Không chạm hoặc merge `main`, không chạy workflow definition cũ. Một CI dispatch trên exact commit sẽ đồng thời chạy static matrix ba OS, browser Linux/Windows và packaged-smoke macOS/Linux/Windows.
+  - Blockers: Chờ GitHub Actions trả evidence; YAML parse và `test:spec-paths` 115/115 xanh cục bộ.
+
 Format:
 ```
 YYYY-MM-DD — Phase X, Task X.Y

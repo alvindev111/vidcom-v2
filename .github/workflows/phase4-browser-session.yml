@@ -6,6 +6,7 @@ name: Browser session
 # browser is the only way to make. The repository already separates a heavy
 # dependency this way in phase4-python-stack.yml.
 on:
+  workflow_call:
   workflow_dispatch:
   schedule:
     # Once a day, so a regression in cookie or SSE behaviour surfaces within a

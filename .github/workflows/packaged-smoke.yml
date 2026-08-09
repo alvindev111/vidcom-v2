@@ -9,6 +9,7 @@ name: Packaged smoke
 # dispatch reconstructs the exact-host native inputs, packages them, and then
 # drives the resulting executable end to end.
 on:
+  workflow_call:
   workflow_dispatch:
 
 permissions:
