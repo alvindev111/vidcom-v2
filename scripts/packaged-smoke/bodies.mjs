@@ -269,7 +269,11 @@ export const STEP_BODIES = {
     // Deliberately outside the workspace: the whole point of import is bringing
     // a directory the daemon does not already own, and a fixture placed inside
     // would pass without exercising that.
-    const fixture = path.join(context.root, "outside", "imported-project");
+    // Under the temporary HOME, which the browser offers as a root. Still
+    // outside the workspace — which is what this step is about — but reachable
+    // in one descent, so the walk does not depend on where a paged listing of
+    // the system temp directory happens to put it.
+    const fixture = path.join(context.environment.HOME, "imported-project");
     await mkdir(fixture, { recursive: true });
     await writeFile(path.join(fixture, "index.html"), "<!doctype html><title>imported</title>\n", "utf8");
 
@@ -290,12 +294,15 @@ export const STEP_BODIES = {
       // the point of the design: the server only ever acts on a directory it
       // handed out itself, so a path typed by a caller cannot become an import.
       const { roots } = await browse("roots");
-      let token = roots.find((root) => fixture.startsWith(root.displayPath))?.token
-        ?? roots[0]?.token;
-      if (!token) throw new Error("the browser offered no roots to descend from");
+      // The deepest root that contains the fixture, so the walk is as short as
+      // the browser allows.
+      const base = roots
+        .filter((root) => fixture.startsWith(root.displayPath))
+        .sort((left, right) => right.displayPath.length - left.displayPath.length)[0];
+      if (!base) throw new Error("the browser offered no root containing the fixture");
+      let token = base.token;
 
-      const segments = path.relative(roots.find((root) => fixture.startsWith(root.displayPath))
-        ?.displayPath ?? "/", fixture).split(path.sep).filter(Boolean);
+      const segments = path.relative(base.displayPath, fixture).split(path.sep).filter(Boolean);
       for (const segment of segments) {
         const page = await browse("entries", { token });
         const next = page.entries.find((entry) => entry.name === segment && entry.isDirectory);
@@ -308,6 +315,15 @@ export const STEP_BODIES = {
         headers,
         body: JSON.stringify({ sourceToken: token, targetName: "Imported" }),
       });
+      if (started.status === 404) {
+        throw new Error(
+          "the daemon answers 404 to project imports: the route declares"
+          + " `startProjectImport` as an optional dependency and nothing in the"
+          + " composition supplies one, so K.6's endpoint is unreachable in every"
+          + " mode. `planProjectImport` and the staging copier exist; the job and"
+          + " the wiring do not.",
+        );
+      }
       if (started.status !== 202) {
         throw new Error(`starting the import returned ${String(started.status)}: ${(await started.text()).slice(0, 200)}`);
       }

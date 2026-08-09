@@ -2497,6 +2497,12 @@ Chi tiết: [Detailed Goals](./spec-packaging-and-distribution-detailed-goal.md)
   - Decisions: Cặp upload là **một** khẳng định chứ không phải hai — chỉ 20 MB hoặc chỉ 21 MB đều không nói được giới hạn nằm ở đâu; payload là file RIFF/WAVE thật để qua được kiểm chữ ký. `render-cli` kiểm **exit contract** chứ không kiểm một lần render: lệnh trả 1 cho input sai sẽ đẩy script vào nhánh retry thay vì nhánh sửa tham số. `lease-loss` đọc record như **file** chứ không qua adapter class, vì runner là Node thuần strip-only và class đó dùng parameter property.
   - Blockers: **Lỗi sản phẩm thứ ba, chưa sửa**: `credential issue` trong artifact trả `internal_error`. Gốc: `credential`/`approve`/`backup` gọi thẳng `initializeDatabase`, **bỏ qua bootstrap coordinator**, nên chúng lấy migration folder từ `import.meta.url` — mà L.1 rewrite giá trị đó thành marker `/vidcom` để bỏ đường dẫn máy build. Đường `serve`/`doctor` không dính vì coordinator dùng `packagedMigrationsFolder(archiveRoots)` trỏ vào runtime đã giải nén. Sửa đúng là cho ba lệnh đó đi qua cùng bootstrap; đây là refactor thật, không phải một dòng.
 
+2026-08-09 — Smoke 9/13; lỗi sản phẩm thứ tư: route import chết trong mọi mode
+  - Files: `scripts/packaged-smoke/{bodies,environment}.mjs`, `packages/cli/src/{main.ts,commands/credential.ts}`, `packages/adapter/src/db/migrate.ts`, checklist
+  - Summary: `bridge` xanh sau khi sửa credential — agent liệt kê tool qua bridge **trong lúc phiên UI vẫn chạy**. Smoke 9/13.
+  - Decisions: `credential` trong bản đóng gói nhận database của coordinator; ai mở thì người đó đóng, vì huỷ database coordinator đang giữ là rút nó ra từ dưới cái lock vẫn cầm. Smoke root `realpathSync` ngay từ đầu — trên macOS `mkdtemp` trả path dưới `/var`, mà `/var` là symlink tới `/private/var`, và filesystem browser đi trên thư mục thật. Fixture import đặt dưới HOME tạm, vẫn **ngoài workspace** nhưng chỉ cách một lần đi xuống, nên phép đi không phụ thuộc việc listing phân trang của thư mục temp hệ thống đặt nó ở trang nào.
+  - Blockers: **Lỗi sản phẩm thứ tư**: `POST /v1/projects/imports` trả **404 `not_found`** — route khai `startProjectImport` là dependency **tuỳ chọn** và **không nơi nào trong composition cung cấp**, nên endpoint của K.6 không với tới được ở bất kỳ mode nào. `planProjectImport` và staging copier đã có; job và phần nối thì chưa. Đây đúng là loại lỗi packaged smoke tồn tại để tìm: một route có trong code và chết trong mọi hệ thống đang chạy.
+
 Format:
 ```
 YYYY-MM-DD — Phase X, Task X.Y

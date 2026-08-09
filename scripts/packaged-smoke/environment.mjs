@@ -1,4 +1,5 @@
 import { randomBytes } from "node:crypto";
+import { realpathSync } from "node:fs";
 import { mkdtemp, mkdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -49,7 +50,11 @@ export function smokeEnvironment(root, base = process.env) {
 }
 
 export async function createSmokeRoot() {
-  const root = await mkdtemp(path.join(tmpdir(), "vidcom-smoke-"));
+  // Canonical from the start. On macOS `mkdtemp` hands back a path under
+  // `/var`, which is a symlink to `/private/var` — and the filesystem browser
+  // walks real directories, so a fixture addressed through the symlink cannot
+  // be descended into.
+  const root = realpathSync(await mkdtemp(path.join(tmpdir(), "vidcom-smoke-")));
   const workspace = path.join(root, "workspace");
   await Promise.all([
     mkdir(path.join(root, "home", ".cache", "huggingface"), { recursive: true }),
