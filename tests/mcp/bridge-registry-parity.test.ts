@@ -77,6 +77,9 @@ function daemonRunning(local: ToolRegistry): DaemonClient {
     attach: () => Promise.reject(new Error("unused")),
     renew: () => Promise.reject(new Error("unused")),
     detach: () => Promise.reject(new Error("unused")),
+    enqueueRender: () => Promise.reject(new Error("unused")),
+    getJob: () => Promise.reject(new Error("unused")),
+    cancelJob: () => Promise.reject(new Error("unused")),
     invokeTool: async (name, input, context) => {
       const result = await local.invoke(name, input, { ...request, protocolVersion: context.protocolVersion });
       // The real daemon answers a refused tool with its stable code, and the
@@ -144,6 +147,9 @@ describe("bridge and local registry parity", () => {
       attach: () => Promise.reject(new Error("unused")),
       renew: () => Promise.reject(new Error("unused")),
       detach: () => Promise.reject(new Error("unused")),
+      enqueueRender: () => Promise.reject(new Error("unused")),
+      getJob: () => Promise.reject(new Error("unused")),
+      cancelJob: () => Promise.reject(new Error("unused")),
       invokeTool: (_name, _input, context) => {
         seen = context.protocolVersion;
         return Promise.resolve({ value: "ok" });

@@ -1010,11 +1010,17 @@ Mỗi phase chạy focused command dưới đây trên SQLite/filesystem thật,
   - Nguồn static tự phân giải: asset nhúng khi là SEA, `dist/sea/**` khi checkout đã chạy `build:artifact`, còn lại trả **503 nói rõ chạy lệnh gì**. Trang trắng đọc như app hỏng
   - [`serve.test.ts`](../../../../tests/cli/serve.test.ts) 8 test trên SQLite thật + filesystem thật trong temp directory
   - _Requirements: R3.2, R1.10_ — _Design: §5.8_
-- [ ] J.3 `render` thin client
+- [x] J.3 `render` thin client
   - Phân biệt id/slug bằng `^project_[0-9a-f-]{36}$`, MUST NOT thử id rồi fallback slug. Thứ tự workspace: explicit(`--workspace`|`VIDCOM_WORKSPACE`) > **`cwd` có marker** > `active_workspace` > `cwd` không marker (nhánh cuối **bị cấm** cho render ⇒ exit 2)
   - Mặc định chờ job xong; `--detach` in jobId; `Ctrl+C` lần đầu cancel, lần hai exit 130; exit `0/1/2/130`; idempotency key **ngẫu nhiên mỗi invocation**
   - Gọi daemon qua `DaemonClient` của **I.2** — đây là lý do J có tiền đề I. MUST NOT tự dựng client HTTP thứ hai
   - Help của `--workspace` nói rõ nó **không** đổi workspace mặc định của UI (hệ quả của C.4). Đây là chỗ thực thi câu đó, vì `commands/render.ts` được tạo ở task này
+  - [`render.ts`](../../../../packages/cli/src/commands/render.ts) + [`render-connect.ts`](../../../../packages/cli/src/commands/render-connect.ts). Ba method render nằm trong **cùng bề mặt đóng** của `DaemonClient`; slug→id đi qua `invokeTool("list_projects")` chứ không phải một endpoint mới. Không có client HTTP thứ hai nào
+  - Nhánh `cwd` (thư mục hiện tại không có gì đánh dấu là workspace) bị **từ chối trước khi chạm tới daemon**: với UI đó là chỗ hợp lý để bắt đầu tìm, với render nó ghi output vào đúng thư mục người dùng tình cờ đang đứng
+  - `render-connect` **không đọc `active_workspace`**: render không ghi lại nó (C.4), nên đọc nó sẽ làm lệnh phụ thuộc vào trạng thái UI mà chính nó từ chối thay đổi
+  - Attach dạng **`render`**, không phải `ui`: một lần render không được lấy đi quyền tự tắt của daemon auto-start sau khi render xong. Và `detach` chạy trong `finally` kể cả khi render hỏng — attachment bỏ lại giữ daemon sống thêm trọn TTL sau khi client cần nó đã biến mất
+  - Ctrl+C lần đầu **cancel rồi vẫn chờ**: render đang huỷ vẫn còn file phải dọn và một dòng job phải kết thúc, nên exit code phải lấy từ thứ daemon thực sự ghi lại. Lần hai dừng chờ — người bấm hai lần đang bảo *tiến trình này* biến đi, không phải daemon
+  - [`render-command.test.ts`](../../../../tests/cli/render-command.test.ts) 22 test
   - _Requirements: R3.3, R1.5_ — _Design: §7.13_
 - [x] J.4 `version`
   - VidCom version, HyperFrames version, build commit, platform tag, runtime manifest version
@@ -1639,6 +1645,12 @@ Chi tiết: [Detailed Goals](./spec-packaging-and-distribution-detailed-goal.md)
   - Summary: Agent ghi qua bridge tới được stream SSE đang mở, trên daemon thật; destructive vẫn hỏng thay vì tự duyệt.
   - Decisions: `startServing` reconcile credential bridge **trước khi** publish record và dưới cùng cái lock mà rotation dùng — advertise trước rồi mint sau tạo một cửa sổ mọi call bridge trả `bridge_credential_unavailable`. Test mở SSE **trước** khi agent ghi, đúng như UI thật đang mở. Giữ optimistic concurrency cho đường bridge: bridge không được hợp đồng yếu hơn đường local.
   - Blockers: Không có; test 1/1 trong 5,2 s trên SQLite thật + filesystem thật, typecheck, lint 0 error.
+
+2026-08-09 — Phase J, Task J.3
+  - Files: `packages/cli/src/commands/render.ts`, `packages/cli/src/commands/render-connect.ts`, `packages/cli/src/main.ts`, `packages/adapter/src/daemon/daemon-client.ts`, `tests/cli/render-command.test.ts`, `tests/adapter/daemon-client.test.ts`, checklist và implementation notes
+  - Summary: `render` thin client — enqueue, chờ, huỷ — đi trọn vẹn qua `DaemonClient`, cộng luật workspace và exit code 0/1/2/130.
+  - Decisions: Thêm `enqueueRender`/`getJob`/`cancelJob` vào **chính** bề mặt đóng của `DaemonClient` thay vì dựng client thứ hai (J.3 cấm), và cập nhật test khoá bề mặt lên tám method — luật vẫn nguyên: không có `request(method, path, body)`. Slug→id qua `invokeTool("list_projects")`, không thêm endpoint. Không đọc `active_workspace` vì render cũng không ghi nó. Attach dạng `render` để không lấy mất quyền tự tắt của daemon auto-start.
+  - Blockers: Không có; 22/22 test render, `tests/cli` 186/186, full suite 1383 pass / 4 skip, typecheck, lint 0 error, boundaries xanh. CI `9b5b7b7` (J.2) xanh cả ba OS.
 
 Format:
 ```

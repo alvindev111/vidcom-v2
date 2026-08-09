@@ -47,6 +47,9 @@ function client(options: { handshakeFails?: boolean } = {}): DaemonClient {
     }),
     renew: () => Promise.reject(new Error("unused")),
     detach: () => Promise.resolve(),
+    enqueueRender: () => Promise.reject(new Error("unused")),
+    getJob: () => Promise.reject(new Error("unused")),
+    cancelJob: () => Promise.reject(new Error("unused")),
     invokeTool: () => Promise.reject(new Error("unused")),
   };
 }

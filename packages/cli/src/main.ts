@@ -9,6 +9,8 @@ import { runApproveCommand } from "./commands/approve";
 import { runCredentialCommand } from "./commands/credential";
 import { runBackupCommand } from "./commands/backup";
 import { runRecoveryCommand } from "./commands/recovery";
+import { runRenderCommand } from "./commands/render";
+import { connectRenderClient, renderWorkspaceSource } from "./commands/render-connect";
 import { runServeCommand, startServing, waitForShutdown } from "./commands/serve";
 import { VIDCOM_VERSION, runVersionCommand } from "./commands/version";
 import { isNodeSentinel, runNodeSentinel } from "./node-sentinel";
@@ -124,6 +126,31 @@ export async function runVidcomApp(options: AppCommandOptions = {}): Promise<voi
   process.stdout.write(`VidCom is running at ${daemon.baseUrl}\n`);
   await waitForShutdown(daemon);
 }
+/** Yields once per interrupt, so `render` can tell the first from the second. */
+async function* interruptSignals(): AsyncGenerator<void> {
+  const queue: Array<() => void> = [];
+  let pending = 0;
+  const onSignal = () => {
+    const waiter = queue.shift();
+    if (waiter) waiter();
+    else pending += 1;
+  };
+  process.on("SIGINT", onSignal);
+  try {
+    for (;;) {
+      if (pending > 0) {
+        pending -= 1;
+        yield;
+        continue;
+      }
+      await new Promise<void>((resolve) => queue.push(resolve));
+      yield;
+    }
+  } finally {
+    process.off("SIGINT", onSignal);
+  }
+}
+
 export async function runVidcomCli(argv: readonly string[] = process.argv.slice(2)): Promise<void> {
   // Dispatched ahead of the public parser on purpose. `parseVidcomCommand`
   // reads any argv starting with `--` as `vidcom app`, so the sentinel would
@@ -136,6 +163,17 @@ export async function runVidcomCli(argv: readonly string[] = process.argv.slice(
   const command = parseVidcomCommand(argv);
   if (command.name === "app") {
     await runVidcomApp(parseAppCommandArgs(command.args));
+    return;
+  }
+  if (command.name === "render") {
+    const code = await runRenderCommand(command.args, {
+      connect: () => connectRenderClient(command.args),
+      workspaceSource: () => renderWorkspaceSource(command.args),
+      interrupts: interruptSignals(),
+    });
+    // The render's own exit code is the contract, so it is set rather than
+    // thrown: a non-zero render is a normal outcome, not a CLI input error.
+    process.exitCode = code;
     return;
   }
   if (command.name === "serve") {

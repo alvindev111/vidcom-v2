@@ -32,8 +32,20 @@ export interface RemoteInvocationContext {
   requestState?: unknown;
 }
 
+export interface EnqueuedRender {
+  jobId: string;
+}
+
+export interface DaemonJob {
+  id: string;
+  status: string;
+  progress?: number;
+  stage?: string | null;
+  error?: { code: string; message: string } | null;
+}
+
 /**
- * Everything a bridge is allowed to ask a daemon to do.
+ * Everything a client is allowed to ask a daemon to do.
  *
  * Closed on purpose, and the absence of a generic `request(method, path, body)`
  * is the point (DR-6). The moment one exists the bridge is an HTTP proxy, every
@@ -51,6 +63,10 @@ export interface DaemonClient {
   renew(attachmentId: string): Promise<DaemonAttachment>;
   detach(attachmentId: string): Promise<void>;
   invokeTool(name: string, input: unknown, context: RemoteInvocationContext): Promise<unknown>;
+  /** `render` is a thin client over these three; it builds no HTTP client of its own. */
+  enqueueRender(projectId: string, input: Record<string, unknown>): Promise<EnqueuedRender>;
+  getJob(jobId: string): Promise<DaemonJob>;
+  cancelJob(jobId: string): Promise<void>;
 }
 
 export interface DaemonClientOptions {
@@ -107,11 +123,15 @@ export function createDaemonClient(options: DaemonClientOptions): DaemonClient {
   const deadlineMs = options.deadlineMs ?? DEFAULT_DEADLINE_MS;
   const doFetch = options.fetch ?? globalThis.fetch;
 
-  async function call(what: string, method: string, route: string, body?: unknown): Promise<unknown> {
+  function call(what: string, method: string, route: string, body?: unknown): Promise<unknown> {
+    return callAt(`${options.baseUrl}${BRIDGE_PREFIX}${route}`, what, method, body);
+  }
+
+  async function callAt(url: string, what: string, method: string, body?: unknown): Promise<unknown> {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), deadlineMs);
     try {
-      const response = await doFetch(`${options.baseUrl}${BRIDGE_PREFIX}${route}`, {
+      const response = await doFetch(url, {
         method,
         headers: {
           authorization: `Bearer ${options.bearer}`,
@@ -133,6 +153,13 @@ export function createDaemonClient(options: DaemonClientOptions): DaemonClient {
     } finally {
       clearTimeout(timer);
     }
+  }
+
+  // The product API, not the bridge prefix. Still named routes: the point of
+  // the closed surface is that no caller can compose a path of its own, not
+  // that every route happens to live under one prefix.
+  function callApi(what: string, method: string, route: string, body?: unknown): Promise<unknown> {
+    return callAt(`${options.baseUrl}/api${route}`, what, method, body);
   }
 
   return {
@@ -172,6 +199,23 @@ export function createDaemonClient(options: DaemonClientOptions): DaemonClient {
 
     async detach(attachmentId): Promise<void> {
       await call("detach", "DELETE", `/attachments/${encodeURIComponent(attachmentId)}`);
+    },
+
+    enqueueRender(projectId, input): Promise<EnqueuedRender> {
+      return callApi(
+        "render enqueue",
+        "POST",
+        `/v1/projects/${encodeURIComponent(projectId)}/renders`,
+        input,
+      ) as Promise<EnqueuedRender>;
+    },
+
+    getJob(jobId): Promise<DaemonJob> {
+      return callApi("job read", "GET", `/v1/jobs/${encodeURIComponent(jobId)}`) as Promise<DaemonJob>;
+    },
+
+    async cancelJob(jobId): Promise<void> {
+      await callApi("job cancel", "POST", `/v1/jobs/${encodeURIComponent(jobId)}/cancel`);
     },
 
     invokeTool(name, input, context): Promise<unknown> {

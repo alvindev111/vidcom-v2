@@ -57,11 +57,16 @@ describe("daemon client", () => {
   it("offers no way to reach an arbitrary route", () => {
     // The absence is the design (DR-6). With a generic request the bridge is an
     // HTTP proxy, every allowlist becomes decoration, and a tool the daemon
-    // never published is one hand-written path away.
+    // never published is one hand-written path away. The three render methods
+    // are named routes for the same reason: `render` is a thin client over this
+    // surface and builds no HTTP client of its own (J.3).
     const { client } = stub(() => json(handshakeBody));
     expect(Object.keys(client).sort()).toEqual([
       "attach",
+      "cancelJob",
       "detach",
+      "enqueueRender",
+      "getJob",
       "handshake",
       "invokeTool",
       "renew",

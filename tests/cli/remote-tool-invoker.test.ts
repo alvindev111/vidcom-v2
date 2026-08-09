@@ -19,6 +19,9 @@ function client(invokeTool: DaemonClient["invokeTool"]): DaemonClient {
     attach: () => Promise.reject(new Error("unused")),
     renew: () => Promise.reject(new Error("unused")),
     detach: () => Promise.reject(new Error("unused")),
+    enqueueRender: () => Promise.reject(new Error("unused")),
+    getJob: () => Promise.reject(new Error("unused")),
+    cancelJob: () => Promise.reject(new Error("unused")),
     invokeTool,
   };
 }
