@@ -38,12 +38,16 @@ async function kindOf(target: string): Promise<ImportEntryKind> {
 /**
  * Identity the plan is bound to, cheap enough to recheck before the copy.
  *
- * Device and inode rather than the path: a path can be repointed at something
- * else between planning and copying, and it is the same string afterwards.
+ * Device and inode rather than the path, because a path can be repointed at
+ * something else and is the same string afterwards. The inode change time is in
+ * there too, and it earns its place: Linux hands the freed inode straight back,
+ * so deleting a directory and creating another in its place can produce the
+ * same `dev:ino` — measured on CI, not guessed. The change time moves whenever
+ * the inode does, which is precisely the event this has to notice.
  */
 export async function sourceIdentityOf(source: string): Promise<string> {
   const info = await stat(source);
-  return `${info.dev}:${info.ino}`;
+  return `${info.dev}:${info.ino}:${info.ctimeMs}`;
 }
 
 export interface CopyReport {

@@ -120,7 +120,9 @@ describe("import staging on a real filesystem", () => {
     await writeFile(path.join(source, "index.html"), "different project", "utf8");
 
     // A path can be repointed at something else and remain the same string,
-    // which is why the identity is device and inode rather than the path.
+    // which is why the identity is device, inode and inode change time rather
+    // than the path. Linux hands the freed inode straight back, so `dev:ino`
+    // alone repeats after a delete-and-recreate — this test caught that on CI.
     const now = await sourceIdentityOf(source);
     expect(assertSourceUnchanged(plan, now).ok).toBe(false);
   });

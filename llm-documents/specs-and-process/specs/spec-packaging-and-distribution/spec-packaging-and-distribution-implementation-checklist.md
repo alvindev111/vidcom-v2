@@ -1091,7 +1091,7 @@ Mỗi phase chạy focused command dưới đây trên SQLite/filesystem thật,
 - [x] K.1 `ProjectImportService.plan/execute`
   - Bind source canonical identity + target absence + digest; execute recheck trước copy. Trả `Result<T, DomainError>`
   - [`project-import.ts`](../../../../packages/core/src/usecase/project-import.ts) là logic thuần: plan buộc identity nguồn, tên đích còn trống và phán quyết overlap vào cùng một chỗ; `assertSourceUnchanged` chạy **trước** copy vì giữa lúc plan và lúc copy người ta có thể move hoặc thay nguồn — và copy thứ đang nằm ở đường dẫn đó là kết cục tệ nhất có thể
-  - Identity là `dev:ino` chứ không phải đường dẫn: một path có thể bị trỏ sang thứ khác mà vẫn là **cùng một chuỗi**
+  - Identity là `dev:ino:ctimeMs` chứ không phải đường dẫn: một path có thể bị trỏ sang thứ khác mà vẫn là **cùng một chuỗi**. `ctimeMs` không phải trang trí — **Linux trả lại ngay inode vừa giải phóng**, nên xoá một thư mục rồi tạo thư mục khác cùng chỗ cho ra **cùng `dev:ino`**; đo được trên CI Linux chứ không phải suy đoán
   - So sánh phân biệt hoa thường là **tham số**, không phải `process.platform`: gate boundary cấm `core` chạm `process`, và đoán sai thì hoặc từ chối một import hợp lệ hoặc cho qua một import đệ quy
   - _Requirements: R7.1, R7.3_ — _Design: §5.19_
 - [x] K.2 Staging cùng filesystem
@@ -1720,6 +1720,12 @@ Chi tiết: [Detailed Goals](./spec-packaging-and-distribution-detailed-goal.md)
   - Summary: Gate provenance — quét cấm, allowlist thư mục artifact, `SHA256SUMS` + `artifact-manifest.json`. Chạy thật trên artifact 127 MB.
   - Decisions: `dirty` ghi lại chứ không từ chối ở tầng này; job release mới đòi `false`. Checksums theo định dạng `sha256sum -c`. Test pack thật tự build export khi thiếu thay vì skip.
   - Blockers: **Hai lỗi thật do chính gate này bắt.** (1) Bundle chứa 11 đường dẫn tuyệt đối của máy build từ `import.meta.url` — đã strip bằng marker `/vidcom`. (2) Bundle **inline `sharp`**, và native addon không đi kèm `.node` nên artifact chết ngay import đầu tiên; đã khai `EXTERNAL_PACKAGES` theo DR-2. Nhưng bare `require("sharp")` trong SEA đi vào `embedderRequire` và trả `ERR_UNKNOWN_BUILTIN_MODULE` — **resolve external từ runtime đã giải nén là việc chưa làm được**, nó cần chính runtime archive đang bị chặn. Ghi lại nguyên văn, MUST NOT giả vờ xanh.
+
+2026-08-09 — Phase K, CI remediation Linux
+  - Files: `packages/adapter/src/fs/import-staging.ts`, `tests/adapter/project-import.test.ts`, checklist và implementation notes
+  - Summary: Linux đỏ một test K — "notices when the source was replaced between plan and copy".
+  - Decisions: Không phải lỗi test mà là lỗi của chính identity: **Linux trả lại ngay inode vừa giải phóng**, nên xoá rồi tạo lại cùng đường dẫn cho ra cùng `dev:ino` và kiểm tra bỏ sót ca nguồn bị thay — đúng ca tệ nhất mà nó tồn tại để chặn. Thêm `ctimeMs`: nó đổi bất cứ khi nào inode đổi. macOS không lộ ra vì phân bổ inode khác.
+  - Blockers: Không có; 14/14 test file đó, typecheck xanh. Chờ CI exact HEAD.
 
 Format:
 ```
