@@ -2506,6 +2506,12 @@ Chi tiết: [Detailed Goals](./spec-packaging-and-distribution-detailed-goal.md)
   - Decisions: `credential` trong bản đóng gói nhận database của coordinator; ai mở thì người đó đóng, vì huỷ database coordinator đang giữ là rút nó ra từ dưới cái lock vẫn cầm. Smoke root `realpathSync` ngay từ đầu — trên macOS `mkdtemp` trả path dưới `/var`, mà `/var` là symlink tới `/private/var`, và filesystem browser đi trên thư mục thật. Fixture import đặt dưới HOME tạm, vẫn **ngoài workspace** nhưng chỉ cách một lần đi xuống, nên phép đi không phụ thuộc việc listing phân trang của thư mục temp hệ thống đặt nó ở trang nào.
   - Blockers: **Lỗi sản phẩm thứ tư**: `POST /v1/projects/imports` trả **404 `not_found`** — route khai `startProjectImport` là dependency **tuỳ chọn** và **không nơi nào trong composition cung cấp**, nên endpoint của K.6 không với tới được ở bất kỳ mode nào. `planProjectImport` và staging copier đã có; job và phần nối thì chưa. Đây đúng là loại lỗi packaged smoke tồn tại để tìm: một route có trong code và chết trong mọi hệ thống đang chạy.
 
+2026-08-09 — K.6: thêm import job type còn thiếu
+  - Files: `packages/worker/src/project-import.ts`, `packages/worker/src/index.ts`, `tests/adapter/project-import-job.test.ts`, checklist
+  - Summary: `createProjectImportJobType` — mảnh mà K để trống giữa route và các use case đã có.
+  - Decisions: **Stage trước, rename sau cùng, luôn luôn.** Một bản copy ghi thẳng vào workspace thì watcher nhìn thấy nó khi nó **mới là nửa cái project**, và hỏng giữa chừng để lại một thư mục người dùng phải tự nhận diện và tự xoá; staging biến cả hai thành một lần rename hoặc có hoặc không. `backfill` chạy **sau** rename: đăng ký trước là trỏ vào một đường dẫn sắp thôi tồn tại. Đường hỏng chỉ dọn **staging của chính nó** — source và mọi thứ đã có trong workspace nằm ngoài tầm với, kể cả khi lỗi. `concurrency: 1` vì hai import chạy song song có thể chọn cùng một slug trống và kẻ thua sẽ rename đè lên thư mục kẻ thắng vừa tạo; `idempotent: false` vì chạy lại là import hai lần.
+  - Blockers: Job đã có và có test, nhưng **chưa nối vào `createJobTypes`/`createServerApp`** — cần một service dựng `plan`/`copy`/`commit`/`discard`/`backfill` từ `planProjectImport`, staging copier và `bootstrapProject`, rồi cấp `startProjectImport` cho route. K.6 vẫn mở cho tới lúc đó.
+
 Format:
 ```
 YYYY-MM-DD — Phase X, Task X.Y
