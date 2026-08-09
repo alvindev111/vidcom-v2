@@ -24,3 +24,4 @@ export * from "./cli-error";
 export * from "./output";
 export * from "./bridge/ensure-daemon";
 export * from "./bridge/remote-tool-invoker";
+export * from "./bridge/spawn-daemon";

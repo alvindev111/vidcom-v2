@@ -128,7 +128,11 @@ export interface ServingDaemon {
 export async function startServing(options: ServeCommandOptions = {}): Promise<ServingDaemon> {
   const appDataRoot = defaultAppDataRoot();
   const port = options.port ?? await freeLoopbackPort();
-  const pending = startNextHostedRuntime(port, options.workspace ?? process.env.VIDCOM_WORKSPACE);
+  const pending = startNextHostedRuntime(
+    port,
+    options.workspace ?? process.env.VIDCOM_WORKSPACE,
+    { autoStarted: options.ensure === true },
+  );
   registerHostedRuntime(port, pending);
   const runtime = await pending;
 

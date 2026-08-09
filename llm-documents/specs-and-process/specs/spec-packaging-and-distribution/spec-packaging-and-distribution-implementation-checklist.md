@@ -937,14 +937,16 @@ Mỗi phase chạy focused command dưới đây trên SQLite/filesystem thật,
   - Route đọc `credentialId` từ chính perimeter rồi truyền xuống invoker; nó **không tự tạo** danh tính nào. Audit do `ToolRegistry` của daemon ghi (actor `agent` đã cố định ở đó), nên bridge chết giữa lời gọi không mang theo bản ghi của lời gọi
   - [`bridge-routes.test.ts`](../../../../tests/server/bridge-routes.test.ts) 14 test trên `createServerApp` thật, gồm cả hai ca từ chối bearer và ca forward danh tính
   - _Requirements: R2.9_ — _Design: §5.7, DR-6_
-- [~] I.8 Auto-start + race — **resolver xong, child `serve --ensure` thuộc J.2**
+- [x] I.8 Auto-start + race
   - `ensure` spawn `serve --ensure` khi cần; kẻ thua race lease **chuyển thành client**, không throw rồi chết. Daemon sinh theo đường này MUST NOT mở browser
   - [`ensure-daemon.ts`](../../../../packages/cli/src/bridge/ensure-daemon.ts): đọc record → handshake → attach; hỏng ở bất kỳ bước nào thì **khởi một daemon** rồi nhìn lại
   - **Kẻ thua race là client, không phải lỗi**: hai client cùng thấy không có record và cùng khởi daemon; đúng một cái thắng lease, cái kia thoát. Client đã khởi cái thua **vẫn muốn một daemon, và đang có một** — nên spawn hỏng đi tiếp bằng cách nhìn lại, chỉ lần nhìn thứ hai rỗng mới là lỗi
   - Giữ nguyên lý do spawn hỏng để báo cáo nói đúng **lỗi thật** thay vì "không thấy daemon nào xuất hiện"
   - Record sống lâu hơn tiến trình nó mô tả là ca riêng: record trông hoàn toàn hợp lệ, chỉ handshake mới phát hiện ra
   - `kind` attach không phải nhãn: nó quyết định daemon có bao giờ được tự tắt không, nên test chốt nó được truyền đúng
-  - **Còn lại**: `spawnDaemon` thật (child `serve --ensure`, và luật MUST NOT mở browser) — `serve` là mode của **J.2**. Seam đã inject sẵn, nối vào là xong
+  - [`spawn-daemon.ts`](../../../../packages/cli/src/bridge/spawn-daemon.ts) sau khi J.2 có `serve`: child chạy `serve --ensure --workspace <root>`. **`--ensure` là thứ duy nhất cho phép một daemon tự tắt**, và thứ **vắng mặt** cũng là nội dung — không có cờ mở browser: daemon sinh ra vì một agent cần nó MUST NOT mở cửa sổ trên màn hình người khác
+  - Child `detached` + `stdio: "ignore"`: client thoát trước daemon rất lâu, và một child dùng chung stdio sẽ ghi vào pipe không ai đọc — mà khi caller là bridge thì pipe đó **chính là** stream JSON-RPC
+  - `waitForDaemonRecord` poll **file**, không theo dõi child của chính mình: thua race lease nghĩa là daemon của người khác publish, và một watcher trên tiến trình con của ta sẽ không bao giờ thấy điều đó
   - [`bridge-attachment.test.ts`](../../../../tests/cli/bridge-attachment.test.ts) 7 test
   - _Requirements: R2.4, R2.10, R2.15_ — _Design: §5.6_
 - [x] I.9 `stdout` của bridge chỉ JSON-RPC

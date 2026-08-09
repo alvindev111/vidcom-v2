@@ -5,7 +5,13 @@ import {
   type DaemonClient,
   type DaemonRecord,
 } from "@vidcom/adapter";
-import { ensureDaemon, type EnsureDaemonDependencies } from "@vidcom/cli";
+import {
+  ensureDaemon,
+  ensureDaemonArgs,
+  spawnEnsuredDaemon,
+  waitForDaemonRecord,
+  type EnsureDaemonDependencies,
+} from "@vidcom/cli";
 import { ErrorCode } from "@vidcom/contracts";
 import { describe, expect, it } from "vitest";
 
@@ -73,6 +79,52 @@ describe("bridge stdout", () => {
     }
   });
 });
+
+describe("starting a daemon on demand", () => {
+  it("marks it as started on demand and opens no window", () => {
+    // `--ensure` is the only thing that ever lets a daemon retire itself. And
+    // note what is missing: a daemon started because an agent needed one must
+    // not open a browser on somebody's screen.
+    expect(ensureDaemonArgs("/w")).toEqual(["serve", "--ensure", "--workspace", "/w"]);
+  });
+
+  it("detaches the child and gives it no stdio", () => {
+    // The client exits long before the daemon does. A child sharing this
+    // process's stdio would write into a pipe nobody reads — and when the
+    // caller is the bridge, that pipe is the JSON-RPC stream.
+    let seen: { options?: { detached?: boolean; stdio?: unknown } } = {};
+    spawnEnsuredDaemon({
+      workspaceRoot: "/w",
+      spawnProcess: ((_command: string, _args: string[], options: Record<string, unknown>) => {
+        seen = { options };
+        return { unref: () => undefined };
+      }) as never,
+    });
+    expect(seen.options).toMatchObject({ detached: true, stdio: "ignore" });
+  });
+
+  it("waits for whichever daemon publishes, not for its own child", async () => {
+    // Losing the lease race means somebody else's daemon publishes the record.
+    // Watching our own child would never see that.
+    let reads = 0;
+    const record = await waitForDaemonRecord(
+      () => Promise.resolve(reads++ < 2 ? null : record0),
+      { pollMs: 0, sleep: () => Promise.resolve() },
+    );
+    expect(record?.instanceId).toBe("daemon_winner");
+    expect(reads).toBe(3);
+  });
+
+  it("gives up rather than waiting for a daemon that never arrives", async () => {
+    expect(await waitForDaemonRecord(() => Promise.resolve(null), {
+      timeoutMs: 0,
+      pollMs: 0,
+      sleep: () => Promise.resolve(),
+    })).toBeNull();
+  });
+});
+
+const record0 = record("daemon_winner");
 
 describe("ensure daemon", () => {
   it("uses the daemon that is already serving the workspace", async () => {

@@ -89,7 +89,11 @@ function runtimeMap(): Map<number, Promise<NextHostedRuntime>> {
   return shared.__vidcomNextRuntimes ??= new Map();
 }
 
-export async function startNextHostedRuntime(port: number, explicitWorkspace?: string): Promise<NextHostedRuntime> {
+export async function startNextHostedRuntime(
+  port: number,
+  explicitWorkspace?: string,
+  options: { autoStarted?: boolean } = {},
+): Promise<NextHostedRuntime> {
   const clock = createSystemClock();
   const nonces = new InMemoryNonceStore(clock);
   const bootstrapNonce = process.env.VIDCOM_BOOTSTRAP_NONCE;
@@ -160,9 +164,9 @@ export async function startNextHostedRuntime(port: number, explicitWorkspace?: s
   const attachments = new AttachmentRegistry({
     clock,
     instanceId,
-    // Only a daemon something started on demand may retire itself. This host is
-    // started by a person, so it never does.
-    autoStarted: false,
+    // Only a daemon a client started on demand may retire itself. One a person
+    // started stays up until that person stops it, however quiet it gets.
+    autoStarted: options.autoStarted ?? false,
     hasActiveWork: () => foundation.infrastructure.jobs.hasNonTerminalJob?.() ?? false,
   });
   const workspaceOverview = async () => {
