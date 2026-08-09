@@ -73,7 +73,10 @@ export function planSteps() {
   // that owns it so a missing step is traceable to the work that adds it.
   return [
     { name: "runtime archives (B.3)", command: process.execPath, args: ["scripts/build-runtime-archives.mjs"] },
-    { name: "static export (G.6)", command: "npm", args: ["run", "build"] },
+    // `bun`, not `npm`: on Windows `npm` is a `.cmd` and Node refuses to spawn
+    // one without a shell, so this step would fail there for a reason that has
+    // nothing to do with the export. Bun is a real executable on all three.
+    { name: "static export (G.6)", command: "bun", args: ["run", "build"] },
     // The pack step runs under Bun so it can read the resolver in
     // `sea-static-host.ts` directly. The manifest's cache policy has to be the
     // one the host applies at runtime, and the only way to guarantee that is to

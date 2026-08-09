@@ -1795,6 +1795,12 @@ Chi tiết: [Detailed Goals](./spec-packaging-and-distribution-detailed-goal.md)
   - Decisions: Builder **tự tính hash từ chính byte nó tar** — không có trường hash nào trong config để bịa. Thứ config thật sự đòi là (a) `versions` gồm bảy tên, trong đó `hyperframes`/`esbuild`/`motion` suy được từ repo và `node` là pin của CI, còn `ffmpeg`/`cpython`/`vieneu` cần bản cài thật; (b) `archives[].source` là **thư mục có thật trên đĩa** để đóng gói; (c) `pythonPackages[<platform>]` là file liệt kê tập package **đã cài thật**, được đối chiếu với evidence trong `spikes/phase-4/s9-windows-runtime/evidence/` — evidence **đã có trong repo**, thứ thiếu là tập thật để so.
   - Blockers: Kể cả một archive chỉ gồm thành phần Node có sẵn trong `node_modules` (sharp, onnxruntime-node, hyperframes, linkedom, esbuild) cũng **không dựng được**, vì `buildRuntimeArchives` bắt buộc có `pythonPackages` cho mọi platform xuất hiện trong `archives` và verify nó trước khi tar bất cứ thứ gì. Đó là thiết kế của builder, không phải chỗ để lách. Cần: một lần cài CPython + VieNeu thật để sinh package-set, cùng cây FFmpeg/CPython/VieNeu đã giải nén.
 
+2026-08-09 — Phase H, H.0 (cùng lỗi spawn, lần này ở production)
+  - Files: `scripts/build-artifact.mjs`, `tests/build/build-artifact.test.ts`, checklist
+  - Summary: Bước static export của `build:artifact` gọi `npm` — **cùng lỗi vừa sửa trong test**, nhưng ở code build thật.
+  - Decisions: Đổi sang `bun`. Trên Windows `npm` là `.cmd` và Node từ chối spawn nó khi không có shell, nên `build:artifact` sẽ chết ở đó vì một lý do chẳng liên quan gì tới việc export. Thêm test ghim **không bước nào** dùng `npm`, để lỗi này không quay lại qua một bước khác.
+  - Blockers: Không có; tìm ra nhờ đọc lại chỗ vừa sửa trong test, không phải nhờ CI — Windows chưa bao giờ chạy tới bước này vì `build:artifact` còn bị chặn ở bước 1.
+
 Format:
 ```
 YYYY-MM-DD — Phase X, Task X.Y

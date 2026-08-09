@@ -37,6 +37,15 @@ describe("build:artifact", () => {
     expect(pack?.command).toBe("bun");
   });
 
+  it("starts every step with a binary all three platforms can spawn", () => {
+    // On Windows `npm` is a `.cmd`, and Node refuses to spawn one without a
+    // shell — a step written that way fails there for a reason that has nothing
+    // to do with what the step does.
+    for (const entry of planSteps()) {
+      expect(entry.command, entry.name).not.toBe("npm");
+    }
+  });
+
   it("names the checklist task that owns each step", () => {
     // A step that has no owner is a step nobody notices is missing.
     for (const entry of planSteps()) {
