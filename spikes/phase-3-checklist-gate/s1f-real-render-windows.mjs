@@ -16,7 +16,7 @@ import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import {
-  capture, descendantsOf, enumerate, enumeratorName, isAlive, killGroup, killPid,
+  capture, descendantsOf, enumerate, enumeratorName, killGroup, killPid,
   osIdentity, probeWindowsEnumerators, terminateAndVerify, isWindows, sleep,
 } from "./platform-supervisor.mjs";
 
@@ -66,14 +66,21 @@ if (observed === null) {
 
 // Ground truth recorded WHILE alive. After the parent dies these pids are
 // reparented and no tree walk can find them again (S1c measurementTrap).
-const groundTruth = observed.map((row) => ({ pid: row.pid, pgid: row.pgid, name: row.name ?? "" }));
+const groundTruth = observed.map((row) => ({
+  pid: row.pid,
+  pgid: row.pgid,
+  name: row.name ?? "",
+  startedAt: row.startedAt,
+}));
 const escaped = groundTruth.filter((row) => row.pgid !== null && row.pgid !== rootPid);
 
 const state = await capture(rootPid, 1000);
 const proof = await terminateAndVerify(rootPid, state);
 
 await sleep(1000);
-const survivorsByGroundTruth = groundTruth.filter((row) => isAlive(row.pid));
+const currentIdentities = new Map(enumerate().map((row) => [row.pid, row.startedAt]));
+const survivorsByGroundTruth = groundTruth.filter((row) =>
+  row.startedAt !== null && currentIdentities.get(row.pid) === row.startedAt);
 for (const row of survivorsByGroundTruth) killPid(row.pid);
 
 const honest = survivorsByGroundTruth.length === 0

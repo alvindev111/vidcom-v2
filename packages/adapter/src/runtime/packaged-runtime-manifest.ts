@@ -201,7 +201,11 @@ export function validatePackagedRuntimeManifest(
     ...contract.nodeEntries.flatMap((required) => {
       const entry = node.entries.find((candidate) => candidate.path === required.path);
       if (!entry) return [`node:${required.path}`];
-      if (required.executable === true && (entry.mode & 0o111) === 0) {
+      if (
+        requestedPlatform !== "win32-x64"
+        && required.executable === true
+        && (entry.mode & 0o111) === 0
+      ) {
         return [`node:${required.path}:executable`];
       }
       return [];

@@ -48,5 +48,10 @@ export default defineConfig({
     include: ["tests/**/*.test.ts"],
     testTimeout,
     hookTimeout,
+    // Windows performs an ACL subprocess for protected files and serializes
+    // SQLite cleanup behind open handles. Unbounded file parallelism made
+    // otherwise-fast integration tests consume their explicit 15/30 s budgets
+    // only in the full Actions suite, while each one passed alone.
+    maxWorkers: slowPlatform ? 2 : undefined,
   },
 });

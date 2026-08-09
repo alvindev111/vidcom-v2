@@ -58,10 +58,10 @@ jobs:
 
       # SameSite is enforced by the browser and by nothing else — spike S9
       # measured curl answering differently — so this job exists to run a real
-      # one. `hyperframes browser install` puts it in the same cache the
+      # one. `hyperframes browser ensure` puts it in the same cache the
       # resolver already searches.
       - name: Install chrome-headless-shell
-        run: node node_modules/hyperframes/bin/hyperframes.mjs browser install
+        run: node node_modules/hyperframes/bin/hyperframes.mjs browser ensure
 
       - name: Build the static frontend
         run: bun run build

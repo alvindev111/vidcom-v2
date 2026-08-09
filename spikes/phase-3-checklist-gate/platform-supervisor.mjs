@@ -29,12 +29,12 @@ function tryRun(command, args) {
 // ---------------------------------------------------------------- enumeration
 
 function enumeratePosix() {
-  const { ok, out } = tryRun("ps", ["-Ao", "pid=,ppid=,pgid="]);
+  const { ok, out } = tryRun("ps", ["-Ao", "pid=,ppid=,pgid=,lstart="]);
   if (!ok) return [];
   const rows = [];
   for (const line of out.split("\n")) {
-    const m = line.trim().match(/^(\d+)\s+(\d+)\s+(\d+)$/);
-    if (m) rows.push({ pid: +m[1], ppid: +m[2], pgid: +m[3] });
+    const m = line.trim().match(/^(\d+)\s+(\d+)\s+(\d+)\s+(.+)$/);
+    if (m) rows.push({ pid: +m[1], ppid: +m[2], pgid: +m[3], startedAt: m[4] });
   }
   return rows;
 }
@@ -65,7 +65,7 @@ const WINDOWS_ENUMERATORS = [
     probe: () => tryRun("tasklist", ["/fo", "csv", "/nh"]),
     parse: (out) => out.split("\n").flatMap((line) => {
       const m = line.match(/^"([^"]*)","(\d+)"/);
-      return m ? [{ pid: +m[2], ppid: null, pgid: null, name: m[1] }] : [];
+      return m ? [{ pid: +m[2], ppid: null, pgid: null, name: m[1], startedAt: null }] : [];
     }),
     providesParent: false,
   },
@@ -75,10 +75,10 @@ const WINDOWS_ENUMERATORS = [
     // so a few hundred milliseconds once per cancel is affordable in a way that
     // the same call per spawn would not be.
     probe: () => tryRun("powershell", ["-NoProfile", "-NonInteractive", "-Command",
-      "Get-CimInstance Win32_Process | ForEach-Object { \"$($_.ProcessId),$($_.ParentProcessId)\" }"]),
+      "Get-CimInstance Win32_Process | ForEach-Object { \"$($_.ProcessId),$($_.ParentProcessId),$($_.CreationDate.ToFileTimeUtc())\" }"]),
     parse: (out) => out.split("\n").flatMap((line) => {
-      const m = line.trim().match(/^(\d+),(\d+)$/);
-      return m ? [{ pid: +m[1], ppid: +m[2], pgid: null }] : [];
+      const m = line.trim().match(/^(\d+),(\d+),(\d+)$/);
+      return m ? [{ pid: +m[1], ppid: +m[2], pgid: null, startedAt: m[3] }] : [];
     }),
     providesParent: true,
   },
@@ -204,13 +204,28 @@ export const PROCESS_VERIFY_SWEEP_INTERVAL_MS = 100;
 export const PROCESS_VERIFY_MAX_SWEEPS = 20;
 
 /** Phase 1 — accumulate concrete pids and the distinct groups they belong to. */
-export async function capture(rootPid, durationMs, state = { pids: new Map(), groups: new Set() }) {
-  state.groups.add(rootPid);
+export async function capture(
+  rootPid,
+  durationMs,
+  state = { pids: new Map(), groups: new Map(), exhaustive: true },
+) {
   const deadline = Date.now() + durationMs;
   do {
-    for (const row of descendantsOf(enumerate(), rootPid)) {
-      state.pids.set(row.pid, row.name ?? "");
-      if (row.pgid !== null) state.groups.add(row.pgid);
+    const table = enumerate();
+    const root = table.find((row) => row.pid === rootPid);
+    if (!root || root.startedAt === null) state.exhaustive = false;
+    else {
+      state.pids.set(root.pid, root.startedAt);
+      state.groups.set(root.pid, root.startedAt);
+    }
+    for (const row of descendantsOf(table, rootPid)) {
+      if (row.startedAt === null) state.exhaustive = false;
+      else state.pids.set(row.pid, row.startedAt);
+      if (row.pgid !== null) {
+        const leader = table.find((candidate) => candidate.pid === row.pgid);
+        if (leader?.startedAt) state.groups.set(leader.pid, leader.startedAt);
+        else state.exhaustive = false;
+      }
     }
     if (Date.now() >= deadline) break;
     await sleep(PROCESS_CAPTURE_INTERVAL_MS);
@@ -221,9 +236,24 @@ export async function capture(rootPid, durationMs, state = { pids: new Map(), gr
 /** Phases 2 and 3 — kill recorded groups then recorded pids, verify by probe. */
 export async function terminateAndVerify(rootPid, state, reason = "abort") {
   const started = process.hrtime.bigint();
-  for (const group of state.groups) killGroup(group);
-  for (const pid of state.pids.keys()) killPid(pid);
-  killPid(rootPid);
+  const beforeKill = new Map(enumerate().map((row) => [row.pid, row.startedAt]));
+  if (!state.exhaustive) {
+    // Degraded enumerators cannot bind identity, but the root came directly from
+    // spawn and must still be contained. The proof remains explicitly degraded.
+    killGroup(rootPid);
+    killPid(rootPid);
+  } else {
+    for (const [group, capturedStart] of state.groups) {
+      const currentStart = beforeKill.get(group);
+      if (currentStart === capturedStart) killGroup(group);
+      else if (currentStart !== undefined) state.exhaustive = false;
+    }
+    for (const [pid, capturedStart] of state.pids) {
+      const currentStart = beforeKill.get(pid);
+      if (currentStart === capturedStart) killPid(pid);
+      else if (currentStart !== undefined) state.exhaustive = false;
+    }
+  }
 
   let sweeps = 0;
   let consecutiveEmpty = 0;
@@ -232,10 +262,17 @@ export async function terminateAndVerify(rootPid, state, reason = "abort") {
     sweeps += 1;
     // Late arrivals still get picked up, so a process that appeared after the
     // last capture poll is not silently excluded from the proof.
-    for (const row of descendantsOf(enumerate(), rootPid)) {
-      if (!state.pids.has(row.pid)) state.pids.set(row.pid, row.name ?? "");
+    const table = enumerate();
+    for (const row of descendantsOf(table, rootPid)) {
+      if (row.startedAt === null) state.exhaustive = false;
+      else if (!state.pids.has(row.pid)) state.pids.set(row.pid, row.startedAt);
     }
-    survivors = [...state.pids.keys()].filter(isAlive);
+    const current = new Map(table.map((row) => [row.pid, row.startedAt]));
+    survivors = [...state.pids].flatMap(([pid, capturedStart]) => {
+      const currentStart = current.get(pid);
+      if (currentStart !== undefined && currentStart !== capturedStart) state.exhaustive = false;
+      return currentStart === capturedStart ? [pid] : [];
+    });
     for (const pid of survivors) killPid(pid);
     consecutiveEmpty = survivors.length === 0 ? consecutiveEmpty + 1 : 0;
     if (consecutiveEmpty >= 2) break;
@@ -246,10 +283,10 @@ export async function terminateAndVerify(rootPid, state, reason = "abort") {
     reason,
     rootPid,
     capturedPids: [...state.pids.keys()],
-    capturedGroups: [...state.groups],
+    capturedGroups: [...state.groups.keys()],
     survivors,
     sweeps,
-    exhaustive: consecutiveEmpty >= 2,
+    exhaustive: state.exhaustive && consecutiveEmpty >= 2,
     elapsedMs: +(Number(process.hrtime.bigint() - started) / 1e6).toFixed(1),
   };
 }

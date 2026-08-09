@@ -1591,6 +1591,10 @@ export async function stageArtifactRuntime(paths, options = {}) {
       esbuildSource,
       "esbuild binary",
       true,
+      // Bun may hard-link package inputs from its global cache on Linux. The
+      // source is read-only build input; the staged release copy below still
+      // has one link and remains the provenance authority.
+      true,
     );
     const stagedEsbuild = path.join(nodeRoot, "bin", `esbuild${suffix}`);
     await copyFile(canonicalEsbuild, stagedEsbuild);

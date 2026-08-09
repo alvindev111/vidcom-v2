@@ -423,7 +423,13 @@ export function createRenderJobHandler(dependencies: RenderJobDependencies): Job
           signal: context.signal,
         });
         if (probed.status !== "exited" || probed.output.exitCode !== 0) {
-          throw new JobFailureError({ code: ErrorCode.Internal, message: "render artifact validation failed" });
+          const diagnostic = probed.status === "exited"
+            ? `ffprobe exited ${String(probed.output.exitCode)}: ${probed.output.stderr.trim().slice(0, 240)}`
+            : `ffprobe was ${probed.status}`;
+          throw new JobFailureError({
+            code: ErrorCode.Internal,
+            message: `render artifact validation failed (${diagnostic})`,
+          });
         }
         const artifactMetadata = metadata(probed.output.stdout);
         let guardSnapshot;

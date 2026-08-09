@@ -424,6 +424,53 @@ describe("render job with real SQLite and filesystem", () => {
     }
   });
 
+  it("preserves the bounded ffprobe diagnostic when rendered bytes are invalid", async () => {
+    const fixture = await baseFixture();
+    try {
+      const project = await addProject(fixture, "invalid-artifact", `<!doctype html><html><body>
+        <main data-composition-id="main" data-duration="1">
+          <section data-composition-id="scene-1" data-start="0" data-duration="1"></section>
+        </main></body></html>`);
+      const harness = await renderHarness(fixture);
+      let calls = 0;
+      const processPort: ProcessSupervisorPort = {
+        async run() {
+          calls += 1;
+          return calls === 1
+            ? {
+              status: "exited" as const,
+              output: { exitCode: 0, stdout: "", stderr: "", timedOut: false },
+            }
+            : {
+              status: "exited" as const,
+              output: {
+                exitCode: 1,
+                stdout: "",
+                stderr: "moov atom not found",
+                timedOut: false,
+              },
+            };
+        },
+      };
+      const queued = await enqueue(fixture, project.id);
+      expect(queued.ok).toBe(true);
+      if (!queued.ok) return;
+
+      await execute(fixture, harness.definition(processPort));
+
+      expect(calls).toBe(2);
+      await expect(fixture.jobs.get(queued.value.id as JobId)).resolves.toMatchObject({
+        status: "failed",
+        error: {
+          code: ErrorCode.Internal,
+          message: "render artifact validation failed (ffprobe exited 1: moov atom not found)",
+        },
+      });
+    } finally {
+      await fixture.database.destroy();
+    }
+  });
+
   it("leaves a crashed render marker-owned until every orphan condition allows reclaim", async () => {
     const fixture = await baseFixture();
     try {

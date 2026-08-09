@@ -2562,6 +2562,48 @@ Chi tiết: [Detailed Goals](./spec-packaging-and-distribution-detailed-goal.md)
   - Decisions: Không chạm hoặc merge `main`. GitHub dispatch dùng definition trên default branch, direct dispatch file mới trả HTTP 404, và called-job trong CI branch cũng không được base workflow nạp. Vì vậy hai file mới tự nghe `pull_request` nhưng job chỉ chạy cho đúng branch closeout này; mọi checkout ghim `pull_request.head.sha`, không dùng synthetic merge commit; artifact version cũng ghi head SHA đó. Sau merge, dispatch/schedule ban đầu vẫn là đường thường và PR khác không trả chi phí heavy.
   - Blockers: Chờ GitHub Actions trả evidence; YAML parse và `test:spec-paths` 115/115 xanh cục bộ.
 
+2026-08-10 — Phase G/M CI: HyperFrames browser command drift
+  - Files: `.github/workflows/phase4-browser-session.yml`, checklist và implementation notes
+  - Summary: Browser Linux fail trước test vì CLI `hyperframes@0.7.86` báo `Unknown subcommand: install`. Help runtime xác nhận subcommand hiện hành là `ensure`.
+  - Decisions: Sửa workflow theo CLI đã pin (`browser ensure`), không cài browser bằng action/URL khác và không nới `VIDCOM_REQUIRE_BROWSER=1`.
+  - Blockers: Chờ rerun exact head trên Linux/Windows; failure này xảy ra ở setup nên chưa tạo browser test evidence.
+
+2026-08-10 — Phase M CI Linux: esbuild input hardlink
+  - Files: `scripts/stage-artifact-runtime.mjs`, `tests/build/stage-artifact-runtime.test.ts`, Design §16, checklist và implementation notes
+  - Summary: Packaged Linux dựng xong frozen Python rồi fail staging: Bun global store hardlink `@esbuild/linux-x64/bin/esbuild`, còn stager áp `nlink === 1` lên source input.
+  - Decisions: Chỉ source esbuild contained trong exact package root nhận `shared=true`; symlink vẫn bị từ chối, staged `node/bin/esbuild` vẫn phải regular executable và `nlink === 1`. Cùng nguyên tắc đã dùng cho package manifest/tree, nay phủ nốt executable bị bỏ sót.
+  - Blockers: Focused staging/smoke 32/32 xanh cục bộ; chờ rerun Linux và hai OS còn lại.
+
+2026-08-10 — Phase M CI Windows: manifest executable mode
+  - Files: `packages/adapter/src/runtime/packaged-runtime-manifest.ts`, `tests/{adapter/packaged-runtime-manifest,support/runtime-fixture}.ts`, Design §16, checklist và implementation notes
+  - Summary: Packaged Windows dựng xong runtime, archive và SEA nhưng verifier từ chối product manifest vì bốn `.exe` không có POSIX execute bit.
+  - Decisions: Windows không có POSIX execute semantics; validator bỏ riêng mode-bit check cho `win32-x64` nhưng giữ nguyên exact path, hash, bytes, archive closure và regular-file proof. POSIX vẫn bắt buộc `0o111`. Regression dựng full Windows product manifest có executable mode `0o666` ngay trên máy macOS để không phụ thuộc runner.
+  - Blockers: Focused manifest test xanh cục bộ; chờ packaged Windows exact-head rerun.
+
+2026-08-10 — Phase D/M CI Windows: process identity trong spike proof
+  - Files: `spikes/phase-3-checklist-gate/platform-supervisor.mjs`, Design §16, checklist và implementation notes
+  - Summary: Windows Actions ghi ground-truth ledger không survivor nhưng legacy spike vẫn báo hai PID sống sau 20 sweep; PID đã được hệ điều hành tái sử dụng.
+  - Decisions: Capture, terminate và survivor proof của spike bind mỗi PID/process group với OS process-start identity, cùng authority production supervisor đã dùng. PID tái sử dụng không bị kill và làm enumeration được báo không exhaustive thay vì survivor giả. Local macOS spike PASS sau sửa.
+  - Blockers: Chờ process-supervision Windows exact-head rerun; real-render Windows chỉ được chạy khi prerequisite này xanh.
+
+2026-08-10 — Phase M CI Windows: full-suite scheduling và path separator
+  - Files: `vitest.config.ts`, `tests/build/packaged-smoke.test.ts`, Design §16, checklist và implementation notes
+  - Summary: Windows chạy xanh 197 file rồi ba integration file timeout đồng loạt dưới full parallel load; lỗi xác định còn lại là symlink test hard-code `/` trong khi `readlink` trả `\\`.
+  - Decisions: Giới hạn riêng Windows còn hai Vitest worker để test filesystem/SQLite/ACL nhận đúng budget; không skip test và không nới assertion. Symlink target so bằng `path.normalize`. Browser workflow riêng vẫn chạy Chrome thật bắt buộc.
+  - Blockers: Chờ full CI Windows exact-head rerun xác nhận không còn timeout/EBUSY dây chuyền.
+
+2026-08-10 — Phase M CI macOS: 11/13 packaged smoke và hai chẩn đoán tiếp theo
+  - Files: `scripts/packaged-smoke/bodies.mjs`, `packages/worker/src/render-job.ts`, `tests/adapter/render-job.test.ts`, Design §16, checklist và implementation notes
+  - Summary: macOS build/verify artifact xanh; render online, TTS, UI, import, bridge, upload, CLI/cancel đều xanh. Offline render fail ở ffprobe sau khi HyperFrames trả 0; lease-loss fail vì smoke đòi 404 qua browser cookie.
+  - Decisions: Lease assertion sửa theo perimeter namespace đã chốt: bootstrap surface phải trả `401 credential_invalid`, rồi smoke kiểm riêng NoWorkspace/listener/winner. Render error giữ bounded ffprobe exit/stderr để CI kế tiếp cho bằng chứng thay vì đoán retry; unit regression chốt diagnostic. Windows real-render job được bật cho đúng closeout PR và checkout exact head.
+  - Blockers: Offline ffprobe vẫn cần log từ rerun để sửa nguyên nhân; production supply-chain human gate vẫn mở độc lập.
+
+2026-08-10 — Phase M: local council gate sau batch CI đầu
+  - Files: toàn bộ code/test thay đổi trong batch Windows/Linux/macOS, checklist và implementation notes
+  - Summary: Full local suite xanh **202 file pass + 1 intentional skip, 1813 test pass + 5 intentional skip**; focused runtime/stager 41/41, process spike PASS, typecheck, boundaries, YAML, spec-path và lint 0 error đều xanh.
+  - Decisions: Bốn lint warning có sẵn vẫn ngoài scope. Không stage/chạm thay đổi người dùng ở `tests/adapter/remote-asset-browser.test.ts`.
+  - Blockers: Exact-head Actions rerun vẫn là authority cho ba OS và offline failure diagnostic.
+
 Format:
 ```
 YYYY-MM-DD — Phase X, Task X.Y

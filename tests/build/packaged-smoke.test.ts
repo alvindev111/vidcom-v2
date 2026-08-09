@@ -87,7 +87,7 @@ describe("packaged smoke steps", () => {
       await symlink("../../blobs/model", path.join(source, "snapshots", "revision", "model"));
       await copyCacheContents(source, destination);
       expect(await readlink(path.join(destination, "snapshots", "revision", "model")))
-        .toBe("../../blobs/model");
+        .toBe(path.normalize("../../blobs/model"));
     } finally {
       await rm(root, { recursive: true, force: true });
     }

@@ -94,8 +94,9 @@ export interface ProductFixtureEntries {
 /** Complete host product contract used by real-archive integration fixtures. */
 export function productRuntimeFixtureEntries(
   migrations: readonly FixtureFile[] = [],
+  platformTag: RuntimePlatformTag = HOST_TAG,
 ): ProductFixtureEntries {
-  const windows = HOST_TAG === "win32-x64";
+  const windows = platformTag === "win32-x64";
   const suffix = windows ? ".exe" : "";
   const commonNativePackageNames = [
     "sharp",
@@ -106,17 +107,17 @@ export function productRuntimeFixtureEntries(
     "onnxruntime-node",
     "onnxruntime-common",
   ];
-  const platformPackageNames = HOST_TAG === "darwin-arm64"
+  const platformPackageNames = platformTag === "darwin-arm64"
     ? ["@img/sharp-darwin-arm64", "@img/sharp-libvips-darwin-arm64", "@esbuild/darwin-arm64"]
-    : HOST_TAG === "linux-x64"
+    : platformTag === "linux-x64"
       ? ["@img/sharp-linux-x64", "@img/sharp-libvips-linux-x64", "@esbuild/linux-x64"]
       : ["@img/sharp-win32-x64", "@esbuild/win32-x64"];
-  const onnxPlatform = windows ? "win32" : HOST_TAG.split("-", 1)[0]!;
-  const onnxArchitecture = HOST_TAG.endsWith("-arm64") ? "arm64" : "x64";
+  const onnxPlatform = windows ? "win32" : platformTag.split("-", 1)[0]!;
+  const onnxArchitecture = platformTag.endsWith("-arm64") ? "arm64" : "x64";
   const onnxRoot = `node_modules/onnxruntime-node/bin/napi-v3/${onnxPlatform}/${onnxArchitecture}`;
   const platformEsbuild = windows
     ? "node_modules/@esbuild/win32-x64/esbuild.exe"
-    : `node_modules/@esbuild/${HOST_TAG}/bin/esbuild`;
+    : `node_modules/@esbuild/${platformTag}/bin/esbuild`;
   const native: FixtureFile[] = [
     ...[...commonNativePackageNames, ...platformPackageNames].map((name) => ({
       path: `node_modules/${name}/package.json`,
@@ -130,32 +131,32 @@ export function productRuntimeFixtureEntries(
     {
       path: windows
         ? `${onnxRoot}/onnxruntime.dll`
-        : HOST_TAG === "darwin-arm64"
+        : platformTag === "darwin-arm64"
           ? `${onnxRoot}/libonnxruntime.1.0.0.dylib`
           : `${onnxRoot}/libonnxruntime.so.1`,
       content: Buffer.from("runtime\n", "utf8"),
     },
     { path: platformEsbuild, content: Buffer.from("esbuild\n", "utf8"), mode: 0o755 },
     {
-      path: `node_modules/@img/sharp-${HOST_TAG}/lib/sharp-${HOST_TAG}.node`,
+      path: `node_modules/@img/sharp-${platformTag}/lib/sharp-${platformTag}.node`,
       content: Buffer.from("sharp\n", "utf8"),
     },
     ...windows ? [] : [{
-      path: `node_modules/@img/sharp-libvips-${HOST_TAG}/lib/libvips-cpp.${
-        HOST_TAG === "darwin-arm64" ? "1.dylib" : "so.1"
+      path: `node_modules/@img/sharp-libvips-${platformTag}/lib/libvips-cpp.${
+        platformTag === "darwin-arm64" ? "1.dylib" : "so.1"
       }`,
       content: Buffer.from("libvips\n", "utf8"),
     }],
   ];
   return {
     node: [
-      { path: `bin/ffmpeg${suffix}`, content: Buffer.from("ffmpeg\n"), mode: 0o755 },
-      { path: `bin/ffprobe${suffix}`, content: Buffer.from("ffprobe\n"), mode: 0o755 },
-      { path: `bin/esbuild${suffix}`, content: Buffer.from("esbuild\n"), mode: 0o755 },
+      { path: `bin/ffmpeg${suffix}`, content: Buffer.from("ffmpeg\n"), mode: windows ? 0o666 : 0o755 },
+      { path: `bin/ffprobe${suffix}`, content: Buffer.from("ffprobe\n"), mode: windows ? 0o666 : 0o755 },
+      { path: `bin/esbuild${suffix}`, content: Buffer.from("esbuild\n"), mode: windows ? 0o666 : 0o755 },
       {
         path: windows ? "python/python.exe" : "python/bin/python3",
         content: Buffer.from("python\n"),
-        mode: 0o755,
+        mode: windows ? 0o666 : 0o755,
       },
       { path: "vieneu/worker.py", content: Buffer.from("# worker\n") },
       ...migrations,

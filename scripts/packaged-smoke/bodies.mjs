@@ -921,8 +921,12 @@ export const STEP_BODIES = {
         headers: { Cookie: ui.cookie, "content-type": "application/json" },
         body: "{}",
       });
-      if (bridge.status !== 404 || (await bridge.json()).error?.code !== "not_found") {
-        throw new Error("UI lease loss did not remove the bridge route");
+      // Namespace auth is deliberately evaluated before route matching. Once
+      // the foundation has stopped, its credential verifier is gone too, so
+      // the inaccessible bridge surface reads as credential_invalid rather
+      // than leaking whether a handler is mounted behind a browser cookie.
+      if (bridge.status !== 401 || (await bridge.json()).error?.code !== "credential_invalid") {
+        throw new Error("UI lease loss left the bridge namespace reachable");
       }
       const workspace = await jsonResponse("no-workspace state", await fetch(
         `${ui.baseUrl}/api/v1/system/workspace`,
@@ -966,7 +970,7 @@ export const STEP_BODIES = {
         if (!headlessStopped) await stopServing(headless);
       }
       context.measurements.leaseLoss = { ui: "no-workspace", headless: "non-zero-exit" };
-      return "UI kept listener with bridge absent and winner wrote; headless withdrew discovery and exited non-zero";
+      return "UI kept listener with bridge inaccessible and winner wrote; headless withdrew discovery and exited non-zero";
     } finally {
       if (!uiStopped) {
         await stopServing(ui);

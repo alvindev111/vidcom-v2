@@ -442,6 +442,12 @@ describe("artifact runtime staging", () => {
 
   it("stages two deterministic archive roots through real filesystem and child processes", async () => {
     const input = await fixture();
+    const esbuildPackageName = nativePackageNamesFor(HOST_TAG)
+      .find((packageName: string) => packageName.startsWith("@esbuild/"));
+    const esbuildPackage = input.nativePackageRoots.get(esbuildPackageName!);
+    const esbuildInput = path.join(esbuildPackage!, esbuildPlatformBinaryRelative(HOST_TAG));
+    await link(esbuildInput, path.join(input.root, `package-cache-esbuild${SUFFIX}`));
+    expect((await lstat(esbuildInput)).nlink).toBeGreaterThan(1);
     const result = await stageArtifactRuntime(input.paths, stageOptions(input));
 
     expect(await readFile(path.join(input.paths.outputRoot, "node", "cli", "boot.cjs"), "utf8"))
@@ -460,7 +466,9 @@ describe("artifact runtime staging", () => {
       "20990101000000_injected",
       "migration.sql",
     ))).toBe(false);
-    expect(existsSync(path.join(input.paths.outputRoot, "node", "bin", `esbuild${SUFFIX}`))).toBe(true);
+    const stagedEsbuild = path.join(input.paths.outputRoot, "node", "bin", `esbuild${SUFFIX}`);
+    expect(existsSync(stagedEsbuild)).toBe(true);
+    expect((await lstat(stagedEsbuild)).nlink).toBe(1);
     expect(existsSync(path.join(input.paths.outputRoot, "node", "python", "lib", "python3.12", "ensurepip"))).toBe(false);
     expect(existsSync(path.join(input.paths.outputRoot, "node", "python", "bin", "pip"))).toBe(false);
     const runtimePython = process.platform === "win32"

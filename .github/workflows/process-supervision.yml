@@ -182,13 +182,15 @@ jobs:
   # rather than seconds, and the answer changes only when HyperFrames or the OS does.
   real-render-windows:
     name: Real render — Windows x64
-    if: github.event_name != 'pull_request'
+    if: github.event_name != 'pull_request' || github.head_ref == 'feat-packaging-and-distribution'
     runs-on: windows-latest
     timeout-minutes: 30
 
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
 
       - name: Set up Node
         uses: actions/setup-node@v4
@@ -205,6 +207,9 @@ jobs:
 
       - name: Install dependencies
         run: bun install --frozen-lockfile
+
+      - name: Install the pinned HyperFrames browser
+        run: bunx hyperframes browser ensure
 
       # Does chrome-headless-shell leave the root's process group on Windows the
       # way it does on macOS? This is the one question the synthetic fixture
