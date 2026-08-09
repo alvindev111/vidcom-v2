@@ -241,6 +241,10 @@ function hasTerminalJob(
     ).get(...types) as { present?: number } | undefined;
     return row?.present === 1;
   } catch {
+    // No job table means nothing has ever run here, which is the same answer a
+    // healthy empty install gives. Doctor is the command people reach for when
+    // the install is broken, so every probe has to survive the broken case
+    // rather than take the whole report down with it.
     return false;
   }
 }

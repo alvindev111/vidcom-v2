@@ -138,6 +138,11 @@ export async function readStagingMarker(staging: string): Promise<ImportStagingM
     if (typeof parsed.operationId !== "string" || typeof parsed.target !== "string") return null;
     return parsed as ImportStagingMarker;
   } catch {
+    // A marker that cannot be read is treated as no marker, which leaves the
+    // directory alone. The conservative direction here is the opposite of the
+    // download marker's: that one guards a cache we may re-fetch, this one sits
+    // in the user's workspace, and deleting a tree we cannot identify is worse
+    // than leaving one behind.
     return null;
   }
 }
@@ -152,6 +157,9 @@ export async function listStagingDirectories(workspaceRoot: string): Promise<Arr
   try {
     entries = await readdir(workspaceRoot, { withFileTypes: true });
   } catch {
+    // An unreadable workspace has nothing to recover, and recovery runs at
+    // start-up: failing here would stop a daemon from booting over a directory
+    // problem the user will see reported everywhere else.
     return found;
   }
   for (const entry of entries) {
