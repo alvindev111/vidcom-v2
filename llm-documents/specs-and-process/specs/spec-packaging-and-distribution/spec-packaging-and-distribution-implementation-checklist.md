@@ -2527,6 +2527,12 @@ Chi tiết: [Detailed Goals](./spec-packaging-and-distribution-detailed-goal.md)
   - Decisions: `assertFilesMatchEntries` so `mode & 0o777` với mode trong manifest. Windows báo cố định `0o666` (hoặc `0o444` khi read-only) cho mọi file, nên phép so đó **từ chối một stage đúng vì một quyền mà nền tảng chưa bao giờ có**. Chỉ so mode ở nơi filesystem thật sự lưu nó; manifest **vẫn giữ** mode vì nó có nghĩa khi archive được giải nén trên máy POSIX, và **hash — khẳng định thực chất về đống byte này — vẫn kiểm trên cả ba**. Đây là lần thứ hai cùng một sự thật (Windows không mô hình hoá bit POSIX) làm đỏ một chỗ khác; lần trước ở test, lần này ở verifier. Ca `target_not_directory` thêm `force` khi `rm`: Windows có thể để thư mục lại khi handle chưa nhả xong, và `writeFile` đè lên thư mục còn đó hỏng đủ im lặng để inspection **không báo gì** thay vì báo đúng sự cố mà ca này mô tả.
   - Blockers: Không có cục bộ; full suite 1790 pass / 5 skip, typecheck và lint 0 error. Chờ CI xác nhận Windows.
 
+2026-08-09 — Windows: hai nền tảng mô tả cùng một hỏng hóc bằng hai errno
+  - Files: `packages/adapter/src/runtime/runtime-asset-manager.ts`, `tests/adapter/runtime-asset-manager.test.ts`, checklist
+  - Summary: Đổi khẳng định sang `toMatchObject` cả object để nó **in ra thứ nhận được**, và bằng chứng chỉ thẳng nguyên nhân: Windows trả `state: "missing"` cho một install mà cha của target là **file**.
+  - Decisions: Hai lần đoán trước (junction, `force`) đều sai vì `toBe` chỉ in `undefined` và giấu mất lý do thật. Gốc: khi một thư mục cha là file, POSIX báo **ENOTDIR** còn Windows báo **ENOENT**, nên `pathKind` trả `absent` và cùng một install hỏng đọc thành `missing` ở đây, `target_not_directory` ở kia. Không phẳng hoá hai cái làm một: **install thiếu thì giải nén lại, install hỏng thì phải dọn thứ đang chắn đường trước**. Thêm `hasNonDirectoryAncestor` kiểm chuỗi cha tường minh thay vì dựa vào errno — độc lập nền tảng và chính xác hơn cả hai.
+  - Blockers: Windows còn `download-cache` timeout 30 s ở `tests/adapter/download-cache.test.ts:150` — thuộc **họ lock/EBUSY đã ghi trong bảng flake**, chưa sửa và không sửa bằng retry. Full suite cục bộ 1790 pass / 5 skip.
+
 Format:
 ```
 YYYY-MM-DD — Phase X, Task X.Y

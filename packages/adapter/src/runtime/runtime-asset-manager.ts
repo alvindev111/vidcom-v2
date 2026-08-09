@@ -328,6 +328,17 @@ async function isRealContainedDirectory(versionRoot: string, target: string): Pr
   }
 }
 
+/** True when something between the version root and the target is not a directory. */
+async function hasNonDirectoryAncestor(versionRoot: string, target: string): Promise<boolean> {
+  let current = path.dirname(target);
+  while (current.startsWith(versionRoot) && current !== versionRoot && current !== path.dirname(current)) {
+    const kind = await pathKind(current);
+    if (kind !== "absent" && kind !== "directory") return true;
+    current = path.dirname(current);
+  }
+  return false;
+}
+
 async function inspectArchiveInstallation(
   archive: EmbeddedArchive,
   artifactVersion: string,
@@ -335,7 +346,19 @@ async function inspectArchiveInstallation(
   root: string,
 ): Promise<RuntimeArchiveInspection> {
   const kind = await pathKind(root);
-  if (kind === "absent") return { key: archive.key, version: artifactVersion, root, state: "missing" };
+  if (kind === "absent") {
+    // "Absent" only when the whole chain is genuinely absent. A parent that is
+    // a file makes the target unreachable, and the two platforms describe that
+    // differently — POSIX reports ENOTDIR, Windows reports ENOENT, so the same
+    // corrupt install read as `missing` on one and `target_not_directory` on
+    // the other. The distinction is worth keeping rather than papering over:
+    // a missing install is re-extracted, a corrupt one has something in the way
+    // that has to be removed first.
+    if (await hasNonDirectoryAncestor(versionRoot, root)) {
+      return { key: archive.key, version: artifactVersion, root, state: "incomplete", reason: "target_not_directory" };
+    }
+    return { key: archive.key, version: artifactVersion, root, state: "missing" };
+  }
   if (kind !== "directory" || !await isRealContainedDirectory(versionRoot, root)) {
     return { key: archive.key, version: artifactVersion, root, state: "incomplete", reason: "target_not_directory" };
   }
