@@ -539,7 +539,18 @@ export async function resolvePackageDirectory(packageName, resolver) {
     }
   }
 
-  fail(`required package ${packageName} is not installed for the HyperFrames runtime`);
+  // Says what it looked at, not just that it failed. This resolution depends on
+  // how the package manager laid out the store, which differs per platform, and
+  // a bare "not installed" turns every platform difference into another guess.
+  const looked = [
+    ...(resolver.resolve.paths(packageName) ?? []),
+    ...(requireFromRepository.resolve.paths(packageName) ?? []),
+  ].slice(0, 8);
+  const present = looked.filter((searchRoot) => existsSync(path.join(searchRoot, ...packageName.split("/"))));
+  fail(`required package ${packageName} is not installed for the HyperFrames runtime`, {
+    searched: looked,
+    present,
+  });
 }
 
 async function defaultHyperframesRoot() {

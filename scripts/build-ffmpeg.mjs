@@ -44,9 +44,11 @@ export const FFMPEG_SOURCES = Object.freeze({
     sha256: "sha256:cd71a7515b0e9a012e1ac9b1f8415bebcaf6fc97d4db32286642ac4c0fbe24f9",
   },
   x265: {
-    version: "3.6",
-    url: "https://bitbucket.org/multicoreware/x265_git/downloads/x265_3.6.tar.gz",
-    sha256: "sha256:663531f341c5389f460d730e62e10a4fcca3428ca2ca109693867bc5fe2e2807",
+    // 4.1 rather than 3.6: 3.6 sets CMake policies to OLD, and CMake 4 refuses
+    // those outright, so it cannot be configured on a current runner at all.
+    version: "4.1",
+    url: "https://bitbucket.org/multicoreware/x265_git/downloads/x265_4.1.tar.gz",
+    sha256: "sha256:a31699c6a89806b74b0151e5e6a7df65de4b49050482fe5ebf8a4379d7af8f29",
   },
   libvpx: {
     version: "1.14.1",
@@ -163,16 +165,15 @@ export function ffmpegConfigureArgs(prefix) {
 }
 
 /**
- * x265 needs telling that an old policy version is acceptable.
+ * How x265 is configured, and why the version moved to get here.
  *
- * Its CMake files declare a minimum below what current CMake will accept
- * without complaint, so a plain configure stops with "Configuring incomplete".
- * Named here rather than discovered again: the first build swallowed that
- * failure, FFmpeg then found the system libx265 through pkg-config's default
- * search path, and the result linked a dylib no user machine has.
+ * x265 3.6 sets two CMake policies to OLD, and CMake 4 refuses those outright —
+ * not a warning, a hard "Configuring incomplete". Worth recording because of
+ * what it cost: the first build swallowed that failure, FFmpeg then found the
+ * system libx265 through pkg-config's default search path, and the result was a
+ * "static" binary linking a dylib no user machine has.
  */
 export const X265_CMAKE_ARGS = Object.freeze([
-  "-DCMAKE_POLICY_VERSION_MINIMUM=3.5",
   "-DENABLE_SHARED=OFF",
   "-DENABLE_CLI=OFF",
   "-DCMAKE_BUILD_TYPE=Release",
