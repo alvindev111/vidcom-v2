@@ -4,6 +4,8 @@ import { fileURLToPath } from "node:url";
 
 import { artifactPath } from "../build-sea.mjs";
 import { hostPlatformTag } from "../stage-artifact-runtime.mjs";
+import { STEP_BODIES } from "./bodies.mjs";
+import { createSmokeRoot } from "./environment.mjs";
 import {
   failedStepIds,
   parseSmokeArgs,
@@ -45,7 +47,7 @@ function hostArtifactTag() {
   }
 }
 
-async function runStep(step) {
+async function runStep(step, context) {
   const startedAt = Date.now();
   const blocked = blockedReason();
   if (blocked !== null) {
@@ -57,22 +59,48 @@ async function runStep(step) {
       detail: blocked,
     };
   }
-  // Each step's body lands with the platform job that runs it (M.3a–M.3d).
-  // Until then a present artifact still reports honestly rather than passing.
-  return {
-    id: step.id,
-    required: step.required,
-    status: "skipped",
-    durationMs: Date.now() - startedAt,
-    detail: "this step has no body yet",
-  };
+
+  const body = STEP_BODIES[step.id];
+  if (!body) {
+    return {
+      id: step.id,
+      required: step.required,
+      status: "skipped",
+      durationMs: Date.now() - startedAt,
+      detail: "this step has no body yet",
+    };
+  }
+
+  try {
+    const detail = await body(context);
+    return { id: step.id, required: step.required, status: "passed", durationMs: Date.now() - startedAt, detail };
+  } catch (error) {
+    // Failed, never skipped. A step whose body threw was reached and did not do
+    // what it claims to do, and those two outcomes need opposite responses.
+    return {
+      id: step.id,
+      required: step.required,
+      status: "failed",
+      durationMs: Date.now() - startedAt,
+      detail: error instanceof Error ? error.message : String(error),
+    };
+  }
 }
 
 async function main(argv) {
   const options = parseSmokeArgs(argv);
   const results = [];
+  const tag = hostArtifactTag();
+  // One environment for the whole run: the steps build on each other, and a
+  // fresh HOME per step would make "cold" and "warm" the same measurement.
+  const smoke = blockedReason() === null ? await createSmokeRoot() : null;
+  const context = smoke === null ? null : {
+    ...smoke,
+    artifact: artifactPath(tag),
+    measurements: {},
+  };
   for (const step of selectSteps(options)) {
-    const result = await runStep(step);
+    const result = await runStep(step, context);
     results.push(result);
     // Progress on stderr so stdout stays clean for the evidence document.
     process.stderr.write(
@@ -81,10 +109,13 @@ async function main(argv) {
     );
   }
 
+  await smoke?.dispose();
+
   process.stdout.write(`${JSON.stringify({
     version: 1,
-    platform: hostArtifactTag(),
+    platform: tag,
     strict: options.strict === true,
+    measurements: context?.measurements ?? {},
     steps: results,
   }, null, 2)}\n`);
 

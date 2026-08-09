@@ -150,10 +150,8 @@ export const STEP_BODIES = {
   async "ui-lifecycle"(context) {
     const serving = await startServing(context);
     try {
-      const health = await fetch(`${serving.baseUrl}/api/v1/health`);
-      if (!health.ok) throw new Error(`health returned ${String(health.status)}`);
-      const nonce = /token=(\S+)/u.exec(serving.output())?.[1];
-      if (!nonce) throw new Error("serve did not mint a one-time token for the browser hand-off");
+      const nonce = context.environment.VIDCOM_BOOTSTRAP_NONCE;
+      if (!nonce) throw new Error("the smoke environment carries no bootstrap nonce");
 
       const exchange = await fetch(`${serving.baseUrl}/api/v1/auth/exchange`, {
         method: "POST",
@@ -170,6 +168,13 @@ export const STEP_BODIES = {
         body: JSON.stringify({ name: "Smoke", preset: "vertical-shorts" }),
       });
       if (!created.ok) throw new Error(`creating a project returned ${String(created.status)}`);
+
+      // Health is checked *after* the exchange, not before. The security
+      // perimeter requires a session on every path except the exchange itself,
+      // and `tests/server/security.test.ts` pins that — so an unauthenticated
+      // probe here would be asserting the opposite of a deliberate decision.
+      const health = await fetch(`${serving.baseUrl}/api/v1/health`, { headers: { Cookie: cookie } });
+      if (!health.ok) throw new Error(`health returned ${String(health.status)}`);
       context.session = { baseUrl: serving.baseUrl, cookie };
       return `served on ${serving.baseUrl}; nonce exchanged and a project created`;
     } finally {

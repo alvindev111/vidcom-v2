@@ -1,29 +1,19 @@
+import { randomBytes } from "node:crypto";
 import { mkdtemp, mkdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
 /**
- * PATH entries that would let the artifact cheat.
+ * An empty PATH, not a filtered one.
  *
- * The promise being tested is that the executable carries its own Node and its
- * own Python. A runner has both installed for the rest of CI, so leaving them
- * on PATH means a packaged build with a broken runtime still passes — and the
- * failure only appears on a user's machine, which is the one place nobody is
- * watching.
+ * Filtering by directory name was wrong and the smoke said so on the first real
+ * run: `/opt/homebrew/bin` holds `node` while containing none of the words a
+ * filter looks for. The promise under test is that the executable carries its
+ * own Node and its own Python, and the only way to state that is to hand it a
+ * PATH with nothing on it at all.
  */
-export const FORBIDDEN_PATH_MARKERS = Object.freeze([
-  "node", "nodejs", "python", "python3", "bun", "hostedtoolcache", "pyenv", "nvm",
-]);
-
-export function scrubbedPath(rawPath, delimiter = path.delimiter) {
-  return (rawPath ?? "")
-    .split(delimiter)
-    .filter(Boolean)
-    .filter((entry) => {
-      const lowered = entry.toLowerCase();
-      return !FORBIDDEN_PATH_MARKERS.some((marker) => lowered.includes(marker));
-    })
-    .join(delimiter);
+export function emptyPath(binDirectory) {
+  return binDirectory;
 }
 
 /**
@@ -39,7 +29,7 @@ export function smokeEnvironment(root, base = process.env) {
   const home = path.join(root, "home");
   return {
     ...Object.fromEntries(Object.entries(base).filter(([key]) => !key.startsWith("VIDCOM_"))),
-    PATH: scrubbedPath(base.PATH),
+    PATH: emptyPath(path.join(root, "empty-bin")),
     HOME: home,
     USERPROFILE: home,
     // Seeded caches live under the temporary HOME, so a warm run reads them and
@@ -47,6 +37,11 @@ export function smokeEnvironment(root, base = process.env) {
     XDG_CACHE_HOME: path.join(home, ".cache"),
     HF_HOME: path.join(home, ".cache", "huggingface"),
     VIDCOM_APP_DATA: path.join(root, "app-data"),
+    // The same hand-off `app` mode mints for a browser, supplied here instead.
+    // `serve` is headless by design and opens nothing, so a smoke that waited
+    // for it to print a token would wait forever — and using `app` would put a
+    // browser window on a runner.
+    VIDCOM_BOOTSTRAP_NONCE: randomBytes(32).toString("base64url"),
     // Strict turns a missing required component into a failure rather than a
     // skip, which is the whole point of running this in a job (R8.4).
     VIDCOM_DOCTOR_STRICT: "1",
@@ -63,6 +58,9 @@ export async function createSmokeRoot() {
     // The artifact is launched from here, so anything it drops beside its
     // working directory shows up as an entry nobody put there.
     mkdir(path.join(root, "cwd"), { recursive: true }),
+    // The only directory on PATH, and it stays empty: `which node` has to come
+    // back with nothing rather than with something the runner installed.
+    mkdir(path.join(root, "empty-bin"), { recursive: true }),
   ]);
   return {
     root,
