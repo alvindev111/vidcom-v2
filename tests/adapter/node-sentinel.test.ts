@@ -1,5 +1,14 @@
-import { realpathSync } from "node:fs";
-import { access, mkdir, mkdtemp, readFile, rename, rm, symlink, writeFile } from "node:fs/promises";
+import {
+  access,
+  mkdir,
+  mkdtemp,
+  readFile,
+  realpath,
+  rename,
+  rm,
+  symlink,
+  writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
@@ -36,8 +45,12 @@ afterEach(async () => {
   await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
 });
 
+// The async `realpath`, matching what the sentinel itself calls. On Windows the
+// two disagree: the sync one leaves an 8.3 short name like `RUNNER~1` in place
+// while the async one returns the long form, so a test built on `realpathSync`
+// compares two spellings of the same directory and fails only there.
 async function temporaryRoot(prefix = "vidcom-sentinel-"): Promise<string> {
-  const root = realpathSync(await mkdtemp(path.join(tmpdir(), prefix)));
+  const root = await realpath(await mkdtemp(path.join(tmpdir(), prefix)));
   roots.push(root);
   return root;
 }
@@ -212,7 +225,7 @@ describe("node sentinel", () => {
     await runVidcomCli([NODE_SENTINEL, installed.script, output]);
 
     expect(JSON.parse(await readFile(output, "utf8"))).toEqual([
-      realpathSync(installed.script),
+      await realpath(installed.script),
       output,
     ]);
     await expect(access(path.join(appDataRoot, "vidcom.sqlite"))).rejects.toMatchObject({ code: "ENOENT" });
@@ -225,7 +238,7 @@ describe("node sentinel", () => {
     const current = await installHyperframes(appDataRoot, "2.0.0");
 
     const trustedRoot = await resolveVerifiedHyperframesRoot(appDataRoot);
-    expect(trustedRoot.path).toBe(realpathSync(current.root));
+    expect(trustedRoot.path).toBe(await realpath(current.root));
     await expect(runNodeSentinel([NODE_SENTINEL, old.script], trustedRoot, () => Promise.resolve()))
       .rejects.toBeInstanceOf(NodeSentinelError);
   });
@@ -268,7 +281,8 @@ describe("node sentinel", () => {
       "toolchain/hyperframes",
     );
 
-    expect((await resolveVerifiedHyperframesRoot(appDataRoot)).path).toBe(realpathSync(installed.root));
+    expect((await resolveVerifiedHyperframesRoot(appDataRoot)).path)
+      .toBe(await realpath(installed.root));
     expect(installed.root).toContain(path.join("toolchain", "hyperframes"));
   });
 

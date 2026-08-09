@@ -173,7 +173,12 @@ describe("cjs bundle", () => {
     const source = "fileURLToPath('file:///Users/Build%20%23%3F%25%20Root/vidcom-v2/main.ts')";
     const stripped = replaceBuildRootEncodings(source, buildRoot);
     expect(stripped.output).toBe("fileURLToPath('file:///vidcom/main.ts')");
-    expect(fileURLToPath("file:///vidcom/main.ts")).toBe("/vidcom/main.ts");
+    // Parsed rather than converted to a path. `fileURLToPath` needs a drive
+    // letter on Windows and throws on a POSIX-rooted URL, so converting here
+    // asserted the host's path syntax instead of the thing under test — that
+    // the rewrite leaves a URL which still parses to the marker location. The
+    // Windows-shaped rewrite is covered by the case above.
+    expect(new URL("file:///vidcom/main.ts").pathname).toBe("/vidcom/main.ts");
   });
 
   it("keeps main and HyperFrames lazy until the emitted CJS has configured esbuild", async () => {

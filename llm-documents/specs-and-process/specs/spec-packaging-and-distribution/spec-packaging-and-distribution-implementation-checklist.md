@@ -2452,6 +2452,12 @@ Chi tiết: [Detailed Goals](./spec-packaging-and-distribution-detailed-goal.md)
   - Decisions: Ghi ra thành danh sách thay vì sửa mò. Bảy file, và các thông điệp cho thấy đây là **port Windows thật**, không phải flake: (1) `C:\Users\runneradmin` vs `C:\Users\RUNNER~1` — `realpath` trả dạng dài, test chờ dạng 8.3 rút gọn; (2) `@esbuild/win32-x64/README.md: expected 18 to be +0` — khẳng định bit mode POSIX trên hệ thống không mô hình hoá chúng; (3) `runtime stage file does not match its manifest entry`; (4) `target_not_directory` trả `undefined`; (5) `isolated install failed` trong provenance; (6) một timeout 30 s. Files: `stage-artifact-runtime` 1, `runtime-asset-manager` 2, `artifact-provenance` 2, `sea-bootstrap` 1, `cli-bundle` 1, `download-cache` 1, `node-sentinel` 4.
   - Blockers: Đây là công việc port có khối lượng thật, không phải một bản vá. MUST NOT sửa bằng cách nới khẳng định cho khớp Windows — mấy khẳng định đó (mode 0o022, đúng tập entry, digest khớp manifest) chính là thứ giữ provenance của artifact. Cần xử lý từng file với hiểu biết về ngữ nghĩa Windows: short path, không có bit mode POSIX, và CRLF.
 
+2026-08-09 — Windows: 5/12 lỗi đã sửa, không nới một khẳng định nào
+  - Files: `tests/adapter/node-sentinel.test.ts`, `tests/build/cli-bundle.test.ts`, checklist
+  - Summary: Hai gốc, năm lỗi.
+  - Decisions: (1) **`realpathSync` và `realpath` bất đồng trên Windows** — bản sync giữ nguyên tên 8.3 (`RUNNER~1`) còn bản async trả dạng dài (`runneradmin`). Sentinel gọi bản async, test gọi bản sync, nên nó so **hai cách viết của cùng một thư mục** và chỉ hỏng ở đó. Đổi test sang đúng hàm production gọi, không đổi production. Sửa 4 lỗi. (2) `fileURLToPath("file:///vidcom/main.ts")` ném trên Windows vì file URL ở đó cần ký tự ổ đĩa — test đang khẳng định **cú pháp đường dẫn của host** thay vì thứ nó định kiểm, là bản rewrite vẫn parse về đúng vị trí marker. Đổi sang `new URL(...).pathname`; ca dạng Windows đã có test riêng ngay trên. Sửa 1 lỗi.
+  - Blockers: Còn 7 lỗi ở `stage-artifact-runtime`, `runtime-asset-manager` (2), `artifact-provenance` (2), `sea-bootstrap`, `download-cache`. Thông điệp: `runtime stage file does not match its manifest entry`, `runtime asset installation failed`, `isolated install failed`, và một timeout 30 s — cần điều tra ngữ nghĩa Windows (CRLF, mode, lock), MUST NOT nới khẳng định provenance để qua.
+
 Format:
 ```
 YYYY-MM-DD — Phase X, Task X.Y
