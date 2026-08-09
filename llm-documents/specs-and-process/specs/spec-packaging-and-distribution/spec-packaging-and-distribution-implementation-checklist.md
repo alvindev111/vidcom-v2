@@ -966,14 +966,16 @@ Mỗi phase chạy focused command dưới đây trên SQLite/filesystem thật,
   - Ca "daemon biến mất giữa phiên" đóng listener thật rồi gọi tiếp: trả `daemon_unavailable`, **không treo**, không kết quả giả
   - Stub lease trong test là cờ **atomic**, không phải read-then-write: read-then-write cho phép cả hai caller tin mình thắng, đúng kết cục mà lease thật không thể tạo ra
   - _Requirements: R2.7, R2.10, R2.13, R2.15_
-- [ ] I.12 Integration test: agent ghi qua bridge ⇒ UI nhận event — **CHẶN NGƯỢC: cần J.2**
+- [x] I.12 Integration test: agent ghi qua bridge ⇒ UI nhận event
   - Đường watcher/event outbox Phase 1 còn nguyên tác dụng, không cần reload
-  - **Vì sao chưa làm**: test phải chạy trên một daemon **đã compose đủ** — route bridge cắm vào cùng app đang giữ project writes và event outbox. `createServerApp` đã nhận `bridge`, nhưng chỗ dựng nó với `instanceId`/`workspaceRoot`/lease thật là mode `serve` của **J.2**. Dựng một app nửa vời chỉ cho test là kiểm một thứ không ai chạy
+  - [`bridge-events.test.ts`](../../../../tests/cli/bridge-events.test.ts) chạy trên **daemon thật của J.2**: copy `projects/swiss-grid` vào workspace tạm, exchange nonce lấy session UI, **mở SSE trước**, rồi agent gọi `save_file` qua `/api/bridge/v1/tools/**` bằng chính bearer daemon tự mint lúc boot. Stream đang mở nhận được thay đổi — không reload
+  - Ghi qua bridge vẫn bị **optimistic concurrency** như mọi đường ghi khác: bridge không được hợp đồng yếu hơn đường local
+  - Cùng test chốt luôn AC destructive: `delete_file` qua bridge **hỏng** thay vì tự duyệt. Bridge không elicit được — đầu kia của một pipe JSON-RPC không có ai để hỏi — nên "không dùng được" là cách hỏng an toàn duy nhất, và file vẫn còn nguyên sau đó
   - _Requirements: R2.8_
 
 **Acceptance Criteria**:
-- [ ] Mở app rồi chạy Codex ⇒ **cả hai dùng được**, vẫn đúng một writer
-- [ ] Tool destructive vẫn cần approval do con người phát hành
+- [x] Mở app rồi chạy Codex ⇒ **cả hai dùng được**, vẫn đúng một writer — một daemon, session UI và bearer bridge cùng phục vụ được, ghi vẫn đi qua đúng một foundation
+- [x] Tool destructive vẫn cần approval do con người phát hành — `delete_file` qua bridge hỏng, file còn nguyên
 - [x] `rtk bun run test:boundaries` xanh, và [`packages/mcp/package.json`](../../../../packages/mcp/package.json) **vẫn đúng 5 dependency** như trước phase (`@modelcontextprotocol/core`, `@modelcontextprotocol/server`, `@vidcom/contracts`, `@vidcom/core`, `zod`) — đây là cách kiểm C-1 không lặng lẽ trôi ngược
 - [x] `git diff scripts/verify-import-boundaries.mjs` không có dòng nào **nới** luật (thêm fixture thì được)
 
@@ -1628,6 +1630,12 @@ Chi tiết: [Detailed Goals](./spec-packaging-and-distribution-detailed-goal.md)
   - Summary: `serve` chạy in-process — listener loopback, router API/static, discovery record — và `app` trở thành `serve` + browser + nonce, không còn spawn `next start`.
   - Decisions: Cắm bridge vào chính runtime đã compose, `instanceId` mới mỗi lần start (daemon restart mà tái dùng id sẽ thoả một handshake dành cho tiến trình đã chết). Work hold đọc từ job store qua `hasNonTerminalJob` mới thay vì đếm attachment. `stop()` idempotent. Xoá `freePort`/`waitUntilReady` khỏi `main.ts` vì chính thay đổi này làm chúng thành mồ côi.
   - Blockers: Không có. **Bug thật do runtime smoke bắt**: sub-app bridge dùng `use("*")` mà lại mount ở gốc app API, nên nó đòi credential bridge hệ thống trên **mọi** request của sản phẩm — hiện ra thành 503 ở `/v1/projects`, không dính gì tới bridge. Không unit test nào bắt được vì app trong test không có route nào khác để hỏng. Đã siết về `/bridge/v1/*` và thêm regression test. Full suite 1352 pass / 4 skip, 0 unhandled; typecheck, lint 0 error, boundaries xanh.
+
+2026-08-09 — Phase I, Task I.12 + AC còn lại
+  - Files: `packages/cli/src/commands/serve.ts`, `packages/cli/src/next-host.ts`, `packages/cli/src/bridge/spawn-daemon.ts`, `tests/cli/bridge-events.test.ts`, checklist và implementation notes
+  - Summary: Agent ghi qua bridge tới được stream SSE đang mở, trên daemon thật; destructive vẫn hỏng thay vì tự duyệt.
+  - Decisions: `startServing` reconcile credential bridge **trước khi** publish record và dưới cùng cái lock mà rotation dùng — advertise trước rồi mint sau tạo một cửa sổ mọi call bridge trả `bridge_credential_unavailable`. Test mở SSE **trước** khi agent ghi, đúng như UI thật đang mở. Giữ optimistic concurrency cho đường bridge: bridge không được hợp đồng yếu hơn đường local.
+  - Blockers: Không có; test 1/1 trong 5,2 s trên SQLite thật + filesystem thật, typecheck, lint 0 error.
 
 Format:
 ```

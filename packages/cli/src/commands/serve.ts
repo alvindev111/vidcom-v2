@@ -6,6 +6,7 @@ import { DaemonDiscoveryStore, workspaceHash } from "@vidcom/adapter";
 import { bindLoopback, type LoopbackListener } from "@vidcom/server";
 
 import { CliInputError } from "../cli-error";
+import { reconcileBridgeCredential, withBridgeCredentialLock } from "../bridge-credential";
 import { defaultAppDataRoot, registerHostedRuntime, startNextHostedRuntime } from "../next-host";
 import { createRequestRouter, type FetchTarget } from "../loopback-host";
 import {
@@ -144,6 +145,16 @@ export async function startServing(options: ServeCommandOptions = {}): Promise<S
     api: (request) => runtime.app.fetch(request),
     static: staticTarget,
   });
+
+  // Reconciled before the record is published, and behind the same lock a
+  // rotation takes. A client that finds the record expects a bridge it can
+  // authenticate against; a daemon that advertises itself first and mints its
+  // credential afterwards has a window where it answers every bridge call with
+  // `bridge_credential_unavailable`.
+  await withBridgeCredentialLock(appDataRoot, () => reconcileBridgeCredential({
+    appDataRoot,
+    database: runtime.foundation.infrastructure.database,
+  }));
 
   const listener = await bindLoopback({ fetch: (request) => router.handle(request) }, port);
   const discovery = new DaemonDiscoveryStore(appDataRoot);
