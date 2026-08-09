@@ -2446,6 +2446,12 @@ Chi tiết: [Detailed Goals](./spec-packaging-and-distribution-detailed-goal.md)
   - Decisions: (1) `reextract` bị **nối cứng vào một lời từ chối**, nên `--repair` chưa bao giờ sửa được gì; giờ nối vào `prepareRuntimeForCli` với asset source thật, và chỉ giữ thông báo "không có archive" cho source checkout — nơi câu đó **đúng**. (2) `await input.repair(...)` ném thì **cả report không được in**: một lệnh mà toàn bộ nhiệm vụ là nói ra cái gì hỏng lại không nói gì cả. Giờ bắt lỗi, giữ report trước repair, và gắn lý do vào **chính hạng mục** nó định sửa để lý do đi cùng thứ còn hỏng. Đó là lý do dưới `VIDCOM_DOCTOR_STRICT=1` nó im lặng: strict biến skip thành missing ⇒ repair chạy ⇒ ném ⇒ không có JSON.
   - Blockers: Không có; `tests/cli` + `tests/golden` 315/315, full suite 1778 pass / 5 skip, typecheck xanh. Cũng sửa `serve.test.ts` khỏi phụ thuộc việc có ai chạy `build:artifact` chưa — nó kiểm hai path tới hai target khác nhau, không kiểm content-type cụ thể.
 
+2026-08-09 — CI: Linux và macOS xanh, Windows còn 12 lỗi cùng một gốc
+  - Files: checklist
+  - Summary: Sau ba vòng sửa, `6c5eb06` xanh Linux + macOS. Windows **12 fail / 1736 pass**, tập trung ở khối build/staging mà tôi commit từ WIP và **chưa từng chạy trên Windows**.
+  - Decisions: Ghi ra thành danh sách thay vì sửa mò. Bảy file, và các thông điệp cho thấy đây là **port Windows thật**, không phải flake: (1) `C:\Users\runneradmin` vs `C:\Users\RUNNER~1` — `realpath` trả dạng dài, test chờ dạng 8.3 rút gọn; (2) `@esbuild/win32-x64/README.md: expected 18 to be +0` — khẳng định bit mode POSIX trên hệ thống không mô hình hoá chúng; (3) `runtime stage file does not match its manifest entry`; (4) `target_not_directory` trả `undefined`; (5) `isolated install failed` trong provenance; (6) một timeout 30 s. Files: `stage-artifact-runtime` 1, `runtime-asset-manager` 2, `artifact-provenance` 2, `sea-bootstrap` 1, `cli-bundle` 1, `download-cache` 1, `node-sentinel` 4.
+  - Blockers: Đây là công việc port có khối lượng thật, không phải một bản vá. MUST NOT sửa bằng cách nới khẳng định cho khớp Windows — mấy khẳng định đó (mode 0o022, đúng tập entry, digest khớp manifest) chính là thứ giữ provenance của artifact. Cần xử lý từng file với hiểu biết về ngữ nghĩa Windows: short path, không có bit mode POSIX, và CRLF.
+
 Format:
 ```
 YYYY-MM-DD — Phase X, Task X.Y
