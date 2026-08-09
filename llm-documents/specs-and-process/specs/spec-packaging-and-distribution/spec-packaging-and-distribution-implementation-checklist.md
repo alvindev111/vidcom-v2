@@ -1202,11 +1202,15 @@ Mỗi phase chạy focused command dưới đây trên SQLite/filesystem thật,
 **Estimate**: 21 SP
 
 **Tasks**:
-- [ ] M.0 Script `test:packaged-smoke` + runner cục bộ
+- [~] M.0 Script `test:packaged-smoke` + runner cục bộ — **khung + luật xong, thân từng bước thuộc M.3a–M.3d**
   - Thêm `"test:packaged-smoke": "node scripts/packaged-smoke/run.mjs"` vào [`package.json`](../../../../package.json). Chạy được **trên máy dev** chứ không chỉ trong Actions — nếu chỉ chạy được trong CI thì mỗi lần sửa một bước phải push, và không ai sửa nữa
   - Nhận `--step <id>` để chạy một bước, `--from <id>` để chạy tiếp từ giữa; mặc định chạy đủ 12 bước theo thứ tự §11.4
   - Mỗi bước in `id`, thời gian, kết quả ở `stderr`; `stdout` chỉ để bằng chứng JSON (M.6). Bước fail ⇒ exit ≠ 0 **kèm id của bước**, MUST NOT chỉ báo "smoke failed"
   - Bước bị bỏ ⇒ đánh dấu `skipped` **và** làm job đỏ khi `VIDCOM_DOCTOR_STRICT=1` (M.5) — AC của phase này là "không step bắt buộc nào bị skip", nên trạng thái đó phải quan sát được, không phải suy từ log
+  - [`scripts/packaged-smoke/`](../../../../scripts/packaged-smoke/run.mjs): danh sách bước là **dữ liệu**, nên `--step`/`--from` có nghĩa chính xác và một bước `skipped` là **giá trị kiểm được**, không phải một dòng log ai đó phải đọc
+  - **Lệch spec, ghi lại chứ không tự chọn**: M.0 nói "đủ **12** bước theo thứ tự §11.4", nhưng §11.4 liệt kê **13**. Đã hiện thực đủ 13 theo Design — bảng ở Design là thứ mô tả công việc thật, còn con số trong checklist là chỗ lệch
+  - Chạy được trên máy dev, đã kiểm: `--step build` trả đúng một dòng, `--strict` exit `1` với lý do "chưa có artifact" thay vì im lặng
+  - **Còn lại**: thân từng bước — chúng lái chính executable đã đóng gói, nên chúng cần artifact chạy được, tức runtime archive. Hiện tại mỗi bước báo `skipped` **kèm lý do**, và `--strict` biến nó thành đỏ
   - _Requirements: R8.3, R8.7_ — _Design: §11.4_
 - [ ] M.1 Job native theo OS
   - macOS arm64, Windows x64, Linux x64; **không job nào dùng artifact build từ OS khác**. Mỗi lần chạy ghi lại nền tảng đã kiểm
@@ -1758,6 +1762,12 @@ Chi tiết: [Detailed Goals](./spec-packaging-and-distribution-detailed-goal.md)
   - Summary: Hai gate startup — trần cứng §9.1 và chặn hồi quy 1,5× theo baseline từng runner — cộng luật ghi baseline.
   - Decisions: Baseline chỉ ghi khi chưa có; ghi đè mỗi lần chạy làm gate tự vô hiệu vì mỗi lần đo trở thành baseline của chính nó. Đo không có trần trả `unknown` và **không** tính là fail — nó là lỗ hổng cần gọi tên, không phải một lần pass. Runner lạ cũng `unknown` thay vì đoán trần.
   - Blockers: Số cold thật cần runtime archive đã giải nén (cột cold theo định nghĩa gồm bước extract), cùng blocker tài sản phát hành. Cơ chế và test đã xong: 8/8.
+
+2026-08-09 — Phase M, Task M.0 (khung)
+  - Files: `scripts/packaged-smoke/{run,steps}.mjs`, `package.json`, `tests/build/packaged-smoke.test.ts`, checklist và implementation notes
+  - Summary: Runner packaged smoke chạy được trên máy dev, `--step`/`--from`, bằng chứng JSON trên stdout, tiến trình trên stderr, exit ≠ 0 **kèm id bước**.
+  - Decisions: Danh sách bước là dữ liệu chứ không phải một script tuần tự, để `skipped` trở thành giá trị kiểm được — AC của phase là "không step bắt buộc nào bị skip", và một AC chỉ kiểm được bằng cách đọc log là AC không ai kiểm. `--strict` mặc định lấy từ `VIDCOM_DOCTOR_STRICT` mà job đã đặt, nên một nghĩa của `skipped` chứ không phải hai.
+  - Blockers: **Lệch spec đã ghi**: M.0 nói 12 bước, §11.4 liệt kê 13 — hiện thực theo Design. Thân từng bước lái executable đã đóng gói nên cần runtime archive; hiện mỗi bước trả `skipped` kèm lý do và `--strict` làm nó đỏ. 8/8 test.
 
 Format:
 ```

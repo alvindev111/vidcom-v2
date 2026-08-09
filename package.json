@@ -29,7 +29,8 @@
     "db:generate": "drizzle-kit generate",
     "typecheck": "tsc --noEmit",
     "test:browser-session": "vitest run tests/frontend/browser-session.test.ts tests/frontend/cookie-matrix.test.ts",
-    "build:artifact": "node scripts/build-artifact.mjs"
+    "build:artifact": "node scripts/build-artifact.mjs",
+    "test:packaged-smoke": "node scripts/packaged-smoke/run.mjs"
   },
   "dependencies": {
     "@alvin0/http-driver": "^0.4.0",
