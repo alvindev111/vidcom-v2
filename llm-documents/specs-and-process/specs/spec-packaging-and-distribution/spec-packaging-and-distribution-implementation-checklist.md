@@ -2415,6 +2415,12 @@ Chi tiết: [Detailed Goals](./spec-packaging-and-distribution-detailed-goal.md)
   - Decisions: (1) **Test của tôi hardcode `darwin-arm64`** nên trên Linux nó trùng host và ca "từ chối cross-build" không bao giờ ném — đổi sang `hostPlatformTag()` cộng một tag chắc chắn khác host. (2) Fake binary trong test là shell script, **không chạy được trên Windows**; thêm seam `readVersion` để việc đọc version không phụ thuộc OS — một test chỉ chạy trên hai trong ba nền tảng không phải test của build này. (3) `next-env.d.ts` là file **sinh ra và bị gitignore**, nên checkout sạch không có; copy vô điều kiện làm test xanh trên máy dev và đỏ trên **mọi** runner. (4) `resolvePackageDirectory` chỉ quét `resolve.paths()`, mà package store keyed theo content hash đặt sibling ở chỗ danh sách đó không nhắc tới — hỏi Node trước bằng `resolve("<name>/package.json")`, giữ nguyên phần quét làm fallback vì `sharp` chặn manifest qua `exports`.
   - Blockers: Không có; full suite 1777 pass / 5 skip sau khi xoá `next-env.d.ts` để giả lập checkout sạch, typecheck, lint 0 error, boundaries xanh.
 
+2026-08-09 — CI Linux/Windows: `nlink !== 1` áp nhầm lên đầu vào
+  - Files: `scripts/stage-artifact-runtime.mjs`, checklist
+  - Summary: Ba vòng CI đỏ với "required package sharp is not installed" trong khi macOS xanh. Không phải thiếu gói.
+  - Decisions: Thêm diagnostic in ra **những thư mục đã tìm** thay vì đoán vòng thứ tư — và nó cho thấy thư mục **có tồn tại**. Nguyên nhân thật: `assertRegularFile` đòi `nlink === 1`, mà **Bun hardlink package từ cache toàn cục trên Linux**, nên mọi `package.json` trong `node_modules` có nlink ≥ 2 và bị từ chối. macOS xanh vì cùng installer đó **copy** thay vì hardlink. Luật một-liên-kết **đúng cho thứ build phát hành** (file staged có tên thứ hai thì ghi đè được qua tên kia sau khi đã verify — lỗ hổng provenance) nhưng **sai cho thứ build đọc vào**. Tách hai vai bằng tham số `shared`, không nới luật ở chỗ nó thuộc về.
+  - Blockers: Không có; `tests/build/stage-artifact-runtime.test.ts` 18/18, full suite xanh, typecheck và lint 0 error.
+
 Format:
 ```
 YYYY-MM-DD — Phase X, Task X.Y

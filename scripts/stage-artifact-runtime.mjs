@@ -236,13 +236,25 @@ async function readRuntimeInputs(filename, expectedPlatform) {
   });
 }
 
-async function assertRegularFile(filename, label, executable = true) {
+/**
+ * Insists on a real file, and by default on the only name pointing at it.
+ *
+ * The single-link rule guards what this build *publishes*: a staged file with a
+ * second name can be rewritten through that other name after it was verified,
+ * which is a provenance hole. It is the wrong rule for what the build *reads*.
+ * Bun hardlinks packages out of its global cache on Linux, so every
+ * `package.json` in `node_modules` has more than one link — and applying the
+ * publish rule to inputs made the whole build unrunnable there while passing on
+ * macOS, where the same installer copies instead. Callers reading installer
+ * output pass `shared`.
+ */
+async function assertRegularFile(filename, label, executable = true, shared = false) {
   const metadata = await lstat(filename).catch(() => null);
   if (
     metadata === null
     || metadata.isSymbolicLink()
     || !metadata.isFile()
-    || metadata.nlink !== 1
+    || (!shared && metadata.nlink !== 1)
   ) fail(`${label} must be a real regular file`, { path: filename });
   if (executable && process.platform !== "win32") {
     if ((metadata.mode & 0o111) === 0) fail(`${label} must be executable`, { path: filename });
@@ -259,9 +271,9 @@ async function assertRealDirectory(directory, label) {
   return realpath(directory);
 }
 
-export async function assertContainedRegularFile(root, filename, label, executable = false) {
+export async function assertContainedRegularFile(root, filename, label, executable = false, shared = false) {
   const canonicalRoot = await realpath(root);
-  const canonicalFile = await assertRegularFile(filename, label, executable);
+  const canonicalFile = await assertRegularFile(filename, label, executable, shared);
   if (!contained(canonicalRoot, canonicalFile)) {
     fail(`${label} escapes its source authority`, { root: canonicalRoot, path: filename, canonicalFile });
   }
@@ -473,6 +485,10 @@ async function readPackageManifest(packageRoot, expectedName) {
     packageRoot,
     filename,
     `${expectedName} package manifest`,
+    false,
+    // Installer output: Bun hardlinks it out of its global cache on Linux, and
+    // this manifest is read for its name and version, never published.
+    true,
   );
   const manifest = object(JSON.parse(await readFile(canonical, "utf8")), `${expectedName} package manifest`);
   if (manifest.name !== expectedName) fail("resolved package has the wrong name", { expectedName, actual: manifest.name });
