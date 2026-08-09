@@ -512,6 +512,33 @@ export async function resolvePackageDirectory(packageName, resolver) {
       // Another package store entry may exist later in the anchored search list.
     }
   }
+  // Last resort: the repository's own resolver. Bun keys its store directories
+  // by the resolved dependency set, and that set is platform-specific, so the
+  // sibling a search from HyperFrames finds on one runner is not always where
+  // another runner puts it. The repository pins these packages directly, so the
+  // copy it resolves is the same instance — and `readPackageManifest` still has
+  // to agree it is the right package before it ships.
+  try {
+    const manifest = requireFromRepository.resolve(`${packageName}/package.json`);
+    const canonical = await realpath(path.dirname(manifest));
+    await readPackageManifest(canonical, packageName);
+    return canonical;
+  } catch {
+    // Fall through to the failure below, which names the package.
+  }
+
+  for (const searchRoot of requireFromRepository.resolve.paths(packageName) ?? []) {
+    const candidate = path.join(searchRoot, ...packageName.split("/"));
+    if (!existsSync(candidate)) continue;
+    const canonical = await realpath(candidate);
+    try {
+      await readPackageManifest(canonical, packageName);
+      return canonical;
+    } catch {
+      // Another store entry may match later in the list.
+    }
+  }
+
   fail(`required package ${packageName} is not installed for the HyperFrames runtime`);
 }
 
