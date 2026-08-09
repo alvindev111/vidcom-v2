@@ -36,6 +36,12 @@ export function allowlistedEnvironment(
   // an explicit caller still can, which is how the failure mode stays testable.
   environment.PYTHONIOENCODING = "utf-8";
   environment.PYTHONUTF8 = "1";
+  // Both names, read out of the pinned HyperFrames CLI rather than guessed.
+  // Measured at S9: with a clean HOME the very first run prints a telemetry
+  // invitation, and a packaged app must not ask a question on behalf of a tool
+  // the user never chose to install.
+  environment.HYPERFRAMES_NO_TELEMETRY = "1";
+  environment.DO_NOT_TRACK = "1";
   // Set only when configured. An empty value is not "no bundle" to Node — it is
   // a bundle at path "", which fails every TLS handshake the child attempts.
   if (options.caBundlePath !== undefined && options.caBundlePath.length > 0) {

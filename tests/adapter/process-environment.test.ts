@@ -34,3 +34,24 @@ describe("node child CA bundle", () => {
   });
 });
 
+describe("third-party telemetry", () => {
+  it("turns off the HyperFrames invitation in every child", () => {
+    // Measured at S9: with a clean HOME the first run prints a telemetry
+    // invitation. A packaged app must not ask a question on behalf of a tool
+    // the user never chose to install.
+    const environment = allowlistedEnvironment({ NODE_ENV: "test" });
+    expect(environment.HYPERFRAMES_NO_TELEMETRY).toBe("1");
+    expect(environment.DO_NOT_TRACK).toBe("1");
+  });
+
+  it("uses the names the pinned CLI actually reads", async () => {
+    // Read out of the shipped CLI rather than guessed: an environment variable
+    // that nothing looks at is a setting that does nothing while looking like
+    // it does.
+    const { readFile } = await import("node:fs/promises");
+    const cli = await readFile("node_modules/hyperframes/dist/cli.js", "utf8");
+    expect(cli).toContain("HYPERFRAMES_NO_TELEMETRY");
+    expect(cli).toContain("DO_NOT_TRACK");
+  }, 60_000);
+});
+

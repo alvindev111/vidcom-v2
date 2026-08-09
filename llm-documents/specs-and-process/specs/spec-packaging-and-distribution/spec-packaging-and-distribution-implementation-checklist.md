@@ -157,8 +157,8 @@ Mỗi phase chạy focused command dưới đây trên SQLite/filesystem thật,
 | A | `rtk bunx vitest run tests/contracts/packaging-contracts.test.ts` **và** `rtk bun run test:mcp-catalogue` **†** (→ `tests/contracts/tool-schema-catalogue.test.ts`) **và** `rtk bun run test:mcp-contract` **và** `rtk bun run test:golden` — hai cái cuối là gate hồi quy cho A.4 | script `test:mcp-catalogue` → **A.8** |
 | B | `rtk bunx vitest run tests/adapter/runtime-archive.test.ts tests/adapter/runtime-asset-manager.test.ts` | — |
 | C | `rtk bunx vitest run tests/adapter/bootstrap-coordinator.test.ts tests/adapter/bridge-credential-lifecycle.test.ts tests/adapter/database-migration.test.ts` | — |
-| D | `rtk bunx vitest run tests/adapter/vidcom-node-shim.test.ts tests/adapter/compiler-guard.test.ts tests/adapter/render-binary-probe.test.ts tests/adapter/vieneu-frozen-interpreter.test.ts` | — |
-| E | `rtk bunx vitest run tests/cli/foundation-manager.test.ts tests/cli/loopback-host.test.ts tests/cli/lease-loss.test.ts` | — |
+| D | `rtk bunx vitest run tests/adapter/node-sentinel.test.ts tests/adapter/compiler-guard.test.ts tests/adapter/render-binary-probe.test.ts tests/adapter/vieneu-frozen-interpreter.test.ts` | — |
+| E | `rtk bunx vitest run tests/cli/foundation-lifecycle.test.ts tests/cli/foundation-state.test.ts tests/cli/loopback-host.test.ts tests/cli/lease-loss.test.ts` | — |
 | F | `rtk bunx vitest run tests/core/filesystem-browser.test.ts tests/server/system-routes.test.ts tests/adapter/browse-worker.test.ts` | — |
 | G | `rtk bunx vitest run tests/frontend/api-driver.test.ts` và `rtk bun run test:browser-session` **†** (→ `tests/frontend/browser-session.test.ts`) | thư mục `tests/frontend/` + script `test:browser-session` + harness `tests/support/browser-harness.ts` → **G.0** |
 | H | `rtk bunx vitest run tests/adapter/sea-static-host.test.ts tests/server/payload-limits.test.ts` và `rtk bun run build:artifact` **†** | script `build:artifact` → **H.0** |
@@ -1162,25 +1162,29 @@ Mỗi phase chạy focused command dưới đây trên SQLite/filesystem thật,
   - Windows unsigned + checksum; signing thật deferred (D2)
   - Đã hiện thực ở **H.4** vì không có nó thì không có gì để kiểm chứng: Mach-O arm64 không chữ ký hợp lệ bị kernel giết lúc launch. `tests/build/sea.test.ts` ghim thứ tự remove-signature → inject → sign
   - _Requirements: R9.5_ — _Design: §5.20_
-- [ ] L.4 Tắt telemetry HyperFrames trong runtime đã giải nén
+- [x] L.4 Tắt telemetry HyperFrames trong runtime đã giải nén
   - Xác nhận ở S9: lời mời telemetry hiện ngay lần chạy đầu với `HOME` sạch. Ghi quyết định vào release notes
+  - `HYPERFRAMES_NO_TELEMETRY=1` và `DO_NOT_TRACK=1` đặt trong `allowlistedEnvironment`, tức **mọi** child đều nhận. Hai tên **đọc ra từ chính `hyperframes/dist/cli.js` đã pin**, không phải đoán — một biến môi trường không ai đọc là một thiết lập không làm gì mà trông như có làm; test ghim luôn việc CLI thật sự đọc hai tên đó
+  - Lý do là sản phẩm chứ không phải sở thích: app đóng gói không được hỏi một câu **thay mặt** một công cụ mà người dùng chưa bao giờ chọn cài
   - _Requirements: R9.7_ — _Design: §5.20_
 - [x] L.5 Test scan
   - Source/sourcemap/dev-origin/secret/build-root; frontend pack không chứa `localhost:3000`
   - [`artifact-provenance.test.ts`](../../../../tests/build/artifact-provenance.test.ts) 12 test; ca pack thật **tự build static export nếu thiếu**, vì job CI chạy test **trước** production build và một check bị skip là check không ai để ý lúc nó biến mất
   - _Requirements: R9.1, R9.2, R9.3_
-- [ ] L.6 **Đăng ký spec này vào [`scripts/verify-spec-test-paths.mjs`](../../../../scripts/verify-spec-test-paths.mjs)**
+- [x] L.6 **Đăng ký spec này vào [`scripts/verify-spec-test-paths.mjs`](../../../../scripts/verify-spec-test-paths.mjs)**
   - Gate hôm nay chỉ biết **hai** spec (`spec-mcp-server` phases `ABCDEFGHIJKLMNOP`, `spec-project-delivery-loop` phases `ABCDEFGHIJKLMNOPQRS`). Convention của repo là mọi checklist đều được gate này bảo vệ; không đăng ký thì bảng Phase Verification Matrix ở trên có thể trỏ vào file không tồn tại mà CI vẫn xanh
   - Thêm entry `{ label: "packaging & distribution", path: "llm-documents/…-implementation-checklist.md", phases: "ABCDEFGHIJKLM" }`
   - **Làm ở cuối, có lý do**: gate kiểm **mọi** đường dẫn `tests/...` trong Matrix phải tồn tại thật. Đăng ký ở Phase A thì `test:spec-paths` đỏ suốt từ B tới M
   - Chạy `rtk bun run test:spec-paths` và đọc số nó in ra — nếu số path verified không tăng thì entry chưa được đọc (sai `path` hoặc sai tên section)
   - Lưu ý khi đọc số: gate cắt section bằng hai heading nên **khối `> [!WARNING]` ở đầu Matrix cũng bị quét**, tức `tests/frontend/` và `tests/build/` nằm trong tập path được kiểm. Đó là ý muốn (hai thư mục đó phải tồn tại thật), không phải nhiễu
   - Nếu có phase nào bị bỏ giữa đường, sửa chuỗi `phases` **cùng lúc**: gate so khớp chuỗi đúng thứ tự và fail với `"rows drifted"`
+  - Đã đăng ký `phases: "ABCDEFGHIJKLM"`; số path verified **80 → 115** trên 3 spec, đúng dấu hiệu entry được đọc
+  - **Gate bắt được drift tài liệu ngay lần chạy đầu**: hàng D trỏ `tests/adapter/vidcom-node-shim.test.ts` và hàng E trỏ `tests/cli/foundation-manager.test.ts` — **cả hai chưa bao giờ tồn tại**; tên thật là `node-sentinel.test.ts` và `foundation-lifecycle.test.ts`/`foundation-state.test.ts`. Sửa bảng cho khớp code, **không** nới gate: đây đúng là quy trình mà chính task này mô tả
   - _Requirements: R9.1_ — _Design: §5.20_
 
 **Acceptance Criteria**:
-- [ ] Không secret, không sourcemap, không absolute path máy build trong artifact
-- [ ] `rtk bun run test:spec-paths` xanh **và** số path verified tăng so với trước L.6
+- [x] Không secret, không sourcemap, không absolute path máy build trong artifact — `verify-artifact` quét và **đã fail thật** trên build-root, đã sửa rồi xanh
+- [x] `rtk bun run test:spec-paths` xanh **và** số path verified tăng so với trước L.6 — 80 → 115
 
 **Deliverables**: `scripts/build-artifact.mjs` · `scripts/verify-artifact.mjs` · `scripts/verify-spec-test-paths.mjs`
 
@@ -1726,6 +1730,12 @@ Chi tiết: [Detailed Goals](./spec-packaging-and-distribution-detailed-goal.md)
   - Summary: Linux đỏ một test K — "notices when the source was replaced between plan and copy".
   - Decisions: Không phải lỗi test mà là lỗi của chính identity: **Linux trả lại ngay inode vừa giải phóng**, nên xoá rồi tạo lại cùng đường dẫn cho ra cùng `dev:ino` và kiểm tra bỏ sót ca nguồn bị thay — đúng ca tệ nhất mà nó tồn tại để chặn. Thêm `ctimeMs`: nó đổi bất cứ khi nào inode đổi. macOS không lộ ra vì phân bổ inode khác.
   - Blockers: Không có; 14/14 test file đó, typecheck xanh. Chờ CI exact HEAD.
+
+2026-08-09 — Phase L, Task L.4 + L.6
+  - Files: `packages/adapter/src/runtime/process-environment.ts`, `scripts/verify-spec-test-paths.mjs`, `tests/adapter/process-environment.test.ts`, checklist và implementation notes
+  - Summary: Tắt telemetry HyperFrames ở mọi child, và đăng ký spec này vào gate spec-paths (80 → 115 path).
+  - Decisions: Hai tên biến đọc ra từ `hyperframes/dist/cli.js` đã pin thay vì đoán, và test ghim rằng CLI thật sự đọc chúng — một biến không ai đọc là thiết lập không làm gì mà trông như có làm.
+  - Blockers: Không có. **Gate bắt drift tài liệu ngay lần đầu**: hàng D và E của Verification Matrix trỏ vào hai file test **chưa bao giờ tồn tại** (`vidcom-node-shim`, `foundation-manager`). Sửa bảng cho khớp tên thật, không nới gate — đây đúng là quy trình task L.6 mô tả.
 
 Format:
 ```
