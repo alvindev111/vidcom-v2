@@ -807,7 +807,7 @@ Mỗi phase chạy focused command dưới đây trên SQLite/filesystem thật,
 **Estimate**: 13 SP
 
 **Tasks**:
-- [~] H.0 Script `build:artifact` — **khung + luật xong; các bước H.1/H.2/H.4/L.1 chưa tồn tại**
+- [x] H.0 Script `build:artifact`
   - Thêm `"build:artifact": "node scripts/build-artifact.mjs"` vào [`package.json`](../../../../package.json) — cùng dạng với các script `node scripts/*.mjs` đang có (`test:boundaries`, `test:schema-drift`, `test:spec-paths`, …). Nó SHALL gọi lần lượt: `scripts/build-runtime-archives.mjs` (B.3) → `next build` với `output: "export"` (G.6) → frontend pack (H.2) → bundle CJS (H.1) → SEA native (H.4) → `scripts/verify-artifact.mjs` (L.1/L.2)
   - **Fail-fast từng bước**, MUST NOT tiếp tục sang bước sau khi bước trước lỗi: một `frontend.pack` cũ đi cùng bundle mới là loại lỗi chỉ lộ ra ở packaged smoke
   - In ra đường dẫn artifact + platform tag ở `stderr`; `stdout` chỉ để `artifact-manifest.json` (L.2) nếu có `--json`
@@ -816,7 +816,8 @@ Mỗi phase chạy focused command dưới đây trên SQLite/filesystem thật,
   - **Fail-fast là nội dung, không phải sở thích**: một `frontend.pack` cũ đi qua bước pack hỏng rồi được bundle cùng code mới sinh ra artifact chỉ hỏng khi có người chạy nó — chỗ đắt nhất để phát hiện
   - Từ chối cross-build với lý do cụ thể: artifact nhúng Node binary và runtime native **của chính máy build**, nên một "bản Linux" dựng trên macOS là file không chạy được ở đâu cả
   - `stderr` mang tiến trình, `stdout` để trống cho `--json` — pipe được mà không phải lọc
-  - **Còn lại**: bốn bước `planSteps()` gọi tới chưa tồn tại (`build-frontend-pack.mjs` H.2, `build-cli-bundle.mjs` H.1, `build-sea.mjs` H.4, `verify-artifact.mjs` L.1). Test ghim **đúng thứ tự và tên chủ sở hữu** của từng bước, nên một bước thiếu hiện ra ở đây thay vì lúc chạy build
+  - **Chuỗi chạy hết, đo được**: `bun run build:artifact` trên darwin-arm64 đi qua runtime archives → static export → frontend pack → CJS bundle → runtime staging → SEA native → `verify-artifact`, ra `dist/artifact/darwin-arm64/vidcom` **322 MB** cùng `SHA256SUMS` và `artifact-manifest.json`. Test ghim đúng thứ tự và tên chủ sở hữu từng bước, nên một bước thiếu hiện ra ở đây thay vì lúc chạy build
+  - **Mọi bước dùng binary cả ba nền tảng spawn được**: `npm` trên Windows là `.cmd` và Node từ chối spawn nó khi không có shell, nên một bước viết theo kiểu đó sẽ chết ở đó vì lý do chẳng liên quan tới việc nó làm. Test cấm `npm` ở mọi bước
   - _Requirements: R4.1, R4.14_ — _Design: DR-1, §5.10_
 - [x] H.1 Bundle CJS **không top-level await**
   - Node SEA nhận main CJS và format `cjs` không diễn đạt được TLA; mọi khởi tạo bất đồng bộ nằm trong `main()`. Vi phạm ⇒ build fail, không degrade
@@ -1220,7 +1221,7 @@ Mỗi phase chạy focused command dưới đây trên SQLite/filesystem thật,
   - _Requirements: R9.1_ — _Design: §5.20_
 
 **Acceptance Criteria**:
-- [ ] Không secret, không sourcemap, không absolute path máy build trong artifact — **CHẶN: cần runtime inputs thật**. Verifier và regression đã bắt build-root/sourcemap/secret trên bundle, manifest và pack; vế còn lại là quét **production artifact** cùng archive/frontend/executable đã nhúng, mà `build:artifact` dừng ở bước staging vì thiếu `dist/runtime-inputs/<tag>.json`
+- [x] Không secret, không sourcemap, không absolute path máy build trong artifact — `verify-artifact` chạy trên **production artifact thật** (322 MB, darwin-arm64) và xanh: quét bundle CJS, SEA main, frontend manifest + pack, mọi runtime scan target, và **final executable**, cộng allowlist đúng ba tên cạnh artifact
 - [x] `rtk bun run test:spec-paths` xanh **và** số path verified tăng so với trước L.6 — chạy lại sau cùng khi L.1–L.5 đã xanh: **115 path trên 3 spec** (từ 80 trước khi đăng ký)
 
 **Deliverables**: `scripts/build-artifact.mjs` · `scripts/verify-artifact.mjs` · `scripts/verify-spec-test-paths.mjs`
@@ -1250,8 +1251,13 @@ Mỗi phase chạy focused command dưới đây trên SQLite/filesystem thật,
   - [`packaged-smoke.yml`](../../../../.github/workflows/packaged-smoke.yml) dựng artifact **trên chính runner** rồi mới chạy smoke, `fail-fast: false` để một nền tảng hỏng không che mất kết quả hai nền tảng kia — biết nền tảng nào đã được chứng minh là toàn bộ mục đích của job này
   - **`workflow_dispatch` thôi, có lý do**: thân từng bước lái một executable cần runtime archive chưa tồn tại, nên đặt lịch chạy chỉ tạo ra một badge đỏ mỗi ngày không nói thêm điều gì. Cùng tiền lệ với `phase4-browser-session.yml`
   - _Requirements: R8.1, R8.5_ — _Design: §4.8, DR-11_
-- [ ] M.2 Môi trường sạch
+- [x] M.2 Môi trường sạch
   - `node` **không** trên PATH; **không** `node_modules` ở `cwd` hay thư mục cha; `HOME` sạch. Cache tải-về (`$HOME/.cache/hyperframes`, `HF_HOME`) **được** mồi; app-data/runtime **không** được mồi
+  - [`environment.mjs`](../../../../scripts/packaged-smoke/environment.mjs) đưa **PATH rỗng hoàn toàn** — một thư mục trống là mục duy nhất trên đó. Lọc PATH theo tên thư mục là cách làm đầu tiên và nó **sai**: `/opt/homebrew/bin` chứa `node` mà không chứa chữ nào bộ lọc tìm. Lời hứa đang kiểm là executable tự mang runtime, và cách duy nhất phát biểu điều đó là không để gì trên PATH
+  - Bước `clean-environment` **hỏi runner** bằng `which`/`where` chứ không tin cấu hình: nếu `node` còn với tới được thì cả smoke đang đo toolchain của runner
+  - `HOME` được **chuyển hướng** chứ không xoá: artifact ghi cache ở đâu đó, và trỏ chỗ đó vào thư mục tạm là thứ làm cho "artifact không để lại gì" **kiểm được** thay vì được giả định
+  - Cache tải-về mồi sẵn, app-data để rỗng — R8.2 nói về máy sạch, không phải máy không có mạng
+  - **Bằng chứng**: bước xanh trên artifact thật — `no node, python or bun on PATH; working directory empty`
   - _Requirements: R8.2, R8.8_ — _Design: §11.4_
 - [ ] M.3a Bước 1–3: nhận dạng + cold/warm doctor
   - `version` → cold `doctor --repair` → warm `doctor --deep`. Đây là ba bước duy nhất không cần listener, nên chúng cũng là chỗ đo cold start thật cho M.7
