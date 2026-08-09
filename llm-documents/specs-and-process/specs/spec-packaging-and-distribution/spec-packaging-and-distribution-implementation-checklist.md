@@ -2434,6 +2434,12 @@ Chi tiết: [Detailed Goals](./spec-packaging-and-distribution-detailed-goal.md)
   - Decisions: `copyContainedTree` cũng đòi `nlink === 1` trên **nguồn copy**, tức lại áp luật phát hành lên đầu vào của installer — cùng gốc với lần trước, khác hàm. Thêm `shared` y như `assertRegularFile`: luật vẫn giữ nguyên cho cây build tự tạo, nơi một tên thứ hai nghĩa là file đã verify vẫn ghi đè được sau lưng. Hook `afterEach` của provenance nới timeout vì nó xoá một cây `node_modules` đã cài đầy đủ — hàng chục nghìn file, không phải một thư mục test.
   - Blockers: Windows đỏ ở `download-cache` với `directory lock release failed` — cùng họ EBUSY/lock đã ghi trong bảng flake, **chưa sửa và không sửa bằng retry**. Full suite cục bộ 1777 pass / 5 skip.
 
+2026-08-09 — Phase M: smoke chạy trên artifact thật, kết quả từng bước
+  - Files: `scripts/packaged-smoke/{run,bodies,environment}.mjs`, `packages/cli/src/main.ts`, checklist
+  - Summary: Nối `bodies.mjs` vào runner (trước đó viết rồi mà chưa nối, nên mọi bước báo "no body yet" trên một artifact 322 MB đã xong). **4 bước xanh trên artifact thật**: `build`, `clean-environment`, `restore-caches`, `ui-lifecycle`, `provenance`.
+  - Decisions: Lọc PATH theo tên thư mục là **sai** — `/opt/homebrew/bin` chứa `node` mà không chứa chữ nào bộ lọc tìm; giờ đưa **PATH rỗng**. Probe health trước khi có session cũng sai: perimeter đòi session ở mọi path trừ exchange và `tests/server/security.test.ts` **ghim điều đó**, nên tôi đã thử nới perimeter, thấy 4 test bảo mật đỏ, và **lùi lại** — khẳng định ngược một quyết định cố ý không phải là sửa. `serve` headless không mint token nên cấp nonce bootstrap như mode `app` vẫn làm. Lỗi 400 khi tạo project là **của smoke**: schema strict đòi `presetId`, smoke gửi `preset`. `doctor` exit ≠ 0 trên máy sạch là **đúng** (chưa chọn workspace, chưa có key ElevenLabs) — đòi exit 0 là bắt một bản cài mới phải tự nhận mình hỏng; giờ chỉ đòi mọi hạng mục **thuộc về artifact** phải `ok`.
+  - Blockers: **Lỗi sản phẩm thật, chưa sửa**: với `VIDCOM_DOCTOR_STRICT=1` trên app-data sạch, `doctor --repair` in ra `this build has no runtime archives to re-extract from` và **không in JSON**, trong khi cùng lệnh không strict lại chạy đủ và in report. Cần điều tra: repair dưới strict đi đường khác và không thấy archive nhúng. `version` đã sửa (đọc manifest nhúng, trước đó trả `null` — chính smoke phát hiện).
+
 Format:
 ```
 YYYY-MM-DD — Phase X, Task X.Y

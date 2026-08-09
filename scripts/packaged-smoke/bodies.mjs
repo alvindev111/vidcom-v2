@@ -28,6 +28,28 @@ function expectSuccess(label, run) {
   return run;
 }
 
+/**
+ * Items a clean machine is expected to be missing.
+ *
+ * `doctor` exits non-zero here and it is right to: nobody has chosen a
+ * workspace yet, and an ElevenLabs key is a user's to supply. Demanding exit 0
+ * made this step assert that a fresh install is misconfigured. What the smoke
+ * actually cares about is that every component the *artifact* carries came up.
+ */
+export const USER_SUPPLIED_DOCTOR_ITEMS = Object.freeze(["workspace.active", "tts.elevenlabs"]);
+
+function assertRuntimeHealthy(label, run) {
+  const report = parseJson(label, run.stdout);
+  const broken = (report.items ?? []).filter((item) => item.status !== "ok"
+    && item.status !== "skipped"
+    && !USER_SUPPLIED_DOCTOR_ITEMS.includes(item.id));
+  if (broken.length > 0) {
+    throw new Error(`${label} found the artifact unhealthy: ${
+      broken.map((item) => `${item.id}=${item.status}`).join(", ")}`);
+  }
+  return report;
+}
+
 function parseJson(label, text) {
   try {
     return JSON.parse(text);
@@ -130,18 +152,12 @@ export const STEP_BODIES = {
     const coldStartedAt = Date.now();
     const cold = runArtifact(context, ["doctor", "--repair", "--json"], { timeoutMs: 600_000 });
     const coldMs = Date.now() - coldStartedAt;
-    if (cold.status !== 0) {
-      throw new Error(`cold doctor --repair exited ${String(cold.status)}: ${cold.stderr.trim().slice(0, 400)}`);
-    }
+    assertRuntimeHealthy("cold doctor --repair", cold);
 
     const warmStartedAt = Date.now();
-    const warm = expectSuccess("warm doctor --deep", runArtifact(context, ["doctor", "--deep", "--json"]));
+    const warm = runArtifact(context, ["doctor", "--deep", "--json"]);
     const warmMs = Date.now() - warmStartedAt;
-    const report = parseJson("doctor --deep", warm.stdout);
-    const notOk = (report.items ?? []).filter((item) => item.status !== "ok");
-    if (notOk.length > 0) {
-      throw new Error(`warm doctor is not clean: ${notOk.map((item) => `${item.id}=${item.status}`).join(", ")}`);
-    }
+    assertRuntimeHealthy("warm doctor --deep", warm);
     context.measurements.coldMs = coldMs;
     context.measurements.warmMs = warmMs;
     return `version ${version.vidcom}/${version.runtimeManifest}; cold ${String(coldMs)}ms, warm ${String(warmMs)}ms`;
