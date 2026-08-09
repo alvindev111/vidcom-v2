@@ -2712,6 +2712,30 @@ Chi tiết: [Detailed Goals](./spec-packaging-and-distribution-detailed-goal.md)
   - Decisions: Typecheck, boundaries, 115 spec paths và diff-check xanh; lint 0 error/4 warning cũ. Không stage/chạm thay đổi người dùng ở `tests/adapter/remote-asset-browser.test.ts`.
   - Blockers: Exact-head packaged smoke ba OS vẫn là authority; production supply-chain human gate vẫn mở.
 
+2026-08-10 — Phase H/M CI Linux: injector ELF streaming cho SEA blob production-size
+  - Files: `scripts/inject-elf-sea.mjs`, `scripts/{build-sea,verify-artifact}.mjs`, `tests/build/{sea,artifact-provenance}.test.ts`, Design §16 và implementation notes
+  - Summary: Exact-head `87920d0` vẫn làm postject abort trên Node 24.9.0 Linux. Repro container cô lập cho thấy blob nhỏ/120 MiB pass nhưng 280/380 MiB abort; đây là ceiling WASM khoảng 256 MiB, không phải Bun hay package runner.
+  - Decisions: Linux dùng injector x86-64 ELF bounded-memory có version provenance; program-header table được relocate vào mapped gap sẵn có, `PT_LOAD` mới giữ đúng thứ tự, canonical `NODE_SEA_BLOB` note + fuse được ghi atomically sau fsync và identity revalidation. Repro 300 MiB qua `verifyActiveSeaResource` và binary in `hello` trong Linux amd64; focused SEA/provenance 60/60 và typecheck xanh.
+  - Blockers: Chờ full local council gate và exact-head packaged Linux; production supply-chain human gate vẫn mở độc lập.
+
+2026-08-10 — Phase M CI macOS: exact packaged smoke C-47 đã xanh
+  - Files: evidence `packaged-smoke-darwin-arm64` run `31335837895`, checklist và implementation notes
+  - Summary: Exact head `87920d0` build/verify và đủ 13/13 required step pass; online + offline đều có H.264/AAC MP4 8 giây và VieNeu WAV, external socket bị chặn, UI/import/bridge/upload/CLI cancel/lease-loss/provenance đều xanh.
+  - Decisions: `RTF_REJECT` là network-cut fix đã được runtime chứng minh; startup cold/warm `621/620 ms`, doctor cold/warm `13970/3366 ms`, chưa ghi baseline cho đến khi đủ cả ba runner.
+  - Blockers: Chờ Windows run cùng head và exact-head Linux sau C-48; production supply-chain human gate vẫn mở độc lập.
+
+2026-08-10 — Phase M CI Windows: exact packaged smoke `87920d0` đã xanh
+  - Files: evidence `packaged-smoke-win32-x64` run `31335837895`, checklist và implementation notes
+  - Summary: Windows build và đủ 13/13 required step pass trong khoảng 22 phút; online/offline H.264/AAC MP4 8 giây, VieNeu WAV, UI/import/bridge/upload/CLI cancel/lease-loss/provenance đều xanh.
+  - Decisions: Startup cold/warm `2232/2240 ms`, doctor cold/warm `135889/11140 ms`; process cancellation proof exhaustive, zero survivor. Chưa ghi baseline cho đến khi exact-head C-48 cho đủ ba runner.
+  - Blockers: Chờ exact-head C-48 packaged matrix; production supply-chain human gate vẫn mở độc lập.
+
+2026-08-10 — Phase M: local council gate cho C-48
+  - Files: toàn bộ batch injector ELF streaming, provenance, Design §16, checklist và implementation notes
+  - Summary: Full suite đơn lẻ xanh 203 test file (202 pass + 1 intentional skip), 1823 test pass + 5 intentional skip; focused SEA/provenance 60/60.
+  - Decisions: Typecheck, boundaries, 115 spec paths, diff-check và syntax checks xanh; lint 0 error/4 warning cũ. Hai failure ở một run chồng process đã được chạy riêng 41/41 rồi full suite sạch; không stage/chạm `tests/adapter/remote-asset-browser.test.ts` của người dùng.
+  - Blockers: Exact-head Actions ba OS vẫn là authority; production supply-chain human gate vẫn mở.
+
 Format:
 ```
 YYYY-MM-DD — Phase X, Task X.Y

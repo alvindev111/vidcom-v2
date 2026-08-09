@@ -19,6 +19,7 @@ import {
   assertRuntimeArchiveHashes,
   copyBoundRegularFile,
   hostRuntimeArchives,
+  injectSeaBlob,
   postjectArguments,
   requiredInputs,
   runtimeAssets,
@@ -114,6 +115,61 @@ function syntheticElf(blob: Buffer, withPrefixCollision = false): Buffer {
   image.writeBigUInt64LE(BigInt(notes.length), noteHeader + 40);
   image.writeBigUInt64LE(BigInt(4), noteHeader + 48);
   notes.copy(image, noteOffset);
+  return image;
+}
+
+function syntheticInjectableElf(): Buffer {
+  const fuse = Buffer.from(`NODE_SEA_FUSE_${SEA_FUSE}:0`, "ascii");
+  const image = Buffer.alloc(0x1100);
+  Buffer.from([0x7f, 0x45, 0x4c, 0x46]).copy(image);
+  image[4] = 2;
+  image[5] = 1;
+  image[6] = 1;
+  image.writeUInt16LE(2, 16);
+  image.writeUInt16LE(62, 18);
+  image.writeUInt32LE(1, 20);
+  image.writeBigUInt64LE(BigInt(64), 32);
+  image.writeUInt16LE(64, 52);
+  image.writeUInt16LE(56, 54);
+  image.writeUInt16LE(4, 56);
+
+  const header = (index: number) => 64 + index * 56;
+  image.writeUInt32LE(6, header(0));
+  image.writeUInt32LE(4, header(0) + 4);
+  image.writeBigUInt64LE(BigInt(64), header(0) + 8);
+  image.writeBigUInt64LE(BigInt(0x400040), header(0) + 16);
+  image.writeBigUInt64LE(BigInt(0x400040), header(0) + 24);
+  image.writeBigUInt64LE(BigInt(4 * 56), header(0) + 32);
+  image.writeBigUInt64LE(BigInt(4 * 56), header(0) + 40);
+  image.writeBigUInt64LE(BigInt(8), header(0) + 48);
+
+  image.writeUInt32LE(1, header(1));
+  image.writeUInt32LE(5, header(1) + 4);
+  image.writeBigUInt64LE(BigInt(0), header(1) + 8);
+  image.writeBigUInt64LE(BigInt(0x400000), header(1) + 16);
+  image.writeBigUInt64LE(BigInt(0x400000), header(1) + 24);
+  image.writeBigUInt64LE(BigInt(0x200), header(1) + 32);
+  image.writeBigUInt64LE(BigInt(0x200), header(1) + 40);
+  image.writeBigUInt64LE(BigInt(0x1000), header(1) + 48);
+
+  image.writeUInt32LE(1, header(2));
+  image.writeUInt32LE(4, header(2) + 4);
+  image.writeBigUInt64LE(BigInt(0x1000), header(2) + 8);
+  image.writeBigUInt64LE(BigInt(0x401000), header(2) + 16);
+  image.writeBigUInt64LE(BigInt(0x401000), header(2) + 24);
+  image.writeBigUInt64LE(BigInt(0x100), header(2) + 32);
+  image.writeBigUInt64LE(BigInt(0x100), header(2) + 40);
+  image.writeBigUInt64LE(BigInt(0x1000), header(2) + 48);
+
+  image.writeUInt32LE(4, header(3));
+  image.writeUInt32LE(4, header(3) + 4);
+  image.writeBigUInt64LE(BigInt(0x140), header(3) + 8);
+  image.writeBigUInt64LE(BigInt(0x400140), header(3) + 16);
+  image.writeBigUInt64LE(BigInt(0x400140), header(3) + 24);
+  image.writeBigUInt64LE(BigInt(16), header(3) + 32);
+  image.writeBigUInt64LE(BigInt(16), header(3) + 40);
+  image.writeBigUInt64LE(BigInt(4), header(3) + 48);
+  fuse.copy(image, 0x180);
   return image;
 }
 
@@ -364,6 +420,28 @@ describe("sea build", () => {
     }
   });
 
+  it("streams a Linux SEA resource into a loader-mapped ELF note", async () => {
+    const root = await realpath(await mkdtemp(path.join(tmpdir(), "vidcom-elf-sea-injector-")));
+    try {
+      const executable = path.join(root, "vidcom");
+      const blobFile = path.join(root, "sea-prep.blob");
+      const blob = Buffer.from("streamed-linux-sea-blob\n", "utf8");
+      await Promise.all([
+        writeFile(executable, syntheticInjectableElf()),
+        writeFile(blobFile, blob),
+      ]);
+
+      await injectSeaBlob(executable, blobFile, "linux");
+      await expect(verifyActiveSeaResource(executable, blobFile)).resolves.toMatchObject({
+        format: "elf",
+      });
+      await expect(injectSeaBlob(executable, blobFile, "linux"))
+        .rejects.toThrow(/sentinel is already active/u);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
   it("passively validates the bounded Node 24.9 blob layout without executing its main", async () => {
     const root = await realpath(await mkdtemp(path.join(tmpdir(), "vidcom-sea-blob-parser-")));
     try {
@@ -483,7 +561,7 @@ describe("sea build", () => {
     }
   });
 
-  it("pins the injector, because it edits the shipped bytes", () => {
+  it("pins the external injector used for Mach-O and PE shipped bytes", () => {
     expect(POSTJECT).toMatch(/@\d/u);
     expect(POSTJECT_CLI).toMatch(/node_modules[/\\]postject[/\\]dist[/\\]cli\.js$/u);
   });
@@ -785,7 +863,7 @@ describe("sea build", () => {
       if (process.platform === "darwin") {
         runChecked("codesign", ["--remove-signature", executable], `${label} remove signature`);
       }
-      runChecked(process.execPath, [POSTJECT_CLI, ...postjectArguments(executable, blob)], `${label} inject`);
+      await injectSeaBlob(executable, blob);
       if (process.platform === "darwin") {
         runChecked("codesign", ["--sign", "-", "--force", executable], `${label} sign`);
       }

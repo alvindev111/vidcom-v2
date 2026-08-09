@@ -61,6 +61,7 @@ describe("build tool provenance", () => {
     const tools = buildToolProvenance();
     expect(tools.tar).toMatch(/^\d+\.\d+\.\d+$/u);
     expect(tools.postject).toMatch(/^\d+\.\d+\.\d+/u);
+    expect(tools.elfSeaInjector).toBe("vidcom-elf-stream-v1");
   });
 
   it("refuses a tar that is not the one the repository pins", () => {

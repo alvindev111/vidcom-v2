@@ -34,6 +34,7 @@ import {
 } from "./artifact-layout.mjs";
 import { MANIFEST_PATH as FRONTEND_MANIFEST_PATH, PACK_PATH } from "./build-frontend-pack.mjs";
 import { verifySeaPreparationBlob } from "./sea-blob.mjs";
+import { ELF_SEA_INJECTOR, injectElfSea } from "./inject-elf-sea.mjs";
 import {
   SEA_PRODUCT_CODE_PATH,
   createSeaBuildSeal,
@@ -44,15 +45,18 @@ import {
 const ARCHIVE_KEY = /^[a-z0-9][a-z0-9._-]*$/u;
 const SHA256 = /^sha256:([0-9a-f]{64})$/u;
 export const PRODUCT_RUNTIME_ARCHIVES = ["hyperframes", "node"];
+export { ELF_SEA_INJECTOR };
 
 /**
- * The exact postject the build uses.
+ * The exact postject the Mach-O and PE builds use.
  *
  * Pinned rather than floating: it edits the executable format directly, so a
  * version change is a change to the bytes shipped to users. Keep the CLI in
  * the lockfile and run it with the pinned Node executable. Package runners may
  * substitute Bun for a `#!/usr/bin/env node` binary, and postject's Emscripten
- * injector aborts on Linux under that substituted runtime.
+ * injector aborts on Linux under that substituted runtime. Linux uses the
+ * versioned streaming ELF injector below because postject's compiled WASM heap
+ * cannot hold the production-size SEA blob.
  */
 export const POSTJECT = "postject@1.0.0-alpha.6";
 export const POSTJECT_CLI = path.join(
@@ -547,6 +551,14 @@ export function postjectArguments(target, blob, platform = process.platform) {
   return args;
 }
 
+export async function injectSeaBlob(target, blob, platform = process.platform) {
+  if (platform === "linux") {
+    await injectElfSea(target, blob, `NODE_SEA_FUSE_${SEA_FUSE}`);
+    return;
+  }
+  run("inject blob", process.execPath, [POSTJECT_CLI, ...postjectArguments(target, blob, platform)]);
+}
+
 export function requiredInputs(tag, manifest) {
   return [
     SEA_MAIN_LOADER_PATH,
@@ -727,7 +739,7 @@ export async function buildSea(target, options = {}) {
   await assertSnapshotAuthority();
   await assertOwnedRegularFile(output, buildDirectory, assertBuildAuthority);
   await assertOwnedRegularFile(blob, buildDirectory, assertBuildAuthority);
-  run("inject blob", process.execPath, [POSTJECT_CLI, ...postjectArguments(output, blob)]);
+  await injectSeaBlob(output, blob);
   await assertOwnedRegularFile(output, buildDirectory, assertBuildAuthority);
   await assertSnapshotAuthority();
 

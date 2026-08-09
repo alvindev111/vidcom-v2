@@ -33,6 +33,7 @@ import {
   runtimeStageRoot,
 } from "./artifact-layout.mjs";
 import {
+  ELF_SEA_INJECTOR,
   POSTJECT,
   SEA_PRIMARY_BUNDLE_ASSET,
   assertSeaInputSnapshot,
@@ -273,10 +274,10 @@ function gitOutput(args) {
  *
  * Recording the versions is not enough on its own. A tar that resolved to
  * something other than the declared pin writes archives nobody reviewed, and a
- * postject other than the pinned one edits the executable format differently —
- * both produce an artifact that looks like the release it claims to be. So the
- * declared pin and the installed reality are compared here, and a mismatch
- * fails the build rather than being written down and shipped.
+ * postject other than the pinned one edits Mach-O/PE differently, while Linux
+ * records the versioned in-repository ELF injector. Both produce artifacts that
+ * otherwise look like the release they claim to be. The declared external pin
+ * and installed reality are compared here, and a mismatch fails the build.
  */
 export function buildToolProvenance(options = {}) {
   const declaredTar = options.declaredTar
@@ -306,7 +307,12 @@ export function buildToolProvenance(options = {}) {
   // Bun has no entry in the lockfile to check against — it is the toolchain
   // itself, not a dependency — so it is recorded rather than compared. Saying
   // which one built the artifact is still worth more than saying nothing.
-  return { tar: installedTar, postject: postject.slice("postject@".length), bun };
+  return {
+    tar: installedTar,
+    postject: postject.slice("postject@".length),
+    elfSeaInjector: ELF_SEA_INJECTOR,
+    bun,
+  };
 }
 
 /**
