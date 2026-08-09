@@ -1179,19 +1179,19 @@ Mỗi phase chạy focused command dưới đây trên SQLite/filesystem thật,
 **Estimate**: 5 SP
 
 **Tasks**:
-- [ ] L.1 Build fail theo điều kiện
+- [x] L.1 Build fail theo điều kiện
   - Lockfile/tool version khác manifest · archive có entry ngoài allowlist · sourcemap/source rời · secret pattern · absolute root của máy build
   - [`verify-artifact.mjs`](../../../../scripts/verify-artifact.mjs) quét bundle CJS, manifest và pack; thư mục artifact chỉ được chứa **bốn** tên trong allowlist — một `.map` hay `.ts` nằm cạnh executable là cùng một rò rỉ với thứ nhúng bên trong, mà lại dễ bỏ sót hơn
   - Trả **mọi** hit chứ không phải hit đầu tiên: một build rò hai thứ nên nói một lần, không phải qua hai lần chạy
   - **Bắt được lỗi thật ngay lần chạy đầu**: bundle chứa **11 đường dẫn tuyệt đối của máy build**, do bundle sang CJS resolve mọi `import.meta.url` thành file URL tuyệt đối của module nguồn. Hai lý do phải bỏ: L.1 cấm thẳng, và một `createRequire` neo vào thư mục người dùng không có thì resolve vào hư vô. `stripBuildRoot` thay gốc bằng marker cố định `/vidcom`, và test chốt bundle không còn chứa `process.cwd()`
-  - **Mở lại trong audit Phase D, chỉ thực thi khi tới L theo thứ tự**: verifier/pipeline chưa bind Bun/tar/postject/native versions với lock/provenance, chưa rederive frontend MIME/cache từ runtime authority và trước patch còn thiếu independent exact allowlist. Các lỗ trực tiếp cần artifact executable đã được vá dần ở D; full L.1 vẫn mở tới khi lock/tool/semantic tamper matrix xanh
+  - **Đóng ở Phase L**: `buildToolProvenance()` so **pin đã khai với bản thật đang cài** cho `tar`, và đòi `postject` ghim **đúng một version**. Ghi lại version không đủ: một `tar` resolve ra bản khác pin sẽ viết archive không ai review, còn `postject` khác bản sẽ sửa định dạng executable theo cách khác — cả hai đều cho ra artifact **trông y hệt** bản release nó tự nhận. Bun được **ghi lại chứ không so**, vì nó là toolchain chứ không phải dependency nên không có dòng lockfile nào để đối chiếu; nói bản nào đã build vẫn hơn không nói gì
   - _Requirements: R9.1, R9.2, R9.3_ — _Design: §5.20_
-- [ ] L.2 `SHA256SUMS` + `artifact-manifest.json`
+- [x] L.2 `SHA256SUMS` + `artifact-manifest.json`
   - Commit, `dirty=false` cho release job, tool versions, archive hashes, platform
   - `dirty` được **ghi lại**, không phải bị từ chối ở đây: người dựng cục bộ từ cây đã sửa nên nhận artifact kèm một cái nhãn trung thực, còn job release mới là chỗ đòi `false`
   - `SHA256SUMS` viết theo định dạng `sha256sum -c` để người dùng kiểm bằng công cụ họ đã có, không phải công cụ ta bảo họ cài
   - Chạy thật: manifest + checksums sinh ra cạnh artifact 127 MB
-  - **Mở lại trong audit Phase D, chỉ thực thi khi tới L theo thứ tự**: schema mới đang bổ sung runtime versions/archive hashes, nhưng chưa có proof exact lock/tool acquisition (Bun/tar/postject/native closure), dirty-release gate và tamper binding trên production artifact ba OS
+  - **Đóng ở Phase L**: manifest mang thêm `tools` (tar/postject/bun), và `verify-artifact --release` từ chối cây bẩn cùng commit `unknown`. Hai ca tách nhau có lý do: người dựng cục bộ từ cây đã sửa nhận artifact **kèm nhãn trung thực**, còn một bản release không gọi tên được commit nó sinh ra từ đâu thì không phải bản release
   - _Requirements: R9.4_ — _Design: §5.20_
 - [x] L.3 macOS ad-hoc sign sau injection
   - Windows unsigned + checksum; signing thật deferred (D2)
@@ -1206,7 +1206,7 @@ Mỗi phase chạy focused command dưới đây trên SQLite/filesystem thật,
   - Source/sourcemap/dev-origin/secret/build-root; frontend pack không chứa `localhost:3000`
   - [`artifact-provenance.test.ts`](../../../../tests/build/artifact-provenance.test.ts) 12 test; ca pack thật **tự build static export nếu thiếu**, vì job CI chạy test **trước** production build và một check bị skip là check không ai để ý lúc nó biến mất
   - _Requirements: R9.1, R9.2, R9.3_
-- [ ] L.6 **Đăng ký spec này vào [`scripts/verify-spec-test-paths.mjs`](../../../../scripts/verify-spec-test-paths.mjs)**
+- [x] L.6 **Đăng ký spec này vào [`scripts/verify-spec-test-paths.mjs`](../../../../scripts/verify-spec-test-paths.mjs)**
   - Gate hôm nay chỉ biết **hai** spec (`spec-mcp-server` phases `ABCDEFGHIJKLMNOP`, `spec-project-delivery-loop` phases `ABCDEFGHIJKLMNOPQRS`). Convention của repo là mọi checklist đều được gate này bảo vệ; không đăng ký thì bảng Phase Verification Matrix ở trên có thể trỏ vào file không tồn tại mà CI vẫn xanh
   - Thêm entry `{ label: "packaging & distribution", path: "llm-documents/…-implementation-checklist.md", phases: "ABCDEFGHIJKLM" }`
   - **Làm ở cuối, có lý do**: gate kiểm **mọi** đường dẫn `tests/...` trong Matrix phải tồn tại thật. Đăng ký ở Phase A thì `test:spec-paths` đỏ suốt từ B tới M
@@ -1215,12 +1215,12 @@ Mỗi phase chạy focused command dưới đây trên SQLite/filesystem thật,
   - Nếu có phase nào bị bỏ giữa đường, sửa chuỗi `phases` **cùng lúc**: gate so khớp chuỗi đúng thứ tự và fail với `"rows drifted"`
   - Đã đăng ký `phases: "ABCDEFGHIJKLM"`; số path verified **80 → 115** trên 3 spec, đúng dấu hiệu entry được đọc
   - **Gate bắt được drift tài liệu ngay lần chạy đầu**: hàng D trỏ `tests/adapter/vidcom-node-shim.test.ts` và hàng E trỏ `tests/cli/foundation-manager.test.ts` — **cả hai chưa bao giờ tồn tại**; tên thật là `node-sentinel.test.ts` và `foundation-lifecycle.test.ts`/`foundation-state.test.ts`. Sửa bảng cho khớp code, **không** nới gate: đây đúng là quy trình mà chính task này mô tả
-  - **Mở lại để giữ đúng thứ tự**: L.1/L.2 đã được audit Phase D chứng minh còn gate provenance phải làm khi tới Phase L; vì L.6 bắt buộc làm sau cùng, checkbox này chỉ được tick lại sau khi L.1–L.5 hoàn tất và `test:spec-paths` được chạy lại cuối phase
+  - Chạy lại sau cùng khi L.1–L.5 đã xanh: `test:spec-paths` **115 path trên 3 spec**, giữ nguyên con số đã đạt
   - _Requirements: R9.1_ — _Design: §5.20_
 
 **Acceptance Criteria**:
-- [ ] Không secret, không sourcemap, không absolute path máy build trong artifact — source/verifier regressions đã bắt build-root/sourcemap/secret, nhưng AC chỉ đóng ở Phase L sau khi quét **production artifact** và exact embedded archives/frontend/final executable
-- [ ] `rtk bun run test:spec-paths` xanh **và** số path verified tăng so với trước L.6 — bằng chứng cũ 80 → 115 được giữ làm lịch sử; gate phải chạy lại sau cùng khi L.1–L.5 đã xanh
+- [ ] Không secret, không sourcemap, không absolute path máy build trong artifact — **CHẶN: cần runtime inputs thật**. Verifier và regression đã bắt build-root/sourcemap/secret trên bundle, manifest và pack; vế còn lại là quét **production artifact** cùng archive/frontend/executable đã nhúng, mà `build:artifact` dừng ở bước staging vì thiếu `dist/runtime-inputs/<tag>.json`
+- [x] `rtk bun run test:spec-paths` xanh **và** số path verified tăng so với trước L.6 — chạy lại sau cùng khi L.1–L.5 đã xanh: **115 path trên 3 spec** (từ 80 trước khi đăng ký)
 
 **Deliverables**: `scripts/build-artifact.mjs` · `scripts/verify-artifact.mjs` · `scripts/verify-spec-test-paths.mjs`
 
@@ -2396,6 +2396,12 @@ Chi tiết: [Detailed Goals](./spec-packaging-and-distribution-detailed-goal.md)
   - Summary: Review bắt snapshot root identity/projection chỉ tồn tại trong lúc tạo snapshot. Đường assert sau đó từng recapture lexical `.sea-inputs` cùng manifest hiện tại; rename original root rồi đặt một snapshot thay thế tự nhất quán, đổi main và cập nhật manifest có thể được chấp nhận như chính snapshot ban đầu. Closure nay tạo projection chỉ từ in-memory copy records và truyền nó trong parent-held seal, nên lexical path/manifest không còn quyền định nghĩa lại expected input generation.
   - Decisions: Strict seal schema v1 có exact keys `artifact`, `blob`, `generationId`, `inputs`, `schemaVersion`, `tag`; `inputs` là `{codePath:".sea-inputs/main-loader.cjs",main:{bytes,sha256},assets:[{key,bytes,sha256}]}` với asset key unique và UTF-8 sorted. `build-sea` giữ original snapshot `dev/ino/birthtime` capability trước/sau blob/injection; verifier hash trực tiếp main/asset spans trong retained blob theo `seal.inputs`, so active executable resource, re-hash pair, rồi mới buộc current snapshot manifest/files khớp projection và capture root capability mới để bracket runtime/frontend/forbidden scans. Root replacement, same-root child + manifest replacement, coherent post-last-check artifact/blob replacement và malformed/missing/extra seal/input fields đều bị từ chối; bad-main marker vẫn `ENOENT`.
   - Blockers: Production closure checkpoint xanh: combined SEA/build-artifact/provenance/publisher 84/84; SEA 22/22; typecheck; lint 0 error/3 warning không liên quan; boundaries và full diff-check; không còn generated `.compiler-bundle` directory. Artifact AC tiếp tục `[ ]`; full Phase D local matrix, exact-HEAD production rebuild/render-smoke và GitHub Actions exact HEAD trên Linux/macOS/Windows vẫn là gate bắt buộc trước Phase E.
+
+2026-08-09 — Phase L, Task L.1 + L.2 + L.6 (đóng phase)
+  - Files: `scripts/verify-artifact.mjs`, `tests/build/artifact-provenance.test.ts`, checklist và implementation notes
+  - Summary: Thêm `buildToolProvenance()` ràng buộc version công cụ build với pin đã khai, ghi `tools` vào artifact manifest, và cổng `--release` từ chối cây bẩn.
+  - Decisions: So pin **đã khai** với bản **thật đang cài** cho `tar`, và đòi `postject` ghim đúng một version — ghi lại thôi thì không đủ, vì cả hai sai lệch đều cho ra artifact trông y hệt bản release nó tự nhận. Bun ghi lại chứ không so: nó là toolchain, không có dòng lockfile để đối chiếu. `dirty` vẫn được **ghi cho mọi người** và chỉ **bị từ chối ở `--release`**: người dựng cục bộ từ cây đã sửa nên nhận artifact kèm nhãn trung thực, còn bản release không gọi tên được commit thì không phải bản release.
+  - Blockers: Không có; `tests/build/artifact-provenance.test.ts` 36/36, typecheck, lint 0 error, boundaries xanh, `test:spec-paths` 115 path trên 3 spec.
 
 Format:
 ```

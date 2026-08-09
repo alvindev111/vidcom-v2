@@ -9,7 +9,9 @@ import {
   ARTIFACT_ALLOWLIST,
   FORBIDDEN_PATTERNS,
   assertAllowedRuntimeEntry,
+  assertReleasable,
   artifactManifest,
+  buildToolProvenance,
   finalExecutableForbiddenAdditions,
   formatChecksums,
   scanFileForForbidden,
@@ -48,6 +50,57 @@ async function writeFixtureFiles(root: string, files: readonly FixtureFile[]): P
 
 afterEach(async () => {
   await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
+});
+
+describe("build tool provenance", () => {
+  it("reports the tools that actually produced the artifact", () => {
+    const tools = buildToolProvenance();
+    expect(tools.tar).toMatch(/^\d+\.\d+\.\d+$/u);
+    expect(tools.postject).toMatch(/^\d+\.\d+\.\d+/u);
+  });
+
+  it("refuses a tar that is not the one the repository pins", () => {
+    // Recording the version is not enough. A tar resolved to something other
+    // than the pin writes archives nobody reviewed, and the artifact still
+    // looks like the release it claims to be.
+    expect(() => buildToolProvenance({ declaredTar: "7.5.22", installedTar: "7.4.0" }))
+      .toThrow(/not the one this repository pins/u);
+  });
+
+  it("refuses a floating injector spec", () => {
+    // postject edits the executable format directly, so a range rather than a
+    // version means the shipped bytes are decided at build time by whatever
+    // happened to resolve.
+    expect(() => buildToolProvenance({ postject: "postject@^1.0.0" }))
+      .toThrow(/pinned to an exact version/u);
+    expect(() => buildToolProvenance({ postject: "postject@1.0.0-alpha.6" })).not.toThrow();
+  });
+
+  it("records Bun rather than comparing it, and says so", () => {
+    // Bun is the toolchain, not a dependency, so there is no lockfile entry to
+    // check against — but naming the one that built the artifact still beats
+    // saying nothing.
+    expect(buildToolProvenance({ bun: "1.3.14" }).bun).toBe("1.3.14");
+  });
+});
+
+describe("release gate", () => {
+  it("refuses a release built from a modified tree", () => {
+    // Recorded for everyone, refused only for a release: a developer building
+    // from local edits should get an artifact and an honest label, while a
+    // release that cannot name its commit is not a release.
+    expect(() => assertReleasable({ dirty: true, commit: "abc1234" }))
+      .toThrow(/modified working tree/u);
+  });
+
+  it("refuses a release that cannot name its commit", () => {
+    expect(() => assertReleasable({ dirty: false, commit: "unknown" }))
+      .toThrow(/name the commit/u);
+  });
+
+  it("lets a clean build through", () => {
+    expect(assertReleasable({ dirty: false, commit: "abc1234" })).toMatchObject({ dirty: false });
+  });
 });
 
 describe("artifact content scan", () => {

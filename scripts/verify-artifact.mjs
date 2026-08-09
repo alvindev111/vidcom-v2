@@ -1,6 +1,6 @@
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { createReadStream, existsSync } from "node:fs";
+import { createReadStream, existsSync, readFileSync } from "node:fs";
 import { lstat, mkdtemp, open, readFile, readdir, realpath, rm, stat } from "node:fs/promises";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
@@ -33,6 +33,7 @@ import {
   runtimeStageRoot,
 } from "./artifact-layout.mjs";
 import {
+  POSTJECT,
   SEA_PRIMARY_BUNDLE_ASSET,
   assertSeaInputSnapshot,
   hostRuntimeArchives,
@@ -255,6 +256,47 @@ function gitOutput(args) {
 }
 
 /**
+ * The exact build tools that produced this artifact, checked against their pins.
+ *
+ * Recording the versions is not enough on its own. A tar that resolved to
+ * something other than the declared pin writes archives nobody reviewed, and a
+ * postject other than the pinned one edits the executable format differently —
+ * both produce an artifact that looks like the release it claims to be. So the
+ * declared pin and the installed reality are compared here, and a mismatch
+ * fails the build rather than being written down and shipped.
+ */
+export function buildToolProvenance(options = {}) {
+  const declaredTar = options.declaredTar
+    ?? JSON.parse(readFileSync(path.join(REPOSITORY_ROOT, "packages/adapter/package.json"), "utf8"))
+      .dependencies.tar;
+  const installedTar = options.installedTar ?? (() => {
+    return JSON.parse(readFileSync(requireFromAdapter.resolve("tar/package.json"), "utf8")).version;
+  })();
+  if (declaredTar !== installedTar) {
+    fail("the installed tar is not the one this repository pins", {
+      declared: declaredTar,
+      installed: installedTar,
+    });
+  }
+
+  // Pinned by exact version in the build script, and stated the same way here
+  // so a floating spec would be visible rather than merely permitted.
+  const postject = options.postject ?? POSTJECT;
+  if (!/^postject@\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/u.test(postject)) {
+    fail("postject must be pinned to an exact version", { requested: postject });
+  }
+
+  const bun = options.bun ?? (() => {
+    const result = spawnSync("bun", ["--version"], { encoding: "utf8" });
+    return result.status === 0 ? result.stdout.trim() : null;
+  })();
+  // Bun has no entry in the lockfile to check against — it is the toolchain
+  // itself, not a dependency — so it is recorded rather than compared. Saying
+  // which one built the artifact is still worth more than saying nothing.
+  return { tar: installedTar, postject: postject.slice("postject@".length), bun };
+}
+
+/**
  * Everything a bug report needs to identify this exact build.
  *
  * `dirty` is recorded rather than refused here, and the release job is what
@@ -272,6 +314,7 @@ export async function artifactManifest(tag, artifact, runtimeManifest) {
     commit: gitOutput(["rev-parse", "HEAD"]) ?? "unknown",
     dirty: (gitOutput(["status", "--porcelain"]) ?? "") !== "",
     node: process.version,
+    tools: buildToolProvenance(),
     runtime: {
       artifactVersion: runtimeManifest.artifactVersion,
       versions: runtimeManifest.versions,
@@ -855,14 +898,39 @@ export async function verifyArtifact(target, options = {}) {
   return manifest;
 }
 
-async function main(argv) {
-  if (argv.length !== 5 || argv[1] !== "--generation" || !argv[2] || argv[3] !== "--seal" || !argv[4]) {
-    fail("usage: verify-artifact <platform-tag> --generation <generation-id> --seal <json>");
+/**
+ * Refuses a release built from a modified tree.
+ *
+ * `dirty` is recorded for everyone and refused only here, because the two
+ * cases are different: a developer building locally from edits should get an
+ * artifact and an honest label, while a release that cannot name the exact
+ * commit it came from is not a release at all.
+ */
+export function assertReleasable(manifest) {
+  if (manifest.dirty) {
+    fail("a release cannot be built from a modified working tree", { commit: manifest.commit });
   }
-  const manifest = await verifyArtifact(argv[0], {
-    generation: artifactBuildDirectory(argv[0], undefined, argv[2]),
-    seal: argv[4],
+  if (manifest.commit === "unknown") {
+    fail("a release must name the commit it was built from");
+  }
+  return manifest;
+}
+
+async function main(argv) {
+  const flags = argv.filter((value) => value === "--release");
+  const positional = argv.filter((value) => value !== "--release");
+  if (
+    positional.length !== 5
+    || positional[1] !== "--generation" || !positional[2]
+    || positional[3] !== "--seal" || !positional[4]
+  ) {
+    fail("usage: verify-artifact <platform-tag> --generation <id> --seal <json> [--release]");
+  }
+  const manifest = await verifyArtifact(positional[0], {
+    generation: artifactBuildDirectory(positional[0], undefined, positional[2]),
+    seal: positional[4],
   });
+  if (flags.length > 0) assertReleasable(manifest);
   process.stderr.write(
     `verify-artifact: ${manifest.platform} ${manifest.commit}${manifest.dirty ? " (dirty)" : ""}\n`,
   );
