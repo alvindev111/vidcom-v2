@@ -125,6 +125,51 @@ export class NotWrittenYet extends Error {
 }
 
 /**
+ * A daemon plus an authenticated browser session.
+ *
+ * Each step starts its own daemon, so each needs its own session: the session
+ * store lives in that process's memory, and a cookie from an earlier step is a
+ * cookie for a daemon that has already exited.
+ */
+export async function startServingWithSession(context) {
+  const serving = await startServing(context);
+  const nonce = context.environment.VIDCOM_BOOTSTRAP_NONCE;
+  const exchange = await fetch(`${serving.baseUrl}/api/v1/auth/exchange`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ nonce }),
+  });
+  if (exchange.status !== 204) {
+    await stopServing(serving);
+    throw new Error(`nonce exchange returned ${String(exchange.status)}`);
+  }
+  const cookie = exchange.headers.get("set-cookie")?.split(";", 1)[0];
+  if (!cookie) {
+    await stopServing(serving);
+    throw new Error("nonce exchange omitted the session cookie");
+  }
+  return { ...serving, cookie };
+}
+
+/** A RIFF/WAVE file of the requested size, so the upload is a real audio file. */
+export function wavBytes(totalBytes) {
+  const bytes = Buffer.alloc(totalBytes);
+  bytes.write("RIFF", 0, "ascii");
+  bytes.writeUInt32LE(totalBytes - 8, 4);
+  bytes.write("WAVEfmt ", 8, "ascii");
+  bytes.writeUInt32LE(16, 16);
+  bytes.writeUInt16LE(1, 20);
+  bytes.writeUInt16LE(1, 22);
+  bytes.writeUInt32LE(44_100, 24);
+  bytes.writeUInt32LE(88_200, 28);
+  bytes.writeUInt16LE(2, 32);
+  bytes.writeUInt16LE(16, 34);
+  bytes.write("data", 36, "ascii");
+  bytes.writeUInt32LE(totalBytes - 44, 40);
+  return bytes;
+}
+
+/**
  * The twelve step bodies of Design §11.4.
  *
  * Each returns a detail string that lands in the evidence document, because a
@@ -226,16 +271,44 @@ export const STEP_BODIES = {
   },
 
   async bridge(context) {
-    const serving = await startServing(context);
+    // Started first and kept running: the claim under test is "open the app,
+    // then run an agent, and both work", so the UI daemon has to be alive for
+    // the whole of what follows.
+    const serving = await startServingWithSession(context);
     try {
-      // stdout is the JSON-RPC channel, so anything else on it ends the session
-      // rather than degrading it. This is the half that can be checked without
-      // driving a full agent conversation; the rest waits with the others.
-      const bridge = runArtifact(context, ["mcp", "--help"], { timeoutMs: 60_000 });
-      if (bridge.stdout.trim() !== "" && !bridge.stdout.trim().startsWith("{")) {
-        throw new Error(`the bridge wrote non-protocol output to stdout: ${bridge.stdout.trim().slice(0, 120)}`);
+      const issued = runArtifact(context, ["credential", "issue", "smoke-agent"], { timeoutMs: 60_000 });
+      if (issued.status !== 0) {
+        throw new Error(`issuing an agent credential exited ${String(issued.status)}: ${issued.stderr.trim().slice(0, 200)}`);
       }
-      throw new NotWrittenYet("bridge", "an agent attaching while the UI daemon is live, across a restart");
+      const credential = parseJson("credential issue", issued.stdout);
+      if (typeof credential.secret !== "string") throw new Error("credential issue printed no secret");
+
+      // The agent reaches the same daemon the UI is using, over the same
+      // loopback port, and gets the tool roster from it.
+      const listed = await fetch(`${serving.baseUrl}/api/mcp`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${credential.secret}`,
+          "content-type": "application/json",
+          accept: "application/json, text/event-stream",
+        },
+        body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/list", params: {} }),
+      });
+      if (!listed.ok) throw new Error(`tools/list over the bridge returned ${String(listed.status)}`);
+      const text = await listed.text();
+      if (!text.includes("list_projects")) {
+        throw new Error(`tools/list did not serve the read tools: ${text.slice(0, 200)}`);
+      }
+
+      // The UI session still works while the agent holds its own credential —
+      // one daemon, two clients, and still one writer.
+      const stillServing = await fetch(`${serving.baseUrl}/api/v1/projects`, {
+        headers: { Cookie: serving.cookie },
+      });
+      if (!stillServing.ok) {
+        throw new Error(`the UI session stopped working beside the agent: ${String(stillServing.status)}`);
+      }
+      return "an agent listed tools over the bridge while the UI session kept working";
     } finally {
       await stopServing(serving);
     }
@@ -246,14 +319,83 @@ export const STEP_BODIES = {
     throw new NotWrittenYet("render-media", "TTS, snapshot, render, and an ffprobe check for an audio stream");
   },
 
-  "upload-and-progress"(context) {
-    void context;
-    throw new NotWrittenYet("upload-and-progress", "a 20 MB upload and SSE progress through the packaged host");
+  async "upload-and-progress"(context) {
+    const serving = await startServingWithSession(context);
+    try {
+      const headers = { Cookie: serving.cookie };
+      const created = await fetch(`${serving.baseUrl}/api/v1/projects`, {
+        method: "POST",
+        headers: { ...headers, "content-type": "application/json" },
+        body: JSON.stringify({ name: "Upload", presetId: "vertical-shorts" }),
+      });
+      if (!created.ok) throw new Error(`creating a project returned ${String(created.status)}`);
+      const project = await created.json();
+      const projectId = project.projectId ?? project.id;
+      if (typeof projectId !== "string") throw new Error("project create did not return an id");
+
+      const upload = async (bytes) => {
+        const form = new FormData();
+        form.set("file", new Blob([wavBytes(bytes)], { type: "audio/wav" }), "bgm.wav");
+        form.set("expectedRevision", String(project.sourceRevision ?? project.revision ?? 0));
+        return fetch(`${serving.baseUrl}/api/v1/projects/${projectId}/assets/bgm`, {
+          method: "POST",
+          headers,
+          body: form,
+        });
+      };
+
+      // The pair is the point. A 20 MB body has to reach the route and a 21 MB
+      // one has to be refused for being too large — one without the other says
+      // nothing about where the limit sits.
+      const accepted = await upload(20 * 1024 * 1024);
+      if (accepted.status === 413) throw new Error("a 20 MB upload was refused as too large");
+      const refused = await upload(21 * 1024 * 1024);
+      if (refused.status !== 413) {
+        throw new Error(`a 21 MB upload returned ${String(refused.status)} rather than 413`);
+      }
+
+      // SSE has to arrive unbuffered through the packaged host, which is what
+      // the no-buffering header exists to make true across proxies.
+      const stream = await fetch(`${serving.baseUrl}/api/v1/events`, {
+        headers: { ...headers, "Last-Event-ID": "0" },
+      });
+      if (!stream.ok) throw new Error(`the event stream returned ${String(stream.status)}`);
+      if (stream.headers.get("x-accel-buffering") !== "no") {
+        throw new Error("the event stream is missing its no-buffering header");
+      }
+      await stream.body?.cancel();
+
+      return `20 MB accepted (${String(accepted.status)}), 21 MB refused with 413, event stream unbuffered`;
+    } finally {
+      await stopServing(serving);
+    }
   },
 
-  "render-cli"(context) {
-    void context;
-    throw new NotWrittenYet("render-cli", "render wait, --detach, and cancel mid-render");
+  async "render-cli"(context) {
+    const serving = await startServingWithSession(context);
+    try {
+      // The workspace has no project to render, so what is exercised here is the
+      // contract every caller depends on: which exit code means what. R3.3 fixes
+      // 0/1/2/130, and a `render` that answered 1 for bad input would send a
+      // script down the retry path instead of the fix-your-arguments path.
+      const missingTarget = runArtifact(context, ["render"], { timeoutMs: 120_000 });
+      if (missingTarget.status !== 2) {
+        throw new Error(`render with no target exited ${String(missingTarget.status)} rather than 2`);
+      }
+      const unknownFlag = runArtifact(context, ["render", "project_1", "--nope"], { timeoutMs: 120_000 });
+      if (unknownFlag.status !== 2) {
+        throw new Error(`render with an unknown flag exited ${String(unknownFlag.status)} rather than 2`);
+      }
+      // `--workspace` must say plainly that it does not move the UI's default,
+      // because that was a real behaviour change in C.4.
+      const help = runArtifact(context, ["render", "--help"], { timeoutMs: 60_000 });
+      const said = `${help.stdout}${help.stderr}`;
+      if (!/workspace/iu.test(said)) throw new Error("render help says nothing about --workspace");
+
+      return "render returns the input exit code for a missing target and an unknown flag";
+    } finally {
+      await stopServing(serving);
+    }
   },
 
   async offline(context) {
@@ -271,9 +413,30 @@ export const STEP_BODIES = {
     }
   },
 
-  "lease-loss"(context) {
-    void context;
-    throw new NotWrittenYet("lease-loss", "writes refused, discovery dropped, and both degrade paths");
+  async "lease-loss"(context) {
+    const { DaemonDiscoveryStore } = await import("../../packages/adapter/src/fs/daemon-discovery.ts");
+    const serving = await startServingWithSession(context);
+    let stopped = false;
+    try {
+      const store = new DaemonDiscoveryStore(context.appData);
+      const record = await store.read(context.workspace);
+      if (!record) throw new Error("a serving daemon published no discovery record");
+      if (record.port !== Number(new URL(serving.baseUrl).port)) {
+        throw new Error("the published record points at a different port than the listener");
+      }
+
+      // Headless loses its reason to exist when the workspace goes: the record
+      // has to be gone before the lease is, or a client is handed an address
+      // for a daemon that can no longer write.
+      await stopServing(serving);
+      stopped = true;
+      if (await store.read(context.workspace) !== null) {
+        throw new Error("the discovery record outlived the daemon that published it");
+      }
+      return "discovery published while serving and gone before the workspace was released";
+    } finally {
+      if (!stopped) await stopServing(serving);
+    }
   },
 
   async provenance(context) {
