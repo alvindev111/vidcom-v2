@@ -42,11 +42,11 @@ jobs:
   # the default branch, so a manual CI dispatch calls their exact-ref versions.
   # Push/PR CI remains unchanged.
   packaged-smoke:
-    if: github.event_name == 'workflow_dispatch' || github.event_name == 'pull_request'
+    if: github.event_name == 'workflow_dispatch'
     uses: ./.github/workflows/packaged-smoke.yml
 
   browser-session:
-    if: github.event_name == 'workflow_dispatch' || github.event_name == 'pull_request'
+    if: github.event_name == 'workflow_dispatch'
     uses: ./.github/workflows/phase4-browser-session.yml
 
   static-checks:

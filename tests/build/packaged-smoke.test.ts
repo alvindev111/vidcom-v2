@@ -130,6 +130,14 @@ describe("native packaged-smoke inputs", () => {
     expect(workflow).toContain("Production FFmpeg acquisition remains behind the human supply-chain gate");
   });
 
+  it("does not duplicate pull-request heavy workflows through the CI wrapper", async () => {
+    const workflow = await readFile(".github/workflows/ci.yml", "utf8");
+    expect(workflow.match(/if: github\.event_name == 'workflow_dispatch'/gu)).toHaveLength(2);
+    expect(workflow).not.toContain(
+      "github.event_name == 'workflow_dispatch' || github.event_name == 'pull_request'",
+    );
+  });
+
   it("has an explicit runner-level network cut for each release platform", () => {
     expect(networkCutPlan("darwin")).toContain("reject routes");
     expect(networkCutPlan("linux")).toContain("iptables");

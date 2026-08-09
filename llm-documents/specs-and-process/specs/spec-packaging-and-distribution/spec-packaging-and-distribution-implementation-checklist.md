@@ -2769,6 +2769,12 @@ Chi tiết: [Detailed Goals](./spec-packaging-and-distribution-detailed-goal.md)
   - Decisions: Typecheck, boundaries, 115 spec paths và diff-check xanh; lint 0 error/4 warning cũ. Không stage/chạm `tests/adapter/remote-asset-browser.test.ts` của người dùng.
   - Blockers: Exact-head Windows CI và packaged baseline matrix vẫn là authority; production supply-chain human gate vẫn mở độc lập.
 
+2026-08-10 — Phase M CI orchestration: loại duplicate reusable run C-51
+  - Files: `.github/workflows/ci.yml`, `tests/build/packaged-smoke.test.ts`, Design §16 và implementation notes
+  - Summary: Run `31338452406` có Linux/Windows static job xanh toàn bộ nhưng wrapper đỏ vì PR vừa tự chạy heavy workflows vừa gọi lại chúng qua CI; cùng concurrency key làm hai bản cancel lẫn nhau.
+  - Decisions: PR chỉ dùng standalone Packaged/Browser authority; CI chỉ gọi reusable versions khi manual `workflow_dispatch`. Regression chốt đúng hai condition dispatch-only, không giảm OS hay step coverage.
+  - Blockers: Cần exact-head rerun của cả bốn workflow; production supply-chain human gate vẫn mở độc lập.
+
 Format:
 ```
 YYYY-MM-DD — Phase X, Task X.Y
