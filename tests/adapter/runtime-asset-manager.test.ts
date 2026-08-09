@@ -586,7 +586,11 @@ describe.skipIf(!HOST_SUPPORTED)("runtime app-data confinement", () => {
     const source = assetSource(manifest, { [ARCHIVE_KEY]: bytes });
     const installed = await manager(appDataRoot, source).ensureAll();
     const layers = path.join(installed.versionRoot, "layers");
-    await rm(layers, { recursive: true });
+    // `force` as well as `recursive`: Windows can leave the directory behind
+    // when a handle is still settling, and a `writeFile` onto a directory that
+    // is still there fails silently enough that the inspection below reports
+    // nothing rather than the corruption this case exists to describe.
+    await rm(layers, { recursive: true, force: true });
     await writeFile(layers, "not a directory\n", "utf8");
 
     const inspection = await manager(appDataRoot, source).inspect();

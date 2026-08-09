@@ -2521,6 +2521,12 @@ Chi tiết: [Detailed Goals](./spec-packaging-and-distribution-detailed-goal.md)
   - Decisions: **Token là đường vào duy nhất**: path client gõ được là path trang nào cũng gửi được, và toàn bộ điểm của browse là server chỉ hành động trên thư mục chính nó phát ra. **Plan trước khi enqueue**: source chồng lấn workspace hay tên không thành slug được bị từ chối **khi caller còn đang nghe**, thay vì nằm trong một job họ phải đi đọc — test chốt `enqueue` không được gọi lần nào ở ca đó. Mỗi lần thử có staging riêng theo `operationId`: hai import cùng một source mà dùng chung một thư mục thì recovery không nói được nó tìm thấy rác của ai.
   - Blockers: 6 test trên **filesystem thật** trong temp directory, gồm ca "source không hề bị sửa" và "workspace rỗng sau khi discard". Còn lại để đóng K.6: nối vào `createJobTypes` và cấp `startProjectImport` cho `createServerApp` trong composition root.
 
+2026-08-09 — Windows: mode POSIX trong verifier, lần này ở code production
+  - Files: `scripts/verify-artifact.mjs`, `tests/adapter/runtime-asset-manager.test.ts`, checklist
+  - Summary: Sau bốn bản sửa trước, Linux và macOS xanh; Windows còn hai và cả hai đã có chẩn đoán.
+  - Decisions: `assertFilesMatchEntries` so `mode & 0o777` với mode trong manifest. Windows báo cố định `0o666` (hoặc `0o444` khi read-only) cho mọi file, nên phép so đó **từ chối một stage đúng vì một quyền mà nền tảng chưa bao giờ có**. Chỉ so mode ở nơi filesystem thật sự lưu nó; manifest **vẫn giữ** mode vì nó có nghĩa khi archive được giải nén trên máy POSIX, và **hash — khẳng định thực chất về đống byte này — vẫn kiểm trên cả ba**. Đây là lần thứ hai cùng một sự thật (Windows không mô hình hoá bit POSIX) làm đỏ một chỗ khác; lần trước ở test, lần này ở verifier. Ca `target_not_directory` thêm `force` khi `rm`: Windows có thể để thư mục lại khi handle chưa nhả xong, và `writeFile` đè lên thư mục còn đó hỏng đủ im lặng để inspection **không báo gì** thay vì báo đúng sự cố mà ca này mô tả.
+  - Blockers: Không có cục bộ; full suite 1790 pass / 5 skip, typecheck và lint 0 error. Chờ CI xác nhận Windows.
+
 Format:
 ```
 YYYY-MM-DD — Phase X, Task X.Y

@@ -597,7 +597,14 @@ async function assertFilesMatchEntries(files, expectedEntries, archiveKey, sourc
     const actualHash = await sha256Of(file.filename);
     const declaredHash = SHA256.exec(entry.sha256)?.[1];
     const actualMode = file.metadata.mode & 0o777;
-    if (actualHash !== declaredHash || actualMode !== entry.mode) {
+    // Mode is compared only where the filesystem stores one. Windows reports a
+    // fixed 0o666 (or 0o444 when read-only) for every file, so comparing there
+    // would reject a correct stage for a permission the platform never had.
+    // The manifest keeps the mode because it matters when the archive is
+    // extracted on a POSIX machine, and the hash — which is the substantive
+    // claim about these bytes — is checked on all three.
+    const modeMatches = process.platform === "win32" || actualMode === entry.mode;
+    if (actualHash !== declaredHash || !modeMatches) {
       fail(`${sourceLabel} file does not match its manifest entry`, {
         key: archiveKey,
         path: file.relative,
