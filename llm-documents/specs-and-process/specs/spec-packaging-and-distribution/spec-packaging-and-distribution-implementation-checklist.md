@@ -1212,8 +1212,10 @@ Mỗi phase chạy focused command dưới đây trên SQLite/filesystem thật,
   - Chạy được trên máy dev, đã kiểm: `--step build` trả đúng một dòng, `--strict` exit `1` với lý do "chưa có artifact" thay vì im lặng
   - **Còn lại**: thân từng bước — chúng lái chính executable đã đóng gói, nên chúng cần artifact chạy được, tức runtime archive. Hiện tại mỗi bước báo `skipped` **kèm lý do**, và `--strict` biến nó thành đỏ
   - _Requirements: R8.3, R8.7_ — _Design: §11.4_
-- [ ] M.1 Job native theo OS
+- [~] M.1 Job native theo OS — **workflow xong, chưa chạy xanh được**
   - macOS arm64, Windows x64, Linux x64; **không job nào dùng artifact build từ OS khác**. Mỗi lần chạy ghi lại nền tảng đã kiểm
+  - [`packaged-smoke.yml`](../../../../.github/workflows/packaged-smoke.yml) dựng artifact **trên chính runner** rồi mới chạy smoke, `fail-fast: false` để một nền tảng hỏng không che mất kết quả hai nền tảng kia — biết nền tảng nào đã được chứng minh là toàn bộ mục đích của job này
+  - **`workflow_dispatch` thôi, có lý do**: thân từng bước lái một executable cần runtime archive chưa tồn tại, nên đặt lịch chạy chỉ tạo ra một badge đỏ mỗi ngày không nói thêm điều gì. Cùng tiền lệ với `phase4-browser-session.yml`
   - _Requirements: R8.1, R8.5_ — _Design: §4.8, DR-11_
 - [ ] M.2 Môi trường sạch
   - `node` **không** trên PATH; **không** `node_modules` ở `cwd` hay thư mục cha; `HOME` sạch. Cache tải-về (`$HOME/.cache/hyperframes`, `HF_HOME`) **được** mồi; app-data/runtime **không** được mồi
@@ -1235,10 +1237,10 @@ Mỗi phase chạy focused command dưới đây trên SQLite/filesystem thật,
 - [ ] M.4 Bước offline chặn ở **tầng mạng runner**
   - Đo ở S9: `HTTPS_PROXY`/`HTTP_PROXY` **bị lờ** — downloader vẫn tải 202 MB qua proxy chết. Viết bằng env thì bước này xanh vì lý do sai
   - _Requirements: R8.8, R6.5_ — _Design: §5.18_
-- [ ] M.5 Cache theo version + fail khi thiếu thành phần bắt buộc
+- [~] M.5 Cache theo version + fail khi thiếu thành phần bắt buộc — **cache key + strict xong**
   - `VIDCOM_DOCTOR_STRICT=1`; thành phần bắt buộc vắng mặt ⇒ **fail**, MUST NOT skip
   - _Requirements: R8.4, R8.8_ — _Design: §5.9_
-- [ ] M.6 Upload bằng chứng
+- [~] M.6 Upload bằng chứng — **upload `if: always()` xong**
   - DoctorReport, artifact manifest, `SHA256SUMS`, kết quả ffprobe, platform metadata
   - _Requirements: R8.3_ — _Design: §9.4_
 - [ ] M.7 Chốt lại hai trần còn tạm
@@ -1768,6 +1770,12 @@ Chi tiết: [Detailed Goals](./spec-packaging-and-distribution-detailed-goal.md)
   - Summary: Runner packaged smoke chạy được trên máy dev, `--step`/`--from`, bằng chứng JSON trên stdout, tiến trình trên stderr, exit ≠ 0 **kèm id bước**.
   - Decisions: Danh sách bước là dữ liệu chứ không phải một script tuần tự, để `skipped` trở thành giá trị kiểm được — AC của phase là "không step bắt buộc nào bị skip", và một AC chỉ kiểm được bằng cách đọc log là AC không ai kiểm. `--strict` mặc định lấy từ `VIDCOM_DOCTOR_STRICT` mà job đã đặt, nên một nghĩa của `skipped` chứ không phải hai.
   - Blockers: **Lệch spec đã ghi**: M.0 nói 12 bước, §11.4 liệt kê 13 — hiện thực theo Design. Thân từng bước lái executable đã đóng gói nên cần runtime archive; hiện mỗi bước trả `skipped` kèm lý do và `--strict` làm nó đỏ. 8/8 test.
+
+2026-08-09 — Phase M, Task M.1 + M.5 + M.6 (workflow)
+  - Files: `.github/workflows/packaged-smoke.yml`, checklist và implementation notes
+  - Summary: Ba job native, artifact dựng **trên chính runner**, cache theo version runtime, `VIDCOM_DOCTOR_STRICT=1`, upload bằng chứng kể cả khi đỏ.
+  - Decisions: `workflow_dispatch` thôi — thân từng bước cần runtime archive chưa có, và đặt lịch chỉ tạo một badge đỏ hằng ngày không mang thêm thông tin; đúng tiền lệ `phase4-browser-session.yml`. `fail-fast: false` vì mục đích của job là biết **nền tảng nào** đã được chứng minh. Cache key theo `build-runtime-archives.mjs` chứ không theo lockfile: thứ được cache là browser/model tải về, chúng đổi khi runtime pin đổi chứ không khi dependency đổi. Upload `if: always()` vì lúc cần timing và lý do từng bước nhất chính là lúc job đỏ.
+  - Blockers: Chưa chạy được xanh cho tới khi có runtime archive; MUST NOT thêm vào CI chính để tránh một gate đỏ vĩnh viễn.
 
 Format:
 ```
