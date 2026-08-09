@@ -333,11 +333,11 @@ Mỗi phase chạy focused command dưới đây trên SQLite/filesystem thật,
   - Luật thứ tự được **cưỡng chế chứ không giả định**: trước khi lấy khoá credential, coordinator gọi `bootstrapLease.assertHeld()`. Khoá credential khai `timeoutCode: bridge_rotation_in_progress`, khoá bootstrap khai `bootstrap_lock_timeout` — hai chế độ hỏng phân biệt được từ mã lỗi
   - Verify: khoá credential chỉ tồn tại **trong lúc** reconcile và biến mất ngay sau; hai `prepare()` song song bị serialize; reconcile ném lỗi thì khoá bootstrap vẫn được nhả
   - _Requirements: R5.6, R5.13_ — _Design: §5.15_
-- [~] C.3 Migration đúng một lần mỗi boot — **một phần**
-  - Hôm nay `selectWorkspace` migrate **hai** lần rồi foundation migrate lần ba ([`workspace-selection.ts:23-30`](../../../../packages/cli/src/workspace-selection.ts#L23), [`:57-60`](../../../../packages/cli/src/workspace-selection.ts#L57))
-  - **Đã làm**: `selectWorkspace` gom về **một** `withSettings` duy nhất — đọc `active_workspace`, resolve, rồi trả kết quả trong cùng một lần mở DB. Hai lần thành một
-  - **Chưa làm, và vì sao**: lần thứ ba ở foundation chỉ gỡ được khi `BootstrapCoordinator.prepare()` chạy **trước** `selectWorkspace` và cấp DB đã migrate xuống dưới. Nhưng [`main.ts:110`](../../../../packages/cli/src/main.ts#L110) gọi `selectWorkspace` đầu tiên, và `prepare()` cần một `RuntimeAssetSource` mà **dev/test chưa có** — `FilesystemRuntimeAssetSource` cần thư mục runtime đã build, SEA source chỉ có trong artifact (Phase H). Đảo thứ tự boot phải sửa `main.ts`, `next-host.ts` (2 chỗ), `commands/mcp.ts`, `commands/recovery.ts` cộng một đường asset source cho dev. **Gỡ khi coordinator được lắp vào entrypoint ở E/J**
-  - AC "đo bằng counter" chưa tick: seam để đếm chỉ tồn tại sau khi coordinator sở hữu migration. Đừng tick bằng một test đếm giả
+- [x] C.3 Migration đúng một lần mỗi boot
+  - `prepareRuntimeForCli()` nay chạy trước chọn workspace ở các boot path `app`/`serve`, `mcp` và `recovery`; DB đã migrate được truyền xuống `selectWorkspace`, còn `startVidcomFoundation` nhận `migrationPrepared: true` nên không chạy lại
+  - Source checkout không có runtime archive để extract: coordinator vẫn sở hữu cùng khoá bootstrap, migration và credential reconciliation, nhưng bỏ riêng bước extraction. Artifact bắt buộc dùng SEA source; `VIDCOM_RUNTIME_ASSETS` chỉ là nguồn filesystem tường minh cho build/test và artifact không được fallback về `node_modules`
+  - Workspace switch trong cùng tiến trình dùng lại `HostedRuntimeBoot`, nên không mở một bootstrap/migration thứ hai
+  - Test counter chạy production boot `startServing` → hosted runtime → coordinator → workspace selection → foundation trên SQLite + filesystem thật và chốt `migrate` được gọi đúng `1`
   - _Requirements: R5.13_ — _Design: §4.5_
 - [x] C.4 **Tách việc ghi `active_workspace` khỏi `selectWorkspace`**
   - Hôm nay resolve nào cũng `set("active_workspace", …)` ([`workspace-selection.ts:58`](../../../../packages/cli/src/workspace-selection.ts#L58)), nên `vidcom render --workspace X` **đổi luôn workspace mặc định của UI**. Chỉ `FoundationManager.activate` thành công mới được ghi
@@ -392,7 +392,7 @@ Mỗi phase chạy focused command dưới đây trên SQLite/filesystem thật,
   - _Requirements: R7.6_ — _Design: §6.5_
 
 **Acceptance Criteria**:
-- [ ] Migration chạy **đúng một lần** trong một boot, đo bằng counter chứ không bằng đọc code — **chưa đạt có chủ ý**, xem C.3: `selectWorkspace` đã từ 2 xuống 1, lần thứ ba ở foundation chỉ gỡ được khi coordinator được lắp vào entrypoint ở E/J. Đừng tick bằng test đếm giả
+- [x] Migration chạy **đúng một lần** trong một boot, đo bằng counter chứ không bằng đọc code — `tests/cli/boot-migration-count.test.ts` chạy production `startServing` trên SQLite + filesystem temp, truyền cùng migrator thật qua coordinator và foundation rồi chốt counter bằng `1`
 - [x] Mọi nhánh kill ở C.10 kết thúc bằng một bridge **nối lại được** — cả bốn nhánh assert file có secret dùng được và `app_settings` trỏ đúng row `active`
 - [x] Không nhánh nào để lại hơn một row `active` mang label `system:bridge` — reconciliation revoke mọi row `active` mang label đó mà không phải `S`; test dựng sẵn hai row rác và chốt còn đúng một
 
@@ -1812,6 +1812,12 @@ Chi tiết: [Detailed Goals](./spec-packaging-and-distribution-detailed-goal.md)
   - Summary: Bốn lỗi nữa từ đọc lại diff, không lỗi nào có test đang bắt.
   - Decisions: (1) `serve` dựng lại static host **mỗi request** — mỗi lần parse lại manifest và kiểm biên từng entry, tức lặp toàn bộ việc đó cho từng ảnh trên một trang. Dựng một lần. (2) **`globalThis.require` không tồn tại trong SEA** — `require` là binding phạm vi module, không phải global — nên nhánh SEA **không bao giờ chạy** và bản đóng gói sẽ phục vụ trang "chưa build" trong khi đang mang sẵn frontend bên trong. Đổi sang `process.getBuiltinModule("node:sea")` + `isSea()`. (3) Strict biến `skipped` thành `missing` **mà không kèm remedy**, tức vi phạm đúng luật "mọi mục không ok đều nói cách sửa", ngay ở lần chạy người ta cần câu trả lời nhất. (4) Daemon hardcode `era: "modern"` — bridge mới là bên đàm phán era, nên nó phải forward; route giờ **bắt buộc** có `era`, vì mặc định "modern" sẽ lặng lẽ chạy một tool modern-only cho client legacy, đúng thứ mà việc tách era tồn tại để chặn.
   - Blockers: Không có; full suite 1502 pass / 4 skip, typecheck, lint 0 error, boundaries xanh. CI `bf8b77d` xanh cả ba OS.
+
+2026-08-09 — Phase C, Task C.3 (đóng AC migration một lần)
+  - Files: `packages/cli/src/{bootstrap-coordinator,runtime-paths-source,workspace-selection,startup,next-host}.ts`, `packages/cli/src/commands/{mcp,serve,recovery}.ts`, `tests/{adapter/bootstrap-coordinator,cli/boot-migration-count}.test.ts`, Design §16 (C-8), checklist và implementation notes
+  - Summary: Lắp `BootstrapCoordinator` trước workspace selection trên mọi boot path; truyền DB đã migrate xuống dưới và bỏ migration lặp ở foundation. Test counter chạy production `startServing` → hosted runtime → coordinator → selection → foundation trên SQLite + filesystem thật và chốt đúng một lần gọi; schema/foreign key được kiểm trên cùng DB sau boot.
+  - Decisions: Source checkout không có archive để extract nên coordinator bỏ riêng extraction khi không có asset source, nhưng vẫn giữ khoá bootstrap, migration và credential reconciliation. Artifact vẫn bắt buộc SEA/filesystem asset source và không fallback về dependency của máy build; ghi thành C-8 trong Design §16. Review độc lập bắt được route activate workspace còn gọi `selectWorkspace` không kèm DB, tức migrate thêm trước mỗi hot-swap. Sửa tận contract: `selectWorkspace` nay bắt buộc nhận DB đã migrate; activation và runtime thay thế dùng DB của foundation đang sống, nên TypeScript chặn call-site quên ownership thay vì dựa vào một boolean.
+  - Blockers: Không có. Focused Phase C 28/28; full suite 1504 pass / 4 skip có chủ ý; typecheck, lint 0 error / 3 warning có sẵn, `test:boundaries`, `test:spec-paths` và `git diff --check` xanh.
 
 Format:
 ```

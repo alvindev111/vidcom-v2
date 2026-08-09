@@ -150,7 +150,13 @@ async function runCleanupActions(
 export async function startVidcomFoundation<Listener>(
   config: CompositionRootConfig & { holderId: string },
   hooks: DaemonHooks<Listener>,
-  options: { signal?: AbortSignal } = {},
+  options: {
+    signal?: AbortSignal;
+    /** BootstrapCoordinator already migrated this app-data during this boot. */
+    migrationPrepared?: boolean;
+    /** Test seam used to count the real migration call across the whole boot. */
+    migrate?: typeof migrateDatabase;
+  } = {},
 ) {
   const infrastructure = createInfrastructure(config);
   let leaseId: string | null = null;
@@ -207,7 +213,9 @@ export async function startVidcomFoundation<Listener>(
   })();
   try {
     const listener = await runStartupSequence({
-      migration: () => migrateDatabase(infrastructure.database),
+      migration: options.migrationPrepared === true
+        ? () => Promise.resolve()
+        : () => (options.migrate ?? migrateDatabase)(infrastructure.database),
       lease: async () => {
         const acquired = await infrastructure.lease.acquire(config.workspaceRoot, config.holderId);
         if (!acquired.ok) throw new Error(`workspace is held by ${acquired.heldBy.holderId}`);

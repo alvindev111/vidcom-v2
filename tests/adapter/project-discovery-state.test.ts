@@ -95,9 +95,15 @@ describe("workspace discovery and project state on real SQLite/filesystem", () =
     const appData = path.join(root, "app-data");
     await Promise.all([mkdir(empty), mkdir(active), mkdir(invalidProject, { recursive: true })]);
     await writeFile(path.join(invalidProject, "vidcom.json"), "{broken\n");
-    await expect(selectWorkspace({ appDataRoot: appData, cwd: empty })).resolves.toBe(empty);
-    await expect(selectWorkspace({ explicit: active, appDataRoot: appData })).resolves.toBe(active);
-    await expect(selectWorkspace({ appDataRoot: appData, cwd: invalidProject })).resolves.toBe(workspace);
+    const database = await initializeDatabase(appData);
+    try {
+      await expect(selectWorkspace({ appDataRoot: appData, cwd: empty, database })).resolves.toBe(empty);
+      await expect(selectWorkspace({ explicit: active, appDataRoot: appData, database })).resolves.toBe(active);
+      await expect(selectWorkspace({ appDataRoot: appData, cwd: invalidProject, database }))
+        .resolves.toBe(workspace);
+    } finally {
+      await database.destroy();
+    }
   });
 
   it("warns with the deleted active path before falling back to cwd", async () => {
@@ -114,15 +120,15 @@ describe("workspace discovery and project state on real SQLite/filesystem", () =
     try {
       await migrateDatabase(database);
       new AppSettingsStore(database).set("active_workspace", active);
+      await rm(active, { recursive: true });
+      const warning = vi.spyOn(process, "emitWarning").mockImplementation(() => {});
+      await expect(selectWorkspace({ appDataRoot: appData, cwd, database })).resolves.toBe(cwd);
+      expect(warning).toHaveBeenCalledWith(expect.stringContaining(active), {
+        code: "active_workspace_unreadable",
+      });
     } finally {
       await database.destroy();
     }
-    await rm(active, { recursive: true });
-    const warning = vi.spyOn(process, "emitWarning").mockImplementation(() => {});
-    await expect(selectWorkspace({ appDataRoot: appData, cwd })).resolves.toBe(cwd);
-    expect(warning).toHaveBeenCalledWith(expect.stringContaining(active), {
-      code: "active_workspace_unreadable",
-    });
   });
 
   it("keeps entry IDs session-local, idempotent, revocable, and workspace-scoped", () => {

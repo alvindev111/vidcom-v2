@@ -8,7 +8,7 @@ import { startMcpStdio } from "@vidcom/mcp";
 import { CliInputError } from "../cli-error";
 import { createJobTypes, createMcpRegistry } from "../composition-root";
 import { defaultAppDataRoot, defaultNativeDependenciesRoot } from "../next-host";
-import { runtimePathsFor } from "../runtime-paths-source";
+import { prepareRuntimeForCli, runtimePathsFor } from "../runtime-paths-source";
 import { startVidcomFoundation } from "../startup";
 import { selectWorkspace } from "../workspace-selection";
 
@@ -83,16 +83,25 @@ export async function startVidcomMcp(
   // nothing that depends on that path can be computed before it is read.
   const settings = await dependencies.readSettings();
   const appDataRoot = dependencies.appDataRoot(settings);
-  const workspaceRoot = await dependencies.selectWorkspace({
-    explicit: options.workspace ?? process.env.VIDCOM_WORKSPACE ?? settings.workspaceRoot,
-    appDataRoot,
-  });
+  const prepared = await prepareRuntimeForCli(appDataRoot);
+  let workspaceRoot: AbsolutePath;
+  let runtimePaths;
+  try {
+    workspaceRoot = await dependencies.selectWorkspace({
+      explicit: options.workspace ?? process.env.VIDCOM_WORKSPACE ?? settings.workspaceRoot,
+      appDataRoot,
+      database: prepared.database,
+    });
+    runtimePaths = runtimePathsFor(appDataRoot, prepared);
+  } finally {
+    await prepared.release();
+  }
   let scheduler: JobScheduler | null = null;
   return startVidcomFoundation({
     appDataRoot,
     workspaceRoot: workspaceRoot as AbsolutePath,
     nativeDependenciesRoot: defaultNativeDependenciesRoot(appDataRoot) as AbsolutePath,
-    runtimePaths: runtimePathsFor(appDataRoot),
+    runtimePaths,
     settings,
     holderId: `mcp:${process.pid}:${randomUUID()}`,
   }, {
@@ -123,7 +132,10 @@ export async function startVidcomMcp(
         onerror: (error) => dependencies.writeError(error.message),
       }, options.protocol ? { pinnedRevision: options.protocol } : {});
     },
-  }, { signal });
+  }, {
+    migrationPrepared: true,
+    ...(signal === undefined ? {} : { signal }),
+  });
 }
 
 /** Installs the signal gate before startup and retains it until cleanup settles. */

@@ -551,6 +551,19 @@
           <div><dt class="font-semibold text-slate-200">Gate spec-paths bắt drift tài liệu</dt><dd class="mt-1 text-slate-300">Hàng D và E của Verification Matrix trỏ vào hai file test <strong>chưa bao giờ tồn tại</strong>. Đăng ký spec vào gate là lúc điều đó lộ ra — 80 → 115 path được kiểm.</dd></div>
         </dl>
       </section>
+      <section class="mt-6 rounded-2xl border border-emerald-500/30 bg-slate-900 p-6">
+        <div class="flex flex-wrap items-center justify-between gap-3">
+          <h2 class="text-2xl font-semibold">2026-08-09 · C.3 — Một boot, một migration</h2>
+          <span class="rounded-full bg-emerald-400/10 px-3 py-1 text-sm text-emerald-300">28 focused · 1504 full · migrate=1</span>
+        </div>
+        <dl class="mt-6 grid gap-5 md:grid-cols-2">
+          <div><dt class="font-semibold text-slate-200">Coordinator đứng trước workspace</dt><dd class="mt-1 text-slate-300"><code>app</code>/<code>serve</code>, <code>mcp</code> và <code>recovery</code> đều prepare trước khi chọn workspace. DB đã migrate được truyền xuống selection; foundation nhận <code>migrationPrepared: true</code>. Không lớp nào phải suy ra lớp trước đã migrate bằng cách đọc code.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Counter đo production boot</dt><dd class="mt-1 text-slate-300">Test chạy <code>startServing</code> thật qua hosted runtime → coordinator → selection → foundation bằng SQLite và filesystem temp. Cùng migrator thật được truyền xuyên chuỗi, counter chốt đúng <strong>1</strong>; sau đó test đọc schema và <code>foreign_key_check</code> trên chính DB vừa boot để loại seam giả.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Source-dev không giả archive</dt><dd class="mt-1 text-slate-300">Checkout nguồn chưa có SEA blob hay runtime archive, nên coordinator bỏ riêng extraction nhưng vẫn giữ khoá bootstrap, migration và credential reconciliation. Không dựng một cây runtime giả chỉ để làm test xanh.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Artifact vẫn fail-closed</dt><dd class="mt-1 text-slate-300">SEA luôn dùng embedded source; filesystem source chỉ bật tường minh qua <code>VIDCOM_RUNTIME_ASSETS</code>. Nếu SEA chưa prepare, resolver ném lỗi thay vì lặng lẽ lấy <code>node_modules</code> của máy build. Làm rõ này được ghi thành C-8 ở Design §16.</dd></div>
+          <div class="md:col-span-2"><dt class="font-semibold text-slate-200">Review bắt một migration nằm ngoài đường boot</dt><dd class="mt-1 text-slate-300">Route activate workspace gọi lại <code>selectWorkspace</code> trước hot-swap mà không đưa DB vào, nên mỗi lần bấm đổi workspace vẫn migrate thêm dù boot ban đầu đã đúng. Không vá bằng một flag ở riêng dòng đó: <code>selectWorkspace</code> nay <strong>bắt buộc</strong> nhận DB đã migrate. Activation và runtime thay thế dùng DB của foundation đang sống; typecheck chặn mọi call-site quên ownership. Integration hot-swap chạy trên SQLite/fs thật xanh 40/40 cùng các regression liên quan.</dd></div>
+        </dl>
+      </section>
     </main>
   </body>
 </html>

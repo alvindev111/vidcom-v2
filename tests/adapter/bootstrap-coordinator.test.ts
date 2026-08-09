@@ -1,15 +1,18 @@
 import { realpathSync } from "node:fs";
-import { lstat, mkdtemp, rm } from "node:fs/promises";
+import { lstat, mkdir, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
-import type { RuntimeAssetSource } from "@vidcom/adapter";
+import { migrateDatabase, type RuntimeAssetSource } from "@vidcom/adapter";
 import {
   BootstrapCoordinator,
   CREDENTIAL_LOCK_FILENAME,
   RUNTIME_BOOTSTRAP_LOCK_FILENAME,
+  selectWorkspace,
+  startVidcomFoundation,
 } from "@vidcom/cli";
 import { ErrorCode } from "@vidcom/contracts";
+import type { AbsolutePath } from "@vidcom/core";
 import { afterEach, describe, expect, it } from "vitest";
 
 import {
@@ -44,6 +47,21 @@ async function isDirectory(pathname: string): Promise<boolean> {
 }
 
 describe.skipIf(!HOST_SUPPORTED)("bootstrap coordinator", () => {
+  it("prepares a source checkout without inventing an embedded runtime", async () => {
+    const appDataRoot = await temporaryRoot();
+    const prepared = await new BootstrapCoordinator().prepare({ appDataRoot });
+    try {
+      expect(prepared.manifest).toBeNull();
+      expect(prepared.versionRoot).toBeNull();
+      expect(prepared.archiveRoots).toEqual({});
+      expect(prepared.database.$client.prepare(
+        "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'app_settings'",
+      ).get()).toBeDefined();
+    } finally {
+      await prepared.release();
+    }
+  });
+
   it("extracts, migrates and hands over a usable database", async () => {
     const appDataRoot = await temporaryRoot();
     const prepared = await new BootstrapCoordinator().prepare({
@@ -51,7 +69,7 @@ describe.skipIf(!HOST_SUPPORTED)("bootstrap coordinator", () => {
       assetSource: source(),
     });
     try {
-      expect(prepared.manifest.artifactVersion).toBe("1.0.0");
+      expect(prepared.manifest?.artifactVersion).toBe("1.0.0");
       expect(prepared.versionRoot).toBe(path.join(appDataRoot, "native", "1.0.0"));
       expect(await isDirectory(prepared.archiveRoots[ARCHIVE_KEY] ?? "")).toBe(true);
       // A migrated database answers for a table the migrations create.
@@ -60,6 +78,52 @@ describe.skipIf(!HOST_SUPPORTED)("bootstrap coordinator", () => {
       ).get()).toBeDefined();
     } finally {
       await prepared.release();
+    }
+  });
+
+  it("runs the real migration exactly once across bootstrap, selection and foundation", async () => {
+    const root = await temporaryRoot();
+    const appDataRoot = path.join(root, "app-data");
+    const workspaceRoot = path.join(root, "workspace");
+    await mkdir(workspaceRoot);
+    let migrationCalls = 0;
+    const countedMigration: typeof migrateDatabase = async (database) => {
+      migrationCalls += 1;
+      await migrateDatabase(database);
+    };
+
+    const prepared = await new BootstrapCoordinator({ migrate: countedMigration }).prepare({
+      appDataRoot,
+      assetSource: source(),
+    });
+    let selected: AbsolutePath;
+    try {
+      selected = await selectWorkspace({
+        explicit: workspaceRoot,
+        appDataRoot,
+        database: prepared.database,
+      });
+    } finally {
+      await prepared.release();
+    }
+
+    const foundation = await startVidcomFoundation({
+      appDataRoot,
+      workspaceRoot: selected,
+      holderId: "test:migration-counter",
+    }, {
+      async recoverJobs() {},
+      async startScheduler() {},
+      async startWatcher() {},
+      async openListener() { return null; },
+    }, {
+      migrationPrepared: true,
+      migrate: countedMigration,
+    });
+    try {
+      expect(migrationCalls).toBe(1);
+    } finally {
+      await foundation.stop();
     }
   });
 

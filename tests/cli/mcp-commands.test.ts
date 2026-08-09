@@ -101,14 +101,17 @@ describe("VidCom CLI dispatch", () => {
     const root = await mkdtemp(path.join(tmpdir(), "vidcom-missing-workspace-"));
     const cwd = path.join(root, "empty-cwd");
     await mkdir(cwd);
+    const database = await initializeDatabase(path.join(root, "app-data"));
     try {
       await expect(selectWorkspace({
         appDataRoot: path.join(root, "app-data"),
         cwd,
+        database,
       })).resolves.toBe(cwd);
       await expect(readFile(path.join(cwd, "hyperframes.json"))).rejects.toMatchObject({ code: "ENOENT" });
       await expect(readFile(path.join(cwd, "index.html"))).rejects.toMatchObject({ code: "ENOENT" });
     } finally {
+      await database.destroy();
       await rm(root, { recursive: true, force: true });
     }
   });
@@ -139,11 +142,13 @@ describe("VidCom CLI dispatch", () => {
     const cwd = path.join(root, "empty-cwd");
     const appData = path.join(root, "app-data");
     await mkdir(cwd);
+    const database = await initializeDatabase(appData);
     try {
-      await expect(selectWorkspace({ appDataRoot: appData, cwd })).resolves.toBe(cwd);
+      await expect(selectWorkspace({ appDataRoot: appData, cwd, database })).resolves.toBe(cwd);
       await expect(readFile(path.join(cwd, "hyperframes.json"), "utf8")).rejects.toThrow();
       await expect(readFile(path.join(cwd, "index.html"), "utf8")).rejects.toThrow();
     } finally {
+      await database.destroy();
       await rm(root, { recursive: true, force: true });
     }
   });
@@ -158,8 +163,9 @@ describe("VidCom CLI dispatch", () => {
     await writeFile(path.join(project, "hyperframes.json"), "{}\n");
     await writeFile(path.join(project, "vidcom.json"), '{"id":"project_explicit_active"}\n');
     await writeFile(path.join(project, "index.html"), '<main data-composition-id="root"></main>');
+    const database = await initializeDatabase(appData);
     try {
-      await expect(selectWorkspace({ explicit: active, appDataRoot: appData })).resolves.toBe(active);
+      await expect(selectWorkspace({ explicit: active, appDataRoot: appData, database })).resolves.toBe(active);
       await expect(startVidcomMcp({ workspace: invalid }, {
         appDataRoot: () => appData,
         readSettings: async () => DEFAULT_VIDCOM_SETTINGS,
@@ -167,11 +173,10 @@ describe("VidCom CLI dispatch", () => {
         startStdio: async () => { throw new Error("listener must not open"); },
         writeError: () => { throw new Error("stderr must not be used"); },
       })).rejects.toBeInstanceOf(CliInputError);
-      const database = await initializeDatabase(appData);
       expect(dbOne(database, "SELECT COUNT(*) AS count FROM workspace_lease"))
         .toEqual({ count: 0 });
-      await database.destroy();
     } finally {
+      await database.destroy();
       await rm(root, { recursive: true, force: true });
     }
   });

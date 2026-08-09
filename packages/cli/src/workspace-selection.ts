@@ -1,7 +1,10 @@
 import { readdir, stat } from "node:fs/promises";
 import path from "node:path";
 
-import { AppSettingsStore, migrateDatabase, openVidcomDatabase } from "@vidcom/adapter";
+import {
+  AppSettingsStore,
+  type VidcomDatabase,
+} from "@vidcom/adapter";
 import { resolveWorkspace, type AbsolutePath, type WorkspaceCandidate } from "@vidcom/core";
 
 import { CliInputError } from "./cli-error";
@@ -27,19 +30,6 @@ async function candidate(raw: string | null | undefined): Promise<WorkspaceCandi
  * migrate the database separately, so one selection paid two migrations before
  * the foundation ran a third.
  */
-async function withSettings<T>(
-  appDataRoot: string,
-  operation: (settings: AppSettingsStore) => Promise<T> | T,
-): Promise<T> {
-  const database = openVidcomDatabase(appDataRoot);
-  try {
-    await migrateDatabase(database);
-    return await operation(new AppSettingsStore(database));
-  } finally {
-    await database.destroy();
-  }
-}
-
 /**
  * Applies explicit -> saved active -> marker-backed cwd without guessing a projects directory.
  *
@@ -52,12 +42,15 @@ export async function selectWorkspace(options: {
   explicit?: string | null;
   appDataRoot: string;
   cwd?: string;
+  /** An already-migrated database owned by the current boot/foundation. */
+  database: VidcomDatabase;
 }): Promise<AbsolutePath> {
   const explicit = await candidate(options.explicit);
   if (explicit && !explicit.readable) {
     throw new CliInputError(`explicit workspace is not readable: ${explicit.root}`);
   }
-  return withSettings(options.appDataRoot, async (settings) => {
+  const settings = new AppSettingsStore(options.database);
+  return (async () => {
     const active = explicit ? null : settings.get("active_workspace");
     const resolution = resolveWorkspace({
       explicit,
@@ -71,5 +64,5 @@ export async function selectWorkspace(options: {
       process.emitWarning(`${warning.reason}: ${warning.path}`, { code: warning.code });
     }
     return resolution.root;
-  });
+  })();
 }

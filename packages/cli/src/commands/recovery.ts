@@ -1,10 +1,10 @@
 import { randomUUID } from "node:crypto";
 
 import {
-  initializeDatabase,
   LargePreviousContentStore,
-  migrateDatabase,
   MutationJournal,
+  type RuntimePaths,
+  type VidcomDatabase,
 } from "@vidcom/adapter";
 import {
   reconcileCompositeMutation,
@@ -16,7 +16,7 @@ import {
 
 import { CliInputError } from "../cli-error";
 import { createApplication, createInfrastructure } from "../composition-root";
-import { runtimePathsFor } from "../runtime-paths-source";
+import { prepareRuntimeForCli, runtimePathsFor } from "../runtime-paths-source";
 import { defaultAppDataRoot } from "../next-host";
 import { writeJson, type CliOutput } from "../output";
 import { selectWorkspace } from "../workspace-selection";
@@ -71,75 +71,68 @@ function parseRecoveryOperation(argv: readonly string[]): RecoveryOperation {
 async function inspectRecovery(
   id: JournalId,
   dependencies: RecoveryCommandDependencies,
+  database: VidcomDatabase,
 ): Promise<void> {
-  const database = await initializeDatabase(dependencies.appDataRoot());
-  try {
-    const largeContent = new LargePreviousContentStore(dependencies.appDataRoot());
-    const mutation = await new MutationJournal(
-      database,
-      { now: dependencies.now },
-      largeContent,
-    ).readPendingComposite(id);
-    if (!mutation) throw new CliInputError("recovery_required");
-    writeJson(dependencies.stdout, {
-      journal: {
-        id: mutation.id,
-        status: mutation.status,
-        projectId: mutation.projectId,
-        actor: mutation.actor,
-        grantId: mutation.grantId,
-        backupId: mutation.backupId,
-        toolAudit: mutation.context.toolAudit,
-        commandAudit: mutation.context.commandAudit,
-        steps: mutation.steps.map((step) => ({
-          ordinal: step.ordinal,
-          kind: step.kind,
-          path: step.path,
-          entity: step.entity,
-          fromHash: step.fromHash,
-          toHash: step.toHash,
-        })),
-      },
-    });
-  } finally {
-    await database.destroy();
-  }
+  const largeContent = new LargePreviousContentStore(dependencies.appDataRoot());
+  const mutation = await new MutationJournal(
+    database,
+    { now: dependencies.now },
+    largeContent,
+  ).readPendingComposite(id);
+  if (!mutation) throw new CliInputError("recovery_required");
+  writeJson(dependencies.stdout, {
+    journal: {
+      id: mutation.id,
+      status: mutation.status,
+      projectId: mutation.projectId,
+      actor: mutation.actor,
+      grantId: mutation.grantId,
+      backupId: mutation.backupId,
+      toolAudit: mutation.context.toolAudit,
+      commandAudit: mutation.context.commandAudit,
+      steps: mutation.steps.map((step) => ({
+        ordinal: step.ordinal,
+        kind: step.kind,
+        path: step.path,
+        entity: step.entity,
+        fromHash: step.fromHash,
+        toHash: step.toHash,
+      })),
+    },
+  });
 }
 
 async function recoveryWorkspaceRoot(
   dependencies: RecoveryCommandDependencies,
   journalId: JournalId,
+  database: VidcomDatabase,
 ): Promise<AbsolutePath> {
-  const database = await initializeDatabase(dependencies.appDataRoot());
-  try {
-    const journal = new MutationJournal(
-      database,
-      { now: dependencies.now },
-      new LargePreviousContentStore(dependencies.appDataRoot()),
-    );
-    const mutation = await journal.readPendingComposite(journalId);
-    if (!mutation) throw new CliInputError("recovery_required");
-    const registration = await journal.findProjectRegistration(mutation.projectId);
-    if (!registration) throw new CliInputError("project_not_found");
-    return registration.workspaceRoot as AbsolutePath;
-  } finally {
-    await database.destroy();
-  }
+  const journal = new MutationJournal(
+    database,
+    { now: dependencies.now },
+    new LargePreviousContentStore(dependencies.appDataRoot()),
+  );
+  const mutation = await journal.readPendingComposite(journalId);
+  if (!mutation) throw new CliInputError("recovery_required");
+  const registration = await journal.findProjectRegistration(mutation.projectId);
+  if (!registration) throw new CliInputError("project_not_found");
+  return registration.workspaceRoot as AbsolutePath;
 }
 
-async function startRecoveryRuntime(dependencies: RecoveryCommandDependencies, journalId: JournalId) {
-  const appDataRoot = dependencies.appDataRoot();
-  const workspaceRoot = await recoveryWorkspaceRoot(dependencies, journalId);
+async function startRecoveryRuntime(
+  dependencies: RecoveryCommandDependencies,
+  input: { appDataRoot: string; workspaceRoot: AbsolutePath; runtimePaths: RuntimePaths },
+) {
+  const { appDataRoot, workspaceRoot, runtimePaths } = input;
   const infrastructure = createInfrastructure({
     appDataRoot,
     workspaceRoot: workspaceRoot as AbsolutePath,
     clock: { now: dependencies.now },
     ids: { newId: dependencies.newId },
-    runtimePaths: runtimePathsFor(appDataRoot),
+    runtimePaths,
   });
   let leaseId: string | null = null;
   try {
-    await migrateDatabase(infrastructure.database);
     const acquired = await infrastructure.lease.acquire(
       workspaceRoot as AbsolutePath,
       `recovery:${process.pid}:${randomUUID()}`,
@@ -168,12 +161,30 @@ export async function runRecoveryCommand(
   dependencies: RecoveryCommandDependencies = defaultDependencies,
 ): Promise<void> {
   const operation = parseRecoveryOperation(argv);
+  const appDataRoot = dependencies.appDataRoot();
+  const prepared = await prepareRuntimeForCli(appDataRoot);
   if (operation.kind === "inspect") {
-    await inspectRecovery(operation.id, dependencies);
+    try {
+      await inspectRecovery(operation.id, dependencies, prepared.database);
+    } finally {
+      await prepared.release();
+    }
     return;
   }
 
-  const runtime = await startRecoveryRuntime(dependencies, operation.id);
+  let workspaceRoot: AbsolutePath;
+  let runtimePaths: RuntimePaths;
+  try {
+    workspaceRoot = await recoveryWorkspaceRoot(dependencies, operation.id, prepared.database);
+    runtimePaths = runtimePathsFor(appDataRoot, prepared);
+  } finally {
+    await prepared.release();
+  }
+  const runtime = await startRecoveryRuntime(dependencies, {
+    appDataRoot,
+    workspaceRoot,
+    runtimePaths,
+  });
   try {
     const result = operation.kind === "reconcile"
       ? await reconcileCompositeMutation({

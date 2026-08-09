@@ -24,8 +24,10 @@ export const CREDENTIAL_LOCK_FILENAME = "credential.lock";
  * adds the field once the resolver is the single source.
  */
 export interface PreparedRuntime {
-  manifest: EmbeddedRuntimeManifest;
-  versionRoot: string;
+  /** Null in a source checkout, where dependencies are resolved from node_modules. */
+  manifest: EmbeddedRuntimeManifest | null;
+  /** Null in a source checkout, which has no embedded archive to publish. */
+  versionRoot: string | null;
   archiveRoots: Readonly<Record<string, string>>;
   database: VidcomDatabase;
   release(): Promise<void>;
@@ -33,7 +35,8 @@ export interface PreparedRuntime {
 
 export interface BootstrapPrepareInput {
   appDataRoot: string;
-  assetSource: RuntimeAssetSource;
+  /** Required by an artifact; absent only for the source-development path. */
+  assetSource?: RuntimeAssetSource | null;
   repair?: boolean;
 }
 
@@ -47,6 +50,7 @@ export type CredentialReconciler = (input: {
 export interface BootstrapCoordinatorOptions {
   lockTimeoutMs?: number;
   reconcileCredential?: CredentialReconciler;
+  migrate?: typeof migrateDatabase;
 }
 
 export class BootstrapError extends Error {
@@ -69,10 +73,12 @@ export class BootstrapError extends Error {
 export class BootstrapCoordinator {
   private readonly lockTimeoutMs: number | undefined;
   private readonly reconcileCredential: CredentialReconciler | undefined;
+  private readonly migrate: typeof migrateDatabase;
 
   constructor(options: BootstrapCoordinatorOptions = {}) {
     this.lockTimeoutMs = options.lockTimeoutMs;
     this.reconcileCredential = options.reconcileCredential;
+    this.migrate = options.migrate ?? migrateDatabase;
   }
 
   /** Extracts, migrates once, reconciles the bearer, then hands over ownership. */
@@ -90,25 +96,27 @@ export class BootstrapCoordinator {
     const lease = await bootstrapLock.acquire();
     let database: VidcomDatabase | undefined;
     try {
-      const manager = new RuntimeAssetManager({
-        appDataRoot,
-        source: input.assetSource,
-        lock: bootstrapLock,
-      });
-      const installation = input.repair === true
-        ? await manager.repair({ lease })
-        : await manager.ensureAll({ lease });
+      const manager = input.assetSource
+        ? new RuntimeAssetManager({
+            appDataRoot,
+            source: input.assetSource,
+            lock: bootstrapLock,
+          })
+        : null;
+      const installation = manager
+        ? await (input.repair === true ? manager.repair({ lease }) : manager.ensureAll({ lease }))
+        : null;
 
       database = openVidcomDatabase(appDataRoot);
-      await migrateDatabase(database);
+      await this.migrate(database);
 
       await this.reconcile(appDataRoot, database, lease);
 
       const prepared = database;
       return {
-        manifest: input.assetSource.readManifest(),
-        versionRoot: installation.versionRoot,
-        archiveRoots: installation.archiveRoots,
+        manifest: input.assetSource?.readManifest() ?? null,
+        versionRoot: installation?.versionRoot ?? null,
+        archiveRoots: installation?.archiveRoots ?? Object.freeze({}),
         database: prepared,
         release: async () => {
           try {

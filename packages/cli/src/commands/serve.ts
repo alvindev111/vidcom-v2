@@ -2,11 +2,10 @@ import { readFileSync } from "node:fs";
 import net from "node:net";
 import path from "node:path";
 
-import { DaemonDiscoveryStore, workspaceHash } from "@vidcom/adapter";
+import { DaemonDiscoveryStore, migrateDatabase, workspaceHash } from "@vidcom/adapter";
 import { bindLoopback, type LoopbackListener } from "@vidcom/server";
 
 import { CliInputError } from "../cli-error";
-import { reconcileBridgeCredential, withBridgeCredentialLock } from "../bridge-credential";
 import { defaultAppDataRoot, registerHostedRuntime, startNextHostedRuntime } from "../next-host";
 import { createRequestRouter, type FetchTarget } from "../loopback-host";
 import {
@@ -121,6 +120,11 @@ export interface ServingDaemon {
   stop(): Promise<void>;
 }
 
+export interface StartServingDependencies {
+  /** Test seam that counts the real migrator across the production boot path. */
+  migrate?: typeof migrateDatabase;
+}
+
 /**
  * Runs the daemon: one listener, one workspace, one discovery record.
  *
@@ -128,13 +132,19 @@ export interface ServingDaemon {
  * before the lease is released. A record that appears early points clients at a
  * daemon that will refuse them; one that lingers points them at nothing.
  */
-export async function startServing(options: ServeCommandOptions = {}): Promise<ServingDaemon> {
+export async function startServing(
+  options: ServeCommandOptions = {},
+  dependencies: StartServingDependencies = {},
+): Promise<ServingDaemon> {
   const appDataRoot = defaultAppDataRoot();
   const port = options.port ?? await freeLoopbackPort();
   const pending = startNextHostedRuntime(
     port,
     options.workspace ?? process.env.VIDCOM_WORKSPACE,
-    { autoStarted: options.ensure === true },
+    {
+      autoStarted: options.ensure === true,
+      ...(dependencies.migrate === undefined ? {} : { migrate: dependencies.migrate }),
+    },
   );
   registerHostedRuntime(port, pending);
   const runtime = await pending;
@@ -151,16 +161,6 @@ export async function startServing(options: ServeCommandOptions = {}): Promise<S
     api: (request) => runtime.app.fetch(request),
     static: staticTarget,
   });
-
-  // Reconciled before the record is published, and behind the same lock a
-  // rotation takes. A client that finds the record expects a bridge it can
-  // authenticate against; a daemon that advertises itself first and mints its
-  // credential afterwards has a window where it answers every bridge call with
-  // `bridge_credential_unavailable`.
-  await withBridgeCredentialLock(appDataRoot, () => reconcileBridgeCredential({
-    appDataRoot,
-    database: runtime.foundation.infrastructure.database,
-  }));
 
   const listener = await bindLoopback({ fetch: (request) => router.handle(request) }, port);
   const discovery = new DaemonDiscoveryStore(appDataRoot);

@@ -12,8 +12,11 @@ import {
   AppSettingsStore,
   WorkerFilesystemBrowser,
   ensureVidcomSettingsFile,
+  migrateDatabase,
   nodeSchedulerTimers,
   readVidcomSettings,
+  type RuntimePaths,
+  type VidcomDatabase,
 } from "@vidcom/adapter";
 import type { ResolvedVidcomSettings } from "@vidcom/contracts";
 import type { AbsolutePath } from "@vidcom/core";
@@ -27,7 +30,7 @@ import { BrowseTokenStore, FilesystemBrowserService } from "@vidcom/core";
 import { ErrorCode, SUPPORTED_REVISIONS } from "@vidcom/contracts";
 import { BRIDGE_CREDENTIAL_SETTING } from "./bridge-credential";
 import { VIDCOM_VERSION } from "./commands/version";
-import { runtimePathsFor } from "./runtime-paths-source";
+import { prepareRuntimeForCli, runtimePathsFor } from "./runtime-paths-source";
 import { selectWorkspace } from "./workspace-selection";
 
 export interface NextHostedRuntime {
@@ -42,6 +45,11 @@ export interface NextHostedRuntime {
 
 interface RuntimeGlobal {
   __vidcomNextRuntimes?: Map<number, Promise<NextHostedRuntime>>;
+}
+
+interface HostedRuntimeBoot {
+  appDataRoot: string;
+  runtimePaths: RuntimePaths;
 }
 
 /**
@@ -99,7 +107,12 @@ function runtimeMap(): Map<number, Promise<NextHostedRuntime>> {
 export async function startNextHostedRuntime(
   port: number,
   explicitWorkspace?: string,
-  options: { autoStarted?: boolean } = {},
+  options: {
+    autoStarted?: boolean;
+    boot?: HostedRuntimeBoot;
+    database?: VidcomDatabase;
+    migrate?: typeof migrateDatabase;
+  } = {},
 ): Promise<NextHostedRuntime> {
   const clock = createSystemClock();
   const nonces = new InMemoryNonceStore(clock);
@@ -117,10 +130,35 @@ export async function startNextHostedRuntime(
   const settings = await readVidcomSettings();
   const appDataRoot = defaultAppDataRoot(settings);
   await ensureVidcomSettingsFile();
-  const workspaceRoot = await selectWorkspace({
-    explicit: explicitWorkspace ?? process.env.VIDCOM_WORKSPACE ?? settings.workspaceRoot,
-    appDataRoot,
-  });
+  let workspaceRoot: AbsolutePath;
+  let boot = options.boot;
+  if (boot) {
+    if (path.resolve(boot.appDataRoot) !== path.resolve(appDataRoot)) {
+      throw new Error("the active app-data root changed during a workspace switch");
+    }
+    if (!options.database) {
+      throw new Error("a workspace switch must retain the already-migrated database");
+    }
+    workspaceRoot = await selectWorkspace({
+      explicit: explicitWorkspace ?? process.env.VIDCOM_WORKSPACE ?? settings.workspaceRoot,
+      appDataRoot,
+      database: options.database,
+    });
+  } else {
+    const prepared = await prepareRuntimeForCli(appDataRoot, {
+      ...(options.migrate === undefined ? {} : { migrate: options.migrate }),
+    });
+    try {
+      workspaceRoot = await selectWorkspace({
+        explicit: explicitWorkspace ?? process.env.VIDCOM_WORKSPACE ?? settings.workspaceRoot,
+        appDataRoot,
+        database: prepared.database,
+      });
+      boot = { appDataRoot, runtimePaths: runtimePathsFor(appDataRoot, prepared) };
+    } finally {
+      await prepared.release();
+    }
+  }
   let scheduler: JobScheduler | null = null;
   const foundation = await startVidcomFoundation({
     appDataRoot,
@@ -128,7 +166,7 @@ export async function startNextHostedRuntime(
     nativeDependenciesRoot: defaultNativeDependenciesRoot(appDataRoot) as AbsolutePath,
     // Complete or not at all. A half-filled set produces paths that look valid
     // and point at nothing, which fails much later and somewhere else.
-    runtimePaths: runtimePathsFor(appDataRoot),
+    runtimePaths: boot.runtimePaths,
     ...(settings.runtime.caBundlePath === null
       ? {}
       : { caBundlePath: settings.runtime.caBundlePath as AbsolutePath }),
@@ -161,6 +199,9 @@ export async function startNextHostedRuntime(
       leaseHeld = false;
       sessions.revokeAll();
     },
+  }, {
+    migrationPrepared: true,
+    ...(options.migrate === undefined ? {} : { migrate: options.migrate }),
   });
   const origins = [`http://127.0.0.1:${port}`, `http://localhost:${port}`];
   const projectReads: NonNullable<ServerAppDependencies["projectReads"]> = {
@@ -292,7 +333,11 @@ export async function startNextHostedRuntime(
               message: "workspace selection token is not valid",
             } };
           }
-          const selected = await selectWorkspace({ explicit: held.canonicalPath, appDataRoot });
+          const selected = await selectWorkspace({
+            explicit: held.canonicalPath,
+            appDataRoot,
+            database: foundation.infrastructure.database,
+          });
           foundation.infrastructure.entries.clear();
           await foundation.infrastructure.events.append({
             type: "workspace.changed",
@@ -300,7 +345,12 @@ export async function startNextHostedRuntime(
             payload: { operation: "activate", workspaceRoot: selected },
           });
           if (path.resolve(selected) !== path.resolve(workspaceRoot)) {
-            const replacement = startNextHostedRuntime(port, selected);
+            const replacement = startNextHostedRuntime(port, selected, {
+              autoStarted: options.autoStarted,
+              boot,
+              database: foundation.infrastructure.database,
+              ...(options.migrate === undefined ? {} : { migrate: options.migrate }),
+            });
             runtimeMap().set(port, replacement);
             await replacement;
             setTimeout(() => void foundation.stop(), 0);
