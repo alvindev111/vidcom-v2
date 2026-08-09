@@ -1146,20 +1146,28 @@ Mỗi phase chạy focused command dưới đây trên SQLite/filesystem thật,
 **Estimate**: 5 SP
 
 **Tasks**:
-- [ ] L.1 Build fail theo điều kiện
+- [x] L.1 Build fail theo điều kiện
   - Lockfile/tool version khác manifest · archive có entry ngoài allowlist · sourcemap/source rời · secret pattern · absolute root của máy build
+  - [`verify-artifact.mjs`](../../../../scripts/verify-artifact.mjs) quét bundle CJS, manifest và pack; thư mục artifact chỉ được chứa **bốn** tên trong allowlist — một `.map` hay `.ts` nằm cạnh executable là cùng một rò rỉ với thứ nhúng bên trong, mà lại dễ bỏ sót hơn
+  - Trả **mọi** hit chứ không phải hit đầu tiên: một build rò hai thứ nên nói một lần, không phải qua hai lần chạy
+  - **Bắt được lỗi thật ngay lần chạy đầu**: bundle chứa **11 đường dẫn tuyệt đối của máy build**, do bundle sang CJS resolve mọi `import.meta.url` thành file URL tuyệt đối của module nguồn. Hai lý do phải bỏ: L.1 cấm thẳng, và một `createRequire` neo vào thư mục người dùng không có thì resolve vào hư vô. `stripBuildRoot` thay gốc bằng marker cố định `/vidcom`, và test chốt bundle không còn chứa `process.cwd()`
   - _Requirements: R9.1, R9.2, R9.3_ — _Design: §5.20_
-- [ ] L.2 `SHA256SUMS` + `artifact-manifest.json`
+- [x] L.2 `SHA256SUMS` + `artifact-manifest.json`
   - Commit, `dirty=false` cho release job, tool versions, archive hashes, platform
+  - `dirty` được **ghi lại**, không phải bị từ chối ở đây: người dựng cục bộ từ cây đã sửa nên nhận artifact kèm một cái nhãn trung thực, còn job release mới là chỗ đòi `false`
+  - `SHA256SUMS` viết theo định dạng `sha256sum -c` để người dùng kiểm bằng công cụ họ đã có, không phải công cụ ta bảo họ cài
+  - Chạy thật: manifest + checksums sinh ra cạnh artifact 127 MB
   - _Requirements: R9.4_ — _Design: §5.20_
-- [ ] L.3 macOS ad-hoc sign sau injection
+- [x] L.3 macOS ad-hoc sign sau injection
   - Windows unsigned + checksum; signing thật deferred (D2)
+  - Đã hiện thực ở **H.4** vì không có nó thì không có gì để kiểm chứng: Mach-O arm64 không chữ ký hợp lệ bị kernel giết lúc launch. `tests/build/sea.test.ts` ghim thứ tự remove-signature → inject → sign
   - _Requirements: R9.5_ — _Design: §5.20_
 - [ ] L.4 Tắt telemetry HyperFrames trong runtime đã giải nén
   - Xác nhận ở S9: lời mời telemetry hiện ngay lần chạy đầu với `HOME` sạch. Ghi quyết định vào release notes
   - _Requirements: R9.7_ — _Design: §5.20_
-- [ ] L.5 Test scan
+- [x] L.5 Test scan
   - Source/sourcemap/dev-origin/secret/build-root; frontend pack không chứa `localhost:3000`
+  - [`artifact-provenance.test.ts`](../../../../tests/build/artifact-provenance.test.ts) 12 test; ca pack thật **tự build static export nếu thiếu**, vì job CI chạy test **trước** production build và một check bị skip là check không ai để ý lúc nó biến mất
   - _Requirements: R9.1, R9.2, R9.3_
 - [ ] L.6 **Đăng ký spec này vào [`scripts/verify-spec-test-paths.mjs`](../../../../scripts/verify-spec-test-paths.mjs)**
   - Gate hôm nay chỉ biết **hai** spec (`spec-mcp-server` phases `ABCDEFGHIJKLMNOP`, `spec-project-delivery-loop` phases `ABCDEFGHIJKLMNOPQRS`). Convention của repo là mọi checklist đều được gate này bảo vệ; không đăng ký thì bảng Phase Verification Matrix ở trên có thể trỏ vào file không tồn tại mà CI vẫn xanh
@@ -1706,6 +1714,12 @@ Chi tiết: [Detailed Goals](./spec-packaging-and-distribution-detailed-goal.md)
   - Summary: Windows đỏ ba test mới. Hai lỗi khác nhau, cả hai đều thật.
   - Decisions: (1) `createDoctorContext` **mở database mà không đóng** — trên Windows file bị giữ tới khi handle biến mất, nên mọi lần dọn thư mục sau đó trả `EBUSY`. Thêm `close()` và gọi trong `finally` của dispatcher; production trước đó thoát process nên che mất, nhưng leak vẫn là leak. (2) Một assert so `"/app-data"` bằng literal POSIX, trong khi Windows dựng `\app-data\native` — sửa bằng `path.join`, đúng nền tảng mà luật này tồn tại để bảo vệ. Không retry, không nới.
   - Blockers: Không có; 9/9 test hai file đó, full suite xanh. Chờ CI exact HEAD.
+
+2026-08-09 — Phase L, Task L.1 + L.2 + L.3 + L.5
+  - Files: `scripts/verify-artifact.mjs`, `scripts/build-cli-bundle.mjs`, `tests/build/{artifact-provenance,cli-bundle}.test.ts`, checklist và implementation notes
+  - Summary: Gate provenance — quét cấm, allowlist thư mục artifact, `SHA256SUMS` + `artifact-manifest.json`. Chạy thật trên artifact 127 MB.
+  - Decisions: `dirty` ghi lại chứ không từ chối ở tầng này; job release mới đòi `false`. Checksums theo định dạng `sha256sum -c`. Test pack thật tự build export khi thiếu thay vì skip.
+  - Blockers: **Hai lỗi thật do chính gate này bắt.** (1) Bundle chứa 11 đường dẫn tuyệt đối của máy build từ `import.meta.url` — đã strip bằng marker `/vidcom`. (2) Bundle **inline `sharp`**, và native addon không đi kèm `.node` nên artifact chết ngay import đầu tiên; đã khai `EXTERNAL_PACKAGES` theo DR-2. Nhưng bare `require("sharp")` trong SEA đi vào `embedderRequire` và trả `ERR_UNKNOWN_BUILTIN_MODULE` — **resolve external từ runtime đã giải nén là việc chưa làm được**, nó cần chính runtime archive đang bị chặn. Ghi lại nguyên văn, MUST NOT giả vờ xanh.
 
 Format:
 ```

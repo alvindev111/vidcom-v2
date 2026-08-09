@@ -1,5 +1,5 @@
 import { spawnSync } from "node:child_process";
-import { mkdir, readFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -42,9 +42,36 @@ export function bundleCommand(entry = CLI_ENTRY, outfile = BUNDLE_PATH) {
       // L.1 forbids sourcemaps in the artifact: they carry the build machine's
       // absolute paths and the full original source.
       "--sourcemap=none",
+      ...EXTERNAL_PACKAGES.flatMap((name) => ["--external", name]),
     ],
   };
 }
+
+/**
+ * Packages the bundle must not inline.
+ *
+ * Every one of these either is a native addon or loads one. Bundling their
+ * JavaScript does not bring the `.node` binary along, so the artifact starts
+ * and then dies at the first import with a message about a missing native
+ * build — Phase 0 measured exactly that for `sharp` and `onnxruntime-node`.
+ * They ship in the runtime archive instead and are required from the extracted
+ * tree (DR-2), which is also why an artifact whose runtime has not been
+ * extracted fails with "cannot find module" rather than something stranger.
+ */
+export const EXTERNAL_PACKAGES = [
+  "sharp",
+  "onnxruntime-node",
+  "esbuild",
+  "hyperframes",
+  "@hyperframes/core",
+  "@hyperframes/studio-server",
+  "@hyperframes/sdk",
+  "@hyperframes/parsers",
+  "@hyperframes/lint",
+  // The HyperFrames packages require it at runtime; a second bundled copy would
+  // mean two DOMParser implementations disagreeing about the same document.
+  "linkedom",
+];
 
 const TOP_LEVEL_AWAIT = /^\s*await\s/mu;
 
@@ -109,7 +136,29 @@ export async function buildCliBundle(entry = CLI_ENTRY, outfile = BUNDLE_PATH) {
   }
   if (result.status !== 0) fail("bundling failed", { exitCode: result.status });
 
+  await stripBuildRoot(outfile);
   return outfile;
+}
+
+/**
+ * Removes the build machine's own directory from the emitted bundle.
+ *
+ * Bundling to CommonJS resolves every `import.meta.url` to an absolute file URL
+ * of the source module, so the shipped bytes carry the layout of whatever
+ * machine built them. Two reasons that has to go: L.1 forbids it outright, and
+ * the paths are worse than useless in a packaged build — a `createRequire`
+ * anchored to a directory that does not exist on the user's machine resolves
+ * against nothing at all.
+ *
+ * A fixed marker rather than a relative path: nothing should be tempted to
+ * treat it as somewhere real.
+ */
+export async function stripBuildRoot(outfile, root = REPOSITORY_ROOT) {
+  const source = await readFile(outfile, "utf8");
+  if (!source.includes(root)) return 0;
+  const stripped = source.split(root).join("/vidcom");
+  await writeFile(outfile, stripped, "utf8");
+  return source.split(root).length - 1;
 }
 
 async function main() {

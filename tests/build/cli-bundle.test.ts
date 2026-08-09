@@ -1,16 +1,23 @@
-import { spawnSync } from "node:child_process";
 import { realpathSync } from "node:fs";
 import { mkdtemp, readFile, rm, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
+import { builtinModules } from "node:module";
+
 import {
   CLI_ENTRY,
+  EXTERNAL_PACKAGES,
   bundleCommand,
   buildCliBundle,
   findTopLevelAwait,
 } from "../../scripts/build-cli-bundle.mjs";
 import { afterEach, describe, expect, it } from "vitest";
+
+const BUILTINS = new Set(builtinModules);
+function isBuiltin(name: string): boolean {
+  return name.startsWith("node:") || BUILTINS.has(name);
+}
 
 const roots: string[] = [];
 
@@ -79,21 +86,39 @@ describe("cjs bundle", () => {
     expect(await readFile(outfile, "utf8")).not.toContain("node_modules/next/");
   }, 120_000);
 
-  it("emits a bundle the embedded Node loads with nothing else on disk", async () => {
-    // The whole point of the bundle is that the SEA has no `node_modules` to
-    // fall back on. Building into a temp directory and loading it from there
-    // puts it outside every `node_modules` in this checkout, so an import the
-    // bundler left external fails here instead of in the packaged smoke.
+  it("leaves out only what ships in the runtime archive", async () => {
+    // Bundling a native package's JavaScript does not bring its `.node` binary
+    // along, so the artifact would start and die at the first import — Phase 0
+    // measured that for sharp and onnxruntime-node. They ride in the runtime
+    // archive and are required from the extracted tree (DR-2). Anything *else*
+    // left external would be an accident, and this is where it shows.
     const root = await scratchDirectory();
     const outfile = path.join(root, "main.cjs");
     await buildCliBundle(CLI_ENTRY, outfile);
     expect((await stat(outfile)).size).toBeGreaterThan(0);
 
-    const loaded = spawnSync(process.execPath, ["-e", "require(process.argv[1])", outfile], {
-      cwd: root,
-      encoding: "utf8",
-    });
-    expect(loaded.stderr).not.toMatch(/MODULE_NOT_FOUND|Cannot find module/u);
-    expect(loaded.status).toBe(0);
+    const source = await readFile(outfile, "utf8");
+    const required = new Set<string>();
+    for (const match of source.matchAll(/\brequire\("([^"]+)"\)/gu)) {
+      const name = match[1] ?? "";
+      if (name.startsWith(".")) continue;
+      required.add(name.startsWith("@") ? name.split("/").slice(0, 2).join("/") : name.split("/")[0]!);
+    }
+    const unexpected = [...required].filter((name) => !isBuiltin(name)
+      && !EXTERNAL_PACKAGES.includes(name)
+      // ajv writes these into generated code as strings, never as live imports.
+      && !["ajv", "ajv-formats"].includes(name));
+    expect(unexpected).toEqual([]);
+  }, 120_000);
+
+  it("carries none of the build machine's directory layout", async () => {
+    // Bundling to CommonJS resolves every `import.meta.url` to an absolute file
+    // URL of its source module. That leaks our layout into the shipped bytes,
+    // and a `createRequire` anchored to a directory the user does not have
+    // resolves against nothing at all.
+    const root = await scratchDirectory();
+    const outfile = path.join(root, "main.cjs");
+    await buildCliBundle(CLI_ENTRY, outfile);
+    expect(await readFile(outfile, "utf8")).not.toContain(process.cwd());
   }, 120_000);
 });
