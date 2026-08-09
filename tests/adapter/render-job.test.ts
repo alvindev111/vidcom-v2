@@ -495,7 +495,12 @@ describe("render job with real SQLite and filesystem", () => {
           fastCaptureSetting = input.environment?.PRODUCER_EXPERIMENTAL_FAST_CAPTURE;
           return {
             status: "exited" as const,
-            output: { exitCode: 0, stdout: "render completed", stderr: "", timedOut: false },
+            output: {
+              exitCode: 0,
+              stdout: `${"early warning ".repeat(300)}render completed`,
+              stderr: "Render failed: browser navigation was blocked offline",
+              timedOut: false,
+            },
           };
         },
       };
@@ -512,7 +517,9 @@ describe("render job with real SQLite and filesystem", () => {
         status: "failed",
         error: {
           code: ErrorCode.Internal,
-          message: "HyperFrames exited 0 without producing the render artifact (render completed)",
+          message: expect.stringMatching(
+            /^HyperFrames exited 0 without producing the render artifact .*Render failed: browser navigation was blocked offline\)$/u,
+          ),
         },
       });
     } finally {

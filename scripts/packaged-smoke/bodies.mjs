@@ -1,6 +1,6 @@
 import { spawn, spawnSync } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
-import { mkdir, readdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readdir, readFile, realpath, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 import {
@@ -85,6 +85,20 @@ function parseJson(label, text) {
   } catch {
     throw new Error(`${label} did not print JSON: ${text.trim().slice(0, 200)}`);
   }
+}
+
+/** Returns the exact canonical path segments a server-minted browse token must follow. */
+export function browsePathSegments(base, target, platform = process.platform) {
+  const paths = platform === "win32" ? path.win32 : path.posix;
+  const relative = paths.relative(base, target);
+  if (relative === "" || relative === ".") return [];
+  if (relative === ".." || relative.startsWith(`..${paths.sep}`) || paths.isAbsolute(relative)) return null;
+  return relative.split(paths.sep).filter(Boolean);
+}
+
+/** Windows browse names are case-insensitive even when the API preserves display casing. */
+export function browseSegmentMatches(name, segment, platform = process.platform) {
+  return platform === "win32" ? name.toLowerCase() === segment.toLowerCase() : name === segment;
 }
 
 /** Starts `serve` and waits for the line that says it is answering. */
@@ -516,9 +530,13 @@ export const STEP_BODIES = {
     // outside the workspace — which is what this step is about — but reachable
     // in one descent, so the walk does not depend on where a paged listing of
     // the system temp directory happens to put it.
-    const fixture = path.join(context.environment.HOME, "imported-project");
-    await mkdir(fixture, { recursive: true });
-    await writeFile(path.join(fixture, "index.html"), "<!doctype html><title>imported</title>\n", "utf8");
+    const fixtureInput = path.join(context.environment.HOME, "imported-project");
+    await mkdir(fixtureInput, { recursive: true });
+    await writeFile(path.join(fixtureInput, "index.html"), "<!doctype html><title>imported</title>\n", "utf8");
+    // Windows TEMP/HOME can use an 8.3 alias such as RUNNER~1 while directory
+    // enumeration returns the long name. Follow the canonical identity the
+    // server will expose rather than asking it to reproduce a display alias.
+    const fixture = await realpath(fixtureInput);
 
     const serving = await startServingWithSession(context);
     try {
@@ -540,15 +558,19 @@ export const STEP_BODIES = {
       // The deepest root that contains the fixture, so the walk is as short as
       // the browser allows.
       const base = roots
-        .filter((root) => fixture.startsWith(root.displayPath))
-        .sort((left, right) => right.displayPath.length - left.displayPath.length)[0];
+        .map((root) => ({
+          ...root,
+          rootPath: root.canonicalPath ?? root.displayPath,
+          segments: browsePathSegments(root.canonicalPath ?? root.displayPath, fixture),
+        }))
+        .filter((root) => root.segments !== null)
+        .sort((left, right) => right.rootPath.length - left.rootPath.length)[0];
       if (!base) throw new Error("the browser offered no root containing the fixture");
       let token = base.token;
 
-      const segments = path.relative(base.displayPath, fixture).split(path.sep).filter(Boolean);
-      for (const segment of segments) {
+      for (const segment of base.segments) {
         const page = await browse("entries", { token });
-        const next = page.entries.find((entry) => entry.name === segment && entry.isDirectory);
+        const next = page.entries.find((entry) => browseSegmentMatches(entry.name, segment) && entry.isDirectory);
         if (!next?.token) throw new Error(`browse could not descend into ${segment}`);
         token = next.token;
       }

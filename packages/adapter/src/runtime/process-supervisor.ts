@@ -1,5 +1,5 @@
 import { execFile, spawn } from "node:child_process";
-import { readFile } from "node:fs/promises";
+import { lstat, readFile } from "node:fs/promises";
 import path from "node:path";
 import { promisify } from "node:util";
 
@@ -438,7 +438,7 @@ async function probeWindowsProcessIdentity(pid: number): Promise<ProcessIdentity
   if (!windowsRoot) {
     return blind(`SystemRoot is not a canonical Windows directory: ${process.env.SystemRoot ?? "<unset>"}`);
   }
-  const powershell = windowsPowerShell(windowsRoot);
+  const powershell = await windowsIdentityShell(windowsRoot);
   let stdout: string;
   try {
     // Call System.Diagnostics directly. Even `Get-Process` can trigger module
@@ -453,7 +453,7 @@ async function probeWindowsProcessIdentity(pid: number): Promise<ProcessIdentity
       + "$_.Exception.InnerException -is [System.ArgumentException]) { "
       + "[Console]::Out.Write('VIDCOM_ABSENT') } else { throw } }";
     const result = await execFileAsync(powershell, [
-      "-NoProfile", "-NonInteractive", "-Command", command,
+      "-NoLogo", "-NoProfile", "-NonInteractive", "-Command", command,
     ], {
       encoding: "utf8",
       timeout: PROCESS_IDENTITY_PROBE_TIMEOUT_MS,
@@ -500,6 +500,34 @@ function windowsPowerShell(windowsRoot: string): string {
     "v1.0",
     "powershell.exe",
   );
+}
+
+/**
+ * Uses PowerShell 7 when its system-protected conventional install exists.
+ *
+ * GitHub's current Windows image exposes both shells, but Windows PowerShell
+ * 5.1 can spend the entire identity budget in cold CLR startup. PowerShell 7
+ * calls the same `System.Diagnostics.Process.StartTime` authority without that
+ * stall. Stock Windows machines without it retain the built-in fallback.
+ */
+export async function windowsIdentityShell(windowsRoot: string): Promise<string> {
+  const [preferred, fallback] = windowsIdentityShellCandidates(windowsRoot);
+  try {
+    const metadata = await lstat(preferred);
+    if (metadata.isFile() && !metadata.isSymbolicLink()) return preferred;
+  } catch (error) {
+    if (!hasErrorCode(error, "ENOENT")) throw error;
+  }
+  return fallback;
+}
+
+/** Exact trusted candidates in preference order; exported to pin Windows path construction. */
+export function windowsIdentityShellCandidates(windowsRoot: string): readonly [string, string] {
+  const driveRoot = path.win32.parse(windowsRoot).root;
+  return [
+    path.win32.join(driveRoot, "Program Files", "PowerShell", "7", "pwsh.exe"),
+    windowsPowerShell(windowsRoot),
+  ];
 }
 
 function truncateReason(value: string): string {

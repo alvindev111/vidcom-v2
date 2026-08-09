@@ -416,11 +416,11 @@ export function createRenderJobHandler(dependencies: RenderJobDependencies): Job
         }
         const stagedArtifact = await dependencies.renderProjects.artifactSource(staged.outputPath)
           .catch((cause: unknown) => {
-            const output = [rendered.output.stderr, rendered.output.stdout]
+            const output = [rendered.output.stdout, rendered.output.stderr]
               .map((value) => value.trim())
               .filter(Boolean)
               .join(" | ")
-              .slice(0, 240);
+              .slice(-2_048);
             throw new JobFailureError({
               code: ErrorCode.Internal,
               message: `HyperFrames exited 0 without producing the render artifact${output ? ` (${output})` : ""}`,

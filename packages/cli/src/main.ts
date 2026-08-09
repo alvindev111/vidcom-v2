@@ -8,7 +8,7 @@ import { runApproveCommand } from "./commands/approve";
 import { runCredentialCommand } from "./commands/credential";
 import { runBackupCommand } from "./commands/backup";
 import { runRecoveryCommand } from "./commands/recovery";
-import { parseDoctorCommandArgs, runDoctor } from "./commands/doctor";
+import { doctorNeedsDeepProbe, parseDoctorCommandArgs, runDoctor } from "./commands/doctor";
 import { createDoctorContext } from "./commands/doctor-context";
 import { repairRuntime } from "./commands/doctor-repair";
 import { runRenderCommand } from "./commands/render";
@@ -191,7 +191,7 @@ export async function runVidcomCli(argv: readonly string[] = process.argv.slice(
   }
   if (command.name === "doctor") {
     const options = parseDoctorCommandArgs(command.args);
-    const context = await createDoctorContext({ deep: options.deep === true });
+    const context = await createDoctorContext({ deep: doctorNeedsDeepProbe(options) });
     try {
       return await runDoctor({
         context,

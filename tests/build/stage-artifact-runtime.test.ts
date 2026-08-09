@@ -457,6 +457,10 @@ describe("artifact runtime staging", () => {
     const hyperframesRuntimeInput = path.join(input.hyperframesRoot, "dist", "hyperframe.runtime.iife.js");
     await link(hyperframesRuntimeInput, path.join(input.root, "package-cache-hyperframe-runtime.js"));
     expect((await lstat(hyperframesRuntimeInput)).nlink).toBeGreaterThan(1);
+    const gsap = MOTION_LIBRARIES.find(({ packageName }) => packageName === "gsap")!;
+    const gsapInput = path.join(input.motionPackageRoots.get(gsap.packageName)!, gsap.files[0].packagePath);
+    await link(gsapInput, path.join(input.root, "package-cache-gsap.js"));
+    expect((await lstat(gsapInput)).nlink).toBeGreaterThan(1);
     const result = await stageArtifactRuntime(input.paths, stageOptions(input));
 
     expect(await readFile(path.join(input.paths.outputRoot, "node", "cli", "boot.cjs"), "utf8"))
@@ -506,13 +510,15 @@ describe("artifact runtime staging", () => {
     expect((await lstat(stagedHyperframesRuntime)).nlink).toBe(1);
     for (const library of MOTION_LIBRARIES) {
       for (const file of library.files) {
-        expect(existsSync(path.join(
+        const stagedMotionAsset = path.join(
           input.paths.outputRoot,
           "hyperframes",
           "motion-libraries",
           library.packageName,
           ...file.packagePath.split("/"),
-        ))).toBe(true);
+        );
+        expect(existsSync(stagedMotionAsset)).toBe(true);
+        expect((await lstat(stagedMotionAsset)).nlink).toBe(1);
       }
     }
 

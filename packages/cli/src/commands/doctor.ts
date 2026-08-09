@@ -20,6 +20,11 @@ export interface DoctorCommandOptions {
   repair?: boolean;
 }
 
+/** Repair needs the integrity result it may act on; a shallow skip is not a diagnosis. */
+export function doctorNeedsDeepProbe(options: DoctorCommandOptions): boolean {
+  return options.deep === true || options.repair === true;
+}
+
 export function parseDoctorCommandArgs(argv: readonly string[]): DoctorCommandOptions {
   const options: DoctorCommandOptions = {};
   for (const flag of argv) {

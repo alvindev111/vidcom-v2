@@ -1018,6 +1018,8 @@ async function stageMotionLibraries(destinationRoot, libraries, packageRoots) {
         sourceRoot,
         source,
         `${library.packageName} motion asset`,
+        false,
+        true,
       );
       const destination = path.join(packageRoot, ...file.packagePath.split("/"));
       await mkdir(path.dirname(destination), { recursive: true });

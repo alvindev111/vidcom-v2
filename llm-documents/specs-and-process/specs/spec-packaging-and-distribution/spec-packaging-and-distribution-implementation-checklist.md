@@ -2664,6 +2664,36 @@ Chi tiết: [Detailed Goals](./spec-packaging-and-distribution-detailed-goal.md)
   - Decisions: Strict là policy report/acceptance, không phải input mutation: `runDoctor` repair từ raw probe failures rồi mới promote skip trong report cuối, nên shallow integrity không còn kích hoạt re-extract runtime khoẻ. Packaged parent và SEA child dùng IPC fd để gửi exact shutdown message và chạy cùng `daemon.stop()`; fallback force-kill chỉ dùng khi IPC lỗi/timeout, không thêm network route.
   - Blockers: Focused 72/72 và full suite 202 file + 1 intentional skip, 1818 test + 5 intentional skip xanh cục bộ; chờ Windows exact-head chứng minh cold/warm doctor và các step kế tiếp không còn lease cascade.
 
+2026-08-10 — Phase H/M CI Linux: GSAP motion input hardlink
+  - Files: `scripts/stage-artifact-runtime.mjs`, `tests/build/stage-artifact-runtime.test.ts`, Design §16 và implementation notes
+  - Summary: Packaged Linux exact head `6d6eb75` đi qua HyperFrames dist rồi fail vì Bun còn hardlink `gsap/dist/gsap.min.js` từ package store.
+  - Decisions: Áp nhất quán C-41 cho mọi exact package-owned asset đọc-only: source được shared sau realpath/containment/regular-file proof; mọi motion asset staged vẫn phải `nlink === 1`. Regression hardlink GSAP thật và kiểm toàn bộ motion output single-link.
+  - Blockers: Chờ focused gate, commit mới và packaged-smoke Linux exact-head rerun; production supply-chain human gate vẫn mở độc lập.
+
+2026-08-10 — Phase D/G/M CI Windows: cold identity shell host
+  - Files: `packages/adapter/src/runtime/process-supervisor.ts`, `tests/adapter/runtime-asset-manager.test.ts`, Design §16 và implementation notes
+  - Summary: Browser exact head `6d6eb75` vẫn timeout 15 giây trước lock publication; log xác nhận direct `System.Diagnostics` không cứu được cold startup của Windows PowerShell 5.1.
+  - Decisions: Ưu tiên PowerShell 7 tại conventional system-protected path khi file regular thật tồn tại, fallback Windows PowerShell 5.1 khi máy không cài. Command vẫn gọi exact `Process.GetProcessById(...).StartTime`, giữ scheme `windows-start`, output parser và fail-closed semantics.
+  - Blockers: Chờ focused gate và browser Windows exact-head rerun; production supply-chain human gate vẫn mở độc lập.
+
+2026-08-10 — Phase H/M CI macOS: repair diagnosis và offline error authority
+  - Files: `packages/cli/src/commands/{doctor,main}.ts`, `packages/worker/src/render-job.ts`, `tests/{cli/doctor,adapter/render-job}.test.ts`, Design §16 và implementation notes
+  - Summary: Packaged macOS `6d6eb75` xanh online media/UI/import/bridge/cancel/lease-loss nhưng cold doctor tự báo `runtime.integrity=missing`; offline vẫn exit 0/no artifact và 240 byte prefix chỉ chứa warning `id`/`pgrep`.
+  - Decisions: `doctor --repair` luôn dùng deep probe để có raw integrity diagnosis trước mutation. Missing-artifact diagnostic giữ bounded 2 KiB suffix để lấy HyperFrames error box ở cuối; chưa thay render behavior dựa trên warning không phải nguyên nhân vì online dùng cùng environment vẫn xanh.
+  - Blockers: Chờ packaged-smoke rerun lộ exact offline root cause; production supply-chain human gate vẫn mở độc lập.
+
+2026-08-10 — Phase K/M CI Windows: canonical browse walk
+  - Files: `scripts/packaged-smoke/bodies.mjs`, `tests/build/packaged-smoke.test.ts`, Design §16 và implementation notes
+  - Summary: Windows artifact `6d6eb75` xanh online/offline render, TTS, CLI/cancel và lease-loss; import fail duy nhất vì smoke fixture dùng short path `RUNNER~1` còn browse API trả long canonical directory name.
+  - Decisions: Harness realpath fixture trước token walk, chọn root bằng `path.relative` containment và match segment không phân biệt hoa thường trên Windows. Import request vẫn chỉ mang server-minted token; không thêm raw path escape hatch.
+  - Blockers: Chờ packaged-smoke Windows exact-head rerun; production supply-chain human gate vẫn mở độc lập.
+
+2026-08-10 — Phase M: local council gate cho C-41–C-45
+  - Files: toàn bộ batch GSAP/identity/doctor/offline-diagnostic/import-walk, checklist và implementation notes
+  - Summary: Full suite xanh 202 file pass + 1 intentional skip, 1821 test pass + 5 intentional skip; focused matrix 108 pass + 1 intentional skip.
+  - Decisions: Typecheck, boundaries, 115 spec paths và diff-check xanh; ESLint 0 error/4 warning cũ. Không stage/chạm thay đổi người dùng ở `tests/adapter/remote-asset-browser.test.ts`.
+  - Blockers: Exact-head Actions ba OS vẫn là authority; production supply-chain human gate vẫn mở.
+
 Format:
 ```
 YYYY-MM-DD — Phase X, Task X.Y

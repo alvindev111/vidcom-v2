@@ -28,6 +28,7 @@ import {
   RuntimeAssetManager,
   probeCurrentProcessIdentity,
   probeProcessIdentity,
+  windowsIdentityShellCandidates,
   windowsProbeEnvironment,
   type EmbeddedRuntimeManifest,
   type RuntimeAssetManagerHooks,
@@ -694,6 +695,13 @@ describe("windows identity probe environment", () => {
     );
     expect(environment.SystemRoot).toBe("C:\\Windows");
     expect(environment.PATH).toContain("System32");
+  });
+
+  it("prefers the protected PowerShell 7 install before the built-in fallback", () => {
+    expect(windowsIdentityShellCandidates("C:\\Windows")).toEqual([
+      "C:\\Program Files\\PowerShell\\7\\pwsh.exe",
+      "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe",
+    ]);
   });
 });
 

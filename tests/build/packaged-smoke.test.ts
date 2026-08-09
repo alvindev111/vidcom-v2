@@ -12,6 +12,7 @@ import {
 } from "../../scripts/packaged-smoke/steps.mjs";
 import { networkCutPlan } from "../../scripts/packaged-smoke/network-cut.mjs";
 import { copyCacheContents } from "../../scripts/packaged-smoke/environment.mjs";
+import { browsePathSegments, browseSegmentMatches } from "../../scripts/packaged-smoke/bodies.mjs";
 import { PACKAGED_RUNTIME_SOURCES } from "../../scripts/prepare-packaged-runtime.mjs";
 import { describe, expect, it } from "vitest";
 
@@ -26,6 +27,16 @@ function results(entries: Array<Partial<StepResult> & { id: string }>): StepResu
 }
 
 describe("packaged smoke steps", () => {
+  it("walks canonical Windows paths without preserving 8.3 aliases or display casing", () => {
+    expect(browsePathSegments(
+      "C:\\",
+      "C:\\Users\\runneradmin\\AppData\\Local\\Temp\\imported-project",
+      "win32",
+    )).toEqual(["Users", "runneradmin", "AppData", "Local", "Temp", "imported-project"]);
+    expect(browseSegmentMatches("RunnerAdmin", "runneradmin", "win32")).toBe(true);
+    expect(browsePathSegments("D:\\workspace", "C:\\outside", "win32")).toBeNull();
+  });
+
   it("runs the matrix from Design §11.4 in order", () => {
     expect(stepIds()).toEqual([
       "build",

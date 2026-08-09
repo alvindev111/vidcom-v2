@@ -9,6 +9,7 @@ import {
   CliInputError,
   createDoctorChecks,
   doctorCheckIsRequired,
+  doctorNeedsDeepProbe,
   parseDoctorCommandArgs,
   repairRuntime,
   runDoctor,
@@ -70,6 +71,12 @@ async function report(input: Partial<DoctorContext> = {}, strict = false): Promi
 }
 
 describe("doctor framework", () => {
+  it("uses an integrity probe for both explicit deep checks and repair", () => {
+    expect(doctorNeedsDeepProbe({})).toBe(false);
+    expect(doctorNeedsDeepProbe({ deep: true })).toBe(true);
+    expect(doctorNeedsDeepProbe({ repair: true })).toBe(true);
+  });
+
   it("reports in a fixed order that does not follow import order", async () => {
     // Registration order follows import order, and nobody controls that. The
     // golden report pins this list, so a check that moves has to move here.
