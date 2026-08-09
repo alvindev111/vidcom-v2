@@ -54,6 +54,15 @@ type BoundaryError = { code: ErrorCode; message: string; field?: string; details
 export interface DeliveryLoopRouteDependencies {
   workspaceRoot: AbsolutePath;
   workspaceOverview(): Promise<unknown>;
+  /**
+   * Starts a project import and returns the job that owns it.
+   *
+   * Takes a browse selection token for the same reason activation does: a path
+   * a client can type is a path any page can send, and the whole point of
+   * browse is that the server only acts on directories it handed out itself.
+   */
+  startProjectImport?(input: { selectionToken: string; targetName?: string }):
+    Promise<Result<{ jobId: string }, DomainError>>;
   /** Takes a browse selection token; no route accepts an absolute path from a client. */
   activateWorkspace(selectionToken: string): Promise<Result<{ workspaceRoot: AbsolutePath; reauthRequired: true }, DomainError>>;
   lifecycle: ProjectLifecycle;
@@ -144,6 +153,36 @@ export function createDeliveryLoopRoutes(dependencies: DeliveryLoopRouteDependen
   routes.put("/v1/workspace/active", async (c) => {
     const input = parse(ActivateWorkspaceRequestSchema, await json(c), "workspace activation payload is invalid");
     return c.json(valueOf(await dependencies.activateWorkspace(input.selectionToken)));
+  });
+  routes.post("/v1/projects/imports", async (c) => {
+    if (!dependencies.startProjectImport) {
+      throw new HttpBoundaryError({
+        code: ErrorCode.NotFound,
+        message: "this daemon does not accept project imports",
+      });
+    }
+    const body = await json(c) as { sourceToken?: unknown; targetName?: unknown };
+    if (typeof body.sourceToken !== "string" || body.sourceToken.length === 0) {
+      throw new HttpBoundaryError({
+        code: ErrorCode.SchemaInvalid,
+        message: "sourceToken is required",
+        field: "sourceToken",
+      });
+    }
+    if (body.targetName !== undefined && typeof body.targetName !== "string") {
+      throw new HttpBoundaryError({
+        code: ErrorCode.SchemaInvalid,
+        message: "targetName must be a string",
+        field: "targetName",
+      });
+    }
+    const started = valueOf(await dependencies.startProjectImport({
+      selectionToken: body.sourceToken,
+      ...(body.targetName === undefined ? {} : { targetName: body.targetName }),
+    }));
+    // 202, not 201: copying a project tree is not something to hold a request
+    // open for, and the job id is what the client polls.
+    return c.json(started, 202);
   });
   routes.post("/v1/projects", async (c) => {
     const input = parse(CreateProjectRequestSchema, await json(c), "project create payload is invalid");

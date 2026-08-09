@@ -29,6 +29,8 @@ export * from "./service/remote-asset-scan";
 export * from "./service/remote-asset-guard";
 export * from "./service/tool-audit-service";
 export * from "./usecase/bootstrap-project";
+export * from "./usecase/project-import";
+export * from "./usecase/project-import-idempotency";
 export * from "./usecase/agent-kit-install";
 export * from "./usecase/project-identity";
 export * from "./usecase/project-lifecycle";

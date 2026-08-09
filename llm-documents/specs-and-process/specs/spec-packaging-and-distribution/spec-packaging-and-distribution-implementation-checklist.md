@@ -1088,41 +1088,51 @@ Mỗi phase chạy focused command dưới đây trên SQLite/filesystem thật,
 **Estimate**: 8 SP
 
 **Tasks**:
-- [ ] K.1 `ProjectImportService.plan/execute`
+- [x] K.1 `ProjectImportService.plan/execute`
   - Bind source canonical identity + target absence + digest; execute recheck trước copy. Trả `Result<T, DomainError>`
+  - [`project-import.ts`](../../../../packages/core/src/usecase/project-import.ts) là logic thuần: plan buộc identity nguồn, tên đích còn trống và phán quyết overlap vào cùng một chỗ; `assertSourceUnchanged` chạy **trước** copy vì giữa lúc plan và lúc copy người ta có thể move hoặc thay nguồn — và copy thứ đang nằm ở đường dẫn đó là kết cục tệ nhất có thể
+  - Identity là `dev:ino` chứ không phải đường dẫn: một path có thể bị trỏ sang thứ khác mà vẫn là **cùng một chuỗi**
+  - So sánh phân biệt hoa thường là **tham số**, không phải `process.platform`: gate boundary cấm `core` chạm `process`, và đoán sai thì hoặc từ chối một import hợp lệ hoặc cho qua một import đệ quy
   - _Requirements: R7.1, R7.3_ — _Design: §5.19_
-- [ ] K.2 Staging cùng filesystem
+- [x] K.2 Staging cùng filesystem
   - `<workspace>/.<slug>.vidcom-import-<operation>.tmp` để rename cuối là atomic; marker operation id. IF temp ở thiết bị khác THEN `rename` fail — MUST NOT dùng temp của OS vô điều kiện
+  - [`import-staging.ts`](../../../../packages/adapter/src/fs/import-staging.ts); `EXDEV` được map thành lỗi **nói thẳng vấn đề là cấu trúc**, không phải thứ để retry
   - _Requirements: R7.6, R7.12_ — _Design: §4.7_
-- [ ] K.3 Luật copy
+- [x] K.3 Luật copy
   - Chỉ regular file/dir; bỏ `node_modules/.git/.hyperframes`; **từ chối symlink** (luật tường minh của R7.11). Source chỉ đọc, không sửa metadata
+  - Symlink **từ chối**, không follow cũng không bỏ qua: follow thì copy dữ liệu từ ngoài nguồn, bỏ qua thì lặng lẽ tạo ra một project thiếu thứ bản gốc có. Ba thư mục kia thì bỏ qua **mà không fail** — chúng dựng lại được, và fail vì chúng sẽ từ chối gần như mọi project thật
+  - Test chốt bản gốc **không đổi** bằng digest cây trước và sau
   - _Requirements: R7.2, R7.11_ — _Design: §5.19_
-- [ ] K.4 Chặn overlap trước khi copy
+- [x] K.4 Chặn overlap trước khi copy
   - Source nằm trong workspace, là cha của workspace, hoặc trùng workspace ⇒ từ chối **sau khi canonicalize, trước khi copy** — đây là chỗ sinh copy đệ quy vô hạn
+  - So theo **segment** chứ không theo prefix chuỗi: `/work/videos-archive` không nằm trong `/work/videos`, mà prefix test nói là có
   - _Requirements: R7.10_ — _Design: §4.7_
-- [ ] K.5 Backfill dùng lại `bootstrapProject`
+- [x] K.5 Backfill dùng lại `bootstrapProject`
   - Không có đường serialize identity thứ hai. `ProjectId` trùng ⇒ cấp id mới, ghi lại `vidcom.json`, log sự kiện
+  - Import **không** viết đường ghi identity nào: cây đã copy xong là một project directory bình thường, và `bootstrapProject` đã xử lý đúng ca `ProjectId` trùng — cấp id mới, ghi lại `vidcom.json`, ghi journal. Thêm một đường serialize thứ hai ở đây là tạo chỗ để hai đường lệch nhau
   - _Requirements: R7.5, R7.7_ — _Design: §5.19_
-- [ ] K.6 `POST /v1/projects/imports` trả **202 `{jobId}`**
+- [x] K.6 `POST /v1/projects/imports` trả **202 `{jobId}`**
   - Request `{sourceToken, targetName?}` — token từ browser, **không** raw path. Idempotency khoá ở **application layer** theo `(workspaceRoot, sourceCanonicalIdentity, targetName)`: `uniqueIndex("uq_job_idempotency")` scope theo `(project_id, type, key)` mà `project_id` **NULL** tới khi xong, và SQLite coi mọi NULL là khác nhau
+  - Ba thành phần khoá nối bằng **NUL**: nối bằng thứ mà path chứa được thì hai request khác nhau dựng ra cùng một material
   - _Requirements: R7.1, R7.8_ — _Design: §7.15_
-- [ ] K.7 Recovery lúc startup
+- [x] K.7 Recovery lúc startup
   - Hoàn tất hoặc xoá theo `workspace_operation`; MUST NOT quét/xoá thư mục không có marker
+  - Test dựng một thư mục **trông y hệt staging nhưng không có marker** và chốt recovery không chạm vào nó: một thư mục trông như tạm có thể là thứ ai đó tự tạo, xoá nó là code đang đoán
   - _Requirements: R7.6_ — _Design: §4.7_
-- [ ] K.8 Logic test
+- [x] K.8 Logic test
   - Import plan; phát hiện overlap; đặt tên khi trùng slug
   - _Requirements: R7.4, R7.10_
-- [ ] K.9 Integration test trên fs thật
+- [x] K.9 Integration test trên fs thật
   - Kill sau begin/copy/validate/rename ⇒ recovery ra project committed hoặc abort sạch, **bản gốc không đổi**
   - Gọi hai lần cùng khoá ⇒ **cùng jobId**, không tạo job thứ hai
   - EXDEV, Windows file lock, symlink — kiểm ở OS hỗ trợ
   - _Requirements: R7.2, R7.6, R7.12_
-- [ ] K.10 Test với **3 project mẫu trong `projects/`** của repo
+- [x] K.10 Test với **3 project mẫu trong `projects/`** của repo
   - _Requirements: R7.9_
 
 **Acceptance Criteria**:
-- [ ] Thất bại không để lại thư mục rác trong workspace
-- [ ] Bản gốc không bị sửa ở bất kỳ nhánh nào
+- [x] Thất bại không để lại thư mục rác trong workspace — test chốt workspace rỗng sau một import hỏng vì symlink
+- [x] Bản gốc không bị sửa ở bất kỳ nhánh nào — digest cây nguồn trước/sau bằng nhau, kể cả ở nhánh commit
 
 **Deliverables**: `packages/core/src/usecase/project-import.ts` · `packages/adapter/src/fs/import-staging.ts`
 
@@ -1684,6 +1694,12 @@ Chi tiết: [Detailed Goals](./spec-packaging-and-distribution-detailed-goal.md)
   - Summary: Một nguồn duy nhất sinh `RuntimePaths` cho mọi entrypoint dựng composition root, và `NODE_EXTRA_CA_CERTS` xuống mọi Node child.
   - Decisions: Test lấy danh sách mode từ chính `VIDCOM_COMMAND_NAMES` chứ không chép lại — mode mới không trượt khỏi file này được. `render`/`doctor` không dựng composition root thứ hai vì chúng là client của daemon, nên "năm entrypoint" là năm mode. `caBundlePath` rỗng được coi là không có bundle, vì với Node chuỗi rỗng là một bundle ở đường dẫn `""` và nó hỏng mọi handshake.
   - Blockers: Không có; 9 test mới, full suite 1422 pass / 4 skip, typecheck, lint 0 error.
+
+2026-08-09 — Phase K, Task K.1–K.10
+  - Files: `packages/core/src/usecase/project-import{,-idempotency}.ts`, `packages/adapter/src/fs/import-staging.ts`, `packages/server/src/routes/delivery-loop.ts`, `tests/core/project-import.test.ts`, `tests/adapter/project-import.test.ts`, `tests/server/project-import-route.test.ts`, checklist và implementation notes
+  - Summary: Import project — plan/overlap/đặt tên trong core, staging + copy + recovery trên filesystem thật, route 202 `{jobId}`.
+  - Decisions: So sánh path phân biệt hoa thường là **tham số** vì gate cấm `core` chạm `process.platform`. Identity nguồn là `dev:ino` chứ không phải đường dẫn. Symlink từ chối; ba thư mục dựng lại được thì bỏ qua mà không fail. Recovery chỉ hành động trên thư mục **có marker**. Khoá idempotency nối bằng NUL vì path chứa được mọi ký tự khác. Test dùng đúng ba project trong `projects/` của repo — `swiss-grid`, `kinetic-type`, `warm-grain`; checklist không nêu tên nên đây là ba cái thật sự tồn tại.
+  - Blockers: Không có; 17 logic test + 14 integration trên fs thật + 7 route/idempotency; full suite 1460 pass / 4 skip, typecheck, lint 0 error, boundaries xanh.
 
 Format:
 ```
