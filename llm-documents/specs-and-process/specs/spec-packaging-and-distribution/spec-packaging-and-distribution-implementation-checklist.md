@@ -1777,6 +1777,12 @@ Chi tiết: [Detailed Goals](./spec-packaging-and-distribution-detailed-goal.md)
   - Decisions: `workflow_dispatch` thôi — thân từng bước cần runtime archive chưa có, và đặt lịch chỉ tạo một badge đỏ hằng ngày không mang thêm thông tin; đúng tiền lệ `phase4-browser-session.yml`. `fail-fast: false` vì mục đích của job là biết **nền tảng nào** đã được chứng minh. Cache key theo `build-runtime-archives.mjs` chứ không theo lockfile: thứ được cache là browser/model tải về, chúng đổi khi runtime pin đổi chứ không khi dependency đổi. Upload `if: always()` vì lúc cần timing và lý do từng bước nhất chính là lúc job đỏ.
   - Blockers: Chưa chạy được xanh cho tới khi có runtime archive; MUST NOT thêm vào CI chính để tránh một gate đỏ vĩnh viễn.
 
+2026-08-09 — Phase C, C.3 AC (vẫn KHÔNG tick)
+  - Files: `tests/cli/boot-migration-count.test.ts`, checklist và implementation notes
+  - Summary: Thêm một test chốt **kết quả** của boot — schema áp đúng một lần, không hash trùng, `foreign_key_check` sạch — trên daemon thật của J.2.
+  - Decisions: **Không tick AC.** AC đòi đếm bằng counter, và chính nó cảnh báo "đừng tick bằng test đếm giả". Test này chứng minh kết quả nhất quán chứ không chứng minh số lần gọi; seam để đếm chỉ tồn tại khi `BootstrapCoordinator` sở hữu migration ở entrypoint. Giữ test lại vì nó vẫn bắt được một lần migrate lặp gây trùng hàng hoặc lỗi, nhưng nó không phải thứ AC hỏi.
+  - Blockers: AC C.3 vẫn mở, đúng như C.3 đã ghi từ đầu.
+
 Format:
 ```
 YYYY-MM-DD — Phase X, Task X.Y
