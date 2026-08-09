@@ -201,7 +201,7 @@ describe("bridge routes", () => {
     const { call, invocations } = build();
     const response = await call("/api/bridge/v1/tools/list_projects", {
       method: "POST",
-      body: JSON.stringify({ input: {}, protocolVersion: "2026-07-28" }),
+      body: JSON.stringify({ input: {}, protocolVersion: "2026-07-28", era: "modern" }),
       token: "system-token",
     });
     expect(response.status).toBe(200);
@@ -213,6 +213,7 @@ describe("bridge routes", () => {
       name: "list_projects",
       credentialId: "system-bridge",
       protocolVersion: "2026-07-28",
+      era: "modern",
     });
   });
 
@@ -222,10 +223,23 @@ describe("bridge routes", () => {
     const { call, invocations } = build();
     const response = await call("/api/bridge/v1/tools/rm_rf", {
       method: "POST",
-      body: JSON.stringify({ input: {}, protocolVersion: "2026-07-28" }),
+      body: JSON.stringify({ input: {}, protocolVersion: "2026-07-28", era: "modern" }),
       token: "system-token",
     });
     expect(response.status).toBe(404);
+    expect(invocations).toEqual([]);
+  });
+
+  it("requires the era the bridge negotiated, rather than assuming one", async () => {
+    // Defaulting to "modern" would silently run a modern-only tool for a legacy
+    // client, which is the one thing the era split exists to prevent.
+    const { call, invocations } = build();
+    const response = await call("/api/bridge/v1/tools/list_projects", {
+      method: "POST",
+      body: JSON.stringify({ input: {}, protocolVersion: "2026-07-28" }),
+      token: "system-token",
+    });
+    expect(await response.json()).toMatchObject({ error: { code: ErrorCode.SchemaInvalid } });
     expect(invocations).toEqual([]);
   });
 
@@ -248,7 +262,7 @@ describe("bridge routes", () => {
     });
     const response = await call("/api/bridge/v1/tools/save_file", {
       method: "POST",
-      body: JSON.stringify({ input: {}, protocolVersion: "2026-07-28" }),
+      body: JSON.stringify({ input: {}, protocolVersion: "2026-07-28", era: "modern" }),
       token: "system-token",
     });
     expect(await response.json()).toMatchObject({ error: { code: ErrorCode.SchemaInvalid } });

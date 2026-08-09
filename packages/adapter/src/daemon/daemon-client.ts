@@ -29,6 +29,15 @@ export interface DaemonAttachment {
 
 export interface RemoteInvocationContext {
   protocolVersion: string;
+  /**
+   * The wire generation the bridge negotiated for this connection.
+   *
+   * Forwarded rather than derived on the daemon. The SDK decides it during
+   * negotiation, and re-deriving it from the revision would be a second
+   * negotiator that can disagree with the first — the same mistake as keeping
+   * a second tool catalogue.
+   */
+  era: "legacy" | "modern";
   requestState?: unknown;
 }
 
@@ -225,6 +234,7 @@ export function createDaemonClient(options: DaemonClientOptions): DaemonClient {
       return call("tool invocation", "POST", `/tools/${encodeURIComponent(name)}`, {
         input,
         protocolVersion: context.protocolVersion,
+        era: context.era,
         ...(context.requestState === undefined ? {} : { requestState: context.requestState }),
       });
     },

@@ -152,16 +152,22 @@ describe("daemon client", () => {
 
   it("sends the tool name in the path and the payload in the body", async () => {
     const { client, calls } = stub(() => json({ ok: true }));
-    await client.invokeTool("list_projects", { limit: 1 }, { protocolVersion: "2026-07-28" });
+    await client.invokeTool("list_projects", { limit: 1 }, { protocolVersion: "2026-07-28", era: "modern" });
     expect(calls[0]?.url).toBe("http://127.0.0.1:43127/api/bridge/v1/tools/list_projects");
-    expect(calls[0]?.body).toEqual({ input: { limit: 1 }, protocolVersion: "2026-07-28" });
+    // The era rides along with the revision: the bridge negotiated it, and the
+    // daemon must not have to guess which generation a client speaks.
+    expect(calls[0]?.body).toEqual({
+      input: { limit: 1 },
+      protocolVersion: "2026-07-28",
+      era: "modern",
+    });
   });
 
   it("encodes a tool name so it cannot address a different route", async () => {
     // An unknown tool has to come back as an unknown tool, not as a request the
     // daemon routes somewhere else entirely.
     const { client, calls } = stub(() => json({ ok: true }));
-    await client.invokeTool("../attachments", {}, { protocolVersion: "2026-07-28" });
+    await client.invokeTool("../attachments", {}, { protocolVersion: "2026-07-28", era: "modern" });
     expect(calls[0]?.url).toContain("/tools/..%2Fattachments");
   });
 

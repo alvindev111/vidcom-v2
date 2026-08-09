@@ -10,6 +10,7 @@ export interface BridgeToolRequest {
   name: string;
   input: unknown;
   protocolVersion: string;
+  era: "legacy" | "modern";
   requestState?: unknown;
   credentialId: string;
 }
@@ -129,16 +130,24 @@ export function createBridgeRoutes(dependencies: BridgeRouteDependencies): Hono<
     const body = await c.req.json() as {
       input?: unknown;
       protocolVersion?: unknown;
+      era?: unknown;
       requestState?: unknown;
     };
     if (typeof body.protocolVersion !== "string") {
       reject(ErrorCode.SchemaInvalid, "protocolVersion is required", { field: "protocolVersion" });
+    }
+    // Required, not defaulted. Defaulting to "modern" would silently run a
+    // modern-only tool for a legacy client, which is the one thing the era
+    // split exists to prevent.
+    if (body.era !== "legacy" && body.era !== "modern") {
+      reject(ErrorCode.SchemaInvalid, "era must be legacy or modern", { field: "era" });
     }
 
     const result = await dependencies.invokeTool({
       name,
       input: body.input,
       protocolVersion: body.protocolVersion,
+      era: body.era,
       requestState: body.requestState,
       // Forwarded, never invented here. The daemon writes the audit entry, so a
       // bridge that dies mid-call cannot take the record of the call with it.

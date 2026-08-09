@@ -97,6 +97,7 @@ describe("an agent write reaches the UI", () => {
         },
         body: JSON.stringify({
           protocolVersion: "2026-07-28",
+          era: "modern",
           input: { projectId, path: "index.html", content: written, expectedContentHash },
         }),
       });
@@ -118,6 +119,7 @@ describe("an agent write reaches the UI", () => {
         },
         body: JSON.stringify({
           protocolVersion: "2026-07-28",
+          era: "modern",
           input: { projectId, path: "index.html", expectedContentHash },
         }),
       });

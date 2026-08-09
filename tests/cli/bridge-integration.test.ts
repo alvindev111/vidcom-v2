@@ -105,7 +105,7 @@ describe("bridge against a real daemon", () => {
     });
     const attachment = await client.attach("bridge");
     expect(daemon.attachments.live()).toHaveLength(1);
-    expect(await client.invokeTool("list_projects", {}, { protocolVersion: "2026-07-28" }))
+    expect(await client.invokeTool("list_projects", {}, { protocolVersion: "2026-07-28", era: "modern" }))
       .toEqual({ projects: [] });
     await client.detach(attachment.attachmentId);
     expect(daemon.attachments.live()).toEqual([]);
@@ -134,7 +134,7 @@ describe("bridge against a real daemon", () => {
     await daemon.listener.close();
     listeners.splice(listeners.indexOf(daemon.listener), 1);
 
-    await expect(client.invokeTool("list_projects", {}, { protocolVersion: "2026-07-28" }))
+    await expect(client.invokeTool("list_projects", {}, { protocolVersion: "2026-07-28", era: "modern" }))
       .rejects.toMatchObject({ code: ErrorCode.DaemonUnavailable });
   }, 20_000);
 

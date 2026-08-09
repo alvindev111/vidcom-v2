@@ -242,7 +242,8 @@ export async function startNextHostedRuntime(
         // here. A bridge that dies mid-call cannot take the record with it.
         invokeTool: async (request) => {
           const result = await registry.invoke(request.name, request.input, {
-            era: "modern",
+            // The era the bridge negotiated, not an assumption made here.
+            era: request.era,
             protocolVersion: request.protocolVersion,
             credentialId: request.credentialId,
             requestInput: () => Promise.reject(

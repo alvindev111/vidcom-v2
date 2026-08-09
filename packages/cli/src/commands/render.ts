@@ -231,7 +231,13 @@ export async function runRenderCommand(
 }
 
 async function resolveSlug(client: DaemonClient, slug: string): Promise<string> {
-  const listed = await client.invokeTool("list_projects", {}, { protocolVersion: "2026-07-28" }) as {
+  // `render` is not an MCP client and negotiates nothing; it names the modern
+  // era because that is the one it speaks, rather than leaving the daemon to
+  // guess on its behalf.
+  const listed = await client.invokeTool("list_projects", {}, {
+    protocolVersion: "2026-07-28",
+    era: "modern",
+  }) as {
     projects?: Array<{ projectId?: string; id?: string; slug?: string }>;
   };
   const match = listed.projects?.find((project) => project.slug === slug);

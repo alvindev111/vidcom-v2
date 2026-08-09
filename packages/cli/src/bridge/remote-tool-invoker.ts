@@ -22,6 +22,10 @@ export function createRemoteToolInvoker(client: DaemonClient): ToolInvoker {
       try {
         const result = await client.invokeTool(name, raw, {
           protocolVersion: request.protocolVersion,
+          // The bridge negotiated this connection, so it is the side that knows
+          // the era. The daemon executing as "modern" regardless would run a
+          // modern-only tool for a legacy client.
+          era: request.era,
         });
         return { ok: true, value: result };
       } catch (error) {
