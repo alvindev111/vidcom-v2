@@ -67,7 +67,11 @@ export async function buildRuntimeInputs(options) {
   const ffprobePath = path.resolve(options.ffprobePath);
   const packagesPath = path.resolve(options.pythonPackagesPath);
 
-  const cpythonVersion = (() => {
+  // Seams, so this can be exercised without a real FFmpeg and a real CPython on
+  // the machine. Asking a binary what it is remains the default; a test that can
+  // only run where those binaries happen to exist is a test that runs nowhere.
+  const readVersion = options.readVersion ?? reportedVersion;
+  const cpythonVersion = options.cpythonVersion ?? (() => {
     const result = spawnSync(pythonPath, ["-c", "import sys; print(sys.version.split()[0])"], {
       encoding: "utf8",
     });
@@ -80,16 +84,16 @@ export async function buildRuntimeInputs(options) {
     artifactVersion: options.artifactVersion,
     platform,
     ffmpegPath,
-    ffmpegVersion: reportedVersion(ffmpegPath, FFMPEG_VERSION_PATTERN),
+    ffmpegVersion: readVersion(ffmpegPath, FFMPEG_VERSION_PATTERN),
     ffmpegSha256: await sha256Of(ffmpegPath),
     ffprobePath,
-    ffprobeVersion: reportedVersion(ffprobePath, FFPROBE_VERSION_PATTERN),
+    ffprobeVersion: readVersion(ffprobePath, FFPROBE_VERSION_PATTERN),
     ffprobeSha256: await sha256Of(ffprobePath),
     pythonRoot,
     pythonPath,
-    // Reported by the interpreter itself, then combined with the build tag the
-    // caller names, because `sys.version` does not carry it.
-    cpythonVersion: options.cpythonVersion ?? cpythonVersion,
+    // Reported by the interpreter itself unless the caller names it, because
+    // `sys.version` does not carry the build tag.
+    cpythonVersion,
     pythonSha256: await sha256Of(pythonPath),
     // Two tree digests: the whole frozen root, and the subset that ships. They
     // differ, and staging checks both, so computing them here with the same

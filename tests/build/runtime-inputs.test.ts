@@ -10,7 +10,7 @@ import {
   buildRuntimeInputs,
   writeRuntimeInputs,
 } from "../../scripts/build-runtime-inputs.mjs";
-import { parseRuntimeInputsValue } from "../../scripts/stage-artifact-runtime.mjs";
+import { hostPlatformTag, parseRuntimeInputsValue } from "../../scripts/stage-artifact-runtime.mjs";
 import { afterEach, describe, expect, it } from "vitest";
 
 const roots: string[] = [];
@@ -44,12 +44,13 @@ async function frozenRuntime(): Promise<{
   await writeFile(pythonPath, "#!/bin/sh\necho 3.12.13\n", { encoding: "utf8", mode: 0o755 });
   await writeFile(path.join(pythonRoot, "lib.txt"), "frozen", "utf8");
 
-  const media = async (name: string, tool: string) => {
+  // Ordinary files, not scripts. What matters here is that their bytes get
+  // hashed; asking them for a version goes through the injected seam, because a
+  // shell script is not an executable on Windows and a test that only runs on
+  // two of the three platforms is not a test of the build.
+  const media = async (name: string) => {
     const file = path.join(root, name);
-    await writeFile(file, `#!/bin/sh\necho "${tool} version 7.1.1 static"\n`, {
-      encoding: "utf8",
-      mode: 0o755,
-    });
+    await writeFile(file, `${name} bytes`, "utf8");
     return file;
   };
 
@@ -59,19 +60,25 @@ async function frozenRuntime(): Promise<{
   return {
     pythonRoot,
     pythonPath,
-    ffmpegPath: await media("ffmpeg", "ffmpeg"),
-    ffprobePath: await media("ffprobe", "ffprobe"),
+    ffmpegPath: await media("ffmpeg"),
+    ffprobePath: await media("ffprobe"),
     pythonPackagesPath: packages,
     output: path.join(root, "darwin-arm64.json"),
   };
 }
 
+const HOST_TAG: string = hostPlatformTag();
+// Something this machine is definitely not, so the cross-build refusal is a
+// real mismatch on every runner rather than only on the one it was written on.
+const FOREIGN_TAG = HOST_TAG === "linux-x64" ? "darwin-arm64" : "linux-x64";
+
 function options(frozen: Awaited<ReturnType<typeof frozenRuntime>>) {
   return {
     ...frozen,
-    platform: "darwin-arm64",
+    platform: HOST_TAG,
     artifactVersion: "2026.08.09",
     cpythonVersion: "3.12.13+20260805",
+    readVersion: () => "7.1.1",
     vieneuRoot: path.resolve("packages/adapter/sidecars/vieneu"),
   };
 }
@@ -110,18 +117,23 @@ describe("runtime inputs", () => {
     const frozen = await frozenRuntime();
     const { target } = await writeRuntimeInputs(options(frozen));
     const written = JSON.parse(await readFile(target, "utf8")) as Record<string, unknown>;
-    expect(() => parseRuntimeInputsValue(written, "darwin-arm64")).not.toThrow();
+    expect(() => parseRuntimeInputsValue(written, HOST_TAG)).not.toThrow();
   });
 
   it("refuses to describe a runtime for another platform", async () => {
     const frozen = await frozenRuntime();
-    await expect(buildRuntimeInputs({ ...options(frozen), platform: "linux-x64" }))
+    await expect(buildRuntimeInputs({ ...options(frozen), platform: FOREIGN_TAG }))
       .rejects.toThrow(/do not match the build host|must be/u);
   });
 
   it("says so when a binary will not report itself", async () => {
+    // The real reader spawns the binary; a file that is not one fails there,
+    // which is the message a build needs rather than a digest of nothing.
     const frozen = await frozenRuntime();
-    await expect(buildRuntimeInputs({ ...options(frozen), ffmpegPath: path.join(frozen.pythonRoot, "lib.txt") }))
-      .rejects.toThrow(/would not report its version|could not read a version/u);
+    await expect(buildRuntimeInputs({
+      ...options(frozen),
+      readVersion: undefined,
+      ffmpegPath: path.join(frozen.pythonRoot, "lib.txt"),
+    })).rejects.toThrow(/would not report its version|could not read a version/u);
   });
 });

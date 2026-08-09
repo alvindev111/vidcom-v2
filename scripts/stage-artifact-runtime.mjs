@@ -484,6 +484,22 @@ async function readPackageManifest(packageRoot, expectedName) {
 
 /** Resolves package roots without deep specifiers, which several packages block through `exports`. */
 export async function resolvePackageDirectory(packageName, resolver) {
+  // Ask Node first. It runs the real resolution algorithm, which follows the
+  // package store layout a scan of `resolve.paths()` can miss — that scan reads
+  // directory names, and a store keyed by content hash puts the sibling
+  // somewhere the plain list never mentions. Not every package exposes its
+  // manifest through `exports` (sharp does not), so the scan stays as the
+  // fallback rather than being replaced.
+  try {
+    const manifest = resolver.resolve(`${packageName}/package.json`);
+    const canonical = await realpath(path.dirname(manifest));
+    await readPackageManifest(canonical, packageName);
+    return canonical;
+  } catch {
+    // Either the package hides its manifest or it is genuinely absent; the scan
+    // below tells those two apart.
+  }
+
   const searchPaths = resolver.resolve.paths(packageName) ?? [];
   for (const searchRoot of searchPaths) {
     const candidate = path.join(searchRoot, ...packageName.split("/"));

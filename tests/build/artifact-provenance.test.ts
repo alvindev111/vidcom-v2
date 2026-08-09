@@ -1,6 +1,6 @@
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { realpathSync } from "node:fs";
+import { existsSync, realpathSync } from "node:fs";
 import { chmod, copyFile, cp, link, mkdir, mkdtemp, readFile, rm, stat, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -513,7 +513,6 @@ describe("the frontend pack this build produces", () => {
     for (const filename of [
       "components.json",
       "bun.lock",
-      "next-env.d.ts",
       "next.config.ts",
       "package.json",
       "postcss.config.mjs",
@@ -521,6 +520,13 @@ describe("the frontend pack this build produces", () => {
       "tsconfig.json",
     ]) {
       await copyFile(path.resolve(filename), path.join(buildRoot, filename));
+    }
+    // `next-env.d.ts` is generated and git-ignored, so a clean checkout has
+    // none — copying it unconditionally made this pass on a developer machine
+    // and fail on every runner. The build writes it itself; carrying it over
+    // when it happens to exist keeps the projection closer to the checkout.
+    if (existsSync(path.resolve("next-env.d.ts"))) {
+      await copyFile(path.resolve("next-env.d.ts"), path.join(buildRoot, "next-env.d.ts"));
     }
     await Promise.all([
       cp(path.resolve("src"), path.join(buildRoot, "src"), { recursive: true }),
