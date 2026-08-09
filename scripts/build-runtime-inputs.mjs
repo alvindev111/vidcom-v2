@@ -1,15 +1,18 @@
 import { createHash } from "node:crypto";
 import { createReadStream } from "node:fs";
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
 import { REPOSITORY_ROOT, runtimeInputPath } from "./artifact-layout.mjs";
 import {
+  copyContainedTree,
   hostPlatformTag,
   materializedTreeSha256,
   parseRuntimeInputsValue,
+  prunePythonBuildTools,
 } from "./stage-artifact-runtime.mjs";
 
 function fail(message, details) {
@@ -95,11 +98,14 @@ export async function buildRuntimeInputs(options) {
     // `sys.version` does not carry the build tag.
     cpythonVersion,
     pythonSha256: await sha256Of(pythonPath),
-    // Two tree digests: the whole frozen root, and the subset that ships. They
-    // differ, and staging checks both, so computing them here with the same
-    // function staging uses is what keeps the two from drifting apart.
+    // Two tree digests, and they are genuinely different values: the frozen
+    // root as installed, and what is left after the build tooling and bytecode
+    // are pruned away. Writing the same digest twice made staging reject its
+    // own correct output. Both are produced by running the very prune staging
+    // runs, on a copy, so the pin describes the tree that ships rather than the
+    // tree that was downloaded.
     pythonTreeSha256: await materializedTreeSha256(pythonRoot),
-    pythonRuntimeTreeSha256: await materializedTreeSha256(pythonRoot),
+    pythonRuntimeTreeSha256: await prunedPythonTreeSha256(pythonRoot),
     pythonPackagesPath: packagesPath,
     pythonPackagesSha256: await sha256Of(packagesPath),
     vieneuRoot,
@@ -113,6 +119,25 @@ export async function buildRuntimeInputs(options) {
   // this generator gets wrong fails here rather than three build steps later.
   parseRuntimeInputsValue(inputs, hostPlatformTag());
   return inputs;
+}
+
+/**
+ * The digest of the Python tree as it will ship, not as it was installed.
+ *
+ * Pruning happens on a throwaway copy: the source tree stays whole so a rebuild
+ * can prune it again, and computing the value any other way would mean
+ * predicting what the prune removes instead of measuring it.
+ */
+export async function prunedPythonTreeSha256(pythonRoot) {
+  const scratch = await mkdtemp(path.join(tmpdir(), "vidcom-python-prune-"));
+  try {
+    const copy = path.join(scratch, "python");
+    await copyContainedTree(pythonRoot, copy);
+    await prunePythonBuildTools(copy);
+    return await materializedTreeSha256(copy);
+  } finally {
+    await rm(scratch, { recursive: true, force: true });
+  }
 }
 
 export async function writeRuntimeInputs(options) {
