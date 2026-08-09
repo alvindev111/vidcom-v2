@@ -987,9 +987,11 @@ Mỗi phase chạy focused command dưới đây trên SQLite/filesystem thật,
 **Estimate**: 13 SP
 
 **Tasks**:
-- [ ] J.1 Mode dispatcher
+- [x] J.1 Mode dispatcher
   - Union công khai `app | serve | mcp | render | doctor | version | approve | credential | backup | recovery`. **Không** `worker` (OQ-9); `packages/worker` giữ nguyên, không xoá
   - Mode không tồn tại ⇒ liệt kê mode hợp lệ, exit ≠ 0
+  - `VIDCOM_COMMAND_NAMES` export ra thành **một danh sách có thứ tự**, để D.3b sau này đếm entrypoint từ chính union này thay vì từ một bản chép tay
+  - Đổi hành vi có chủ ý: message `unknown command` giờ liệt kê đủ mười mode. [`mcp-commands.test.ts`](../../../../tests/cli/mcp-commands.test.ts) ghim chuỗi cũ nên đã cập nhật — đây là hành vi J.1 yêu cầu, **không phải** snapshot sửa cho khớp code
   - _Requirements: R3.1, R3.11_ — _Design: §5.8_
 - [ ] J.2 `serve` và `app`
   - `serve` headless, in địa chỉ qua `stderr`/log; `app` = `serve` + mở browser + token một lần
@@ -1000,8 +1002,10 @@ Mỗi phase chạy focused command dưới đây trên SQLite/filesystem thật,
   - Gọi daemon qua `DaemonClient` của **I.2** — đây là lý do J có tiền đề I. MUST NOT tự dựng client HTTP thứ hai
   - Help của `--workspace` nói rõ nó **không** đổi workspace mặc định của UI (hệ quả của C.4). Đây là chỗ thực thi câu đó, vì `commands/render.ts` được tạo ở task này
   - _Requirements: R3.3, R1.5_ — _Design: §7.13_
-- [ ] J.4 `version`
+- [x] J.4 `version`
   - VidCom version, HyperFrames version, build commit, platform tag, runtime manifest version
+  - Trường nào source checkout không biết thì trả **`null`** (human: `not packaged`), không phải một giá trị trông hợp lý. Output này tồn tại để trả lời "bản build nào đây" trong một bug report, và một version đoán bừa **tệ hơn một chỗ trống**: nó đẩy người đọc sang đúng một release khác
+  - Test chốt `VIDCOM_VERSION` khớp `packages/cli/package.json` — hai chỗ cùng nói một số thì lệch phải lộ ở đây chứ không lộ trong bug report
   - _Requirements: R3.4_ — _Design: §7.14_
 - [ ] J.5a Khung `DoctorCheck` + thứ tự deterministic
   - `DoctorCheck`/`DoctorReport` theo §5.9; `run` trả `Result<DoctorItem, DomainError>` ([steering/03](../../../steering/03-architecture-ddd.md) §2.2, Design §5.0 hệ quả 2). Thứ tự đăng ký **cố định**, không phụ thuộc thứ tự import — golden test J.9 chốt nó
@@ -1603,6 +1607,12 @@ Chi tiết: [Detailed Goals](./spec-packaging-and-distribution-detailed-goal.md)
   - Summary: Integration test bridge trên listener loopback thật + filesystem thật; thêm guard stdout cho `packages/cli/src/bridge/**`.
   - Decisions: **Sửa một bug thật do integration test tìm ra**: temp file của `publish` đặt tên theo `instanceId`, nên hai publish đồng thời dùng chung đường dẫn và cái thua `wx` xoá file cái thắng đang ghi — cả hai hỏng, không record nào tồn tại, workspace có daemon sống mà không ai tìm thấy. Đổi sang `randomUUID()` (đúng cách credential store đang làm) và thêm regression test. Stub lease trong test dùng cờ atomic vì read-then-write cho phép cả hai caller tin mình thắng, thứ lease thật không tạo ra được.
   - Blockers: Không có; `tests/cli` bridge 6/6 + 8/8, discovery 14/14, typecheck, lint 0 error, boundaries xanh.
+
+2026-08-09 — Phase J, Task J.1 + J.4
+  - Files: `packages/cli/src/main.ts`, `packages/cli/src/commands/version.ts`, `packages/cli/src/index.ts`, `tests/cli/cli-modes.test.ts`, `tests/cli/mcp-commands.test.ts`, checklist và implementation notes
+  - Summary: Mở union mode lên đủ mười, message lỗi liệt kê mode hợp lệ, và thêm `vidcom version` có `--json`.
+  - Decisions: Không thêm mode `worker` (OQ-9). Message `unknown command` đổi để liệt kê mode — test cũ ghim chuỗi cũ đã cập nhật, đây là hành vi J.1 yêu cầu chứ không phải snapshot sửa cho khớp code. `version` trả `null`/`not packaged` cho thứ source checkout không biết thay vì giá trị trông hợp lý, vì một version đoán bừa đẩy bug report sang release khác.
+  - Blockers: `serve`, `render`, `doctor` mới chỉ có trong union; thân lệnh là J.2/J.3/J.5. `tests/cli` + `tests/e2e` 151/151, typecheck, lint 0 error.
 
 Format:
 ```

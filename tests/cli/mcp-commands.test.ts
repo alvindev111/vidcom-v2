@@ -79,7 +79,13 @@ describe("VidCom CLI dispatch", () => {
       stderr: { write: (chunk) => { stderr += String(chunk); return true; } },
     });
     expect(exitCode).toBe(2);
-    expect(stderr.trim()).toBe("unknown command: unknown-command");
+    // J.1 requires the message to name the valid modes: the answer is a short
+    // fixed set, and making the user search for it is the least useful thing a
+    // CLI can do.
+    expect(stderr.trim()).toBe(
+      "unknown command: unknown-command."
+      + " Available: app, serve, mcp, render, doctor, version, approve, credential, backup, recovery",
+    );
   });
 
   it("maps unexpected command failures to exit code 1 without touching stdout", async () => {

@@ -11,12 +11,26 @@ import { runApproveCommand } from "./commands/approve";
 import { runCredentialCommand } from "./commands/credential";
 import { runBackupCommand } from "./commands/backup";
 import { runRecoveryCommand } from "./commands/recovery";
+import { runVersionCommand } from "./commands/version";
 import { isNodeSentinel, runNodeSentinel } from "./node-sentinel";
 import { CliInputError } from "./cli-error";
 
 export { CliInputError } from "./cli-error";
 
-export type VidcomCommandName = "app" | "mcp" | "approve" | "credential" | "backup" | "recovery";
+/** Kept beside the parser so one file answers "what is this build". */
+export const VIDCOM_VERSION = "0.1.0";
+
+export type VidcomCommandName =
+  | "app"
+  | "serve"
+  | "mcp"
+  | "render"
+  | "doctor"
+  | "version"
+  | "approve"
+  | "credential"
+  | "backup"
+  | "recovery";
 
 export interface ParsedVidcomCommand {
   name: VidcomCommandName;
@@ -28,16 +42,31 @@ export interface AppCommandOptions {
   port?: number;
 }
 
-const COMMAND_NAMES = new Set<VidcomCommandName>([
-  "app", "mcp", "approve", "credential", "backup", "recovery",
-]);
+/**
+ * Every mode the executable answers to, in the order `--help` lists them.
+ *
+ * `worker` is deliberately absent (OQ-9): `packages/worker` stays exactly as it
+ * is, run in-process, and publishing a mode for it would promise a supported
+ * entry point that nothing else in the product uses.
+ */
+export const VIDCOM_COMMAND_NAMES: readonly VidcomCommandName[] = [
+  "app", "serve", "mcp", "render", "doctor", "version",
+  "approve", "credential", "backup", "recovery",
+];
+
+const COMMAND_NAMES = new Set<VidcomCommandName>(VIDCOM_COMMAND_NAMES);
 
 /** Selects one strict top-level command; bare invocation and leading app options alias `vidcom app`. */
 export function parseVidcomCommand(argv: readonly string[]): ParsedVidcomCommand {
   const [first, ...rest] = argv;
   if (first === undefined || first.startsWith("--")) return { name: "app", args: [...argv] };
   if (!COMMAND_NAMES.has(first as VidcomCommandName)) {
-    throw new CliInputError(`unknown command: ${first}`);
+    // Listing them costs one line and saves the user a search. A bare "unknown
+    // command" is the least useful thing a CLI can say when the answer is a
+    // fixed, short set.
+    throw new CliInputError(
+      `unknown command: ${first}. Available: ${VIDCOM_COMMAND_NAMES.join(", ")}`,
+    );
   }
   return { name: first as VidcomCommandName, args: rest };
 }
@@ -157,6 +186,15 @@ export async function runVidcomCli(argv: readonly string[] = process.argv.slice(
   const command = parseVidcomCommand(argv);
   if (command.name === "app") {
     await runVidcomApp(parseAppCommandArgs(command.args));
+    return;
+  }
+  if (command.name === "version") {
+    await runVersionCommand(command.args, {
+      // The version is read from the package rather than injected at build
+      // time, so a source checkout reports the same number it was built from.
+      vidcom: VIDCOM_VERSION,
+      buildCommit: process.env.VIDCOM_BUILD_COMMIT ?? null,
+    });
     return;
   }
   if (command.name === "mcp") {
