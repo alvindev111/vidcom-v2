@@ -498,7 +498,7 @@ Mỗi phase chạy focused command dưới đây trên SQLite/filesystem thật,
 
 **Acceptance Criteria**:
 - [ ] Render MP4 **từ artifact** trên máy không có Node và không có Python trên PATH — **chưa kiểm được ở D**: cần một artifact thật, tức [`build:artifact`](../../../../package.json) của **H.0**. Đây là AC duy nhất của D không thể chứng minh bằng test đơn vị; nó là gate thật của Phase H
-- [ ] `install_motion_library` vendor được mà không cần `node_modules`, version khớp catalogue — chờ **D.3b** nối `motionLibraryRoot` từ mọi entrypoint. Resolver đã đúng (D.3a) nhưng resolver đúng mà không ai truyền thì vẫn hỏng y như bẫy §4.8 mô tả
+- [ ] `install_motion_library` vendor được mà không cần `node_modules`, version khớp catalogue — **D.3b đã xong** (mọi entrypoint dựng composition root nay truyền đủ bộ path, gồm `motionLibraryRoot`, và test ghim điều đó). Nửa còn lại — *vendor được thật* — cần thư viện motion nằm trong runtime archive đã giải nén, tức cùng blocker tài sản phát hành
 - [x] Không đường nào chạm compiler mà thiếu timeout — [`compiler-timeout-audit.test.ts`](../../../../tests/adapter/compiler-timeout-audit.test.ts) quét bốn package, fail nếu có file chạm compiler mà không qua `CompilerGuard` cũng không tự khai timeout. Miễn trừ phải kèm lý do và phải còn trỏ vào file thật. Audit bắt được một false positive đúng như thiết kế: `runtime-asset-source.ts` khai `esbuild: string` là **field version trong manifest**, không phải lời gọi compiler
 
 **Deliverables**: `packages/cli/src/main.ts` · `binary-probe.ts` · `compiler-guard.ts` · `vieneu-sidecar-path.ts` · `tts-vieneu.ts` · `process-environment.ts`
@@ -760,10 +760,10 @@ Mỗi phase chạy focused command dưới đây trên SQLite/filesystem thật,
   - _Requirements: R1.10, R1.19, R4.10, R4.12_
 
 **Acceptance Criteria**:
-- [ ] Cùng một bundle chạy same-origin (artifact) và cross-origin (dev) chỉ bằng cấu hình
+- [x] Cùng một bundle chạy same-origin (artifact) và cross-origin (dev) chỉ bằng cấu hình
 - [x] `next build` với `output: "export"` xanh
-- [ ] `rtk bun run test:browser-session` **chạy được** (script tồn tại, Chrome resolve được) và xanh
-- [ ] Không thêm dependency nào vào [`package.json`](../../../../package.json) cho phase này ngoài script
+- [x] `rtk bun run test:browser-session` **chạy được** (script tồn tại, Chrome resolve được) và xanh
+- [x] Không thêm dependency nào vào [`package.json`](../../../../package.json) cho phase này ngoài script
 
 **Deliverables**: `src/lib/api/services.ts` · `src/app/projects/[slug]/*` · `src/components/workspace-picker/*` · `next.config.ts` · `tests/support/browser-harness.ts` · `tests/frontend/{api-driver,browser-session}.test.ts` · script `test:browser-session`
 
@@ -1742,6 +1742,12 @@ Chi tiết: [Detailed Goals](./spec-packaging-and-distribution-detailed-goal.md)
   - Summary: Đóng hai AC của Phase F bằng test qua socket thật.
   - Decisions: **Phát hiện lỗi thật khi đi kiểm AC**: `createSystemRoutes` đã tồn tại từ Phase F nhưng **chưa bao giờ được mount** vào `createServerApp`, nên picker của G.7 không có endpoint nào để gọi và cả hai AC chưa từng được kiểm end-to-end. Đã nối vào dưới `/v1/system`, dùng chung `hostBrowseTokens` với route activation — token do browse mint phải được chính activation kế tiếp tiêu thụ.
   - Blockers: Không có; 3/3 test, full suite xanh. `401` đúng kể cả từ `127.0.0.1`: đến từ loopback không phải là xác thực, mọi thứ chạy trên máy người dùng đều tới được cổng này.
+
+2026-08-09 — Phase G, Acceptance Criteria
+  - Files: checklist và implementation notes
+  - Summary: Đóng ba AC còn lại của Phase G bằng bằng chứng đã có.
+  - Decisions: "Một bundle, hai môi trường" nằm ở `resolveApiBaseUrl` — đọc global runtime rồi mặc định `location.origin`, không `NEXT_PUBLIC_*` nào bị inline lúc build; test routing của J.2 chứng minh vế same-origin trên cùng một port. `test:browser-session` chạy 7/7. `git diff main -- package.json` chỉ thêm **script**, không dependency; `bun.lock` đúng một dòng `tar@7.5.22` — đúng dependency duy nhất được phép.
+  - Blockers: Không có cho ba AC này.
 
 Format:
 ```
