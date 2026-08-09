@@ -2559,7 +2559,7 @@ Chi tiết: [Detailed Goals](./spec-packaging-and-distribution-detailed-goal.md)
 2026-08-10 — Phase M: exact-ref GitHub Actions orchestration
   - Files: `.github/workflows/{ci,packaged-smoke,phase4-browser-session}.yml`, checklist và implementation notes
   - Summary: Hai workflow heavy chưa tồn tại trên default branch nên GitHub không đăng ký direct dispatch. Chúng nay nhận `workflow_call`; CI đã đăng ký gọi đúng phiên bản cùng branch khi manual dispatch, trong khi push/PR path giữ nguyên.
-  - Decisions: Không chạm hoặc merge `main`, không chạy workflow definition cũ. Một CI dispatch trên exact commit sẽ đồng thời chạy static matrix ba OS, browser Linux/Windows và packaged-smoke macOS/Linux/Windows.
+  - Decisions: Không chạm hoặc merge `main`. GitHub dispatch dùng definition trên default branch và direct dispatch file mới trả HTTP 404, nên draft PR cùng repo kích hoạt branch workflow. Mọi checkout ghim `pull_request.head.sha`, không dùng synthetic merge commit; artifact version cũng ghi head SHA đó.
   - Blockers: Chờ GitHub Actions trả evidence; YAML parse và `test:spec-paths` 115/115 xanh cục bộ.
 
 Format:

@@ -42,11 +42,11 @@ jobs:
   # the default branch, so a manual CI dispatch calls their exact-ref versions.
   # Push/PR CI remains unchanged.
   packaged-smoke:
-    if: github.event_name == 'workflow_dispatch'
+    if: github.event_name == 'workflow_dispatch' || github.event_name == 'pull_request'
     uses: ./.github/workflows/packaged-smoke.yml
 
   browser-session:
-    if: github.event_name == 'workflow_dispatch'
+    if: github.event_name == 'workflow_dispatch' || github.event_name == 'pull_request'
     uses: ./.github/workflows/phase4-browser-session.yml
 
   static-checks:
@@ -69,6 +69,10 @@ jobs:
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
+        with:
+          # PR workflows normally test a synthetic merge commit. Release
+          # evidence must name the exact reviewed branch commit instead.
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
 
       - name: Set up Node
         uses: actions/setup-node@v4

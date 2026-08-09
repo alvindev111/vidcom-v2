@@ -47,6 +47,8 @@ jobs:
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
 
       - name: Set up Node
         uses: actions/setup-node@v4
@@ -78,7 +80,7 @@ jobs:
           # Explicitly authorizes a CI fixture, not a publishable release input.
           # Production FFmpeg acquisition remains behind the human supply-chain gate.
           VIDCOM_ALLOW_UNRELEASED_SMOKE_RUNTIME: "1"
-        run: node scripts/prepare-packaged-runtime.mjs --artifact-version "0.1.0-${{ github.sha }}"
+        run: node scripts/prepare-packaged-runtime.mjs --artifact-version "0.1.0-${{ github.event.pull_request.head.sha || github.sha }}"
 
       - name: Build the artifact for this runner
         # No cross-building (DR-1): the artifact embeds this machine's Node
