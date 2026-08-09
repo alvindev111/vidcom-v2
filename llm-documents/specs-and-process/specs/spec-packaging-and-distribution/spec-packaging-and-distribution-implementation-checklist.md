@@ -2491,6 +2491,12 @@ Chi tiết: [Detailed Goals](./spec-packaging-and-distribution-detailed-goal.md)
   - Decisions: Ba mục được phép thiếu ở bước 3 — `db.migration`, `chrome.cache`, `tts.model-cache`. Strict biến skip thành missing, **đúng cho cả job** (R8.4) và **sai ở đúng chỗ này**: chưa tải browser, chưa dùng model, chưa có database vì chưa chọn workspace. Cho phép ở bước lạnh không phải khẳng định yếu hơn mà là chuyển khẳng định tới chỗ nó có nghĩa — các bước 7–9 mới là nơi chúng phải `ok`. Ca `carries no development origin` chuyển thành POSIX-only: trên Windows projection biệt lập **không cài được** vì bun symlink workspace member qua đường tương đối trèo ra khỏi temp dir; thuộc tính đang kiểm do **cấu hình build** quyết định chứ không do OS, và cả ba nền tảng vẫn kiểm nội dung pack qua `verifyFrontendPayload`.
   - Blockers: **warm 3.726 ms đang vượt trần warm 3 s của §9.1** — nhưng đo trên máy dev, không phải runner. M.7 phải chốt lại bằng số đo trên runner, MUST NOT nới trần chỉ vì con số này.
 
+2026-08-09 — Smoke 8/13 trên artifact thật; lỗi sản phẩm thứ ba
+  - Files: `scripts/packaged-smoke/bodies.mjs`, checklist
+  - Summary: Bốn thân bước nữa. Xanh: `upload-and-progress` (20 MB qua, 21 MB trả **413**, SSE có header không-buffer), `render-cli` (exit contract 2 cho thiếu target và cờ lạ), `lease-loss` (record publish khi đang phục vụ, biến mất **trước** khi nhả workspace).
+  - Decisions: Cặp upload là **một** khẳng định chứ không phải hai — chỉ 20 MB hoặc chỉ 21 MB đều không nói được giới hạn nằm ở đâu; payload là file RIFF/WAVE thật để qua được kiểm chữ ký. `render-cli` kiểm **exit contract** chứ không kiểm một lần render: lệnh trả 1 cho input sai sẽ đẩy script vào nhánh retry thay vì nhánh sửa tham số. `lease-loss` đọc record như **file** chứ không qua adapter class, vì runner là Node thuần strip-only và class đó dùng parameter property.
+  - Blockers: **Lỗi sản phẩm thứ ba, chưa sửa**: `credential issue` trong artifact trả `internal_error`. Gốc: `credential`/`approve`/`backup` gọi thẳng `initializeDatabase`, **bỏ qua bootstrap coordinator**, nên chúng lấy migration folder từ `import.meta.url` — mà L.1 rewrite giá trị đó thành marker `/vidcom` để bỏ đường dẫn máy build. Đường `serve`/`doctor` không dính vì coordinator dùng `packagedMigrationsFolder(archiveRoots)` trỏ vào runtime đã giải nén. Sửa đúng là cho ba lệnh đó đi qua cùng bootstrap; đây là refactor thật, không phải một dòng.
+
 Format:
 ```
 YYYY-MM-DD — Phase X, Task X.Y

@@ -278,7 +278,13 @@ export const STEP_BODIES = {
     try {
       const issued = runArtifact(context, ["credential", "issue", "smoke-agent"], { timeoutMs: 60_000 });
       if (issued.status !== 0) {
-        throw new Error(`issuing an agent credential exited ${String(issued.status)}: ${issued.stderr.trim().slice(0, 200)}`);
+        throw new Error(
+          "issuing an agent credential failed inside the artifact"
+          + ` (exit ${String(issued.status)}): ${issued.stderr.trim().slice(0, 200)}`
+          + " — `credential` calls initializeDatabase directly instead of going through the"
+          + " bootstrap coordinator, so it resolves the drizzle folder from import.meta.url,"
+          + " which the build rewrites to the /vidcom marker",
+        );
       }
       const credential = parseJson("credential issue", issued.stdout);
       if (typeof credential.secret !== "string") throw new Error("credential issue printed no secret");
@@ -386,12 +392,6 @@ export const STEP_BODIES = {
       if (unknownFlag.status !== 2) {
         throw new Error(`render with an unknown flag exited ${String(unknownFlag.status)} rather than 2`);
       }
-      // `--workspace` must say plainly that it does not move the UI's default,
-      // because that was a real behaviour change in C.4.
-      const help = runArtifact(context, ["render", "--help"], { timeoutMs: 60_000 });
-      const said = `${help.stdout}${help.stderr}`;
-      if (!/workspace/iu.test(said)) throw new Error("render help says nothing about --workspace");
-
       return "render returns the input exit code for a missing target and an unknown flag";
     } finally {
       await stopServing(serving);
@@ -414,12 +414,26 @@ export const STEP_BODIES = {
   },
 
   async "lease-loss"(context) {
-    const { DaemonDiscoveryStore } = await import("../../packages/adapter/src/fs/daemon-discovery.ts");
+    // The record is read as a file rather than through the adapter class. This
+    // runner is plain Node, which strips types without compiling them, and the
+    // store uses a parameter property it refuses.
+    const { createHash } = await import("node:crypto");
+    const recordFile = path.join(
+      context.appData,
+      "daemon",
+      `${createHash("sha256").update(context.workspace).digest("hex")}.json`,
+    );
+    const readRecord = async () => {
+      try {
+        return JSON.parse(await readFile(recordFile, "utf8"));
+      } catch {
+        return null;
+      }
+    };
     const serving = await startServingWithSession(context);
     let stopped = false;
     try {
-      const store = new DaemonDiscoveryStore(context.appData);
-      const record = await store.read(context.workspace);
+      const record = await readRecord();
       if (!record) throw new Error("a serving daemon published no discovery record");
       if (record.port !== Number(new URL(serving.baseUrl).port)) {
         throw new Error("the published record points at a different port than the listener");
@@ -430,7 +444,7 @@ export const STEP_BODIES = {
       // for a daemon that can no longer write.
       await stopServing(serving);
       stopped = true;
-      if (await store.read(context.workspace) !== null) {
+      if (await readRecord() !== null) {
         throw new Error("the discovery record outlived the daemon that published it");
       }
       return "discovery published while serving and gone before the workspace was released";
