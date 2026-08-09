@@ -810,8 +810,15 @@ await commitRuntimeGeneration(temporary, destination, {
     expect(files.some((filename) => /(?:^|\/)esbuild\.exe$/u.test(filename)))
       .toBe(process.platform === "win32");
     expect(files.some((filename) => /\.(?:map|ts|tsx)$/u.test(filename))).toBe(false);
-    for (const filename of files) {
-      expect((await lstat(path.join(archiveRoot, filename))).mode & 0o022, filename).toBe(0);
+    // Group and other write bits, where they exist. Windows has none — Node
+    // reports 0o666 for every regular file there — so asserting them would be
+    // testing Node's emulation rather than what staging did. Windows protects
+    // the same tree through its ACL, which `secureAppDataDirectorySync` sets and
+    // the credential-store suites cover.
+    if (process.platform !== "win32") {
+      for (const filename of files) {
+        expect((await lstat(path.join(archiveRoot, filename))).mode & 0o022, filename).toBe(0);
+      }
     }
     for (const filename of files.filter((candidate) => /\.(?:cjs|mjs|js)$/u.test(candidate))) {
       expect(await readFile(path.join(archiveRoot, filename), "utf8"), filename)

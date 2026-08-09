@@ -543,7 +543,13 @@ describe("the frontend pack this build produces", () => {
         },
       }),
     ]);
-    const installed = spawnSync("bun", ["install", "--frozen-lockfile"], {
+    // Not `--frozen-lockfile`. The projection copies the root manifest, the
+    // lockfile and the workspace manifests, and on Windows the resolved set
+    // differs enough that bun wants to write the lockfile — which is a fact
+    // about optional platform packages, not about the thing under test. The
+    // subject here is the frontend pack; the lockfile is audited by CI's own
+    // install step, which does run frozen.
+    const installed = spawnSync("bun", ["install"], {
       cwd: buildRoot,
       encoding: "utf8",
       shell: false,

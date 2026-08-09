@@ -557,7 +557,11 @@ describe.skipIf(!HOST_SUPPORTED)("runtime app-data confinement", () => {
     const layers = path.join(installed.versionRoot, "layers");
     const escapedLayers = path.join(outside, "layers");
     await rename(layers, escapedLayers);
-    await symlink(escapedLayers, layers);
+    // `junction` on Windows, the way the sentinel and download-cache suites
+    // already do it: a plain symlink to a directory needs Developer Mode or
+    // admin there, so without this the link is never created and the
+    // inspection reports nothing rather than the escape it is meant to catch.
+    await symlink(escapedLayers, layers, process.platform === "win32" ? "junction" : "dir");
 
     const inspection = await manager(appDataRoot, source).inspect();
     expect(inspection.state).toBe("broken");
@@ -608,7 +612,11 @@ describe.skipIf(!HOST_SUPPORTED)("runtime app-data confinement", () => {
       hooks: {
         onPhase: async (phase) => {
           if (phase !== "afterValidate") return;
-          await symlink(outside, path.join(appDataRoot, "native", "1.0.0", "toolchain"));
+          await symlink(
+            outside,
+            path.join(appDataRoot, "native", "1.0.0", "toolchain"),
+            process.platform === "win32" ? "junction" : "dir",
+          );
         },
       },
     }).ensureAll().catch((error: unknown) => error);
