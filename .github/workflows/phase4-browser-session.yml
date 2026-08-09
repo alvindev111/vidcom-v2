@@ -8,6 +8,7 @@ name: Browser session
 on:
   workflow_call:
   workflow_dispatch:
+  pull_request:
   schedule:
     # Once a day, so a regression in cookie or SSE behaviour surfaces within a
     # day rather than at release.
@@ -23,6 +24,7 @@ concurrency:
 jobs:
   browser-session:
     name: ${{ matrix.name }}
+    if: github.event_name != 'pull_request' || github.head_ref == 'feat-packaging-and-distribution'
     runs-on: ${{ matrix.os }}
     timeout-minutes: 30
 

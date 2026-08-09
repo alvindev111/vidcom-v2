@@ -11,6 +11,7 @@ name: Packaged smoke
 on:
   workflow_call:
   workflow_dispatch:
+  pull_request:
 
 permissions:
   contents: read
@@ -22,6 +23,10 @@ concurrency:
 jobs:
   packaged-smoke:
     name: ${{ matrix.name }}
+    # New workflow files cannot be manually dispatched before reaching the
+    # default branch. This one closeout PR is the exact-ref bootstrap path;
+    # later PRs retain the original dispatch-only cost model.
+    if: github.event_name != 'pull_request' || github.head_ref == 'feat-packaging-and-distribution'
     runs-on: ${{ matrix.os }}
     # Long enough for a cold start on Windows under antivirus (§9.1 allows
     # 180 s for that alone) plus a real render, and short enough that a hung
