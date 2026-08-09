@@ -2781,6 +2781,12 @@ Chi tiết: [Detailed Goals](./spec-packaging-and-distribution-detailed-goal.md)
   - Decisions: Evidence JSON xác nhận `baselinePresent=true`, mọi startup evaluation `ok`; serve cold/warm lần lượt darwin `830/611 ms`, Linux `1005/1004 ms`, Windows `2031/1817 ms`. CI wrapper skip đúng hai reusable job ở PR nên không còn duplicate concurrency cancellation. Production gate không đổi vì runtime CI vẫn là digest-pinned non-release fixture có explicit opt-in.
   - Blockers: Chỉ còn production supply-chain human gate và production `build:artifact --json`/private-PATH render proof; không được suy diễn evidence fixture thành release artifact.
 
+2026-08-10 — Phase M CI Linux: tách browser integration khỏi process contract C-52
+  - Files: `.github/workflows/process-supervision.yml`, `tests/build/packaged-smoke.test.ts`, Design §16 và implementation notes
+  - Summary: Exact-head run `31340373970` đỏ ở `remote-asset-browser.test.ts` vì Linux runner tình cờ có Chrome nhưng launch trong process matrix chạm hook timeout 30 s; Browser session Linux cùng head đã xanh.
+  - Decisions: Giữ file trong path trigger để thay đổi remote-asset vẫn gọi process review, nhưng bỏ real-browser test khỏi bước `Production supervisor adapter contract`. Browser workflow chuyên biệt có exact Chrome và `VIDCOM_REQUIRE_BROWSER=1` tiếp tục là authority; regression khóa ranh giới này.
+  - Blockers: Cần local gate và exact-head Process supervision rerun; production supply-chain human gate vẫn mở độc lập.
+
 Format:
 ```
 YYYY-MM-DD — Phase X, Task X.Y
