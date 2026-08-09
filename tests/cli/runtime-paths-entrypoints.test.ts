@@ -1,4 +1,5 @@
 import { readFile } from "node:fs/promises";
+import path from "node:path";
 
 import { RUNTIME_PATH_NAMES } from "@vidcom/adapter";
 import { VIDCOM_COMMAND_NAMES, runtimePathsFor } from "@vidcom/cli";
@@ -60,6 +61,9 @@ describe("runtime paths reach every entrypoint", () => {
     // inside a single executable with no node_modules to search.
     const paths = runtimePathsFor("/app-data");
     expect(paths.hyperframesCliPath).not.toBe("");
-    expect(paths.nativeDependenciesRoot).toContain("/app-data");
+    // Compared with the platform separator: Windows builds `\app-data\native`,
+    // and a POSIX literal here would fail on the one platform this rule exists
+    // to protect.
+    expect(paths.nativeDependenciesRoot).toContain(path.join("/app-data", ""));
   });
 });

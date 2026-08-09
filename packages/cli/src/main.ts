@@ -173,7 +173,8 @@ export async function runVidcomCli(argv: readonly string[] = process.argv.slice(
   if (command.name === "doctor") {
     const options = parseDoctorCommandArgs(command.args);
     const context = await createDoctorContext({ deep: options.deep === true });
-    process.exitCode = await runDoctor({
+    try {
+      process.exitCode = await runDoctor({
       context,
       options,
       repair: (failing) => repairRuntime(failing, {
@@ -187,8 +188,13 @@ export async function runVidcomCli(argv: readonly string[] = process.argv.slice(
       }),
       // The packaged smoke sets this, and there a skipped required component is
       // a failure rather than a "not yet".
-      strict: process.env.VIDCOM_DOCTOR_STRICT === "1",
-    });
+        strict: process.env.VIDCOM_DOCTOR_STRICT === "1",
+      });
+    } finally {
+      // Windows keeps the file locked until the handle is gone, so leaving it
+      // open turns any later cleanup into EBUSY.
+      await context.close();
+    }
     return;
   }
   if (command.name === "render") {

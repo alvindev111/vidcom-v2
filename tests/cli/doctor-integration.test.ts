@@ -15,11 +15,16 @@ import {
 } from "@vidcom/cli";
 import { afterEach, describe, expect, it } from "vitest";
 
+const contexts: Array<{ close(): Promise<void> }> = [];
+
 const roots: string[] = [];
 const daemons: ServingDaemon[] = [];
 
 afterEach(async () => {
   for (const daemon of daemons.splice(0)) await daemon.stop();
+  // Windows holds the database file until every handle is gone, and the temp
+  // cleanup below is what finds out.
+  for (const context of contexts.splice(0)) await context.close();
   delete process.env.VIDCOM_APP_DATA;
   await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
 });
@@ -38,6 +43,7 @@ describe("doctor against a real install", () => {
   it("reports every check against real app-data and real SQLite", async () => {
     const { appData } = await scratch();
     const context = await createDoctorContext({ deep: false, appDataRoot: appData });
+    contexts.push(context);
     const report = await runDoctorChecks(createDoctorChecks(), context, {
       platform: context.platform,
     });
@@ -63,6 +69,7 @@ describe("doctor against a real install", () => {
     // that cannot render a frame.
     const { appData } = await scratch();
     const context = await createDoctorContext({ deep: false, appDataRoot: appData });
+    contexts.push(context);
     const report = await runDoctorChecks(createDoctorChecks(), context, {
       platform: context.platform,
     });

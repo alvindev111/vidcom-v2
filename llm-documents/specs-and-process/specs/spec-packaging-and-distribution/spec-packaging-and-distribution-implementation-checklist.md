@@ -1701,6 +1701,12 @@ Chi tiết: [Detailed Goals](./spec-packaging-and-distribution-detailed-goal.md)
   - Decisions: So sánh path phân biệt hoa thường là **tham số** vì gate cấm `core` chạm `process.platform`. Identity nguồn là `dev:ino` chứ không phải đường dẫn. Symlink từ chối; ba thư mục dựng lại được thì bỏ qua mà không fail. Recovery chỉ hành động trên thư mục **có marker**. Khoá idempotency nối bằng NUL vì path chứa được mọi ký tự khác. Test dùng đúng ba project trong `projects/` của repo — `swiss-grid`, `kinetic-type`, `warm-grain`; checklist không nêu tên nên đây là ba cái thật sự tồn tại.
   - Blockers: Không có; 17 logic test + 14 integration trên fs thật + 7 route/idempotency; full suite 1460 pass / 4 skip, typecheck, lint 0 error, boundaries xanh.
 
+2026-08-09 — Phase J/D, CI remediation Windows (run trên `6662c6d`)
+  - Files: `packages/cli/src/commands/doctor-context.ts`, `packages/cli/src/main.ts`, `tests/cli/doctor-integration.test.ts`, `tests/cli/runtime-paths-entrypoints.test.ts`, checklist và implementation notes
+  - Summary: Windows đỏ ba test mới. Hai lỗi khác nhau, cả hai đều thật.
+  - Decisions: (1) `createDoctorContext` **mở database mà không đóng** — trên Windows file bị giữ tới khi handle biến mất, nên mọi lần dọn thư mục sau đó trả `EBUSY`. Thêm `close()` và gọi trong `finally` của dispatcher; production trước đó thoát process nên che mất, nhưng leak vẫn là leak. (2) Một assert so `"/app-data"` bằng literal POSIX, trong khi Windows dựng `\app-data\native` — sửa bằng `path.join`, đúng nền tảng mà luật này tồn tại để bảo vệ. Không retry, không nới.
+  - Blockers: Không có; 9/9 test hai file đó, full suite xanh. Chờ CI exact HEAD.
+
 Format:
 ```
 YYYY-MM-DD — Phase X, Task X.Y

@@ -56,6 +56,18 @@ function loopbackBindable(): Promise<ProbeResult> {
   });
 }
 
+export interface ClosableDoctorContext extends DoctorContext {
+  /**
+   * Releases the database handle this context opened.
+   *
+   * Windows holds the file until the handle is gone, so a caller that only
+   * exits gets away with leaking it while a caller that tries to delete the
+   * directory afterwards gets EBUSY. Closing is the honest end of "this
+   * command opened a database".
+   */
+  close(): Promise<void>;
+}
+
 export interface DoctorContextOptions {
   deep: boolean;
   appDataRoot?: string;
@@ -70,7 +82,9 @@ export interface DoctorContextOptions {
  * and pretending otherwise would make `doctor` green on an install that cannot
  * render.
  */
-export async function createDoctorContext(options: DoctorContextOptions): Promise<DoctorContext> {
+export async function createDoctorContext(
+  options: DoctorContextOptions,
+): Promise<ClosableDoctorContext> {
   const settings = await readVidcomSettings().catch(() => null);
   const appDataRoot = options.appDataRoot ?? defaultAppDataRoot(settings ?? undefined);
   const nativeRoot = options.nativeRoot ?? defaultNativeDependenciesRoot(appDataRoot);
@@ -195,6 +209,7 @@ export async function createDoctorContext(options: DoctorContextOptions): Promis
     appDataRoot,
     probes,
     history,
+    close: () => database.destroy(),
   };
 }
 
