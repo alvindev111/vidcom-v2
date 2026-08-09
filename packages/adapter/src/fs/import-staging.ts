@@ -1,5 +1,16 @@
 import { createHash } from "node:crypto";
-import { copyFile, lstat, mkdir, readdir, readlink, rename, rm, stat, writeFile } from "node:fs/promises";
+import {
+  copyFile,
+  lstat,
+  mkdir,
+  readFile,
+  readdir,
+  readlink,
+  rename,
+  rm,
+  stat,
+  writeFile,
+} from "node:fs/promises";
 import path from "node:path";
 
 import { ErrorCode, type DomainError } from "@vidcom/contracts";
@@ -129,7 +140,6 @@ export async function writeStagingMarker(
 
 export async function readStagingMarker(staging: string): Promise<ImportStagingMarker | null> {
   try {
-    const { readFile } = await import("node:fs/promises");
     const parsed = JSON.parse(await readFile(path.join(staging, MARKER_FILE), "utf8")) as
       Partial<ImportStagingMarker>;
     if (typeof parsed.operationId !== "string" || typeof parsed.target !== "string") return null;
@@ -183,8 +193,12 @@ export async function recoverImportStaging(
   for (const { staging, marker } of await listStagingDirectories(workspaceRoot)) {
     if (await isCommitted(marker.operationId)) {
       try {
-        await rm(path.join(staging, MARKER_FILE), { force: true });
+        // Rename first, then drop the marker from where it landed. Removing it
+        // before the rename means a rename that fails leaves a staging
+        // directory no recovery can ever recognise again — it becomes rubbish
+        // in the user's workspace that nothing will clean up.
         await rename(staging, marker.target);
+        await rm(path.join(marker.target, MARKER_FILE), { force: true });
         outcomes.push({ staging, action: "committed" });
         continue;
       } catch {
@@ -204,8 +218,10 @@ export async function recoverImportStaging(
 /** Moves staging into place. Fails loudly rather than merging into an existing directory. */
 export async function commitStaging(staging: string, target: string): Promise<DomainError | null> {
   try {
-    await rm(path.join(staging, MARKER_FILE), { force: true });
+    // Same order as recovery, for the same reason: a marker removed before a
+    // rename that then fails leaves a directory recovery cannot identify.
     await rename(staging, target);
+    await rm(path.join(target, MARKER_FILE), { force: true });
     return null;
   } catch (error) {
     const code = (error as NodeJS.ErrnoException).code;

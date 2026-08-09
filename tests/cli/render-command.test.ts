@@ -239,6 +239,26 @@ describe("render run", () => {
     expect(code).toBe(RENDER_EXIT.interrupted);
   });
 
+  it("returns even when the interrupt stream can never be closed", async () => {
+    // Found by reviewing the diff. Waiting for the next Ctrl+C parks an async
+    // generator on a promise nothing settles, so `return()` cannot resume it to
+    // run cleanup — awaiting that would hang the very exit it is cleaning up
+    // for. The render says it is done listening and moves on; the handler's
+    // owner removes it.
+    async function* endless(): AsyncGenerator<void> {
+      for (;;) await new Promise<void>(() => undefined);
+    }
+    const code = await runRender({
+      client: daemon({}),
+      projectId: "project_1",
+      options: { target: "project_1" },
+      io: capture().io,
+      interrupts: endless(),
+      sleep: () => Promise.resolve(),
+    });
+    expect(code).toBe(RENDER_EXIT.succeeded);
+  });
+
   it("goes through the daemon client rather than a second HTTP client", async () => {
     let seen: Record<string, unknown> | undefined;
     await runRender({

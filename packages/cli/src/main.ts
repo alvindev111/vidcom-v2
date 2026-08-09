@@ -131,8 +131,14 @@ export async function runVidcomApp(options: AppCommandOptions = {}): Promise<voi
   process.stdout.write(`VidCom is running at ${daemon.baseUrl}\n`);
   await waitForShutdown(daemon);
 }
-/** Yields once per interrupt, so `render` can tell the first from the second. */
-async function* interruptSignals(): AsyncGenerator<void> {
+/**
+ * One yield per interrupt, so `render` can tell the first from the second.
+ *
+ * The handler is removed by `stop()` rather than by the generator's own
+ * `finally`: a generator parked on "the next Ctrl+C" is suspended on a promise
+ * nothing will settle, and `return()` cannot resume it to run cleanup.
+ */
+function interruptSignals(): { stream: AsyncIterable<void>; stop: () => void } {
   const queue: Array<() => void> = [];
   let pending = 0;
   const onSignal = () => {
@@ -141,7 +147,8 @@ async function* interruptSignals(): AsyncGenerator<void> {
     else pending += 1;
   };
   process.on("SIGINT", onSignal);
-  try {
+
+  async function* stream(): AsyncGenerator<void> {
     for (;;) {
       if (pending > 0) {
         pending -= 1;
@@ -151,9 +158,9 @@ async function* interruptSignals(): AsyncGenerator<void> {
       await new Promise<void>((resolve) => queue.push(resolve));
       yield;
     }
-  } finally {
-    process.off("SIGINT", onSignal);
   }
+
+  return { stream: stream(), stop: () => process.off("SIGINT", onSignal) };
 }
 
 export async function runVidcomCli(argv: readonly string[] = process.argv.slice(2)): Promise<void> {
@@ -198,11 +205,15 @@ export async function runVidcomCli(argv: readonly string[] = process.argv.slice(
     return;
   }
   if (command.name === "render") {
+    // The handler's lifetime is owned here, not inside the generator. A
+    // generator parked on "the next Ctrl+C" cannot be resumed to run its own
+    // cleanup, so leaving removal to it would leave the listener installed.
+    const signals = interruptSignals();
     const code = await runRenderCommand(command.args, {
       connect: () => connectRenderClient(command.args),
       workspaceSource: () => renderWorkspaceSource(command.args),
-      interrupts: interruptSignals(),
-    });
+      interrupts: signals.stream,
+    }).finally(signals.stop);
     // The render's own exit code is the contract, so it is set rather than
     // thrown: a non-zero render is a normal outcome, not a CLI input error.
     process.exitCode = code;

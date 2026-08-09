@@ -168,6 +168,32 @@ describe("import recovery", () => {
     expect(await readdir(workspace)).toEqual([]);
   });
 
+  it("keeps the marker until the rename has actually happened", async () => {
+    // Found by reviewing the diff, not by a failure. Removing the marker first
+    // and then failing the rename leaves a staging directory no recovery can
+    // recognise again — rubbish in the user's workspace that nothing cleans up.
+    const { workspace, source } = await scratch();
+    await writeFile(path.join(source, "index.html"), "x", "utf8");
+    const plan = planFor(source, workspace, await sourceIdentityOf(source));
+    const staging = stagingPathFor(plan, "op-1");
+    await copyIntoStaging(source, staging);
+    await writeStagingMarker(staging, {
+      operationId: "op-1",
+      slug: plan.slug,
+      source,
+      target: plan.target,
+      startedAt: "2026-08-09T00:00:00.000Z",
+    });
+
+    // The target already exists, so the rename cannot succeed.
+    await mkdir(plan.target, { recursive: true });
+    await writeFile(path.join(plan.target, "keep.txt"), "mine", "utf8");
+    expect(await commitStaging(staging, plan.target)).not.toBeNull();
+
+    // Still recoverable: the marker is where it was.
+    expect((await listStagingDirectories(workspace)).map((entry) => entry.staging)).toEqual([staging]);
+  });
+
   it("never touches a directory that has no marker", async () => {
     // A directory that merely looks temporary may be something a person made,
     // and deleting it would be this code guessing.

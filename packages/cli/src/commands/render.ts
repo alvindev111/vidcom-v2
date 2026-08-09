@@ -149,9 +149,16 @@ export async function runRender(input: RenderRunOptions): Promise<number> {
 
   let interrupts = 0;
   let stopWaiting = false;
+  // The iterator is held rather than consumed by `for await`, so it can be
+  // closed when the render ends. The real one is an endless generator over
+  // SIGINT: abandoning it leaves the signal handler installed for the rest of
+  // the process, which is a leak in a long-lived host and a surprise in tests.
+  const signals = input.interrupts?.[Symbol.asyncIterator]();
   const watch = (async () => {
-    for await (const signal of input.interrupts ?? []) {
-      void signal;
+    if (!signals) return;
+    for (;;) {
+      const next = await signals.next();
+      if (next.done === true) return;
       interrupts += 1;
       if (interrupts === 1) {
         io.stderr.write("cancelling the render; press Ctrl+C again to stop waiting\n");
@@ -171,7 +178,13 @@ export async function runRender(input: RenderRunOptions): Promise<number> {
       await sleep(pollMs);
     }
   } finally {
-    void watch;
+    // Asked to close, never awaited. An async generator suspended on a promise
+    // that never settles — which is exactly what waiting for the next Ctrl+C
+    // is — cannot be resumed by `return()`, so awaiting it would hang the very
+    // exit this is cleaning up for. Whoever owns the signal handler removes it;
+    // this only says it is done listening.
+    void signals?.return?.(undefined);
+    void watch.catch(() => undefined);
   }
 }
 

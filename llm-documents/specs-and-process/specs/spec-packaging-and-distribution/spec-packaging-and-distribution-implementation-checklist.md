@@ -1801,6 +1801,12 @@ Chi tiết: [Detailed Goals](./spec-packaging-and-distribution-detailed-goal.md)
   - Decisions: Đổi sang `bun`. Trên Windows `npm` là `.cmd` và Node từ chối spawn nó khi không có shell, nên `build:artifact` sẽ chết ở đó vì một lý do chẳng liên quan gì tới việc export. Thêm test ghim **không bước nào** dùng `npm`, để lỗi này không quay lại qua một bước khác.
   - Blockers: Không có; tìm ra nhờ đọc lại chỗ vừa sửa trong test, không phải nhờ CI — Windows chưa bao giờ chạy tới bước này vì `build:artifact` còn bị chặn ở bước 1.
 
+2026-08-09 — Review diff (K + J), ba lỗi thật
+  - Files: `packages/adapter/src/fs/import-staging.ts`, `packages/cli/src/commands/render.ts`, `packages/cli/src/main.ts`, `tests/adapter/project-import.test.ts`, `tests/cli/render-command.test.ts`, checklist
+  - Summary: Đọc lại diff của K và J, tìm ra ba lỗi mà không test nào đang bắt.
+  - Decisions: (1) **Thứ tự sai ở cả `commitStaging` lẫn `recoverImportStaging`**: xoá marker **trước** rồi mới rename — rename hỏng thì còn lại một thư mục staging **không recovery nào nhận ra được nữa**, tức rác trong workspace người dùng mà không gì dọn. Đổi sang rename trước, xoá marker ở nơi nó đã tới; thêm test dựng ca rename hỏng thật. (2) `readStagingMarker` dùng `await import("node:fs/promises")` trong khi module đã import ở trên — bỏ. (3) `runRender` bỏ rơi iterator interrupt, nên listener SIGINT ở lại suốt đời tiến trình.
+  - Blockers: Không có. Chỗ (3) lộ ra một tính chất phải viết ra: async generator đang **park trên một promise không bao giờ settle** — đúng hình dạng của "chờ Ctrl+C kế tiếp" — thì `return()` không đánh thức nó để chạy cleanup được, nên `await` nó sẽ **treo đúng lần thoát mà nó đang dọn dẹp**. Vòng đời handler chuyển về chỗ sở hữu nó (`main.ts` gọi `stop()` trong `finally`), còn `runRender` chỉ báo "thôi nghe" chứ không chờ. Full suite 1498 pass / 4 skip.
+
 Format:
 ```
 YYYY-MM-DD — Phase X, Task X.Y
