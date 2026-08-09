@@ -2403,6 +2403,12 @@ Chi tiết: [Detailed Goals](./spec-packaging-and-distribution-detailed-goal.md)
   - Decisions: So pin **đã khai** với bản **thật đang cài** cho `tar`, và đòi `postject` ghim đúng một version — ghi lại thôi thì không đủ, vì cả hai sai lệch đều cho ra artifact trông y hệt bản release nó tự nhận. Bun ghi lại chứ không so: nó là toolchain, không có dòng lockfile để đối chiếu. `dirty` vẫn được **ghi cho mọi người** và chỉ **bị từ chối ở `--release`**: người dựng cục bộ từ cây đã sửa nên nhận artifact kèm nhãn trung thực, còn bản release không gọi tên được commit thì không phải bản release.
   - Blockers: Không có; `tests/build/artifact-provenance.test.ts` 36/36, typecheck, lint 0 error, boundaries xanh, `test:spec-paths` 115 path trên 3 spec.
 
+2026-08-09 — Phase M, gỡ blocker runtime: dựng thật frozen Python stack
+  - Files: `scripts/build-runtime-inputs.mjs`, `tests/build/runtime-inputs.test.ts`, checklist và implementation notes
+  - Summary: Tải **đúng** bản CPython đã pin, cài VieNeu, prune, và **tái lập chính xác** tập package mà evidence đã ghi. Thêm generator sinh `dist/runtime-inputs/<tag>.json` với mọi digest đo từ byte thật.
+  - Decisions: Không bịa gì cả — evidence trong repo **chính là đáp án**, nên đây là tái lập chứ không phải sáng tác. `cpython-3.12.13+20260805-aarch64-apple-darwin` từ chính release astral-sh mà Design pin; `pip install -r sidecars/vieneu/requirements.txt` ra **77 package**, đúng con số Design đo; prune 21 gói + `pip` còn **55**, khớp `darwin-package-set-pruned.txt` **tuyệt đối 55/55**; cây 482 MB so với 481 MB Design ghi. Ba gói trôi version so evidence (`huggingface-hub` 1.27.0, `platformdirs` 4.11.1, `sea-g2p` 0.8.4) — **ghim về đúng bản evidence** thay vì sửa evidence: evidence là cái đã được review, không phải cái tiện sửa. Sau khi ghim: **0 lệch version, 0 gói thừa, 0 gói thiếu**. Generator validate bằng chính `parseRuntimeInputsValue` của staging và so với **host tag** chứ không so với giá trị nó vừa ghi — không có cross-build (DR-1), nên một file khai platform khác sẽ ghim byte của máy này dưới tên máy khác.
+  - Blockers: **Còn đúng một thứ: FFmpeg/ffprobe static.** `build:artifact` giờ đi qua export → pack → bundle → staging và dừng ở `assertPortableDarwinDependencies`, thứ đã bắt đúng bản homebrew: **16 dylib không portable** (`libavcodec`, `libssl`, `libx264`, …). Gate hoạt động đúng như thiết kế. Chọn bản static nào để ship là **quyết định supply-chain**, cần người duyệt — MUST NOT tự chọn một mirror bên thứ ba thay mặt người dùng.
+
 Format:
 ```
 YYYY-MM-DD — Phase X, Task X.Y
