@@ -947,8 +947,10 @@ Mỗi phase chạy focused command dưới đây trên SQLite/filesystem thật,
   - **Còn lại**: `spawnDaemon` thật (child `serve --ensure`, và luật MUST NOT mở browser) — `serve` là mode của **J.2**. Seam đã inject sẵn, nối vào là xong
   - [`bridge-attachment.test.ts`](../../../../tests/cli/bridge-attachment.test.ts) 7 test
   - _Requirements: R2.4, R2.10, R2.15_ — _Design: §5.6_
-- [ ] I.9 `stdout` của bridge chỉ JSON-RPC
+- [x] I.9 `stdout` của bridge chỉ JSON-RPC
   - Mọi log/cảnh báo/tiến trình qua `stderr` hoặc log store; test bắt được một dòng lạc
+  - Hai lớp, bắt hai thứ khác nhau: [`mcp-stdio-host.test.ts`](../../../../tests/e2e/mcp-stdio-host.test.ts) đã chốt stdout sạch **lúc chạy** trên child thật; test mới quét source `packages/cli/src/bridge/**` và cấm `console.log/info/debug` cùng `process.stdout` — bắt dòng lạc **trước khi nó được viết ra**, chỗ rẻ nhất
+  - Một dòng lạc không làm phiên tệ đi, nó làm agent host **hết parse được stream**: phiên chết chứ không phải phiên kém
   - _Requirements: R2.6_ — _Design: §5.8_
 - [x] I.10 Contract parity test local ↔ remote
   - Cùng input ⇒ cùng schema, cùng revision, cùng mã lỗi

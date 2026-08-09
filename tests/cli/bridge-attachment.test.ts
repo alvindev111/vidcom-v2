@@ -58,6 +58,22 @@ function dependencies(overrides: Partial<EnsureDaemonDependencies> = {}): Ensure
   };
 }
 
+describe("bridge stdout", () => {
+  it("has nothing in the bridge path that can write to stdout", async () => {
+    // stdout is the JSON-RPC channel. One stray line and the agent host stops
+    // being able to parse the stream at all — not a degraded session, a dead
+    // one. The end-to-end stdio host proves the runtime stays clean; this
+    // catches the line before it is ever written, which is where it is cheap.
+    const { readdir, readFile } = await import("node:fs/promises");
+    const directory = "packages/cli/src/bridge";
+    for (const entry of await readdir(directory)) {
+      const source = await readFile(`${directory}/${entry}`, "utf8");
+      expect(source, entry).not.toMatch(/console\.(?:log|info|debug)\b/u);
+      expect(source, entry).not.toMatch(/process\.stdout\b/u);
+    }
+  });
+});
+
 describe("ensure daemon", () => {
   it("uses the daemon that is already serving the workspace", async () => {
     let spawned = 0;
