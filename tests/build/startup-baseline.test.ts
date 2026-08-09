@@ -3,6 +3,8 @@ import {
   STARTUP_CEILINGS,
   evaluateStartup,
   failingResults,
+  isStartupBaseline,
+  readBaseline,
   runnerLabel,
 } from "../../scripts/measure-startup.mjs";
 import { describe, expect, it } from "vitest";
@@ -28,6 +30,33 @@ describe("startup ceilings", () => {
 
   it("names this runner the way the baseline file does", () => {
     expect(runnerLabel("win32", "x64")).toBe("win32-x64");
+  });
+
+  it("accepts only one complete baseline for the named runner", () => {
+    const baseline = {
+      version: 1,
+      runner: LABEL,
+      measurements: { coldServe: 1_000, warmServe: 800 },
+    };
+    expect(isStartupBaseline(LABEL, baseline)).toBe(true);
+    expect(isStartupBaseline("linux-x64", baseline)).toBe(false);
+    expect(isStartupBaseline(LABEL, {
+      ...baseline,
+      measurements: { warmServe: 800 },
+    })).toBe(false);
+    expect(isStartupBaseline(LABEL, {
+      ...baseline,
+      measurements: { ...baseline.measurements, extra: 1 },
+    })).toBe(false);
+  });
+
+  it("loads a complete committed baseline for every native runner", async () => {
+    for (const label of Object.keys(STARTUP_CEILINGS)) {
+      await expect(readBaseline(label)).resolves.toMatchObject({
+        version: 1,
+        runner: label,
+      });
+    }
   });
 });
 

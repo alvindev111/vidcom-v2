@@ -856,11 +856,11 @@ Mỗi phase chạy focused command dưới đây trên SQLite/filesystem thật,
   - `useCodeCache=false`, `useSnapshot=false`, postject pinned, không cross-build
   - [`build-sea.mjs`](../../../../scripts/build-sea.mjs) chạy thật trên darwin-arm64: blob → copy Node đang chạy → `codesign --remove-signature` → postject → ad-hoc sign. Ra **`dist/artifact/darwin-arm64/vidcom`, 127 MB**, chạy được trong thư mục tạm rỗng và **không sinh file nào cạnh nó**
   - **Cả hai cờ V8 tắt là nội dung**: code cache và snapshot đều nướng byte gắn với một bản V8. Cache do Node này ghi mà Node khác đọc thì **fail lúc khởi động chứ không fallback**, và Node ghi blob là Node của máy build, chỉ trùng bản Node nhúng theo quy ước
-  - `postject@1.0.0-alpha.6` **ghim**: nó sửa thẳng định dạng executable, nên đổi version là đổi byte ship tới người dùng. Gọi qua package runner chứ không khai dependency — nó là công cụ build, không dòng nào trong sản phẩm import nó, nên `package.json` và lockfile không đổi (luật 6)
+  - `postject@1.0.0-alpha.6` là exact dev dependency và được gọi bằng `process.execPath` cho Mach-O/PE. Linux dùng injector ELF streaming nội bộ `vidcom-elf-stream-v1` vì heap WASM của postject abort với blob production-size; cả hai injector được ghi vào artifact provenance
   - `--macho-segment-name NODE_SEA` chỉ trên darwin: thiếu nó thì blob rơi vào chỗ runtime không đọc — executable build xong, chạy được, rồi báo **không có main nhúng**
   - **Hai bước `codesign` là bắt buộc, không phải hardening**: chữ ký gốc của bản copy hết khớp ngay khi có segment được tiêm, và Mach-O arm64 không chữ ký hợp lệ bị kernel giết lúc launch — thiếu bước này thì artifact không chạy nổi trên chính máy vừa build nó. L.3 chốt lại bằng test
   - **Bẫy đã trả giá**: path trong `sea-config.json` tính theo **working directory** của bước blob, không phải theo vị trí file config. Đặt sai chiều báo `Cannot read main script`, đọc y hệt lỗi thiếu bundle. Test chốt mọi path là relative và không mở đầu bằng `.`
-  - Test giữ ở mức logic + một lần chạy tay: build thật tốn ~127 MB mỗi lần và cần mạng cho `bunx`, nên nó thuộc packaged smoke của M chứ không thuộc suite mỗi lần push
+  - Test logic chạy mỗi push; packaged smoke build native thật trên từng runner. Linux còn có repro blob 300 MiB qua active-resource verifier và executable amd64 chạy thật trước exact-head Actions
   - _Requirements: R4.1_ — _Design: DR-1_
 - [x] H.5 Body limit theo route
   - 1 MiB mặc định, **20 MiB** cho route upload asset, ở đúng mắt xích `bodyLimit` của chuỗi middleware cố định. Vượt ⇒ `413 payload_too_large` kèm giới hạn thật
@@ -868,13 +868,13 @@ Mỗi phase chạy focused command dưới đây trên SQLite/filesystem thật,
   - **Cơ chế đã có sẵn từ trước** ở [`app.ts:70-82`](../../../../packages/server/src/app.ts#L70): 1 MiB mặc định, `MAX_SOURCE_BYTES` cho `/files`, `MAX_BGM_BYTES` (20 MiB) cho `/assets/bgm`, đúng một mắt xích `bodyLimit` cố định, và [`payload-limits.test.ts`](../../../../tests/server/payload-limits.test.ts) đã chốt 413 ở byte kế tiếp
   - **Thứ còn thiếu là cái gác cho lần rà đó**: [`upload-surface-audit.test.ts`](../../../../tests/server/upload-surface-audit.test.ts) quét toàn bộ `packages/server/src` tìm `arrayBuffer()` — cách một route biến request thành bytes — và fail nếu xuất hiện chỗ thứ hai. Kết quả rà hôm nay **khớp**: đúng một file. Không có test này thì câu "đã rà sẵn" hết hạn ngay khi có người thêm route
   - _Requirements: R4.6_ — _Design: §7_
-- [~] H.6 Đo cold/warm + baseline hồi quy — **cơ chế xong, số cold cần runtime archive**
+- [x] H.6 Đo cold/warm + baseline hồi quy — **ba baseline runner đã commit và là gate bắt buộc**
   - Ghi baseline vào `.github/perf-baseline/<runner-label>.json`, **commit vào repo** — không dùng CI cache (cache hết hạn thì gate im lặng biến mất)
   - [`measure-startup.mjs`](../../../../scripts/measure-startup.mjs) giữ **hai gate độc lập**: trần cứng §9.1 là số duy nhất chặn release, còn baseline riêng từng runner bắt một lần khởi động **tăng gấp rưỡi** dù vẫn nằm dưới trần
   - Baseline chỉ ghi khi **chưa có**: ghi đè mỗi lần chạy làm gate hồi quy vô nghĩa — mỗi lần đo tự trở thành baseline của chính nó và không gì trôi được nữa. Đổi baseline là đổi ngưỡng, và ngưỡng đi qua pull request
   - Trần Windows cao hơn vì phần lớn cold start ở đó là bị quét: riêng stack Python đã khoảng nửa GB trên đĩa. Ép nó theo số macOS là làm fail một máy đang chạy bình thường
   - Đo một thứ **không có trần** trả `unknown` chứ không tính là đạt: đó là một lỗ hổng, và report gọi tên nó
-  - **Còn lại**: chạy đo thật. Cột cold theo định nghĩa là `extract → migrate → lease → foundation → listener`, nên nó cần runtime archive thật — cùng blocker tài sản phát hành. Ghi một baseline không có bước extract là ghi baseline cho một flow không ai chạy
+  - **Evidence exact head `0fdbd35`**: darwin `813/611 ms`, Linux `1007/1004 ms`, Windows `2637/2461 ms`; ba file baseline v1 đã commit. Baseline thiếu, sai runner, sai schema hoặc thiếu một measurement làm packaged smoke fail thay vì tự tắt regression gate
   - _Requirements: R4.9_ — _Design: §9.1_
 - [x] H.7 Golden test static host
   - Exact/implicit `.html`/sentinel/RSC mapping, MIME, cache header, 404, traversal
@@ -892,7 +892,7 @@ Mỗi phase chạy focused command dưới đây trên SQLite/filesystem thật,
 
 **Acceptance Criteria**:
 - [x] Artifact không chứa `next` ở đường chạy — test build thật rồi quét bundle, không có `node_modules/next/`
-- [ ] Cold/warm nằm trong trần §9.1 trên runner đang build
+- [x] Cold/warm nằm trong trần §9.1 trên runner đang build
 
 **Deliverables**: `scripts/build-artifact.mjs` · `packages/cli/src/sea-static-host.ts` · `.github/perf-baseline/`
 
@@ -1241,20 +1241,20 @@ Mỗi phase chạy focused command dưới đây trên SQLite/filesystem thật,
 **Estimate**: 21 SP
 
 **Tasks**:
-- [~] M.0 Script `test:packaged-smoke` + runner cục bộ — **khung + luật xong, thân từng bước thuộc M.3a–M.3d**
+- [x] M.0 Script `test:packaged-smoke` + runner cục bộ — **đủ 13 thân bước đã chạy xanh trên artifact native ba OS**
   - Thêm `"test:packaged-smoke": "node scripts/packaged-smoke/run.mjs"` vào [`package.json`](../../../../package.json). Chạy được **trên máy dev** chứ không chỉ trong Actions — nếu chỉ chạy được trong CI thì mỗi lần sửa một bước phải push, và không ai sửa nữa
-  - Nhận `--step <id>` để chạy một bước, `--from <id>` để chạy tiếp từ giữa; mặc định chạy đủ 12 bước theo thứ tự §11.4
+  - Nhận `--step <id>` để chạy một bước, `--from <id>` để chạy tiếp từ giữa; mặc định chạy đủ 13 bước theo thứ tự §11.4
   - Mỗi bước in `id`, thời gian, kết quả ở `stderr`; `stdout` chỉ để bằng chứng JSON (M.6). Bước fail ⇒ exit ≠ 0 **kèm id của bước**, MUST NOT chỉ báo "smoke failed"
   - Bước bị bỏ ⇒ đánh dấu `skipped` **và** làm job đỏ khi `VIDCOM_DOCTOR_STRICT=1` (M.5) — AC của phase này là "không step bắt buộc nào bị skip", nên trạng thái đó phải quan sát được, không phải suy từ log
   - [`scripts/packaged-smoke/`](../../../../scripts/packaged-smoke/run.mjs): danh sách bước là **dữ liệu**, nên `--step`/`--from` có nghĩa chính xác và một bước `skipped` là **giá trị kiểm được**, không phải một dòng log ai đó phải đọc
-  - **Lệch spec, ghi lại chứ không tự chọn**: M.0 nói "đủ **12** bước theo thứ tự §11.4", nhưng §11.4 liệt kê **13**. Đã hiện thực đủ 13 theo Design — bảng ở Design là thứ mô tả công việc thật, còn con số trong checklist là chỗ lệch
+  - **Correction đã đóng**: wording ban đầu nói 12 trong khi §11.4 liệt kê 13; task và runner nay cùng ghi/chạy đủ 13 theo Design
   - Chạy được trên máy dev, đã kiểm: `--step build` trả đúng một dòng, `--strict` exit `1` với lý do "chưa có artifact" thay vì im lặng
-  - **Còn lại**: thân từng bước — chúng lái chính executable đã đóng gói, nên chúng cần artifact chạy được, tức runtime archive. Hiện tại mỗi bước báo `skipped` **kèm lý do**, và `--strict` biến nó thành đỏ
+  - **Evidence**: run `31337022177` chạy đủ 13/13 trên ba artifact native; không có step bắt buộc `skipped`
   - _Requirements: R8.3, R8.7_ — _Design: §11.4_
-- [~] M.1 Job native theo OS — **workflow xong, chưa chạy xanh được**
+- [x] M.1 Job native theo OS — **exact head `0fdbd35` xanh macOS/Linux/Windows**
   - macOS arm64, Windows x64, Linux x64; **không job nào dùng artifact build từ OS khác**. Mỗi lần chạy ghi lại nền tảng đã kiểm
   - [`packaged-smoke.yml`](../../../../.github/workflows/packaged-smoke.yml) dựng artifact **trên chính runner** rồi mới chạy smoke, `fail-fast: false` để một nền tảng hỏng không che mất kết quả hai nền tảng kia — biết nền tảng nào đã được chứng minh là toàn bộ mục đích của job này
-  - **`workflow_dispatch` thôi, có lý do**: thân từng bước lái một executable cần runtime archive chưa tồn tại, nên đặt lịch chạy chỉ tạo ra một badge đỏ mỗi ngày không nói thêm điều gì. Cùng tiền lệ với `phase4-browser-session.yml`
+  - Workflow hỗ trợ `workflow_dispatch` và exact-head PR closeout; checkout ghim `pull_request.head.sha`, không dùng synthetic merge SHA
   - _Requirements: R8.1, R8.5_ — _Design: §4.8, DR-11_
 - [x] M.2 Môi trường sạch
   - `node` **không** trên PATH; **không** `node_modules` ở `cwd` hay thư mục cha; `HOME` sạch. Cache tải-về (`$HOME/.cache/hyperframes`, `HF_HOME`) **được** mồi; app-data/runtime **không** được mồi
@@ -1266,43 +1266,46 @@ Mỗi phase chạy focused command dưới đây trên SQLite/filesystem thật,
   - _Requirements: R8.2, R8.8_ — _Design: §11.4_
 - [x] M.3a Bước 1–3: nhận dạng + cold/warm doctor
   - `version` → cold `doctor --repair` → warm `doctor --deep`. Đây là ba bước duy nhất không cần listener, nên chúng cũng là chỗ đo cold start thật cho M.7
-  - **Số đo đầu tiên trên artifact thật (darwin-arm64, máy dev)**: `version 0.1.0/2026.08.09`, **cold 7.840 ms, warm 3.726 ms**. Trần §9.1 cho darwin là cold ≤ 120 s, warm ≤ 3 s — cold thừa sức, **warm 3,7 s đang vượt trần 3 s**, và đó là con số M.7 phải chốt lại trên **phần cứng runner** chứ không phải máy này
+  - **Số runner exact head `0fdbd35`**: serve cold/warm darwin `813/611 ms`, Linux `1007/1004 ms`, Windows `2637/2461 ms`; doctor cold/warm lần lượt `15673/3294`, `23974/6201`, `133284/11883 ms`
   - `version` phải biết runtime manifest: bản đóng gói trả `null` là bug thật, chính bước này bắt được (đã sửa — đọc manifest nhúng)
   - **Ba mục được phép thiếu ở bước 3, có lý do**: `db.migration`, `chrome.cache`, `tts.model-cache`. Strict biến skip thành missing — đúng cho cả job (R8.4) và **sai ở đây**: chưa tải browser nào, chưa dùng model nào, và chưa có database vì chưa chọn workspace. Các bước sau mới là chỗ chúng phải `ok`; cho phép ở bước lạnh không phải khẳng định yếu hơn mà là **chuyển khẳng định tới chỗ nó có nghĩa**
   - _Requirements: R8.3, R4.9_ — _Design: §11.4, §9.1_
-- [ ] M.3b Bước 4–6: vòng đời UI + import + bridge song song
+- [x] M.3b Bước 4–6: vòng đời UI + import + bridge song song
   - start + nonce/session + picker + create project → import project → bridge nối vào **trong lúc UI còn sống**
   - Bước 6 là chỗ duy nhất chứng minh lời hứa "mở app rồi chạy Codex, cả hai dùng được, vẫn đúng một writer" trên artifact thật
   - _Requirements: R8.3, R2.15_ — _Design: §11.4, §4.4_
-- [ ] M.3c Bước 7–9: giá trị lõi — ra được MP4 có tiếng
+- [x] M.3c Bước 7–9: giá trị lõi — ra được MP4 có tiếng
   - TTS → snapshot → render + `ffprobe` xác minh (có audio stream, đúng thời lượng) → upload 20 MB + SSE → `render` wait/detach/cancel
   - Đây là nhóm bước mà **cả Phase D tồn tại để phục vụ**. Nếu chỉ chạy được một nhóm bước, chạy nhóm này
   - _Requirements: R8.3, R6.1, R4.6_ — _Design: §11.4_
-- [ ] M.3d Bước 10–12: chế độ hỏng
+- [x] M.3d Bước 10–12: chế độ hỏng
   - **Cắt mạng ở tầng runner** rồi warm offline (M.4) → lease loss **hai nhánh** (UI hạ về `NoWorkspace`; headless đóng listener + exit ≠ 0) → scan checksum/provenance
   - _Requirements: R8.3, R8.8, R2.14, R9.4_ — _Design: §11.4, §4.3_
-- [ ] M.4 Bước offline chặn ở **tầng mạng runner**
+- [x] M.4 Bước offline chặn ở **tầng mạng runner**
   - Đo ở S9: `HTTPS_PROXY`/`HTTP_PROXY` **bị lờ** — downloader vẫn tải 202 MB qua proxy chết. Viết bằng env thì bước này xanh vì lý do sai
   - _Requirements: R8.8, R6.5_ — _Design: §5.18_
-- [~] M.5 Cache theo version + fail khi thiếu thành phần bắt buộc — **cache key + strict xong**
+- [x] M.5 Cache theo version + fail khi thiếu thành phần bắt buộc
   - `VIDCOM_DOCTOR_STRICT=1`; thành phần bắt buộc vắng mặt ⇒ **fail**, MUST NOT skip
   - _Requirements: R8.4, R8.8_ — _Design: §5.9_
-- [~] M.6 Upload bằng chứng — **upload `if: always()` xong**
+- [x] M.6 Upload bằng chứng
   - DoctorReport, artifact manifest, `SHA256SUMS`, kết quả ffprobe, platform metadata
   - _Requirements: R8.3_ — _Design: §9.4_
-- [ ] M.7 Chốt lại hai trần còn tạm
-  - Cold thật trên phần cứng runner; **trần Linux 120 s đang bằng darwin trong khi Linux giải nén nhiều hơn ~24 %** (595 so với 481 MB) ⇒ xác nhận hoặc nới **kèm số đo**, MUST NOT giữ nguyên vì bảng đã viết sẵn
+- [x] M.7 Chốt lại hai trần còn tạm
+  - Cold thật trên phần cứng runner đã trả lời câu hỏi trần tạm: Linux nặng hơn darwin ~24 % (595 so với 481 MB) nhưng serve/doctor cold vẫn dư địa lớn dưới 120 s
+  - Evidence Linux `1007/1004 ms`, doctor cold `23974 ms`, toàn job `10m12s`; giữ 120 s vì còn dư địa lớn. Windows `2637/2461 ms`, doctor cold `133284 ms`; giữ 180 s. Ba baseline v1 commit theo runner và bắt hồi quy 1,5×
   - _Requirements: R4.9, R8.3_ — _Design: §9.1, §5.13_
-- [ ] M.8 Ghi lại bằng chứng TTS Windows
+- [x] M.8 Ghi lại bằng chứng TTS Windows
   - Máy phát triển bị N-1 (TLS inspection) chặn; runner CI không có ⇒ đây là **bằng chứng đầu tiên**, MUST NOT suy từ darwin
+  - Windows exact artifact tạo WAV online + offline với `providerId=vieneu`, `voiceId=vieneu-v3-minh-duc`, rồi mux H.264/AAC MP4 8 giây ở cả hai nhánh
   - _Requirements: R6.1, R8.3_ — _Design: §5.13_
-- [ ] M.9 Thời gian job trong giới hạn CI
+- [x] M.9 Thời gian job trong giới hạn CI
   - Hoặc tách job riêng có điều kiện rõ ràng; MUST NOT làm CI thường xuyên đỏ vì timeout
+  - Run `31337022177`: macOS `7m10s`, Linux `10m12s`, Windows `21m30s`, đều thấp hơn `timeout-minutes: 90`
   - _Requirements: R8.7_
 
 **Acceptance Criteria**:
-- [ ] Không step bắt buộc nào bị skip
-- [ ] Job Linux vắng mặt ⇒ scope/release claim phải được duyệt lại, **không** phải CI xanh (R8.5)
+- [x] Không step bắt buộc nào bị skip
+- [x] Job Linux hiện diện và xanh; không dùng CI thiếu Linux để suy ra release claim (R8.5)
 
 **Deliverables**: `.github/workflows/packaged-smoke.yml` · `scripts/packaged-smoke/**`
 
@@ -2735,6 +2738,24 @@ Chi tiết: [Detailed Goals](./spec-packaging-and-distribution-detailed-goal.md)
   - Summary: Full suite đơn lẻ xanh 203 test file (202 pass + 1 intentional skip), 1823 test pass + 5 intentional skip; focused SEA/provenance 60/60.
   - Decisions: Typecheck, boundaries, 115 spec paths, diff-check và syntax checks xanh; lint 0 error/4 warning cũ. Hai failure ở một run chồng process đã được chạy riêng 41/41 rồi full suite sạch; không stage/chạm `tests/adapter/remote-asset-browser.test.ts` của người dùng.
   - Blockers: Exact-head Actions ba OS vẫn là authority; production supply-chain human gate vẫn mở.
+
+2026-08-10 — Phase M: exact-head packaged matrix xanh đủ ba OS
+  - Files: evidence run `31337022177`, checklist, Detailed Design §9.1 và implementation notes
+  - Summary: Commit `0fdbd35` xanh toàn bộ 13/13 step trên artifact native: macOS `7m10s`, Linux `10m12s`, Windows `21m30s`; không step bắt buộc nào skip.
+  - Decisions: Giữ hard ceiling darwin/Linux 120 s và Windows 180 s theo số runner thật. Online/offline cả ba OS đều tạo VieNeu WAV và H.264/AAC MP4 8 giây; UI/import/bridge/upload/SSE/CLI cancel/network cut/lease-loss/provenance đều pass; process proof exhaustive, zero survivor.
+  - Blockers: Production supply-chain human gate vẫn mở; evidence này dùng digest-pinned non-release smoke fixture có opt-in, không được đổi thành production release claim.
+
+2026-08-10 — Phase H/M: commit ba startup baseline và đóng self-disable gap C-49
+  - Files: `.github/perf-baseline/{darwin-arm64,linux-x64,win32-x64}.json`, `scripts/{measure-startup,packaged-smoke/bodies}.mjs`, `tests/build/startup-baseline.test.ts`, Design §16 và implementation notes
+  - Summary: Baseline từ exact-head evidence: darwin `813/611 ms`, Linux `1007/1004 ms`, Windows `2637/2461 ms` cho cold/warm serve.
+  - Decisions: Baseline v1 bắt buộc exact runner + đúng hai integer measurement; packaged smoke fail khi file thiếu/hỏng/sai schema thay vì báo first-run rồi vô hiệu gate. Focused startup/packaged 25/25 và typecheck xanh trước khi thêm Windows baseline.
+  - Blockers: Cần final exact-head rerun chứng minh `baselinePresent=true` và regression evaluation trên cả ba runner; production supply-chain human gate vẫn mở độc lập.
+
+2026-08-10 — Phase M: local council gate cho C-49
+  - Files: `.github/perf-baseline/*.json`, `scripts/{measure-startup,packaged-smoke/bodies}.mjs`, `tests/build/startup-baseline.test.ts`, Design §16, checklist và implementation notes
+  - Summary: Full suite đơn lẻ xanh 203 test file, 1825 test pass + 5 intentional skip; focused startup/packaged 26/26.
+  - Decisions: Typecheck, boundaries, 115 spec paths và diff-check xanh; lint 0 error/4 warning cũ. Không stage/chạm thay đổi người dùng ở `tests/adapter/remote-asset-browser.test.ts`.
+  - Blockers: Exact-head Actions phải chứng minh ba baseline được load và regression gate chạy trên cả ba runner; production supply-chain human gate vẫn mở độc lập.
 
 Format:
 ```

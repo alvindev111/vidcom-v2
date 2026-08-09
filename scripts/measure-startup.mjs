@@ -35,14 +35,27 @@ export function baselinePath(label) {
   return path.join(BASELINE_DIRECTORY, `${label}.json`);
 }
 
+export function isStartupBaseline(label, value) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  if (value.version !== 1 || value.runner !== label) return false;
+  const measurements = value.measurements;
+  if (!measurements || typeof measurements !== "object" || Array.isArray(measurements)) return false;
+  if (Object.keys(measurements).sort().join(",") !== "coldServe,warmServe") return false;
+  return Object.values(measurements).every((measurement) => (
+    Number.isInteger(measurement) && measurement >= 0
+  ));
+}
+
 export async function readBaseline(label) {
   const file = baselinePath(label);
   if (!existsSync(file)) return null;
   try {
-    return JSON.parse(await readFile(file, "utf8"));
+    const baseline = JSON.parse(await readFile(file, "utf8"));
+    return isStartupBaseline(label, baseline) ? baseline : null;
   } catch {
-    // A baseline that cannot be parsed is not a baseline. Treating it as absent
-    // records a fresh one rather than failing every run until somebody notices.
+    // The packaged smoke treats null as a hard failure now that all three
+    // runner baselines are committed. recordBaseline still uses null for the
+    // explicit first-capture workflow.
     return null;
   }
 }
@@ -59,6 +72,7 @@ export async function recordBaseline(label, measurements) {
   if (existing !== null) return { written: false, baseline: existing };
   await mkdir(BASELINE_DIRECTORY, { recursive: true });
   const baseline = { version: 1, runner: label, measurements };
+  if (!isStartupBaseline(label, baseline)) throw new Error(`invalid startup baseline for ${label}`);
   await writeFile(baselinePath(label), `${JSON.stringify(baseline, null, 2)}\n`, "utf8");
   return { written: true, baseline };
 }

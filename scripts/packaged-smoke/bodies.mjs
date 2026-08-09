@@ -475,13 +475,16 @@ export const STEP_BODIES = {
     const label = runnerLabel();
     const startup = { coldServe, warmServe };
     const baseline = await readBaseline(label);
+    if (baseline === null) {
+      throw new Error(`required committed startup baseline is missing or invalid for ${label}`);
+    }
     const evaluation = evaluateStartup(label, startup, baseline);
     const failures = failingResults(evaluation);
     if (failures.length > 0) {
       throw new Error(`startup gate failed: ${failures.map((result) => `${result.name}=${result.value}>${result.limit}`).join(", ")}`);
     }
     context.measurements.doctor = { coldMs: doctorColdMs, warmMs: doctorWarmMs };
-    context.measurements.startup = { runner: label, ...startup, baselinePresent: baseline !== null, evaluation };
+    context.measurements.startup = { runner: label, ...startup, baselinePresent: true, evaluation };
     return `version ${version.vidcom}/${version.runtimeManifest}; doctor ${String(doctorColdMs)}/${String(doctorWarmMs)}ms; serve ${String(coldServe)}/${String(warmServe)}ms`;
   },
 
