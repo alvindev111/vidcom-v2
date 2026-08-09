@@ -14,6 +14,7 @@ import packageMetadata from "../package.json";
 import { canonicalizeJson } from "@vidcom/core";
 import { mcpToolError } from "./error-map";
 import type { ToolRegistry } from "./registry/registry";
+import type { ToolInvoker } from "./registry/types";
 import { InputRequiredSignal } from "./registry/types";
 
 export const MCP_SERVER_INFO = {
@@ -23,6 +24,15 @@ export const MCP_SERVER_INFO = {
 
 export interface ServerFactoryOptions {
   supportedProtocolVersions?: string[];
+  /**
+   * Who actually runs a tool. Defaults to the registry itself.
+   *
+   * The registry stays the single source of the tool list, the schemas and the
+   * era rules whichever invoker is used — a bridge that ran a tool the registry
+   * never published, or published one it could not run, would be a second
+   * catalogue with no way to tell which is right.
+   */
+  invoker?: ToolInvoker;
 }
 
 function protocolVersionOf(
@@ -57,6 +67,7 @@ export function registerRegistryTools(
   server: McpServer,
   registry: ToolRegistry,
   factoryContext: McpRequestContext,
+  invoker: ToolInvoker = registry,
 ): void {
   for (const tool of registry.list(factoryContext.era)) {
     server.registerTool(tool.name, {
@@ -67,7 +78,7 @@ export function registerRegistryTools(
       annotations: tool.annotations,
     }, async (input, requestContext) => {
       try {
-        const result = await registry.invoke(tool.name, resumeInput(input, requestContext), {
+        const result = await invoker.invoke(tool.name, resumeInput(input, requestContext), {
           era: factoryContext.era,
           protocolVersion: protocolVersionOf(server, factoryContext, requestContext),
           credentialId: credentialIdOf(factoryContext, requestContext),
@@ -106,7 +117,7 @@ export function createServerFactory(
         ? { supportedProtocolVersions: options.supportedProtocolVersions }
         : {}),
     });
-    registerRegistryTools(server, registry, factoryContext);
+    registerRegistryTools(server, registry, factoryContext, options.invoker ?? registry);
     return server;
   };
 }

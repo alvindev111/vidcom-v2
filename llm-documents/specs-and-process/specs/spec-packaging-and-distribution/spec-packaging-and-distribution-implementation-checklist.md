@@ -917,9 +917,11 @@ Mỗi phase chạy focused command dưới đây trên SQLite/filesystem thật,
   - Grace period tính từ lúc daemon **bắt đầu rỗi**, không phải từ lúc bị hỏi: caller chỉ hỏi một lần sẽ không bao giờ thấy period trôi qua. Test chốt cả biên `-1`/`0` và ca có người quay lại giữa chừng
   - [`attachments.test.ts`](../../../../tests/server/attachments.test.ts) 11 test cho cả I.4/I.5/I.6
   - _Requirements: R2.15_ — _Design: §4.4_
-- [ ] I.7a `createMcpRegistry` nhận `ToolInvoker`
+- [x] I.7a `createMcpRegistry` nhận `ToolInvoker`
   - Sửa [`composition-root.ts`](../../../../packages/cli/src/composition-root.ts) để registry được dựng quanh một invoker thay vì nối cứng vào `application`. `ToolDefinition` vẫn là nguồn duy nhất cho schema/list/era — invoker chỉ đổi **chỗ thực thi**
   - Đường local (stdio hôm nay, `vidcom app`) MUST giữ nguyên hành vi: đây là refactor, không phải tính năng
+  - Seam đặt ở `registerRegistryTools`/`createServerFactory`/`createMcpHttpHandlers`, **mặc định là chính registry**. Đó là chỗ đúng: registry vẫn phát `list`/schema/era, chỉ chỗ **thực thi** đổi. Đổi ở tầng registry sẽ tạo ra hai catalogue mà không cách nào biết cái nào đúng
+  - Bằng chứng hành vi không đổi: `test:mcp-contract` 71/71, `test:golden` 40/40, `test:mcp-catalogue` xanh — **snapshot `tools/list` không đổi một byte**
   - _Requirements: R2.2, R2.3_ — _Design: §5.7_
 - [x] I.7b Route `/api/bridge/v1/tools/:name` phía daemon
   - Validate bằng catalogue của A.4 (`server` không được import `mcp`), rồi thực thi qua invoker local do composition root inject
@@ -937,7 +939,7 @@ Mỗi phase chạy focused command dưới đây trên SQLite/filesystem thật,
 - [ ] I.9 `stdout` của bridge chỉ JSON-RPC
   - Mọi log/cảnh báo/tiến trình qua `stderr` hoặc log store; test bắt được một dòng lạc
   - _Requirements: R2.6_ — _Design: §5.8_
-- [ ] I.10 Contract parity test local ↔ remote
+- [x] I.10 Contract parity test local ↔ remote
   - Cùng input ⇒ cùng schema, cùng revision, cùng mã lỗi
   - _Requirements: R2.3_
 - [ ] I.11 Integration test
@@ -1563,6 +1565,12 @@ Chi tiết: [Detailed Goals](./spec-packaging-and-distribution-detailed-goal.md)
   - Summary: Route bridge phía daemon — handshake, ready, attachments, tools — cắm vào chuỗi middleware cố định của `createServerApp`.
   - Decisions: Bridge dùng **bearer** như MCP chứ không dùng session trình duyệt (client là agent host), nhưng siết thêm: chỉ `app_settings.bridge_credential_id` qua được, vì credential MCP người dùng là bearer hợp lệ cho `/api/mcp` và nhận nó ở đây là trao quyền vòng đời daemon cho agent bất kỳ. Validate tên tool bằng `TOOL_SCHEMA_CATALOGUE` của `contracts` để `server` không phải import `mcp`. Renew một attachment đã hết hạn trả **404** chứ không 401: nó không phải vấn đề phân quyền, và "attach lại đi" là câu trả lời duy nhất dùng được. `DELETE` một attachment đã biến mất trả 204 vì đó đúng là trạng thái caller muốn.
   - Blockers: Không có; 14/14 test bridge, toàn `tests/server` 117/117, typecheck, lint 0 error, boundaries xanh. Nối invoker thật vào composition root là I.7a.
+
+2026-08-09 — Phase I, Task I.7a + I.10
+  - Files: `packages/mcp/src/server.ts`, `packages/mcp/src/http.ts`, `tests/mcp/bridge-registry-parity.test.ts`, checklist và implementation notes
+  - Summary: Thêm `invoker` tuỳ chọn (mặc định là chính registry) xuyên qua `createMcpHttpHandlers` → `createServerFactory` → `registerRegistryTools`, cộng test parity local ↔ remote.
+  - Decisions: Đặt seam ở tầng đăng ký tool chứ không ở registry: registry phải tiếp tục là nguồn duy nhất của `list`/schema/era, còn invoker chỉ đổi chỗ thực thi — đổi ở tầng registry là tạo hai catalogue không phân xử được. Stub daemon trong test **ném đúng `DaemonClientError`** với mã ổn định, vì stub dễ dãi hơn sẽ biến parity test thành test cho chính stub.
+  - Blockers: Không có. Hành vi local không đổi: `test:mcp-contract` 71/71, `test:golden` 40/40, catalogue xanh, `tools/list` snapshot không đổi byte. `tests/mcp` 70/70, typecheck, lint 0 error, boundaries xanh.
 
 Format:
 ```
