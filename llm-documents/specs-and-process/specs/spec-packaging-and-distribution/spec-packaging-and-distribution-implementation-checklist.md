@@ -2512,6 +2512,12 @@ Chi tiết: [Detailed Goals](./spec-packaging-and-distribution-detailed-goal.md)
   - Decisions: **Stage trước, rename sau cùng, luôn luôn.** Một bản copy ghi thẳng vào workspace thì watcher nhìn thấy nó khi nó **mới là nửa cái project**, và hỏng giữa chừng để lại một thư mục người dùng phải tự nhận diện và tự xoá; staging biến cả hai thành một lần rename hoặc có hoặc không. `backfill` chạy **sau** rename: đăng ký trước là trỏ vào một đường dẫn sắp thôi tồn tại. Đường hỏng chỉ dọn **staging của chính nó** — source và mọi thứ đã có trong workspace nằm ngoài tầm với, kể cả khi lỗi. `concurrency: 1` vì hai import chạy song song có thể chọn cùng một slug trống và kẻ thua sẽ rename đè lên thư mục kẻ thắng vừa tạo; `idempotent: false` vì chạy lại là import hai lần.
   - Blockers: Job đã có và có test, nhưng **chưa nối vào `createJobTypes`/`createServerApp`** — cần một service dựng `plan`/`copy`/`commit`/`discard`/`backfill` từ `planProjectImport`, staging copier và `bootstrapProject`, rồi cấp `startProjectImport` cho route. K.6 vẫn mở cho tới lúc đó.
 
+2026-08-09 — K.6: service import, nửa còn lại giữa route và use case
+  - Files: `packages/cli/src/project-import-service.ts`, `packages/cli/src/index.ts`, `tests/cli/project-import-service.test.ts`, checklist
+  - Summary: `createStartProjectImport` + `createProjectImportJobDependencies` — phần nối `planProjectImport`, staging copier và job type lại với nhau.
+  - Decisions: **Token là đường vào duy nhất**: path client gõ được là path trang nào cũng gửi được, và toàn bộ điểm của browse là server chỉ hành động trên thư mục chính nó phát ra. **Plan trước khi enqueue**: source chồng lấn workspace hay tên không thành slug được bị từ chối **khi caller còn đang nghe**, thay vì nằm trong một job họ phải đi đọc — test chốt `enqueue` không được gọi lần nào ở ca đó. Mỗi lần thử có staging riêng theo `operationId`: hai import cùng một source mà dùng chung một thư mục thì recovery không nói được nó tìm thấy rác của ai.
+  - Blockers: 6 test trên **filesystem thật** trong temp directory, gồm ca "source không hề bị sửa" và "workspace rỗng sau khi discard". Còn lại để đóng K.6: nối vào `createJobTypes` và cấp `startProjectImport` cho `createServerApp` trong composition root.
+
 Format:
 ```
 YYYY-MM-DD — Phase X, Task X.Y

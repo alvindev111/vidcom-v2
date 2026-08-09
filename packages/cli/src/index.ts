@@ -29,6 +29,7 @@ export * from "./commands/serve";
 export * from "./commands/version";
 export * from "./cli-error";
 export * from "./output";
+export * from "./project-import-service";
 export * from "./bridge/ensure-daemon";
 export * from "./bridge/remote-tool-invoker";
 export * from "./bridge/spawn-daemon";
