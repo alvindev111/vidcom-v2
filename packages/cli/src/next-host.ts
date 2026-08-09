@@ -8,7 +8,13 @@ import {
   InMemorySessionStore,
   type ServerAppDependencies,
 } from "@vidcom/server";
-import { AppSettingsStore, ensureVidcomSettingsFile, nodeSchedulerTimers, readVidcomSettings } from "@vidcom/adapter";
+import {
+  AppSettingsStore,
+  WorkerFilesystemBrowser,
+  ensureVidcomSettingsFile,
+  nodeSchedulerTimers,
+  readVidcomSettings,
+} from "@vidcom/adapter";
 import type { ResolvedVidcomSettings } from "@vidcom/contracts";
 import type { AbsolutePath } from "@vidcom/core";
 import { JobScheduler, type ProjectIdentity } from "@vidcom/core";
@@ -17,7 +23,7 @@ import { enqueueRenderJob, enqueueSnapshotJob } from "@vidcom/worker";
 
 import { createJobTypes, createMcpRegistry, createSystemClock, hashContent } from "./composition-root";
 import { startVidcomFoundation } from "./startup";
-import { BrowseTokenStore } from "@vidcom/core";
+import { BrowseTokenStore, FilesystemBrowserService } from "@vidcom/core";
 import { ErrorCode, SUPPORTED_REVISIONS } from "@vidcom/contracts";
 import { BRIDGE_CREDENTIAL_SETTING } from "./bridge-credential";
 import { VIDCOM_VERSION } from "./commands/version";
@@ -260,6 +266,17 @@ export async function startNextHostedRuntime(
       },
       jobs: foundation.infrastructure.jobs,
       events: foundation.infrastructure.events,
+      system: {
+        browser: new FilesystemBrowserService(new WorkerFilesystemBrowser(), hostBrowseTokens),
+        // One session per host, and the token store is shared with the
+        // activation route: a token minted by a browse has to be redeemable by
+        // the activation that follows it.
+        sessionId: (request) => (/(?:^|;\s*)vidcom_session=/u.test(request.headers.get("cookie") ?? "")
+          ? HOST_BROWSE_SESSION
+          : undefined),
+        workspace: () => Promise.resolve({ workspaceRoot }),
+        runtime: () => Promise.resolve({ platform: `${process.platform}-${process.arch}` }),
+      },
       deliveryLoop: {
         workspaceRoot,
         workspaceOverview,

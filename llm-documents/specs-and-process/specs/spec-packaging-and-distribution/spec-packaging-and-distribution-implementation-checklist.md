@@ -661,8 +661,8 @@ Mỗi phase chạy focused command dưới đây trên SQLite/filesystem thật,
   - _Requirements: R1.15_ — _Design: §5.2_
 
 **Acceptance Criteria**:
-- [ ] Request không session ⇒ 401 kể cả từ `127.0.0.1`
-- [ ] Không trả nội dung file hay kích thước file thường
+- [x] Request không session ⇒ 401 kể cả từ `127.0.0.1` — [`browse-surface.test.ts`](../../../../tests/cli/browse-surface.test.ts) gọi qua **socket loopback thật** trên daemon của J.2
+- [x] Không trả nội dung file hay kích thước file thường — test dựng một file 4096 byte ngoài workspace và chốt response không mang byte lẫn kích thước
 
 **Deliverables**: `packages/core/src/service/filesystem-browser.ts` · `packages/adapter/src/fs/browse-*.ts` · `packages/server/src/routes/system.ts`
 
@@ -1736,6 +1736,12 @@ Chi tiết: [Detailed Goals](./spec-packaging-and-distribution-detailed-goal.md)
   - Summary: Tắt telemetry HyperFrames ở mọi child, và đăng ký spec này vào gate spec-paths (80 → 115 path).
   - Decisions: Hai tên biến đọc ra từ `hyperframes/dist/cli.js` đã pin thay vì đoán, và test ghim rằng CLI thật sự đọc chúng — một biến không ai đọc là thiết lập không làm gì mà trông như có làm.
   - Blockers: Không có. **Gate bắt drift tài liệu ngay lần đầu**: hàng D và E của Verification Matrix trỏ vào hai file test **chưa bao giờ tồn tại** (`vidcom-node-shim`, `foundation-manager`). Sửa bảng cho khớp tên thật, không nới gate — đây đúng là quy trình task L.6 mô tả.
+
+2026-08-09 — Phase F, Acceptance Criteria
+  - Files: `packages/server/src/app.ts`, `packages/cli/src/next-host.ts`, `tests/cli/browse-surface.test.ts`, checklist và implementation notes
+  - Summary: Đóng hai AC của Phase F bằng test qua socket thật.
+  - Decisions: **Phát hiện lỗi thật khi đi kiểm AC**: `createSystemRoutes` đã tồn tại từ Phase F nhưng **chưa bao giờ được mount** vào `createServerApp`, nên picker của G.7 không có endpoint nào để gọi và cả hai AC chưa từng được kiểm end-to-end. Đã nối vào dưới `/v1/system`, dùng chung `hostBrowseTokens` với route activation — token do browse mint phải được chính activation kế tiếp tiêu thụ.
+  - Blockers: Không có; 3/3 test, full suite xanh. `401` đúng kể cả từ `127.0.0.1`: đến từ loopback không phải là xác thực, mọi thứ chạy trên máy người dùng đều tới được cổng này.
 
 Format:
 ```

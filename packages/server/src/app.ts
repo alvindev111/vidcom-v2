@@ -23,6 +23,7 @@ import { createEventRoutes } from "./routes/events";
 import { createProjectWriteRoutes, type ProjectWriteRouteDependencies } from "./routes/project-writes";
 import { createBridgeRoutes, type BridgeRouteDependencies } from "./routes/bridge";
 import { createMcpRoutes, type McpRouteDependencies } from "./routes/mcp";
+import { createSystemRoutes, type SystemRouteDependencies } from "./routes/system";
 import { createDeliveryLoopRoutes, type DeliveryLoopRouteDependencies } from "./routes/delivery-loop";
 import { ErrorCode, MAX_BGM_BYTES, MAX_SOURCE_BYTES } from "@vidcom/contracts";
 
@@ -34,6 +35,7 @@ export interface ServerAppDependencies {
   mcpCredentials?: McpCredentialVerifier;
   mcp?: McpRouteDependencies;
   bridge?: BridgeRouteDependencies;
+  system?: SystemRouteDependencies;
   log?: (line: string) => void;
   trace?: (step: string) => void;
   projectReads?: ProjectReadRouteDependencies;
@@ -92,6 +94,10 @@ export function createServerApp(deps: ServerAppDependencies) {
   app.route("/v1", createAuthRoutes(deps.nonces, deps.sessions, deps.trace));
   if (deps.mcp) app.route("/", createMcpRoutes(deps.mcp));
   if (deps.bridge) app.route("/", createBridgeRoutes(deps.bridge));
+  // Under /v1/system, behind the same session the browser already holds. The
+  // picker is the only caller, and an agent that could enumerate the user's
+  // filesystem would hold a capability nobody granted it.
+  if (deps.system) app.route("/v1/system", createSystemRoutes(deps.system));
   if (deps.projectReads) app.route("/", createProjectReadRoutes(deps.projectReads));
   if (deps.jobs) app.route("/v1", createJobRoutes(deps.jobs));
   if (deps.events) app.route("/v1", createEventRoutes(deps.events));
