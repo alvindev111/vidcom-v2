@@ -132,7 +132,8 @@ export async function prunedPythonTreeSha256(pythonRoot) {
   const scratch = await mkdtemp(path.join(tmpdir(), "vidcom-python-prune-"));
   try {
     const copy = path.join(scratch, "python");
-    await copyContainedTree(pythonRoot, copy);
+    // The frozen interpreter is an installed tree, not one this build produced.
+    await copyContainedTree(pythonRoot, copy, true);
     await prunePythonBuildTools(copy);
     return await materializedTreeSha256(copy);
   } finally {

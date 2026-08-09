@@ -48,9 +48,13 @@ async function writeFixtureFiles(root: string, files: readonly FixtureFile[]): P
   }
 }
 
+// One of these roots holds a full isolated install, so cleanup is deleting tens
+// of thousands of files rather than a handful. The default hook timeout is
+// generous for a test directory and far too short for that, and the run it
+// killed had already done all the work it was checking.
 afterEach(async () => {
   await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
-});
+}, 300_000);
 
 describe("build tool provenance", () => {
   it("reports the tools that actually produced the artifact", () => {

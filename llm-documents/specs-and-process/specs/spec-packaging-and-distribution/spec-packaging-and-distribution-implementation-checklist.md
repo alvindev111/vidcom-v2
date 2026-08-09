@@ -76,6 +76,7 @@ Hai test **có sẵn từ trước Giai đoạn 4** đỏ ngẫu nhiên trên Wi
 | `tests/adapter/journal-recovery.test.ts` — abort khi bị kill giữa lúc ghi | `child did not reach mid-write`, rồi `EBUSY ... unlink vidcom.sqlite` | `df56f42` |
 | `tests/adapter/render-job.test.ts` — render qua tiến trình thật | `render_binary_missing` sau 10,6 s | `6ee93ba` |
 | `tests/adapter/remote-asset-browser.test.ts` — chặn ảnh remote trong browser thật | `mediaViolations` rỗng, không quan sát được request nào | `6ee93ba` |
+| `tests/adapter/download-cache.test.ts` — hai fetch cùng component | `RuntimeAssetError: directory lock release failed` | `2267849` |
 
 Hai dòng cuối **đã đo lại**: `dd515c7` (nhiều commit hơn, không đụng file nào của hai test đó) xanh cả ba OS. Cùng họ với hai dòng trên — phụ thuộc binary tải về và thời điểm, chạm filesystem/tiến trình thật. Vẫn **chưa sửa**, và vẫn không được sửa bằng retry.
 
@@ -2426,6 +2427,12 @@ Chi tiết: [Detailed Goals](./spec-packaging-and-distribution-detailed-goal.md)
   - Summary: `ffmpeg`/`ffprobe` 7.1.1 static, **không một dependency ngoài System framework**, đủ cả năm encoder pipeline cần (`libx264 libx265 libvpx-vp9 libopus aac`).
   - Decisions: Source ghim bằng URL **và** digest, mọi digest **đo bằng cách tải thật**; FFmpeg đối chiếu thêm với giá trị project công bố, x264 tải hai lần để xác nhận archive byte-stable. x264 ghim theo **commit** vì nó không phát hành tarball và `stable` là nhánh động. Bốn lần x265 hỏng, mỗi lần một gốc khác, đã ghi hết vào script: script nuốt lỗi bằng `;` (rồi FFmpeg lặng lẽ link dylib homebrew), `cmake_policy(SET ... OLD)` bị CMake 4 từ chối, `cmake_minimum_required` quá cũ, và NEON aarch64 không compile với Apple clang hiện tại. **`PKG_CONFIG_LIBDIR` chứ không chỉ `PKG_CONFIG_PATH`** — pkg-config giữ danh sách mặc định riêng, và đó là đường một build "static" vẫn nuốt dylib hệ thống.
   - Blockers: **Đánh đổi cần duyệt**: assembly của x265 bị tắt ⇒ HEVC encode chậm hơn. Đây là mất mát hẹp hơn — x264 giữ nguyên assembly và H.264 là codec pipeline dùng mặc định. Runtime tree giữ **ngoài repo** (`/tmp/vidcom-runtime`, `/tmp/vidcom-ffmpeg`) sau khi lệnh dọn `dist/` cho lint xoá mất cây Python 482 MB một lần.
+
+2026-08-09 — Phase M: artifact thật đầu tiên, và luật hardlink áp nhầm lần hai
+  - Files: `scripts/stage-artifact-runtime.mjs`, `scripts/build-runtime-inputs.mjs`, `tests/build/artifact-provenance.test.ts`, checklist
+  - Summary: `build:artifact` **chạy hết** — `dist/artifact/darwin-arm64/vidcom` **322 MB** cùng `SHA256SUMS` và `artifact-manifest.json`, verify-artifact xanh.
+  - Decisions: `copyContainedTree` cũng đòi `nlink === 1` trên **nguồn copy**, tức lại áp luật phát hành lên đầu vào của installer — cùng gốc với lần trước, khác hàm. Thêm `shared` y như `assertRegularFile`: luật vẫn giữ nguyên cho cây build tự tạo, nơi một tên thứ hai nghĩa là file đã verify vẫn ghi đè được sau lưng. Hook `afterEach` của provenance nới timeout vì nó xoá một cây `node_modules` đã cài đầy đủ — hàng chục nghìn file, không phải một thư mục test.
+  - Blockers: Windows đỏ ở `download-cache` với `directory lock release failed` — cùng họ EBUSY/lock đã ghi trong bảng flake, **chưa sửa và không sửa bằng retry**. Full suite cục bộ 1777 pass / 5 skip.
 
 Format:
 ```

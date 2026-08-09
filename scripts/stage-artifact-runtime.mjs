@@ -619,12 +619,21 @@ function packageDestination(nodeModulesRoot, packageName) {
   return path.join(nodeModulesRoot, ...packageName.split("/"));
 }
 
-/** Materializes only symlinks whose canonical target remains inside the copied source tree. */
-export async function copyContainedTree(source, destination) {
+/**
+ * Materializes only symlinks whose canonical target remains inside the copied source tree.
+ *
+ * `shared` says the source is installer output rather than something this build
+ * produced. Bun hardlinks packages out of its global cache on Linux, so every
+ * file under `node_modules` has a second name — refusing that made the whole
+ * stage unrunnable there while passing on macOS, where the same installer
+ * copies. The refusal still applies to trees this build owns, where a second
+ * name means a verified file can be rewritten behind the verification.
+ */
+export async function copyContainedTree(source, destination, shared = false) {
   const canonicalRoot = await assertRealDirectory(source, "copy source root");
 
   const materializeFile = async (sourceFile, destinationFile, metadata) => {
-    if (metadata.nlink !== 1) {
+    if (!shared && metadata.nlink !== 1) {
       fail("copy source contains a hard-linked file", { path: sourceFile, links: metadata.nlink });
     }
     await mkdir(path.dirname(destinationFile), { recursive: true });
@@ -865,7 +874,8 @@ async function copyNativeClosure(packageRoots, packageNames, platform, ...archiv
     for (const archiveRoot of archiveRoots) {
       const destination = packageDestination(path.join(archiveRoot, "node_modules"), packageName);
       await mkdir(path.dirname(destination), { recursive: true });
-      await copyContainedTree(source, destination);
+      // Installer output: hardlinked out of Bun's global cache on Linux.
+      await copyContainedTree(source, destination, true);
       await pruneRuntimePackageTree(destination, packageName, platform);
     }
   }
