@@ -6,6 +6,7 @@ export * from "./foundation-lifecycle";
 export * from "./workspace-activation";
 export * from "./lease-loss";
 export * from "./bootstrap-app";
+export * from "./runtime-paths-source";
 export * from "./sea-static-host";
 export * from "./loopback-host";
 export * from "./composition-root";

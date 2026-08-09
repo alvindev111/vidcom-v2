@@ -16,6 +16,7 @@ import {
 
 import { CliInputError } from "../cli-error";
 import { createApplication, createInfrastructure } from "../composition-root";
+import { runtimePathsFor } from "../runtime-paths-source";
 import { defaultAppDataRoot } from "../next-host";
 import { writeJson, type CliOutput } from "../output";
 import { selectWorkspace } from "../workspace-selection";
@@ -134,6 +135,7 @@ async function startRecoveryRuntime(dependencies: RecoveryCommandDependencies, j
     workspaceRoot: workspaceRoot as AbsolutePath,
     clock: { now: dependencies.now },
     ids: { newId: dependencies.newId },
+    runtimePaths: runtimePathsFor(appDataRoot),
   });
   let leaseId: string | null = null;
   try {

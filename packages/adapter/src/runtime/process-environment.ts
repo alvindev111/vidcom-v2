@@ -6,10 +6,23 @@ const INHERITED_ENVIRONMENT = [
   "PYTHONIOENCODING", "PYTHONUTF8", "NUMBER_OF_PROCESSORS", "PROCESSOR_ARCHITECTURE",
 ] as const;
 
+export interface ChildEnvironmentOptions {
+  /**
+   * A CA bundle every Node child should trust.
+   *
+   * Passed rather than discovered: a frozen runtime carries no trust store of
+   * its own, and picking certificates out of the OS store would turn a download
+   * failure into a silent one. Disabling verification is not an option here for
+   * the same reason.
+   */
+  caBundlePath?: string;
+}
+
 /** Reduces the daemon environment to the child-process allowlist. */
 export function allowlistedEnvironment(
   parent: NodeJS.ProcessEnv,
   supplied: Record<string, string> = {},
+  options: ChildEnvironmentOptions = {},
 ): NodeJS.ProcessEnv {
   const environment: Record<string, string> = {};
   for (const name of INHERITED_ENVIRONMENT) {
@@ -23,5 +36,10 @@ export function allowlistedEnvironment(
   // an explicit caller still can, which is how the failure mode stays testable.
   environment.PYTHONIOENCODING = "utf-8";
   environment.PYTHONUTF8 = "1";
+  // Set only when configured. An empty value is not "no bundle" to Node — it is
+  // a bundle at path "", which fails every TLS handshake the child attempts.
+  if (options.caBundlePath !== undefined && options.caBundlePath.length > 0) {
+    environment.NODE_EXTRA_CA_CERTS = options.caBundlePath;
+  }
   return { NODE_ENV: parent.NODE_ENV, ...environment, ...supplied };
 }

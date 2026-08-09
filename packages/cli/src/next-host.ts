@@ -21,6 +21,7 @@ import { BrowseTokenStore } from "@vidcom/core";
 import { ErrorCode, SUPPORTED_REVISIONS } from "@vidcom/contracts";
 import { BRIDGE_CREDENTIAL_SETTING } from "./bridge-credential";
 import { VIDCOM_VERSION } from "./commands/version";
+import { runtimePathsFor } from "./runtime-paths-source";
 import { selectWorkspace } from "./workspace-selection";
 
 export interface NextHostedRuntime {
@@ -119,6 +120,12 @@ export async function startNextHostedRuntime(
     appDataRoot,
     workspaceRoot: workspaceRoot as AbsolutePath,
     nativeDependenciesRoot: defaultNativeDependenciesRoot(appDataRoot) as AbsolutePath,
+    // Complete or not at all. A half-filled set produces paths that look valid
+    // and point at nothing, which fails much later and somewhere else.
+    runtimePaths: runtimePathsFor(appDataRoot),
+    ...(settings.runtime.caBundlePath === null
+      ? {}
+      : { caBundlePath: settings.runtime.caBundlePath as AbsolutePath }),
     settings,
     holderId: `next:${process.pid}:${crypto.randomUUID()}`,
     clock,

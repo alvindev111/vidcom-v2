@@ -259,7 +259,10 @@ export function createInfrastructure(config: CompositionRootConfig) {
     config: { rotationOverlapMs: runtimeConfig.credentialRotationOverlapMs },
   });
   const settings = config.settings ?? DEFAULT_VIDCOM_SETTINGS;
-  const processes = new NodeProcessRunner();
+  // The Node half of D.7. The sidecar gets `SSL_CERT_FILE`/`REQUESTS_CA_BUNDLE`
+  // from the TTS provider; every Node child started here gets the same bundle
+  // as `NODE_EXTRA_CA_CERTS`.
+  const processes = new NodeProcessRunner(undefined, config.caBundlePath);
   const diagnosticLint = new NodeHyperframesDiagnosticsLint(processes);
   // App-data, never the workspace or the checkout: these are engine
   // intermediates and model weights, and a project directory is watched, backed

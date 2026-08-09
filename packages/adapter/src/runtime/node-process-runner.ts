@@ -16,7 +16,17 @@ export { allowlistedEnvironment } from "./process-environment";
 export class NodeProcessRunner implements ProcessPort {
   private readonly supervisor: NodeProcessSupervisor;
 
-  constructor(private readonly defaultTimeoutMs: number = DEFAULT_TIMEOUT_MS) {
+  constructor(
+    private readonly defaultTimeoutMs: number = DEFAULT_TIMEOUT_MS,
+    /**
+     * Trusted by every Node child this runner starts.
+     *
+     * A frozen runtime carries no trust store, so the bundle has to be handed
+     * down. Nothing here disables verification or reads the OS store: both turn
+     * a download failure into a silent one.
+     */
+    private readonly caBundlePath?: string,
+  ) {
     this.supervisor = new NodeProcessSupervisor(defaultTimeoutMs);
   }
 
@@ -24,7 +34,11 @@ export class NodeProcessRunner implements ProcessPort {
     const result = await this.supervisor.run({
       ...input,
       timeoutMs: input.timeoutMs ?? this.defaultTimeoutMs,
-      environment: allowlistedEnvironment(process.env, input.environment) as Record<string, string>,
+      environment: allowlistedEnvironment(
+        process.env,
+        input.environment,
+        this.caBundlePath === undefined ? {} : { caBundlePath: this.caBundlePath },
+      ) as Record<string, string>,
     });
     if (result.status === "exited") return result.output;
     if (result.proof.reason === "abort") {

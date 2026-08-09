@@ -8,6 +8,7 @@ import { startMcpStdio } from "@vidcom/mcp";
 import { CliInputError } from "../cli-error";
 import { createJobTypes, createMcpRegistry } from "../composition-root";
 import { defaultAppDataRoot, defaultNativeDependenciesRoot } from "../next-host";
+import { runtimePathsFor } from "../runtime-paths-source";
 import { startVidcomFoundation } from "../startup";
 import { selectWorkspace } from "../workspace-selection";
 
@@ -91,6 +92,7 @@ export async function startVidcomMcp(
     appDataRoot,
     workspaceRoot: workspaceRoot as AbsolutePath,
     nativeDependenciesRoot: defaultNativeDependenciesRoot(appDataRoot) as AbsolutePath,
+    runtimePaths: runtimePathsFor(appDataRoot),
     settings,
     holderId: `mcp:${process.pid}:${randomUUID()}`,
   }, {

@@ -428,12 +428,13 @@ Mỗi phase chạy focused command dưới đây trên SQLite/filesystem thật,
   - `assertComplete` từ chối cả đường **tương đối**, không chỉ đường thiếu — một `motionLibraryRoot` tương đối sẽ resolve theo `cwd` của process và hỏng khác nhau tuỳ nơi gọi
   - Test chứng minh artifact không chạm `require.resolve` bằng cách truyền một resolver **ném lỗi** và chốt là không ném
   - _Requirements: R5.7, R6.3_ — _Design: §5.16_
-- [~] D.3b Truyền `RuntimePaths` từ **mọi** entrypoint — **một phần**
+- [x] D.3b Truyền `RuntimePaths` từ **mọi** entrypoint
   - `app`, `serve`, `mcp`, `render`, `doctor` — mỗi cái một dòng, và đây là chỗ dễ làm sót đúng một cái rồi chỉ hỏng ở mode ít dùng nhất
   - `motionLibraryRoot` hôm nay **không entrypoint nào truyền** (bẫy 4.8): nó là lý do task này tách riêng khỏi D.3a. Resolver đúng mà không ai truyền thì `install_motion_library` vẫn hỏng y như cũ
   - Test: liệt kê entrypoint từ mode union của J.1 và chứng minh **không entrypoint nào** dựng `RuntimePaths` rỗng hay thiếu field
   - **Đã làm**: `CompositionRootConfig.runtimePaths` nhận cả bộ đã resolve và **thắng** các field lẻ. Lý do phải thắng: mỗi field lẻ tự có default hợp lý — đúng chỗ nguy hiểm, vì bản đóng gói quên một cái sẽ nhận đường dẫn trông hợp lệ trỏ vào hư vô thay vì một lỗi. `NodeRenderBinaryProbe` nay nhận thẳng `hyperframesCliPath`/`hyperframesPackagePath`, nên fallback `require.resolve` của nó không còn nằm trên đường artifact. Thêm `caBundlePath` vào config cho nửa Node của D.7
-  - **Chưa làm, và vì sao**: `serve` (Phase E), `render` (J.3) và `doctor` (J) **chưa tồn tại**, và "mode union của J.1" cũng vậy — không thể liệt kê entrypoint từ một union chưa có. Hoàn tất cùng J.1; đến lúc đó test phải đếm đủ **năm** entrypoint chứ không phải hai
+  - **Hoàn tất sau J.1**: [`runtime-paths-source.ts`](../../../../packages/cli/src/runtime-paths-source.ts) là **một** chỗ duy nhất sinh ra bộ path, và `next-host` (`app` + `serve`), `commands/mcp.ts`, `commands/recovery.ts` đều gọi nó. `render` và `doctor` **không** dựng composition root thứ hai — chúng nói chuyện với daemon — nên "năm entrypoint" là năm mode, không phải năm composition root
+  - [`runtime-paths-entrypoints.test.ts`](../../../../tests/cli/runtime-paths-entrypoints.test.ts) lấy danh sách mode từ chính `VIDCOM_COMMAND_NAMES` của J.1 thay vì chép lại, nên một mode mới không lặng lẽ trượt khỏi file này; và chốt bộ path là **đủ field hoặc không có gì**, vì mỗi field lẻ có default hợp lý riêng — đúng chỗ nguy hiểm
   - _Requirements: R5.8, R6.3_ — _Design: §5.16, §4.8_
 - [x] D.4 `CompilerGuard`
   - Đặt **cả hai** `ESBUILD_BINARY_PATH` và `ESBUILD_WORKER_THREADS=0`; timeout bắt buộc cho mọi lời gọi in-process chạm compiler. Thiếu **bất kỳ** cái nào ⇒ **treo vĩnh viễn, không một dòng stderr**
@@ -452,10 +453,12 @@ Mỗi phase chạy focused command dưới đây trên SQLite/filesystem thật,
   - `vieneuInterpreterPath()` quyết theo **sự tồn tại trên đĩa**, không theo cấu hình: production luôn truyền root, nhưng source checkout chưa giải nén gì ở đó nên phải rơi về interpreter môi trường
   - Đặt cả `HF_HUB_OFFLINE` lẫn `TRANSFORMERS_OFFLINE` khi `offline`. Thiếu cờ thì một lần chạy warm vẫn ra mạng hỏi revision mới, biến "máy không có mạng" thành treo hoặc timeout dài thay vì trả lời sạch từ cache đã có
   - _Requirements: R6.5, R6.7_ — _Design: §4.6_
-- [~] D.7 `runtime.caBundlePath` xuống cả hai loại child — **một nửa**
+- [x] D.7 `runtime.caBundlePath` xuống cả hai loại child
   - `SSL_CERT_FILE` + `REQUESTS_CA_BUNDLE` cho sidecar; `NODE_EXTRA_CA_CERTS` cho child Node. MUST NOT tắt xác minh chứng chỉ, MUST NOT tự nhặt CA từ trust store OS
   - **Đã làm nửa sidecar**: `VieNeuTtsProviderOptions.caBundlePath` đặt `SSL_CERT_FILE` + `REQUESTS_CA_BUNDLE`. Interpreter đóng băng không mang trust store riêng, nên truyền bundle là đường được hỗ trợ; tắt xác minh hay nhặt từ store OS chỉ đổi một lỗi tải thành một lỗi im lặng
-  - **Chưa làm nửa Node**: `NODE_EXTRA_CA_CERTS` cần `runtime.caBundlePath` có mặt trong `RuntimePaths`, mà D.3b chưa truyền. Làm cùng D.3b
+  - **Nửa Node đã xong cùng D.3b**: `allowlistedEnvironment` nhận `caBundlePath` và đặt `NODE_EXTRA_CA_CERTS`; `NodeProcessRunner` nhận nó từ composition root, và `next-host` lấy từ `settings.runtime.caBundlePath`
+  - Path rỗng được coi là **không có bundle**: với Node một chuỗi rỗng không phải "không có bundle" mà là bundle ở đường dẫn `""`, và nó làm hỏng mọi TLS handshake của child
+  - Test chốt thêm một vế: `NODE_TLS_REJECT_UNAUTHORIZED` của cha **không** đi qua allowlist — tắt xác minh chỉ đổi một lỗi tải thành một lỗi im lặng
   - _Requirements: R6.5_ — _Design: §5.13_
 - [x] D.8 Download cache coordinator
   - Per-component lock, partial marker, timeout. Partial marker là **nguồn sự thật duy nhất**: `hyperframes browser path` trả exit 0 cho binary 1 MB (đo ở S9)
@@ -1675,6 +1678,12 @@ Chi tiết: [Detailed Goals](./spec-packaging-and-distribution-detailed-goal.md)
   - Summary: Integration test doctor trên app-data thật, SQLite thật và daemon thật; đóng hai Acceptance Criteria của Phase J.
   - Decisions: Ca repair dùng daemon thật của J.2 thay vì stub, vì thứ cần chứng minh là "daemon sống thì từ chối" và discovery record là bằng chứng quan sát được — daemon xoá record trước khi nhả lease nên "đã dừng" không phải phỏng đoán theo thời gian.
   - Blockers: Không có. **Bug thật do test bắt**: `db.migration` chỉ chạy `foreign_key_check`, mà nó hài lòng với database rỗng, nên doctor gọi một install chưa migrate là khoẻ mạnh. Đã kiểm schema trước khi kiểm integrity, và bọc đường đọc `app_settings` vì doctor là lệnh chạy đúng lúc install đang hỏng. Full suite 1413 pass / 4 skip.
+
+2026-08-09 — Phase D, Task D.3b + D.7 (đóng phần chặn ngược)
+  - Files: `packages/cli/src/runtime-paths-source.ts`, `packages/cli/src/next-host.ts`, `packages/cli/src/commands/{mcp,recovery}.ts`, `packages/cli/src/composition-root.ts`, `packages/adapter/src/runtime/{process-environment,node-process-runner}.ts`, `tests/cli/runtime-paths-entrypoints.test.ts`, `tests/adapter/process-environment.test.ts`, checklist và implementation notes
+  - Summary: Một nguồn duy nhất sinh `RuntimePaths` cho mọi entrypoint dựng composition root, và `NODE_EXTRA_CA_CERTS` xuống mọi Node child.
+  - Decisions: Test lấy danh sách mode từ chính `VIDCOM_COMMAND_NAMES` chứ không chép lại — mode mới không trượt khỏi file này được. `render`/`doctor` không dựng composition root thứ hai vì chúng là client của daemon, nên "năm entrypoint" là năm mode. `caBundlePath` rỗng được coi là không có bundle, vì với Node chuỗi rỗng là một bundle ở đường dẫn `""` và nó hỏng mọi handshake.
+  - Blockers: Không có; 9 test mới, full suite 1422 pass / 4 skip, typecheck, lint 0 error.
 
 Format:
 ```
