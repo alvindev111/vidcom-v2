@@ -5,6 +5,7 @@ import path from "node:path";
 import {
   DOWNLOAD_CACHE_COMPONENTS,
   DownloadCacheCoordinator,
+  NodeProcessRunner,
   resolveRuntimePaths,
 } from "@vidcom/adapter";
 import { DEFAULT_VIDCOM_SETTINGS } from "@vidcom/contracts";
@@ -99,10 +100,16 @@ describe("production VieNeu runtime wiring", () => {
         engineVersion: "3.2.4",
       }));
     `, "utf8");
+    const nodeProcesses = new NodeProcessRunner();
 
     const infrastructure = createInfrastructure({
       appDataRoot,
       workspaceRoot: workspaceRoot as AbsolutePath,
+      processes: {
+        run: (input) => input.command[1] === "-version"
+          ? Promise.resolve({ exitCode: 0, stdout: "test toolchain", stderr: "", timedOut: false })
+          : nodeProcesses.run(input),
+      },
       settings: {
         ...DEFAULT_VIDCOM_SETTINGS,
         tts: {
@@ -116,9 +123,15 @@ describe("production VieNeu runtime wiring", () => {
     });
     try {
       const providers = await infrastructure.tts.listProviders();
-      expect(providers.find((provider) => provider.id === "vieneu")?.available).toBe(true);
-      expect(await infrastructure.downloads.status(DOWNLOAD_CACHE_COMPONENTS.models))
-        .toMatchObject({ state: "ready" });
+      const cacheStatus = await infrastructure.downloads.status(DOWNLOAD_CACHE_COMPONENTS.models);
+      const observedModes = (await readFile(observations, "utf8")).trim().split("\n")
+        .map((line) => JSON.parse(line) as { offline: boolean });
+      const vieneu = providers.find((provider) => provider.id === "vieneu");
+      expect(
+        vieneu?.available,
+        JSON.stringify({ cacheStatus, observedModes, vieneu }),
+      ).toBe(true);
+      expect(cacheStatus).toMatchObject({ state: "ready" });
       expect((await stat(path.join(appDataRoot, "vidcom.sqlite"))).isFile()).toBe(true);
     } finally {
       await infrastructure.database.destroy();

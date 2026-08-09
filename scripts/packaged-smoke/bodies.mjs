@@ -1,6 +1,15 @@
 import { spawn, spawnSync } from "node:child_process";
+import { createHash, randomUUID } from "node:crypto";
 import { mkdir, readdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
+
+import {
+  evaluateStartup,
+  failingResults,
+  readBaseline,
+  runnerLabel,
+} from "../measure-startup.mjs";
+import { withRunnerNetworkCut } from "./network-cut.mjs";
 
 /**
  * Runs the packaged executable once and returns everything it said.
@@ -85,6 +94,7 @@ export async function startServing(context, extraArgs = []) {
     env: context.environment,
     stdio: ["ignore", "pipe", "pipe"],
     shell: false,
+    detached: process.platform !== "win32",
   });
   let output = "";
   child.stdout.on("data", (chunk) => { output += chunk; });
@@ -102,25 +112,29 @@ export async function startServing(context, extraArgs = []) {
 }
 
 export async function stopServing(serving) {
+  if (serving.child.exitCode !== null) return;
   serving.child.kill("SIGTERM");
-  await new Promise((resolve) => {
-    serving.child.once("exit", resolve);
-    setTimeout(resolve, 15_000);
+  const exited = await new Promise((resolve) => {
+    const timer = setTimeout(() => resolve(false), 15_000);
+    serving.child.once("exit", () => {
+      clearTimeout(timer);
+      resolve(true);
+    });
   });
-}
-
-/**
- * A step whose body is not written yet.
- *
- * Thrown rather than returned as a pass. The phase's acceptance criterion is
- * "no required step was skipped", and a body that reports success without
- * driving anything would satisfy that criterion while proving nothing — the
- * one failure mode this whole phase exists to prevent.
- */
-export class NotWrittenYet extends Error {
-  constructor(step, what) {
-    super(`the ${step} step still has to drive ${what}`);
-    this.name = "NotWrittenYet";
+  if (!exited && serving.child.exitCode === null) {
+    if (process.platform === "win32") {
+      spawnSync("taskkill.exe", ["/PID", String(serving.child.pid), "/T", "/F"], {
+        encoding: "utf8",
+        shell: false,
+      });
+    } else {
+      try { process.kill(-serving.child.pid, "SIGKILL"); }
+      catch { serving.child.kill("SIGKILL"); }
+    }
+    await new Promise((resolve) => {
+      if (serving.child.exitCode !== null) resolve();
+      else serving.child.once("exit", resolve);
+    });
   }
 }
 
@@ -169,6 +183,198 @@ export function wavBytes(totalBytes) {
   return bytes;
 }
 
+const TERMINAL_JOBS = new Set(["succeeded", "partial", "failed", "cancelled"]);
+
+async function jsonResponse(label, response) {
+  const text = await response.text();
+  let payload;
+  try { payload = text.length === 0 ? null : JSON.parse(text); }
+  catch { throw new Error(`${label} did not return JSON: ${text.slice(0, 200)}`); }
+  if (!response.ok) {
+    throw new Error(`${label} returned ${String(response.status)}: ${text.slice(0, 300)}`);
+  }
+  return payload;
+}
+
+async function jobUntilTerminal(serving, jobId, timeoutMs = 600_000) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    let response;
+    try {
+      response = await fetch(`${serving.baseUrl}/api/v1/jobs/${jobId}`, {
+        headers: { Cookie: serving.cookie },
+      });
+    } catch (error) {
+      throw new Error(
+        `job ${jobId} poll failed: ${error instanceof Error ? error.message : String(error)}`
+        + `; daemon tail: ${serving.output().slice(-1_000)}`,
+      );
+    }
+    const job = await jsonResponse(`job ${jobId}`, response);
+    if (TERMINAL_JOBS.has(job.status)) return job;
+    await new Promise((resolve) => setTimeout(resolve, 250));
+  }
+  throw new Error(`job ${jobId} did not become terminal within ${String(timeoutMs)}ms`);
+}
+
+function contentHash(content) {
+  return `sha256:${createHash("sha256").update(content).digest("hex")}`;
+}
+
+async function ensureMediaProject(context, serving) {
+  if (context.media) return context.media;
+  const projectRoot = path.join(context.workspace, "smoke-media");
+  let projectId;
+  try {
+    projectId = JSON.parse(await readFile(path.join(projectRoot, "vidcom.json"), "utf8")).id;
+  } catch {
+    const created = await jsonResponse("create media project", await fetch(`${serving.baseUrl}/api/v1/projects`, {
+      method: "POST",
+      headers: { Cookie: serving.cookie, "content-type": "application/json" },
+      body: JSON.stringify({ name: "Smoke Media", presetId: "horizontal-youtube" }),
+    }));
+    projectId = created.projectId;
+    const index = await readFile(path.join(projectRoot, "index.html"), "utf8");
+    const scene = await jsonResponse("create media scene", await fetch(
+      `${serving.baseUrl}/api/v1/projects/${projectId}/scenes`,
+      {
+        method: "POST",
+        headers: { Cookie: serving.cookie, "content-type": "application/json" },
+        body: JSON.stringify({
+          title: "Xin chào từ VidCom",
+          duration: 8,
+          expectedContentHash: contentHash(index),
+        }),
+      },
+    ));
+    if (scene.scene?.id !== "scene-1") throw new Error("media project did not create scene-1");
+  }
+  if (typeof projectId !== "string") throw new Error("media project identity has no project id");
+  context.media = { projectId, slug: "smoke-media", sceneId: "scene-1" };
+  return context.media;
+}
+
+async function findExecutable(root, filename) {
+  const pending = [root];
+  while (pending.length > 0) {
+    const directory = pending.pop();
+    for (const entry of await readdir(directory, { withFileTypes: true }).catch(() => [])) {
+      const pathname = path.join(directory, entry.name);
+      if (entry.isDirectory()) pending.push(pathname);
+      else if (entry.isFile() && entry.name === filename) return pathname;
+    }
+  }
+  throw new Error(`${filename} was not found under app-data`);
+}
+
+async function runMediaPipeline(context, options = {}) {
+  const serving = await startServingWithSession(context);
+  try {
+    const media = await ensureMediaProject(context, serving);
+    const voices = await jsonResponse("list TTS voices", await fetch(
+      `${serving.baseUrl}/api/v1/projects/${media.projectId}/tts/voices`,
+      { headers: { Cookie: serving.cookie } },
+    ));
+    const provider = voices.providers?.find((candidate) => candidate.id === "vieneu");
+    const voice = provider?.voices?.find((candidate) => candidate.recommended)
+      ?? provider?.voices?.[0];
+    if (!provider?.available || !voice) {
+      throw new Error(`VieNeu is unavailable: ${provider?.unavailableReason ?? "provider missing"}`);
+    }
+    const tts = await jsonResponse("start TTS", await fetch(
+      `${serving.baseUrl}/api/v1/projects/${media.projectId}/narration/synthesize`,
+      {
+        method: "POST",
+        headers: {
+          Cookie: serving.cookie,
+          "content-type": "application/json",
+          "Idempotency-Key": `smoke-tts-${randomUUID()}`,
+        },
+        body: JSON.stringify({
+          sceneIds: [media.sceneId],
+          providerId: provider.id,
+          voiceId: voice.id,
+          modelId: voice.modelId,
+          computeDevice: "cpu",
+        }),
+      },
+    ));
+    const ttsJob = await jobUntilTerminal(serving, tts.jobId);
+    if (ttsJob.status !== "succeeded") {
+      throw new Error(`TTS job ended ${ttsJob.status}: ${JSON.stringify(ttsJob.error)}`);
+    }
+
+    let snapshotJob = null;
+    if (options.snapshot !== false) {
+      const snapshot = await jsonResponse("start snapshot", await fetch(
+        `${serving.baseUrl}/api/v1/projects/${media.projectId}/snapshots`,
+        {
+          method: "POST",
+          headers: { Cookie: serving.cookie, "content-type": "application/json" },
+          body: JSON.stringify({ idempotencyKey: `smoke-snapshot-${randomUUID()}` }),
+        },
+      ));
+      snapshotJob = await jobUntilTerminal(serving, snapshot.jobId);
+      if (snapshotJob.status !== "succeeded") {
+        throw new Error(`snapshot job ended ${snapshotJob.status}: ${JSON.stringify(snapshotJob.error)}`);
+      }
+    }
+
+    const render = await jsonResponse("start render", await fetch(
+      `${serving.baseUrl}/api/v1/projects/${media.projectId}/renders`,
+      {
+        method: "POST",
+        headers: { Cookie: serving.cookie, "content-type": "application/json" },
+        body: JSON.stringify({ idempotencyKey: `smoke-render-${randomUUID()}` }),
+      },
+    ));
+    const renderJob = await jobUntilTerminal(serving, render.jobId);
+    if (renderJob.status !== "succeeded") {
+      throw new Error(`render job ended ${renderJob.status}: ${JSON.stringify(renderJob.error)}`);
+    }
+    const downloaded = await fetch(`${serving.baseUrl}/api/v1/renders/${render.jobId}/download`, {
+      headers: { Cookie: serving.cookie },
+    });
+    if (!downloaded.ok) throw new Error(`render download returned ${String(downloaded.status)}`);
+    const output = path.join(context.root, `render-${options.label ?? "online"}.mp4`);
+    await writeFile(output, Buffer.from(await downloaded.arrayBuffer()));
+
+    const ffprobe = await findExecutable(
+      context.appData,
+      process.platform === "win32" ? "ffprobe.exe" : "ffprobe",
+    );
+    const probe = spawnSync(ffprobe, [
+      "-v", "error",
+      "-show_entries", "stream=codec_type,codec_name:format=duration",
+      "-of", "json",
+      output,
+    ], { env: context.environment, encoding: "utf8", shell: false, timeout: 120_000 });
+    if (probe.error || probe.status !== 0) {
+      throw new Error(`ffprobe failed: ${probe.error?.message ?? probe.stderr?.slice(0, 300)}`);
+    }
+    const report = parseJson("ffprobe", probe.stdout);
+    const streams = report.streams ?? [];
+    if (!streams.some((stream) => stream.codec_type === "video")) throw new Error("render has no video stream");
+    if (!streams.some((stream) => stream.codec_type === "audio")) throw new Error("render has no audio stream");
+    const duration = Number(report.format?.duration);
+    if (!Number.isFinite(duration) || duration < 7 || duration > 10) {
+      throw new Error(`render duration ${String(duration)} is outside the expected 8 second window`);
+    }
+    context.measurements.ffprobe ??= {};
+    context.measurements.ffprobe[options.label ?? "online"] = report;
+    context.measurements.tts ??= {};
+    context.measurements.tts[options.label ?? "online"] = {
+      providerId: provider.id,
+      voiceId: voice.id,
+      platform: `${process.platform}-${process.arch}`,
+      assets: ttsJob.result?.assets ?? [],
+    };
+    return { media, ttsJob, snapshotJob, renderJob, report };
+  } finally {
+    await stopServing(serving);
+  }
+}
+
 /**
  * The twelve step bodies of Design §11.4.
  *
@@ -205,27 +411,56 @@ export const STEP_BODIES = {
   async "restore-caches"(context) {
     const cache = path.join(context.environment.HOME, ".cache");
     const seeded = await readdir(cache).catch(() => []);
-    return `caches seeded under a temporary HOME (${seeded.length} entries); app-data runtime left empty`;
+    const browser = await readdir(path.join(context.appData, "browser-cache")).catch(() => []);
+    const models = await readdir(path.join(context.appData, "models")).catch(() => []);
+    const runtime = await readdir(path.join(context.appData, "runtime")).catch(() => []);
+    if (runtime.length > 0) throw new Error("restored caches pre-seeded app-data/runtime");
+    return `cache restore: HOME ${seeded.length}, browser ${browser.length}, models ${models.length}; app-data/runtime empty`;
   },
 
-  identify(context) {
+  async identify(context) {
     const version = parseJson("version", expectSuccess("version", runArtifact(context, ["version", "--json"])).stdout);
     if (!version.runtimeManifest) throw new Error("a packaged build must know its runtime manifest version");
 
-    // Cold: the runtime is not extracted yet, so this is the run that pays for
-    // extraction and the one M.7 measures.
-    const coldStartedAt = Date.now();
-    const cold = runArtifact(context, ["doctor", "--repair", "--json"], { timeoutMs: 600_000 });
-    const coldMs = Date.now() - coldStartedAt;
+    // Doctor gets its own app-data root so it can prove both cold and warm
+    // diagnostics without warming the serve flow §9.1 actually puts ceilings on.
+    const diagnosticContext = {
+      ...context,
+      environment: {
+        ...context.environment,
+        VIDCOM_APP_DATA: path.join(context.root, "doctor-app-data"),
+      },
+    };
+    const doctorColdStartedAt = Date.now();
+    const cold = runArtifact(diagnosticContext, ["doctor", "--repair", "--json"], { timeoutMs: 600_000 });
+    const doctorColdMs = Date.now() - doctorColdStartedAt;
     assertRuntimeHealthy("cold doctor --repair", cold);
 
-    const warmStartedAt = Date.now();
-    const warm = runArtifact(context, ["doctor", "--deep", "--json"]);
-    const warmMs = Date.now() - warmStartedAt;
+    const doctorWarmStartedAt = Date.now();
+    const warm = runArtifact(diagnosticContext, ["doctor", "--deep", "--json"]);
+    const doctorWarmMs = Date.now() - doctorWarmStartedAt;
     assertRuntimeHealthy("warm doctor --deep", warm);
-    context.measurements.coldMs = coldMs;
-    context.measurements.warmMs = warmMs;
-    return `version ${version.vidcom}/${version.runtimeManifest}; cold ${String(coldMs)}ms, warm ${String(warmMs)}ms`;
+
+    const coldServeStartedAt = Date.now();
+    const coldServing = await startServing(context);
+    const coldServe = Date.now() - coldServeStartedAt;
+    await stopServing(coldServing);
+    const warmServeStartedAt = Date.now();
+    const warmServing = await startServing(context);
+    const warmServe = Date.now() - warmServeStartedAt;
+    await stopServing(warmServing);
+
+    const label = runnerLabel();
+    const startup = { coldServe, warmServe };
+    const baseline = await readBaseline(label);
+    const evaluation = evaluateStartup(label, startup, baseline);
+    const failures = failingResults(evaluation);
+    if (failures.length > 0) {
+      throw new Error(`startup gate failed: ${failures.map((result) => `${result.name}=${result.value}>${result.limit}`).join(", ")}`);
+    }
+    context.measurements.doctor = { coldMs: doctorColdMs, warmMs: doctorWarmMs };
+    context.measurements.startup = { runner: label, ...startup, baselinePresent: baseline !== null, evaluation };
+    return `version ${version.vidcom}/${version.runtimeManifest}; doctor ${String(doctorColdMs)}/${String(doctorWarmMs)}ms; serve ${String(coldServe)}/${String(warmServe)}ms`;
   },
 
   async "ui-lifecycle"(context) {
@@ -353,7 +588,7 @@ export const STEP_BODIES = {
     // Started first and kept running: the claim under test is "open the app,
     // then run an agent, and both work", so the UI daemon has to be alive for
     // the whole of what follows.
-    const serving = await startServingWithSession(context);
+    let serving = await startServingWithSession(context);
     try {
       const issued = runArtifact(context, ["credential", "issue", "smoke-agent"], { timeoutMs: 60_000 });
       if (issued.status !== 0) {
@@ -367,6 +602,44 @@ export const STEP_BODIES = {
       }
       const credential = parseJson("credential issue", issued.stdout);
       if (typeof credential.secret !== "string") throw new Error("credential issue printed no secret");
+
+      const systemBearer = (await readFile(path.join(context.appData, "credentials"), "utf8")).trim();
+      const recordFile = path.join(
+        context.appData,
+        "daemon",
+        `${createHash("sha256").update(context.workspace).digest("hex")}.json`,
+      );
+      const firstRecord = parseJson("first discovery record", await readFile(recordFile, "utf8"));
+      const bridgeCall = (pathname, body, bearer = systemBearer) => fetch(`${serving.baseUrl}${pathname}`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${bearer}`, "content-type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      const handshake = await jsonResponse("bridge handshake", await bridgeCall(
+        "/api/bridge/v1/handshake",
+        { workspaceRoot: context.workspace, expectedInstanceId: firstRecord.instanceId },
+      ));
+      if (handshake.instanceId !== firstRecord.instanceId) throw new Error("bridge handshake changed the instance id");
+
+      const created = await jsonResponse("create bridge project", await fetch(`${serving.baseUrl}/api/v1/projects`, {
+        method: "POST",
+        headers: { Cookie: serving.cookie, "content-type": "application/json" },
+        body: JSON.stringify({ name: "Bridge State", presetId: "horizontal-youtube" }),
+      }));
+      const entry = await readFile(path.join(context.workspace, "bridge-state", "index.html"), "utf8");
+      await jsonResponse("bridge create_scene", await bridgeCall(
+        "/api/bridge/v1/tools/create_scene",
+        {
+          protocolVersion: "2026-07-28",
+          era: "modern",
+          input: {
+            projectId: created.projectId,
+            title: "Written through bridge",
+            duration: 2,
+            expectedContentHash: contentHash(entry),
+          },
+        },
+      ));
 
       // The agent reaches the same daemon the UI is using, over the same
       // loopback port, and gets the tool roster from it.
@@ -393,15 +666,66 @@ export const STEP_BODIES = {
       if (!stillServing.ok) {
         throw new Error(`the UI session stopped working beside the agent: ${String(stillServing.status)}`);
       }
-      return "an agent listed tools over the bridge while the UI session kept working";
-    } finally {
+
       await stopServing(serving);
+      serving = null;
+      serving = await startServingWithSession(context);
+      const secondRecord = parseJson("second discovery record", await readFile(recordFile, "utf8"));
+      if (secondRecord.instanceId === firstRecord.instanceId) {
+        throw new Error("a restarted daemon reused its old instance id");
+      }
+      const stale = await bridgeCall("/api/bridge/v1/handshake", {
+        workspaceRoot: context.workspace,
+        expectedInstanceId: firstRecord.instanceId,
+      });
+      if (stale.status < 400 || (await stale.json()).error?.code !== "daemon_identity_mismatch") {
+        throw new Error("the restarted daemon accepted a stale handshake");
+      }
+      const persisted = await jsonResponse("list projects after restart", await bridgeCall(
+        "/api/bridge/v1/tools/list_projects",
+        { protocolVersion: "2026-07-28", era: "modern", input: {} },
+      ));
+      if (!persisted.projects?.some((project) => project.slug === "bridge-state")) {
+        throw new Error("bridge state did not survive the daemon restart");
+      }
+      const projectContext = await jsonResponse("read bridge project after restart", await bridgeCall(
+        "/api/bridge/v1/tools/get_project_context",
+        {
+          protocolVersion: "2026-07-28",
+          era: "modern",
+          input: { projectId: created.projectId },
+        },
+      ));
+      if (projectContext.project?.sceneCount !== 1) {
+        throw new Error("the bridge scene did not survive the daemon restart");
+      }
+      const credentialStillWorks = await fetch(`${serving.baseUrl}/api/mcp`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${credential.secret}`,
+          "content-type": "application/json",
+          accept: "application/json, text/event-stream",
+        },
+        body: JSON.stringify({ jsonrpc: "2.0", id: 2, method: "tools/list", params: {} }),
+      });
+      if (!credentialStillWorks.ok) throw new Error("the agent credential did not survive restart");
+      return "bridge read/write ran beside UI; state and credential survived restart; stale handshake rejected";
+    } finally {
+      if (serving) await stopServing(serving);
     }
   },
 
-  "render-media"(context) {
-    void context;
-    throw new NotWrittenYet("render-media", "TTS, snapshot, render, and an ffprobe check for an audio stream");
+  async "render-media"(context) {
+    const result = await runMediaPipeline(context, { label: "online", snapshot: true });
+    const doctorRun = runArtifact(context, ["doctor", "--deep", "--json"], { timeoutMs: 300_000 });
+    const doctor = parseJson("post-media doctor", doctorRun.stdout);
+    for (const id of ["db.migration", "runtime.integrity", "chrome.cache", "tts.model-cache"]) {
+      const item = doctor.items?.find((candidate) => candidate.id === id);
+      if (item?.status !== "ok") throw new Error(`post-media doctor reports ${id}=${item?.status ?? "absent"}`);
+    }
+    context.measurements.postMediaDoctor = doctor;
+    return `VieNeu ${result.ttsJob.result.assets.length} WAV; snapshot succeeded; MP4 ${
+      result.report.format.duration}s with video and audio`;
   },
 
   async "upload-and-progress"(context) {
@@ -459,44 +783,93 @@ export const STEP_BODIES = {
   async "render-cli"(context) {
     const serving = await startServingWithSession(context);
     try {
-      // The workspace has no project to render, so what is exercised here is the
-      // contract every caller depends on: which exit code means what. R3.3 fixes
-      // 0/1/2/130, and a `render` that answered 1 for bad input would send a
-      // script down the retry path instead of the fix-your-arguments path.
-      const missingTarget = runArtifact(context, ["render"], { timeoutMs: 120_000 });
-      if (missingTarget.status !== 2) {
-        throw new Error(`render with no target exited ${String(missingTarget.status)} rather than 2`);
+      const media = await ensureMediaProject(context, serving);
+      const wait = runArtifact(context, [
+        "render", media.slug, "--workspace", context.workspace,
+      ], { timeoutMs: 600_000 });
+      if (wait.status !== 0) {
+        throw new Error(`render wait exited ${String(wait.status)}: ${wait.stderr.slice(0, 300)}`);
       }
-      const unknownFlag = runArtifact(context, ["render", "project_1", "--nope"], { timeoutMs: 120_000 });
-      if (unknownFlag.status !== 2) {
-        throw new Error(`render with an unknown flag exited ${String(unknownFlag.status)} rather than 2`);
+
+      const detached = runArtifact(context, [
+        "render", media.slug, "--workspace", context.workspace, "--detach",
+      ], { timeoutMs: 120_000 });
+      if (detached.status !== 0) {
+        throw new Error(`render --detach exited ${String(detached.status)}: ${detached.stderr.slice(0, 300)}`);
       }
-      return "render returns the input exit code for a missing target and an unknown flag";
+      const jobId = detached.stdout.trim();
+      if (!/^[A-Za-z0-9][A-Za-z0-9._-]+$/u.test(jobId)) {
+        throw new Error(`render --detach did not print one job id: ${detached.stdout.slice(0, 200)}`);
+      }
+
+      const runningDeadline = Date.now() + 120_000;
+      let running = null;
+      while (Date.now() < runningDeadline) {
+        running = await jsonResponse(`detached job ${jobId}`, await fetch(
+          `${serving.baseUrl}/api/v1/jobs/${jobId}`,
+          { headers: { Cookie: serving.cookie } },
+        ));
+        if (running.status === "running" && running.stage === "rendering video") break;
+        if (TERMINAL_JOBS.has(running.status)) {
+          throw new Error(`detached render became ${running.status} before mid-render cancellation`);
+        }
+        await new Promise((resolve) => setTimeout(resolve, 100));
+      }
+      if (running?.status !== "running" || running.stage !== "rendering video") {
+        throw new Error("detached render never reached the rendering-video stage");
+      }
+      // The stage is persisted immediately before the supervised spawn. Give
+      // that spawn one capture interval so this is a real mid-process cancel,
+      // not a cancellation between preflight and child creation.
+      await new Promise((resolve) => setTimeout(resolve, 500));
+      const cancel = await fetch(`${serving.baseUrl}/api/v1/jobs/${jobId}/cancel`, {
+        method: "POST",
+        headers: { Cookie: serving.cookie },
+      });
+      if (cancel.status !== 202) throw new Error(`render cancellation returned ${String(cancel.status)}`);
+      const terminal = await jobUntilTerminal(serving, jobId);
+      if (terminal.status !== "cancelled") {
+        throw new Error(`cancelled render ended ${terminal.status}: ${JSON.stringify(terminal.error)}`);
+      }
+      const proof = await jsonResponse("render termination proof", await fetch(
+        `${serving.baseUrl}/api/v1/jobs/${jobId}/termination-proof`,
+        { headers: { Cookie: serving.cookie } },
+      ));
+      if (proof.exhaustive !== true || proof.survivors?.length !== 0) {
+        throw new Error(`render termination proof is not exhaustive: ${JSON.stringify(proof)}`);
+      }
+      if (terminal.cleanupPending === true) throw new Error("cancelled render left cleanup pending");
+      const roots = await readdir(path.join(context.appData, "render-roots")).catch(() => []);
+      if (roots.includes(jobId)) throw new Error("the marker-backed render workdir survived cancellation");
+      context.measurements.renderCancellation = { jobId, proof };
+      return `render wait succeeded; detach returned ${jobId}; mid-render cancel recorded exhaustive zero-survivor proof`;
     } finally {
       await stopServing(serving);
     }
   },
 
   async offline(context) {
-    if (context.environment.VIDCOM_SMOKE_OFFLINE !== "1") {
-      // Refused rather than skipped. S9 measured that the downloader ignores
-      // HTTPS_PROXY, so a step that "went offline" by setting an environment
-      // variable passes for the wrong reason — the cut has to be at the runner.
-      throw new Error("offline step requires the network cut at the runner (VIDCOM_SMOKE_OFFLINE=1)");
-    }
-    const serving = await startServing(context);
+    const previousHf = context.environment.HF_HUB_OFFLINE;
+    const previousTransformers = context.environment.TRANSFORMERS_OFFLINE;
+    context.environment.HF_HUB_OFFLINE = "1";
+    context.environment.TRANSFORMERS_OFFLINE = "1";
     try {
-      return "warm render and TTS completed with the network cut at the runner";
+      return await withRunnerNetworkCut(async (plan) => {
+        const result = await runMediaPipeline(context, { label: "offline", snapshot: false });
+        return `${plan}; warm VieNeu and MP4 render succeeded offline (${result.report.format.duration}s)`;
+      });
     } finally {
-      await stopServing(serving);
+      if (previousHf === undefined) delete context.environment.HF_HUB_OFFLINE;
+      else context.environment.HF_HUB_OFFLINE = previousHf;
+      if (previousTransformers === undefined) delete context.environment.TRANSFORMERS_OFFLINE;
+      else context.environment.TRANSFORMERS_OFFLINE = previousTransformers;
     }
   },
 
   async "lease-loss"(context) {
-    // The record is read as a file rather than through the adapter class. This
-    // runner is plain Node, which strips types without compiling them, and the
-    // store uses a parameter property it refuses.
-    const { createHash } = await import("node:crypto");
+    // The record and SQLite row are driven from outside the artifact: this is a
+    // process test of the packaged daemon, not a call to the lease-loss helper.
+    const { DatabaseSync } = await import("node:sqlite");
     const recordFile = path.join(
       context.appData,
       "daemon",
@@ -509,26 +882,97 @@ export const STEP_BODIES = {
         return null;
       }
     };
-    const serving = await startServingWithSession(context);
-    let stopped = false;
+    const databaseFile = path.join(context.appData, "vidcom.sqlite");
+    const takeLease = () => {
+      const database = new DatabaseSync(databaseFile);
+      try {
+        database.prepare("UPDATE workspace_lease SET lease_id = ?, holder_id = ?, expires_at = ?")
+          .run(`lease-smoke-${randomUUID()}`, "smoke-other-writer", new Date(Date.now() + 60_000).toISOString());
+      } finally {
+        database.close();
+      }
+    };
+    const clearLease = () => {
+      const database = new DatabaseSync(databaseFile);
+      try { database.exec("DELETE FROM workspace_lease"); }
+      finally { database.close(); }
+    };
+    const waitFor = async (predicate, label, timeoutMs = 30_000) => {
+      const deadline = Date.now() + timeoutMs;
+      while (Date.now() < deadline) {
+        if (await predicate()) return;
+        await new Promise((resolve) => setTimeout(resolve, 100));
+      }
+      throw new Error(`${label} did not happen before its deadline`);
+    };
+
+    const ui = await startServingWithSession(context);
+    let uiStopped = false;
     try {
       const record = await readRecord();
       if (!record) throw new Error("a serving daemon published no discovery record");
-      if (record.port !== Number(new URL(serving.baseUrl).port)) {
+      if (record.port !== Number(new URL(ui.baseUrl).port)) {
         throw new Error("the published record points at a different port than the listener");
       }
-
-      // Headless loses its reason to exist when the workspace goes: the record
-      // has to be gone before the lease is, or a client is handed an address
-      // for a daemon that can no longer write.
-      await stopServing(serving);
-      stopped = true;
-      if (await readRecord() !== null) {
-        throw new Error("the discovery record outlived the daemon that published it");
+      takeLease();
+      await waitFor(async () => await readRecord() === null, "UI discovery withdrawal");
+      const bridge = await fetch(`${ui.baseUrl}/api/bridge/v1/tools/list_projects`, {
+        method: "POST",
+        headers: { Cookie: ui.cookie, "content-type": "application/json" },
+        body: "{}",
+      });
+      if (bridge.status !== 404 || (await bridge.json()).error?.code !== "not_found") {
+        throw new Error("UI lease loss did not remove the bridge route");
       }
-      return "discovery published while serving and gone before the workspace was released";
+      const workspace = await jsonResponse("no-workspace state", await fetch(
+        `${ui.baseUrl}/api/v1/system/workspace`,
+        { headers: { Cookie: ui.cookie } },
+      ));
+      if (workspace.workspaceRoot !== null) throw new Error("UI lease loss did not enter NoWorkspace");
+      if (!(await fetch(`${ui.baseUrl}/api/v1/health`, { headers: { Cookie: ui.cookie } })).ok) {
+        throw new Error("UI listener died instead of remaining on the bootstrap surface");
+      }
+
+      // Remove only the injected winner, then prove a new writer can take over
+      // while the old UI daemon remains read-only on the bootstrap surface.
+      clearLease();
+      const winner = await startServingWithSession(context);
+      try {
+        const created = await fetch(`${winner.baseUrl}/api/v1/projects`, {
+          method: "POST",
+          headers: { Cookie: winner.cookie, "content-type": "application/json" },
+          body: JSON.stringify({ name: "Lease Winner", presetId: "vertical-shorts" }),
+        });
+        if (created.status !== 201) throw new Error(`the takeover writer returned ${String(created.status)}`);
+      } finally {
+        await stopServing(winner);
+      }
+
+      clearLease();
+      const headless = await startServing(context);
+      let headlessStopped = false;
+      try {
+        takeLease();
+        const exitCode = await new Promise((resolve, reject) => {
+          const timer = setTimeout(() => reject(new Error("headless daemon did not exit after lease loss")), 30_000);
+          headless.child.once("exit", (code) => { clearTimeout(timer); resolve(code); });
+        });
+        headlessStopped = true;
+        if (exitCode === 0 || exitCode === null) {
+          throw new Error(`headless lease loss exited ${String(exitCode)} rather than non-zero`);
+        }
+        if (await readRecord() !== null) throw new Error("headless discovery record survived process exit");
+      } finally {
+        if (!headlessStopped) await stopServing(headless);
+      }
+      context.measurements.leaseLoss = { ui: "no-workspace", headless: "non-zero-exit" };
+      return "UI kept listener with bridge absent and winner wrote; headless withdrew discovery and exited non-zero";
     } finally {
-      if (!stopped) await stopServing(serving);
+      if (!uiStopped) {
+        await stopServing(ui);
+        uiStopped = true;
+      }
+      clearLease();
     }
   },
 

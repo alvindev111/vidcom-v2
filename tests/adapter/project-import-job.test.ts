@@ -20,7 +20,12 @@ function dependencies(overrides: Partial<ProjectImportJobDependencies> = {}) {
   const base: ProjectImportJobDependencies = {
     plan: () => {
       calls.push("plan");
-      return Promise.resolve({ slug: "imported", target: "/w/imported", staging: "/w/.tmp" });
+      return Promise.resolve({
+        operationId: "17",
+        slug: "imported",
+        target: "/w/imported",
+        staging: "/w/.tmp",
+      });
     },
     copy: () => {
       calls.push("copy");
@@ -38,12 +43,16 @@ function dependencies(overrides: Partial<ProjectImportJobDependencies> = {}) {
       calls.push("backfill");
       return Promise.resolve();
     },
+    settle: (_operationId, outcome) => {
+      calls.push(`settle:${outcome}`);
+      return Promise.resolve();
+    },
     ...overrides,
   };
   return { calls, base };
 }
 
-const input = { source: "/outside/fixture", workspaceRoot: "/w" };
+const input = { source: "/outside/fixture", sourceIdentity: "source-identity", workspaceRoot: "/w" };
 
 describe("project import job", () => {
   it("stages, commits, then registers", async () => {
@@ -54,7 +63,7 @@ describe("project import job", () => {
     const job = createProjectImportJobType(base);
     const io = context();
     const output = await job.run(input, io.job as never);
-    expect(calls).toEqual(["plan", "copy", "commit", "backfill"]);
+    expect(calls).toEqual(["plan", "copy", "commit", "backfill", "settle:commit"]);
     expect(output).toMatchObject({ slug: "imported", files: 3 });
     expect(io.progress.at(-1)).toBe(1);
   });
@@ -71,7 +80,7 @@ describe("project import job", () => {
     });
     await expect(createProjectImportJobType(base).run(input, context().job as never))
       .rejects.toThrow(/disk full/u);
-    expect(calls).toEqual(["plan", "discard"]);
+    expect(calls).toEqual(["plan", "discard", "settle:abort"]);
     expect(recorded).toEqual(["copy"]);
   });
 
@@ -82,8 +91,22 @@ describe("project import job", () => {
 
     await expect(createProjectImportJobType(base).run(input, context().job as never))
       .rejects.toThrow(/target exists/u);
-    expect(calls).toEqual(["plan", "copy", "discard"]);
+    expect(calls).toEqual(["plan", "copy", "discard", "settle:abort"]);
     expect(calls).not.toContain("backfill");
+  });
+
+  it("orphan-marks a published directory when registration fails", async () => {
+    const { calls, base } = dependencies({
+      backfill: () => {
+        calls.push("backfill");
+        return Promise.reject(new Error("registration failed"));
+      },
+    });
+
+    await expect(createProjectImportJobType(base).run(input, context().job as never))
+      .rejects.toThrow(/registration failed/u);
+    expect(calls).toEqual(["plan", "copy", "commit", "backfill", "settle:orphan"]);
+    expect(calls).not.toContain("discard");
   });
 
   it("runs one at a time", () => {

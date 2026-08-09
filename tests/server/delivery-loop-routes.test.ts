@@ -1,4 +1,4 @@
-import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { access, mkdtemp, mkdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
@@ -8,6 +8,7 @@ import {
   handleNextHostedRequest,
   hostBrowseTokens,
   HOST_BROWSE_SESSION,
+  startNextHostedRuntime,
 } from "@vidcom/cli";
 import { ErrorCode, type ProjectId, type RelPath } from "@vidcom/contracts";
 import {
@@ -571,7 +572,7 @@ describe("project delivery HTTP routes on real SQLite and filesystem", () => {
     }
   });
 
-  it("hot-swaps the selected workspace, clears recovery tokens, and requires reauthentication", async () => {
+  it("hot-swaps the selected workspace, clears recovery tokens, and preserves the host session", async () => {
     const root = await mkdtemp(path.join(tmpdir(), "vidcom-workspace-swap-"));
     roots.push(root);
     const firstWorkspace = path.join(root, "workspace-one");
@@ -622,7 +623,8 @@ describe("project delivery HTTP routes on real SQLite and filesystem", () => {
       const oldSession = await handleNextHostedRequest(new Request(`http://${host}/api/v1/workspace`, {
         headers: { Host: host, Cookie: cookie },
       }));
-      expect(oldSession.status).toBe(401);
+      expect(oldSession.status).toBe(200);
+      expect(await oldSession.json()).toMatchObject({ workspaceRoot: secondWorkspace });
     } finally {
       await Promise.allSettled([first.foundation.stop(), second?.foundation.stop()]);
       if (prior.appData === undefined) delete process.env.VIDCOM_APP_DATA;
@@ -635,4 +637,84 @@ describe("project delivery HTTP routes on real SQLite and filesystem", () => {
       else process.env.VIDCOM_SETTINGS = prior.settings;
     }
   });
+
+  it("imports through the production host wiring and exposes the real async job", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "vidcom-hosted-import-"));
+    roots.push(root);
+    const workspace = path.join(root, "workspace");
+    const source = path.join(root, "outside", "source-project");
+    const appData = path.join(root, "app-data");
+    await Promise.all([mkdir(workspace), mkdir(source, { recursive: true })]);
+    await writeFile(path.join(source, "hyperframes.json"), "{}\n");
+    await writeFile(path.join(source, "index.html"),
+      '<main data-composition-id="main" data-width="1920" data-height="1080" data-duration="1"></main>\n');
+    const prior = {
+      appData: process.env.VIDCOM_APP_DATA,
+      workspace: process.env.VIDCOM_WORKSPACE,
+      nonce: process.env.VIDCOM_BOOTSTRAP_NONCE,
+      settings: process.env.VIDCOM_SETTINGS,
+    };
+    const nonce = Buffer.alloc(32, 11).toString("base64url");
+    const port = 49332;
+    process.env.VIDCOM_APP_DATA = appData;
+    process.env.VIDCOM_WORKSPACE = workspace;
+    process.env.VIDCOM_BOOTSTRAP_NONCE = nonce;
+    process.env.VIDCOM_SETTINGS = path.join(root, "setting.json");
+    hostBrowseTokens.revokeSession(HOST_BROWSE_SESSION);
+    let runtime: Awaited<ReturnType<typeof startNextHostedRuntime>> | null = null;
+    try {
+      runtime = await startNextHostedRuntime(port, workspace);
+      const host = `127.0.0.1:${port}`;
+      const exchange = await runtime.app.request(`http://${host}/api/v1/auth/exchange`, {
+        method: "POST",
+        headers: { Host: host, "Content-Type": "application/json" },
+        body: JSON.stringify({ nonce }),
+      });
+      expect(exchange.status).toBe(204);
+      const cookie = exchange.headers.get("set-cookie")!.split(";", 1)[0]!;
+      const identity = await stat(source, { bigint: true });
+      const token = hostBrowseTokens.mint({
+        sessionId: HOST_BROWSE_SESSION,
+        canonicalPath: source,
+        identity: { device: identity.dev.toString(), inode: identity.ino.toString() },
+      }).token;
+      const requestImport = () => runtime!.app.request(`http://${host}/api/v1/projects/imports`, {
+        method: "POST",
+        headers: { Host: host, Cookie: cookie, "Content-Type": "application/json" },
+        body: JSON.stringify({ sourceToken: token, targetName: "Hosted Copy" }),
+      });
+      const accepted = await requestImport();
+      expect(accepted.status).toBe(202);
+      const { jobId } = await accepted.json() as { jobId: string };
+
+      let job: { status: string; result?: { slug?: string } } | null = null;
+      for (let attempt = 0; attempt < 200; attempt += 1) {
+        const response = await runtime.app.request(`http://${host}/api/v1/jobs/${jobId}`, {
+          headers: { Host: host, Cookie: cookie },
+        });
+        expect(response.status).toBe(200);
+        job = await response.json() as typeof job;
+        if (["succeeded", "partial", "failed", "cancelled"].includes(job!.status)) break;
+        await new Promise((resolve) => setTimeout(resolve, 10));
+      }
+      expect(job).toMatchObject({ status: "succeeded", result: { slug: "hosted-copy" } });
+      expect(await readFile(path.join(workspace, "hosted-copy", "index.html"), "utf8"))
+        .toContain("data-composition-id");
+      expect(JSON.parse(await readFile(path.join(workspace, "hosted-copy", "vidcom.json"), "utf8")))
+        .toMatchObject({ id: expect.stringMatching(/^project_/u) });
+      await expect(access(path.join(source, "vidcom.json"))).rejects.toMatchObject({ code: "ENOENT" });
+      expect((await requestImport()).status).toBe(409);
+    } finally {
+      hostBrowseTokens.revokeSession(HOST_BROWSE_SESSION);
+      await runtime?.foundation.stop();
+      if (prior.appData === undefined) delete process.env.VIDCOM_APP_DATA;
+      else process.env.VIDCOM_APP_DATA = prior.appData;
+      if (prior.workspace === undefined) delete process.env.VIDCOM_WORKSPACE;
+      else process.env.VIDCOM_WORKSPACE = prior.workspace;
+      if (prior.nonce === undefined) delete process.env.VIDCOM_BOOTSTRAP_NONCE;
+      else process.env.VIDCOM_BOOTSTRAP_NONCE = prior.nonce;
+      if (prior.settings === undefined) delete process.env.VIDCOM_SETTINGS;
+      else process.env.VIDCOM_SETTINGS = prior.settings;
+    }
+  }, 15_000);
 });

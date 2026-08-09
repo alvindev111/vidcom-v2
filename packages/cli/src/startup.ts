@@ -80,6 +80,8 @@ export async function runStartupSequence<Listener>(
 export interface DaemonRuntime {
   infrastructure: ReturnType<typeof createInfrastructure>;
   application: ReturnType<typeof createApplication> | null;
+  /** Current foundation lease, exposed only for bounded lease-loss recovery. */
+  leaseId: string | null;
 }
 
 export interface DaemonHooks<Listener> {
@@ -122,6 +124,11 @@ async function recoverJobsAndRenderRoots(
   recoverJobs: DaemonHooks<unknown>["recoverJobs"],
 ): Promise<void> {
   const errors: unknown[] = [];
+  if (runtime.application) {
+    try {
+      await runtime.application.workspaceCoordinator.recoverPending(runtime.infrastructure.workspaceRoot);
+    } catch (error) { errors.push(error); }
+  }
   try { await recoverJobs(runtime); }
   catch (error) { errors.push(error); }
   try { await recoverRenderRoots(runtime.infrastructure); }
@@ -202,6 +209,10 @@ export async function startVidcomFoundation<Listener>(
     { name: "scheduler", run: stopSchedulerOnce },
     { name: "watcher", run: closeWatcherOnce },
     { name: "lease", run: releaseLeaseOnce },
+    // Recovery entry ids are session-scoped capabilities. Once this foundation
+    // stops, keeping them resolvable would let a stale UI address the workspace
+    // that has just been replaced.
+    { name: "entry-registry", run: () => infrastructure.entries.clear() },
     { name: "database", run: destroyDatabaseOnce },
   ]);
   const cleanup = () => cleanupPromise ??= (async () => {
@@ -226,14 +237,14 @@ export async function startVidcomFoundation<Listener>(
             leaseLost = true;
             if (leaseRenewal) clearInterval(leaseRenewal);
             await stopBackground();
-            await hooks.onLeaseLost?.({ infrastructure, application });
+            await hooks.onLeaseLost?.({ infrastructure, application, leaseId });
           })
           .catch(async () => {
             if (leaseLost) return;
             leaseLost = true;
             if (leaseRenewal) clearInterval(leaseRenewal);
             await stopBackground();
-            await hooks.onLeaseLost?.({ infrastructure, application });
+            await hooks.onLeaseLost?.({ infrastructure, application, leaseId });
           }), WORKSPACE_LEASE_RENEW_MS);
         leaseRenewal.unref?.();
         application = createApplication(infrastructure, leaseId);
@@ -272,7 +283,7 @@ export async function startVidcomFoundation<Listener>(
         );
       },
       jobRecovery: () => recoverJobsAndRenderRoots(
-        { infrastructure, application },
+        { infrastructure, application, leaseId },
         hooks.recoverJobs,
       ),
       identityBackfill: async () => {
@@ -292,13 +303,14 @@ export async function startVidcomFoundation<Listener>(
           if (!result.ok) throw new Error(result.error.message);
         }
       },
-      scheduler: async () => { schedulerHandle = await hooks.startScheduler({ infrastructure, application }) ?? null; },
-      watcher: async () => { watcherHandle = await hooks.startWatcher({ infrastructure, application }) ?? null; },
-      listener: async () => { listenerHandle = await hooks.openListener({ infrastructure, application }); return listenerHandle; },
+      scheduler: async () => { schedulerHandle = await hooks.startScheduler({ infrastructure, application, leaseId }) ?? null; },
+      watcher: async () => { watcherHandle = await hooks.startWatcher({ infrastructure, application, leaseId }) ?? null; },
+      listener: async () => { listenerHandle = await hooks.openListener({ infrastructure, application, leaseId }); return listenerHandle; },
     }, options.signal);
     return {
       infrastructure,
       application: application!,
+      leaseId,
       listener,
       stop: cleanup,
     };

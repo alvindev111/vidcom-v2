@@ -1,6 +1,6 @@
 import { randomBytes } from "node:crypto";
 import { realpathSync } from "node:fs";
-import { mkdtemp, mkdir, rm } from "node:fs/promises";
+import { cp, mkdtemp, mkdir, readdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
@@ -49,6 +49,25 @@ export function smokeEnvironment(root, base = process.env) {
   };
 }
 
+export async function copyCacheContents(source, destination) {
+  const entries = await readdir(source, { withFileTypes: true }).catch(() => []);
+  // An absent cache must remain absent. Creating an empty component directory
+  // makes the production coordinator classify it as `ready`, which turns a
+  // first install into a forced repair instead of a normal download.
+  if (entries.length === 0) return;
+  await mkdir(destination, { recursive: true });
+  for (const entry of entries) {
+    await cp(path.join(source, entry.name), path.join(destination, entry.name), {
+      recursive: true,
+      force: true,
+      // Hugging Face snapshots use relative links into their sibling blob
+      // store. Node otherwise rewrites them to the temporary smoke root, so
+      // the persisted cache becomes dangling as soon as that root is removed.
+      verbatimSymlinks: true,
+    });
+  }
+}
+
 export async function createSmokeRoot() {
   // Canonical from the start. On macOS `mkdtemp` hands back a path under
   // `/var`, which is a symlink to `/private/var` — and the filesystem browser
@@ -67,6 +86,16 @@ export async function createSmokeRoot() {
     // back with nothing rather than with something the runner installed.
     mkdir(path.join(root, "empty-bin"), { recursive: true }),
   ]);
+  const cacheRoot = process.env.VIDCOM_SMOKE_CACHE_ROOT
+    ? path.resolve(process.env.VIDCOM_SMOKE_CACHE_ROOT)
+    : null;
+  if (cacheRoot) {
+    await Promise.all([
+      copyCacheContents(path.join(cacheRoot, "home-cache"), path.join(root, "home", ".cache")),
+      copyCacheContents(path.join(cacheRoot, "browser-cache"), path.join(root, "app-data", "browser-cache")),
+      copyCacheContents(path.join(cacheRoot, "model-cache"), path.join(root, "app-data", "models")),
+    ]);
+  }
   return {
     root,
     workspace,
@@ -74,6 +103,13 @@ export async function createSmokeRoot() {
     appData: path.join(root, "app-data"),
     environment: smokeEnvironment(root),
     async dispose() {
+      if (cacheRoot) {
+        await Promise.all([
+          copyCacheContents(path.join(root, "home", ".cache"), path.join(cacheRoot, "home-cache")),
+          copyCacheContents(path.join(root, "app-data", "browser-cache"), path.join(cacheRoot, "browser-cache")),
+          copyCacheContents(path.join(root, "app-data", "models"), path.join(cacheRoot, "model-cache")),
+        ]);
+      }
       await rm(root, { recursive: true, force: true });
     },
   };

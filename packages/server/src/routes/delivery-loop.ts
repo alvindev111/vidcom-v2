@@ -312,7 +312,8 @@ export function createDeliveryLoopRoutes(dependencies: DeliveryLoopRouteDependen
   });
   routes.get("/v1/renders/:jobId/download", async (c) => {
     const job = await requireJob(dependencies.jobs, jobId(c));
-    if (job.type !== "render" || (job.status !== "succeeded" && job.status !== "partial")) {
+    if (job.projectId === null || job.type !== "render"
+      || (job.status !== "succeeded" && job.status !== "partial")) {
       fail({ code: ErrorCode.NotFound, message: "render artifact is not available" });
     }
     const path = (job.result as { artifactPath?: unknown } | null)?.artifactPath;

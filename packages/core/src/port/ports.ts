@@ -510,6 +510,8 @@ export interface EventOutboxPort {
 export interface JobStorePort {
   /** Enqueues or returns an identical prior job; a reused key with different input is a conflict. */
   enqueue(job: NewJob): Promise<{ job: Job; reused: boolean } | { conflict: "idempotency_key_reused" }>;
+  /** Reads the newest job for an application-owned idempotency key. */
+  findIdempotent?(projectId: ProjectId | null, type: string, idempotencyKey: string): Promise<Job | null>;
   /** Reads one job; `null` means the ID does not exist. */
   get(id: JobId): Promise<Job | null>;
   /** Reads durable process termination evidence without exposing internal job input. */
@@ -527,7 +529,7 @@ export interface JobStorePort {
   /** Reads the oldest eligible queued job; `null` means none is ready. */
   nextQueued(
     types: string[],
-    excluded: readonly { projectId: ProjectId; type: string }[],
+    excluded: readonly { projectId: ProjectId | null; type: string }[],
   ): Promise<Job | null>;
   /** Persists bounded progress and an optional stage; `null` clears the stage. */
   updateProgress(id: JobId, progress: number, stage: string | null): Promise<void>;

@@ -132,6 +132,29 @@ describe("NodeProcessSupervisor", () => {
     }
   }, 30_000);
 
+  it("keeps cancellation proof exhaustive when the packaged PATH is empty", async () => {
+    const previousPath = process.env.PATH;
+    const controller = new AbortController();
+    try {
+      process.env.PATH = "";
+      const execution = new NodeProcessSupervisor(20_000).run({
+        command: [process.execPath, "-e", "setInterval(() => {}, 1000)"],
+        signal: controller.signal,
+      });
+      await new Promise((resolve) => setTimeout(resolve, PROCESS_CAPTURE_INTERVAL_MS * 2));
+      controller.abort();
+      const result = await execution;
+      expect(result.status).toBe("terminated");
+      if (result.status !== "terminated") return;
+      expect(result.proof).toMatchObject({ exhaustive: true, survivors: [] });
+      expect(result.warnings).toEqual([]);
+    } finally {
+      controller.abort();
+      if (previousPath === undefined) delete process.env.PATH;
+      else process.env.PATH = previousPath;
+    }
+  }, 30_000);
+
   it("proves a post-kill ppid walk can be empty while direct PID probes still find survivors", async () => {
     let stdout: string;
     try {

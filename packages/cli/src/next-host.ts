@@ -17,13 +17,13 @@ import {
   type RuntimePaths,
   type VidcomDatabase,
 } from "@vidcom/adapter";
-import type { AbsolutePath } from "@vidcom/core";
-import { JobScheduler, type ProjectIdentity } from "@vidcom/core";
+import type { AbsolutePath, JobId } from "@vidcom/core";
+import { canonicalizeJson, JobScheduler, type ProjectIdentity } from "@vidcom/core";
 import { createMcpHttpHandlers } from "@vidcom/mcp";
 import { enqueueRenderJob, enqueueSnapshotJob } from "@vidcom/worker";
 
 import { createJobTypes, createMcpRegistry, createSystemClock, hashContent } from "./composition-root";
-import { startVidcomFoundation } from "./startup";
+import { startVidcomFoundation, type DaemonRuntime } from "./startup";
 import { BrowseTokenStore, FilesystemBrowserService } from "@vidcom/core";
 import { ErrorCode, SUPPORTED_REVISIONS } from "@vidcom/contracts";
 import { BRIDGE_CREDENTIAL_SETTING } from "./bridge-credential";
@@ -31,6 +31,8 @@ import { VIDCOM_VERSION } from "./commands/version";
 import { prepareRuntimeForCli, runtimePathsFor } from "./runtime-paths-source";
 import { selectWorkspace } from "./workspace-selection";
 import { defaultAppDataRoot } from "./app-data-root";
+import { createStartProjectImport } from "./project-import-service";
+import { handleLeaseLoss } from "./lease-loss";
 
 export { defaultAppDataRoot } from "./app-data-root";
 
@@ -40,17 +42,43 @@ export interface NextHostedRuntime {
   nonces: InMemoryNonceStore;
   /** Identifies this process for the lifetime of one start, for discovery and handshake. */
   instanceId: string;
-  workspaceRoot: string;
+  workspaceRoot: AbsolutePath;
   attachments: AttachmentRegistry;
+  /** Shared host state survives workspace swaps; foundations do not. */
+  readonly hostState: HostedRuntimeState;
 }
 
 interface RuntimeGlobal {
   __vidcomNextRuntimes?: Map<number, Promise<NextHostedRuntime>>;
+  __vidcomNextApps?: Map<number, Promise<ReturnType<typeof createServerApp>>>;
 }
 
 interface HostedRuntimeBoot {
   appDataRoot: string;
   runtimePaths: RuntimePaths;
+}
+
+export interface HostedRuntimeRecord {
+  workspaceRoot: string;
+  instanceId: string;
+}
+
+/** Listener/discovery operations owned outside a workspace foundation. */
+export interface HostedRuntimeHost {
+  replaceDiscovery(previous: HostedRuntimeRecord | null, next: HostedRuntimeRecord): Promise<void>;
+  removeDiscovery(runtime: HostedRuntimeRecord): Promise<void>;
+  exitHeadless(error: Error): Promise<void>;
+}
+
+interface HostedRuntimeState {
+  readonly clock: ReturnType<typeof createSystemClock>;
+  readonly nonces: InMemoryNonceStore;
+  readonly sessions: InMemorySessionStore;
+  readonly instanceId: string;
+  attachments?: AttachmentRegistry;
+  activeRuntime: NextHostedRuntime | null;
+  switching: boolean;
+  host?: HostedRuntimeHost;
 }
 
 /**
@@ -89,6 +117,22 @@ function runtimeMap(): Map<number, Promise<NextHostedRuntime>> {
   return shared.__vidcomNextRuntimes ??= new Map();
 }
 
+function appMap(): Map<number, Promise<ReturnType<typeof createServerApp>>> {
+  const shared = globalThis as typeof globalThis & RuntimeGlobal;
+  return shared.__vidcomNextApps ??= new Map();
+}
+
+function setHostedApp(port: number, app: ReturnType<typeof createServerApp>): void {
+  appMap().set(port, Promise.resolve(app));
+}
+
+function activateHostedRuntime(port: number, runtime: NextHostedRuntime): void {
+  const pending = Promise.resolve(runtime);
+  runtimeMap().set(port, pending);
+  appMap().set(port, pending.then((value) => value.app));
+  runtime.hostState.activeRuntime = runtime;
+}
+
 export async function startNextHostedRuntime(
   port: number,
   explicitWorkspace?: string,
@@ -97,18 +141,30 @@ export async function startNextHostedRuntime(
     boot?: HostedRuntimeBoot;
     database?: VidcomDatabase;
     migrate?: typeof migrateDatabase;
+    hostState?: HostedRuntimeState;
+    host?: HostedRuntimeHost;
   } = {},
 ): Promise<NextHostedRuntime> {
-  const clock = createSystemClock();
-  const nonces = new InMemoryNonceStore(clock);
-  const bootstrapNonce = process.env.VIDCOM_BOOTSTRAP_NONCE;
-  delete process.env.VIDCOM_BOOTSTRAP_NONCE;
-  if (bootstrapNonce) nonces.register(bootstrapNonce);
-  const sessions = new InMemorySessionStore(clock);
-  // New on every start, deliberately. A restarted daemon that reused its id
-  // would satisfy a handshake meant for the process that died, and every check
-  // after that would pass.
-  const instanceId = `daemon_${crypto.randomUUID()}`;
+  const clock = options.hostState?.clock ?? createSystemClock();
+  const nonces = options.hostState?.nonces ?? new InMemoryNonceStore(clock);
+  const sessions = options.hostState?.sessions ?? new InMemorySessionStore(clock);
+  // A workspace swap stays inside this daemon and keeps its identity; a fresh
+  // process gets a fresh id so a stale handshake cannot bind to a restart.
+  const instanceId = options.hostState?.instanceId ?? `daemon_${crypto.randomUUID()}`;
+  const hostState: HostedRuntimeState = options.hostState ?? {
+    clock,
+    nonces,
+    sessions,
+    instanceId,
+    activeRuntime: null,
+    switching: false,
+  };
+  if (options.host) hostState.host = options.host;
+  if (!options.hostState) {
+    const bootstrapNonce = process.env.VIDCOM_BOOTSTRAP_NONCE;
+    delete process.env.VIDCOM_BOOTSTRAP_NONCE;
+    if (bootstrapNonce) nonces.register(bootstrapNonce);
+  }
   let leaseHeld = true;
   // Settings first: the file is allowed to say where application data lives, so
   // nothing that depends on that path can be computed before it is read.
@@ -145,6 +201,7 @@ export async function startNextHostedRuntime(
     }
   }
   let scheduler: JobScheduler | null = null;
+  let leaseLossHandler: (runtime: DaemonRuntime) => Promise<void> = async () => {};
   const foundation = await startVidcomFoundation({
     appDataRoot,
     workspaceRoot: workspaceRoot as AbsolutePath,
@@ -180,9 +237,8 @@ export async function startNextHostedRuntime(
       return infrastructure.watcher;
     },
     async openListener() { return null; },
-    onLeaseLost() {
-      leaseHeld = false;
-      sessions.revokeAll();
+    onLeaseLost(runtime) {
+      return leaseLossHandler(runtime);
     },
   }, {
     migrationPrepared: true,
@@ -200,13 +256,13 @@ export async function startNextHostedRuntime(
   };
   const registry = createMcpRegistry(foundation.infrastructure, foundation.application);
   const mcp = createMcpHttpHandlers(registry);
-  const attachments = new AttachmentRegistry({
+  const attachments = hostState.attachments ??= new AttachmentRegistry({
     clock,
     instanceId,
     // Only a daemon a client started on demand may retire itself. One a person
     // started stays up until that person stops it, however quiet it gets.
     autoStarted: options.autoStarted ?? false,
-    hasActiveWork: () => foundation.infrastructure.jobs.hasNonTerminalJob?.() ?? false,
+    hasActiveWork: () => hostState.activeRuntime?.foundation.infrastructure.jobs.hasNonTerminalJob?.() ?? false,
   });
   const workspaceOverview = async () => {
     const entries = await foundation.application.scanWorkspace();
@@ -241,13 +297,110 @@ export async function startNextHostedRuntime(
     hashContent,
     binaries: foundation.infrastructure.renderBinaries,
   };
-  return {
-    foundation,
-    nonces,
-    instanceId,
+  const startProjectImport = createStartProjectImport({
     workspaceRoot,
-    attachments,
-    app: createServerApp({
+    takenSlugs: async () => (await foundation.application.scanWorkspace()).map((entry) => entry.slug),
+    resolveSelection: (token) => hostBrowseTokens.peek(token, HOST_BROWSE_SESSION) ?? null,
+    findExisting: async (idempotencyKey) => {
+      const find = foundation.infrastructure.jobs.findIdempotent;
+      if (!find) throw new TypeError("job store cannot query import idempotency");
+      const job = await find.call(
+        foundation.infrastructure.jobs,
+        null,
+        "project-import",
+        idempotencyKey,
+      );
+      return job ? { id: job.id, status: job.status } : null;
+    },
+    enqueue: async (input) => {
+      const jobInput = {
+        source: input.source,
+        sourceIdentity: input.sourceIdentity,
+        workspaceRoot: input.workspaceRoot,
+        ...(input.targetName === undefined ? {} : { targetName: input.targetName }),
+      };
+      const enqueued = await foundation.infrastructure.jobs.enqueue({
+        id: foundation.infrastructure.ids.newId("job") as JobId,
+        projectId: null,
+        type: "project-import",
+        input: jobInput,
+        inputHash: hashContent(canonicalizeJson(jobInput)),
+        idempotencyKey: input.idempotencyKey,
+      });
+      if ("conflict" in enqueued) return { ok: false, error: {
+        code: ErrorCode.IdempotencyKeyReused,
+        message: "project import idempotency key was reused with different input",
+      } };
+      return { ok: true, value: { id: enqueued.job.id } };
+    },
+  });
+  let runtimeValue: NextHostedRuntime | null = null;
+  const activateSelection = async (requested: string) => {
+    const held = hostBrowseTokens.peek(requested, HOST_BROWSE_SESSION);
+    if (!held) {
+      return { ok: false as const, error: {
+        code: ErrorCode.BrowseTokenInvalid,
+        message: "workspace selection token is not valid",
+      } };
+    }
+    const current = hostState.activeRuntime ?? runtimeValue;
+    if (!current) {
+      return { ok: false as const, error: {
+        code: ErrorCode.WorkspaceUnavailable,
+        message: "the daemon has no runtime to replace",
+      } };
+    }
+    if (path.resolve(held.canonicalPath) === path.resolve(current.workspaceRoot)) {
+      return { ok: true as const, value: { workspaceRoot: current.workspaceRoot, reauthRequired: true as const } };
+    }
+    if (hostState.switching) {
+      return { ok: false as const, error: {
+        code: ErrorCode.WorkspaceSwitching,
+        message: "a workspace switch is already in progress",
+      } };
+    }
+    if (await current.foundation.infrastructure.jobs.hasNonTerminalJob?.() === true) {
+      return { ok: false as const, error: {
+        code: ErrorCode.WorkspaceBusy,
+        message: "a running job blocks workspace activation",
+      } };
+    }
+
+    hostState.switching = true;
+    let replacement: NextHostedRuntime | null = null;
+    try {
+      replacement = await startNextHostedRuntime(port, held.canonicalPath, {
+        autoStarted: options.autoStarted,
+        hostState,
+        ...(hostState.host === undefined ? {} : { host: hostState.host }),
+        ...(options.migrate === undefined ? {} : { migrate: options.migrate }),
+      });
+      await current.foundation.stop();
+      new AppSettingsStore(replacement.foundation.infrastructure.database).set(
+        "active_workspace",
+        replacement.workspaceRoot,
+      );
+      await hostState.host?.replaceDiscovery(
+        { workspaceRoot: current.workspaceRoot, instanceId },
+        { workspaceRoot: replacement.workspaceRoot, instanceId },
+      );
+      activateHostedRuntime(port, replacement);
+      return { ok: true as const, value: {
+        workspaceRoot: replacement.workspaceRoot,
+        reauthRequired: true as const,
+      } };
+    } catch (cause) {
+      await replacement?.foundation.stop().catch(() => {});
+      return { ok: false as const, error: {
+        code: ErrorCode.WorkspaceUnavailable,
+        message: cause instanceof Error ? cause.message : String(cause),
+      } };
+    } finally {
+      hostState.switching = false;
+    }
+  };
+  const browser = new FilesystemBrowserService(new WorkerFilesystemBrowser(), hostBrowseTokens);
+  const activeApp = createServerApp({
       port,
       uiOrigins: origins,
       nonces,
@@ -264,11 +417,8 @@ export async function startNextHostedRuntime(
           new AppSettingsStore(foundation.infrastructure.database).get(BRIDGE_CREDENTIAL_SETTING),
         ),
         leaseHeld: () => leaseHeld,
-        // The daemon's own registry runs the tool, so the audit entry is written
-        // here. A bridge that dies mid-call cannot take the record with it.
         invokeTool: async (request) => {
           const result = await registry.invoke(request.name, request.input, {
-            // The era the bridge negotiated, not an assumption made here.
             era: request.era,
             protocolVersion: request.protocolVersion,
             credentialId: request.credentialId,
@@ -294,10 +444,7 @@ export async function startNextHostedRuntime(
       jobs: foundation.infrastructure.jobs,
       events: foundation.infrastructure.events,
       system: {
-        browser: new FilesystemBrowserService(new WorkerFilesystemBrowser(), hostBrowseTokens),
-        // One session per host, and the token store is shared with the
-        // activation route: a token minted by a browse has to be redeemable by
-        // the activation that follows it.
+        browser,
         sessionId: (request) => (/(?:^|;\s*)vidcom_session=/u.test(request.headers.get("cookie") ?? "")
           ? HOST_BROWSE_SESSION
           : undefined),
@@ -307,47 +454,14 @@ export async function startNextHostedRuntime(
       deliveryLoop: {
         workspaceRoot,
         workspaceOverview,
-        // `requested` is a browse selection token, not a path. Resolving it is
-        // the only way an absolute path enters here, and the token was minted
-        // for this session against a directory the user walked to.
-        activateWorkspace: async (requested) => {
-          const held = hostBrowseTokens.peek(requested, HOST_BROWSE_SESSION);
-          if (!held) {
-            return { ok: false as const, error: {
-              code: ErrorCode.BrowseTokenInvalid,
-              message: "workspace selection token is not valid",
-            } };
-          }
-          const selected = await selectWorkspace({
-            explicit: held.canonicalPath,
-            appDataRoot,
-            database: foundation.infrastructure.database,
-          });
-          foundation.infrastructure.entries.clear();
-          await foundation.infrastructure.events.append({
-            type: "workspace.changed",
-            projectId: null,
-            payload: { operation: "activate", workspaceRoot: selected },
-          });
-          if (path.resolve(selected) !== path.resolve(workspaceRoot)) {
-            const replacement = startNextHostedRuntime(port, selected, {
-              autoStarted: options.autoStarted,
-              boot,
-              database: foundation.infrastructure.database,
-              ...(options.migrate === undefined ? {} : { migrate: options.migrate }),
-            });
-            runtimeMap().set(port, replacement);
-            await replacement;
-            setTimeout(() => void foundation.stop(), 0);
-          }
-          return { ok: true, value: { workspaceRoot: selected, reauthRequired: true as const } };
-        },
+        activateWorkspace: activateSelection,
         lifecycle: foundation.application.lifecycle,
         diagnostics: foundation.application.diagnostics,
         agentKit: foundation.application.agentKit,
         writes: foundation.application.writeDependencies,
         reads: foundation.application.readDependencies,
         jobs: foundation.infrastructure.jobs,
+        startProjectImport,
         enqueueRender: (input) => enqueueRenderJob(enqueueDependencies, input),
         enqueueSnapshot: (input) => enqueueSnapshotJob(enqueueDependencies, input),
         replaceRecoveryIdentity: (input) => foundation.application.lifecycle.replaceIdentity({
@@ -358,8 +472,80 @@ export async function startNextHostedRuntime(
         }),
         mimeFromPath: foundation.infrastructure.mimeFromPath,
       },
-    }),
+    });
+  const bootstrapApp = createServerApp({
+    port,
+    uiOrigins: origins,
+    nonces,
+    sessions,
+    system: {
+      browser,
+      sessionId: (request) => (/(?:^|;\s*)vidcom_session=/u.test(request.headers.get("cookie") ?? "")
+        ? HOST_BROWSE_SESSION
+        : undefined),
+      workspace: () => Promise.resolve({ workspaceRoot: null }),
+      runtime: () => Promise.resolve({ platform: `${process.platform}-${process.arch}` }),
+    },
+    workspaceActivation: activateSelection,
+  });
+  runtimeValue = {
+    foundation,
+    nonces,
+    instanceId,
+    workspaceRoot,
+    attachments,
+    hostState,
+    app: activeApp,
   };
+  leaseLossHandler = async (lost) => {
+    if (hostState.activeRuntime !== null && hostState.activeRuntime !== runtimeValue) return;
+    const record = { workspaceRoot, instanceId };
+    const outcome = await handleLeaseLoss(instanceId, {
+      refuseWrites() {
+        leaseHeld = false;
+        setHostedApp(port, bootstrapApp);
+      },
+      removeDiscoveryRecord: () => hostState.host?.removeDiscovery(record) ?? Promise.resolve(),
+      emitLeaseLost: () => lost.infrastructure.events.append({
+        type: "workspace.lease_lost",
+        projectId: null,
+        payload: { workspaceRoot },
+      }).then(() => undefined),
+      reacquire: () => lost.leaseId === null
+        ? Promise.resolve(false)
+        : lost.infrastructure.lease.renew(lost.leaseId),
+      hasAttachedUi: () => sessions.storedHashes().length > 0,
+      async toNoWorkspace() {
+        await foundation.stop();
+        if (hostState.activeRuntime === runtimeValue) hostState.activeRuntime = null;
+      },
+      async exitHeadless() {
+        await foundation.stop();
+        if (hostState.activeRuntime === runtimeValue) hostState.activeRuntime = null;
+        await hostState.host?.exitHeadless(new Error("workspace lease was lost"));
+      },
+    });
+    if (outcome.kind !== "recovered") return;
+
+    await foundation.stop();
+    try {
+      const replacement = await startNextHostedRuntime(port, workspaceRoot, {
+        autoStarted: options.autoStarted,
+        hostState,
+        ...(hostState.host === undefined ? {} : { host: hostState.host }),
+        ...(options.migrate === undefined ? {} : { migrate: options.migrate }),
+      });
+      await hostState.host?.replaceDiscovery(null, record);
+      activateHostedRuntime(port, replacement);
+    } catch (cause) {
+      if (sessions.storedHashes().length === 0) {
+        await hostState.host?.exitHeadless(new Error(
+          `workspace lease recovery failed: ${cause instanceof Error ? cause.message : String(cause)}`,
+        ));
+      }
+    }
+  };
+  return runtimeValue;
 }
 
 /**
@@ -371,14 +557,21 @@ export async function startNextHostedRuntime(
  */
 export function registerHostedRuntime(port: number, runtime: Promise<NextHostedRuntime>): void {
   runtimeMap().set(port, runtime);
+  appMap().set(port, runtime.then((value) => {
+    if (runtimeMap().get(port) === runtime) value.hostState.activeRuntime = value;
+    return value.app;
+  }));
 }
 
 export function getNextHostedRuntime(port: number): Promise<NextHostedRuntime> {
   const runtimes = runtimeMap();
   const pending = runtimes.get(port) ?? startNextHostedRuntime(port);
-  runtimes.set(port, pending);
+  if (!runtimes.has(port)) registerHostedRuntime(port, pending);
   pending.catch(() => {
-    if (runtimes.get(port) === pending) runtimes.delete(port);
+    if (runtimes.get(port) === pending) {
+      runtimes.delete(port);
+      appMap().delete(port);
+    }
   });
   return pending;
 }
@@ -396,5 +589,6 @@ export async function handleNextHostedRequest(request: Request): Promise<Respons
       sessions: new InMemorySessionStore(clock),
     }).fetch(request);
   }
-  return (await getNextHostedRuntime(port)).app.fetch(request);
+  const target = appMap().get(port) ?? getNextHostedRuntime(port).then((runtime) => runtime.app);
+  return (await target).fetch(request);
 }

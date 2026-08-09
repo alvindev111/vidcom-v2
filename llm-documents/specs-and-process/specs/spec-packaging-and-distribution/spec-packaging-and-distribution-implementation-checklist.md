@@ -781,12 +781,13 @@ Mỗi phase chạy focused command dưới đây trên SQLite/filesystem thật,
   - `canSubmit` được kiểm **cả ở handler lẫn ở thuộc tính `disabled`**: submit bằng bàn phím không đi qua `disabled`
   - Dòng phụ ở [`new-project-card.tsx`](../../../../src/components/home/new-project-card.tsx) đổi từ "Generate with an AI agent" sang "Or ask a connected AI agent to build one" — bản cũ khiến nút trông như sẽ tự viết video, trong khi generation xảy ra qua agent nối bằng MCP, thứ người dùng phải tự thiết lập
   - _Requirements: R1.19_ — _Design: §5.12, §7.6_
-- [~] G.9 Kịch bản trên harness của G.0 — **ma trận cookie + workflow xong, kịch bản UI còn lại**
+- [x] G.9 Kịch bản trên harness của G.0
   - Nonce → session → xoá token khỏi URL; picker; New video **cả hai nhánh** thành công và thất bại; cross-origin dev giữ cookie ở fetch **và** SSE
   - Ma trận cookie lấy **đúng** bảng đã đo ở S9 làm kỳ vọng: `localhost:3000 → localhost:<port>` giữ được `SameSite=Strict`; `localhost:3000 → 127.0.0.1:<port>` **mất cookie dù `exchange` trả 200**. Vế thứ hai là test của G.3, và nó phải fail-at-boot chứ không phải fail-ở-request đầu
   - [`cookie-matrix.test.ts`](../../../../tests/frontend/cookie-matrix.test.ts) giữ **cả hai dòng cạnh nhau** để đọc thành một cặp: đổi port thì được, đổi hostname thì không, và cái hỏng thì im lặng. Kiểm tra lúc boot phải khớp **chính xác** bảng đo — nếu nó từng chấp nhận dòng thứ hai thì sản phẩm ship một cấu hình mà `exchange` trả 200 còn session không bao giờ tới
   - **Workflow riêng, không nhồi vào CI chính**: [`phase4-browser-session.yml`](../../../../.github/workflows/phase4-browser-session.yml) cài `chrome-headless-shell` rồi set `VIDCOM_REQUIRE_BROWSER=1`. Browser là ~200 MB mỗi job và CI chính đã 13–16 phút trên Windows; trả giá đó mỗi lần push để mua hai khẳng định là đánh đổi sai. Repo đã có tiền lệ tách dependency nặng ở `phase4-python-stack.yml`
-  - **Còn lại**: kịch bản UI đầy đủ (nonce → session → xoá token khỏi URL; picker; New video cả hai nhánh) — cần daemon chạy thật cộng static host, tức **H.1** phải có trước
+  - [`browser-session.test.ts`](../../../../tests/frontend/browser-session.test.ts) chạy bundle static đã build bằng Chrome thật, proxy `/api/*` vào đúng Hono production host: exchange nonce rồi xác nhận query `t` biến mất; tạo `Browser Video` và điều hướng tới slug; tạo trùng rồi xác nhận `role=alert`; ép trạng thái chưa có workspace, đi qua roots → entries → activate và quan sát request kích hoạt. Local gate: **8/8** cùng `cookie-matrix.test.ts`
+  - Harness chỉ intercept bốn response picker để có cây thư mục deterministic; auth, nonce exchange, project create thành công/thất bại và static asset đều chạy qua daemon thật. Workflow build `out` trước khi chạy và đặt `VIDCOM_REQUIRE_BROWSER=1`, nên thiếu Chrome là lỗi chứ không phải skip
   - _Requirements: R1.10, R1.19, R4.10, R4.12_
 
 **Acceptance Criteria**:
@@ -1146,13 +1147,11 @@ Mỗi phase chạy focused command dưới đây trên SQLite/filesystem thật,
   - Không có đường serialize identity thứ hai. `ProjectId` trùng ⇒ cấp id mới, ghi lại `vidcom.json`, log sự kiện
   - Import **không** viết đường ghi identity nào: cây đã copy xong là một project directory bình thường, và `bootstrapProject` đã xử lý đúng ca `ProjectId` trùng — cấp id mới, ghi lại `vidcom.json`, ghi journal. Thêm một đường serialize thứ hai ở đây là tạo chỗ để hai đường lệch nhau
   - _Requirements: R7.5, R7.7_ — _Design: §5.19_
-- [ ] K.6 `POST /v1/projects/imports` trả **202 `{jobId}`** — **MỞ LẠI: endpoint chết trong mọi mode**
-  - **Bỏ tick sau khi packaged smoke chạm tới nó.** Route tồn tại và khai `startProjectImport` là dependency **tuỳ chọn**, nhưng **không nơi nào trong composition cung cấp** — nên nó trả `404 not_found` ở mọi mode, kể cả `serve` trong source checkout. `planProjectImport` (core) và staging copier (adapter) đã có; **job type và phần nối thì chưa**. `createJobTypes` không có import job nào
-  - **Đã có**: job type (`createProjectImportJobType`, 6 test) và service (`createStartProjectImport` + `createProjectImportJobDependencies`, 6 test trên filesystem thật)
-  - **Cơ chế nối đúng không phải job store, và schema đã nói điều đó.** Thử nối qua `jobs.enqueue` thì chạm ngay `NewJob.projectId` **bắt buộc, không null** — mà import thì **chưa có project**, đó là toàn bộ điểm của nó. Bảng `workspace_operation` đã có sẵn `kind: "project_import"`, `project_id` **nullable** và `staging_path`: import được thiết kế để chạy qua `WorkspaceMutationCoordinator` với một operation row, và K.7 recovery đọc đúng bảng đó. Đây nhiều khả năng là lý do K.6 chưa bao giờ được nối
-  - **Mẫu để theo là `WorkspaceMutationCoordinator.createProjectRoot`** (`workspace-mutation-coordinator.ts:149`): `assertHeld(leaseId)` → `mutex.run(workspaceRoot, …)` → `journal.begin({ kind, projectId, stagingPath, actor, action }, steps, { leaseId })` → dựng staging → publish → settle. Import khác nó đúng hai chỗ: `kind: "project_import"`, và `projectId: null` cho tới khi thư mục đã nằm trong workspace
-  - Để tick lại cần: thêm `importProjectRoot` theo mẫu trên, cấp `startProjectImport` trả **operation id** làm `jobId`, và để `recoverPending` xử lý row `project_import` bỏ dở. Job type và service đã sẵn sàng cho phần thực thi
-  - Ghi lại vì nó đắt: mỗi mảnh đều đúng khi đứng riêng nên không unit test nào đỏ; chỉ một lần gọi endpoint thật mới lộ ra
+- [x] K.6 `POST /v1/projects/imports` trả **202 `{jobId}`**
+  - Route production host cấp `startProjectImport`, enqueue một job `project-import` cấp workspace với `projectId: null`, và `createJobTypes` chạy đúng worker đã stage/copy/publish/backfill. `workspace_operation` vẫn là journal phục hồi filesystem; nó không thay thế job mà client poll qua `/api/v1/jobs/:jobId`
+  - `Job`/`NewJob` phản ánh schema SQLite vốn đã nullable; event project-scoped không phát cho job cấp workspace. Application lock + lookup `(NULL, type, key)` đóng khoảng trống unique-index của SQLite
+  - Test production host thật đi `exchange → token → POST 202 → poll succeeded`, kiểm cây đích có identity, nguồn không đổi, và request lặp sau success trả conflict. Focused matrix 51/51 xanh trên SQLite/filesystem thật
+  - Token không chỉ peek path: `device/inode` đã mint phải khớp source hiện tại trước plan, rồi worker recheck identity đầy đủ trước copy
   - Request `{sourceToken, targetName?}` — token từ browser, **không** raw path. Idempotency khoá ở **application layer** theo `(workspaceRoot, sourceCanonicalIdentity, targetName)`: `uniqueIndex("uq_job_idempotency")` scope theo `(project_id, type, key)` mà `project_id` **NULL** tới khi xong, và SQLite coi mọi NULL là khác nhau
   - Ba thành phần khoá nối bằng **NUL**: nối bằng thứ mà path chứa được thì hai request khác nhau dựng ra cùng một material
   - _Requirements: R7.1, R7.8_ — _Design: §7.15_
@@ -2532,6 +2531,30 @@ Chi tiết: [Detailed Goals](./spec-packaging-and-distribution-detailed-goal.md)
   - Summary: Đổi khẳng định sang `toMatchObject` cả object để nó **in ra thứ nhận được**, và bằng chứng chỉ thẳng nguyên nhân: Windows trả `state: "missing"` cho một install mà cha của target là **file**.
   - Decisions: Hai lần đoán trước (junction, `force`) đều sai vì `toBe` chỉ in `undefined` và giấu mất lý do thật. Gốc: khi một thư mục cha là file, POSIX báo **ENOTDIR** còn Windows báo **ENOENT**, nên `pathKind` trả `absent` và cùng một install hỏng đọc thành `missing` ở đây, `target_not_directory` ở kia. Không phẳng hoá hai cái làm một: **install thiếu thì giải nén lại, install hỏng thì phải dọn thứ đang chắn đường trước**. Thêm `hasNonDirectoryAncestor` kiểm chuỗi cha tường minh thay vì dựa vào errno — độc lập nền tảng và chính xác hơn cả hai.
   - Blockers: Windows còn `download-cache` timeout 30 s ở `tests/adapter/download-cache.test.ts:150` — thuộc **họ lock/EBUSY đã ghi trong bảng flake**, chưa sửa và không sửa bằng retry. Full suite cục bộ 1790 pass / 5 skip.
+
+2026-08-09 — Phase K, K.6/K.7: endpoint import production và crash recovery
+  - Files: `packages/{core,adapter,worker,cli,server}/**`, `tests/{adapter,cli,server}/**`, detailed design §16, checklist
+  - Summary: Production host trả 202 với job thật có `projectId: null`; scheduler chạy import tuần tự, client poll cùng job qua API. Import đồng thời ghi `workspace_operation` để startup phân biệt crash trước publish (xoá staging có marker + abort) và crash sau publish (backfill + recover). Focused matrix 51/51, typecheck và diff-check xanh.
+  - Decisions: Ghi chú cũ trong K.6 nói operation id phải giả làm job id vì TypeScript bắt `projectId`; điều đó mâu thuẫn schema SQLite nullable và contract polling đã duyệt. C-15 ghi correction: job row là progress/terminal authority, workspace-operation row là filesystem recovery authority. Token import cũng kiểm lại device/inode trước plan để đóng TOCTOU của đường `peek`.
+  - Blockers: Không còn blocker K.6/K.7 cục bộ; exact artifact smoke và CI ba OS vẫn thuộc Phase M.
+
+2026-08-09 — Phase G, G.9: đóng vòng UI trên trình duyệt thật
+  - Files: `src/app/page.tsx`, `src/components/home/new-project-card.tsx`, `src/lib/api/services.ts`, `tests/frontend/browser-session.test.ts`, `.github/workflows/phase4-browser-session.yml`, checklist
+  - Summary: Home nay thực sự đưa người dùng chưa có workspace vào picker; thẻ New video mở dialog thật và gọi service catalog. Chrome chạy static bundle + production Hono host, phủ nonce cleanup, picker/activate, create success và duplicate failure; local `test:browser-session` xanh 8/8.
+  - Decisions: API picker được giữ ổn định qua prop interface và service catalog; chỉ response filesystem được intercept để fixture deterministic. Luồng auth/session/create vẫn dùng daemon và SQLite/fs thật. Áp dụng các quy tắc React về dependency ổn định và tránh effect gây render thừa; không thêm dependency hoặc abstraction ngoài phạm vi.
+  - Blockers: Không còn blocker cục bộ cho G.9; workflow exact commit vẫn phải xanh trước closeout phát hành.
+
+2026-08-10 — Phase M: production wiring, perimeter và full local gate
+  - Files: `packages/{adapter,cli,server}/**`, `tests/{adapter,cli,server,build}/**`, `.github/workflows/{packaged-smoke,phase4-browser-session}.yml`, Design §16, checklist và implementation notes
+  - Summary: Đóng các regression cuối của import/workspace lifecycle, termination probe, VieNeu warm-repair và MCP perimeter. Full suite xanh **201 file pass + 1 intentional skip, 1810 test pass + 5 intentional skip**; typecheck, boundaries và lint 0 error/4 warning có sẵn đều xanh.
+  - Decisions: `EntryRegistry` là capability cấp foundation nên clear khi workspace đổi, nhưng session thuộc listener nên được giữ. `/api/mcp` và `/api/bridge` chọn bearer theo namespace dù handler có mount hay không. Test VieNeu inject process seam thay vì vô tình dựa FFmpeg của host; production vẫn resolve absolute runtime binary và fail-closed. Progress đổi stage không bị throttle; process-tree probe dùng environment tối thiểu, tuyệt đối, không PATH cha.
+  - Blockers: Các checkbox M.3b–M.9 và artifact AC vẫn chờ **exact-commit native CI evidence**. Chưa dùng local green để tick bằng chứng ba OS.
+
+2026-08-10 — Phase M: tách CI smoke fixture khỏi supply chain phát hành
+  - Files: `scripts/prepare-packaged-runtime.mjs`, `.github/workflows/packaged-smoke.yml`, `tests/build/packaged-smoke.test.ts`, Design §16
+  - Summary: Bộ FFmpeg/ffprobe digest-pinned từ mirror bên thứ ba được gắn nhãn và cưỡng chế là **non-release smoke fixture**; script từ chối chạy nếu workflow không opt-in tường minh.
+  - Decisions: URL + digest đủ để smoke reproducible nhưng không biến nguồn thành được duyệt. Workflow chỉ upload JSON/manifest/checksum evidence, không publish binary. Production release supply chain vẫn giữ human approval gate như checklist đã yêu cầu.
+  - Blockers: Muốn đánh dấu toàn bộ task/release complete vẫn cần người dùng duyệt một trong hai: nguồn binary production, hoặc source-build policy/tradeoff x265. Không tự chọn thay.
 
 Format:
 ```

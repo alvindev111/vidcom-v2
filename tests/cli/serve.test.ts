@@ -1,5 +1,6 @@
 import { realpathSync } from "node:fs";
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, stat, writeFile } from "node:fs/promises";
+import { DatabaseSync } from "node:sqlite";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
@@ -9,6 +10,8 @@ import {
   connectRenderClient,
   createSeaStaticAssetHost,
   defaultAppDataRoot,
+  HOST_BROWSE_SESSION,
+  hostBrowseTokens,
   parseServeCommandArgs,
   resolveStaticAssets,
   startServing,
@@ -43,6 +46,35 @@ async function serve(): Promise<{ daemon: ServingDaemon; appData: string; worksp
   const daemon = await startServing({ workspace });
   daemons.push(daemon);
   return { daemon, appData, workspace };
+}
+
+async function exchange(daemon: ServingDaemon, nonce: string): Promise<string> {
+  const response = await fetch(`${daemon.baseUrl}/api/v1/auth/exchange`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ nonce }),
+  });
+  expect(response.status).toBe(204);
+  return response.headers.get("set-cookie")?.split(";", 1)[0] ?? "";
+}
+
+function stealLease(appData: string): void {
+  const database = new DatabaseSync(path.join(appData, "vidcom.sqlite"));
+  try {
+    database.prepare("UPDATE workspace_lease SET lease_id = ?, holder_id = ?, expires_at = ?")
+      .run("lease_stolen", "other-writer", new Date(Date.now() + 60_000).toISOString());
+  } finally {
+    database.close();
+  }
+}
+
+async function waitUntil(predicate: () => Promise<boolean>, timeoutMs = 20_000): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if (await predicate()) return;
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  }
+  throw new Error("condition did not become true before its deadline");
 }
 
 describe("serve arguments", () => {
@@ -195,4 +227,85 @@ describe("serve", () => {
     // two paths reach different targets on one port.
     expect(page.headers.get("content-type")).not.toContain("application/json");
   }, 60_000);
+
+  it("switches the production listener to a new foundation without losing the session", async () => {
+    const { appData, workspace } = await scratch();
+    const nextWorkspace = path.join(path.dirname(workspace), "workspace-two");
+    await mkdir(nextWorkspace);
+    process.env.VIDCOM_APP_DATA = appData;
+    const nonce = Buffer.alloc(32, 21).toString("base64url");
+    process.env.VIDCOM_BOOTSTRAP_NONCE = nonce;
+    const daemon = await startServing({ workspace });
+    daemons.push(daemon);
+    const cookie = await exchange(daemon, nonce);
+    const identity = await stat(nextWorkspace, { bigint: true });
+    const selectionToken = hostBrowseTokens.mint({
+      sessionId: HOST_BROWSE_SESSION,
+      canonicalPath: nextWorkspace,
+      identity: { device: String(identity.dev), inode: String(identity.ino) },
+    }).token;
+
+    const switched = await fetch(`${daemon.baseUrl}/api/v1/workspace/active`, {
+      method: "PUT",
+      headers: { Cookie: cookie, "content-type": "application/json" },
+      body: JSON.stringify({ selectionToken }),
+    });
+    expect(switched.status).toBe(200);
+    expect(await switched.json()).toMatchObject({ workspaceRoot: nextWorkspace });
+
+    const workspaceResponse = await fetch(`${daemon.baseUrl}/api/v1/system/workspace`, {
+      headers: { Cookie: cookie },
+    });
+    expect(await workspaceResponse.json()).toEqual({ workspaceRoot: nextWorkspace });
+    expect(await new DaemonDiscoveryStore(appData).read(workspace)).toBeNull();
+    expect(await new DaemonDiscoveryStore(appData).read(nextWorkspace)).toMatchObject({
+      instanceId: daemon.instanceId,
+      port: daemon.listener.port,
+    });
+    const created = await fetch(`${daemon.baseUrl}/api/v1/projects`, {
+      method: "POST",
+      headers: { Cookie: cookie, "content-type": "application/json" },
+      body: JSON.stringify({ name: "After Switch", presetId: "vertical-shorts" }),
+    });
+    expect(created.status).toBe(201);
+    await expect(stat(path.join(nextWorkspace, "after-switch", "vidcom.json"))).resolves.toBeDefined();
+  }, 90_000);
+
+  it("drops to the bootstrap surface after lease loss when a UI session exists", async () => {
+    const { appData, workspace } = await scratch();
+    process.env.VIDCOM_APP_DATA = appData;
+    const nonce = Buffer.alloc(32, 22).toString("base64url");
+    process.env.VIDCOM_BOOTSTRAP_NONCE = nonce;
+    const daemon = await startServing({ workspace });
+    daemons.push(daemon);
+    const cookie = await exchange(daemon, nonce);
+    stealLease(appData);
+
+    const discovery = new DaemonDiscoveryStore(appData);
+    await waitUntil(async () => await discovery.read(workspace) === null);
+    const bridge = await fetch(`${daemon.baseUrl}/api/bridge/v1/tools/list_projects`, {
+      method: "POST",
+      headers: { Cookie: cookie, "content-type": "application/json" },
+      body: "{}",
+    });
+    expect(bridge.status).toBe(401);
+    expect((await bridge.json()).error.code).toBe("credential_invalid");
+    expect((await fetch(`${daemon.baseUrl}/api/v1/health`, { headers: { Cookie: cookie } })).status).toBe(200);
+    expect(await (await fetch(`${daemon.baseUrl}/api/v1/system/workspace`, {
+      headers: { Cookie: cookie },
+    })).json()).toEqual({ workspaceRoot: null });
+  }, 45_000);
+
+  it("closes a headless listener and rejects its wait after lease loss", async () => {
+    const { appData, workspace } = await scratch();
+    process.env.VIDCOM_APP_DATA = appData;
+    const daemon = await startServing({ workspace });
+    daemons.push(daemon);
+    const failed = expect(daemon.failure).rejects.toThrow("workspace lease was lost");
+    stealLease(appData);
+
+    await failed;
+    await expect(fetch(`${daemon.baseUrl}/api/v1/health`)).rejects.toThrow();
+    expect(await new DaemonDiscoveryStore(appData).read(workspace)).toBeNull();
+  }, 45_000);
 });

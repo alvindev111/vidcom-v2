@@ -57,8 +57,8 @@ async function kindOf(target: string): Promise<ImportEntryKind> {
  * the inode does, which is precisely the event this has to notice.
  */
 export async function sourceIdentityOf(source: string): Promise<string> {
-  const info = await stat(source);
-  return `${info.dev}:${info.ino}:${info.ctimeMs}`;
+  const info = await stat(source, { bigint: true });
+  return `${info.dev}:${info.ino}:${info.ctimeNs}`;
 }
 
 export interface CopyReport {

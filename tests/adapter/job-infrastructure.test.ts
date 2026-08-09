@@ -92,6 +92,47 @@ describe("SQLite job infrastructure", () => {
     }
   });
 
+  it("persists and schedules a workspace-scoped job without a project event", async () => {
+    const { database, store, clock } = await fixture();
+    const emitted: string[] = [];
+    try {
+      await store.enqueue({
+        id: "job_workspace" as JobId,
+        projectId: null,
+        type: "workspace-probe",
+        input: { source: "/outside" },
+        inputHash: inputHash({ source: "/outside" }),
+        idempotencyKey: "workspace-key",
+      });
+      expect(await store.findIdempotent(null, "workspace-probe", "workspace-key"))
+        .toMatchObject({ id: "job_workspace", projectId: null });
+      const scheduler = new JobScheduler(store, clock, createSequentialIdPort(), [{
+        type: "workspace-probe",
+        concurrency: 1,
+        idempotent: false,
+        async run(_input, context) {
+          await context.updateProgress(0.5, "working");
+          return { complete: true };
+        },
+      }], {
+        async append(event) { emitted.push(event.type); return emitted.length; },
+        async readFrom() { return { events: [], gap: false }; },
+        async latestSeq() { return 0; },
+      }, nodeSchedulerTimers);
+      await scheduler.runAvailable();
+      await scheduler.waitForIdle();
+      expect(await store.get("job_workspace" as JobId)).toMatchObject({
+        projectId: null,
+        status: "succeeded",
+        progress: 1,
+        result: { complete: true },
+      });
+      expect(emitted).toEqual([]);
+    } finally {
+      await database.destroy();
+    }
+  });
+
   it("claims once, keeps progress monotonic, and makes terminal operations no-ops", async () => {
     const { database, store } = await fixture();
     try {
@@ -203,6 +244,38 @@ describe("SQLite job infrastructure", () => {
       expect(emitted).toContainEqual(expect.objectContaining({
         type: "job.progress", payload: expect.objectContaining({ stage: "retrying" }),
       }));
+    } finally {
+      await database.destroy();
+    }
+  });
+
+  it("does not throttle a stage transition with the preceding progress write", async () => {
+    const { database, store, clock } = await fixture();
+    const definition: JobTypeDefinition = {
+      type: "stage-probe", concurrency: 1, idempotent: false,
+      async run(_input, context) {
+        await context.updateProgress(0.05, "building render document");
+        await context.updateProgress(0.1, "rendering video");
+        return { ok: true };
+      },
+    };
+    try {
+      await store.enqueue({ ...newJob("job_stage_transition", p1, {}), type: "stage-probe" });
+      const scheduler = new JobScheduler(
+        store,
+        clock,
+        createSequentialIdPort(),
+        [definition],
+        undefined,
+        nodeSchedulerTimers,
+      );
+      await scheduler.runAvailable();
+      await scheduler.waitForIdle();
+      expect(await store.get("job_stage_transition" as JobId)).toMatchObject({
+        status: "succeeded",
+        progress: 1,
+        stage: "rendering video",
+      });
     } finally {
       await database.destroy();
     }

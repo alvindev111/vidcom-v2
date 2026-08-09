@@ -103,3 +103,31 @@ export function serviceStream(
     },
   };
 }
+
+/** Structured HTTP failure kept intact for form and picker error states. */
+export class ServiceError extends Error {
+  constructor(readonly code: string, message: string, readonly status: number) {
+    super(message);
+    this.name = "ServiceError";
+  }
+}
+
+/** Executes one catalog entry and parses its JSON response. */
+export async function callService<Value>(
+  id: ServiceId,
+  init: ServiceRequestInit = {},
+): Promise<Value> {
+  const request = serviceRequest(id, init);
+  const response = await fetch(request.url, request.init);
+  const payload = await response.json().catch(() => null) as {
+    error?: { code?: string; message?: string };
+  } | null;
+  if (!response.ok) {
+    throw new ServiceError(
+      payload?.error?.code ?? "request_failed",
+      payload?.error?.message ?? `Request failed (${response.status}).`,
+      response.status,
+    );
+  }
+  return payload as Value;
+}

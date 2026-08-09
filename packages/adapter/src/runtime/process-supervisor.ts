@@ -60,6 +60,17 @@ export function identitySchemesAgree(left: string, right: string): boolean {
 const DEFAULT_TIMEOUT_MS = 5 * 60 * 1_000;
 const MAX_CAPTURE_BYTES = 64 * 1024;
 const execFileAsync = promisify(execFile);
+const POSIX_PS = process.platform === "darwin" ? "/bin/ps" : "/usr/bin/ps";
+
+function posixProbeEnvironment(): NodeJS.ProcessEnv {
+  return {
+    NODE_ENV: process.env.NODE_ENV,
+    PATH: "/usr/bin:/bin",
+    LANG: "C",
+    LC_ALL: "C",
+    TZ: "UTC",
+  };
+}
 
 interface ProcessRow { pid: number; ppid: number | null; pgid: number | null; startedAt: string }
 interface CaptureState { pids: Map<number, string>; groups: Map<number, string>; exhaustive: boolean }
@@ -393,16 +404,10 @@ async function probeLinuxProcessIdentity(pid: number): Promise<ProcessIdentityPr
 async function probePosixProcessIdentity(pid: number): Promise<ProcessIdentityProbeResult> {
   let stdout: string;
   try {
-    const result = await execFileAsync("/bin/ps", ["-p", String(pid), "-o", "pid=,lstart="], {
+    const result = await execFileAsync(POSIX_PS, ["-p", String(pid), "-o", "pid=,lstart="], {
       encoding: "utf8",
       timeout: PROCESS_COMMAND_TIMEOUT_MS,
-      env: {
-        NODE_ENV: process.env.NODE_ENV,
-        PATH: "/usr/bin:/bin",
-        LANG: "C",
-        LC_ALL: "C",
-        TZ: "UTC",
-      },
+      env: posixProbeEnvironment(),
     });
     if (result.stderr !== "") return { identity: undefined, exhaustive: false };
     stdout = result.stdout;
@@ -429,20 +434,11 @@ async function probeWindowsProcessIdentity(pid: number): Promise<ProcessIdentity
   const disabled = new Set((process.env.VIDCOM_DISABLE_ENUMERATORS ?? "")
     .split(",").map((value) => value.trim()).filter(Boolean));
   if (disabled.has("powershell-cim")) return blind("powershell probe disabled by VIDCOM_DISABLE_ENUMERATORS");
-  const windowsRoot = process.env.SystemRoot;
-  if (
-    !windowsRoot
-    || !path.win32.isAbsolute(windowsRoot)
-    || path.win32.normalize(windowsRoot) !== windowsRoot
-    || path.win32.basename(windowsRoot).toLowerCase() !== "windows"
-  ) return blind(`SystemRoot is not a canonical Windows directory: ${windowsRoot ?? "<unset>"}`);
-  const powershell = path.win32.join(
-    windowsRoot,
-    "System32",
-    "WindowsPowerShell",
-    "v1.0",
-    "powershell.exe",
-  );
+  const windowsRoot = canonicalWindowsRoot();
+  if (!windowsRoot) {
+    return blind(`SystemRoot is not a canonical Windows directory: ${process.env.SystemRoot ?? "<unset>"}`);
+  }
+  const powershell = windowsPowerShell(windowsRoot);
   let stdout: string;
   try {
     // `Get-Process` reads the process object directly through .NET. The former
@@ -498,6 +494,26 @@ async function probeWindowsProcessIdentity(pid: number): Promise<ProcessIdentity
     identity: { pid, startedAt: `${WINDOWS_IDENTITY_SCHEME}:${record.StartTime}` },
     exhaustive: true,
   };
+}
+
+function canonicalWindowsRoot(): string | null {
+  const windowsRoot = process.env.SystemRoot;
+  return windowsRoot
+    && path.win32.isAbsolute(windowsRoot)
+    && path.win32.normalize(windowsRoot) === windowsRoot
+    && path.win32.basename(windowsRoot).toLowerCase() === "windows"
+    ? windowsRoot
+    : null;
+}
+
+function windowsPowerShell(windowsRoot: string): string {
+  return path.win32.join(
+    windowsRoot,
+    "System32",
+    "WindowsPowerShell",
+    "v1.0",
+    "powershell.exe",
+  );
 }
 
 function truncateReason(value: string): string {
@@ -593,8 +609,10 @@ function hasErrorCode(error: unknown, code: string): boolean {
 async function enumerateProcesses(): Promise<{ rows: ProcessRow[]; exhaustive: boolean }> {
   if (process.platform !== "win32") {
     try {
-      const { stdout } = await execFileAsync("ps", ["-Ao", "pid=,ppid=,pgid=,lstart="], {
-        encoding: "utf8", timeout: PROCESS_COMMAND_TIMEOUT_MS,
+      const { stdout } = await execFileAsync(POSIX_PS, ["-Ao", "pid=,ppid=,pgid=,lstart="], {
+        encoding: "utf8",
+        timeout: PROCESS_COMMAND_TIMEOUT_MS,
+        env: posixProbeEnvironment(),
       });
       return { rows: parsePosixTable(stdout), exhaustive: true };
     } catch {
@@ -604,11 +622,18 @@ async function enumerateProcesses(): Promise<{ rows: ProcessRow[]; exhaustive: b
   const disabled = new Set((process.env.VIDCOM_DISABLE_ENUMERATORS ?? "")
     .split(",").map((value) => value.trim()).filter(Boolean));
   if (disabled.has("powershell-cim")) return { rows: [], exhaustive: false };
+  const windowsRoot = canonicalWindowsRoot();
+  if (!windowsRoot) return { rows: [], exhaustive: false };
+  const powershell = windowsPowerShell(windowsRoot);
   try {
-    const { stdout } = await execFileAsync("powershell.exe", [
+    const { stdout } = await execFileAsync(powershell, [
       "-NoProfile", "-NonInteractive", "-Command",
       "Get-CimInstance Win32_Process | Select-Object ProcessId,ParentProcessId,CreationDate | ConvertTo-Csv -NoTypeInformation",
-    ], { encoding: "utf8", timeout: PROCESS_COMMAND_TIMEOUT_MS });
+    ], {
+      encoding: "utf8",
+      timeout: PROCESS_COMMAND_TIMEOUT_MS,
+      env: windowsProbeEnvironment(windowsRoot, powershell),
+    });
     return { rows: parseWindowsCim(stdout), exhaustive: true };
   } catch {
     return { rows: [], exhaustive: false };
@@ -641,9 +666,14 @@ async function killPid(pid: number, tree = false): Promise<void> {
     try { process.kill(pid, "SIGKILL"); } catch { /* already exited */ }
     return;
   }
+  const windowsRoot = canonicalWindowsRoot();
+  if (!windowsRoot) return;
   try {
-    await execFileAsync("taskkill", ["/pid", String(pid), ...(tree ? ["/t"] : []), "/f"], {
+    await execFileAsync(path.win32.join(windowsRoot, "System32", "taskkill.exe"), [
+      "/pid", String(pid), ...(tree ? ["/t"] : []), "/f",
+    ], {
       encoding: "utf8", timeout: PROCESS_COMMAND_TIMEOUT_MS,
+      env: windowsProbeEnvironment(windowsRoot, windowsPowerShell(windowsRoot)),
     });
   } catch { /* taskkill reports non-zero when the pid already exited */ }
 }

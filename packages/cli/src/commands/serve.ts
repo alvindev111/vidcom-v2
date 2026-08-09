@@ -6,7 +6,14 @@ import { DaemonDiscoveryStore, migrateDatabase, workspaceHash } from "@vidcom/ad
 import { bindLoopback, type LoopbackListener } from "@vidcom/server";
 
 import { CliInputError } from "../cli-error";
-import { defaultAppDataRoot, registerHostedRuntime, startNextHostedRuntime } from "../next-host";
+import {
+  defaultAppDataRoot,
+  handleNextHostedRequest,
+  registerHostedRuntime,
+  startNextHostedRuntime,
+  type HostedRuntimeHost,
+  type HostedRuntimeRecord,
+} from "../next-host";
 import { createRequestRouter, type FetchTarget } from "../loopback-host";
 import {
   MANIFEST_ASSET,
@@ -117,6 +124,8 @@ export interface ServingDaemon {
   instanceId: string;
   workspaceRoot: string;
   baseUrl: string;
+  /** Rejects when a headless daemon must exit after losing its workspace. */
+  failure: Promise<never>;
   stop(): Promise<void>;
 }
 
@@ -138,11 +147,45 @@ export async function startServing(
 ): Promise<ServingDaemon> {
   const appDataRoot = defaultAppDataRoot();
   const port = options.port ?? await freeLoopbackPort();
+  const discovery = new DaemonDiscoveryStore(appDataRoot);
+  let listener: LoopbackListener | null = null;
+  let currentRecord: HostedRuntimeRecord | null = null;
+  let rejectFailure: (error: Error) => void = () => {};
+  const failure = new Promise<never>((_resolve, reject) => { rejectFailure = reject; });
+  const host: HostedRuntimeHost = {
+    async replaceDiscovery(previous, next) {
+      if (previous) await discovery.remove(previous.workspaceRoot, previous.instanceId);
+      if (!listener) throw new Error("cannot publish discovery before the listener exists");
+      await discovery.publish({
+        schemaVersion: 1,
+        workspaceRoot: next.workspaceRoot,
+        workspaceHash: workspaceHash(next.workspaceRoot),
+        instanceId: next.instanceId,
+        pid: process.pid,
+        host: "127.0.0.1",
+        port: listener.port,
+        startedAt: new Date().toISOString(),
+      });
+      currentRecord = next;
+    },
+    async removeDiscovery(runtime) {
+      await discovery.remove(runtime.workspaceRoot, runtime.instanceId);
+      if (currentRecord?.workspaceRoot === runtime.workspaceRoot
+        && currentRecord.instanceId === runtime.instanceId) currentRecord = null;
+    },
+    async exitHeadless(error) {
+      const active = listener;
+      listener = null;
+      await active?.close();
+      rejectFailure(error);
+    },
+  };
   const pending = startNextHostedRuntime(
     port,
     options.workspace ?? process.env.VIDCOM_WORKSPACE,
     {
       autoStarted: options.ensure === true,
+      host,
       ...(dependencies.migrate === undefined ? {} : { migrate: dependencies.migrate }),
     },
   );
@@ -158,21 +201,14 @@ export async function startServing(
     ? unbuiltFrontendTarget()
     : (request) => assetHost.handle(request);
   const router = createRequestRouter({
-    api: (request) => runtime.app.fetch(request),
+    api: handleNextHostedRequest,
     static: staticTarget,
   });
 
-  const listener = await bindLoopback({ fetch: (request) => router.handle(request) }, port);
-  const discovery = new DaemonDiscoveryStore(appDataRoot);
-  await discovery.publish({
-    schemaVersion: 1,
+  listener = await bindLoopback({ fetch: (request) => router.handle(request) }, port);
+  await host.replaceDiscovery(null, {
     workspaceRoot: runtime.workspaceRoot,
-    workspaceHash: workspaceHash(runtime.workspaceRoot),
     instanceId: runtime.instanceId,
-    pid: process.pid,
-    host: "127.0.0.1",
-    port: listener.port,
-    startedAt: new Date().toISOString(),
   });
 
   let stopped: Promise<void> | null = null;
@@ -181,14 +217,17 @@ export async function startServing(
     instanceId: runtime.instanceId,
     workspaceRoot: runtime.workspaceRoot,
     baseUrl: `http://127.0.0.1:${listener.port}`,
+    failure,
     stop() {
       // One teardown, however many callers: a signal handler and an error path
       // both reach here, and running it twice releases a lease this process no
       // longer holds.
       return stopped ??= (async () => {
-        await discovery.remove(runtime.workspaceRoot, runtime.instanceId);
-        await listener.close();
-        await runtime.foundation.stop();
+        if (currentRecord) await discovery.remove(currentRecord.workspaceRoot, currentRecord.instanceId);
+        const active = listener;
+        listener = null;
+        await active?.close();
+        await (runtime.hostState.activeRuntime?.foundation.stop() ?? runtime.foundation.stop());
       })();
     },
   };
@@ -210,11 +249,12 @@ export async function runServeCommand(
 }
 
 export function waitForShutdown(daemon: ServingDaemon): Promise<void> {
-  return new Promise<void>((resolve, reject) => {
+  const signal = new Promise<void>((resolve, reject) => {
     const shutdown = () => {
       daemon.stop().then(resolve, reject);
     };
     process.once("SIGINT", shutdown);
     process.once("SIGTERM", shutdown);
   });
+  return Promise.race([signal, daemon.failure]);
 }

@@ -185,7 +185,11 @@ describe("NodeRenderBinaryProbe", () => {
       import { appendFile, chmod, copyFile } from "node:fs/promises";
       const args = process.argv.slice(2);
       const home = process.env.HOME ?? process.env.USERPROFILE;
-      await appendFile(${JSON.stringify(invocations)}, JSON.stringify({ args, home }) + "\\n", "utf8");
+      await appendFile(${JSON.stringify(invocations)}, JSON.stringify({
+        args,
+        home,
+        telemetry: process.env.HYPERFRAMES_NO_TELEMETRY,
+      }) + "\\n", "utf8");
       if (args[0] === "browser" && args[1] === "ensure" && args.includes("--force")) {
         await copyFile(${JSON.stringify(browserFixture)}, ${JSON.stringify(browser)});
         await chmod(${JSON.stringify(browser)}, 0o755);
@@ -206,10 +210,11 @@ describe("NodeRenderBinaryProbe", () => {
 
     expect(result).toMatchObject({ ok: true, value: { browserPath: await realpath(browser) } });
     const observed = (await readFile(invocations, "utf8")).trim().split("\n")
-      .map((line) => JSON.parse(line) as { args: string[]; home: string });
+      .map((line) => JSON.parse(line) as { args: string[]; home: string; telemetry: string });
     expect(observed[0]).toEqual({
       args: ["browser", "ensure", "--force"],
       home: browserRoot,
+      telemetry: "1",
     });
     expect(observed.at(-1)?.args).toEqual(["browser", "path"]);
     expect((await cache.status(DOWNLOAD_CACHE_COMPONENTS.browser)).state).toBe("ready");

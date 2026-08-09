@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 
 import { AGENT_KIT_FILES, AGENT_KIT_VERSION } from "@vidcom/agent-kit";
 import {
@@ -39,11 +39,13 @@ import {
   hyperframesRuntimeSource,
   mimeFromPath,
   openVidcomDatabase,
+  projectRegistrationLocationExists,
   type RuntimePaths,
 } from "@vidcom/adapter";
 import { DEFAULT_VIDCOM_SETTINGS, type ContentHash, type ProjectId, type ResolvedVidcomSettings } from "@vidcom/contracts";
 import {
   reconcileCompositeMutation,
+  bootstrapProject,
   ApprovalService,
   McpCredentialService,
   ToolAuditService,
@@ -63,6 +65,8 @@ import {
   type IdPort,
   type LogPort,
   type MetricPort,
+  type ProcessPort,
+  type ProcessRunInput,
   type JobTypeDefinition,
   type ProjectRef,
 } from "@vidcom/core";
@@ -74,7 +78,10 @@ import {
   createRenderJobHandler,
   createSnapshotJobHandler,
   createTtsJobType,
+  createProjectImportJobType,
 } from "@vidcom/worker";
+
+import { createProjectImportJobDependencies } from "./project-import-service";
 
 export interface McpRuntimeConfig {
   approvalRequestTtlMs: number;
@@ -135,6 +142,8 @@ export interface CompositionRootConfig {
   settings?: ResolvedVidcomSettings;
   clock?: ClockPort;
   ids?: IdPort;
+  /** Injectable process seam for deterministic integration tests; production uses NodeProcessRunner. */
+  processes?: ProcessPort;
   runtimeConfig?: Partial<McpRuntimeConfig>;
   logger?: LogPort;
   metrics?: MetricPort;
@@ -158,6 +167,24 @@ function renderBinaryPaths(config: CompositionRootConfig): {
       || join(nativeRoot, "bin", `ffmpeg${executableSuffix}`)) as AbsolutePath,
     ffprobePath: (process.env.HYPERFRAMES_FFPROBE_PATH?.trim()
       || join(nativeRoot, "bin", `ffprobe${executableSuffix}`)) as AbsolutePath,
+  };
+}
+
+/** Resolves registry-owned FFmpeg commands through the verified runtime paths. */
+export function withAudioBinaryPaths(
+  processes: ProcessPort,
+  binaries: { ffmpegPath: AbsolutePath; ffprobePath: AbsolutePath },
+): ProcessPort {
+  return {
+    run(input: ProcessRunInput) {
+      const [executable, ...args] = input.command;
+      const mapped = executable === "ffmpeg"
+        ? binaries.ffmpegPath
+        : executable === "ffprobe"
+          ? binaries.ffprobePath
+          : executable;
+      return processes.run({ ...input, command: mapped === undefined ? [] : [mapped, ...args] });
+    },
   };
 }
 
@@ -243,7 +270,8 @@ export function createInfrastructure(config: CompositionRootConfig) {
     defaultEnvironment: { VIDCOM_APP_DATA: config.appDataRoot },
     caBundlePath,
   });
-  const processes = new NodeProcessRunner(undefined, caBundlePath);
+  const processes = config.processes ?? new NodeProcessRunner(undefined, caBundlePath);
+  const ttsProcesses = withAudioBinaryPaths(processes, binaries);
   const renderGuard = new LoopbackRuntimeAssetGuard();
   // The probe falls back to require.resolve when a path is absent, which cannot
   // work inside a packaged binary. Handing it the resolved paths is what keeps
@@ -299,12 +327,12 @@ export function createInfrastructure(config: CompositionRootConfig) {
   // up and committed by its owner.
   const ttsScratchRoot = join(config.appDataRoot, "tts-scratch");
   const tts = new TtsRegistry({
-    processes,
+    processes: ttsProcesses,
     scratchRoot: ttsScratchRoot,
     providers: [
       new ElevenLabsTtsProvider({ apiKey: elevenLabsApiKey(settings) }),
       new VieNeuTtsProvider({
-        processes,
+        processes: ttsProcesses,
         command: () => vieneuCommand(
           settings,
           config.runtimePaths?.nativeDependenciesRoot ?? config.nativeDependenciesRoot,
@@ -434,6 +462,7 @@ export function createApplication(
   infrastructure: ReturnType<typeof createInfrastructure>,
   leaseId: string,
 ) {
+  let recoverImportedProject: ((root: AbsolutePath, slug: string) => Promise<void>) | null = null;
   const workspaceCoordinator = new WorkspaceMutationCoordinator({
     workspace: infrastructure.workspace,
     journal: infrastructure.workspaceOperations,
@@ -442,6 +471,10 @@ export function createApplication(
     hashContent,
     directories: infrastructure.projectDirectories,
     clock: infrastructure.clock,
+    recoverImportedProject: (root, slug) => {
+      if (!recoverImportedProject) throw new Error("project import recovery is not initialized");
+      return recoverImportedProject(root, slug);
+    },
   });
   const authority = new WriteAuthority({
     workspace: infrastructure.workspace,
@@ -469,6 +502,23 @@ export function createApplication(
       resolveProjectRef: infrastructure.resolveProjectRef,
     }, journalId),
   });
+  recoverImportedProject = async (root, slug) => {
+    const result = await bootstrapProject({
+      workspace: infrastructure.workspace,
+      journal: infrastructure.journal,
+      authority,
+      clock: infrastructure.clock,
+      ids: infrastructure.ids,
+      hashContent,
+      registrationLocationExists: projectRegistrationLocationExists,
+    }, {
+      workspaceRoot: infrastructure.workspaceRoot,
+      root,
+      slug,
+      entry: "index.html" as import("@vidcom/contracts").RelPath,
+    });
+    if (!result.ok) throw new Error(result.error.message);
+  };
   const readDependencies = {
     workspace: infrastructure.workspace,
     composition: infrastructure.composition,
@@ -537,6 +587,7 @@ export function createApplication(
     },
   });
   return {
+    leaseId,
     authority,
     identity,
     state,
@@ -546,6 +597,7 @@ export function createApplication(
     agentKit,
     readDependencies,
     writeDependencies,
+    workspaceCoordinator,
     scanWorkspace: scan,
     async openProject(projectId: ProjectId) {
       const ref = await infrastructure.workspace.readProjectRef(projectId);
@@ -576,6 +628,29 @@ export function createJobTypes(
       dependencies: { ...application.writeDependencies, tts: infrastructure.tts },
       actor: "user",
     }),
+    createProjectImportJobType(createProjectImportJobDependencies({
+      journal: infrastructure.workspaceOperations,
+      leaseId: application.leaseId,
+      now: () => infrastructure.clock.now().toISOString(),
+      takenSlugs: async () => (await application.scanWorkspace()).map((entry) => entry.slug),
+      backfill: async (target) => {
+        const result = await bootstrapProject({
+          workspace: infrastructure.workspace,
+          journal: infrastructure.journal,
+          authority: application.authority,
+          clock: infrastructure.clock,
+          ids: infrastructure.ids,
+          hashContent,
+          registrationLocationExists: projectRegistrationLocationExists,
+        }, {
+          workspaceRoot: infrastructure.workspaceRoot,
+          root: target as AbsolutePath,
+          slug: basename(target),
+          entry: "index.html" as import("@vidcom/contracts").RelPath,
+        });
+        if (!result.ok) throw new Error(result.error.message);
+      },
+    })),
     createRenderJobHandler({
       process: infrastructure.renderProcess,
       roots: infrastructure.renderRoots,

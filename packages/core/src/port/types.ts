@@ -51,7 +51,8 @@ export type WorkspaceOperationKind =
   | "agent_kit_files"
   | "project_create"
   | "project_rename"
-  | "project_delete";
+  | "project_delete"
+  | "project_import";
 
 export interface WorkspaceOperationIntent {
   workspaceRoot: AbsolutePath;
@@ -462,7 +463,8 @@ export interface ProjectRevisionProjection {
 
 /** Internal durable job record consumed by Core scheduling logic. */
 export interface Job extends JobDto {
-  projectId: ProjectId;
+  /** Null only while a workspace-scoped job has not produced a project yet. */
+  projectId: ProjectId | null;
   input: unknown;
   inputHash: ContentHash;
   idempotencyKey: string | null;
@@ -475,7 +477,8 @@ export interface Job extends JobDto {
 /** New job data ready for durable enqueue. */
 export interface NewJob {
   id: JobId;
-  projectId: ProjectId;
+  /** Null only for workspace-scoped jobs such as project import. */
+  projectId: ProjectId | null;
   type: string;
   input: unknown;
   inputHash: ContentHash;

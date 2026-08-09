@@ -63,10 +63,15 @@ function childProcessCalls(source: string): ChildProcessCall[] {
     }
   }
 
+  const trustedEnvironmentHelpers = new Set([
+    "allowlistedEnvironment",
+    "posixProbeEnvironment",
+    "windowsProbeEnvironment",
+  ]);
   const containsAllowlist = (node: ts.Node): boolean => {
     if (ts.isCallExpression(node)
       && ts.isIdentifier(node.expression)
-      && node.expression.text === "allowlistedEnvironment") return true;
+      && trustedEnvironmentHelpers.has(node.expression.text)) return true;
     let found = false;
     ts.forEachChild(node, (child) => {
       if (!found && containsAllowlist(child)) found = true;
@@ -111,26 +116,6 @@ function childProcessCallNames(source: string): string[] {
  * own environment loses both protections at once and nothing reports it.
  */
 const EXEMPT = new Map<string, string>([
-  [
-    'packages/adapter/src/runtime/process-supervisor.ts#execFileAsync("/bin/ps")',
-    "reads one Linux process identity through a fixed, read-only OS command",
-  ],
-  [
-    "packages/adapter/src/runtime/process-supervisor.ts#execFileAsync(powershell)",
-    "reads one Windows process identity through a fixed PowerShell command",
-  ],
-  [
-    'packages/adapter/src/runtime/process-supervisor.ts#execFileAsync("ps")',
-    "enumerates the POSIX process table through a fixed, read-only OS command",
-  ],
-  [
-    'packages/adapter/src/runtime/process-supervisor.ts#execFileAsync("powershell.exe")',
-    "enumerates the Windows process table through a fixed PowerShell command",
-  ],
-  [
-    'packages/adapter/src/runtime/process-supervisor.ts#execFileAsync("taskkill")',
-    "terminates one already-identified Windows process tree through the OS tool",
-  ],
   [
     "packages/adapter/src/fs/credential-store.ts#execFileSync(executable)",
     "runs the fixed credential ACL inspection command with no user-controlled executable",

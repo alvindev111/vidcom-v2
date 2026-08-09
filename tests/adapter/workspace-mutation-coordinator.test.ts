@@ -20,6 +20,8 @@ import {
   WorkspaceFs,
   WorkspaceLease,
   WorkspaceOperationJournal,
+  readStagingMarker,
+  writeStagingMarker,
 } from "@vidcom/adapter";
 
 import { dbAll, dbOne } from "../support/database";
@@ -64,6 +66,19 @@ function coordinator(workspacePort: WorkspacePort = workspace) {
     lease,
     leaseId,
     hashContent: hash,
+  });
+}
+
+function lifecycleCoordinator(recoverImportedProject?: (root: AbsolutePath, slug: string) => Promise<void>) {
+  return new WorkspaceMutationCoordinator({
+    workspace,
+    journal,
+    lease,
+    leaseId,
+    hashContent: hash,
+    directories: new FsProjectDirectoryAdapter(workspaceRoot),
+    clock,
+    ...(recoverImportedProject ? { recoverImportedProject } : {}),
   });
 }
 
@@ -276,5 +291,98 @@ describe("WorkspaceMutationCoordinator with real SQLite and filesystem", () => {
     expect(dbAll(database, "SELECT status FROM workspace_operation")).toEqual([{ status: "aborted" }]);
     await expect(directories.removeOwned(workspaceRoot)).rejects.toThrow();
     expect((await stat(workspaceRoot)).isDirectory()).toBe(true);
+  });
+
+  it("removes a marker-owned import staging tree and aborts after a pre-publish crash", async () => {
+    const directories = new FsProjectDirectoryAdapter(workspaceRoot);
+    const target = await directories.projectRoot(workspaceRoot, "imported");
+    const operationId = await journal.begin({
+      workspaceRoot,
+      kind: "project_import",
+      projectId: null,
+      fromPath: path.join(root, "source"),
+      toPath: "imported",
+      stagingPath: null,
+      actor: "user",
+      action: "project.import",
+    }, [], { leaseId });
+    const staging = path.join(path.dirname(target), `.imported.vidcom-import-${operationId}.tmp`);
+    await journal.setDirectoryPaths(operationId, { stagingPath: staging });
+    await writeStagingMarker(staging, {
+      operationId: String(operationId),
+      slug: "imported",
+      source: path.join(root, "source"),
+      target,
+      startedAt: now,
+    });
+    await writeFile(path.join(staging, "index.html"), "<main>partial</main>");
+    expect(await journal.read(operationId)).toMatchObject({
+      kind: "project_import",
+      toPath: "imported",
+      stagingPath: staging,
+    });
+    expect(await readStagingMarker(staging)).toMatchObject({ operationId: String(operationId) });
+    expect(await directories.inspect(staging as AbsolutePath)).toBe("directory");
+
+    expect(await lifecycleCoordinator(() => Promise.resolve()).recoverPending(workspaceRoot))
+      .toEqual([{ operationId, terminal: "aborted" }]);
+    await expect(stat(staging)).rejects.toMatchObject({ code: "ENOENT" });
+    expect(dbAll(database, "SELECT status FROM workspace_operation")).toEqual([{ status: "aborted" }]);
+  });
+
+  it("backfills and recovers an import published before its journal settle", async () => {
+    const directories = new FsProjectDirectoryAdapter(workspaceRoot);
+    const target = await directories.projectRoot(workspaceRoot, "imported");
+    const staging = path.join(path.dirname(target), ".imported.vidcom-import-recover.tmp");
+    const operationId = await journal.begin({
+      workspaceRoot,
+      kind: "project_import",
+      projectId: null,
+      fromPath: path.join(root, "source"),
+      toPath: "imported",
+      stagingPath: staging,
+      actor: "user",
+      action: "project.import",
+    }, [], { leaseId });
+    await mkdir(target);
+    await writeFile(path.join(target, "index.html"), "<main>complete</main>");
+    expect(await journal.read(operationId)).toMatchObject({
+      kind: "project_import",
+      toPath: "imported",
+      stagingPath: staging,
+    });
+    expect(await directories.inspect(target)).toBe("directory");
+    const recovered: Array<{ root: string; slug: string }> = [];
+
+    expect(await lifecycleCoordinator((projectRoot, slug) => {
+      recovered.push({ root: projectRoot, slug });
+      return Promise.resolve();
+    }).recoverPending(workspaceRoot)).toEqual([{ operationId, terminal: "recovered" }]);
+    expect(recovered).toEqual([{ root: target, slug: "imported" }]);
+    expect(dbAll(database, "SELECT status FROM workspace_operation")).toEqual([{ status: "recovered" }]);
+    expect(await readFile(path.join(target, "index.html"), "utf8")).toBe("<main>complete</main>");
+  });
+
+  it("never deletes an import-shaped directory without its matching marker", async () => {
+    const directories = new FsProjectDirectoryAdapter(workspaceRoot);
+    const target = await directories.projectRoot(workspaceRoot, "imported");
+    const staging = path.join(path.dirname(target), ".imported.vidcom-import-unsafe.tmp");
+    const operationId = await journal.begin({
+      workspaceRoot,
+      kind: "project_import",
+      projectId: null,
+      fromPath: path.join(root, "source"),
+      toPath: "imported",
+      stagingPath: staging,
+      actor: "user",
+      action: "project.import",
+    }, [], { leaseId });
+    await mkdir(staging);
+    await writeFile(path.join(staging, "user.txt"), "keep me");
+
+    expect(await lifecycleCoordinator(() => Promise.resolve()).recoverPending(workspaceRoot))
+      .toEqual([{ operationId, terminal: "orphaned" }]);
+    expect(await readFile(path.join(staging, "user.txt"), "utf8")).toBe("keep me");
+    expect(dbAll(database, "SELECT status FROM workspace_operation")).toEqual([{ status: "orphaned" }]);
   });
 });

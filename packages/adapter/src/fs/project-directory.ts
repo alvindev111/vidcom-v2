@@ -12,9 +12,11 @@ import type { RelPath } from "@vidcom/contracts";
 
 import { writeAtomic } from "./atomic-write";
 import { syncDirectory } from "./durability";
+import { readStagingMarker } from "./import-staging";
 
 const CREATE_MARKER = ".vidcom-create-";
 const QUARANTINE_MARKER = ".vidcom-quarantine-";
+const IMPORT_MARKER = ".vidcom-import-";
 
 function contained(root: string, target: string): boolean {
   const relative = path.relative(root, target);
@@ -160,7 +162,11 @@ export class FsProjectDirectoryAdapter implements ProjectDirectoryPort {
   async removeOwned(target: AbsolutePath): Promise<void> {
     const owned = await this.directChild(target);
     const name = path.basename(owned.target);
-    if (!name.startsWith(".") || (!name.includes(CREATE_MARKER) && !name.includes(QUARANTINE_MARKER))) {
+    const importOperationId = name.match(/\.vidcom-import-(.+)\.tmp$/u)?.[1] ?? null;
+    const importMarker = importOperationId === null ? null : await readStagingMarker(owned.target);
+    const importOwned = importMarker !== null && importMarker.operationId === importOperationId;
+    if (!name.startsWith(".")
+      || (!name.includes(CREATE_MARKER) && !name.includes(QUARANTINE_MARKER) && !importOwned)) {
       throw new Error("refusing to remove a directory not owned by VidCom");
     }
     await rm(owned.target, { recursive: true, force: true });

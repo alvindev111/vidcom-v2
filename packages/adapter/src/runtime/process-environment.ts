@@ -36,6 +36,9 @@ export function allowlistedEnvironment(
   // an explicit caller still can, which is how the failure mode stays testable.
   environment.PYTHONIOENCODING = "utf-8";
   environment.PYTHONUTF8 = "1";
+  // The extracted runtime is integrity-checked content, not a Python cache.
+  // Importing the bundled sidecar must not create __pycache__ beside its files.
+  environment.PYTHONDONTWRITEBYTECODE = "1";
   // Both names, read out of the pinned HyperFrames CLI rather than guessed.
   // Measured at S9: with a clean HOME the very first run prints a telemetry
   // invitation, and a packaged app must not ask a question on behalf of a tool

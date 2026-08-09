@@ -98,6 +98,7 @@ export class NodeRenderBinaryProbe implements BinaryProbePort {
     const root = this.paths.browserCacheRoot;
     return {
       VIDCOM_APP_DATA: this.options.appDataRoot,
+      HYPERFRAMES_NO_TELEMETRY: "1",
       ...(root ? { HOME: root, USERPROFILE: root } : {}),
     };
   }

@@ -55,3 +55,8 @@ describe("third-party telemetry", () => {
   }, 60_000);
 });
 
+describe("frozen Python runtime", () => {
+  it("keeps imports from mutating extracted runtime files", () => {
+    expect(allowlistedEnvironment({ NODE_ENV: "test" }).PYTHONDONTWRITEBYTECODE).toBe("1");
+  });
+});

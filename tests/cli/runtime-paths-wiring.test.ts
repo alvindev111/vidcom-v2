@@ -9,7 +9,7 @@ import {
   RUNTIME_PATH_NAMES,
   VIDCOM_NODE_SENTINEL,
 } from "@vidcom/adapter";
-import { createInfrastructure } from "@vidcom/cli";
+import { createInfrastructure, withAudioBinaryPaths } from "@vidcom/cli";
 import type { ProjectId, RelPath } from "@vidcom/contracts";
 import type { AbsolutePath, ProcessPort, ProcessRunInput } from "@vidcom/core";
 import { afterEach, describe, expect, it } from "vitest";
@@ -36,6 +36,29 @@ function artifactPaths() {
 }
 
 describe("runtime path wiring", () => {
+  it("maps TTS-owned media commands to the verified artifact binaries", async () => {
+    const calls: ProcessRunInput[] = [];
+    const processes: ProcessPort = {
+      async run(input) {
+        calls.push(input);
+        return { exitCode: 0, stdout: "", stderr: "", timedOut: false };
+      },
+    };
+    const ffmpegPath = path.join(VERSION_ROOT, "node", "bin", "ffmpeg") as AbsolutePath;
+    const ffprobePath = path.join(VERSION_ROOT, "node", "bin", "ffprobe") as AbsolutePath;
+    const mapped = withAudioBinaryPaths(processes, { ffmpegPath, ffprobePath });
+
+    await mapped.run({ command: ["ffmpeg", "-version"] });
+    await mapped.run({ command: ["ffprobe", "-version"] });
+    await mapped.run({ command: ["python3", "worker.py"] });
+
+    expect(calls.map((call) => call.command)).toEqual([
+      [ffmpegPath, "-version"],
+      [ffprobePath, "-version"],
+      ["python3", "worker.py"],
+    ]);
+  });
+
   it("carries every resolved path rather than leaving a field to its own default", () => {
     // Each optional field defaults to something plausible on its own, which is
     // the hazard: a packaged build that forgets one gets a path pointing at

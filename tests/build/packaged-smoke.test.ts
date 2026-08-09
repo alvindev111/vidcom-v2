@@ -1,4 +1,6 @@
-import { readFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, readlink, rm, stat, symlink, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import path from "node:path";
 
 import {
   SMOKE_STEPS,
@@ -8,6 +10,9 @@ import {
   smokeExitCode,
   stepIds,
 } from "../../scripts/packaged-smoke/steps.mjs";
+import { networkCutPlan } from "../../scripts/packaged-smoke/network-cut.mjs";
+import { copyCacheContents } from "../../scripts/packaged-smoke/environment.mjs";
+import { PACKAGED_RUNTIME_SOURCES } from "../../scripts/prepare-packaged-runtime.mjs";
 import { describe, expect, it } from "vitest";
 
 interface StepResult {
@@ -52,6 +57,70 @@ describe("packaged smoke steps", () => {
       scripts: Record<string, string>;
     };
     expect(manifest.scripts["test:packaged-smoke"]).toBe("node scripts/packaged-smoke/run.mjs");
+  });
+
+  it("ships the zip extractor required by a clean machine", async () => {
+    const manifest = JSON.parse(await readFile("package.json", "utf8")) as {
+      dependencies: Record<string, string>;
+    };
+    expect(manifest.dependencies.yauzl).toBe("3.4.0");
+  });
+
+  it("does not turn an empty restored cache into a ready component", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "vidcom-empty-cache-"));
+    try {
+      await copyCacheContents(path.join(root, "missing"), path.join(root, "browser-cache"));
+      await expect(stat(path.join(root, "browser-cache"))).rejects.toMatchObject({ code: "ENOENT" });
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("keeps model-cache symlinks portable across smoke roots", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "vidcom-linked-cache-"));
+    try {
+      const source = path.join(root, "source");
+      const destination = path.join(root, "destination");
+      await mkdir(path.join(source, "snapshots", "revision"), { recursive: true });
+      await mkdir(path.join(source, "blobs"), { recursive: true });
+      await writeFile(path.join(source, "blobs", "model"), "weights", "utf8");
+      await symlink("../../blobs/model", path.join(source, "snapshots", "revision", "model"));
+      await copyCacheContents(source, destination);
+      expect(await readlink(path.join(destination, "snapshots", "revision", "model")))
+        .toBe("../../blobs/model");
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("native packaged-smoke inputs", () => {
+  it("pins one exact Python and non-release media fixture for every smoke platform", () => {
+    expect(Object.keys(PACKAGED_RUNTIME_SOURCES).sort()).toEqual([
+      "darwin-arm64",
+      "linux-x64",
+      "win32-x64",
+    ]);
+    for (const source of Object.values(PACKAGED_RUNTIME_SOURCES)) {
+      for (const asset of [source.python, source.ffmpeg, source.ffprobe]) {
+        expect(asset.url).toMatch(/^https:\/\/github\.com\//u);
+        expect(asset.sha256).toMatch(/^sha256:[0-9a-f]{64}$/u);
+      }
+      expect(source.evidence).toMatch(/-package-set(?:-pruned)?\.txt$/u);
+    }
+  });
+
+  it("requires the workflow to opt in to the unapproved smoke-only media source", async () => {
+    const workflow = await readFile(".github/workflows/packaged-smoke.yml", "utf8");
+    expect(workflow).toContain('VIDCOM_ALLOW_UNRELEASED_SMOKE_RUNTIME: "1"');
+    expect(workflow).toContain("Production FFmpeg acquisition remains behind the human supply-chain gate");
+  });
+
+  it("has an explicit runner-level network cut for each release platform", () => {
+    expect(networkCutPlan("darwin")).toContain("blackhole routes");
+    expect(networkCutPlan("linux")).toContain("iptables");
+    expect(networkCutPlan("win32")).toContain("firewall rule");
+    expect(() => networkCutPlan("freebsd")).toThrow(/no runner network cut/u);
   });
 });
 

@@ -5,9 +5,9 @@ name: Packaged smoke
 # main workflow already runs 13-16 minutes on Windows, and paying this on every
 # push would buy nothing that a release gate does not buy better.
 #
-# Dispatch-only for now. The step bodies drive a packaged executable whose
-# runtime archive does not exist in this repository yet, so a scheduled run
-# would be a red badge that says nothing new every day.
+# Dispatch-only: this is a release evidence gate, not a fast presubmit. Each
+# dispatch reconstructs the exact-host native inputs, packages them, and then
+# drives the resulting executable end to end.
 on:
   workflow_dispatch:
 
@@ -25,7 +25,7 @@ jobs:
     # Long enough for a cold start on Windows under antivirus (§9.1 allows
     # 180 s for that alone) plus a real render, and short enough that a hung
     # job is cut rather than left holding a runner.
-    timeout-minutes: 45
+    timeout-minutes: 90
 
     strategy:
       # Every platform reports. One failing does not hide what the others found,
@@ -60,19 +60,24 @@ jobs:
       - name: Install dependencies
         run: bun install --frozen-lockfile
 
-      # Keyed by the runtime version rather than a lockfile hash: what is being
-      # cached is the downloaded browser and model set, and those change when
-      # the pinned runtime changes, not when a dependency does. A cache that
-      # expires must not silently turn into a passing run — the smoke restores
-      # it into an explicit location and fails if a required component is not
-      # there afterwards.
+      # The key binds both the pinned native source inputs and the measured
+      # browser/model set. A cache miss is allowed for the online warm-up; the
+      # later runner-level network cut proves those bytes are sufficient.
       - name: Restore downloaded runtime caches
         uses: actions/cache@v4
         with:
           path: |
-            ~/.cache/vidcom-smoke
-            ~/AppData/Local/vidcom-smoke
-          key: vidcom-smoke-${{ matrix.tag }}-${{ hashFiles('scripts/build-runtime-archives.mjs') }}
+            ${{ github.workspace }}/.vidcom-runtime-source-cache
+            ${{ github.workspace }}/.vidcom-smoke-cache
+          key: vidcom-smoke-${{ matrix.tag }}-${{ hashFiles('scripts/prepare-packaged-runtime.mjs', 'scripts/build-runtime-archives.mjs', 'spikes/phase-4/s9-windows-runtime/evidence/*') }}
+
+      - name: Prepare digest-pinned non-release smoke runtime
+        env:
+          VIDCOM_RUNTIME_SOURCE_CACHE: ${{ github.workspace }}/.vidcom-runtime-source-cache
+          # Explicitly authorizes a CI fixture, not a publishable release input.
+          # Production FFmpeg acquisition remains behind the human supply-chain gate.
+          VIDCOM_ALLOW_UNRELEASED_SMOKE_RUNTIME: "1"
+        run: node scripts/prepare-packaged-runtime.mjs --artifact-version "0.1.0-${{ github.sha }}"
 
       - name: Build the artifact for this runner
         # No cross-building (DR-1): the artifact embeds this machine's Node
@@ -85,6 +90,8 @@ jobs:
           # A skipped required step is a failure here. R8.4: a missing required
           # component fails the job rather than being reported as "not reached".
           VIDCOM_DOCTOR_STRICT: "1"
+          VIDCOM_SMOKE_CACHE_ROOT: ${{ github.workspace }}/.vidcom-smoke-cache
+          VIDCOM_SMOKE_NETWORK_CUT: "1"
         run: node scripts/packaged-smoke/run.mjs > packaged-smoke-${{ matrix.tag }}.json
 
       - name: Upload the evidence
@@ -94,5 +101,8 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: packaged-smoke-${{ matrix.tag }}
-          path: packaged-smoke-${{ matrix.tag }}.json
+          path: |
+            packaged-smoke-${{ matrix.tag }}.json
+            dist/artifact/${{ matrix.tag }}/artifact-manifest.json
+            dist/artifact/${{ matrix.tag }}/SHA256SUMS
           if-no-files-found: warn

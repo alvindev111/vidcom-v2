@@ -58,6 +58,9 @@ jobs:
       - name: Install chrome-headless-shell
         run: node node_modules/hyperframes/bin/hyperframes.mjs browser install
 
+      - name: Build the static frontend
+        run: bun run build
+
       - name: Browser session tests
         run: npm run test:browser-session
         env:

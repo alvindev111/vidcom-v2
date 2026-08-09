@@ -2,7 +2,8 @@ import { bodyLimit } from "hono/body-limit";
 import { Hono } from "hono";
 
 import type { NonceSource } from "./auth/nonce";
-import type { SessionPort } from "@vidcom/core";
+import type { DomainError } from "@vidcom/contracts";
+import type { Result, SessionPort } from "@vidcom/core";
 import type { EventOutboxPort, JobStorePort } from "@vidcom/core";
 import { mapHttpError, HttpBoundaryError } from "./middleware/error-mapper";
 import {
@@ -25,7 +26,7 @@ import { createBridgeRoutes, type BridgeRouteDependencies } from "./routes/bridg
 import { createMcpRoutes, type McpRouteDependencies } from "./routes/mcp";
 import { createSystemRoutes, type SystemRouteDependencies } from "./routes/system";
 import { createDeliveryLoopRoutes, type DeliveryLoopRouteDependencies } from "./routes/delivery-loop";
-import { ErrorCode, MAX_BGM_BYTES, MAX_SOURCE_BYTES } from "@vidcom/contracts";
+import { ActivateWorkspaceRequestSchema, ErrorCode, MAX_BGM_BYTES, MAX_SOURCE_BYTES } from "@vidcom/contracts";
 
 export interface ServerAppDependencies {
   port: number;
@@ -44,6 +45,11 @@ export interface ServerAppDependencies {
   projectWrites?: ProjectWriteRouteDependencies;
   narration?: NarrationRouteDependencies;
   deliveryLoop?: DeliveryLoopRouteDependencies;
+  /** Bootstrap-only workspace activation; active runtimes use `deliveryLoop`. */
+  workspaceActivation?(selectionToken: string): Promise<Result<{
+    workspaceRoot: string;
+    reauthRequired: true;
+  }, DomainError>>;
 }
 
 function observed(step: string, middleware: ReturnType<typeof requestId>, trace?: (step: string) => void) {
@@ -110,6 +116,15 @@ export function createServerApp(deps: ServerAppDependencies) {
   if (deps.projectWrites) app.route("/", createProjectWriteRoutes(deps.projectWrites));
   if (deps.narration) app.route("/", createNarrationRoutes(deps.narration));
   if (deps.deliveryLoop) app.route("/", createDeliveryLoopRoutes(deps.deliveryLoop));
+  if (deps.workspaceActivation) app.put("/v1/workspace/active", async (c) => {
+    const parsed = ActivateWorkspaceRequestSchema.safeParse(await c.req.json().catch(() => null));
+    if (!parsed.success) {
+      throw new HttpBoundaryError({ code: ErrorCode.SchemaInvalid, message: "workspace activation payload is invalid" });
+    }
+    const activated = await deps.workspaceActivation!(parsed.data.selectionToken);
+    if (!activated.ok) throw new HttpBoundaryError(activated.error);
+    return c.json(activated.value);
+  });
   app.get("/v1/health", (c) => c.json({ ok: true }));
   app.notFound((c) => mapHttpError(
     new HttpBoundaryError({ code: ErrorCode.NotFound, message: "endpoint not found" }),

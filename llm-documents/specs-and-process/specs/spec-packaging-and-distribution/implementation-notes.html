@@ -1313,6 +1313,48 @@
           <div><dt class="font-semibold text-slate-200">Thân bước không được nói dối</dt><dd class="mt-1 text-slate-300">Năm thân viết trước khi có artifact đều <strong>ném <code>NotWrittenYet</code></strong> thay vì trả pass. Tiêu chí phase là "không step nào bị skip", và một thân trả pass mà không điều khiển gì sẽ thoả mãn tiêu chí đó trong khi không chứng minh gì.</dd></div>
         </dl>
       </section>
+      <section class="mt-6 rounded-2xl border border-emerald-500/30 bg-slate-900 p-6">
+        <div class="flex flex-wrap items-center justify-between gap-3">
+          <h2 class="text-2xl font-semibold">2026-08-09 · K.6/K.7 — import chạy thật qua production host</h2>
+          <span class="rounded-full bg-emerald-400/10 px-3 py-1 text-sm text-emerald-300">202 → poll job · crash-safe · 51/51</span>
+        </div>
+        <dl class="mt-6 grid gap-5 md:grid-cols-2">
+          <div><dt class="font-semibold text-slate-200">Hai authority, hai nhiệm vụ</dt><dd class="mt-1 text-slate-300">Job row cấp workspace giữ progress và terminal state để UI poll. <code>workspace_operation</code> giữ staging path/marker để startup phục hồi filesystem; operation id không giả làm job id.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Schema và type đã khớp</dt><dd class="mt-1 text-slate-300">SQLite vốn cho <code>job.project_id = NULL</code>; Core nay biểu diễn đúng. Application service tự serialize idempotency vì unique index SQLite không khoá các hàng NULL.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Crash trước và sau publish</dt><dd class="mt-1 text-slate-300">Trước rename: chỉ staging có marker đúng operation mới bị xoá rồi abort. Sau rename: startup dùng lại <code>bootstrapProject</code> rồi recover journal. Thư mục chỉ giống staging nhưng thiếu marker luôn được giữ.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Token không còn chỉ là path handle</dt><dd class="mt-1 text-slate-300">Device/inode lúc mint phải khớp source hiện tại trước plan; worker kiểm lại identity đầy đủ ngay trước copy. Path bị thay giữa browse và import bị từ chối.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Bằng chứng end-to-end</dt><dd class="mt-1 text-slate-300">Host production thật chạy exchange → token → POST 202 → scheduler → poll succeeded; project đích có identity, nguồn không đổi, request lặp sau success trả conflict.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Gate</dt><dd class="mt-1 text-slate-300">Typecheck xanh; focused matrix 51/51 trên SQLite và filesystem thật. Exact packaged smoke và ba OS vẫn thuộc Phase M, chưa dùng proof cục bộ để đóng chúng.</dd></div>
+        </dl>
+      </section>
+      <section class="mt-6 rounded-2xl border border-sky-500/30 bg-slate-900 p-6">
+        <div class="flex flex-wrap items-center justify-between gap-3">
+          <h2 class="text-2xl font-semibold">2026-08-09 · G.9 — UI thật trên static bundle</h2>
+          <span class="rounded-full bg-sky-400/10 px-3 py-1 text-sm text-sky-300">Chrome · daemon thật · 8/8</span>
+        </div>
+        <dl class="mt-6 grid gap-5 md:grid-cols-2">
+          <div><dt class="font-semibold text-slate-200">Khoảng trống được tìm thấy</dt><dd class="mt-1 text-slate-300"><code>WorkspacePicker</code> và <code>NewProjectDialog</code> đã tồn tại nhưng chưa được shell dùng; thẻ New video vẫn disabled. Test reducer xanh không chứng minh người dùng chạm được các luồng này.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Shell nay quyết định đúng</dt><dd class="mt-1 text-slate-300">Sau session bootstrap, <code>system.workspace = null</code> đưa thẳng vào picker. Khi đã có workspace, Home lấy projects qua service catalog và New video mở dialog có semantics truy cập được.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Bốn hành vi trên Chrome thật</dt><dd class="mt-1 text-slate-300">Nonce được exchange rồi xoá khỏi URL; tạo project điều hướng đúng slug; tạo trùng hiển thị alert; picker đi roots → entries → activate.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Boundary của fixture</dt><dd class="mt-1 text-slate-300">Chỉ bốn response filesystem/activation bị intercept để cây thư mục deterministic. Cookie, auth exchange, static hosting và cả hai nhánh project create chạy qua production Hono host cùng SQLite/fs thật.</dd></div>
+          <div><dt class="font-semibold text-slate-200">React gọn và ổn định</dt><dd class="mt-1 text-slate-300">API picker được hoist khỏi component để dependency của effect ổn định; slug không đi qua effect phụ; không thêm dependency hay state đồng bộ dư thừa.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Gate</dt><dd class="mt-1 text-slate-300"><code>test:browser-session</code> xanh 8/8 cục bộ. Workflow build static output trước test và bắt buộc browser bằng <code>VIDCOM_REQUIRE_BROWSER=1</code>; exact-commit CI vẫn là gate phát hành.</dd></div>
+        </dl>
+      </section>
+      <section class="mt-6 rounded-2xl border border-cyan-500/30 bg-slate-900 p-6">
+        <div class="flex flex-wrap items-center justify-between gap-3">
+          <h2 class="text-2xl font-semibold">2026-08-10 · Phase M — full local gate và trust boundaries</h2>
+          <span class="rounded-full bg-cyan-400/10 px-3 py-1 text-sm text-cyan-300">1810 pass · 0 lỗi lint</span>
+        </div>
+        <dl class="mt-6 grid gap-5 md:grid-cols-2">
+          <div><dt class="font-semibold text-slate-200">Session không phải capability recovery</dt><dd class="mt-1 text-slate-300"><code>EntryRegistry</code> bị clear khi foundation cũ dừng để token recovery không sống qua workspace switch. Cookie/session thuộc listener host được giữ, nên UI không bị ép đăng nhập lại.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Namespace quyết định perimeter</dt><dd class="mt-1 text-slate-300"><code>/api/mcp</code> và <code>/api/bridge</code> luôn dùng bearer auth, kể cả khi handler chưa mount. Browser cookie không bao giờ biến hai namespace agent thành browser surface.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Test VieNeu không mượn máy dev</dt><dd class="mt-1 text-slate-300">Warm-repair test inject process seam xác định cho phép toolchain probe, còn sidecar vẫn chạy process thật. Production tiếp tục resolve FFmpeg/ffprobe tuyệt đối và fail-closed nếu runtime thiếu.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Process proof không tin PATH</dt><dd class="mt-1 text-slate-300">POSIX/Windows termination probes dùng environment tối thiểu và executable hệ thống tuyệt đối; audit spawn không còn exemption cho supervisor.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Local council gate</dt><dd class="mt-1 text-slate-300">201 test file pass, 1 intentional skip; 1810 test pass, 5 intentional skip; typecheck, import boundaries và ESLint 0 error. Bốn warning đã có sẵn được giữ ngoài scope.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Không giả CI thành release</dt><dd class="mt-1 text-slate-300">FFmpeg mirror chỉ là digest-pinned smoke fixture và đòi opt-in riêng. Nó có thể chứng minh workflow ba OS nhưng không phải production acquisition policy được duyệt.</dd></div>
+        </dl>
+      </section>
     </main>
   </body>
 </html>

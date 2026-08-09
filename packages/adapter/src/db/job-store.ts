@@ -55,7 +55,7 @@ function parseWarnings(value: string | null): Job["warnings"] {
 function toJob(row: JobRow): Job {
   return {
     id: row.id,
-    projectId: row.projectId as ProjectId,
+    projectId: row.projectId as ProjectId | null,
     type: row.type,
     status: row.status,
     input: parseJson(row.input),
@@ -86,8 +86,11 @@ export class SqliteJobStore implements JobStorePort {
   constructor(private readonly database: VidcomDatabase, private readonly clock: ClockPort) {}
 
   async enqueue(job: NewJob): Promise<{ job: Job; reused: boolean } | { conflict: "idempotency_key_reused" }> {
-    if (job.idempotencyKey !== null) {
-      const prior = this.findIdempotent(job);
+    // A workspace-scoped job has a null project id, so SQLite's unique index
+    // deliberately cannot serialize it. Its application service owns that
+    // lock and decides whether a terminal attempt may be retried.
+    if (job.projectId !== null && job.idempotencyKey !== null) {
+      const prior = await this.findIdempotent(job.projectId, job.type, job.idempotencyKey);
       if (prior) return prior.inputHash === job.inputHash
         ? { job: prior, reused: true }
         : { conflict: "idempotency_key_reused" };
@@ -103,8 +106,8 @@ export class SqliteJobStore implements JobStorePort {
         )
       `);
     } catch (error) {
-      if (job.idempotencyKey === null) throw error;
-      const prior = this.findIdempotent(job);
+      if (job.projectId === null || job.idempotencyKey === null) throw error;
+      const prior = await this.findIdempotent(job.projectId, job.type, job.idempotencyKey);
       if (!prior) throw error;
       return prior.inputHash === job.inputHash
         ? { job: prior, reused: true }
@@ -117,6 +120,20 @@ export class SqliteJobStore implements JobStorePort {
 
   async get(id: JobId): Promise<Job | null> {
     const row = this.database.get<JobRow>(sql`${SELECT_JOB} WHERE id = ${id}`);
+    return row ? toJob(row) : null;
+  }
+
+  async findIdempotent(
+    projectId: ProjectId | null,
+    type: string,
+    idempotencyKey: string,
+  ): Promise<Job | null> {
+    const row = this.database.get<JobRow>(sql`
+      ${SELECT_JOB}
+      WHERE project_id IS ${projectId} AND type = ${type}
+        AND idempotency_key = ${idempotencyKey}
+      ORDER BY created_at DESC, id DESC LIMIT 1
+    `);
     return row ? toJob(row) : null;
   }
 
@@ -151,7 +168,7 @@ export class SqliteJobStore implements JobStorePort {
 
   async nextQueued(
     types: string[],
-    excluded: readonly { projectId: ProjectId; type: string }[],
+    excluded: readonly { projectId: ProjectId | null; type: string }[],
   ): Promise<Job | null> {
     if (types.length === 0) return null;
     const exclusions = excluded.length
@@ -287,12 +304,4 @@ export class SqliteJobStore implements JobStorePort {
     `).changes === 1;
   }
 
-  private findIdempotent(job: NewJob): Job | null {
-    const row = this.database.get<JobRow>(sql`
-      ${SELECT_JOB}
-      WHERE project_id IS ${job.projectId} AND type = ${job.type} AND idempotency_key IS ${job.idempotencyKey}
-      LIMIT 1
-    `);
-    return row ? toJob(row) : null;
-  }
 }
