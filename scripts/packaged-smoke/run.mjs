@@ -2,6 +2,7 @@ import { existsSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { PLATFORM_TAGS } from "../build-artifact.mjs";
 import { artifactPath } from "../build-sea.mjs";
 import {
   failedStepIds,
@@ -11,8 +12,6 @@ import {
 } from "./steps.mjs";
 
 const REPOSITORY_ROOT = path.resolve(fileURLToPath(new URL("../..", import.meta.url)));
-
-const PLATFORM_TAGS = { darwin: "darwin-arm64", win32: "win32-x64", linux: "linux-x64" };
 
 /**
  * Why a step could not run, when it could not.

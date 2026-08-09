@@ -14,7 +14,7 @@ import {
 import path from "node:path";
 
 import { ErrorCode, type DomainError } from "@vidcom/contracts";
-import { importRefusal, type ImportEntryKind, type ImportPlan } from "@vidcom/core";
+import { importDecision, importRefusal, type ImportEntryKind, type ImportPlan } from "@vidcom/core";
 
 const MARKER_FILE = ".vidcom-import.json";
 
@@ -92,7 +92,7 @@ export async function copyIntoStaging(
       report.skipped += 1;
       continue;
     }
-    if (!importDecisionCopies(childRelative, kind)) {
+    if (!importDecision(childRelative, kind).copy) {
       report.skipped += 1;
       continue;
     }
@@ -110,13 +110,6 @@ export async function copyIntoStaging(
 
 function isReport(value: CopyReport | DomainError): value is CopyReport {
   return "files" in value;
-}
-
-function importDecisionCopies(relativePath: string, kind: ImportEntryKind): boolean {
-  return importRefusal(relativePath, kind) === null
-    && !relativePath.split("/").some((segment) => segment === "node_modules"
-      || segment === ".git"
-      || segment === ".hyperframes");
 }
 
 /**

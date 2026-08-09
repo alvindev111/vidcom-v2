@@ -12,7 +12,7 @@ const REPOSITORY_ROOT = path.resolve(fileURLToPath(new URL("..", import.meta.url
  * build" produced on macOS would be a file that cannot run anywhere. Failing
  * here is better than shipping that.
  */
-const PLATFORM_TAGS = {
+export const PLATFORM_TAGS = {
   darwin: "darwin-arm64",
   win32: "win32-x64",
   linux: "linux-x64",
