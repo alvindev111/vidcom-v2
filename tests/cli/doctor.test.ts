@@ -144,6 +144,17 @@ describe("doctor skips", () => {
       .toBe("ok");
   });
 
+  it("still says what to do when strict promotes a skip", async () => {
+    // Every other not-ok item carries a remedy, and a strict run producing the
+    // one line that does not is the run where somebody most needs the answer.
+    const items = (await report({}, true)).items;
+    for (const item of items) {
+      if (item.status === "ok" || item.status === "skipped") continue;
+      expect(item.remedy, item.id).toBeTruthy();
+    }
+    expect(items.find((item) => item.id === "runtime.integrity")?.remedy).toContain("--deep");
+  });
+
   it("counts a skipped required item as missing under strict", async () => {
     // R8.4 says the packaged smoke fails when a required component is absent,
     // while the exit rule says skipped is not a failure. Strict mode is where

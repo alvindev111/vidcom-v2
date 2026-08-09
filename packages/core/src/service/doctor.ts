@@ -101,6 +101,11 @@ export async function runDoctorChecks<Context>(
           ...item,
           status: "missing",
           detail: item.detail ?? "required component was never exercised",
+          // Promotion has to carry a remedy too. Every other not-ok item says
+          // what to do about it, and a strict run producing the one line that
+          // does not is the run where somebody most needs the answer.
+          remedy: item.remedy
+            ?? "exercise this component once, or run without VIDCOM_DOCTOR_STRICT to see it as pending",
         }
         : item,
     );

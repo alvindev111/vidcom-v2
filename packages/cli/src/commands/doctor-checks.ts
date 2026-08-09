@@ -111,6 +111,10 @@ export function createDoctorChecks(): DoctorCheck<DoctorContext>[] {
           id: "runtime.integrity",
           status: "skipped",
           detail: "markers only; pass --deep to hash every extracted file",
+          // Carried on the skip so a strict run, which promotes it, still says
+          // the one thing that fixes it. This skip means "a different mode was
+          // asked for", not "never exercised".
+          remedy: "run `vidcom doctor --deep` to hash every extracted file",
         };
       }
       return itemFrom("runtime.integrity", await context.probes.runtimeIntegrity(true), REPAIR_REMEDY);
