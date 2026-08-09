@@ -13,6 +13,7 @@ export * from "./port/process-port";
 export * from "./port/tts-port";
 export * from "./port/types";
 export * from "./service/write-authority";
+export * from "./service/doctor";
 export * from "./service/workspace-mutation-coordinator";
 export * from "./service/canonical-json";
 export * from "./service/browse-token-store";

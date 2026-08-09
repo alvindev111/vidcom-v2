@@ -39,6 +39,11 @@ const EXEMPT = new Map<string, string>([
     "declares the command type and executes nothing",
   ],
   [
+    "packages/cli/src/commands/doctor-repair.ts",
+    "lists `runtime.esbuild-binary` as a check id it may re-extract; it runs"
+    + " nothing and the probe that does carries its own timeout",
+  ],
+  [
     "packages/adapter/src/runtime/runtime-asset-source.ts",
     "names esbuild as a pinned version field in the manifest schema; it records"
     + " which compiler shipped and never invokes one",

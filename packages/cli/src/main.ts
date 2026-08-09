@@ -9,10 +9,15 @@ import { runApproveCommand } from "./commands/approve";
 import { runCredentialCommand } from "./commands/credential";
 import { runBackupCommand } from "./commands/backup";
 import { runRecoveryCommand } from "./commands/recovery";
+import { parseDoctorCommandArgs, runDoctor } from "./commands/doctor";
+import { createDoctorContext } from "./commands/doctor-context";
+import { repairRuntime } from "./commands/doctor-repair";
 import { runRenderCommand } from "./commands/render";
 import { connectRenderClient, renderWorkspaceSource } from "./commands/render-connect";
 import { runServeCommand, startServing, waitForShutdown } from "./commands/serve";
 import { VIDCOM_VERSION, runVersionCommand } from "./commands/version";
+import { DaemonDiscoveryStore } from "@vidcom/adapter";
+
 import { isNodeSentinel, runNodeSentinel } from "./node-sentinel";
 import { CliInputError } from "./cli-error";
 
@@ -163,6 +168,27 @@ export async function runVidcomCli(argv: readonly string[] = process.argv.slice(
   const command = parseVidcomCommand(argv);
   if (command.name === "app") {
     await runVidcomApp(parseAppCommandArgs(command.args));
+    return;
+  }
+  if (command.name === "doctor") {
+    const options = parseDoctorCommandArgs(command.args);
+    const context = await createDoctorContext({ deep: options.deep === true });
+    process.exitCode = await runDoctor({
+      context,
+      options,
+      repair: (failing) => repairRuntime(failing, {
+        appDataRoot: context.appDataRoot,
+        activeWorkspace: () => context.probes.activeWorkspace()
+          .then((result) => result.detail ?? null),
+        discovery: new DaemonDiscoveryStore(context.appDataRoot),
+        reextract: () => Promise.reject(new CliInputError(
+          "this build has no runtime archives to re-extract from",
+        )),
+      }),
+      // The packaged smoke sets this, and there a skipped required component is
+      // a failure rather than a "not yet".
+      strict: process.env.VIDCOM_DOCTOR_STRICT === "1",
+    });
     return;
   }
   if (command.name === "render") {

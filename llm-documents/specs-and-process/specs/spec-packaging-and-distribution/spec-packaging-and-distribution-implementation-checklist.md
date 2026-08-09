@@ -1027,31 +1027,41 @@ Mỗi phase chạy focused command dưới đây trên SQLite/filesystem thật,
   - Trường nào source checkout không biết thì trả **`null`** (human: `not packaged`), không phải một giá trị trông hợp lý. Output này tồn tại để trả lời "bản build nào đây" trong một bug report, và một version đoán bừa **tệ hơn một chỗ trống**: nó đẩy người đọc sang đúng một release khác
   - Test chốt `VIDCOM_VERSION` khớp `packages/cli/package.json` — hai chỗ cùng nói một số thì lệch phải lộ ở đây chứ không lộ trong bug report
   - _Requirements: R3.4_ — _Design: §7.14_
-- [ ] J.5a Khung `DoctorCheck` + thứ tự deterministic
+- [x] J.5a Khung `DoctorCheck` + thứ tự deterministic
   - `DoctorCheck`/`DoctorReport` theo §5.9; `run` trả `Result<DoctorItem, DomainError>` ([steering/03](../../../steering/03-architecture-ddd.md) §2.2, Design §5.0 hệ quả 2). Thứ tự đăng ký **cố định**, không phụ thuộc thứ tự import — golden test J.9 chốt nó
   - `gpu.cuda` **không** có trong bảng: stack chỉ có `onnxruntime` CPU nên nó không bao giờ `ok` được, và một mục vĩnh viễn không `ok` dạy người dùng bỏ qua doctor
+  - [`doctor.ts`](../../../../packages/core/src/service/doctor.ts) giữ `DOCTOR_CHECK_ORDER` **cố định trong core**, không lấy theo thứ tự đăng ký — thứ tự đăng ký chạy theo thứ tự import, và không ai điều khiển thứ tự import. Golden J.9 ghim đúng danh sách này
+  - Không dừng ở check hỏng đầu tiên: người chạy `doctor` muốn toàn cảnh, dừng sớm biến một install hỏng thành đúng bấy nhiêu lần chạy như số vấn đề nó có
+  - Check tự ném lỗi thành một item `broken` chứ không làm mất cả report vì một unhandled rejection
+  - `missing` và `broken` tách bạch: *không có gì ở đó* cần re-extract, *có mà sai* cần điều tra — gộp lại thì mọi remedy thành phỏng đoán
   - _Requirements: R3.5_ — _Design: §5.9_
-- [ ] J.5b 11 check nguồn **artifact** (required, không có `skipped`)
+- [x] J.5b 11 check nguồn **artifact** (required, không có `skipped`)
   - `app-data.writable`, `db.migration`, `runtime.manifest`, `runtime.integrity` (`skipped` khi không `--deep`), `runtime.ffmpeg`, `runtime.esbuild-binary`, `compiler.probe`, `runtime.hyperframes`, `runtime.motion`, `runtime.python`, `runtime.python-utf8`
   - `runtime.python` dùng `importlib.metadata`, **không cần pip** (pip đã bị gỡ khỏi stack, −12 MB); `compiler.probe` chạy `transformSync` **qua `CompilerGuard`** trong timeout, nếu không thì check này chính là chỗ treo vĩnh viễn; `runtime.python-utf8` in một chuỗi tiếng Việt qua interpreter đã ship rồi đọc lại
   - _Requirements: R3.5, R3.6_ — _Design: §5.9_
-- [ ] J.5c 6 check nguồn **tải-về / máy / người dùng**
+- [x] J.5c 6 check nguồn **tải-về / máy / người dùng**
   - `chrome.cache`, `tts.model-cache`, `workspace.active`, `port.available` (required) · `settings.file`, `tts.elevenlabs` (optional)
   - `chrome.cache` **thực thi** `chrome-headless-shell --version` với timeout rồi so version với manifest. MUST NOT hỏi `hyperframes browser path` — S9 đo được: Chrome cắt còn 1 MB thì CLI vẫn trả đường dẫn và **exit 0**. Dùng lại helper resolve+probe của G.0, MUST NOT viết đường thứ hai
   - `settings.file` MUST NOT in nội dung file; nếu khai `runtime.caBundlePath` thì kiểm file đó tồn tại/đọc được
+  - [`doctor-checks.ts`](../../../../packages/cli/src/commands/doctor-checks.ts) nhận probe qua inject, nên **mọi nhánh hỏng đều chạy được trong test** — mà nhánh hỏng chính là lý do `doctor` tồn tại
+  - [`doctor-context.ts`](../../../../packages/cli/src/commands/doctor-context.ts) nối probe thật: chạy binary rồi tin thứ nó in ra, không chỉ kiểm tồn tại. `runtime.python-utf8` in chuỗi tiếng Việt qua interpreter đã ship **rồi đọc lại** — lỗi cần bắt là output méo, không phải exit code khác 0
   - _Requirements: R3.5, R3.6, R3.12_ — _Design: §5.9_
-- [ ] J.6 `skipped` có nguồn sự thật
+- [x] J.6 `skipped` có nguồn sự thật
   - `chrome.cache`/`tts.model-cache` từ bảng `job`; `workspace.active` từ `app_settings`. `VIDCOM_DOCTOR_STRICT=1` ⇒ `skipped` trên mục required tính như `missing`
   - _Requirements: R3.12_ — _Design: §5.9_
-- [ ] J.7 Exit code + `--json` + redaction
+- [x] J.7 Exit code + `--json` + redaction
   - Required không `ok` ⇒ ≠ 0; optional không `ok` ⇒ vẫn 0; `--json` stdout chỉ một `DoctorReport`, human output `stderr`; redact token/API key/credential/absolute path của máy build
   - _Requirements: R3.7, R3.8, R3.10_ — _Design: §7.12_
-- [ ] J.8 `--repair`
+- [x] J.8 `--repair`
   - Chỉ extraction/runtime component; giải nén vào temp rồi swap, hoặc **từ chối** kèm hướng dẫn khi daemon đang giữ file (Windows khoá file đang mở). MUST NOT ghi đè in-place
   - Credential file mất ⇒ **mint mới**, không phải khôi phục
+  - [`doctor-repair.ts`](../../../../packages/cli/src/commands/doctor-repair.ts): chỉ 9 check runtime nằm trong `REPAIRABLE_CHECKS`; `settings.file` và phần còn lại thuộc về người dùng, sửa hộ là sửa thứ không ai nhờ
+  - **Từ chối khi daemon còn sống không phải là thận trọng**: trên Windows daemon giữ đúng những file mà repair phải thay, nên swap hỏng giữa chừng để lại một cây không phải bản cũ cũng không phải bản mới. Bảo người dùng dừng app trước tốn một bước và tránh được đúng trạng thái đó
+  - Report được **dựng lại từ kết quả repair** chứ không vá tại chỗ: một lần repair thành công một nửa phải hiện ra đúng như hiện tại, không phải một hỗn hợp trước-và-sau
   - _Requirements: R3.9, R3.13_ — _Design: §5.9, §4.4_
-- [ ] J.9 Golden test `doctor --json`
+- [x] J.9 Golden test `doctor --json`
   - Payload ổn định; thứ tự check deterministic
+  - [`doctor-report.test.ts`](../../../../tests/golden/doctor-report.test.ts) **viết cả payload ra**, không suy từ code sinh ra nó — suy lại thì test chỉ chứng minh code bằng chính nó. Đổi thứ tự, đổi tên id hay đổi vocabulary status đều hiện thành một diff phải giải thích
   - _Requirements: R3.8_
 - [ ] J.10 Integration test
   - Từng check fail độc lập ⇒ exit code đúng; `--repair` khi daemon sống ⇒ swap hoặc từ chối, không để lại trạng thái nửa vời
@@ -1651,6 +1661,12 @@ Chi tiết: [Detailed Goals](./spec-packaging-and-distribution-detailed-goal.md)
   - Summary: `render` thin client — enqueue, chờ, huỷ — đi trọn vẹn qua `DaemonClient`, cộng luật workspace và exit code 0/1/2/130.
   - Decisions: Thêm `enqueueRender`/`getJob`/`cancelJob` vào **chính** bề mặt đóng của `DaemonClient` thay vì dựng client thứ hai (J.3 cấm), và cập nhật test khoá bề mặt lên tám method — luật vẫn nguyên: không có `request(method, path, body)`. Slug→id qua `invokeTool("list_projects")`, không thêm endpoint. Không đọc `active_workspace` vì render cũng không ghi nó. Attach dạng `render` để không lấy mất quyền tự tắt của daemon auto-start.
   - Blockers: Không có; 22/22 test render, `tests/cli` 186/186, full suite 1383 pass / 4 skip, typecheck, lint 0 error, boundaries xanh. CI `9b5b7b7` (J.2) xanh cả ba OS.
+
+2026-08-09 — Phase J, Task J.5a–J.9 (doctor)
+  - Files: `packages/core/src/service/doctor.ts`, `packages/cli/src/commands/doctor{,-checks,-context,-repair}.ts`, `packages/cli/src/main.ts`, `tests/cli/doctor.test.ts`, `tests/golden/doctor-report.test.ts`, `tests/adapter/compiler-timeout-audit.test.ts`, checklist và implementation notes
+  - Summary: Khung `DoctorCheck` với thứ tự cố định trong core, 17 check (11 artifact + 6 máy/người dùng), `skipped` lấy từ job store và `app_settings`, exit code + `--json` + redaction, `--repair` giới hạn ở runtime, golden report viết tay.
+  - Decisions: Thứ tự nằm ở `DOCTOR_CHECK_ORDER` trong core chứ không theo thứ tự đăng ký — đăng ký chạy theo import và không ai điều khiển import. Probe được inject nên mọi nhánh hỏng chạy được trong test. `missing` tách khỏi `broken` vì hai cái cần hai remedy khác nhau. Repair từ chối khi daemon còn sống: trên Windows daemon giữ đúng file mà repair phải thay. Golden viết cả payload ra tay thay vì suy từ code sinh ra nó.
+  - Blockers: Không có. **Hai audit có sẵn bắt được hai lỗi thật khi thêm code này**: `compiler-timeout-audit` bắt `doctor-repair.ts` nhắc `esbuild` (đã khai miễn trừ kèm lý do — nó không chạy gì), và `spawn-environment-audit` bắt probe spawn **không đi qua `allowlistedEnvironment`** — đúng thứ D.5 tồn tại để ép, và nếu để nguyên thì `runtime.python-utf8` sẽ kiểm một environment mà sản phẩm không bao giờ chạy. Đã sửa. Full suite 1409 pass / 4 skip, typecheck, lint 0 error, boundaries xanh.
 
 Format:
 ```
