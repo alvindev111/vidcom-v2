@@ -1789,6 +1789,12 @@ Chi tiết: [Detailed Goals](./spec-packaging-and-distribution-detailed-goal.md)
   - Decisions: Nguyên nhân là cách spawn, không phải build: `npm` trên Windows là một `.cmd`, và Node từ chối spawn nó khi không có shell, nên `status` về `null` và lỗi đọc thành "không build được export" thay vì "spawn sai". Đổi sang `bun`, vốn là executable thật trên cả ba OS và đã có sẵn trong job. Kèm `stderr` vào message để lần sau lỗi tự nói ra nguyên nhân.
   - Blockers: Không có; 12/12 test file đó sau khi xoá `out/`, typecheck và lint xanh.
 
+2026-08-09 — Blocker runtime archive, mô tả lại cho đúng
+  - Files: checklist
+  - Summary: Đọc thẳng `parseConfig`/`buildRuntimeArchives` thay vì dựa vào ghi chú cũ. Blocker vẫn còn, nhưng **không phải** vì "phải bịa hash".
+  - Decisions: Builder **tự tính hash từ chính byte nó tar** — không có trường hash nào trong config để bịa. Thứ config thật sự đòi là (a) `versions` gồm bảy tên, trong đó `hyperframes`/`esbuild`/`motion` suy được từ repo và `node` là pin của CI, còn `ffmpeg`/`cpython`/`vieneu` cần bản cài thật; (b) `archives[].source` là **thư mục có thật trên đĩa** để đóng gói; (c) `pythonPackages[<platform>]` là file liệt kê tập package **đã cài thật**, được đối chiếu với evidence trong `spikes/phase-4/s9-windows-runtime/evidence/` — evidence **đã có trong repo**, thứ thiếu là tập thật để so.
+  - Blockers: Kể cả một archive chỉ gồm thành phần Node có sẵn trong `node_modules` (sharp, onnxruntime-node, hyperframes, linkedom, esbuild) cũng **không dựng được**, vì `buildRuntimeArchives` bắt buộc có `pythonPackages` cho mọi platform xuất hiện trong `archives` và verify nó trước khi tar bất cứ thứ gì. Đó là thiết kế của builder, không phải chỗ để lách. Cần: một lần cài CPython + VieNeu thật để sinh package-set, cùng cây FFmpeg/CPython/VieNeu đã giải nén.
+
 Format:
 ```
 YYYY-MM-DD — Phase X, Task X.Y
