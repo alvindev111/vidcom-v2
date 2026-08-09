@@ -564,8 +564,13 @@ describe.skipIf(!HOST_SUPPORTED)("runtime app-data confinement", () => {
     await symlink(escapedLayers, layers, process.platform === "win32" ? "junction" : "dir");
 
     const inspection = await manager(appDataRoot, source).inspect();
-    expect(inspection.state).toBe("broken");
-    expect(inspection.archives[0]?.reason).toBe("target_not_directory");
+    // Asserted as one object so a mismatch prints the whole inspection. Two
+    // guesses at this failure on Windows produced two wrong fixes; the reason
+    // it reports is the thing worth reading, and a bare `toBe` hides it.
+    expect(inspection).toMatchObject({
+      state: "broken",
+      archives: [{ reason: "target_not_directory" }],
+    });
     expect(await readPublishedRuntimeInstallation(appDataRoot)).toBeNull();
     const failure = await manager(appDataRoot, source).ensureAll().catch((error: unknown) => error);
     expect(failure).toBeInstanceOf(RuntimeAssetError);
@@ -594,8 +599,13 @@ describe.skipIf(!HOST_SUPPORTED)("runtime app-data confinement", () => {
     await writeFile(layers, "not a directory\n", "utf8");
 
     const inspection = await manager(appDataRoot, source).inspect();
-    expect(inspection.state).toBe("broken");
-    expect(inspection.archives[0]?.reason).toBe("target_not_directory");
+    // Asserted as one object so a mismatch prints the whole inspection. Two
+    // guesses at this failure on Windows produced two wrong fixes; the reason
+    // it reports is the thing worth reading, and a bare `toBe` hides it.
+    expect(inspection).toMatchObject({
+      state: "broken",
+      archives: [{ reason: "target_not_directory" }],
+    });
     expect(await readPublishedRuntimeInstallation(appDataRoot)).toBeNull();
     await expect(manager(appDataRoot, source).ensureAll()).rejects.toBeInstanceOf(RuntimeAssetError);
   });
