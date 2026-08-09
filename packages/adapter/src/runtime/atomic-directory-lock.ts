@@ -18,6 +18,7 @@ import { RuntimeAssetError } from "./runtime-asset-source";
 const OWNER_FILENAME = "owner.json";
 const DEFAULT_TIMEOUT_MS = 10_000;
 const DEFAULT_POLL_INTERVAL_MS = 100;
+const MAX_RELEASE_RENAME_RETRY_MS = 2_000;
 const MAX_OWNER_BYTES = 4 * 1024;
 const NONCE_PATTERN = /^[A-Za-z0-9_-]{43}$/u;
 const DIRECTORY_LOCK_LEASE_BRAND: unique symbol = Symbol("vidcom.directory-lock-lease");
@@ -219,7 +220,7 @@ export class AtomicDirectoryLock {
     try {
       await this.assertLeaseHeld(identity, owner);
       const quarantine = this.newQuarantinePath();
-      await rename(this.lockPath, quarantine);
+      await this.renameOwnedLeaseForRelease(quarantine, identity, owner);
       if (!(await this.ownershipMatches(quarantine, identity, owner))) {
         await this.restoreQuarantine(quarantine);
         this.ownershipError("directory lock changed during release");
@@ -229,6 +230,28 @@ export class AtomicDirectoryLock {
     } catch (error) {
       if (error instanceof RuntimeAssetError) throw error;
       throw this.runtimeError("directory lock release failed", error);
+    }
+  }
+
+  private async renameOwnedLeaseForRelease(
+    quarantine: string,
+    identity: DirectoryIdentity,
+    owner: DirectoryLockOwner,
+  ): Promise<void> {
+    const deadline = performance.now() + Math.min(this.timeoutMs, MAX_RELEASE_RENAME_RETRY_MS);
+    while (true) {
+      try {
+        await rename(this.lockPath, quarantine);
+        return;
+      } catch (error) {
+        if (!isTransientWindowsRenameError(error)) throw error;
+        // Windows scanners and indexers can briefly retain a directory handle.
+        // A retry is safe only while the exact directory identity and owner
+        // nonce still match this lease; otherwise release must fail closed.
+        await this.assertLeaseHeld(identity, owner);
+        if (performance.now() >= deadline) throw error;
+        await this.poll(deadline);
+      }
     }
   }
 
@@ -592,6 +615,11 @@ function sameOwner(left: DirectoryLockOwner, right: DirectoryLockOwner): boolean
 function isIntrinsicRenameContention(error: unknown): boolean {
   return hasCode(error, "EEXIST")
     || hasCode(error, "ENOTEMPTY");
+}
+
+function isTransientWindowsRenameError(error: unknown): boolean {
+  return process.platform === "win32"
+    && (hasCode(error, "EPERM") || hasCode(error, "EACCES") || hasCode(error, "EBUSY"));
 }
 
 function hasCode(error: unknown, code: string): boolean {

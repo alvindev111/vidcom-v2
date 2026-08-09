@@ -1063,6 +1063,8 @@ async function stageHyperframes({ root, sourceRoot, libraries, motionPackageRoot
     sourceRoot,
     path.join(sourceRoot, "bin", "hyperframes.mjs"),
     "HyperFrames CLI entry",
+    false,
+    true,
   );
   await bundle(
     cliEntry,

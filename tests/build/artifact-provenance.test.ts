@@ -139,7 +139,7 @@ describe("artifact content scan", () => {
     ["a GitHub token", "const k = 'ghp_abcdefghijklmnopqrstuvwxyz1234567890'", "github-token"],
     ["a fine-grained GitHub token", "const k = 'github_pat_abcdefghijklmnopqrstuvwxyz_123456'", "github-token"],
     ["a Hugging Face token", "const k = 'hf_abcdefghijklmnopqrstuvwxyz'", "huggingface-token"],
-    ["a private key", "-----BEGIN PRIVATE KEY-----", "private-key"],
+    ["a private key", "-----BEGIN PRIVATE KEY-----\nZmFrZS1rZXktYm9keQ==", "private-key"],
   ])("refuses %s", (_label, text, id) => {
     // Each of these is invisible until it is embarrassing: a key that works, a
     // sourcemap that hands over the whole source, an origin pointing at a
@@ -184,6 +184,16 @@ describe("artifact content scan", () => {
 
   it("passes ordinary content", () => {
     expect(scanForForbidden("const answer = 42;", "/Users/builder/vidcom")).toEqual([]);
+  });
+
+  it("does not mistake libssh parser and FIDO algorithm literals for credentials", () => {
+    const linkedLibraryText = [
+      "-----BEGIN RSA PRIVATE KEY-----\0-----BEGIN EC PRIVATE KEY-----\0",
+      "-----BEGIN OPENSSH PRIVATE KEY-----\0Not an OpenSSH private key (no header)",
+      "sk-ssh-ed25519-cert-v01@openssh.com\0",
+      "sk-ecdsa-sha2-nistp256@openssh.com\0",
+    ].join("");
+    expect(scanForForbidden(linkedLibraryText, "")).toEqual([]);
   });
 
   it("detects a forbidden marker when it exists only in the primary or final binary", async () => {

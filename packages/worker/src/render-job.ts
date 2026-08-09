@@ -380,6 +380,10 @@ export function createRenderJobHandler(dependencies: RenderJobDependencies): Job
           cwd: staged.projectRoot,
           environment: {
             ...acquired.environment,
+            // A packaged render must not opt itself into a telemetry-gated
+            // experimental capture route. The exact HyperFrames pin enables
+            // that trial from mutable per-user config unless explicitly off.
+            HF_DE_PARALLEL_ROUTER: "false",
             HYPERFRAMES_BROWSER_PATH: preflight.value.binaries.browserPath,
             HYPERFRAMES_FFMPEG_PATH: preflight.value.binaries.ffmpegPath,
             HYPERFRAMES_FFPROBE_PATH: preflight.value.binaries.ffprobePath,
@@ -408,6 +412,18 @@ export function createRenderJobHandler(dependencies: RenderJobDependencies): Job
             message: readiness ? "a sub-composition timeline did not become ready" : "HyperFrames render failed",
           });
         }
+        const stagedArtifact = await dependencies.renderProjects.artifactSource(staged.outputPath)
+          .catch((cause: unknown) => {
+            const output = [rendered.output.stderr, rendered.output.stdout]
+              .map((value) => value.trim())
+              .filter(Boolean)
+              .join(" | ")
+              .slice(0, 240);
+            throw new JobFailureError({
+              code: ErrorCode.Internal,
+              message: `HyperFrames exited 0 without producing the render artifact${output ? ` (${output})` : ""}`,
+            }, { cause });
+          });
 
         await context.updateProgress(0.92, "validating video");
         const probed = await dependencies.process.run({
@@ -468,7 +484,7 @@ export function createRenderJobHandler(dependencies: RenderJobDependencies): Job
         const published = await dependencies.authority.mutateDerived({
           ref: prepared.value.ref,
           writes: [
-            { path: artifactPath, content: await dependencies.renderProjects.artifactSource(staged.outputPath) },
+            { path: artifactPath, content: stagedArtifact },
             {
               path: sidecarPath,
               content: `${canonicalizeJson({ ...result, renderPresetId: input.renderPresetId ?? null })}\n`,

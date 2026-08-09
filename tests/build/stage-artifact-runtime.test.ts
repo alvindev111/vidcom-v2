@@ -448,6 +448,9 @@ describe("artifact runtime staging", () => {
     const esbuildInput = path.join(esbuildPackage!, esbuildPlatformBinaryRelative(HOST_TAG));
     await link(esbuildInput, path.join(input.root, `package-cache-esbuild${SUFFIX}`));
     expect((await lstat(esbuildInput)).nlink).toBeGreaterThan(1);
+    const hyperframesInput = path.join(input.hyperframesRoot, "bin", "hyperframes.mjs");
+    await link(hyperframesInput, path.join(input.root, "package-cache-hyperframes.mjs"));
+    expect((await lstat(hyperframesInput)).nlink).toBeGreaterThan(1);
     const result = await stageArtifactRuntime(input.paths, stageOptions(input));
 
     expect(await readFile(path.join(input.paths.outputRoot, "node", "cli", "boot.cjs"), "utf8"))
@@ -488,7 +491,9 @@ describe("artifact runtime staging", () => {
         )), `${archive}:${packageName}`).toBe(true);
       }
     }
-    expect(existsSync(path.join(input.paths.outputRoot, "hyperframes", "bin", "hyperframes.mjs"))).toBe(true);
+    const stagedHyperframes = path.join(input.paths.outputRoot, "hyperframes", "bin", "hyperframes.mjs");
+    expect(existsSync(stagedHyperframes)).toBe(true);
+    expect((await lstat(stagedHyperframes)).nlink).toBe(1);
     expect(existsSync(path.join(input.paths.outputRoot, "hyperframes", "bin", "hyperframe.manifest.json"))).toBe(true);
     expect(existsSync(path.join(input.paths.outputRoot, "hyperframes", "bin", "hyperframe.runtime.iife.js"))).toBe(true);
     for (const library of MOTION_LIBRARIES) {

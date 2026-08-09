@@ -434,8 +434,14 @@ describe("render job with real SQLite and filesystem", () => {
       const harness = await renderHarness(fixture);
       let calls = 0;
       const processPort: ProcessSupervisorPort = {
-        async run() {
+        async run(input) {
           calls += 1;
+          if (calls === 1) {
+            const outputIndex = input.command.indexOf("-o");
+            const outputPath = input.command[outputIndex + 1];
+            if (!outputPath) throw new Error("render command did not name its output");
+            await writeFile(outputPath, "not an mp4", "utf8");
+          }
           return calls === 1
             ? {
               status: "exited" as const,
@@ -464,6 +470,46 @@ describe("render job with real SQLite and filesystem", () => {
         error: {
           code: ErrorCode.Internal,
           message: "render artifact validation failed (ffprobe exited 1: moov atom not found)",
+        },
+      });
+    } finally {
+      await fixture.database.destroy();
+    }
+  });
+
+  it("rejects a zero-exit renderer that published no artifact and disables the experimental router", async () => {
+    const fixture = await baseFixture();
+    try {
+      const project = await addProject(fixture, "missing-artifact", `<!doctype html><html><body>
+        <main data-composition-id="main" data-duration="1">
+          <section data-composition-id="scene-1" data-start="0" data-duration="1"></section>
+        </main></body></html>`);
+      const harness = await renderHarness(fixture);
+      let calls = 0;
+      let routerSetting: string | undefined;
+      const processPort: ProcessSupervisorPort = {
+        async run(input) {
+          calls += 1;
+          routerSetting = input.environment?.HF_DE_PARALLEL_ROUTER;
+          return {
+            status: "exited" as const,
+            output: { exitCode: 0, stdout: "render completed", stderr: "", timedOut: false },
+          };
+        },
+      };
+      const queued = await enqueue(fixture, project.id);
+      expect(queued.ok).toBe(true);
+      if (!queued.ok) return;
+
+      await execute(fixture, harness.definition(processPort));
+
+      expect(calls).toBe(1);
+      expect(routerSetting).toBe("false");
+      await expect(fixture.jobs.get(queued.value.id as JobId)).resolves.toMatchObject({
+        status: "failed",
+        error: {
+          code: ErrorCode.Internal,
+          message: "HyperFrames exited 0 without producing the render artifact (render completed)",
         },
       });
     } finally {

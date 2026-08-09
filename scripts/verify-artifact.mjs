@@ -91,11 +91,24 @@ export const FORBIDDEN_PATTERNS = [
   { id: "dev-origin", pattern: /localhost:3000/u, why: "a development origin cannot be reachable from a user's machine" },
   { id: "sourcemap-url", pattern: /(?:\/\/|\/\*)\s*[#@]\s*sourceMappingURL\s*=/u, why: "a sourcemap hands over the entire original source" },
   { id: "aws-key", pattern: /AKIA[0-9A-Z]{16}/u, why: "an AWS access key" },
-  { id: "openai-key", pattern: /\bsk-(?!ant-)(?:proj-|svcacct-)?[A-Za-z0-9_-]{20,}/u, why: "an OpenAI API key" },
+  {
+    id: "openai-key",
+    // OpenSSH names two FIDO key algorithms with the same `sk-` prefix. Match
+    // API-key-shaped text without treating those exact standard identifiers as
+    // credentials when a media binary links libssh.
+    pattern: /\bsk-(?!ant-|ssh-ed25519(?:-cert-v01)?@openssh\.com|ecdsa-sha2-nistp256(?:-cert-v01)?@openssh\.com)(?:proj-|svcacct-)?[A-Za-z0-9_-]{20,}/u,
+    why: "an OpenAI API key",
+  },
   { id: "anthropic-key", pattern: /\bsk-ant-[A-Za-z0-9_-]{20,}/u, why: "an Anthropic API key" },
   { id: "github-token", pattern: /\b(?:gh[pousr]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,})/u, why: "a GitHub token" },
   { id: "huggingface-token", pattern: /\bhf_[A-Za-z0-9]{20,}/u, why: "a Hugging Face token" },
-  { id: "private-key", pattern: /-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----/u, why: "a private key" },
+  {
+    id: "private-key",
+    // A valid PEM/OpenSSH key continues on the next line. Crypto libraries
+    // legitimately embed the header alone as a NUL-terminated parser literal.
+    pattern: /-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----\r?\n/u,
+    why: "a private key",
+  },
 ];
 
 /**

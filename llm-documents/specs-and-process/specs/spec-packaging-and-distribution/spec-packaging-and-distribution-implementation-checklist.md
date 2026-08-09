@@ -2604,6 +2604,42 @@ Chi tiết: [Detailed Goals](./spec-packaging-and-distribution-detailed-goal.md)
   - Decisions: Bốn lint warning có sẵn vẫn ngoài scope. Không stage/chạm thay đổi người dùng ở `tests/adapter/remote-asset-browser.test.ts`.
   - Blockers: Exact-head Actions rerun vẫn là authority cho ba OS và offline failure diagnostic.
 
+2026-08-10 — Phase H/M CI Linux: HyperFrames CLI input hardlink
+  - Files: `scripts/stage-artifact-runtime.mjs`, `tests/build/stage-artifact-runtime.test.ts`, Design §16, checklist và implementation notes
+  - Summary: Sau khi esbuild input được sửa, packaged Linux đi xa hơn rồi fail vì Bun cũng hardlink `hyperframes/bin/hyperframes.mjs` từ global store.
+  - Decisions: Cho phép shared chỉ với exact regular/contained CLI source; generated staged bundle và toàn cây artifact vẫn bắt buộc `nlink === 1`. Regression tạo hardlink thật ở input và kiểm output là bản copy một link.
+  - Blockers: Focused stager 18/18 và typecheck xanh; chờ rerun exact head trên Linux.
+
+2026-08-10 — Phase D/G/M CI Windows: degraded proof và lock identity probe
+  - Files: `packages/adapter/src/runtime/process-supervisor.ts`, `tests/adapter/process-supervisor.test.ts`, Design §16, checklist và implementation notes
+  - Summary: Process workflow đã PASS spike thường lẫn degraded spike nhưng test PATH rỗng đòi exhaustive trong chính job chủ động tắt enumerator. Browser workflow tải Chrome/build thành công rồi lock self-identity treo 15 giây ở `Get-Process`.
+  - Decisions: PATH test vẫn đòi zero survivor, còn exhaustive/warning theo capability bị tắt. Windows identity probe bỏ hoàn toàn cmdlet/module discovery, gọi thẳng `System.Diagnostics.Process.GetProcessById` và parse strict một dòng; lock vẫn từ chối publish khi probe inconclusive.
+  - Blockers: Focused process/runtime-lock matrix 47 pass + 1 intentional skip và typecheck xanh; chờ Windows exact-head rerun.
+
+2026-08-10 — Phase L/M CI Windows: semantic secret scan
+  - Files: `scripts/verify-artifact.mjs`, `tests/build/artifact-provenance.test.ts`, Design §16 và implementation notes
+  - Summary: Exact FFmpeg Windows bị false positive bởi literal parser private-key NUL-terminated và tên thuật toán FIDO chuẩn của libssh.
+  - Decisions: Scanner đòi PEM header có newline và loại đúng standard identifier; không dùng file/hash allowlist. Binary exact quét lại zero finding, PEM fixture thật vẫn bị bắt; focused provenance 37/37.
+  - Blockers: Chờ packaged-smoke Windows exact-head chạy lại toàn verifier.
+
+2026-08-10 — Phase M CI macOS: HyperFrames exit 0 nhưng thiếu artifact
+  - Files: `packages/worker/src/render-job.ts`, `tests/adapter/render-job.test.ts`, Design §16 và implementation notes
+  - Summary: Offline smoke xác nhận HyperFrames exit 0 nhưng không sinh `output.mp4`; ffprobe sau đó chỉ báo triệu chứng file vắng.
+  - Decisions: Ép `HF_DE_PARALLEL_ROUTER=false`; sau render phải chứng minh regular-file/hash source trước ffprobe và tái dùng đúng source đó khi publish. Exit 0 thiếu output có diagnostic riêng.
+  - Blockers: Chờ packaged-smoke macOS exact-head chứng minh offline render dưới network cut.
+
+2026-08-10 — Phase D/M CI Windows: identity-safe test, bounded lock release, serial full suite
+  - Files: `tests/adapter/process-supervisor.test.ts`, `packages/adapter/src/runtime/atomic-directory-lock.ts`, `vitest.config.ts`, Design §16 và implementation notes
+  - Summary: Full CI còn báo survivor do PID reuse, lock release `EPERM` khi rename, và browser integration hết budget dưới hai worker.
+  - Decisions: Test capture/assert/cleanup bằng exact process identity; lock release chỉ retry lỗi handle-contention Windows tối đa 2 giây và reassert ownership mỗi vòng; Windows full suite dùng một worker, không skip hoặc nới timeout/assertion.
+  - Blockers: Chờ full CI, browser và process workflow exact-head xác nhận trên Windows.
+
+2026-08-10 — Phase M: local council gate trước exact-head rerun
+  - Files: toàn bộ batch fix hardlink/scanner/render/process/lock, checklist và implementation notes
+  - Summary: Full suite xanh 202 file pass + 1 intentional skip, 1815 test pass + 5 intentional skip; focused matrix, typecheck, boundaries, 115 spec paths, YAML và diff-check đều xanh.
+  - Decisions: ESLint 0 error; giữ nguyên 4 warning ngoài phạm vi. Không stage/chạm thay đổi người dùng ở `tests/adapter/remote-asset-browser.test.ts`.
+  - Blockers: Exact-head GitHub Actions ba OS vẫn là authority; production supply-chain human gate vẫn mở.
+
 Format:
 ```
 YYYY-MM-DD — Phase X, Task X.Y

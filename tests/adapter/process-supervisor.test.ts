@@ -11,6 +11,8 @@ import {
   PROCESS_VERIFY_TIMEOUT_MS,
   PROCESS_VERIFY_SWEEP_INTERVAL_MS,
   ProcessTerminationUnverifiedError,
+  type ProcessIdentity,
+  probeProcessIdentity,
   processIdentityMatches,
   terminationResult,
 } from "@vidcom/adapter";
@@ -37,15 +39,16 @@ async function waitForTree(pathname: string): Promise<Array<{ pid: number; role:
   return ledger(pathname);
 }
 
-function isAlive(pid: number): boolean {
-  try { process.kill(pid, 0); return true; } catch (error) {
-    return (error as NodeJS.ErrnoException).code === "EPERM";
-  }
+async function exactProcessIsAlive(captured: ProcessIdentity): Promise<boolean> {
+  const current = await probeProcessIdentity(captured.pid);
+  if (!current.exhaustive) throw new Error(`could not verify captured PID ${captured.pid}: ${current.reason}`);
+  return processIdentityMatches(captured, current.identity);
 }
 
-async function forceCleanup(pids: readonly number[]): Promise<void> {
-  for (const pid of pids) {
-    try { process.kill(pid, "SIGKILL"); } catch { /* already gone or Windows */ }
+async function forceCleanup(processes: readonly ProcessIdentity[]): Promise<void> {
+  for (const captured of processes) {
+    if (!(await exactProcessIsAlive(captured))) continue;
+    try { process.kill(captured.pid, "SIGKILL"); } catch { /* already gone or Windows */ }
   }
 }
 
@@ -109,8 +112,13 @@ describe("NodeProcessSupervisor", () => {
       signal: controller.signal,
     });
     const rows = await waitForTree(ledgerPath);
+    const captured: ProcessIdentity[] = [];
     try {
       expect(rows.map(({ role }) => role).sort()).toEqual(["escaping", "inGroup", "leaf", "root"]);
+      for (const { pid } of rows) {
+        const probe = await probeProcessIdentity(pid);
+        if (probe.identity !== undefined) captured.push(probe.identity);
+      }
       await new Promise((resolve) => setTimeout(resolve, PROCESS_CAPTURE_INTERVAL_MS * 2));
       controller.abort();
       const result = await execution;
@@ -123,12 +131,17 @@ describe("NodeProcessSupervisor", () => {
       } else {
         expect(result.proof.exhaustive).toBe(true);
         expect(result.warnings).toEqual([]);
+        expect(captured).toHaveLength(rows.length);
         await new Promise((resolve) => setTimeout(resolve, 100));
-        expect(rows.filter(({ pid }) => isAlive(pid))).toEqual([]);
+        const survivors = (await Promise.all(captured.map(async (identity) => ({
+          identity,
+          alive: await exactProcessIsAlive(identity),
+        })))).filter(({ alive }) => alive);
+        expect(survivors).toEqual([]);
       }
     } finally {
       controller.abort();
-      await forceCleanup(rows.map(({ pid }) => pid));
+      await forceCleanup(captured);
     }
   }, 30_000);
 
@@ -146,8 +159,11 @@ describe("NodeProcessSupervisor", () => {
       const result = await execution;
       expect(result.status).toBe("terminated");
       if (result.status !== "terminated") return;
-      expect(result.proof).toMatchObject({ exhaustive: true, survivors: [] });
-      expect(result.warnings).toEqual([]);
+      expect(result.proof.survivors).toEqual([]);
+      const windowsEnumeratorDisabled = process.platform === "win32"
+        && (process.env.VIDCOM_DISABLE_ENUMERATORS ?? "").split(",").includes("powershell-cim");
+      expect(result.proof.exhaustive).toBe(!windowsEnumeratorDisabled);
+      expect(result.warnings).toEqual(windowsEnumeratorDisabled ? ["termination_proof_not_exhaustive"] : []);
     } finally {
       controller.abort();
       if (previousPath === undefined) delete process.env.PATH;

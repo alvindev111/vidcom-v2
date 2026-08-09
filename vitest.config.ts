@@ -52,6 +52,6 @@ export default defineConfig({
     // SQLite cleanup behind open handles. Unbounded file parallelism made
     // otherwise-fast integration tests consume their explicit 15/30 s budgets
     // only in the full Actions suite, while each one passed alone.
-    maxWorkers: slowPlatform ? 2 : undefined,
+    maxWorkers: slowPlatform ? 1 : undefined,
   },
 });

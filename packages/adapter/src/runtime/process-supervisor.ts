@@ -441,16 +441,17 @@ async function probeWindowsProcessIdentity(pid: number): Promise<ProcessIdentity
   const powershell = windowsPowerShell(windowsRoot);
   let stdout: string;
   try {
-    // `Get-Process` reads the process object directly through .NET. The former
-    // `Get-CimInstance` query went through WMI, which hung past every budget on
-    // CI runners and left this probe permanently inconclusive.
+    // Call System.Diagnostics directly. Even `Get-Process` can trigger module
+    // discovery before it reaches the same .NET API, which made a cold Windows
+    // runner consume the whole probe budget despite an empty PSModulePath.
     const command = "$ErrorActionPreference = 'Stop'; "
-      + `$p = Get-Process -Id ${pid} -ErrorAction SilentlyContinue; `
-      + "if ($null -eq $p) { 'VIDCOM_ABSENT' } else { "
+      + `try { $p = [System.Diagnostics.Process]::GetProcessById(${pid}); `
       + "$started = $p.StartTime.ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ss.fffffffZ', "
       + "[System.Globalization.CultureInfo]::InvariantCulture); "
-      + "$json = [ordered]@{ ProcessId = [int]$p.Id; StartTime = $started } | ConvertTo-Json -Compress; "
-      + "'VIDCOM_FOUND ' + $json }";
+      + "[Console]::Out.Write('VIDCOM_FOUND ' + [int]$p.Id + '|' + $started) "
+      + "} catch { if ($_.Exception -is [System.ArgumentException] -or "
+      + "$_.Exception.InnerException -is [System.ArgumentException]) { "
+      + "[Console]::Out.Write('VIDCOM_ABSENT') } else { throw } }";
     const result = await execFileAsync(powershell, [
       "-NoProfile", "-NonInteractive", "-Command", command,
     ], {
@@ -471,27 +472,12 @@ async function probeWindowsProcessIdentity(pid: number): Promise<ProcessIdentity
   if (!stdout.startsWith("VIDCOM_FOUND ") || stdout.includes("\n") || stdout.includes("\r")) {
     return blind(`unexpected probe output: ${truncateReason(stdout)}`);
   }
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(stdout.slice("VIDCOM_FOUND ".length)) as unknown;
-  } catch {
-    return blind("probe output was not valid JSON");
+  const match = /^VIDCOM_FOUND ([0-9]+)\|(.+)$/u.exec(stdout);
+  if (!match || Number(match[1]) !== pid || !canonicalWindowsCreationDate(match[2] ?? "")) {
+    return blind("probe output did not describe the requested process canonically");
   }
-  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
-    return blind("probe output was not a JSON object");
-  }
-  const record = parsed as Record<string, unknown>;
-  const keys = Object.keys(record).sort();
-  if (
-    keys.length !== 2
-    || keys[0] !== "ProcessId"
-    || keys[1] !== "StartTime"
-    || record.ProcessId !== pid
-    || typeof record.StartTime !== "string"
-    || !canonicalWindowsCreationDate(record.StartTime)
-  ) return blind("probe output did not describe the requested process canonically");
   return {
-    identity: { pid, startedAt: `${WINDOWS_IDENTITY_SCHEME}:${record.StartTime}` },
+    identity: { pid, startedAt: `${WINDOWS_IDENTITY_SCHEME}:${match[2]}` },
     exhaustive: true,
   };
 }
