@@ -16,6 +16,7 @@ import {
   resolveStaticAssets,
   startServing,
   unbuiltFrontendTarget,
+  waitForShutdown,
   type ServingDaemon,
 } from "@vidcom/cli";
 import { configureCompilerBeforeRuntime } from "../../packages/cli/src/compiler-preload";
@@ -152,6 +153,29 @@ describe("serve static assets", () => {
 });
 
 describe("serve", () => {
+  it("accepts a parent IPC shutdown and removes its process listeners", async () => {
+    const listenerCounts = {
+      message: process.listenerCount("message"),
+      sigint: process.listenerCount("SIGINT"),
+      sigterm: process.listenerCount("SIGTERM"),
+    };
+    let stops = 0;
+    const daemon = {
+      stop: async () => { stops += 1; },
+      failure: new Promise<never>(() => {}),
+    } as unknown as ServingDaemon;
+
+    const waiting = waitForShutdown(daemon);
+    (process as unknown as { emit(event: "message", message: unknown): boolean })
+      .emit("message", { type: "vidcom.shutdown" });
+    await waiting;
+
+    expect(stops).toBe(1);
+    expect(process.listenerCount("message")).toBe(listenerCounts.message);
+    expect(process.listenerCount("SIGINT")).toBe(listenerCounts.sigint);
+    expect(process.listenerCount("SIGTERM")).toBe(listenerCounts.sigterm);
+  });
+
   it("uses the preloaded settings root for discovery and render attachment", async () => {
     const { appData, workspace } = await scratch();
     const settingsPath = path.join(path.dirname(appData), "setting.json");

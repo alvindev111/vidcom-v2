@@ -134,6 +134,9 @@ jobs:
 
       # The flag turns a missing FFmpeg into a failure instead of a skip, so this
       # job cannot report green while the narration audio pipeline goes unrun.
+      # Real-browser coverage belongs to the required browser-session job above;
+      # the generic runner may happen to contain Chrome, but must not run that
+      # heavyweight suite a second time merely because of ambient software.
       - name: Test
         run: npm run test
         env:

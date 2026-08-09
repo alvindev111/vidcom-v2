@@ -180,6 +180,28 @@ describe("doctor skips", () => {
     for (const item of broken) expect(item.remedy).toContain("repair failed");
   });
 
+  it("does not repair a shallow skip merely because strict promotes it", async () => {
+    const output = capture();
+    let repairInput: readonly { id: string }[] = [];
+    await runDoctor({
+      context: context(),
+      options: { json: true, repair: true },
+      strict: true,
+      repair: async (failing) => {
+        repairInput = failing;
+        return { items: [] };
+      },
+      io: output.io,
+    });
+
+    expect(repairInput.map((item) => item.id)).not.toContain("runtime.integrity");
+    const printed = JSON.parse(output.out.join("")) as DoctorReport;
+    expect(printed.items.find((item) => item.id === "runtime.integrity")).toMatchObject({
+      status: "missing",
+      remedy: expect.stringContaining("--deep"),
+    });
+  });
+
   it("counts a skipped required item as missing under strict", async () => {
     // R8.4 says the packaged smoke fails when a required component is absent,
     // while the exit rule says skipped is not a failure. Strict mode is where

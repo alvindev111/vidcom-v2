@@ -451,6 +451,12 @@ describe("artifact runtime staging", () => {
     const hyperframesInput = path.join(input.hyperframesRoot, "bin", "hyperframes.mjs");
     await link(hyperframesInput, path.join(input.root, "package-cache-hyperframes.mjs"));
     expect((await lstat(hyperframesInput)).nlink).toBeGreaterThan(1);
+    const hyperframesManifestInput = path.join(input.hyperframesRoot, "dist", "hyperframe.manifest.json");
+    await link(hyperframesManifestInput, path.join(input.root, "package-cache-hyperframe-manifest.json"));
+    expect((await lstat(hyperframesManifestInput)).nlink).toBeGreaterThan(1);
+    const hyperframesRuntimeInput = path.join(input.hyperframesRoot, "dist", "hyperframe.runtime.iife.js");
+    await link(hyperframesRuntimeInput, path.join(input.root, "package-cache-hyperframe-runtime.js"));
+    expect((await lstat(hyperframesRuntimeInput)).nlink).toBeGreaterThan(1);
     const result = await stageArtifactRuntime(input.paths, stageOptions(input));
 
     expect(await readFile(path.join(input.paths.outputRoot, "node", "cli", "boot.cjs"), "utf8"))
@@ -494,8 +500,10 @@ describe("artifact runtime staging", () => {
     const stagedHyperframes = path.join(input.paths.outputRoot, "hyperframes", "bin", "hyperframes.mjs");
     expect(existsSync(stagedHyperframes)).toBe(true);
     expect((await lstat(stagedHyperframes)).nlink).toBe(1);
-    expect(existsSync(path.join(input.paths.outputRoot, "hyperframes", "bin", "hyperframe.manifest.json"))).toBe(true);
-    expect(existsSync(path.join(input.paths.outputRoot, "hyperframes", "bin", "hyperframe.runtime.iife.js"))).toBe(true);
+    const stagedHyperframesManifest = path.join(input.paths.outputRoot, "hyperframes", "bin", "hyperframe.manifest.json");
+    const stagedHyperframesRuntime = path.join(input.paths.outputRoot, "hyperframes", "bin", "hyperframe.runtime.iife.js");
+    expect((await lstat(stagedHyperframesManifest)).nlink).toBe(1);
+    expect((await lstat(stagedHyperframesRuntime)).nlink).toBe(1);
     for (const library of MOTION_LIBRARIES) {
       for (const file of library.files) {
         expect(existsSync(path.join(

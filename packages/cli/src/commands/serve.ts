@@ -249,12 +249,23 @@ export async function runServeCommand(
 }
 
 export function waitForShutdown(daemon: ServingDaemon): Promise<void> {
-  const signal = new Promise<void>((resolve, reject) => {
-    const shutdown = () => {
-      daemon.stop().then(resolve, reject);
-    };
-    process.once("SIGINT", shutdown);
-    process.once("SIGTERM", shutdown);
+  let shutdown: () => void = () => {};
+  const control = new Promise<void>((resolve, reject) => {
+    shutdown = () => { daemon.stop().then(resolve, reject); };
   });
-  return Promise.race([signal, daemon.failure]);
+  const onMessage = (message: unknown) => {
+    if (message !== null && typeof message === "object"
+      && "type" in message && message.type === "vidcom.shutdown") shutdown();
+  };
+  process.once("SIGINT", shutdown);
+  process.once("SIGTERM", shutdown);
+  // Exists only when a parent deliberately spawned the SEA with an IPC fd.
+  // Packaged smoke uses it because Windows process signals are forceful and do
+  // not run the lease/discovery cleanup that SIGTERM runs on POSIX.
+  process.on("message", onMessage);
+  return Promise.race([control, daemon.failure]).finally(() => {
+    process.off("SIGINT", shutdown);
+    process.off("SIGTERM", shutdown);
+    process.off("message", onMessage);
+  });
 }

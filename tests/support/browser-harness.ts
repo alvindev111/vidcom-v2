@@ -65,6 +65,16 @@ export function browserIsRequired(): boolean {
 export async function requireBrowser(browserCacheRoot?: string): Promise<
   { run: true; chromePath: string } | { run: false; message: string }
 > {
+  // The generic CI matrix can inherit a system Chrome from the runner. That
+  // must not make the heavyweight browser cases run there opportunistically:
+  // the dedicated browser-session workflow installs the exact browser and
+  // sets VIDCOM_REQUIRE_BROWSER so absence and skips are both failures.
+  if ((process.env.CI === "true" || process.env.CI === "1") && !browserIsRequired()) {
+    return {
+      run: false,
+      message: "browser session tests skipped: dedicated browser-session CI owns required coverage",
+    };
+  }
   const availability = await browserAvailability(browserCacheRoot);
   if (availability.available && availability.chromePath) {
     return { run: true, chromePath: availability.chromePath };

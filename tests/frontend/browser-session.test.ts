@@ -88,6 +88,24 @@ describe("browser session harness", () => {
     process.stdout.write(`${outcome.message}\n`);
   });
 
+  it("keeps optional browser work out of the generic CI matrix", async () => {
+    const priorCi = process.env.CI;
+    const priorRequired = process.env.VIDCOM_REQUIRE_BROWSER;
+    try {
+      process.env.CI = "true";
+      delete process.env.VIDCOM_REQUIRE_BROWSER;
+      await expect(requireBrowser()).resolves.toEqual({
+        run: false,
+        message: "browser session tests skipped: dedicated browser-session CI owns required coverage",
+      });
+    } finally {
+      if (priorCi === undefined) delete process.env.CI;
+      else process.env.CI = priorCi;
+      if (priorRequired === undefined) delete process.env.VIDCOM_REQUIRE_BROWSER;
+      else process.env.VIDCOM_REQUIRE_BROWSER = priorRequired;
+    }
+  });
+
   it("drives nonce cleanup, picker, and both New video outcomes through the static bundle", async () => {
     const available = await requireBrowser();
     if (!available.run) {

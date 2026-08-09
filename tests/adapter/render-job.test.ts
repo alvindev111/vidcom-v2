@@ -477,7 +477,7 @@ describe("render job with real SQLite and filesystem", () => {
     }
   });
 
-  it("rejects a zero-exit renderer that published no artifact and disables the experimental router", async () => {
+  it("rejects a zero-exit renderer that published no artifact and disables experimental capture", async () => {
     const fixture = await baseFixture();
     try {
       const project = await addProject(fixture, "missing-artifact", `<!doctype html><html><body>
@@ -487,10 +487,12 @@ describe("render job with real SQLite and filesystem", () => {
       const harness = await renderHarness(fixture);
       let calls = 0;
       let routerSetting: string | undefined;
+      let fastCaptureSetting: string | undefined;
       const processPort: ProcessSupervisorPort = {
         async run(input) {
           calls += 1;
           routerSetting = input.environment?.HF_DE_PARALLEL_ROUTER;
+          fastCaptureSetting = input.environment?.PRODUCER_EXPERIMENTAL_FAST_CAPTURE;
           return {
             status: "exited" as const,
             output: { exitCode: 0, stdout: "render completed", stderr: "", timedOut: false },
@@ -505,6 +507,7 @@ describe("render job with real SQLite and filesystem", () => {
 
       expect(calls).toBe(1);
       expect(routerSetting).toBe("false");
+      expect(fastCaptureSetting).toBe("false");
       await expect(fixture.jobs.get(queued.value.id as JobId)).resolves.toMatchObject({
         status: "failed",
         error: {

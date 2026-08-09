@@ -2625,7 +2625,7 @@ Chi tiết: [Detailed Goals](./spec-packaging-and-distribution-detailed-goal.md)
 2026-08-10 — Phase M CI macOS: HyperFrames exit 0 nhưng thiếu artifact
   - Files: `packages/worker/src/render-job.ts`, `tests/adapter/render-job.test.ts`, Design §16 và implementation notes
   - Summary: Offline smoke xác nhận HyperFrames exit 0 nhưng không sinh `output.mp4`; ffprobe sau đó chỉ báo triệu chứng file vắng.
-  - Decisions: Ép `HF_DE_PARALLEL_ROUTER=false`; sau render phải chứng minh regular-file/hash source trước ffprobe và tái dùng đúng source đó khi publish. Exit 0 thiếu output có diagnostic riêng.
+  - Decisions: Ép `PRODUCER_EXPERIMENTAL_FAST_CAPTURE=false` và router con false; sau render phải chứng minh regular-file/hash source trước ffprobe và tái dùng đúng source đó khi publish. Exit 0 thiếu output có diagnostic riêng.
   - Blockers: Chờ packaged-smoke macOS exact-head chứng minh offline render dưới network cut.
 
 2026-08-10 — Phase D/M CI Windows: identity-safe test, bounded lock release, serial full suite
@@ -2639,6 +2639,30 @@ Chi tiết: [Detailed Goals](./spec-packaging-and-distribution-detailed-goal.md)
   - Summary: Full suite xanh 202 file pass + 1 intentional skip, 1815 test pass + 5 intentional skip; focused matrix, typecheck, boundaries, 115 spec paths, YAML và diff-check đều xanh.
   - Decisions: ESLint 0 error; giữ nguyên 4 warning ngoài phạm vi. Không stage/chạm thay đổi người dùng ở `tests/adapter/remote-asset-browser.test.ts`.
   - Blockers: Exact-head GitHub Actions ba OS vẫn là authority; production supply-chain human gate vẫn mở.
+
+2026-08-10 — Phase H/M CI Linux: HyperFrames dist inputs cũng là hardlink
+  - Files: `scripts/stage-artifact-runtime.mjs`, `tests/build/stage-artifact-runtime.test.ts`, Design §16 và implementation notes
+  - Summary: Exact-head `e96a121` đi qua CLI staging rồi fail vì Bun Linux còn hardlink runtime manifest/IIFE từ global store.
+  - Decisions: Cho phép shared chỉ với hai exact source regular/contained; generated manifest và copied/sanitized runtime output vẫn bắt buộc single-link. Regression hardlink cả hai input và kiểm cả hai output.
+  - Blockers: Chờ focused gate, commit mới và packaged-smoke Linux exact-head rerun.
+
+2026-08-10 — Phase M CI macOS: tắt đúng experimental capture authority
+  - Files: `packages/worker/src/render-job.ts`, `tests/adapter/render-job.test.ts`, Design §16 và implementation notes
+  - Summary: `e96a121` vẫn exit 0 không output ở offline; log bounded cho thấy artifact vắng. Đọc help/code exact 0.7.86 xác nhận fast capture mặc định bật trên macOS hardware GPU; biến router con trước đó không tắt capture mode.
+  - Decisions: Production ép `PRODUCER_EXPERIMENTAL_FAST_CAPTURE=false` để dùng screenshot path ổn định trên mọi OS, vẫn giữ router con false và artifactSource proof trước ffprobe/publication.
+  - Blockers: Chờ packaged-smoke macOS exact-head rerun dưới network cut.
+
+2026-08-10 — Phase G/M CI Windows: generic matrix không sở hữu browser E2E
+  - Files: `tests/support/browser-harness.ts`, `tests/frontend/browser-session.test.ts`, `.github/workflows/ci.yml`, Design §16, checklist và implementation notes
+  - Summary: CI Windows `e96a121` chạy 200 file xanh rồi thất bại duy nhất vì browser E2E timeout 30 giây; runner generic tình cờ có Chrome nên chạy lại suite nặng vốn đã có workflow chuyên biệt Linux/Windows xanh.
+  - Decisions: Generic CI không có `VIDCOM_REQUIRE_BROWSER` skip có lý do trước browser resolution; local vẫn chạy khi có browser. Workflow `phase4-browser-session.yml` cài exact Chrome, ép required flag và vẫn fail nếu browser thiếu hoặc test skip. Regression chốt nhánh generic-CI mà không giảm required coverage.
+  - Blockers: Chờ exact-head CI rerun; production supply-chain human gate vẫn mở độc lập.
+
+2026-08-10 — Phase M CI Windows: strict repair và graceful packaged shutdown
+  - Files: `packages/cli/src/commands/{doctor,serve}.ts`, `scripts/packaged-smoke/bodies.mjs`, `tests/cli/{doctor,serve}.test.ts`, Design §16, checklist và implementation notes
+  - Summary: Windows packaged smoke build/verify artifact xanh nhưng cold doctor timeout 600 giây; UI step kế tiếp xanh rồi mọi daemon sau bị lease của process vừa force-kill chặn.
+  - Decisions: Strict là policy report/acceptance, không phải input mutation: `runDoctor` repair từ raw probe failures rồi mới promote skip trong report cuối, nên shallow integrity không còn kích hoạt re-extract runtime khoẻ. Packaged parent và SEA child dùng IPC fd để gửi exact shutdown message và chạy cùng `daemon.stop()`; fallback force-kill chỉ dùng khi IPC lỗi/timeout, không thêm network route.
+  - Blockers: Focused 72/72 và full suite 202 file + 1 intentional skip, 1818 test + 5 intentional skip xanh cục bộ; chờ Windows exact-head chứng minh cold/warm doctor và các step kế tiếp không còn lease cascade.
 
 Format:
 ```

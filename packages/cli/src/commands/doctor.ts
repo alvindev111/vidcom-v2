@@ -4,6 +4,7 @@ import {
   redactDoctorReport,
   runDoctorChecks,
   type DoctorItem,
+  type DoctorReport,
 } from "@vidcom/core";
 
 import { CliInputError } from "../cli-error";
@@ -52,11 +53,28 @@ export interface DoctorRunInput {
   repair?(failing: readonly DoctorItem[]): Promise<RepairOutcome>;
 }
 
+function enforceStrictReport(report: DoctorReport): DoctorReport {
+  return {
+    ...report,
+    items: report.items.map((item) => doctorCheckIsRequired(item.id) && item.status === "skipped"
+      ? {
+          ...item,
+          status: "missing" as const,
+          detail: item.detail ?? "required component was never exercised",
+          remedy: item.remedy
+            ?? "exercise this component once, or run without VIDCOM_DOCTOR_STRICT to see it as pending",
+        }
+      : item),
+  };
+}
+
 export async function runDoctor(input: DoctorRunInput): Promise<number> {
   const io = input.io ?? { stdout: process.stdout, stderr: process.stderr };
+  // Repair only what a probe actually found broken. Strict promotion is an
+  // acceptance/reporting policy; applying it before repair made a shallow
+  // integrity skip trigger a full healthy-runtime re-extraction.
   let report = await runDoctorChecks(createDoctorChecks(), input.context, {
     platform: input.context.platform,
-    ...(input.strict === undefined ? {} : { strict: input.strict }),
   });
 
   if (input.options.repair === true) {
@@ -97,6 +115,8 @@ export async function runDoctor(input: DoctorRunInput): Promise<number> {
       };
     }
   }
+
+  if (input.strict === true) report = enforceStrictReport(report);
 
   const redacted = redactDoctorReport(report, input.buildRoots ?? []);
   // JSON on stdout, prose on stderr. That is what lets `doctor --json | jq`

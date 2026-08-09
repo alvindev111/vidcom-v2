@@ -1078,11 +1078,15 @@ async function stageHyperframes({ root, sourceRoot, libraries, motionPackageRoot
     sourceRoot,
     runtimeManifestSource,
     "HyperFrames runtime manifest",
+    false,
+    true,
   );
   const canonicalRuntime = await assertContainedRegularFile(
     sourceRoot,
     runtimeSource,
     "HyperFrames runtime IIFE",
+    false,
+    true,
   );
   const runtimeManifest = object(
     JSON.parse(await readFile(canonicalRuntimeManifest, "utf8")),

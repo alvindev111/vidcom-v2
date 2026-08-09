@@ -380,9 +380,11 @@ export function createRenderJobHandler(dependencies: RenderJobDependencies): Job
           cwd: staged.projectRoot,
           environment: {
             ...acquired.environment,
-            // A packaged render must not opt itself into a telemetry-gated
-            // experimental capture route. The exact HyperFrames pin enables
-            // that trial from mutable per-user config unless explicitly off.
+            // The exact HyperFrames pin defaults experimental fast capture on
+            // for macOS with a hardware-GPU browser. Packaged rendering uses
+            // the stable screenshot path on every machine instead of allowing
+            // host GPU state to select a different capture implementation.
+            PRODUCER_EXPERIMENTAL_FAST_CAPTURE: "false",
             HF_DE_PARALLEL_ROUTER: "false",
             HYPERFRAMES_BROWSER_PATH: preflight.value.binaries.browserPath,
             HYPERFRAMES_FFMPEG_PATH: preflight.value.binaries.ffmpegPath,

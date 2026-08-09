@@ -92,7 +92,9 @@ export async function startServing(context, extraArgs = []) {
   const child = spawn(context.artifact, ["serve", "--workspace", context.workspace, ...extraArgs], {
     cwd: context.cwd,
     env: context.environment,
-    stdio: ["ignore", "pipe", "pipe"],
+    // IPC is a parent-held local capability, not a network endpoint. It gives
+    // Windows the graceful shutdown that child.kill("SIGTERM") cannot provide.
+    stdio: ["ignore", "pipe", "pipe", "ipc"],
     shell: false,
     detached: process.platform !== "win32",
   });
@@ -113,7 +115,13 @@ export async function startServing(context, extraArgs = []) {
 
 export async function stopServing(serving) {
   if (serving.child.exitCode !== null) return;
-  serving.child.kill("SIGTERM");
+  if (serving.child.connected) {
+    serving.child.send({ type: "vidcom.shutdown" }, (error) => {
+      if (error && serving.child.exitCode === null) serving.child.kill("SIGTERM");
+    });
+  } else {
+    serving.child.kill("SIGTERM");
+  }
   const exited = await new Promise((resolve) => {
     const timer = setTimeout(() => resolve(false), 15_000);
     serving.child.once("exit", () => {
