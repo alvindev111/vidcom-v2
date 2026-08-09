@@ -74,6 +74,10 @@ Hai test **có sẵn từ trước Giai đoạn 4** đỏ ngẫu nhiên trên Wi
 |---|---|---|
 | `tests/adapter/bridge-credential-lifecycle.test.ts` — waiter nhận `bridge_rotation_in_progress` | `ENOENT ... mkdir '…\.credential.lock.claim-…'` | `5b85578` |
 | `tests/adapter/journal-recovery.test.ts` — abort khi bị kill giữa lúc ghi | `child did not reach mid-write`, rồi `EBUSY ... unlink vidcom.sqlite` | `df56f42` |
+| `tests/adapter/render-job.test.ts` — render qua tiến trình thật | `render_binary_missing` sau 10,6 s | `6ee93ba` |
+| `tests/adapter/remote-asset-browser.test.ts` — chặn ảnh remote trong browser thật | `mediaViolations` rỗng, không quan sát được request nào | `6ee93ba` |
+
+Hai dòng cuối **đã đo lại**: `dd515c7` (nhiều commit hơn, không đụng file nào của hai test đó) xanh cả ba OS. Cùng họ với hai dòng trên — phụ thuộc binary tải về và thời điểm, chạm filesystem/tiến trình thật. Vẫn **chưa sửa**, và vẫn không được sửa bằng retry.
 
 `EBUSY` khi `unlink` một file SQLite vừa đóng là dấu hiệu Windows **giữ handle lâu hơn lời hứa `close()` trả về**. Nghi ngờ cả hai cùng một gốc: cleanup của `afterEach` (`rm -r`) chạy trong khi handle chưa thực sự được nhả.
 
@@ -1528,6 +1532,7 @@ Chi tiết: [Detailed Goals](./spec-packaging-and-distribution-detailed-goal.md)
   - Files: `scripts/runtime-smoke-host.mjs`, `scripts/verify-next-runtime.mjs`, `.github/workflows/ci.yml`, checklist và implementation notes
   - Summary: Exact SHA `6ee93ba` đỏ **cả ba OS** ở đúng một step — `test:runtime-smoke` khởi `next start`, mà `"next start" does not work with "output: export" configuration`. Đổi host của smoke sang chính listener daemon.
   - Decisions: Không skip step, không disable job, không nới gate. Mọi khẳng định của smoke — nonce exchange, session cookie, project list, MCP legacy + modern exact/latest, credential audit, SSE `Last-Event-ID` resume — đều thuộc **API của daemon**; `next start` chỉ là process chứa nó. `runtime-smoke-host.mjs` bind `handleNextHostedRequest` qua `bindLoopback` của E. Bỏ probe `GET /` (frontend giờ là file tĩnh, không thuộc process này): readiness đọc dòng `listening` trên stdout, nên một route trả lời là việc của khẳng định kế tiếp chứ không che mất bên nào hỏng. Đổi tên step CI cho khớp thực tế.
+  - Verification: `dd515c7` xanh **cả ba OS** (run 31284935464) — G.6 và loạt task I đầu tiên đi qua CI đầy đủ.
   - Blockers: Bun **không host được** cái này — `No such built-in module: node:sqlite`, mà SQLite là nền của cả stack. Chạy dưới Node với loader `tsx@4.23.1` đã là direct dependency của `packages/cli`, đúng cách các suite MCP đang làm. Smoke xanh cục bộ: `SSE 1 -> 2`, MCP legacy + modern ok. Chờ CI exact HEAD ba OS.
 
 2026-08-09 — Lệch thứ tự phase, ghi lại để không trôi
