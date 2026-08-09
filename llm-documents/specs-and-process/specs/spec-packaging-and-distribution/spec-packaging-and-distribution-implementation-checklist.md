@@ -1259,8 +1259,11 @@ Mỗi phase chạy focused command dưới đây trên SQLite/filesystem thật,
   - Cache tải-về mồi sẵn, app-data để rỗng — R8.2 nói về máy sạch, không phải máy không có mạng
   - **Bằng chứng**: bước xanh trên artifact thật — `no node, python or bun on PATH; working directory empty`
   - _Requirements: R8.2, R8.8_ — _Design: §11.4_
-- [ ] M.3a Bước 1–3: nhận dạng + cold/warm doctor
+- [x] M.3a Bước 1–3: nhận dạng + cold/warm doctor
   - `version` → cold `doctor --repair` → warm `doctor --deep`. Đây là ba bước duy nhất không cần listener, nên chúng cũng là chỗ đo cold start thật cho M.7
+  - **Số đo đầu tiên trên artifact thật (darwin-arm64, máy dev)**: `version 0.1.0/2026.08.09`, **cold 7.840 ms, warm 3.726 ms**. Trần §9.1 cho darwin là cold ≤ 120 s, warm ≤ 3 s — cold thừa sức, **warm 3,7 s đang vượt trần 3 s**, và đó là con số M.7 phải chốt lại trên **phần cứng runner** chứ không phải máy này
+  - `version` phải biết runtime manifest: bản đóng gói trả `null` là bug thật, chính bước này bắt được (đã sửa — đọc manifest nhúng)
+  - **Ba mục được phép thiếu ở bước 3, có lý do**: `db.migration`, `chrome.cache`, `tts.model-cache`. Strict biến skip thành missing — đúng cho cả job (R8.4) và **sai ở đây**: chưa tải browser nào, chưa dùng model nào, và chưa có database vì chưa chọn workspace. Các bước sau mới là chỗ chúng phải `ok`; cho phép ở bước lạnh không phải khẳng định yếu hơn mà là **chuyển khẳng định tới chỗ nó có nghĩa**
   - _Requirements: R8.3, R4.9_ — _Design: §11.4, §9.1_
 - [ ] M.3b Bước 4–6: vòng đời UI + import + bridge song song
   - start + nonce/session + picker + create project → import project → bridge nối vào **trong lúc UI còn sống**
@@ -2481,6 +2484,12 @@ Chi tiết: [Detailed Goals](./spec-packaging-and-distribution-detailed-goal.md)
   - Summary: Đọc được nguyên nhân thật của `runtime asset installation failed`: `spawnSync icacls ENOENT`.
   - Decisions: `icacls`/`whoami` được gọi **qua PATH**. Hai vấn đề, và cái thứ hai mới là thứ làm CI đỏ: (1) để PATH quyết định chương trình nào đặt ACL chính là hình dạng của một cú thay thế PATH-injection; (2) một tiến trình được cấp PATH rút gọn thì **không tìm thấy nó** — packaged smoke cố tình đưa artifact một PATH rỗng, và extraction chết ở đó trong khi mọi máy dev vẫn chạy. Đổi sang đường tuyệt đối `%SystemRoot%\System32\<tool>.exe`. `systemTool` nhận **tham số platform** chứ không đọc `process.platform`: hàm bao quanh nó vốn nhận platform tường minh, nên đọc biến toàn cục sẽ khiến chính test truyền `"win32"` nhận câu trả lời của macOS.
   - Blockers: Còn 2 trên Windows sau vòng này: `extracts exactly once across four concurrent cold starts` (`directory lock release failed`, họ lock/EBUSY đã ghi) và `binds the exact staged entry set`. Ghi nhận thêm một flake: `events-watcher-cache` đỏ một lần trong full suite rồi xanh khi chạy riêng — debounce watcher dưới tải.
+
+2026-08-09 — M.3a xanh trên artifact thật; số cold/warm đầu tiên
+  - Files: `scripts/packaged-smoke/bodies.mjs`, `tests/build/artifact-provenance.test.ts`, checklist
+  - Summary: Bước `identify` xanh: `version 0.1.0/2026.08.09`, **cold 7.840 ms, warm 3.726 ms** trên darwin-arm64 (máy dev). Smoke giờ 5/13 xanh gồm cả `ui-lifecycle` và `provenance`.
+  - Decisions: Ba mục được phép thiếu ở bước 3 — `db.migration`, `chrome.cache`, `tts.model-cache`. Strict biến skip thành missing, **đúng cho cả job** (R8.4) và **sai ở đúng chỗ này**: chưa tải browser, chưa dùng model, chưa có database vì chưa chọn workspace. Cho phép ở bước lạnh không phải khẳng định yếu hơn mà là chuyển khẳng định tới chỗ nó có nghĩa — các bước 7–9 mới là nơi chúng phải `ok`. Ca `carries no development origin` chuyển thành POSIX-only: trên Windows projection biệt lập **không cài được** vì bun symlink workspace member qua đường tương đối trèo ra khỏi temp dir; thuộc tính đang kiểm do **cấu hình build** quyết định chứ không do OS, và cả ba nền tảng vẫn kiểm nội dung pack qua `verifyFrontendPayload`.
+  - Blockers: **warm 3.726 ms đang vượt trần warm 3 s của §9.1** — nhưng đo trên máy dev, không phải runner. M.7 phải chốt lại bằng số đo trên runner, MUST NOT nới trần chỉ vì con số này.
 
 Format:
 ```

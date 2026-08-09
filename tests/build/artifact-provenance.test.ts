@@ -504,7 +504,16 @@ describe("frontend payload provenance", () => {
 });
 
 describe("the frontend pack this build produces", () => {
-  it("carries no development origin", async () => {
+  // POSIX only, and the reason is what the case is about rather than where it
+  // runs. The pack is whatever `next build` writes from these sources, and the
+  // property under test — that no development origin was inlined — is decided
+  // by the build configuration, not by the host. On Windows the isolated
+  // projection cannot be installed at all: bun resolves workspace members
+  // through relative symlinks that climb out of the temp directory
+  // (`..\..\..\..\..\..\runneradmin\...`) and fails to link them. Two
+  // platforms build the pack; all three check its contents through
+  // `verifyFrontendPayload` above.
+  it.skipIf(process.platform === "win32")("carries no development origin", async () => {
     // The dev origin is injected at runtime by the host and never inlined, so
     // there is nothing to leak — and this is the check that keeps it that way.
     // Build every time in an isolated checkout projection. Reusing repo-root

@@ -36,13 +36,33 @@ function expectSuccess(label, run) {
  * made this step assert that a fresh install is misconfigured. What the smoke
  * actually cares about is that every component the *artifact* carries came up.
  */
-export const USER_SUPPLIED_DOCTOR_ITEMS = Object.freeze(["workspace.active", "tts.elevenlabs"]);
+export const USER_SUPPLIED_DOCTOR_ITEMS = Object.freeze([
+  "workspace.active",
+  "tts.elevenlabs",
+]);
+
+/**
+ * Items nothing has exercised yet at step three.
+ *
+ * Strict turns a skip into a missing, which is right for the job as a whole
+ * (R8.4) and wrong here: no browser has been downloaded, no voice model has
+ * been used, and no database exists because no workspace has been chosen. The
+ * steps that exercise them come later, and that is where they have to be `ok`.
+ * Allowing them at the cold check is not a weaker assertion — it is the
+ * assertion moving to the point where it can mean something.
+ */
+export const NOT_YET_EXERCISED_DOCTOR_ITEMS = Object.freeze([
+  "db.migration",
+  "chrome.cache",
+  "tts.model-cache",
+]);
 
 function assertRuntimeHealthy(label, run) {
   const report = parseJson(label, run.stdout);
+  const allowed = [...USER_SUPPLIED_DOCTOR_ITEMS, ...NOT_YET_EXERCISED_DOCTOR_ITEMS];
   const broken = (report.items ?? []).filter((item) => item.status !== "ok"
     && item.status !== "skipped"
-    && !USER_SUPPLIED_DOCTOR_ITEMS.includes(item.id));
+    && !allowed.includes(item.id));
   if (broken.length > 0) {
     throw new Error(`${label} found the artifact unhealthy: ${
       broken.map((item) => `${item.id}=${item.status}`).join(", ")}`);
