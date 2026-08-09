@@ -279,7 +279,24 @@ export async function runVidcomCli(argv: readonly string[] = process.argv.slice(
     return 0;
   }
   if (command.name === "credential") {
-    await runCredentialCommand(command.args);
+    // A packaged build hands over the coordinator's database. Opening one here
+    // would migrate against the source-relative history folder, which L.1
+    // rewrites away so the build machine's paths never ship — inside an
+    // artifact that folder does not exist, and `credential issue` came back
+    // `internal_error`. The packaged smoke is what found it.
+    const assetSource = runtimeAssetSourceForProcess();
+    await runCredentialCommand(command.args, {
+      appDataRoot: defaultAppDataRoot,
+      stdout: process.stdout,
+      now: () => new Date(),
+      newId: () => `credential_${crypto.randomUUID()}`,
+      ...(assetSource === null ? {} : {
+        database: async () => {
+          const prepared = await prepareRuntimeForCli(defaultAppDataRoot(), { assetSource });
+          return { database: prepared.database, release: () => prepared.release() };
+        },
+      }),
+    });
     return 0;
   }
   if (command.name === "backup") {

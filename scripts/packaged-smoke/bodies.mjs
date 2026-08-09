@@ -1,5 +1,5 @@
 import { spawn, spawnSync } from "node:child_process";
-import { readdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 /**
@@ -265,9 +265,72 @@ export const STEP_BODIES = {
     }
   },
 
-  import(context) {
-    void context;
-    throw new NotWrittenYet("import", "a fixture outside the workspace, copied in and backfilled");
+  async import(context) {
+    // Deliberately outside the workspace: the whole point of import is bringing
+    // a directory the daemon does not already own, and a fixture placed inside
+    // would pass without exercising that.
+    const fixture = path.join(context.root, "outside", "imported-project");
+    await mkdir(fixture, { recursive: true });
+    await writeFile(path.join(fixture, "index.html"), "<!doctype html><title>imported</title>\n", "utf8");
+
+    const serving = await startServingWithSession(context);
+    try {
+      const headers = { Cookie: serving.cookie, "content-type": "application/json" };
+      const browse = async (route, body) => {
+        const response = await fetch(`${serving.baseUrl}/api/v1/system/filesystem/${route}`, {
+          method: body === undefined ? "GET" : "POST",
+          headers,
+          ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+        });
+        if (!response.ok) throw new Error(`${route} returned ${String(response.status)}`);
+        return response.json();
+      };
+
+      // The token is minted by the browse walk and never by the client. That is
+      // the point of the design: the server only ever acts on a directory it
+      // handed out itself, so a path typed by a caller cannot become an import.
+      const { roots } = await browse("roots");
+      let token = roots.find((root) => fixture.startsWith(root.displayPath))?.token
+        ?? roots[0]?.token;
+      if (!token) throw new Error("the browser offered no roots to descend from");
+
+      const segments = path.relative(roots.find((root) => fixture.startsWith(root.displayPath))
+        ?.displayPath ?? "/", fixture).split(path.sep).filter(Boolean);
+      for (const segment of segments) {
+        const page = await browse("entries", { token });
+        const next = page.entries.find((entry) => entry.name === segment && entry.isDirectory);
+        if (!next?.token) throw new Error(`browse could not descend into ${segment}`);
+        token = next.token;
+      }
+
+      const started = await fetch(`${serving.baseUrl}/api/v1/projects/imports`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({ sourceToken: token, targetName: "Imported" }),
+      });
+      if (started.status !== 202) {
+        throw new Error(`starting the import returned ${String(started.status)}: ${(await started.text()).slice(0, 200)}`);
+      }
+      const { jobId } = await started.json();
+      if (typeof jobId !== "string") throw new Error("the import did not return a job id");
+
+      // Asynchronous by contract, so the smoke waits the way a client does.
+      const deadline = Date.now() + 120_000;
+      let status = "queued";
+      while (Date.now() < deadline && status !== "succeeded" && status !== "failed" && status !== "cancelled") {
+        const job = await fetch(`${serving.baseUrl}/api/v1/jobs/${jobId}`, { headers });
+        if (!job.ok) throw new Error(`job status returned ${String(job.status)}`);
+        status = (await job.json()).status;
+        if (status === "queued" || status === "running") await new Promise((r) => setTimeout(r, 250));
+      }
+      if (status !== "succeeded") throw new Error(`the import job ended ${status}`);
+
+      // The original must be untouched: import copies, it does not move.
+      await readFile(path.join(fixture, "index.html"), "utf8");
+      return `imported a fixture from outside the workspace as job ${jobId}`;
+    } finally {
+      await stopServing(serving);
+    }
   },
 
   async bridge(context) {

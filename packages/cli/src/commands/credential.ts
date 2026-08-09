@@ -4,6 +4,7 @@ import {
   initializeDatabase,
   NodeMcpCredentialCrypto,
   SqliteMcpCredentialStore,
+  type VidcomDatabase,
 } from "@vidcom/adapter";
 import { MAX_CREDENTIAL_ROTATION_OVERLAP_MS, McpCredentialService } from "@vidcom/core";
 
@@ -14,6 +15,18 @@ import { writeJson, type CliOutput } from "../output";
 
 export interface CredentialCommandDependencies {
   appDataRoot(): string;
+  /**
+   * An already-migrated database, when the caller has one.
+   *
+   * A packaged build must supply it. Opening the database here runs the
+   * migration with the source-relative history folder, and L.1 rewrites
+   * `import.meta.url` to the `/vidcom` marker so the build machine's paths
+   * never ship — which leaves that folder pointing at nothing inside an
+   * artifact. The bootstrap coordinator already migrates against the copy in
+   * the extracted runtime, so the fix is to use its database rather than to
+   * open a second one.
+   */
+  database?(): Promise<{ database: VidcomDatabase; release(): Promise<void> }>;
   stdout: CliOutput;
   now(): Date;
   newId(): string;
@@ -65,7 +78,8 @@ export async function runCredentialCommand(
   dependencies: CredentialCommandDependencies = defaultDependencies,
 ): Promise<void> {
   const operation = parseCredentialOperation(argv);
-  const database = await initializeDatabase(dependencies.appDataRoot());
+  const prepared = dependencies.database ? await dependencies.database() : null;
+  const database = prepared?.database ?? await initializeDatabase(dependencies.appDataRoot());
   try {
     const service = new McpCredentialService({
       credentials: new SqliteMcpCredentialStore(database),
@@ -94,6 +108,9 @@ export async function runCredentialCommand(
     }
     throw error;
   } finally {
-    await database.destroy();
+    // Whoever opened it closes it. Destroying a database the coordinator owns
+    // would pull it out from under the lock that is still holding it.
+    if (prepared) await prepared.release();
+    else await database.destroy();
   }
 }
