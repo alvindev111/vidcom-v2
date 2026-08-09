@@ -1,5 +1,6 @@
 import { EventEmitter } from "node:events";
 import { createHash } from "node:crypto";
+import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -9,10 +10,14 @@ import { describe, expect, it } from "vitest";
 import {
   AppDataBackupStore,
   initializeDatabase,
+  migrateDatabase,
   MutationJournal,
+  readPublishedRuntimeInstallation,
+  RUNTIME_PATH_NAMES,
   SqliteApprovalGrantStore,
   WorkspaceFs,
   WorkspaceLease,
+  type RuntimePaths,
 } from "@vidcom/adapter";
 import {
   DEFAULT_VIDCOM_SETTINGS,
@@ -29,21 +34,46 @@ import {
 } from "@vidcom/core";
 import {
   CliInputError,
+  createInfrastructure,
+  defaultAppDataRoot,
+  type BackupCommandDependencies,
   parseAppCommandArgs,
   parseMcpCommandArgs,
   parseVidcomCommand,
+  prepareRuntimeForCli,
   runCliMain,
   runApproveCommand,
   runBackupCommand,
   runCredentialCommand,
   runMcpLifecycle,
   runRecoveryCommand,
+  runtimePathsFor,
   selectWorkspace,
   startVidcomMcp,
   waitForMcpShutdown,
 } from "@vidcom/cli";
 import type { AbsolutePath, ResolvedPath } from "@vidcom/core";
+import { earlyAppDataRoot } from "../../packages/cli/src/app-data-root";
+import { configureCompilerBeforeRuntime } from "../../packages/cli/src/compiler-preload";
 import { dbOne, dbRun } from "../support/database";
+import {
+  archiveFor,
+  assetSource,
+  HOST_SUPPORTED,
+  HOST_TAG,
+  productRuntimeFixtureEntries,
+  runtimeManifest,
+} from "../support/runtime-fixture";
+
+const MIGRATIONS_SOURCE = new URL("../../packages/adapter/drizzle/", import.meta.url);
+const SHIPPED_MIGRATIONS = readdirSync(MIGRATIONS_SOURCE, { withFileTypes: true })
+  .filter((entry) => entry.isDirectory()
+    && existsSync(new URL(`${entry.name}/migration.sql`, MIGRATIONS_SOURCE)))
+  .sort((left, right) => left.name.localeCompare(right.name, "en"))
+  .map((entry) => ({
+    path: path.posix.join("drizzle", entry.name, "migration.sql"),
+    content: readFileSync(new URL(`${entry.name}/migration.sql`, MIGRATIONS_SOURCE)),
+  }));
 
 describe("VidCom CLI dispatch", () => {
   it("preserves bare/app invocation and recognizes every reviewed subcommand", () => {
@@ -403,16 +433,25 @@ describe("VidCom CLI dispatch", () => {
   it("runs credential issue/list/rotate/revoke with one-time JSON secrets", async () => {
     const root = await mkdtemp(path.join(tmpdir(), "vidcom-credential-command-"));
     const appData = path.join(root, "app-data");
+    const settingsPath = path.join(root, "setting.json");
     const now = "2026-08-02T00:00:00.000Z";
     let stdout = "";
     let id = 0;
     const dependencies = {
-      appDataRoot: () => appData,
+      appDataRoot: defaultAppDataRoot,
       stdout: { write: (chunk: string) => { stdout += chunk; } },
       now: () => new Date(now),
       newId: () => `credential_cli_${++id}`,
     };
+    await writeFile(settingsPath, JSON.stringify({ appDataRoot: appData }));
+    const previousAppData = process.env.VIDCOM_APP_DATA;
+    const previousSettings = process.env.VIDCOM_SETTINGS;
     try {
+      delete process.env.VIDCOM_APP_DATA;
+      process.env.VIDCOM_SETTINGS = settingsPath;
+      await configureCompilerBeforeRuntime();
+      expect(process.env.VIDCOM_APP_DATA).toBe(appData);
+
       await runCredentialCommand(["issue", "primary"], dependencies);
       const issued = JSON.parse(stdout.trim()) as { id: string; secret: string };
       expect(issued.id).toBe("credential_cli_1");
@@ -459,6 +498,10 @@ describe("VidCom CLI dispatch", () => {
         ],
       });
     } finally {
+      if (previousAppData === undefined) delete process.env.VIDCOM_APP_DATA;
+      else process.env.VIDCOM_APP_DATA = previousAppData;
+      if (previousSettings === undefined) delete process.env.VIDCOM_SETTINGS;
+      else process.env.VIDCOM_SETTINGS = previousSettings;
       await rm(root, { recursive: true, force: true });
     }
   });
@@ -487,11 +530,18 @@ describe("VidCom CLI dispatch", () => {
     await setup.destroy();
 
     let stdout = "";
+    let prepareCalls = 0;
     const dependencies = {
       appDataRoot: () => appData,
       stdout: { write: (chunk: string) => { stdout += chunk; } },
       now: () => new Date(now),
       newId: () => "unused",
+      prepareRuntime: (root: string) => {
+        prepareCalls += 1;
+        return prepareRuntimeForCli(root);
+      },
+      runtimePathsFor,
+      createInfrastructure,
       selectWorkspace: async () => { throw new Error("read commands must not select a workspace"); },
     };
     try {
@@ -512,8 +562,10 @@ describe("VidCom CLI dispatch", () => {
       stdout = "";
       await runBackupCommand(["verify", "backup_cli"], dependencies);
       expect(JSON.parse(stdout.trim())).toEqual({ backupId: "backup_cli", valid: false });
+      expect(prepareCalls).toBe(0);
       await expect(runBackupCommand(["restore", "missing_backup"], dependencies))
         .rejects.toThrow("backup_not_found");
+      expect(prepareCalls).toBe(1);
       const database = await initializeDatabase(appData);
       expect(dbOne(database, "SELECT COUNT(*) AS count FROM workspace_lease"))
         .toEqual({ count: 0 });
@@ -524,28 +576,81 @@ describe("VidCom CLI dispatch", () => {
     }
   });
 
-  it("restores a real destructive backup through the Core use case", async () => {
+  it.skipIf(!HOST_SUPPORTED)("prepares an artifact runtime once before restoring a real destructive backup", async () => {
     const root = await mkdtemp(path.join(tmpdir(), "vidcom-backup-restore-command-"));
     const appData = path.join(root, "app-data");
     const workspaceRoot = path.join(root, "workspace");
     const projectRoot = path.join(workspaceRoot, "project");
+    const settingsPath = path.join(root, "setting.json");
     const projectId = "project_backup_restore_cli" as ProjectId;
     const now = "2026-08-02T00:00:00.000Z";
     const hash = (content: string | Uint8Array): ContentHash =>
       `sha256:${createHash("sha256").update(content).digest("hex")}` as ContentHash;
     let nextId = 0;
     let stdout = "";
-    const dependencies = {
-      appDataRoot: () => appData,
+    const product = productRuntimeFixtureEntries(SHIPPED_MIGRATIONS);
+    const nodeArchive = archiveFor(
+      "node",
+      [
+        { path: "cli/boot.cjs", content: Buffer.from("module.exports = {};\n") },
+        { path: "runtime.txt", content: Buffer.from("backup runtime\n") },
+        ...product.node,
+        ...product.native,
+      ],
+      HOST_TAG,
+      "node-runtime",
+    );
+    const hyperframesArchive = archiveFor(
+      "hyperframes",
+      [
+        ...product.hyperframes,
+        ...product.native,
+      ],
+      HOST_TAG,
+      "hyperframes-runtime",
+    );
+    const runtimeAssets = assetSource(
+      runtimeManifest("1.0.0", [nodeArchive.archive, hyperframesArchive.archive]),
+      { node: nodeArchive.bytes, hyperframes: hyperframesArchive.bytes },
+    );
+    let migrationCalls = 0;
+    let infrastructureCalls = 0;
+    let observedPrepareRoot: string | undefined;
+    let observedInfrastructureRoot: string | undefined;
+    let observedRuntimePaths: RuntimePaths | undefined;
+    const countedMigration: typeof migrateDatabase = async (database, migrationsFolder) => {
+      migrationCalls += 1;
+      await migrateDatabase(database, migrationsFolder);
+    };
+    const dependencies: BackupCommandDependencies = {
+      appDataRoot: earlyAppDataRoot,
       stdout: { write: (chunk: string) => { stdout += chunk; } },
       now: () => new Date(now),
       newId: () => `cli_backup_id_${++nextId}`,
-      selectWorkspace: async () => { throw new Error("restore must use the backup registration"); },
+      prepareRuntime: (preparedRoot) => {
+        observedPrepareRoot = preparedRoot;
+        return prepareRuntimeForCli(preparedRoot, {
+          assetSource: runtimeAssets,
+          migrate: countedMigration,
+        });
+      },
+      runtimePathsFor: (root, prepared) => runtimePathsFor(root, prepared),
+      createInfrastructure: (config) => {
+        infrastructureCalls += 1;
+        observedInfrastructureRoot = config.appDataRoot;
+        observedRuntimePaths = config.runtimePaths;
+        return createInfrastructure(config);
+      },
     };
     await mkdir(projectRoot, { recursive: true });
     await writeFile(path.join(projectRoot, "hyperframes.json"), "{}\n");
     await writeFile(path.join(projectRoot, "vidcom.json"), JSON.stringify({ id: projectId }));
     await writeFile(path.join(projectRoot, "index.html"), "before destructive");
+    await writeFile(settingsPath, JSON.stringify({ appDataRoot: appData }));
+    const previousAppData = process.env.VIDCOM_APP_DATA;
+    const previousSettings = process.env.VIDCOM_SETTINGS;
+    delete process.env.VIDCOM_APP_DATA;
+    process.env.VIDCOM_SETTINGS = settingsPath;
 
     try {
       const database = await initializeDatabase(appData);
@@ -614,7 +719,72 @@ describe("VidCom CLI dispatch", () => {
       });
       expect(await readFile(path.join(projectRoot, "index.html"), "utf8"))
         .toBe("before destructive");
+      expect(migrationCalls).toBe(1);
+      expect(infrastructureCalls).toBe(1);
+      expect(observedPrepareRoot).toBe(appData);
+      expect(observedInfrastructureRoot).toBe(appData);
+      expect(observedRuntimePaths?.mode).toBe("artifact");
+      for (const name of RUNTIME_PATH_NAMES) {
+        expect(path.isAbsolute(observedRuntimePaths?.[name] ?? ""), name).toBe(true);
+      }
+      expect(observedRuntimePaths?.nativeDependenciesRoot).toBe(path.join(
+        appData,
+        "native",
+        "1.0.0",
+        "node-runtime",
+      ));
+      expect(observedRuntimePaths?.hyperframesPackagePath).toBe(path.join(
+        appData,
+        "native",
+        "1.0.0",
+        "hyperframes-runtime",
+        "package.json",
+      ));
+      if (!observedRuntimePaths) throw new Error("restore did not receive runtime paths");
+      expect(await readFile(observedRuntimePaths.hyperframesPackagePath, "utf8"))
+        .toContain('"version":"0.7.86"');
+
+      let incompleteMigrationCalls = 0;
+      let incompleteInfrastructureCalls = 0;
+      const incompleteDependencies: BackupCommandDependencies = {
+        ...dependencies,
+        prepareRuntime: (root) => prepareRuntimeForCli(root, {
+          assetSource: assetSource(runtimeManifest("1.0.1", [nodeArchive.archive]), {
+            node: nodeArchive.bytes,
+          }),
+          migrate: async (database, migrationsFolder) => {
+            incompleteMigrationCalls += 1;
+            await migrateDatabase(database, migrationsFolder);
+          },
+        }),
+        createInfrastructure: (config) => {
+          incompleteInfrastructureCalls += 1;
+          return createInfrastructure(config);
+        },
+      };
+      await expect(runBackupCommand(["restore", "backup_cli_destructive"], incompleteDependencies))
+        .rejects.toMatchObject({ code: ErrorCode.RuntimeManifestInvalid });
+      // `hyperframes` exists in this source checkout. A fallback to
+      // require.resolve/PATH would make this pass; artifact mode must stop before
+      // the composition root or workspace lease instead.
+      expect(incompleteMigrationCalls).toBe(0);
+      expect(incompleteInfrastructureCalls).toBe(0);
+      const published = await readPublishedRuntimeInstallation(appData);
+      expect(published?.manifest.artifactVersion).toBe("1.0.0");
+      expect(published?.archiveRoots).toMatchObject({
+        node: path.join(appData, "native", "1.0.0", "node-runtime"),
+        hyperframes: path.join(appData, "native", "1.0.0", "hyperframes-runtime"),
+      });
+      expect(existsSync(path.join(appData, "native", "1.0.1"))).toBe(false);
+      const verification = await initializeDatabase(appData);
+      expect(dbOne(verification, "SELECT COUNT(*) AS count FROM workspace_lease"))
+        .toEqual({ count: 0 });
+      await verification.destroy();
     } finally {
+      if (previousAppData === undefined) delete process.env.VIDCOM_APP_DATA;
+      else process.env.VIDCOM_APP_DATA = previousAppData;
+      if (previousSettings === undefined) delete process.env.VIDCOM_SETTINGS;
+      else process.env.VIDCOM_SETTINGS = previousSettings;
       await rm(root, { recursive: true, force: true });
     }
   });
@@ -625,14 +795,19 @@ describe("VidCom CLI dispatch", () => {
     const workspaceRoot = path.join(root, "workspace");
     const unrelatedWorkspace = path.join(root, "unrelated-workspace");
     const projectRoot = path.join(workspaceRoot, "project");
+    const settingsPath = path.join(root, "setting.json");
     const projectId = "project_recovery_cli" as ProjectId;
     const now = "2026-08-02T00:00:00.000Z";
     const digest = (content: string): ContentHash =>
       `sha256:${createHash("sha256").update(content).digest("hex")}` as ContentHash;
     let stdout = "";
     let nextId = 0;
+    let appDataRootCalls = 0;
     const dependencies = {
-      appDataRoot: () => appData,
+      appDataRoot: async () => {
+        appDataRootCalls += 1;
+        return earlyAppDataRoot();
+      },
       stdout: { write: (chunk: string) => { stdout += chunk; } },
       now: () => new Date(now),
       newId: (prefix: string) => `${prefix}_cli_${++nextId}`,
@@ -644,6 +819,11 @@ describe("VidCom CLI dispatch", () => {
     await writeFile(path.join(projectRoot, "vidcom.json"), JSON.stringify({ id: projectId }));
     await writeFile(path.join(projectRoot, "index.html"), "before");
     await writeFile(path.join(projectRoot, "orphan.html"), "ambiguous");
+    await writeFile(settingsPath, JSON.stringify({ appDataRoot: appData }));
+    const previousAppData = process.env.VIDCOM_APP_DATA;
+    const previousSettings = process.env.VIDCOM_SETTINGS;
+    delete process.env.VIDCOM_APP_DATA;
+    process.env.VIDCOM_SETTINGS = settingsPath;
 
     try {
       const database = await initializeDatabase(appData);
@@ -724,7 +904,14 @@ describe("VidCom CLI dispatch", () => {
         envelope: null,
       });
       expect(await readFile(path.join(projectRoot, "orphan.html"), "utf8")).toBe("previous");
+      // Invalid syntax stops before settings I/O; every executable command
+      // resolves the settings-aware root exactly once.
+      expect(appDataRootCalls).toBe(3);
     } finally {
+      if (previousAppData === undefined) delete process.env.VIDCOM_APP_DATA;
+      else process.env.VIDCOM_APP_DATA = previousAppData;
+      if (previousSettings === undefined) delete process.env.VIDCOM_SETTINGS;
+      else process.env.VIDCOM_SETTINGS = previousSettings;
       await rm(root, { recursive: true, force: true });
     }
   });

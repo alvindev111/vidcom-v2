@@ -113,8 +113,10 @@ function diagnosticsWithMissingCheck(value: Awaited<ReturnType<typeof fixture>>)
     authority: value.application.authority,
     lint: new NodeHyperframesDiagnosticsLint(
       new NodeProcessRunner(2_000),
-      path.join(value.root, "missing-hyperframes-cli.mjs") as AbsolutePath,
-      2_000,
+      {
+        cliPath: path.join(value.root, "missing-hyperframes-cli.mjs") as AbsolutePath,
+        timeoutMs: 2_000,
+      },
     ),
   });
 }
@@ -401,7 +403,10 @@ describe("Phase M diagnostics and thumbnails on real SQLite/filesystem", () => {
       contrast:{findings:[{code:"contrast",severity:"error",message:"contrast"}]}
     }));\n`);
     const root = value.workspaceRoot as AbsolutePath;
-    const lint = new NodeHyperframesDiagnosticsLint(new NodeProcessRunner(5_000), cli as AbsolutePath, 5_000);
+    const lint = new NodeHyperframesDiagnosticsLint(new NodeProcessRunner(5_000), {
+      cliPath: cli as AbsolutePath,
+      timeoutMs: 5_000,
+    });
     const result = await lint.check({
       id: "project_lint" as ProjectId, slug: "lint", root, entry: "index.html" as RelPath,
     });

@@ -1,9 +1,14 @@
 import { realpathSync } from "node:fs";
-import { mkdir, mkdtemp, rm } from "node:fs/promises";
+import { access, mkdir, mkdtemp, rename, rm, symlink } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
-import { DaemonDiscoveryStore } from "@vidcom/adapter";
+import {
+  DaemonDiscoveryStore,
+  migrateDatabase,
+  openVidcomDatabase,
+  RuntimeAssetManager,
+} from "@vidcom/adapter";
 import { DOCTOR_CHECK_ORDER, doctorExitCode, runDoctorChecks } from "@vidcom/core";
 import {
   createDoctorChecks,
@@ -14,6 +19,8 @@ import {
   type ServingDaemon,
 } from "@vidcom/cli";
 import { afterEach, describe, expect, it } from "vitest";
+
+import { archiveFor, assetSource, HOST_SUPPORTED, runtimeManifest } from "../support/runtime-fixture";
 
 const contexts: Array<{ close(): Promise<void> }> = [];
 
@@ -40,6 +47,85 @@ async function scratch(): Promise<{ appData: string; workspace: string }> {
 }
 
 describe("doctor against a real install", () => {
+  it.skipIf(!HOST_SUPPORTED)("reads the current version's manifest targets through RuntimePaths", async () => {
+    const { appData } = await scratch();
+    const executableSuffix = process.platform === "win32" ? ".exe" : "";
+    const node = archiveFor("node", [{
+      path: `bin/ffmpeg${executableSuffix}`,
+      content: Buffer.from("#!/bin/sh\necho 'ffmpeg fixture 1.0'\n", "utf8"),
+      mode: 0o755,
+    }], undefined, "toolchain/native");
+    const hyperframes = archiveFor("hyperframes", [
+      { path: "package.json", content: Buffer.from('{"name":"hyperframes","version":"1.0.0"}\n') },
+      { path: "bin/hyperframes.mjs", content: Buffer.from("export {};\n") },
+      { path: "motion-libraries/gsap/package.json", content: Buffer.from('{"name":"gsap"}\n') },
+    ], undefined, "toolchain/hyperframes");
+    const manifest = runtimeManifest("1.2.3", [node.archive, hyperframes.archive]);
+    await new RuntimeAssetManager({
+      appDataRoot: appData,
+      source: assetSource(manifest, { node: node.bytes, hyperframes: hyperframes.bytes }),
+    }).ensureAll();
+    const database = openVidcomDatabase(appData);
+    await migrateDatabase(database);
+    await database.destroy();
+
+    const context = await createDoctorContext({ deep: true, appDataRoot: appData });
+    contexts.push(context);
+    const report = await runDoctorChecks(createDoctorChecks(), context, {
+      platform: context.platform,
+    });
+    const byId = new Map(report.items.map((item) => [item.id, item]));
+
+    expect(byId.get("db.migration")?.status).toBe("ok");
+    expect(byId.get("runtime.manifest")?.status).toBe("ok");
+    expect(byId.get("runtime.hyperframes")?.status).toBe("ok");
+    expect(byId.get("runtime.motion")?.status).toBe("ok");
+    expect(byId.get("runtime.esbuild-binary")?.detail)
+      .toContain(path.join("native", "1.2.3", "toolchain", "native", "bin", "esbuild"));
+    if (process.platform !== "win32") {
+      expect(byId.get("runtime.ffmpeg")?.status).toBe("ok");
+      expect(byId.get("runtime.ffmpeg")?.detail).toContain("ffmpeg fixture 1.0");
+    }
+  }, 60_000);
+
+  it.skipIf(!HOST_SUPPORTED || process.platform === "win32")(
+    "never executes through an escaped post-publication runtime target",
+    async () => {
+      const { appData } = await scratch();
+      const root = path.dirname(appData);
+      const executed = path.join(root, "outside-runtime-executed");
+      const node = archiveFor("node", [{
+        path: "bin/ffmpeg",
+        content: Buffer.from(
+          `#!/bin/sh\n: > ${JSON.stringify(executed)}\nprintf 'escaped ffmpeg\\n'\n`,
+          "utf8",
+        ),
+        mode: 0o755,
+      }], undefined, "layers/toolchain/native");
+      const hyperframes = archiveFor("hyperframes", [
+        { path: "package.json", content: Buffer.from('{"name":"hyperframes"}\n') },
+        { path: "bin/hyperframes.mjs", content: Buffer.from("export {};\n") },
+        { path: "motion-libraries/gsap/package.json", content: Buffer.from('{"name":"gsap"}\n') },
+      ], undefined, "layers/hyperframes");
+      const manifest = runtimeManifest("1.2.3", [node.archive, hyperframes.archive]);
+      const installed = await new RuntimeAssetManager({
+        appDataRoot: appData,
+        source: assetSource(manifest, { node: node.bytes, hyperframes: hyperframes.bytes }),
+      }).ensureAll();
+      const layers = path.join(installed.versionRoot, "layers");
+      const outside = path.join(root, "escaped-layers");
+      await rename(layers, outside);
+      await symlink(outside, layers);
+
+      const context = await createDoctorContext({ deep: true, appDataRoot: appData });
+      contexts.push(context);
+      expect((await context.probes.runtimeManifest()).ok).toBe(false);
+      expect((await context.probes.ffmpeg()).ok).toBe(false);
+      await expect(access(executed)).rejects.toMatchObject({ code: "ENOENT" });
+    },
+    60_000,
+  );
+
   it("reports every check against real app-data and real SQLite", async () => {
     const { appData } = await scratch();
     const context = await createDoctorContext({ deep: false, appDataRoot: appData });

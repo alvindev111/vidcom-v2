@@ -132,7 +132,7 @@ export async function preflightRenderDocument(
   binaries: RenderBinaryProbeResult;
   externalDependencies: string[];
 }, DomainError>> {
-  const binaries = await dependencies.binaries.probe();
+  const binaries = await dependencies.binaries.probe(prepared.ref.root);
   if (!binaries.ok) return binaries;
   try {
     const document = await dependencies.composition.buildDocument(

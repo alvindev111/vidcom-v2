@@ -93,7 +93,13 @@ export function createServerApp(deps: ServerAppDependencies) {
 
   app.route("/v1", createAuthRoutes(deps.nonces, deps.sessions, deps.trace));
   if (deps.mcp) app.route("/", createMcpRoutes(deps.mcp));
-  if (deps.bridge) app.route("/", createBridgeRoutes(deps.bridge));
+  if (deps.bridge) app.route("/", createBridgeRoutes(
+    deps.bridge,
+    deps.deliveryLoop ? {
+      enqueueRender: deps.deliveryLoop.enqueueRender,
+      jobs: deps.deliveryLoop.jobs,
+    } : undefined,
+  ));
   // Under /v1/system, behind the same session the browser already holds. The
   // picker is the only caller, and an agent that could enumerate the user's
   // filesystem would hold a capability nobody granted it.

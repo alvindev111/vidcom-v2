@@ -60,7 +60,7 @@ export function prepareRuntimeForCli(
 /**
  * The one place every entrypoint gets its runtime paths.
  *
- * There are five modes that build a composition root, and this exists because
+ * Several modes build a composition root, and this exists because
  * missing one of them is the easy mistake: the forgotten mode is usually the
  * least used, so the break shows up long after the change that caused it, in
  * the one place nobody was testing.

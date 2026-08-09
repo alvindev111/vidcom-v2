@@ -1,7 +1,6 @@
 #!/usr/bin/env node
 import { spawn } from "node:child_process";
 import { randomBytes } from "node:crypto";
-import path from "node:path";
 
 import { defaultAppDataRoot } from "./next-host";
 import { runMcpCommand } from "./commands/mcp";
@@ -16,9 +15,13 @@ import { runRenderCommand } from "./commands/render";
 import { connectRenderClient, renderWorkspaceSource } from "./commands/render-connect";
 import { runServeCommand, startServing, waitForShutdown } from "./commands/serve";
 import { VIDCOM_VERSION, runVersionCommand } from "./commands/version";
-import { DaemonDiscoveryStore } from "@vidcom/adapter";
+import { DaemonDiscoveryStore, readVidcomSettings } from "@vidcom/adapter";
 
-import { isNodeSentinel, runNodeSentinel } from "./node-sentinel";
+import {
+  isNodeSentinel,
+  resolveVerifiedHyperframesRoot,
+  runNodeSentinel,
+} from "./node-sentinel";
 import { CliInputError } from "./cli-error";
 
 export { CliInputError } from "./cli-error";
@@ -163,38 +166,46 @@ function interruptSignals(): { stream: AsyncIterable<void>; stop: () => void } {
   return { stream: stream(), stop: () => process.off("SIGINT", onSignal) };
 }
 
-export async function runVidcomCli(argv: readonly string[] = process.argv.slice(2)): Promise<void> {
+/**
+ * Dispatches one CLI command and returns the exit status its caller must publish.
+ *
+ * Doctor and render failures are normal command outcomes, so this function
+ * returns their codes without mutating the surrounding process.
+ */
+export async function runVidcomCli(argv: readonly string[] = process.argv.slice(2)): Promise<number> {
   // Dispatched ahead of the public parser on purpose. `parseVidcomCommand`
   // reads any argv starting with `--` as `vidcom app`, so the sentinel would
   // otherwise start the whole application instead of running a script — and
   // silently, since that path raises nothing.
   if (isNodeSentinel(argv)) {
-    await runNodeSentinel(argv, path.join(defaultAppDataRoot(), "native"));
-    return;
+    const settings = await readVidcomSettings();
+    const appDataRoot = defaultAppDataRoot(settings);
+    await runNodeSentinel(argv, await resolveVerifiedHyperframesRoot(appDataRoot));
+    return 0;
   }
   const command = parseVidcomCommand(argv);
   if (command.name === "app") {
     await runVidcomApp(parseAppCommandArgs(command.args));
-    return;
+    return 0;
   }
   if (command.name === "doctor") {
     const options = parseDoctorCommandArgs(command.args);
     const context = await createDoctorContext({ deep: options.deep === true });
     try {
-      process.exitCode = await runDoctor({
-      context,
-      options,
-      repair: (failing) => repairRuntime(failing, {
-        appDataRoot: context.appDataRoot,
-        activeWorkspace: () => context.probes.activeWorkspace()
-          .then((result) => result.detail ?? null),
-        discovery: new DaemonDiscoveryStore(context.appDataRoot),
-        reextract: () => Promise.reject(new CliInputError(
-          "this build has no runtime archives to re-extract from",
-        )),
-      }),
-      // The packaged smoke sets this, and there a skipped required component is
-      // a failure rather than a "not yet".
+      return await runDoctor({
+        context,
+        options,
+        repair: (failing) => repairRuntime(failing, {
+          appDataRoot: context.appDataRoot,
+          activeWorkspace: () => context.probes.activeWorkspace()
+            .then((result) => result.detail ?? null),
+          discovery: new DaemonDiscoveryStore(context.appDataRoot),
+          reextract: () => Promise.reject(new CliInputError(
+            "this build has no runtime archives to re-extract from",
+          )),
+        }),
+        // The packaged smoke sets this, and there a skipped required component is
+        // a failure rather than a "not yet".
         strict: process.env.VIDCOM_DOCTOR_STRICT === "1",
       });
     } finally {
@@ -202,7 +213,6 @@ export async function runVidcomCli(argv: readonly string[] = process.argv.slice(
       // open turns any later cleanup into EBUSY.
       await context.close();
     }
-    return;
   }
   if (command.name === "render") {
     // The handler's lifetime is owned here, not inside the generator. A
@@ -214,14 +224,13 @@ export async function runVidcomCli(argv: readonly string[] = process.argv.slice(
       workspaceSource: () => renderWorkspaceSource(command.args),
       interrupts: signals.stream,
     }).finally(signals.stop);
-    // The render's own exit code is the contract, so it is set rather than
-    // thrown: a non-zero render is a normal outcome, not a CLI input error.
-    process.exitCode = code;
-    return;
+    // A non-zero render is a normal outcome, not a CLI input error. Return it
+    // through the same boundary as doctor so the launcher publishes it once.
+    return code;
   }
   if (command.name === "serve") {
     await runServeCommand(command.args);
-    return;
+    return 0;
   }
   if (command.name === "version") {
     await runVersionCommand(command.args, {
@@ -230,27 +239,27 @@ export async function runVidcomCli(argv: readonly string[] = process.argv.slice(
       vidcom: VIDCOM_VERSION,
       buildCommit: process.env.VIDCOM_BUILD_COMMIT ?? null,
     });
-    return;
+    return 0;
   }
   if (command.name === "mcp") {
     await runMcpCommand(command.args);
-    return;
+    return 0;
   }
   if (command.name === "approve") {
     await runApproveCommand(command.args);
-    return;
+    return 0;
   }
   if (command.name === "credential") {
     await runCredentialCommand(command.args);
-    return;
+    return 0;
   }
   if (command.name === "backup") {
     await runBackupCommand(command.args);
-    return;
+    return 0;
   }
   if (command.name === "recovery") {
     await runRecoveryCommand(command.args);
-    return;
+    return 0;
   }
   throw new CliInputError(`${command.name} command is not available yet`);
 }
@@ -263,11 +272,10 @@ export interface CliMainIo {
 export async function runCliMain(
   argv: readonly string[],
   io: CliMainIo = { stderr: process.stderr },
-  execute: (args: readonly string[]) => Promise<void> = runVidcomCli,
+  execute: (args: readonly string[]) => Promise<number | void> = runVidcomCli,
 ): Promise<number> {
   try {
-    await execute(argv);
-    return 0;
+    return await execute(argv) ?? 0;
   } catch (error) {
     if (error instanceof CliInputError) {
       io.stderr.write(`${error.message.replace(/[\r\n]+/g, " ").trim()}\n`);

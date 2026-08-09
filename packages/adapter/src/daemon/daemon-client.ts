@@ -45,6 +45,12 @@ export interface EnqueuedRender {
   jobId: string;
 }
 
+export interface EnqueueRenderInput {
+  idempotencyKey: string;
+  renderPresetId?: string;
+  bestEffort?: boolean;
+}
+
 export interface DaemonJob {
   id: string;
   status: string;
@@ -73,7 +79,7 @@ export interface DaemonClient {
   detach(attachmentId: string): Promise<void>;
   invokeTool(name: string, input: unknown, context: RemoteInvocationContext): Promise<unknown>;
   /** `render` is a thin client over these three; it builds no HTTP client of its own. */
-  enqueueRender(projectId: string, input: Record<string, unknown>): Promise<EnqueuedRender>;
+  enqueueRender(projectId: string, input: EnqueueRenderInput): Promise<EnqueuedRender>;
   getJob(jobId: string): Promise<DaemonJob>;
   cancelJob(jobId: string): Promise<void>;
 }
@@ -164,13 +170,6 @@ export function createDaemonClient(options: DaemonClientOptions): DaemonClient {
     }
   }
 
-  // The product API, not the bridge prefix. Still named routes: the point of
-  // the closed surface is that no caller can compose a path of its own, not
-  // that every route happens to live under one prefix.
-  function callApi(what: string, method: string, route: string, body?: unknown): Promise<unknown> {
-    return callAt(`${options.baseUrl}/api${route}`, what, method, body);
-  }
-
   return {
     async handshake(input): Promise<DaemonHandshake> {
       const result = await call("handshake", "POST", "/handshake", input) as DaemonHandshake;
@@ -211,20 +210,20 @@ export function createDaemonClient(options: DaemonClientOptions): DaemonClient {
     },
 
     enqueueRender(projectId, input): Promise<EnqueuedRender> {
-      return callApi(
+      return call(
         "render enqueue",
         "POST",
-        `/v1/projects/${encodeURIComponent(projectId)}/renders`,
+        `/projects/${encodeURIComponent(projectId)}/renders`,
         input,
       ) as Promise<EnqueuedRender>;
     },
 
     getJob(jobId): Promise<DaemonJob> {
-      return callApi("job read", "GET", `/v1/jobs/${encodeURIComponent(jobId)}`) as Promise<DaemonJob>;
+      return call("job read", "GET", `/jobs/${encodeURIComponent(jobId)}`) as Promise<DaemonJob>;
     },
 
     async cancelJob(jobId): Promise<void> {
-      await callApi("job cancel", "POST", `/v1/jobs/${encodeURIComponent(jobId)}/cancel`);
+      await call("job cancel", "POST", `/jobs/${encodeURIComponent(jobId)}/cancel`);
     },
 
     invokeTool(name, input, context): Promise<unknown> {

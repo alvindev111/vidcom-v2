@@ -25,6 +25,7 @@ const COMPLETE_ARCHIVES = {
 describe("runtime path resolution", () => {
   it("resolves all five paths from the extracted runtime in artifact mode", () => {
     const paths = resolveRuntimePaths(artifactInput(COMPLETE_ARCHIVES));
+    expect(paths.mode).toBe("artifact");
     for (const name of RUNTIME_PATH_NAMES) {
       expect(path.isAbsolute(paths[name])).toBe(true);
     }
@@ -74,6 +75,7 @@ describe("runtime path resolution", () => {
       },
     });
     expect(seen).toEqual(["hyperframes/bin/hyperframes.mjs", "hyperframes/package.json"]);
+    expect(paths.mode).toBe("development");
     expect(paths.motionLibraryRoot).toBe(path.join(APP_DATA, "motion-libraries"));
   });
 
@@ -81,6 +83,13 @@ describe("runtime path resolution", () => {
     const complete = resolveRuntimePaths(artifactInput(COMPLETE_ARCHIVES));
     const partial: Partial<RuntimePaths> = { ...complete };
     delete partial[name];
+    expect(() => { assertComplete(partial); }).toThrow(RuntimeAssetError);
+  });
+
+  it("rejects a path set whose artifact/development mode was lost", () => {
+    const complete = resolveRuntimePaths(artifactInput(COMPLETE_ARCHIVES));
+    const partial: Partial<RuntimePaths> = { ...complete };
+    delete partial.mode;
     expect(() => { assertComplete(partial); }).toThrow(RuntimeAssetError);
   });
 

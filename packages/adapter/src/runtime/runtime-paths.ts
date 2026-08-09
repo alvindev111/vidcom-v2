@@ -7,6 +7,8 @@ import { RuntimeAssetError } from "./runtime-asset-source";
 
 /** Every filesystem location the render toolchain needs, resolved in one place. */
 export interface RuntimePaths {
+  /** Keeps artifact-only fail-closed behaviour explicit at downstream seams. */
+  mode: "artifact" | "development";
   hyperframesCliPath: string;
   hyperframesPackagePath: string;
   motionLibraryRoot: string;
@@ -79,6 +81,7 @@ function artifactPaths(input: ArtifactRuntimePathsInput): RuntimePaths {
   if (absent.length > 0) missing([...new Set(absent)]);
 
   const paths: RuntimePaths = {
+    mode: "artifact",
     hyperframesCliPath: path.join(hyperframes!, "bin", "hyperframes.mjs"),
     hyperframesPackagePath: path.join(hyperframes!, "package.json"),
     motionLibraryRoot: path.join(hyperframes!, "motion-libraries"),
@@ -93,6 +96,7 @@ function developmentPaths(input: DevelopmentRuntimePathsInput): RuntimePaths {
   const resolve = input.resolve
     ?? ((specifier: string) => requireFromRuntime.resolve(specifier));
   const paths: RuntimePaths = {
+    mode: "development",
     hyperframesCliPath: resolve("hyperframes/bin/hyperframes.mjs"),
     hyperframesPackagePath: resolve("hyperframes/package.json"),
     motionLibraryRoot: path.join(input.appDataRoot, "motion-libraries"),
@@ -105,6 +109,13 @@ function developmentPaths(input: DevelopmentRuntimePathsInput): RuntimePaths {
 
 /** Rejects an empty or relative path before it reaches a spawn or an import. */
 export function assertComplete(paths: Partial<RuntimePaths>): asserts paths is RuntimePaths {
+  if (paths.mode !== "artifact" && paths.mode !== "development") {
+    throw new RuntimeAssetError(
+      ErrorCode.RuntimeManifestInvalid,
+      "runtime path mode is missing or invalid",
+      { missing: ["mode"] },
+    );
+  }
   const absent = RUNTIME_PATH_NAMES.filter((name) => {
     const value = paths[name];
     return typeof value !== "string" || value.length === 0 || !path.isAbsolute(value);

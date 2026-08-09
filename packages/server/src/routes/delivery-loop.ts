@@ -127,6 +127,16 @@ function range(header: string | undefined, size: number): ByteRange {
     ? { kind: "valid", start: Number(start), end: Number(end >= BigInt(size) ? size - 1 : end) }
     : { kind: "unsatisfiable" };
 }
+
+/** Shared strict render-enqueue boundary used by browser and bridge routes. */
+export async function enqueueRenderResponse(
+  dependencies: Pick<DeliveryLoopRouteDependencies, "enqueueRender">,
+  c: Context,
+): Promise<Response> {
+  const input = parse(EnqueueRenderRequestSchema, await json(c), "render enqueue payload is invalid");
+  const job = valueOf(await dependencies.enqueueRender({ projectId: projectId(c), ...input }));
+  return c.json({ jobId: job.id }, 202);
+}
 function bytesResponse(c: Context, bytes: Uint8Array, hash: string, mime: string): Response {
   const etag = `"${hash}"`;
   const common = { "Accept-Ranges": "bytes", "Cache-Control": "must-revalidate", "Content-Type": mime, ETag: etag };
@@ -206,11 +216,7 @@ export function createDeliveryLoopRoutes(dependencies: DeliveryLoopRouteDependen
       { kind: "project", projectId: projectId(c) }, { actor: "user", confirmed: true },
     )));
   });
-  routes.post("/v1/projects/:id/renders", async (c) => {
-    const input = parse(EnqueueRenderRequestSchema, await json(c), "render enqueue payload is invalid");
-    const job = valueOf(await dependencies.enqueueRender({ projectId: projectId(c), ...input }));
-    return c.json({ jobId: job.id }, 202);
-  });
+  routes.post("/v1/projects/:id/renders", (c) => enqueueRenderResponse(dependencies, c));
   routes.post("/v1/projects/:id/snapshots", async (c) => {
     const input = parse(EnqueueSnapshotRequestSchema, await json(c), "snapshot enqueue payload is invalid");
     const job = valueOf(await dependencies.enqueueSnapshot({ projectId: projectId(c), ...input }));

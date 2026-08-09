@@ -4,7 +4,7 @@ import { Hono, type Context } from "hono";
 
 import { HttpBoundaryError } from "../middleware/error-mapper";
 
-function jobId(c: Context): JobId {
+export function jobId(c: Context): JobId {
   const parsed = JobParamsSchema.safeParse({ jobId: c.req.param("jobId") });
   if (!parsed.success) {
     throw new HttpBoundaryError({ code: ErrorCode.SchemaInvalid, message: "job id is invalid", field: "jobId" });
@@ -12,7 +12,7 @@ function jobId(c: Context): JobId {
   return parsed.data.jobId as JobId;
 }
 
-function publicJob(job: Job): JobDto {
+export function publicJob(job: Job): JobDto {
   return {
     id: job.id,
     type: job.type,
@@ -30,10 +30,18 @@ function publicJob(job: Job): JobDto {
   };
 }
 
-async function requireJob(store: JobStorePort, id: JobId): Promise<Job> {
+export async function requireJob(store: JobStorePort, id: JobId): Promise<Job> {
   const job = await store.get(id);
   if (!job) throw new HttpBoundaryError({ code: ErrorCode.NotFound, message: "job not found" });
   return job;
+}
+
+/** Requests cooperative cancellation and reports whether state changed. */
+export async function requestJobCancellation(store: JobStorePort, id: JobId): Promise<boolean> {
+  const job = await requireJob(store, id);
+  if (TERMINAL_JOB_STATUSES.includes(job.status as (typeof TERMINAL_JOB_STATUSES)[number])) return false;
+  await store.requestCancel(id);
+  return true;
 }
 
 /** Read and cooperative-cancel routes; internal scheduler fields never cross HTTP. */
@@ -54,13 +62,8 @@ export function createJobRoutes(store: JobStorePort): Hono {
     return c.json(proof);
   });
   routes.post("/jobs/:jobId/cancel", async (c) => {
-    const id = jobId(c);
-    const job = await requireJob(store, id);
-    if (TERMINAL_JOB_STATUSES.includes(job.status as (typeof TERMINAL_JOB_STATUSES)[number])) {
-      return c.body(null, 200);
-    }
-    await store.requestCancel(id);
-    return c.body(null, 202);
+    const requested = await requestJobCancellation(store, jobId(c));
+    return c.body(null, requested ? 202 : 200);
   });
   return routes;
 }

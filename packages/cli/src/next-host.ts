@@ -1,5 +1,4 @@
 import path from "node:path";
-import os from "node:os";
 
 import {
   AttachmentRegistry,
@@ -18,7 +17,6 @@ import {
   type RuntimePaths,
   type VidcomDatabase,
 } from "@vidcom/adapter";
-import type { ResolvedVidcomSettings } from "@vidcom/contracts";
 import type { AbsolutePath } from "@vidcom/core";
 import { JobScheduler, type ProjectIdentity } from "@vidcom/core";
 import { createMcpHttpHandlers } from "@vidcom/mcp";
@@ -32,6 +30,9 @@ import { BRIDGE_CREDENTIAL_SETTING } from "./bridge-credential";
 import { VIDCOM_VERSION } from "./commands/version";
 import { prepareRuntimeForCli, runtimePathsFor } from "./runtime-paths-source";
 import { selectWorkspace } from "./workspace-selection";
+import { defaultAppDataRoot } from "./app-data-root";
+
+export { defaultAppDataRoot } from "./app-data-root";
 
 export interface NextHostedRuntime {
   app: ReturnType<typeof createServerApp>;
@@ -53,14 +54,6 @@ interface HostedRuntimeBoot {
 }
 
 /**
- * Where the database, model cache and backups live.
- *
- * `VIDCOM_APP_DATA` wins, then `appDataRoot` from `~/.vidcom/setting.json`, then
- * the platform convention. Settings come last of the three so an operator can
- * redirect one run without editing a file, and so an existing install keeps its
- * database when a settings file appears.
- */
-/**
  * One browse token store per daemon process.
  *
  * The store must be shared: `/v1/system/*` mints the token and
@@ -71,14 +64,6 @@ export const hostBrowseTokens = new BrowseTokenStore();
 
 /** The single UI session this host serves; the bridge has its own sessions. */
 export const HOST_BROWSE_SESSION = "host";
-
-export function defaultAppDataRoot(settings?: ResolvedVidcomSettings): string {
-  if (process.env.VIDCOM_APP_DATA) return path.resolve(process.env.VIDCOM_APP_DATA);
-  if (settings?.appDataRoot) return path.resolve(settings.appDataRoot);
-  if (process.platform === "darwin") return path.join(os.homedir(), "Library", "Application Support", "VidCom");
-  if (process.platform === "win32") return path.join(process.env.APPDATA ?? os.homedir(), "VidCom");
-  return path.join(process.env.XDG_DATA_HOME ?? path.join(os.homedir(), ".local", "share"), "vidcom");
-}
 
 /**
  * Directory a packaged build unpacked its native sidecars into, or `undefined`

@@ -10,6 +10,8 @@ export const RUNTIME_MOTION_PACKAGES = ["animejs", "gsap", "lottie-web", "motion
 export const RUNTIME_MANIFEST_FILENAME = "runtime-manifest.json";
 export const RUNTIME_ARCHIVE_DIRECTORY = "runtime-archives";
 export const RUNTIME_CURRENT_FILENAME = "current.json";
+export const MAX_RUNTIME_RELATIVE_PATH_LENGTH = 1024;
+export const MAX_RUNTIME_PATH_SEGMENT_BYTES = 255;
 
 export type RuntimePlatformTag = (typeof RUNTIME_PLATFORM_TAGS)[number];
 export type RuntimeMotionPackage = (typeof RUNTIME_MOTION_PACKAGES)[number];
@@ -68,6 +70,8 @@ const ARCHIVE_KEY_PATTERN = /^[a-z0-9][a-z0-9._-]*$/u;
 const ARTIFACT_VERSION_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._+-]*$/u;
 const PYTHON_PACKAGE_PATTERN = /^[a-z0-9][a-z0-9.-]*==[^=\s]+$/u;
 const READY_NAMESPACE_PATTERN = /^\.ready-/iu;
+const WINDOWS_FORBIDDEN_PATH_CHARACTER_PATTERN = /[<>:"|?*\u0000-\u001f\u007f]/u;
+const WINDOWS_RESERVED_DEVICE_PATTERN = /^(?:con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\.|$)/iu;
 
 function invalid(message: string, details?: Record<string, unknown>): never {
   throw new RuntimeAssetError(ErrorCode.RuntimeManifestInvalid, message, details);
@@ -102,26 +106,55 @@ function contentHash(value: unknown, label: string): ContentHash {
   return value as ContentHash;
 }
 
+function portablePathSegment(segment: string): boolean {
+  return segment.length > 0
+    && Buffer.byteLength(segment, "utf8") <= MAX_RUNTIME_PATH_SEGMENT_BYTES
+    && segment !== "."
+    && segment !== ".."
+    && !segment.endsWith(".")
+    && !segment.endsWith(" ")
+    && !WINDOWS_FORBIDDEN_PATH_CHARACTER_PATTERN.test(segment)
+    && !WINDOWS_RESERVED_DEVICE_PATTERN.test(segment);
+}
+
+/** Shared guard for manifest versions and persisted active-version pointers. */
+export function isPortableRuntimeArtifactVersion(value: unknown): value is string {
+  return typeof value === "string"
+    && value.length > 0
+    && value.length <= 128
+    && value.trim() === value
+    && ARTIFACT_VERSION_PATTERN.test(value)
+    && value.toLowerCase() !== RUNTIME_CURRENT_FILENAME
+    && portablePathSegment(value);
+}
+
 function artifactVersion(value: unknown): string {
-  const version = nonEmptyString(value, "artifactVersion");
-  if (
-    !ARTIFACT_VERSION_PATTERN.test(version)
-    || version.toLowerCase() === RUNTIME_CURRENT_FILENAME
-  ) {
-    return invalid("artifactVersion must be a portable path segment", { artifactVersion: version });
+  if (!isPortableRuntimeArtifactVersion(value)) {
+    return invalid("artifactVersion must be a portable path segment", { artifactVersion: value });
   }
-  return version;
+  return value;
 }
 
 function portableRelativePath(value: unknown, label: string): string {
-  const pathname = nonEmptyString(value, label);
+  if (
+    typeof value !== "string"
+    || value.length === 0
+    || value.length > MAX_RUNTIME_RELATIVE_PATH_LENGTH
+    || value.trim() !== value
+  ) {
+    return invalid(
+      `${label} must be a canonical path no longer than ${MAX_RUNTIME_RELATIVE_PATH_LENGTH} characters`,
+    );
+  }
+  const pathname = value;
+  const segments = pathname.split("/");
   if (
     pathname.includes("\\")
     || pathname.endsWith("/")
     || path.posix.isAbsolute(pathname)
     || path.win32.isAbsolute(pathname)
     || path.posix.normalize(pathname) !== pathname
-    || pathname.split("/").some((part) => part === "" || part === "." || part === "..")
+    || segments.some((part) => !portablePathSegment(part))
   ) {
     return invalid(`${label} must be a normalized portable relative path`, { path: pathname });
   }
@@ -149,7 +182,25 @@ function platform(value: unknown, label: string): RuntimePlatformTag {
   return value as RuntimePlatformTag;
 }
 
-function parseEntries(value: unknown, archiveKey: string): readonly EmbeddedRuntimeEntry[] {
+function declaredParentPath(paths: ReadonlySet<string>, child: string): string | undefined {
+  let parent = path.posix.dirname(child);
+  while (parent !== ".") {
+    if (paths.has(parent)) return parent;
+    parent = path.posix.dirname(parent);
+  }
+  return undefined;
+}
+
+function ownershipPath(pathname: string, platformTag: RuntimePlatformTag): string {
+  if (platformTag === "linux-x64") return pathname;
+  return (platformTag === "darwin-arm64" ? pathname.normalize("NFC") : pathname).toLowerCase();
+}
+
+function parseEntries(
+  value: unknown,
+  archiveKey: string,
+  platformTag: RuntimePlatformTag,
+): readonly EmbeddedRuntimeEntry[] {
   if (!Array.isArray(value) || value.length === 0) {
     return invalid(`archive ${archiveKey} must declare at least one entry`);
   }
@@ -171,16 +222,55 @@ function parseEntries(value: unknown, archiveKey: string): readonly EmbeddedRunt
       mode: fileMode(entry.mode, `archive ${archiveKey} entry ${entryPath} mode`),
     });
   });
-  const paths = entries.map((entry) => entry.path).sort();
-  for (let index = 0; index < paths.length - 1; index += 1) {
-    if (paths[index + 1]?.startsWith(`${paths[index]}/`)) {
+  const originalByOwnershipPath = new Map<string, string>();
+  for (const entry of entries) {
+    const ownership = ownershipPath(entry.path, platformTag);
+    const previous = originalByOwnershipPath.get(ownership);
+    if (previous !== undefined) {
+      invalid(`archive ${archiveKey} declares paths that alias on ${platformTag}`, {
+        current: previous,
+        next: entry.path,
+      });
+    }
+    originalByOwnershipPath.set(ownership, entry.path);
+  }
+  const paths = new Set(originalByOwnershipPath.keys());
+  for (const [ownedChild, child] of originalByOwnershipPath) {
+    const ownedParent = declaredParentPath(paths, ownedChild);
+    if (ownedParent !== undefined) {
       invalid(`archive ${archiveKey} entry cannot be the parent of another file`, {
-        parent: paths[index],
-        child: paths[index + 1],
+        parent: originalByOwnershipPath.get(ownedParent),
+        child,
       });
     }
   }
   return Object.freeze(entries);
+}
+
+function assertNonOverlappingTargets(
+  archives: readonly Pick<EmbeddedArchive, "target">[],
+  label: string,
+  platformTag: RuntimePlatformTag,
+): void {
+  const originalByOwnershipPath = new Map<string, string>();
+  for (const archive of archives) {
+    const ownership = ownershipPath(archive.target, platformTag);
+    const previous = originalByOwnershipPath.get(ownership);
+    if (previous !== undefined) {
+      invalid(`${label} overlap`, { current: previous, next: archive.target });
+    }
+    originalByOwnershipPath.set(ownership, archive.target);
+  }
+  const targets = new Set(originalByOwnershipPath.keys());
+  for (const [ownedChild, child] of originalByOwnershipPath) {
+    const ownedParent = declaredParentPath(targets, ownedChild);
+    if (ownedParent !== undefined) {
+      invalid(`${label} overlap`, {
+        current: originalByOwnershipPath.get(ownedParent),
+        next: child,
+      });
+    }
+  }
 }
 
 function parseArchives(value: unknown): readonly EmbeddedArchive[] {
@@ -190,20 +280,39 @@ function parseArchives(value: unknown): readonly EmbeddedArchive[] {
     const archive = object(candidate, `archive ${index}`);
     exactKeys(archive, ["key", "platform", "sha256", "bytes", "target", "entries"], `archive ${index}`);
     const key = nonEmptyString(archive.key, `archive ${index} key`);
-    if (!ARCHIVE_KEY_PATTERN.test(key) || key === RUNTIME_MANIFEST_FILENAME) {
+    if (
+      !ARCHIVE_KEY_PATTERN.test(key)
+      || !portablePathSegment(key)
+      || key === RUNTIME_MANIFEST_FILENAME
+    ) {
       invalid(`archive key ${key} is not portable`);
     }
     if (seen.has(key)) invalid(`manifest declares duplicate archive key ${key}`);
     seen.add(key);
+    const platformTag = platform(archive.platform, `archive ${key} platform`);
+    const target = portableRelativePath(archive.target, `archive ${key} target`);
+    const targetNamespace = target.split("/", 1)[0]?.toLowerCase();
+    if (targetNamespace === RUNTIME_MANIFEST_FILENAME || targetNamespace === RUNTIME_CURRENT_FILENAME) {
+      invalid(`archive ${key} target collides with the installed runtime metadata namespace`, {
+        target,
+      });
+    }
     return Object.freeze({
       key,
-      platform: platform(archive.platform, `archive ${key} platform`),
+      platform: platformTag,
       sha256: contentHash(archive.sha256, `archive ${key} sha256`),
       bytes: positiveInteger(archive.bytes, `archive ${key} bytes`),
-      target: portableRelativePath(archive.target, `archive ${key} target`),
-      entries: parseEntries(archive.entries, key),
+      target,
+      entries: parseEntries(archive.entries, key, platformTag),
     });
   });
+  for (const platformTag of RUNTIME_PLATFORM_TAGS) {
+    assertNonOverlappingTargets(
+      archives.filter((archive) => archive.platform === platformTag),
+      `runtime archive targets on ${platformTag}`,
+      platformTag,
+    );
+  }
   return Object.freeze(archives);
 }
 
@@ -316,6 +425,33 @@ export function resolveRuntimeArchives(
     );
   }
   return Object.freeze([...archives]);
+}
+
+/**
+ * Maps manifest archive keys to their build-authoritative publish targets.
+ *
+ * `key` identifies the embedded archive; `target` says where its verified
+ * contents live inside the selected version. Keeping this in one helper avoids
+ * the dangerous split where extraction publishes by key while a consumer reads
+ * the target declared by the manifest (or vice versa).
+ */
+export function resolveRuntimeArchiveRoots(
+  archives: readonly EmbeddedArchive[],
+  versionRoot: string,
+): Readonly<Record<string, string>> {
+  if (!path.isAbsolute(versionRoot)) {
+    invalid("runtime version root must be absolute", { versionRoot });
+  }
+  for (const platformTag of RUNTIME_PLATFORM_TAGS) {
+    assertNonOverlappingTargets(
+      archives.filter((archive) => archive.platform === platformTag),
+      `runtime archive targets on ${platformTag}`,
+      platformTag,
+    );
+  }
+  return Object.freeze(Object.fromEntries(
+    archives.map((archive) => [archive.key, path.join(versionRoot, archive.target)]),
+  ));
 }
 
 type RawAssetReader = (key: string) => ArrayBuffer;

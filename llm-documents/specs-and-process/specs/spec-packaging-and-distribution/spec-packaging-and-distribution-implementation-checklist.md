@@ -2,7 +2,7 @@
 
 > **References**:
 > - [Detailed Goals](./spec-packaging-and-distribution-detailed-goal.md) — bản 4, **Approved 2026-08-07** (R2.14 sửa sau khi duyệt, cùng ngày)
-> - [Detailed Design](./spec-packaging-and-distribution-detailed-design.md) — bản 2, **Approved 2026-08-07**, gate §15 · **+ phụ lục sửa §16 (bản 2.1, cùng ngày)** — 5 chỗ bản 2 nói khác code thật, đọc trước khi bắt đầu Phase A và Phase I
+> - [Detailed Design](./spec-packaging-and-distribution-detailed-design.md) — bản 2, **Approved 2026-08-07**, gate §15 · **+ phụ lục sửa §16 (bản 2.2, cập nhật 2026-08-09)** — 14 chỗ bản 2 nói khác code, manifest authority hoặc runtime thật, đọc trước khi bắt đầu Phase A và Phase I
 > - [Main spec](./spec-packaging-and-distribution-inprocess.md)
 > - Spike gate: [phase-4](../../../../spikes/phase-4/README.md) · [S9 Windows/Linux/darwin](../../../../spikes/phase-4/s9-windows-runtime/README.md)
 
@@ -54,7 +54,7 @@ Checklist chuyển Design bản 2 thành task 1–4 giờ, giữ đúng ranh gi�
 - **Confirmed by**: alvin0
 - **Confirmation date**: 2026-08-07
 - **Notes**: Design gate §15 đã mở (alvin0, 2026-08-07) nên checklist này được phép tồn tại. Gate thứ hai này — Code Execution — **đã duyệt cùng ngày**, sau vòng review cuối vá bốn chỗ (B.3 nguồn danh sách package Python + normalize tên, A.4 `ToolSchemaEntry` dùng lại `ToolLevel` sẵn có, H.5 nêu tên route upload `uploadBgm`, và `test:mcp-catalogue` lệch giữa Matrix và Files Changed Summary), cộng N-C vào bảng Nợ tài liệu.
-- **Trạng thái thực thi**: **Phase A, B, C, E, F hoàn tất; D 12/14 — cập nhật 2026-08-08**. F đóng 9/9 với CI ba OS xanh ở commit `5b85578`; 1123 test toàn repo. D còn D.3b và nửa Node của D.7 chờ **J.1**, cùng hai Acceptance Criteria chờ **H.0** và D.3b — điều kiện gỡ ghi ngay tại từng task. Phase G là gate kế tiếp. Phase C: 11/12 task tick, C.3 một phần có chủ ý; 2/3 Acceptance Criteria tick, AC "migration đúng một lần mỗi boot" để trống có lý do ghi ngay tại C.3. CI ba OS xanh ở [`31247413684`](https://github.com/alvindev111/vidcom-v2/actions/runs/31247413684) trên commit `bfbf7c0`; 929 test toàn repo. Stdio hardening commit `d754b2bdc1f83d50b6864dc39a1e8717f86209db` đã push và workflow [`31199182402`](https://github.com/alvindev111/vidcom-v2/actions/runs/31199182402) kết thúc `success`: macOS arm64 4m06s, Linux x64 6m13s, Windows x64 16m08s. Trước Phase B đã activate lại Bun skill và đọc FULL `credential-store.ts` + spike Phase 4 theo bảng Skill Activation. Focused command của Phase B chạy xanh trên filesystem thật; typecheck, ESLint và `test:boundaries` xanh. **CI ba OS xanh ở [`31244020503`](https://github.com/alvindev111/vidcom-v2/actions/runs/31244020503) trên commit `d71f95e`**: macOS arm64 3m, Linux x64 6m, Windows x64 13m (riêng step Test 494s). Phase B mất **năm vòng CI** vì một bug Windows chỉ lộ ra khi `AtomicDirectoryLock` lần đầu chạy trên nền đó — chi tiết ở B.9 và `implementation-notes.html`. Phase C là gate kế tiếp. Main spec đang là [`-inprocess.md`](./spec-packaging-and-distribution-inprocess.md).
+- **Trạng thái thực thi**: **Phase A, B, C hoàn tất; Phase D có 14/14 task nhưng artifact Acceptance Criterion đang mở lại, nên chỉ 2/3 Acceptance Criteria còn giữ proof hiện hành và Phase D chưa được gọi hoàn tất**. Sáu vòng audit đã thêm final-SEA raw-asset proof, active-resource extent, generation capability/publisher recovery, executable exit/preload normalization, passive Node 24.9 prep-blob parser không chạy candidate và parent-memory seal bind cả executable/blob lẫn original input projection. Review mới nhất bắt lexical `.sea-inputs` cùng manifest có thể bị thay tự nhất quán sau snapshot; closure nay đã land: `seal.inputs` giữ `codePath`, main và assets byte/SHA từ in-memory copy records, `build-sea` giữ original root capability, còn verifier hash blob spans trực tiếp theo parent-held projection trước khi xác minh snapshot hiện tại và capture capability mới cho các scan path-based. Regression root replacement, same-root child/manifest replacement và coherent artifact/blob replacement đều fail-closed, không chạy bad main. Checkpoint sau patch xanh combined SEA/build-artifact/provenance/publisher **84/84**, SEA riêng **22/22**, typecheck, lint 0 error/3 warning không liên quan, boundaries và full diff-check; không còn generated `.compiler-bundle` directory. Đây mới là focused closure, chưa phải artifact proof: binary cũ SHA-256 `5b111f…e2bc0` không còn là exact HEAD; artifact AC tiếp tục `[ ]`, toàn bộ Phase D local matrix và production rebuild/render-smoke trên binary mới vẫn phải chạy lại trước commit/push và GitHub Actions exact HEAD ba OS. Evidence cũ vẫn được bảo toàn ở `/private/tmp/vidcom-phase-d-production-smoke.6mvwdf/EVIDENCE.md` nhưng không được dùng thay proof mới. Phase C đã qua CI ba OS ở [`31295074545`](https://github.com/alvindev111/vidcom-v2/actions/runs/31295074545) trên exact commit `23b6dcf`: Linux 4m23s, macOS 4m58s, Windows 8m40s. Các phần E–L đã có code từ lượt thực thi trước nhưng **không được coi là phase kế tiếp trong lượt này**; thứ tự tiếp tục vẫn là D → E → F → G → H → I → J → K → L → M. Main spec đang là [`-inprocess.md`](./spec-packaging-and-distribution-inprocess.md).
 
 **Bản này (2026-08-07, sau review) đã đóng năm câu hỏi mà trước đó dev buộc phải hỏi lại giữa lúc code.** Duyệt mục này nghĩa là duyệt cả năm quyết định sau:
 
@@ -290,6 +290,7 @@ Mỗi phase chạy focused command dưới đây trên SQLite/filesystem thật,
   - _Requirements: R5.5_
 - [x] B.8 Integration test trên filesystem thật
   - Traversal/symlink/special-file bị từ chối; kill giữa chừng ở **từng pha** (extract, validate, rename, marker) ⇒ lần sau coi là chưa giải nén và làm lại; xoá `native/**` bằng tay ⇒ dựng lại được
+  - **Proof được siết lại sau adversarial review**: hook ném lỗi chỉ đi qua `catch`/rollback, không mô phỏng process chết. Test nay spawn child thật rồi `SIGKILL` ở `afterExtract`, `afterValidate`, `afterRename`, `beforeMarkerCommit` và `afterMarker`; restart trên cùng filesystem chốt bốn pha đầu re-extract sạch, còn marker đã commit được reuse đúng payload
   - Extractor: absolute path, `..`, symlink, hardlink, character device, file không khai trong manifest, sai SHA, sai byte length, thiếu entry, content drift — mỗi case **không để lại destination**
   - **Pha `afterMarker` không giống bốn pha kia**: marker đã commit nên lần chạy sau `reused` chứ không re-extract, chỉ `current.json` được publish lại. Test tách riêng và assert `extracted: []` — nếu ép nó cũng phải re-extract là hiểu sai thiết kế
   - _Requirements: R5.3, R5.4, R5.10_ — _Design: §11.2_
@@ -414,10 +415,13 @@ Mỗi phase chạy focused command dưới đây trên SQLite/filesystem thật,
   - [`node-sentinel.ts`](../../../../packages/cli/src/node-sentinel.ts) dispatch trong `runVidcomCli` **trước** `parseVidcomCommand`; không vào `COMMAND_NAMES` nên không lộ ra help hay mode list
   - Chỉ import script **trong** verified runtime root. Test chốt ba đường thoát: thư mục anh em `${root}-evil` (tên có tiền tố nhưng không nằm trong), traversal `..` leo ngược, và thiếu hẳn script
   - `process.argv` được viết lại thành hình dạng của node (`execPath, script, …args`) rồi **khôi phục kể cả khi script ném** — để nguyên sentinel sẽ lệch mọi index phía sau đúng một vị trí
+  - **Mở lại sau TOCTOU review**: authority resolver trả verified root nhưng pathname đó có thể bị rename rồi thay bằng symlink trước `runNodeSentinel`; canonicalize lại cả root/script sau substitution làm containment giả vẫn pass. Sentinel phải bind đúng canonical authority đã verify và từ chối original root path bị thay thế
+  - **Đã đóng race**: resolver trả canonical path cùng identity filesystem `dev`/`ino`/`birthtimeNs`; sentinel lstat/revalidate authority trước script resolution, sau resolution và ngay trước import. Regression rename root đã verify rồi đặt symlink/junction tới module ngoài: trả `runtime_manifest_invalid`, importer không chạy và `argv` nguyên vẹn
   - _Requirements: R6.2_ — _Design: §4.6, §5.16_
 - [x] D.2 Sửa **cả hai** chỗ spawn
   - `NodeRenderBinaryProbe` trả `[execPath, "--vidcom-node", cliPath]`; và chỗ thứ hai `[execPath, cliPath, "browser", "path"]` ([`binary-probe.ts:66-70`](../../../../packages/adapter/src/hyperframes/binary-probe.ts#L66)) — **cả hai** đều làm artifact chạy lại `main` của chính nó, và **không sinh lỗi**
-  - Cả hai chỗ đi qua `nodeArgv()`, và sentinel **chỉ** được thêm khi `process.isSEA` — ngoài artifact thì `execPath` đúng là node, thêm sentinel sẽ hỏng dev
+  - Cả hai chỗ đi qua `nodeArgv()`, và sentinel **chỉ** được thêm khi API chuẩn `process.getBuiltinModule("node:sea").isSea()` trả true — ngoài artifact thì `execPath` đúng là node, thêm sentinel sẽ hỏng dev
+  - Reporter spawn và render/snapshot supervisor cùng nhận `VIDCOM_APP_DATA` đã resolve qua strict allowlist, nên SEA child tìm lại đúng authority chain của D.1 kể cả portable/custom install; ambient `GH_KEY` không đi qua
   - `RenderBinaryProbeResult.hyperframesCommand` phải nới từ `[string, string]` sang `[string, ...string[]]`: kiểu cũ khoá cứng đúng hai phần tử nên không chứa nổi sentinel
   - Test chốt **chính cái bẫy**: `parseVidcomCommand([NODE_SENTINEL, script])` trả `{ name: "app" }` — bằng chứng sống rằng hình dạng spawn cũ không sinh lỗi mà lặng lẽ khởi động app
   - _Requirements: R6.2, R6.4_ — _Design: §4.6_
@@ -435,12 +439,19 @@ Mỗi phase chạy focused command dưới đây trên SQLite/filesystem thật,
   - **Đã làm**: `CompositionRootConfig.runtimePaths` nhận cả bộ đã resolve và **thắng** các field lẻ. Lý do phải thắng: mỗi field lẻ tự có default hợp lý — đúng chỗ nguy hiểm, vì bản đóng gói quên một cái sẽ nhận đường dẫn trông hợp lệ trỏ vào hư vô thay vì một lỗi. `NodeRenderBinaryProbe` nay nhận thẳng `hyperframesCliPath`/`hyperframesPackagePath`, nên fallback `require.resolve` của nó không còn nằm trên đường artifact. Thêm `caBundlePath` vào config cho nửa Node của D.7
   - **Hoàn tất sau J.1**: [`runtime-paths-source.ts`](../../../../packages/cli/src/runtime-paths-source.ts) là **một** chỗ duy nhất sinh ra bộ path, và `next-host` (`app` + `serve`), `commands/mcp.ts`, `commands/recovery.ts` đều gọi nó. `render` và `doctor` **không** dựng composition root thứ hai — chúng nói chuyện với daemon — nên "năm entrypoint" là năm mode, không phải năm composition root
   - [`runtime-paths-entrypoints.test.ts`](../../../../tests/cli/runtime-paths-entrypoints.test.ts) lấy danh sách mode từ chính `VIDCOM_COMMAND_NAMES` của J.1 thay vì chép lại, nên một mode mới không lặng lẽ trượt khỏi file này; và chốt bộ path là **đủ field hoặc không có gì**, vì mỗi field lẻ có default hợp lý riêng — đúng chỗ nguy hiểm
+  - Artifact repro bắt thêm diagnostics adapter còn `require.resolve("hyperframes/bin/hyperframes.mjs")`. Composition root nay truyền verified `hyperframesCliPath`; SEA diagnostics child thêm cùng sentinel D.1/D.2. Integration chạy CLI `.mjs` thật từ runtime temp với SQLite/filesystem thật, nên checkout fallback không thể che đường hỏng
+  - **Mở lại sau entrypoint audit**: `backup restore` cũng dựng composition root nhưng test inventory đã loại nhầm toàn bộ mode `backup`. Đường restore còn gọi migration trực tiếp, không đi qua bootstrap lock/extraction/credential reconciliation, rồi nhận runtime unversioned và có thể fallback `require.resolve`/Python PATH trong SEA. Root split rộng hơn hai mode: compiler preload đọc `setting.json.appDataRoot=A`, nhưng serve discovery, render-connect, approve/credential, backup và recovery còn gọi resolver không có settings nên dùng default B. Preload phải pin authority A vào `VIDCOM_APP_DATA` khi env chưa explicit; explicit env C vẫn thắng settings. Chỉ `backup list`/`verify` là read-only và không cần bootstrap
+  - **Publication phải fail trước side effect**: product-required host archive set thiếu HyperFrames không được để generic manager publish `current.json` rồi mới bị `runtimePathsFor` từ chối. Bootstrap phải prevalidate đầy đủ trước extraction/publication/database migration; regression giữ prior good runtime current và chốt invalid candidate có migration count 0
+  - **Đã đóng lại sau audit entrypoint + artifact publication**: compiler preload pin settings-resolved app-data vào `VIDCOM_APP_DATA` khi env chưa explicit; backup restore/recovery dùng cùng bootstrap/runtime authority, migrate đúng một lần; canonical product validator chạy trước lock/extract/current/DB ở SEA primary và coordinator. MCP fixture dùng exact product set trên SQLite/filesystem thật. SEA/publisher generation có authenticated payload + unique live-owner lock, nên candidate thiếu/drift không poison prior current hoặc artifact published
   - _Requirements: R5.8, R6.3_ — _Design: §5.16, §4.8_
 - [x] D.4 `CompilerGuard`
   - Đặt **cả hai** `ESBUILD_BINARY_PATH` và `ESBUILD_WORKER_THREADS=0`; timeout bắt buộc cho mọi lời gọi in-process chạm compiler. Thiếu **bất kỳ** cái nào ⇒ **treo vĩnh viễn, không một dòng stderr**
   - Preflight chạy **trước** operation: thiếu biến thì trả `compiler_unavailable` ngay, không bắt caller chờ hết budget rồi mới biết. Test chốt cả hai điều: đúng mã lỗi, và trả về trong dưới 1s dù budget là 30s
   - Timeout **không được tuỳ chọn**: `run()` ném `TypeError` khi timeout ≤ 0. Timeout tuỳ chọn là một cú treo đang chờ được tái sinh
   - Test dùng operation `new Promise(() => {})` — **đúng hình dạng lỗi thật**: không error, không stderr, không trả về
+  - Entry source và SEA chạy preload compiler-free trước khi dynamic-import adapter barrel/runtime; source launcher đặt binary đúng của `tsx@4.23.1` trước loader, rồi TS boot đặt binary đúng của HyperFrames/esbuild trước runtime graph
+  - Compiler đồng bộ không chạy dưới timer cùng event loop: doctor re-enter child ẩn, gọi `bundleToSingleHtml` thật trên temp filesystem và được `NodeProcessSupervisor` kill/verify khi hết deadline
+  - AST audit pin mọi import HyperFrames/esbuild, direct/aliased `require`/`createRequire`, compiler-capable call, đúng tám static adapter site và graph `0.7.86`; emitted-CJS test đưa hostile env để chứng minh Bun không eager-init main
   - _Requirements: R6.10, R6.11_ — _Design: §5.17_
 - [x] D.5 **Ép** `PYTHONUTF8`/`PYTHONIOENCODING`
   - Đổi `??=` thành ghi đè vô điều kiện trong [`allowlistedEnvironment`](../../../../packages/adapter/src/runtime/process-environment.ts#L19); mọi child (sidecar, shim, FFmpeg, Chromium) đi qua helper đó
@@ -452,19 +463,30 @@ Mỗi phase chạy focused command dưới đây trên SQLite/filesystem thật,
   - `HF_HOME` trỏ app-data; warm offline đặt `HF_HUB_OFFLINE=1` — hôm nay [`tts-vieneu.ts:322-327`](../../../../packages/adapter/src/tts/tts-vieneu.ts#L322) **không** đặt cờ này
   - `vieneuInterpreterPath()` quyết theo **sự tồn tại trên đĩa**, không theo cấu hình: production luôn truyền root, nhưng source checkout chưa giải nén gì ở đó nên phải rơi về interpreter môi trường
   - Đặt cả `HF_HUB_OFFLINE` lẫn `TRANSFORMERS_OFFLINE` khi `offline`. Thiếu cờ thì một lần chạy warm vẫn ra mạng hỏi revision mới, biến "máy không có mạng" thành treo hoặc timeout dài thay vì trả lời sạch từ cache đã có
+  - **Production wiring đã được chốt lại sau audit**: `HF_HUB_OFFLINE=1` hoặc `TRANSFORMERS_OFFLINE=1` ở daemon bật chế độ warm-offline và provider luôn truyền **cả hai** cờ; mặc định không bật để cold first-run vẫn tải weights được. `tests/cli/vieneu-runtime-wiring.test.ts` chạy composition root + child thật trên SQLite/filesystem temp
+  - `DownloadCacheCoordinator` nay quyết policy tự động: cache `models` missing/partial chạy `worker.py --probe` online để gọi `snapshot_download` với revision đã pin; chỉ sau probe thành công marker mới bị xoá. Cache ready ở cùng process hoặc sau restart luôn ép cả `HF_HUB_OFFLINE=1` và `TRANSFORMERS_OFFLINE=1`
+  - Artifact mode fail-closed nếu interpreter/worker đóng băng thiếu hoặc hỏng, không rơi về Python trên PATH; lỗi local command không bị gán nhầm thành download failure và không phá marker ready. Integration composition root dùng SQLite/filesystem temp + child thật để chốt cold download, warm restart và environment thực nhận
+  - **Mở lại sau adversarial review**: `timedOut=true` đang bị rơi thành `sidecar_missing` không có failure code; cache ready nhưng stale phải repair online ngay trong **cùng** lần gọi khi không explicit offline, không bắt người dùng gọi lần hai
+  - **Đã đóng lại**: probe timeout trả `download_unavailable`, ghi failure code bền vào marker và không bị registry cache thành `sidecar_missing`. Cache ready nhưng stale/corrupt được chuyển partial có mã rồi chạy online repair ngay trong cùng call; explicit offline vẫn fail-fast. Integration dùng child Python/Node, SQLite và filesystem temp thật, chốt cold snapshot, warm offline và repair xuyên restart
   - _Requirements: R6.5, R6.7_ — _Design: §4.6_
 - [x] D.7 `runtime.caBundlePath` xuống cả hai loại child
   - `SSL_CERT_FILE` + `REQUESTS_CA_BUNDLE` cho sidecar; `NODE_EXTRA_CA_CERTS` cho child Node. MUST NOT tắt xác minh chứng chỉ, MUST NOT tự nhặt CA từ trust store OS
   - **Đã làm nửa sidecar**: `VieNeuTtsProviderOptions.caBundlePath` đặt `SSL_CERT_FILE` + `REQUESTS_CA_BUNDLE`. Interpreter đóng băng không mang trust store riêng, nên truyền bundle là đường được hỗ trợ; tắt xác minh hay nhặt từ store OS chỉ đổi một lỗi tải thành một lỗi im lặng
-  - **Nửa Node đã xong cùng D.3b**: `allowlistedEnvironment` nhận `caBundlePath` và đặt `NODE_EXTRA_CA_CERTS`; `NodeProcessRunner` nhận nó từ composition root, và `next-host` lấy từ `settings.runtime.caBundlePath`
+  - **Nửa Node**: `allowlistedEnvironment` nhận `caBundlePath` và đặt `NODE_EXTRA_CA_CERTS`; `NodeProcessRunner`, reporter `NodeRenderBinaryProbe` và shared `NodeProcessSupervisor` cho render/snapshot đều nhận cùng giá trị đã resolve từ composition root
   - Path rỗng được coi là **không có bundle**: với Node một chuỗi rỗng không phải "không có bundle" mà là bundle ở đường dẫn `""`, và nó làm hỏng mọi TLS handshake của child
   - Test chốt thêm một vế: `NODE_TLS_REJECT_UNAUTHORIZED` của cha **không** đi qua allowlist — tắt xác minh chỉ đổi một lỗi tải thành một lỗi im lặng
+  - **Production wiring đã được chốt lại sau audit**: composition root lấy `config.caBundlePath` hoặc `settings.runtime.caBundlePath`, đưa cùng giá trị vào `NodeProcessRunner`, reporter probe, render/snapshot supervisor và `VieNeuTtsProvider`. Integration child thật chốt `NODE_EXTRA_CA_CERTS`, `SSL_CERT_FILE`, `REQUESTS_CA_BUNDLE`; không mock `node:fs`
   - _Requirements: R6.5_ — _Design: §5.13_
 - [x] D.8 Download cache coordinator
   - Per-component lock, partial marker, timeout. Partial marker là **nguồn sự thật duy nhất**: `hyperframes browser path` trả exit 0 cho binary 1 MB (đo ở S9)
   - Marker ghi **trước** byte đầu tiên và chỉ xoá khi download báo thành công. Thất bại, timeout, hay crash đều để lại trạng thái `partial` **qua cả restart** — test dựng một coordinator mới như lần boot sau và chốt vẫn đọc ra `partial`
   - Marker **hỏng/không đọc được vẫn tính là `partial`**, không phải `ready`: marker tồn tại nghĩa là đã có ai đó bắt đầu tải. Đây là hướng bảo thủ đúng
   - Khoá **theo từng component**: hai lần tải cùng component bị serialize, nhưng `models` tải chậm **không** chặn `chromium` — test chốt cả hai chiều, **đồng bộ tường minh** bằng promise chứ không bằng `sleep`. Bản đầu dùng `sleep(20)` rồi kỳ vọng thứ tự: xanh local, **đỏ trên Linux CI** khi runner tải nặng
+  - Production dựng đúng một coordinator tại app-data và chia authority ổn định `browser-cache`/`models`. Browser dùng synthetic HOME, chạy `hyperframes browser ensure` dưới lock, thực thi binary với `--version` trước khi xoá marker; cache ready/partial nhưng binary hỏng buộc `ensure --force`
+  - Timeout abort operation nhưng **không nhả lock sớm**: caller nhận `download_unavailable` sau khi failure marker atomic đã bền, còn lease được giữ tới khi downloader không hợp tác thật sự settle. `discardPartial`, `markReady`, `markPartial` cùng serialize với writer; root/component/marker symlink hoặc special file đều bị fail-closed
+  - Doctor đọc cùng marker authority và giữ `download_tls_untrusted`/`download_unavailable` qua restart. Integration production composition root chạy cold browser thật bằng child Node, warm restart không tải lại, và VieNeu cold/warm như D.6 trên SQLite/filesystem temp
+  - **Mở lại sau adversarial review**: managed Chrome phải là regular non-symlink, canonical-contained trong cache và trả version có hình dạng Chrome/Chromium/Headless Shell — executable bất kỳ như Bun/Node không phải Chromium. Doctor không được gọi model cache markerless rỗng là ready; cần warm offline probe hoặc proof tương đương
+  - **Đã đóng lại**: browser managed bị kiểm regular/non-symlink, realpath contained ở cả resolver lẫn output của HyperFrames CLI, và `--version` phải có hình dạng Chrome/Chromium/Headless Shell. Doctor chạy warm-offline VieNeu probe trên cache ready thay vì tin directory/marker; cache rỗng hoặc payload hỏng không còn false-green
   - **Thiếu `ErrorCode.DownloadUnavailable`** — xem ghi chú ngay dưới
   - _Requirements: R6.5_ — _Design: §5.18_
   - > [!WARNING]
@@ -484,11 +506,14 @@ Mỗi phase chạy focused command dưới đây trên SQLite/filesystem thật,
   - esbuild: [`compiler-guard.test.ts`](../../../../tests/adapter/compiler-guard.test.ts) — thiếu từng biến một, operation dùng `new Promise(() => {})` đúng hình dạng lỗi thật
   - Chrome: [`silent-failure-modes.test.ts`](../../../../tests/adapter/silent-failure-modes.test.ts) dựng **binary thật** cắt cụt trên đĩa. Test then chốt: một "reporter" giả lập `hyperframes browser path` in đường dẫn và exit 0 cho đúng binary hỏng đó — rồi chốt `verifyBrowserExecutable` vẫn nói không dùng được. Công cụ quản lý download không thể là trọng tài cho chính download của nó
   - Sidecar: child thật in `Xin chào thế giới`, và env cha mang `PYTHONUTF8=0`/`PYTHONIOENCODING=cp932` vẫn tới child thành `1:utf-8`
+  - Một integration mới chạy **cả ba** trong cùng temp tree qua object production: `CompilerGuard` nhận operation không bao giờ settle; `NodeRenderBinaryProbe` gọi reporter Node thật trả exit 0/path hỏng rồi vẫn thực thi candidate; `NodeProcessRunner` spawn sidecar child thật. Seam mô phỏng mất `PYTHONUTF8` trả `tts_provider_unavailable`, stdout rỗng — không có chuỗi mojibake bị coi là thành công
   - _Requirements: R6.11, R6.5, R6.7_ — _Design: §11.3_
 - [x] D.12 Integration test: mọi điểm spawn đi qua `allowlistedEnvironment`
   - Liệt kê điểm spawn và chứng minh không điểm nào tự dựng env — nếu không, hai bảo vệ UTF-8 và caBundlePath biến mất mà không ai thấy
   - Quét bốn package source; **miễn trừ phải khai kèm lý do**, và test thứ hai chốt mọi miễn trừ vẫn trỏ vào file còn spawn thật — miễn trừ sống lâu hơn cái spawn của nó là một lỗ để ngỏ cho lần sau
   - **Bẫy khi viết audit**: regex `\bexec\s*\(` bắt nhầm `client.exec(` của SQLite và `pattern.exec(` của regex, báo 5 điểm spawn không hề tồn tại. Phải dùng lookbehind `(?<![.\w])` — một audit báo động giả sẽ bị người ta tắt đi
+  - Audit hiện dùng TypeScript AST thay regex: theo binding của `node:child_process`, bắt renamed import, namespace call, `promisify(execFile)` và alias như `options.spawnProcess ?? spawn`; kiểm **từng call** chứa allowlist, không để một call đúng che call sai cùng file
+  - Mỗi exemption định danh đúng file + callee + argument đầu, phải còn đúng một unguarded call và có lý do sống; `spawnEnsuredDaemon` đã bị audit bắt rò full environment và nay chỉ forward tập cấu hình daemon hẹp
   - _Requirements: R6.7, R6.8_
 - [x] D.13 Integration test: huỷ giữa chừng
   - **Termination proof có cờ `exhaustive`**, MUST NOT phát biểu thành "không còn tiến trình con" ([steering/08](../../../steering/08-jobs-and-queue.md) §6.1 đã rút lại bảo đảm đó). Còn survivor sau khi cạn lượt ⇒ `process_termination_unverified`, MUST NOT ghi `cancelled`. Workdir có marker thu hồi được thứ lọt qua
@@ -497,9 +522,13 @@ Mỗi phase chạy focused command dưới đây trên SQLite/filesystem thật,
   - _Requirements: R6.8_ — _Design: §4.6, §11.4_
 
 **Acceptance Criteria**:
-- [ ] Render MP4 **từ artifact** trên máy không có Node và không có Python trên PATH — **chưa kiểm được ở D**: cần một artifact thật, tức [`build:artifact`](../../../../package.json) của **H.0**. Đây là AC duy nhất của D không thể chứng minh bằng test đơn vị; nó là gate thật của Phase H
-- [ ] `install_motion_library` vendor được mà không cần `node_modules`, version khớp catalogue — **D.3b đã xong** (mọi entrypoint dựng composition root nay truyền đủ bộ path, gồm `motionLibraryRoot`, và test ghim điều đó). Nửa còn lại — *vendor được thật* — cần thư viện motion nằm trong runtime archive đã giải nén, tức cùng blocker tài sản phát hành
-- [x] Không đường nào chạm compiler mà thiếu timeout — [`compiler-timeout-audit.test.ts`](../../../../tests/adapter/compiler-timeout-audit.test.ts) quét bốn package, fail nếu có file chạm compiler mà không qua `CompilerGuard` cũng không tự khai timeout. Miễn trừ phải kèm lý do và phải còn trỏ vào file thật. Audit bắt được một false positive đúng như thiết kế: `runtime-asset-source.ts` khai `esbuild: string` là **field version trong manifest**, không phải lời gọi compiler
+- [ ] Render MP4 **từ artifact** trên máy không có Node và không có Python trên PATH — proof lịch sử đã publish binary SHA-256 `5b111f…e2bc0`, nhưng closeout SEA/publisher/seal sau đó đã đổi exact HEAD nên AC được mở lại cho tới khi production `build:artifact --json` tạo binary mới và clean app-data cold-extract/render dưới private PATH nơi `command -v node|python|python3` đều absent
+  - Prototype exact HEAD xác nhận SEA main trực tiếp không thể load native/external package từ filesystem; cần bootstrap builtins-only extract verified runtime rồi load secondary CJS từ archive. Ngoài ra migration path từng bake source `import.meta.url`, diagnostics từng fallback checkout (đã sửa), và CLI render bearer đang gọi nhầm browser-session route 401. Không blocker nào được phép temp-rewrite để tick AC
+  - Migration source-path blocker đã đóng: `BootstrapCoordinator` chỉ sau extraction mới lấy `<archiveRoots.node>/drizzle`; source mode vẫn dùng default checkout. Integration xoá source migrations trước prepare, migrate SQL từ archive target không trùng key trên SQLite thật và chốt đúng một lần
+  - Production proof: `/private/tmp/vidcom-phase-d-production-smoke.6mvwdf/EVIDENCE.md`; MP4 SHA-256 `744c8c…bdc0`, H.264 320×180 30 fps + AAC 48 kHz stereo, 5,000 s. Extracted ffmpeg báo mean −20,3 dB/max −6,3 dB; only authored audio là `narration/intro.wav`, BGM tắt/HTML không audio-video và decoded source→render correlation `0,991181` ở AAC priming 21,375 ms
+  - Exact extracted frozen Python chỉ còn `bin/python3`; packaged worker probe dưới `HF_HUB_OFFLINE=1` + `TRANSFORMERS_OFFLINE=1` trả ready, 14 voice, engine 3.2.4. Explicit + auto-started daemon đều được dừng; ports/discovery record sạch
+- [x] `install_motion_library` vendor được mà không cần `node_modules`, version khớp catalogue — [`motion-runtime-artifact.test.ts`](../../../../tests/e2e/motion-runtime-artifact.test.ts) build archive thật chứa đủ năm package/file đã khai, xoá staging source, extract qua `FilesystemRuntimeAssetSource` + `RuntimeAssetManager`, resolve artifact paths, mở foundation trên SQLite/filesystem thật rồi gọi registry `install_motion_library` cho cả năm. Test so byte source → extracted → vendored và làm mất distributed root để chốt không fallback checkout `node_modules`
+- [x] Không đường nào chạm compiler mà thiếu timeout — preload đặt đúng binary trước module initialization; compiler-capable call duy nhất nằm trong child process có deadline/termination proof. AST inventory + emitted-CJS ordering + real transform xanh 38/38 trong main rerun
 
 **Deliverables**: `packages/cli/src/main.ts` · `binary-probe.ts` · `compiler-guard.ts` · `vieneu-sidecar-path.ts` · `tts-vieneu.ts` · `process-environment.ts`
 
@@ -1150,17 +1179,19 @@ Mỗi phase chạy focused command dưới đây trên SQLite/filesystem thật,
 **Estimate**: 5 SP
 
 **Tasks**:
-- [x] L.1 Build fail theo điều kiện
+- [ ] L.1 Build fail theo điều kiện
   - Lockfile/tool version khác manifest · archive có entry ngoài allowlist · sourcemap/source rời · secret pattern · absolute root của máy build
   - [`verify-artifact.mjs`](../../../../scripts/verify-artifact.mjs) quét bundle CJS, manifest và pack; thư mục artifact chỉ được chứa **bốn** tên trong allowlist — một `.map` hay `.ts` nằm cạnh executable là cùng một rò rỉ với thứ nhúng bên trong, mà lại dễ bỏ sót hơn
   - Trả **mọi** hit chứ không phải hit đầu tiên: một build rò hai thứ nên nói một lần, không phải qua hai lần chạy
   - **Bắt được lỗi thật ngay lần chạy đầu**: bundle chứa **11 đường dẫn tuyệt đối của máy build**, do bundle sang CJS resolve mọi `import.meta.url` thành file URL tuyệt đối của module nguồn. Hai lý do phải bỏ: L.1 cấm thẳng, và một `createRequire` neo vào thư mục người dùng không có thì resolve vào hư vô. `stripBuildRoot` thay gốc bằng marker cố định `/vidcom`, và test chốt bundle không còn chứa `process.cwd()`
+  - **Mở lại trong audit Phase D, chỉ thực thi khi tới L theo thứ tự**: verifier/pipeline chưa bind Bun/tar/postject/native versions với lock/provenance, chưa rederive frontend MIME/cache từ runtime authority và trước patch còn thiếu independent exact allowlist. Các lỗ trực tiếp cần artifact executable đã được vá dần ở D; full L.1 vẫn mở tới khi lock/tool/semantic tamper matrix xanh
   - _Requirements: R9.1, R9.2, R9.3_ — _Design: §5.20_
-- [x] L.2 `SHA256SUMS` + `artifact-manifest.json`
+- [ ] L.2 `SHA256SUMS` + `artifact-manifest.json`
   - Commit, `dirty=false` cho release job, tool versions, archive hashes, platform
   - `dirty` được **ghi lại**, không phải bị từ chối ở đây: người dựng cục bộ từ cây đã sửa nên nhận artifact kèm một cái nhãn trung thực, còn job release mới là chỗ đòi `false`
   - `SHA256SUMS` viết theo định dạng `sha256sum -c` để người dùng kiểm bằng công cụ họ đã có, không phải công cụ ta bảo họ cài
   - Chạy thật: manifest + checksums sinh ra cạnh artifact 127 MB
+  - **Mở lại trong audit Phase D, chỉ thực thi khi tới L theo thứ tự**: schema mới đang bổ sung runtime versions/archive hashes, nhưng chưa có proof exact lock/tool acquisition (Bun/tar/postject/native closure), dirty-release gate và tamper binding trên production artifact ba OS
   - _Requirements: R9.4_ — _Design: §5.20_
 - [x] L.3 macOS ad-hoc sign sau injection
   - Windows unsigned + checksum; signing thật deferred (D2)
@@ -1175,7 +1206,7 @@ Mỗi phase chạy focused command dưới đây trên SQLite/filesystem thật,
   - Source/sourcemap/dev-origin/secret/build-root; frontend pack không chứa `localhost:3000`
   - [`artifact-provenance.test.ts`](../../../../tests/build/artifact-provenance.test.ts) 12 test; ca pack thật **tự build static export nếu thiếu**, vì job CI chạy test **trước** production build và một check bị skip là check không ai để ý lúc nó biến mất
   - _Requirements: R9.1, R9.2, R9.3_
-- [x] L.6 **Đăng ký spec này vào [`scripts/verify-spec-test-paths.mjs`](../../../../scripts/verify-spec-test-paths.mjs)**
+- [ ] L.6 **Đăng ký spec này vào [`scripts/verify-spec-test-paths.mjs`](../../../../scripts/verify-spec-test-paths.mjs)**
   - Gate hôm nay chỉ biết **hai** spec (`spec-mcp-server` phases `ABCDEFGHIJKLMNOP`, `spec-project-delivery-loop` phases `ABCDEFGHIJKLMNOPQRS`). Convention của repo là mọi checklist đều được gate này bảo vệ; không đăng ký thì bảng Phase Verification Matrix ở trên có thể trỏ vào file không tồn tại mà CI vẫn xanh
   - Thêm entry `{ label: "packaging & distribution", path: "llm-documents/…-implementation-checklist.md", phases: "ABCDEFGHIJKLM" }`
   - **Làm ở cuối, có lý do**: gate kiểm **mọi** đường dẫn `tests/...` trong Matrix phải tồn tại thật. Đăng ký ở Phase A thì `test:spec-paths` đỏ suốt từ B tới M
@@ -1184,11 +1215,12 @@ Mỗi phase chạy focused command dưới đây trên SQLite/filesystem thật,
   - Nếu có phase nào bị bỏ giữa đường, sửa chuỗi `phases` **cùng lúc**: gate so khớp chuỗi đúng thứ tự và fail với `"rows drifted"`
   - Đã đăng ký `phases: "ABCDEFGHIJKLM"`; số path verified **80 → 115** trên 3 spec, đúng dấu hiệu entry được đọc
   - **Gate bắt được drift tài liệu ngay lần chạy đầu**: hàng D trỏ `tests/adapter/vidcom-node-shim.test.ts` và hàng E trỏ `tests/cli/foundation-manager.test.ts` — **cả hai chưa bao giờ tồn tại**; tên thật là `node-sentinel.test.ts` và `foundation-lifecycle.test.ts`/`foundation-state.test.ts`. Sửa bảng cho khớp code, **không** nới gate: đây đúng là quy trình mà chính task này mô tả
+  - **Mở lại để giữ đúng thứ tự**: L.1/L.2 đã được audit Phase D chứng minh còn gate provenance phải làm khi tới Phase L; vì L.6 bắt buộc làm sau cùng, checkbox này chỉ được tick lại sau khi L.1–L.5 hoàn tất và `test:spec-paths` được chạy lại cuối phase
   - _Requirements: R9.1_ — _Design: §5.20_
 
 **Acceptance Criteria**:
-- [x] Không secret, không sourcemap, không absolute path máy build trong artifact — `verify-artifact` quét và **đã fail thật** trên build-root, đã sửa rồi xanh
-- [x] `rtk bun run test:spec-paths` xanh **và** số path verified tăng so với trước L.6 — 80 → 115
+- [ ] Không secret, không sourcemap, không absolute path máy build trong artifact — source/verifier regressions đã bắt build-root/sourcemap/secret, nhưng AC chỉ đóng ở Phase L sau khi quét **production artifact** và exact embedded archives/frontend/final executable
+- [ ] `rtk bun run test:spec-paths` xanh **và** số path verified tăng so với trước L.6 — bằng chứng cũ 80 → 115 được giữ làm lịch sử; gate phải chạy lại sau cùng khi L.1–L.5 đã xanh
 
 **Deliverables**: `scripts/build-artifact.mjs` · `scripts/verify-artifact.mjs` · `scripts/verify-spec-test-paths.mjs`
 
@@ -1818,6 +1850,552 @@ Chi tiết: [Detailed Goals](./spec-packaging-and-distribution-detailed-goal.md)
   - Summary: Lắp `BootstrapCoordinator` trước workspace selection trên mọi boot path; truyền DB đã migrate xuống dưới và bỏ migration lặp ở foundation. Test counter chạy production `startServing` → hosted runtime → coordinator → selection → foundation trên SQLite + filesystem thật và chốt đúng một lần gọi; schema/foreign key được kiểm trên cùng DB sau boot.
   - Decisions: Source checkout không có archive để extract nên coordinator bỏ riêng extraction khi không có asset source, nhưng vẫn giữ khoá bootstrap, migration và credential reconciliation. Artifact vẫn bắt buộc SEA/filesystem asset source và không fallback về dependency của máy build; ghi thành C-8 trong Design §16. Review độc lập bắt được route activate workspace còn gọi `selectWorkspace` không kèm DB, tức migrate thêm trước mỗi hot-swap. Sửa tận contract: `selectWorkspace` nay bắt buộc nhận DB đã migrate; activation và runtime thay thế dùng DB của foundation đang sống, nên TypeScript chặn call-site quên ownership thay vì dựa vào một boolean.
   - Blockers: Không có. Focused Phase C 28/28; full suite 1504 pass / 4 skip có chủ ý; typecheck, lint 0 error / 3 warning có sẵn, `test:boundaries`, `test:spec-paths` và `git diff --check` xanh.
+
+2026-08-09 — Phase D, production-path re-audit (mở lại task đã tick sai)
+  - Files: `packages/adapter/src/hyperframes/{binary-probe,compiler-guard,browser-verification,version-skew}.ts`, `packages/adapter/src/runtime/download-cache.ts`, `packages/cli/src/{main,node-sentinel,composition-root}.ts`, checklist và implementation notes
+  - Summary: Focused matrix cũ xanh nhưng không chạy các bảo vệ trên đường artifact thật. Mở lại D.1, D.2, D.4, D.6, D.7, D.8, D.9, D.11, D.12 và AC compiler: SEA detection đọc property không chuẩn; sentinel dùng root rộng + lexical path; Chrome chỉ kiểm `X_OK`; ba helper guard/cache/skew không có caller production; VieNeu không nhận CA/offline; spawn audit bỏ alias.
+  - Decisions: Một test helper xanh không đủ để tick task production. Giữ nguyên `tools/list`, boundary gate và ESLint; sửa ở call graph rồi mới thêm regression xuyên seam. Phase C được xác nhận exact-SHA CI ba OS xanh ở run `31295074545` trước khi Phase D được kích hoạt lại.
+  - Blockers: Hai AC artifact vẫn chặn bởi chuỗi phát hành thật: `build:artifact` gọi builder archive thiếu argument/config/source runtime, và packaged-smoke chưa có thân bước chạy executable. Không tick bằng spike cũ hoặc fixture copy từ `node_modules`.
+
+2026-08-09 — Phase D, seam D.6 + D.7 (nối lại VieNeu production, CHƯA tick)
+  - Files: `packages/cli/src/composition-root.ts`, `tests/cli/vieneu-runtime-wiring.test.ts`, checklist và implementation notes
+  - Summary: Nối frozen VieNeu provider với CA bundle và chế độ warm-offline ở composition root; test mở SQLite/filesystem temp rồi spawn child Node thật để đọc environment thực tế.
+  - Decisions: Cold first-run giữ online mặc định. Hai cờ chuẩn `HF_HUB_OFFLINE=1` hoặc `TRANSFORMERS_OFFLINE=1` là opt-in của packaged smoke/operator; một cờ đầu vào luôn sinh cả hai cờ ở sidecar. CA ưu tiên config đã resolve rồi mới settings, cùng một giá trị tới Node và Python; không thêm public setting hay dependency.
+  - Blockers: D.6 còn thiếu cache-ready tự bật offline qua D.8. D.7 còn thiếu CA ở render supervisor và reporter spawn. `vieneu-runtime-wiring` + frozen-interpreter + provider + process-environment xanh 33/33; agent chạy typecheck xanh, lint 0 error / 3 warning có sẵn.
+
+2026-08-09 — Phase D, Task D.1 (đóng lại sentinel production)
+  - Files: `packages/cli/src/{main,node-sentinel}.ts`, `tests/adapter/node-sentinel.test.ts`, checklist và implementation notes
+  - Summary: Sentinel được dispatch trước parser nhưng chỉ nhận script dưới archive HyperFrames của đúng runtime hiện hành; root được xác minh qua `current.json`, installed manifest và ready marker khớp artifact/platform. Script và root đều canonicalize bằng `realpath`; symlink/traversal/sibling/missing file đều trả `runtime_manifest_invalid`.
+  - Decisions: Resolver sentinel chỉ đọc filesystem và không gọi bootstrap/extraction/migration, vì child có thể re-enter artifact trong khi foundation đang sống. Cấu hình app-data được đọc từ đúng `VIDCOM_SETTINGS`/`VIDCOM_APP_DATA`; test production wiring chốt không tạo SQLite hoặc daemon state.
+  - Blockers: Không có cho D.1. Focused `node-sentinel.test.ts` xanh 13/13 trên filesystem thật. D.2 vẫn mở cho tới khi cả reporter và render child nhận app-data đã resolve trong environment allowlist.
+
+2026-08-09 — Phase D, Acceptance Criterion motion libraries
+  - Files: `tests/e2e/motion-runtime-artifact.test.ts`, checklist và implementation notes
+  - Summary: Dựng archive runtime thật từ package manifest và đúng tập file catalogue của GSAP, Anime.js, Motion One, Lottie và Three.js; xoá cây staging trước khi extract, resolve `RuntimePaths` ở artifact mode, mở foundation bằng SQLite/filesystem temp thật rồi gọi registry production `install_motion_library` cho đủ năm.
+  - Decisions: `node_modules` chỉ được dùng ở bước build để stage byte vào archive, đúng vai trò của dependency build. Runtime proof đọc từ archive đã build/extract; test so byte nguồn → extracted → vendored, sau đó làm mất distributed root và yêu cầu lần gọi nữa fail `storage_unavailable`, nên checkout không thể lặng lẽ cứu một đường artifact hỏng.
+  - Blockers: Không có. Focused integration xanh 1/1 trong 3,23 s; agent cũng xác nhận typecheck, lint scoped và boundaries xanh.
+
+2026-08-09 — Phase D, Task D.9 (version skew trên production preflight)
+  - Files: `packages/{core/src/port/ports,worker/src/render-job,adapter/src/hyperframes/binary-probe}.ts`, `tests/adapter/{render-binary-probe,render-job,version-skew}.test.ts`, checklist và implementation notes
+  - Summary: `BinaryProbePort.probe` bắt buộc nhận project root; render và snapshot preflight truyền root đã chọn, nên detector so version khai trong `hyperframes.json` với đúng package HyperFrames mà probe vừa resolve và đưa warning có mã vào kết quả job.
+  - Decisions: File thiếu, không khai version, chuỗi rỗng hoặc JSON hỏng không bị đoán thành drift. Warning chỉ quan sát; integration đọc lại file và chốt byte-for-byte không đổi. Contract bắt buộc project root để TypeScript ngăn một caller mới vô tình bỏ qua kiểm tra.
+  - Blockers: Không có. `render-binary-probe`, `version-skew`, `render-job`, `snapshot-job` xanh 31/31 trên checkout chung.
+
+2026-08-09 — Phase D, Task D.2 (hai spawn shape trong SEA)
+  - Files: `packages/adapter/src/hyperframes/binary-probe.ts`, `packages/adapter/src/runtime/process-supervisor.ts`, `packages/cli/src/composition-root.ts`, `tests/{adapter/render-binary-probe,cli/render-process-environment}.test.ts`, checklist và implementation notes
+  - Summary: SEA detection dùng API chuẩn `node:sea.isSea()`; reporter `browser path` và command render trả về đều đi qua cùng `nodeArgv`, thêm `--vidcom-node` chỉ trong artifact. Reporter và supervisor nhận đúng app-data đã resolve để sentinel child xác minh runtime hiện hành.
+  - Decisions: `VIDCOM_APP_DATA` là authority cấu hình, không phải ambient hint: giá trị composition root thắng cả parent lẫn per-call hostile override. Environment vẫn đi qua allowlist và integration child thật chốt `GH_KEY` không lọt.
+  - Blockers: Không có. Bộ child-seam focused xanh 57/57; riêng binary probe phủ SEA command, reporter thực, browser cắt cụt và custom app-data.
+
+2026-08-09 — Phase D, Task D.7 (CA bundle tới mọi child loại Node/Python)
+  - Files: `packages/{adapter/src/{hyperframes/binary-probe,runtime/process-supervisor,tts/tts-vieneu},cli/src/composition-root}.ts`, `tests/{adapter/render-binary-probe,cli/render-process-environment,cli/vieneu-runtime-wiring}.test.ts`, checklist và implementation notes
+  - Summary: Một CA bundle đã resolve được truyền tới reporter HyperFrames, render/snapshot supervisor, Node process runner và VieNeu sidecar. Node child nhận `NODE_EXTRA_CA_CERTS`; Python nhận `SSL_CERT_FILE` + `REQUESTS_CA_BUNDLE`.
+  - Decisions: CA cấu hình thắng ambient/per-call override; path rỗng không được materialize. Không tắt verify TLS và `NODE_TLS_REJECT_UNAUTHORIZED` của parent không qua allowlist. Tất cả integration spawn child thật; VieNeu wiring đồng thời mở SQLite/filesystem temp thật.
+  - Blockers: Không có. Bộ child-seam focused xanh 57/57; CA được quan sát từ chính process con, không chỉ inspect object option.
+
+2026-08-09 — Phase D, Task D.12 (audit mọi child-process spawn)
+  - Files: `tests/adapter/spawn-environment-audit.test.ts`, `packages/cli/src/bridge/spawn-daemon.ts`, `tests/cli/bridge-attachment.test.ts`, checklist và implementation notes
+  - Summary: Thay regex audit bằng TypeScript AST theo binding thật của `node:child_process`; nhận renamed import, namespace access, promisify và alias chain, rồi kiểm từng call có `allowlistedEnvironment`. Audit mới bắt `spawnEnsuredDaemon` đang kế thừa full env; production nay chỉ forward cấu hình daemon hẹp.
+  - Decisions: Exemption dùng exact call key và test liveness đúng một call, kèm lý do bắt buộc. Integration daemon child giữ `VIDCOM_APP_DATA`/provider config cần thiết nhưng loại `GH_KEY`; render/reporter/VieNeu child thật đồng thời chứng minh UTF-8 và CA không mất.
+  - Blockers: Không có. `spawn-environment-audit`, `bridge-attachment` và toàn bộ child-seam focused xanh trong bộ 57/57.
+
+2026-08-09 — Phase D, Task D.3b (chốt authority layout runtime đã publish)
+  - Files: `packages/adapter/src/runtime/{runtime-asset-source,runtime-asset-manager,runtime-paths}.ts`, `packages/adapter/src/tts/vieneu-sidecar-path.ts`, `packages/cli/src/commands/doctor-context.ts`, tests runtime/doctor tương ứng, checklist và implementation notes
+  - Summary: Một resolver duy nhất ánh xạ `archive.key` sang `archive.target`; extraction, read-only current-runtime resolver, sentinel, composition root và doctor cùng đọc đúng version/target đã publish. Target lồng nhau được publish/rollback bền vững trên đúng parent directory; parent symlink/special bị từ chối.
+  - Decisions: §5.13 đã duyệt `archive.target` nhưng §5.14 lại viết cứng `<archive-key>`; correction chọn field manifest làm authority và ghi mâu thuẫn này thành Design §16 C-9. Artifact mode được gắn tường minh trên `RuntimePaths`; frozen VieNeu fail-closed khi thiếu bất kỳ interpreter hoặc `vieneu/worker.py`, trong khi source-dev vẫn được dùng interpreter checkout/PATH.
+  - Blockers: Không có cho D.3b. Main rerun `runtime-asset-manager`, `runtime-paths`, `vieneu-frozen-interpreter`, `doctor-integration` trên filesystem/SQLite thật: 4 file, 50 pass, 1 Windows skip có chủ đích.
+
+2026-08-09 — Phase D, Task D.4 + Acceptance Criterion compiler
+  - Files: `packages/{cli/{bin/vidcom.mjs,src/{boot,compiler-preload,compiler-probe,sea-entry}.ts},adapter/src/hyperframes/{compiler-guard,compiler-probe-child}.ts}`, compiler/doctor/bundle tests, Design §16 C-10, checklist và implementation notes
+  - Summary: Compiler env được cấu hình trước adapter barrel/HyperFrames ở cả source lẫn SEA. Doctor chạy transform HyperFrames thật trong child riêng có OS deadline/kill proof; không còn dùng `esbuild --version` hoặc Promise timer quanh API sync.
+  - Decisions: Design §5.17 được correction ở C-10: `run()` chỉ nhận async operation; sync compiler chỉ được gọi trong supervised child. Subpath `@vidcom/adapter/compiler-guard` là module adapter hẹp, compiler-free duy nhất preload được phép import trước barrel. Source có hai stage vì `tsx` và HyperFrames sở hữu hai bản esbuild khác nhau; SEA chỉ cần stage HyperFrames.
+  - Blockers: Không có. Main rerun 5 file compiler/audit/bundle: 38/38; guard + child thật + doctor: 20/20; `typecheck` và source CLI `version` xanh. Emitted CJS chạy transform thật với ambient `ESBUILD_BINARY_PATH` cố tình sai và vẫn trả marker đúng.
+
+2026-08-09 — Phase D, Task D.6 (frozen VieNeu + warm-offline tự động)
+  - Files: `packages/adapter/src/tts/{tts-vieneu,vieneu-sidecar-path}.ts`, `packages/adapter/sidecars/vieneu/worker.py`, `packages/cli/src/composition-root.ts`, `tests/{adapter/{tts-vieneu,vieneu-model-probe,vieneu-frozen-interpreter},cli/vieneu-runtime-wiring}.test.ts`, checklist và implementation notes
+  - Summary: Artifact gọi interpreter/worker tuyệt đối từ runtime đã publish; cold model cache chạy probe thật có `snapshot_download` revision pin, còn marker ready tự chuyển mọi probe/synthesis sau đó sang cả hai chế độ offline của Hugging Face/Transformers.
+  - Decisions: Không tự bật offline trước cold fetch. Chỉ stderr của sidecar là bằng chứng download TLS/network; lỗi dựng command local không được làm cache ready thành partial. Artifact thiếu frozen Python/worker fail-closed, development và explicit command override giữ hành vi cũ.
+  - Blockers: Không có. Main rerun sáu file cache/VieNeu/browser integration: 66/66; SQLite, filesystem và child process đều là thật, không mock `node:fs`; `python3 -m py_compile` xanh.
+
+2026-08-09 — Phase D, Task D.8 (download cache coordinator production)
+  - Files: `packages/adapter/src/{runtime/download-cache,hyperframes/{binary-probe,chrome-resolver},tts/tts-vieneu}.ts`, `packages/cli/src/{composition-root,commands/doctor-context}.ts`, cache/browser/model tests và integration `download-cache-runtime-wiring.test.ts`, checklist và implementation notes
+  - Summary: Một coordinator app-data sở hữu riêng browser/model component; marker được ghi trước download và chỉ xoá sau executable/model probe thật. Chrome cold/warm/repair và VieNeu cold/warm đều đi qua production composition root; doctor đọc đúng state/failure code đã bền qua restart.
+  - Decisions: Timeout trả lỗi sớm cho caller nhưng giữ lease trong finalizer cho tới operation thật settle, nên retry/discard không bao giờ đè writer còn sống. Mọi path cache phải normalized, real directory, contained; symlink/special/malformed marker được đọc bảo thủ là invalid hoặc partial chứ không thành ready.
+  - Blockers: Không có. Main rerun sáu file integration 66/66; agent chạy official Phase D matrix 49/49, extended D.8 111/111, typecheck/lint/boundaries/diff-check và Python compile xanh.
+
+2026-08-09 — Phase D, Task D.4 (follow-up review: CommonJS loader alias)
+  - Files: `tests/adapter/compiler-timeout-audit.test.ts`, checklist và implementation notes
+  - Summary: Review độc lập dựng được hai cú pháp né inventory: namespace `node:module` rồi gọi `moduleApi.createRequire`, và alias nhiều tầng của chính factory. Audit nay lan truyền binding namespace/factory/loader đến fixed point và nhận module string qua cả hai hình dạng.
+  - Decisions: Không dựa vào style convention hoặc regex cấm tên biến; synthetic fixtures dùng đúng cú pháp né cũ để chốt graph inventory theo binding thật. Đây là hardening bằng test, không nới boundary hay ESLint.
+  - Blockers: Không có. Main rerun năm file compiler/audit/bundle: 40/40; agent xác nhận typecheck, lint 0 error / 3 warning có sẵn, boundaries và diff-check xanh.
+
+2026-08-09 — Phase D, adversarial review D.6/D.8 (mở lại sau 66 test xanh)
+  - Files: `packages/adapter/src/{tts/tts-vieneu,hyperframes/{chrome-resolver,browser-verification},runtime/download-cache}.ts`, `packages/cli/src/commands/doctor-context.ts`, checklist và implementation notes
+  - Summary: Repro thật chứng minh model timeout bị mất `download_unavailable`; cache ready-stale chỉ repair ở lần gọi thứ hai; managed cache chấp nhận symlink tới Bun như Chrome; doctor gọi model directory rỗng markerless là healthy.
+  - Decisions: Test helper/marker state không thay thế validation payload. Mở lại cả D.6 và D.8 ngay; yêu cầu repair cùng call, canonical containment + browser-shaped version và warm offline model proof trước doctor ok.
+  - Blockers: Bốn lỗi trên đang được sửa; chưa được phép tick lại dù bộ sáu file trước đó xanh 66/66.
+
+2026-08-09 — Phase D, Task D.11 (ba failure mode trong một integration)
+  - Files: `tests/adapter/silent-failure-modes.test.ts`, checklist và implementation notes
+  - Summary: Cùng một test temp-filesystem chạy guard với compiler promise treo, reporter Node thật nói dối về Chrome cắt cụt và sidecar child thật dưới production process runner với tiếng Việt/encoding hostile.
+  - Decisions: Không chỉ gọi ba helper độc lập. Chrome đi qua `NodeRenderBinaryProbe`; encoding đi qua `NodeProcessRunner`; ca mô phỏng mất biến dùng explicit override mà D.5 chủ ý cho phép, yêu cầu error code và stdout rỗng thay vì chấp nhận chữ hỏng.
+  - Blockers: Không có cho D.11. Main rerun `silent-failure-modes.test.ts`: 10/10 trên real filesystem/process; hai compiler env đều trả dưới 1 giây dù budget 30 giây.
+
+2026-08-09 — Phase D, Task D.3b (follow-up artifact: diagnostics CLI)
+  - Files: `packages/adapter/src/hyperframes/check.ts`, `packages/cli/src/composition-root.ts`, `tests/{cli/runtime-paths-wiring,adapter/diagnostics-thumbnail}.test.ts`, checklist và implementation notes
+  - Summary: Repro SEA ngoài checkout lộ diagnostics adapter còn resolve HyperFrames CLI từ module graph. Adapter nay nhận verified extracted CLI, composition root truyền RuntimePaths và SEA spawn dùng sentinel trước CLI.
+  - Decisions: Chỉ source mode được fallback `require.resolve`; artifact không có dependency checkout để cứu. Integration mở SQLite/filesystem temp và chạy một `.mjs` thật đặt dưới runtime root, đồng thời test riêng command SEA có sentinel.
+  - Blockers: Không có cho seam này. Agent chạy hai file focused 12/12, typecheck, lint 0 error / 3 warning có sẵn, boundaries và diff-check xanh; main rerun integration runtime path 4/4.
+
+2026-08-09 — Phase D, adversarial review D.1 (mở lại root-retarget race)
+  - Files: `packages/cli/src/{main,node-sentinel}.ts`, `tests/adapter/node-sentinel.test.ts`, checklist và implementation notes
+  - Summary: Sau khi resolver xác minh current runtime, attacker cùng user có thể rename HyperFrames root và thay pathname cũ bằng symlink ngoài. Sentinel canonicalize lại pathname mới cho cả root/script, nên containment vẫn pass và import code ngoài verified archive.
+  - Decisions: Child import phải bind canonical authority đã verify, không chỉ hai pathname canonical tại thời điểm import. Regression sẽ retarget chính root giữa resolve và dispatch, không chỉ symlink một child như test cũ.
+  - Blockers: D.1 mở tới khi real-fs regression chứng minh external module không chạy và trả `runtime_manifest_invalid`.
+
+2026-08-09 — Phase D, artifact executable proof loop (AC còn mở)
+  - Files: temp prototype dưới `/tmp/vidcom-phase-d-artifact.*`; production seams liên quan `scripts/build-{artifact,sea,cli-bundle,runtime-archives}.mjs`, `packages/cli/src/bootstrap-coordinator.ts`, daemon bridge routes; checklist và implementation notes
+  - Summary: SEA exact HEAD không thể `require` native external từ embedded CJS; source migration root bị bake vào bundle; diagnostics CLI fallback checkout (đã đóng); bridge bearer gọi `/api/v1` render route và nhận 401. Mỗi lỗi được repro ngoài checkout/node_modules bằng artifact/temp runtime thật.
+  - Decisions: Không dùng temp source mirror, mechanical bundle rewrite hoặc spike artifact cũ làm bằng chứng. Hướng nhỏ nhất đang được proof là SEA bootstrap builtins-only extract archive, verify secondary entry hash rồi `createRequire` CJS cạnh native closure; migration SQL phải ship trong verified archive; render API giữ bearer ở namespace bridge riêng thay vì nới auth browser.
+  - Blockers: AC MP4 vẫn mở cho tới khi production build tạo artifact exact HEAD, PATH riêng không có node/python/python3, render narration MP4 và `ffprobe` xác nhận output.
+
+2026-08-09 — Phase D, Task D.1 (đóng root-retarget TOCTOU)
+  - Files: `packages/cli/src/{main,node-sentinel}.ts`, `tests/adapter/node-sentinel.test.ts`, checklist và implementation notes
+  - Summary: Verified root authority mang canonical path + filesystem identity, được kiểm lại ba lần quanh script resolution/import. Thay pathname bằng symlink/junction ngoài sau resolve không thể đổi authority mà sentinel tin.
+  - Decisions: So canonical string chưa đủ vì cả root/script có thể cùng đổi; bind identity inode/device/birthtime. String-only seam giữ cho unit thấp, production main chỉ truyền authority đã verify.
+  - Blockers: Không có. Main rerun node-sentinel 15/15 trên filesystem thật; agent xác nhận typecheck, lint scoped, boundaries và diff-check xanh.
+
+2026-08-09 — Phase D, artifact follow-up (migration authority)
+  - Files: `packages/cli/src/bootstrap-coordinator.ts`, `tests/adapter/bootstrap-coordinator.test.ts`, checklist và implementation notes
+  - Summary: Artifact migration không còn dùng `import.meta.url` bị Bun bake từ máy build. Sau extraction, coordinator truyền đúng `<archiveRoots.node>/drizzle`; source/no-asset mode giữ default hiện hữu.
+  - Decisions: Migration root theo manifest target authority, không hardcode archive key hay source path. Test dùng target `node-runtime`, xoá source migrations trước boot và chạy SQL đã ship qua SQLite thật.
+  - Blockers: Không có cho seam migration. Main rerun bootstrap coordinator 10/10, tạo proof table và đúng một row migration; agent xác nhận typecheck/lint/boundaries/diff-check xanh.
+
+2026-08-09 — Phase D, Task D.6 (đóng lại timeout và same-call repair)
+  - Files: `packages/adapter/src/tts/tts-vieneu.ts`, `packages/adapter/src/runtime/download-cache.ts`, `tests/{adapter/{tts-vieneu,vieneu-model-probe},cli/vieneu-runtime-wiring}.test.ts`, checklist và implementation notes
+  - Summary: `timedOut` từ model probe nay trở thành `download_unavailable`, được ghi vào partial marker và ném để provider registry cho phép retry. Cache từng ready nhưng stale/corrupt chuyển partial rồi chạy online repair ngay trong cùng request; explicit offline vẫn từ chối mạng và giữ failure code.
+  - Decisions: Không coi mọi lỗi sidecar là download failure — thiếu interpreter/worker vẫn là local unavailable và không phá marker ready. Chỉ timeout hoặc stderr có bằng chứng download được map sang cache failure. Warm thành công luôn ép cả hai cờ Hugging Face/Transformers.
+  - Blockers: Không có. Main chạy lại sáu file cache/browser/VieNeu integration trên child process, SQLite và filesystem temp thật: 74/74; official Phase D matrix 57/57.
+
+2026-08-09 — Phase D, Task D.8 (đóng lại payload proof browser/model)
+  - Files: `packages/adapter/src/{runtime/download-cache,hyperframes/{browser-verification,chrome-resolver,binary-probe},tts/tts-vieneu}.ts`, `packages/cli/src/commands/doctor-context.ts`, `tests/{adapter/{download-cache,render-binary-probe},cli/download-cache-runtime-wiring}.test.ts`, checklist và implementation notes
+  - Summary: Browser managed chỉ được nhận khi là regular non-symlink, canonical-contained dưới browser cache và tự trả Chrome/Chromium-shaped version; HyperFrames CLI không thể đưa system executable ngoài authority vào rồi xoá partial marker. Doctor model-cache chạy production warm-offline probe thay vì gọi directory markerless rỗng là healthy.
+  - Decisions: Explicit browser override vẫn là policy riêng; mọi candidate do coordinator quản lý phải nằm trong authority. Test positive dùng executable fixture thực sự in Chromium version, không dùng Node/Bun làm Chrome giả. Lock lease tiếp tục sống sau prompt timeout tới khi writer thật settle.
+  - Blockers: Không có. Main rerun focused D.6/D.8 74/74 và official Phase D matrix 57/57; agent chạy extended 109/109, typecheck, lint 0 error / 3 warning có sẵn, boundaries và diff-check xanh. Windows executable fixture còn phải qua CI ba OS của phase.
+
+2026-08-09 — Phase D, adversarial review D.3b (`backup restore`/`recovery` authority split)
+  - Files: `packages/cli/src/commands/{backup,recovery}.ts`, `tests/cli/runtime-paths-entrypoints.test.ts`, checklist và implementation notes
+  - Summary: Inventory cũ khẳng định mode backup không dựng composition root, nhưng nhánh restore thực tế dựng hạ tầng rồi gọi migration trực tiếp. Trong SEA nó bỏ qua extraction/bootstrap lock và nhận runtime unversioned, cho phép toolchain fallback checkout hoặc Python trên PATH. Root split còn chạm serve discovery, render-connect, approve/credential và recovery: compiler preload dùng settings A trong khi các resolver sau dùng default B.
+  - Decisions: Mở lại D.3b ngay. Restore phải dùng cùng `prepareRuntimeForCli`/`runtimePathsFor` authority trước composition/lease và không migrate lần hai. Authority settings được pin ở preload sớm nhất vào `VIDCOM_APP_DATA` khi env chưa explicit, để mọi command sau cùng đọc một root; explicit env C vẫn thắng settings A. `backup list`/`verify` giữ read-only, không khởi động runtime vô ích.
+  - Blockers: D.3b chưa được tick lại cho tới khi integration artifact-mode trên SQLite/filesystem temp chứng minh prepare/extract/migrate đúng một lần, không `require.resolve`/PATH fallback, settings root A nhất quán qua serve/render/backup/recovery/credential, explicit C vẫn thắng, và manifest thiếu archive bắt buộc không publish/migrate hay đổi prior current.
+
+2026-08-09 — Phase D, artifact follow-up (CLI render bridge auth)
+  - Files: `packages/{adapter/src/daemon/daemon-client,cli/src/commands/render,server/src/{app,routes/{bridge,delivery-loop,jobs}}}.ts`, `tests/{adapter/daemon-client,cli/{render-command,bridge-render-integration}}.test.ts`, checklist và implementation notes
+  - Summary: Artifact CLI không còn gửi bridge bearer vào browser-session `/api/v1`. Enqueue/read/cancel dùng namespace đóng `/api/bridge/v1`, qua system credential guard hiện hữu và tái dùng strict render/job/cancel semantics của browser route.
+  - Decisions: Không nới middleware bearer cho toàn bộ `/api/v1`; browser cookie vẫn là authority duy nhất ở surface đó. Server index giữ explicit public exports để helper transport nội bộ mới không mở rộng package boundary.
+  - Blockers: Auth blocker đã đóng, nhưng AC artifact vẫn mở. Integration loopback server + SQLite/filesystem temp thật chốt bridge bearer thành công, user/MCP credential và thiếu bearer bị từ chối, bridge bearer trên `/api/v1` vẫn 401; focused 61/61, typecheck/lint/boundaries/diff-check xanh.
+
+2026-08-09 — Phase D, artifact prototype (HyperFrames runtime adjacency)
+  - Files: temp prototype dưới `/tmp/vidcom-phase-d-artifact.*`, production staging contract đang được triển khai, checklist và implementation notes
+  - Summary: SEA prototype trên PATH riêng không tìm thấy node/python/python3 đã gọi CLI HyperFrames giải nén bằng absolute Chrome/FFmpeg/FFprobe và tạo H.264 MP4 320×180, 30 fps, 5 giây. Điều kiện thiếu trước đó là `hyperframe.manifest.json` cùng `hyperframe.runtime.iife.js` phải nằm cạnh `hyperframes/bin/hyperframes.mjs`.
+  - Decisions: Ship hai core runtime file trong archive HyperFrames theo đúng lookup của CLI, không thêm archive thứ ba hay env override nếu không cần. Giữ `ffprobe` độc lập sau render: fixture invalid cho thấy HyperFrames log `sub_timeline_readiness_timeout`, không tạo output nhưng vẫn exit 0.
+  - Blockers: Đây là direct sentinel prototype, không phải production `build:artifact`/`vidcom render`, chưa có narration và không được tick AC. Cần rebuild exact shared HEAD sau auth fix và hoàn tất two-stage production build/staging.
+
+2026-08-09 — Phase D, Task D.3b follow-up (doctor deep integrity + broken publication)
+  - Files: `packages/adapter/src/runtime/runtime-integrity.ts`, `packages/cli/src/commands/{doctor-context,doctor-checks}.ts`, `tests/cli/doctor-runtime-integrity.test.ts`, checklist và implementation notes
+  - Summary: `doctor --deep` nay xác minh từng entry của host archive bằng size/hash/mode, regular non-symlink, single hardlink, real containment và ready marker chính xác; payload bị sửa, thiếu, extra, symlink/special/hardlink đều làm runtime integrity broken. Marker không còn được dùng thay digest.
+  - Decisions: Deep verification là read-only authority tách khỏi repair/bootstrap. Lỗi đọc publication như `EACCES current.json` chỉ bị catch tại doctor seam: boot vẫn fail-closed, còn doctor giữ runtime paths null, ghi remedy và tiếp tục mọi check khác thay vì dừng ở lỗi đầu tiên.
+  - Blockers: Không có cho doctor seam. Main rerun `doctor-runtime-integrity`, `doctor-integration`, `doctor` bằng filesystem/SQLite thật: 31/31; agent xác nhận typecheck, lint 0 error / 3 warning có sẵn và boundaries xanh. D.3b vẫn mở riêng vì `backup restore`.
+
+2026-08-09 — Phase D, artifact prototype (actual `vidcom render` xanh)
+  - Files: exact shared-HEAD secondary bundle + temp-only two-stage bootstrap/runtime staging dưới `/tmp/vidcom-phase-d-artifact.*`, checklist và implementation notes
+  - Summary: Sau first-run `vidcom serve` tạo bridge credential, chính CLI `vidcom render artifact-proof --workspace …` chạy dưới `env -i` với private PATH không resolve node/python/python3 và kết thúc 0 sau 15,2 giây. Output 198845 byte có H.264 320×180 30 fps 5 giây cùng AAC 48 kHz stereo 5 giây; extracted ffprobe product validator exit 0/stderr rỗng.
+  - Decisions: Xác minh audio bằng cả stream metadata và `volumedetect` (mean −20,3 dB, max −6,4 dB), rồi decode input/output và đo normalized correlation 0,9913 sau AAC priming shift 21,375 ms. Input duy nhất là project-local `narration/intro.wav` 4,88 giây, metadata `generated`, voice `Minh Đức`, BGM tắt và HTML không có audio/video; vì vậy track ra là narration chứ không phải âm thanh tình cờ. Fresh app-data render trước serve trả recovery error có mã về credential; smoke phải chạy flow bootstrap được thiết kế trước enqueue.
+  - Blockers: AC vẫn mở vì bootstrap/archive staging của run này còn nằm trong prototype temp, chưa được tạo bởi production `bun run build:artifact`. Phải tái lập cùng proof không mechanical rewrite sau khi two-stage build pipeline land.
+
+2026-08-09 — Phase B/D follow-up (portable manifest + crash publication hardening)
+  - Files: `packages/adapter/src/runtime/{runtime-asset-source,runtime-asset-manager}.ts`, `scripts/build-runtime-archives.mjs`, `tests/adapter/{runtime-archive,runtime-asset-manager}.test.ts`, checklist và implementation notes
+  - Summary: Manifest/current pointer dùng chung portable bounded segment rules; từ chối traversal, NUL/control, colon, DOS device, trailing dot/space, Unicode alias theo platform và component vượt 255 UTF-8 byte. Builder dùng total byte ordering, giữ parser-version bounds và self-parse manifest trước write, nên artifact build không thể xanh rồi runtime mới từ chối.
+  - Decisions: Collision ownership normalize theo filesystem đích: case-fold Windows/macOS và NFC trên macOS; Linux giữ tên phân biệt nhưng builder vẫn có total deterministic order cho NFC/NFD. Corrupt current pointer read-only trả null, không để `ERR_INVALID_ARG_VALUE`/`ENAMETOOLONG` thoát.
+  - Blockers: Không có. Main rerun 4 file runtime layout/frozen VieNeu: 133 pass, 2 platform skip. B.8 nay có child process bị SIGKILL thật ở đủ năm boundary rồi restart trên cùng filesystem; agent xác nhận typecheck/lint/boundaries/diff-check xanh. D.3b vẫn mở riêng vì backup restore.
+
+2026-08-09 — Phase D, artifact build review (build-root encoding leak)
+  - Files: `scripts/{build-cli-bundle,build-sea-bootstrap,verify-artifact}.mjs`, build/provenance tests, checklist và implementation notes
+  - Summary: Source-path scanner/stripper chỉ nhận raw checkout root. Trên Windows Bun có thể bake `file:///C:/…` dùng slash xuôi; path có space thành `%20`, nên artifact vẫn mang build root trong khi test `not.toContain(process.cwd())` xanh giả.
+  - Decisions: Một helper chung liệt kê raw native path, slash-normalized path và canonical file-URL/percent-encoded forms; secondary bundle, bootstrap bundle và verifier cùng dùng. Không replace chuỗi rộng ngoài đúng root encodings vì có thể làm hỏng code bundle.
+  - Blockers: Production two-stage build chưa được chấp nhận cho tới khi synthetic Windows-root-with-space regression chứng minh mọi encoding bị strip/scan, trên mọi host chạy test.
+
+2026-08-09 — Phase D, artifact bootstrap review (verified-entry TOCTOU)
+  - Files: `packages/cli/src/sea-bootstrap.ts`, SEA bootstrap security tests, checklist và implementation notes
+  - Summary: Bootstrap hash `boot.cjs` rồi trả pathname; `createRequire` mở lại pathname sau đó. File hoặc parent có thể bị swap trong khoảng giữa, nên code được thực thi không phải byte vừa khớp manifest — cùng lớp race đã mở lại D.1.
+  - Decisions: Stage hai phải evaluate chính verified bytes hoặc bind filesystem identity/containment xuyên điểm load; một `realpath` trước require không đủ vì parent vẫn đổi được. Adjacent module resolution vẫn neo vào canonical boot path, nhưng entry source không được đọc lại từ pathname.
+  - Blockers: Two-stage bootstrap chưa được chấp nhận tới khi deterministic hook swap file/parent sau verify chứng minh external marker không chạy và trả `runtime_manifest_invalid` trên filesystem thật.
+
+2026-08-09 — Phase D, artifact input inventory (FFmpeg/FFprobe)
+  - Files: temp-only pinned media binaries dưới `/tmp/vidcom-ffmpeg-static.*` và `/tmp/vidcom-ffprobe-arm64.*`, checklist và implementation notes
+  - Summary: Copy `/opt/homebrew/bin/ffmpeg|ffprobe` chạy được nhưng `otool -L` còn hàng loạt dependency tuyệt đối `/opt/homebrew`, nên private PATH proof cũ vẫn dựa vào máy build. Cặp FFmpeg/FFprobe 6.0 arm64 từ release b6.0 chỉ link `/usr/lib` + Apple system frameworks; temp encode/probe H.264+AAC xanh.
+  - Decisions: Dùng hai file này như **explicit local smoke input** cho production-build rerun, pin SHA-256 (`ffmpeg a90e…6584`, `ffprobe bb2d…0b64`). Không hardcode path, không commit binary, không biến nguồn tải/license của prototype thành production acquisition policy trong Phase D.
+  - Blockers: Release/H/M vẫn phải provision nguồn hợp lệ trên cả ba OS và giữ provenance/license. Local D AC chỉ được tick sau `build:artifact` nhận explicit files, embed chúng, rồi artifact chạy với `/opt/homebrew` không được dùng làm runtime dependency.
+
+2026-08-09 — Phase D, artifact input inventory (clean frozen VieNeu)
+  - Files: temp-only `/tmp/vidcom-phase-d-artifact.*/production-inputs`, `TRANSFORMATION.md`, staged Python/VieNeu worker/package inventory, checklist và implementation notes
+  - Summary: Cây spike 492 MB được copy/materialize ngoài repo: dereference interpreter cần thiết, bỏ mọi symlink còn lại, pip/ensurepip/scripts/packages và kiểm loại hardlink/special. Kết quả có 12.170 regular files, 1.246 directory, `bin/python3` arm64 mode 0755, đúng 55 distribution pin từ introspection và current `worker.py` regular.
+  - Decisions: Builder chỉ nhận explicit input path và phải tự xác minh payload/inventory; không tin một config khai "55 package" nếu interpreter thực tế còn pip hoặc version lệch. Model weights được seed riêng vào temp app-data `models`, không bao giờ đưa vào runtime archive.
+  - Blockers: Production acquisition/rebuild script cho ba OS thuộc H/M; local D có input sạch để tái chạy exact builder. Offline probe trả ready/14 voice/revision pin và synth WAV PCM 48 kHz mono 3,52 giây trên private PATH; chưa tick AC cho tới production artifact render.
+
+2026-08-09 — Phase D, artifact input inventory (frozen Python native closure)
+  - Files: temp-only `/tmp/vidcom-phase-d-artifact.*/production-inputs/TRANSFORMATION.md`, 203 Mach-O payload files, checklist và implementation notes
+  - Summary: Inspect 203 Mach-O (189 `.so`, 12 dylib, 2 executable): 198 arm64-only + 5 universal, toàn bộ có arm64. 318 load edge chỉ gồm 313 system + 5 relocatable-contained; không external absolute/bare-relative. 12 dylib ctypes-load và 188 extension direct-import không có dyld failure.
+  - Decisions: Đây là evidence cho explicit local input, không thay builder verification/provenance và không suy portability sang OS khác. Audit chạy không sinh cache bền; tree được dọn lại 7.652 regular file/760 directory, không pycache/pyc/link/special.
+  - Blockers: Không có dylib blocker local cho Python. Production artifact vẫn phải stage/hash/probe chính tree này và final private-PATH render; H/M vẫn cần input/provenance tương đương cho Linux/Windows.
+
+2026-08-09 — Phase D, artifact bootstrap review (product validation + module containment)
+  - Files: `packages/cli/src/{sea-bootstrap,bootstrap-coordinator}.ts`, narrow product-manifest validator, SEA bootstrap tests, checklist và implementation notes
+  - Summary: Primary bootstrap gọi generic manager sau khi chỉ kiểm node/boot entry, nên candidate thiếu HyperFrames/drizzle vẫn publish current trước secondary coordinator từ chối. Loader secondary còn dùng normal Node module paths, cho phép missing dependency leo lên `<version>/node_modules`, native ancestors hoặc checkout/NODE_PATH ngoài verified archive.
+  - Decisions: Một product-manifest prevalidator compiler/runtime-safe được dùng **trước side effect** ở cả primary và full coordinator. Stage-two loader chỉ cho builtin hoặc canonical module path nằm trong verified node archive; constraint phải sống xuyên toàn secondary graph, không chỉ lọc `module.paths` của entry rồi để child module leo lại.
+  - Blockers: Cold fixture phải trở thành product-complete. Regression prior-good + node-only/missing-drizzle giữ nguyên current và có zero extraction/migration; dependency chỉ tồn tại ở ancestor/NODE_PATH phải fail có mã, không chạy marker ngoài archive.
+
+2026-08-09 — Phase D, artifact bootstrap review (complete product entry contract)
+  - Files: `packages/adapter/src/runtime/packaged-runtime-manifest.ts`, primary/coordinator fixtures, checklist và implementation notes
+  - Summary: Shared validator mới đã chặn archive thiếu hẳn, nhưng chỉ yêu cầu boot + một migration và HyperFrames fixed + một motion entry. Candidate vẫn có thể bỏ FFmpeg/FFprobe/esbuild, interpreter/worker, migration class hoặc 4/5 motion payload rồi publish current.
+  - Decisions: Pre-side-effect contract phải liệt kê exact platform-critical entry classes, migration set và catalogue/native closure được product cần; không đợi filesystem path resolver hoặc render mới phát hiện.
+  - Blockers: Negative matrix bỏ từng class từ manifest hợp lệ phải cho archive read/extract/current/migration zero và prior current byte-identical.
+
+2026-08-09 — Phase D, artifact bootstrap/verifier review (exact migration set)
+  - Files: shared packaged-runtime contract, `packages/adapter/src/runtime/packaged-runtime-manifest.ts`, `scripts/verify-artifact.mjs`, checklist và implementation notes
+  - Summary: Required-list check không cấm extra `drizzle/*/migration.sql`; migration reader enumerate mọi subdirectory, nên SQL 2099 được thêm nhất quán vào stage/tar/manifest có thể chạy trên DB người dùng.
+  - Decisions: Export một exact set 13 migration SQL dùng chung cho primary/coordinator/verifier; từ chối mọi extra Drizzle path, không ship snapshot runtime không đọc.
+  - Blockers: Consistent injected migration phải bị từ chối trước archive read/publication/database; prior current và SQLite migration count giữ nguyên.
+
+2026-08-09 — Phase D, artifact bootstrap review (authenticated transitive code)
+  - Files: `packages/cli/src/sea-bootstrap.ts`, manifest-backed module loader tests, checklist và implementation notes
+  - Summary: Warm manager tin ready marker; primary chỉ hash `boot.cjs`. Module hook containment vì vậy vẫn chạy transitive dependency bị sửa tại chỗ dưới node root dù manifest entry hash không còn khớp.
+  - Decisions: Mọi non-builtin code load từ secondary phải được authenticate bằng entry size/hash/mode trước evaluation (on-demand hoặc full verified code closure). Marker chỉ là publication state, không là digest.
+  - Blockers: Sau install hợp lệ, sửa declared transitive module nhưng giữ marker; boot phải coded-fail và external execution marker vắng. Prior/tampered bytes không được chạy.
+
+2026-08-09 — Phase D, artifact bootstrap review (validated cross-archive imports)
+  - Files: `packages/cli/src/{sea-bootstrap,node-sentinel}.ts`, two-archive real-fs integration, checklist và implementation notes
+  - Summary: Hook containment chỉ đăng ký node archive nên chặn dynamic import hợp lệ từ secondary graph sang verified sibling `hyperframes/bin/hyperframes.mjs`; packaged reporter/render re-entry vì vậy không thể chạy dù ancestor escape đã bị chặn.
+  - Decisions: Loader authority là một validated product generation với exact canonical archive roots (hoặc explicit sentinel cross-archive entry), không phải một root node duy nhất. Mọi target vẫn phải declared/authenticated; ancestor/NODE_PATH ngoài generation bị từ chối.
+  - Blockers: Integration extract node+HyperFrames thật, chạy sentinel/HyperFrames `--version` thành công và đồng thời chứng minh hostile ancestor module không load; final artifact browser/render smoke phải đi chính path này.
+
+2026-08-09 — Phase D, artifact stager review (symlink source containment)
+  - Files: `scripts/stage-artifact-runtime.mjs`, real-filesystem stager tests, checklist và implementation notes
+  - Summary: `fs.cp({dereference:true})` biến mọi symlink thành regular payload, kể cả link trong Python/native source trỏ ra file hoặc directory ngoài source root. Final regular-tree validation chỉ thấy byte đã copy nên không phát hiện escape và có thể ship secret/host file.
+  - Decisions: Walk bằng `lstat`; symlink chỉ được materialize nếu canonical target nằm trong canonical source root, không cycle và target type được hỗ trợ. Internal Python aliases được dereference hợp lệ; external link bị từ chối trước khi final stage/config thay đổi.
+  - Blockers: Production stager chưa được chấp nhận tới khi real-fs external file/dir symlink regressions chứng minh không outside byte được stage và prior output còn nguyên; không mock `node:fs`.
+
+2026-08-09 — Phase D, artifact stager review (hardlink + Bun owner graph)
+  - Files: `scripts/stage-artifact-runtime.mjs`, Bun-layout/native-closure real-fs tests, checklist và implementation notes
+  - Summary: Regular source hardlink `nlink=2` được copy thành file `nlink=1`, xoá bằng chứng alias tới inode ngoài tree. Resolver native closure lại neo mọi transitive package ở HyperFrames scope, nhưng Bun isolated đặt chúng dưới owner scope nên production stager không tìm thấy.
+  - Decisions: Từ chối source hardlink trước khi đọc/copy. Resolve transitive packages từ từng owner package đã pin, không fallback checkout/global search path.
+  - Blockers: Outside-hardlink secret fixture phải fail và giữ sentinel/prior outputs; real Bun-isolated graph phải resolve đủ native closure rồi chạy probe ngoài checkout fallback.
+
+2026-08-09 — Phase D, artifact stager review (runtime-only external closure)
+  - Files: `scripts/stage-artifact-runtime.mjs`, staged/archive purity + isolated cold-load tests, checklist và implementation notes
+  - Summary: Whole-package copy của onnxruntime-node/common mang TS, declarations, source maps, build scripts và `sourceMappingURL`; production verifier đúng ra phải làm build đỏ, không được nới scanner để ship source.
+  - Decisions: Runtime-only allowlist/pruner dựa trên actual resolved closure; giữ license/package/runtime JS/native binary, bỏ TS/declaration/map/build payload và strip map comments. Sau prune, cold-load mọi external từ isolated staged root.
+  - Blockers: Stage/archive phải có zero `*.ts|*.tsx|*.d.ts|*.map` và zero `sourceMappingURL`, đồng thời external module probes vẫn xanh không fallback checkout.
+
+2026-08-09 — Phase D, artifact stager review (Windows esbuild layout)
+  - Files: `scripts/stage-artifact-runtime.mjs`, shared esbuild-path authority, Windows real-package tests, checklist và implementation notes
+  - Summary: Stager tìm `@esbuild/win32-x64/bin/esbuild.exe` trong khi package thật và compiler preload dùng root `esbuild.exe`; runtime pruner lại bỏ mọi `.exe`. Windows build vì vậy thiếu binary dù fixture tự chế `bin/esbuild.exe` xanh.
+  - Decisions: Dùng một platform resolver: Windows package-root `esbuild.exe`, POSIX `bin/esbuild`; chỉ approved Windows binary được giữ/copy, không nới toàn bộ `.exe`.
+  - Blockers: Real Windows package fixture/CI phải chốt standalone `node/bin/esbuild.exe`, cả hai node_modules copies và emitted compiler probe; synthetic wrong-layout fixture bị loại.
+
+2026-08-09 — Phase D, artifact stager review (sanitized portability probes)
+  - Files: `scripts/stage-artifact-runtime.mjs`, staged native/Python/media hostile-env tests, checklist và implementation notes
+  - Summary: Runtime probes kế thừa full parent env, nên loader paths, Python/Node search vars hoặc host PATH có thể cứu missing external dependency và cho build xanh giả; Darwin cũng mới inspect media, không toàn Python/native closure.
+  - Decisions: Probe bằng absolute staged commands trong private sanitized env với synthetic HOME/TMP và minimal OS vars; strip `DYLD_*`/`LD_*`, Python/Node module search cùng ambient secrets. Cold-load sharp/onnx/esbuild từ từng archive.
+  - Blockers: External dylib/module chỉ có qua hostile env phải không cứu được stage; failure trước publication. Clean local input và CI từng OS phải probe xanh trong cùng env policy.
+
+2026-08-09 — Phase D, artifact verifier review (đúng target, host và Node pin)
+  - Files: `scripts/{build-root-provenance,build-artifact,build-sea,verify-artifact}.mjs`, build/provenance tests, checklist và implementation notes
+  - Summary: Verifier cũ chưa quét primary SEA main hoặc final executable; build-root helper còn bỏ sót canonical URL encoding của `#`/`?`/`%` và JS-escaped Windows path. Host tag chỉ nhìn platform nên có thể gắn Darwin x64 vào Darwin arm64, còn build-sea copy Node hiện tại mà không so pin manifest.
+  - Decisions: Scan primary, secondary, embedded asset inputs và final artifact; một helper canonical dùng URL/JSON semantics cho mọi build-root encoding. Resolve host bằng đúng cặp platform/arch và so normalized `manifest.versions.node` với `process.version` trước mọi output mutation.
+  - Blockers: Pipeline chưa được chấp nhận tới khi synthetic Windows path regressions, primary/final-only forbidden marker, unsupported architecture và Node-version mismatch đều fail closed mà không để output dở.
+
+2026-08-09 — Phase D, artifact provenance review (representation-safe rewrite)
+  - Files: `scripts/build-root-provenance.mjs`, primary/secondary executable bundle tests, checklist và implementation notes
+  - Summary: Rewriter dùng một replacement `/vidcom` cho cả filesystem path và full file URL. `fileURLToPath("file:///Users/builder/vidcom/…")` vì vậy thành `fileURLToPath("/vidcom/…")` và ném `ERR_INVALID_URL` dù source-root absence test xanh.
+  - Decisions: Mapping theo representation: canonical file URL thành URL hợp lệ (`file:///vidcom`), native/slash path thành `/vidcom`; không replace đồng nhất chỉ để sạch scanner.
+  - Blockers: POSIX/Windows URL expressions phải parse/run sau rewrite và primary/secondary actual boot phải xanh; string-absence một mình không đủ đóng build purity.
+
+2026-08-09 — Phase D, artifact stager review (destination và single-file authority)
+  - Files: `scripts/stage-artifact-runtime.mjs`, real-filesystem stager tests, checklist và implementation notes
+  - Summary: Ngoài tree copy, các single-file source đang `realpath` rồi mất bằng chứng symlink ngoài; output/config parent chain chỉ check lexical nên symlink parent có thể chuyển atomic write/rename/rm ra ngoài build root. Config/pins cũng chưa được chứng minh disjoint với mọi input.
+  - Decisions: Lstat original single-file và canonical-contain dưới source authority; output parent phải là directory thật, không link/special và canonical-contained. Mọi input/output/config/pin path pair phải disjoint trước khi đọc hay commit.
+  - Blockers: Cần real-fs regression external file/dir/single-file symlink, symlinked destination parent và config alias input; failure phải giữ nguyên external sentinel cùng prior stage/config.
+
+2026-08-09 — Phase D, artifact stager review (exact CPython build pin)
+  - Files: `scripts/stage-artifact-runtime.mjs`, runtime staging schema/tests, checklist và implementation notes
+  - Summary: Probe `python --version` chỉ trả 3.12.13 rồi stager ghi cùng chuỗi, trong khi Design pin standalone build `3.12.13+20260805`. Hai payload khác build revision có thể cùng language version và hiện không phân biệt được.
+  - Decisions: Explicit input phải kèm release identity hoặc digest kiểm được; stager xác minh trước commit và giữ exact build pin trong manifest, không rút gọn contract để vừa probe.
+  - Blockers: Production stage chưa được chấp nhận tới khi wrong-build/same-language-version fixture fail trước mutation và prior stage/config còn nguyên.
+
+2026-08-09 — Phase D, artifact stager review (media và VieNeu worker byte authority)
+  - Files: `scripts/stage-artifact-runtime.mjs`, explicit runtime-input schema/tests, checklist và implementation notes
+  - Summary: FFmpeg/FFprobe paths chỉ được hỏi self-reported version nên executable khác byte vẫn ship được; explicit VieNeu root có thể đưa worker cũ/tùy ý dù Python packages đúng pin.
+  - Decisions: Media input mang approved version + SHA-256 và được hash trước/sau copy/probe. Worker lấy từ repository-owned asset hoặc exact digest, không suy authority từ package `vieneu==3.2.4`.
+  - Blockers: Wrong-byte/same-version media và one-byte worker drift phải fail trước mutation, giữ nguyên prior stage/config; exact shipped bytes phải khớp pins.
+
+2026-08-09 — Phase D, artifact stager review (full frozen-Python tree digest)
+  - Files: explicit runtime-input schema, `scripts/stage-artifact-runtime.mjs`, deterministic tree-digest tests, checklist và implementation notes
+  - Summary: Chỉ interpreter SHA và package name/version không authenticate hàng nghìn Python/native files được ship; sửa một module VieNeu/torch/onnx nhưng giữ interpreter/metadata vẫn tạo archive+manifest mới “hợp lệ”.
+  - Decisions: Bind acquisition/prepared input bằng deterministic full-tree digest (canonical relative path, mode, size, file hash); verify source trước copy và staged/pruned tree theo exact approved contract. Metadata là inventory, không là checksum.
+  - Blockers: Non-interpreter module one-byte mutation với cùng versions phải fail trước publication; clean local tree cần pin mới được dùng cho production build. Native Bun package lock integrity được giữ làm gate L.1 theo thứ tự phase.
+
+2026-08-09 — Phase D, artifact stager review (Darwin dylib closure)
+  - Files: `scripts/stage-artifact-runtime.mjs`, Darwin media inspection tests, checklist và implementation notes
+  - Summary: Inspector cho phép `@rpath`/`@loader_path`/`@executable_path` nhưng stager chỉ copy hai executable, không mang dylib closure và không đọc `LC_RPATH`. Binary có Homebrew rpath vì vậy build xanh rồi hỏng/thoát authority trên máy sạch.
+  - Decisions: Với policy single-file hiện tại chỉ cho dependency tuyệt đối dưới `/usr/lib` và `/System/Library`; relative install-name bị từ chối. Chỉ được nới khi companion dylib được stage/hash/inspect đệ quy như first-class payload.
+  - Blockers: Synthetic hoặc real `@rpath` + Homebrew `LC_RPATH` phải fail trước output mutation; cặp media local cuối phải pass và không có runtime linkage ngoài system roots.
+
+2026-08-09 — Phase D, artifact stager review (single-generation publication)
+  - Files: `scripts/{stage-artifact-runtime,build-runtime-archives}.mjs`, real-filesystem crash/failure tests, checklist và implementation notes
+  - Summary: Stager publish output tree trước, rồi pins, rồi config. Lỗi/kill sau commit có thể để new tree + new pins + old config; archive builder sau đó vẫn đọc old paths ổn định và phát hành new bytes dưới old provenance.
+  - Decisions: Tree, pins và config phải cùng một generation publication. Ưu tiên đặt cả ba trong một generation directory rồi atomically publish một boundary; nếu tách phải có generation ID/digest cùng recovery khiến consumer từ chối mix.
+  - Blockers: Real-fs failure/SIGKILL sau mỗi postcommit boundary phải cho prior/new generation hoàn chỉnh hoặc fail-closed; test tiếp theo chứng minh builder không thể consume mixed generation.
+
+2026-08-09 — Phase D, artifact stager review (authenticated recovery + concurrent commit)
+  - Files: `scripts/stage-artifact-runtime.mjs`, generation journal/recovery/concurrency tests, checklist và implementation notes
+  - Summary: Recovery từng thấy journal + destination/backup rồi xoá backup chỉ vì destination là directory thật; empty/attacker destination sau SIGKILL làm mất prior generation. Hai commit cùng process lại cùng PID nên commit sau có thể nhầm journal sống là recoverable.
+  - Decisions: Journal bind process-start + transaction nonce/generation digest; recovery validate exact marker/config/pins/tree trước chọn new, ngược lại restore prior/fail closed. Serialize in-process commit bằng mutex/active registry.
+  - Blockers: Crash fixture với empty substituted destination phải giữ/restore prior; deterministic two-commit barrier không được để transaction sau xóa/restore transaction đang sống.
+
+2026-08-09 — Phase D, frontend pack review (atomic pair + semantic verification)
+  - Files: `scripts/build-frontend-pack.mjs`, `scripts/verify-artifact.mjs`, real-fs pack/publication tests, checklist và implementation notes
+  - Summary: Pack và manifest từng ghi độc lập; raw fs error ở manifest bị top-level catch nuốt exit code, để new pack + old manifest mà build-artifact tiếp tục. Verifier chỉ scan file, không validate index offsets/hashes với pack.
+  - Decisions: Publish pack+manifest như một generation atomic/recoverable; mọi rejection exit nonzero. Verifier đọc lại entry set, offset/length và hash trên actual pack trước SEA claim.
+  - Blockers: Prior pair + second-write EACCES/SIGKILL phải giữ prior hoặc complete new; mixed pair/malformed offsets/hash drift bị verifier từ chối trên filesystem thật.
+
+2026-08-09 — Phase D, frontend pack closure (atomic pair + source-tree fail-closed)
+  - Files: `scripts/build-frontend-pack.mjs`, `tests/build/frontend-pack.test.ts`, checklist và implementation notes
+  - Summary: Journal hash-bind pair cũ/mới, rollback/recovery sau EACCES/abrupt process exit; paths disjoint, canonical-contained, parent không symlink. Export traversal lstat và reject symlink/FIFO/special thay vì silently skip.
+  - Decisions: Pair-specific publisher giữ riêng vì publication là hai file, nhưng cùng invariant generation/journal/foreign-path của directory publishers. Chỉ ENOENT được gọi “not built”; integrity error không bị đổi nghĩa.
+  - Blockers: Không có cho producer. Focused frontend+provenance 40/40, typecheck/lint/boundaries/diff-check xanh. Full combined verifier/publisher gate và artifact smoke vẫn mở ở parent.
+
+2026-08-09 — Phase D, artifact pipeline review (exit code, secret vocabulary, end-to-end generation)
+  - Files: `scripts/{build-cli-bundle,build-sea-bootstrap,build-runtime-archives,build-sea,verify-artifact}.mjs`, artifact provenance/transaction tests, checklist và implementation notes
+  - Summary: Top-level rejection có thể bị `.catch(() => {})` nuốt rồi exit 0; scanner thiếu GitHub/Anthropic/Hugging Face token shapes; artifact manifest/JSON thiếu tool versions và archive hashes. Archives, SEA executable và provenance outputs còn overwrite tuần tự nên late failure trộn generation.
+  - Decisions: Mọi rejected promise làm process nonzero; secret vocabulary bao phủ credential classes build có thể mang; manifest phát hành chứa exact versions/hashes. Publication atomic/recoverable xuyên archive set → SEA → manifest/SHA, consumer từ chối mix.
+  - Blockers: Raw fs/JSON rejection process test, token fixtures, L.2 manifest assertions và failure/SIGKILL matrix ở từng output boundary phải xanh; stale outputs không được giúp build tiếp tục.
+
+2026-08-09 — Phase D, artifact CLI review (missing flag value fail-before-side-effect)
+  - Files: `scripts/build-artifact.mjs`, CLI orchestration tests, checklist và implementation notes
+  - Summary: `build-artifact --runtime-inputs` thiếu value bị coi như không truyền flag, nên static export/frontend/secondary bundle đã chạy trước khi default input thiếu làm command đỏ. Nếu default file có sẵn, lệnh typo còn có thể build nhầm artifact.
+  - Decisions: Validate mọi flag/value và target host trước khi lập/chạy step graph; chỉ absence thật của flag mới dùng default. Invalid invocation không được spawn hoặc tạo output.
+  - Blockers: Regressions cho `--runtime-inputs`/`--target` thiếu value và value nhìn như flag phải exit nonzero với zero step/output side effect.
+
+2026-08-09 — Phase D, artifact verifier review (archive semantics + machine JSON)
+  - Files: `scripts/{build-artifact,verify-artifact}.mjs`, production extractor/real-fs verifier tests, checklist và implementation notes
+  - Summary: Verifier từng chỉ hash tar ngoài và so stage riêng, nên literal non-tar cũng pass. `build-artifact --json` lại inherit stdout của mọi child rồi in object tối giản, không phải một machine-readable artifact manifest.
+  - Decisions: Extract/read chính produced tar qua production contract trên temp filesystem và so exact entries/path/bytes/modes. JSON mode capture/redirect child stdout, chỉ in một artifact manifest đủ tool versions, archive hashes và final executable digest; progress ở stderr.
+  - Blockers: Malformed/non-tar, traversal/link/special, entry drift/mode drift phải fail; spawned JSON test parse toàn stdout thành đúng một document có exact L.2 fields bound với embedded runtime manifest/SHA256SUMS.
+
+2026-08-09 — Phase D, artifact verifier review (independent product allowlist)
+  - Files: `scripts/verify-artifact.mjs`, archive-specific policy + consistent-mutation tests, checklist và implementation notes
+  - Summary: Equality stage↔tar↔manifest vẫn pass nếu cả ba cùng chứa source/host file ngoài product. Verifier chưa có independent allowed path/extension contract, nên benign `.ts`, `.d.ts`, `.map` hoặc source/build/test tree không có magic marker có thể ship.
+  - Decisions: Enforce policy theo archive/prefix: frozen Python được `.py` trong bounded root; node_modules/HyperFrames từ chối TS/TSX/declaration/map và source/build/test payload, đồng thời yêu cầu exact product entry classes. Không tin stager là policy duy nhất.
+  - Blockers: Regression thêm cùng forbidden entry vào stage+tar+manifest với valid hashes vẫn phải fail; required runtime cold-load/render không bị allowlist cắt nhầm.
+
+2026-08-09 — Phase D, artifact verifier review (product completeness, không chỉ no-extra)
+  - Files: `scripts/verify-artifact.mjs`, shared packaged-runtime validator, delete-each-class tests, checklist và implementation notes
+  - Summary: Generic manifest parse + allowlist/equality từ chối extra nhưng không bắt required entry bị xoá nhất quán khỏi stage/tar/manifest; artifact có thể publish rồi primary mới fail trên máy người dùng.
+  - Decisions: Verifier/builder gọi canonical product completeness contract cho đúng host trước SEA/final publication, cùng authority với primary/coordinator.
+  - Blockers: Xoá lần lượt migration, media, Python/worker, HF CLI/runtime, native closure hoặc motion catalogue phải fail build với no final artifact; valid exact set vẫn xanh.
+
+2026-08-09 — Phase D discovery for L.1 (frontend pack source-path allowlist)
+  - Files: `scripts/verify-artifact.mjs`, real frontend pack purity tests, checklist và implementation notes
+  - Summary: Frontend semantic verifier chấp nhận manifest entry `.map` nếu offsets/hash đúng; JSON map không có `sourceMappingURL` cũng qua forbidden-byte scan. Runtime allowlist không áp dụng cho frontend pack.
+  - Decisions: Frontend manifest path policy độc lập từ chối `.map`, `.ts/.tsx/.d.ts` và source dirs phù hợp; comment regex chỉ là lớp thứ hai, không thay path policy.
+  - Blockers: Real pack có `_next/static/app.js.map` ordinary JSON phải fail trước SEA; production export/pack vẫn xanh không sourcemap/source rời. Full claim thuộc L.1 theo thứ tự phase.
+
+2026-08-09 — Phase D, artifact publisher review (foreign backup ownership)
+  - Files: `scripts/{build-runtime-archives,artifact-publish}.mjs`, journal/recovery/SIGKILL tests, checklist và implementation notes
+  - Summary: Recovery từng xoá mọi real directory ở reserved `.previous`/`.previous-<tag>` dù không có journal/identity, nên chỉ chạy build đã có thể xoá foreign/stale sentinel bytes.
+  - Decisions: Orphan backup fail closed và được giữ nguyên. Trước rename, journal single-link bind transaction id cùng previous/next digest; recovery/concurrency chỉ thao tác generation khớp journal.
+  - Blockers: Foreign backup fixtures phải được preserve+reject; SIGKILL ở từng rename/marker boundary và concurrent publisher phải phục hồi complete prior/new, không xoá unrelated directory.
+
+2026-08-09 — Phase D, SEA builder review (immutable input snapshot)
+  - Files: `scripts/build-sea.mjs`, SEA config/blob/final-asset verification tests, checklist và implementation notes
+  - Summary: Builder hash shared primary/frontend/runtime files rồi blob process đọc lại mutable paths; concurrent swap có thể embed bytes B, restore A trước verifier và tạo executable khác provenance. Verifier chỉ đọc external files, không raw assets đã embed.
+  - Decisions: Snapshot một private immutable generation của mọi SEA input, validate/hash snapshot và build blob chỉ từ snapshot dưới publication authority; sau blob/injection recheck hoặc inspect embedded raw assets.
+  - Blockers: Deterministic swap-at-blob barrier phải fail hoặc final SEA raw assets khớp declared digests; không external A/final B split.
+
+2026-08-09 — Phase D, artifact publisher review (concurrent same-tag writers)
+  - Files: `scripts/{artifact-publish,directory-generation-publish}.mjs`, two-process concurrency/SIGKILL tests, checklist và implementation notes
+  - Summary: Fixed `.build-<tag>` bị prepare thứ hai xoá dù writer đầu còn sống; shared journal thiếu owner PID/process-start/active guard nên recovery có thể rollback và xoá journal sống trước first rename.
+  - Decisions: Mỗi build dùng unique generation; publication theo target có lock/owner identity+liveness và in-process guard. Observer không recover transaction owner còn sống.
+  - Blockers: Two real processes barrier phải serialize/reject writer hai mà không chạm generation một; SIGKILL owner rồi recovery mới được chọn complete prior/new, không active deletion. Repro hai commit cùng dừng ở `afterJournal` đã làm commit sau mất `.build`, published directory biến mất và chỉ còn foreign `.previous`; regression cuối phải chứng minh luôn còn đúng một complete published generation.
+
+2026-08-09 — Phase D, artifact CLI review (`--json` production path shape)
+  - Files: `scripts/build-artifact.mjs`, main/nested-layout JSON integration, checklist và implementation notes
+  - Summary: Main truyền artifact directory nhưng formatter dùng `dirname` như thể input là binary path, nên đọc manifest ở `dist/artifact/artifact-manifest.json` thay vì `<tag>/artifact-manifest.json`; helper test dùng shape khác và xanh giả.
+  - Decisions: API path type phải unambiguous: nhận published directory và join trực tiếp, hoặc main truyền exact artifact path. Integration gọi production main/nested tag layout, không chỉ helper.
+  - Blockers: `build:artifact --json` phải kết thúc 0 và stdout parse thành đúng một full manifest document sau real publication; missing manifest fail trước claim success.
+
+2026-08-09 — Phase D discovery, deferred strict-order gate for Phase L (lock/tool provenance)
+  - Files: `bun.lock`, artifact manifest/verifier/toolchain audit ở Phase L, checklist và implementation notes
+  - Summary: Current pipeline chưa đối chiếu Bun 1.3.14, exact `tar@7.5.22`, postject bytes/version và native package versions với lockfile/provenance. Đây là gap thật của L.1/L.2, không phải điều kiện trực tiếp để chứng minh D artifact executable trên PATH sạch.
+  - Decisions: Giữ thứ tự A→M: không tick/claim Phase L từ proof D. Artifact manifest D không được phát biểu full provenance; khi tới L phải mở audit exact lock/tool drift và bổ sung gate trước CI L.
+  - Blockers: Phase L sẽ chưa done cho tới khi lockfile/tool mismatch fail, manifest chứa exact versions/hashes và tamper tests xanh trên artifact thật. D vẫn phải đóng executable/render AC độc lập trước.
+
+2026-08-09 — Phase D discovery, deferred strict-order gates for L/M (semantic provenance + cross-OS closure)
+  - Files: `scripts/verify-artifact.mjs`, `bun.lock`, SEA/bundler acquisition, packaged-smoke workflows, checklist và implementation notes
+  - Summary: Frontend verifier chưa rederive MIME/cache policy; Bun/tar/postject/native integrity chưa bind đầy đủ và build spawns inherit ambient env. Darwin có otool proof local, còn ELF/PE closure cần clean native runners.
+  - Decisions: Không chặn D local executability nếu exact mac artifact render xanh và không leak được scan. Khi tới L, rederive MIME/cache bằng runtime authority, pin/verify Bun 1.3.14, tar 7.5.22, postject/native integrities và đánh giá sanitized build env. M/three-OS packaged smoke chốt Linux/Windows dependency closure.
+  - Blockers: L.1/L.2 không được coi done trước semantic tamper + lock/tool mismatch gates; M không done trước artifact smoke clean trên cả ba OS. Không dùng local D proof thay các gate đó.
+
+2026-08-09 — Phase D truth-maintenance for Phase L ordering (reopen L.6)
+  - Files: checklist và implementation notes
+  - Summary: Audit Phase D đã mở lại L.1/L.2 vì còn provenance/tool-lock gates thật. L.6 từng xanh từ lần chạy sớm, nhưng luật checklist yêu cầu L.6 làm sau cùng nên giữ `[x]` lúc L.1/L.2 lại mở sẽ phát biểu sai thứ tự thực thi.
+  - Decisions: Đổi L.6 và Acceptance Criteria `test:spec-paths` về `[ ]`; giữ số 80 → 115 như bằng chứng lịch sử, rồi chỉ tick lại sau L.1–L.5 và focused/gates Phase L xanh.
+  - Blockers: Không chặn Phase D executability; đây là invariant tài liệu cho Phase L. Không nới hoặc xoá registration hiện có.
+
+2026-08-09 — Phase D, artifact publisher review (journal phải bind toàn payload)
+  - Files: `scripts/directory-generation-publish.mjs`, artifact/runtime publisher tests, checklist và implementation notes
+  - Summary: Shared publisher chỉ hash authority manifest. Nếu executable hoặc archive đổi byte sau khi journal được ghi nhưng manifest chưa đổi, commit/recovery vẫn nhận generation mới và xoá prior-good dù manifest không còn mô tả payload thật.
+  - Decisions: Journal/commit/recovery phải bind digest của toàn generation hoặc chạy authority-aware validation manifest→mọi payload ngay trước và sau rename. Lock owner/liveness không thay thế payload authentication; cần cả hai invariant.
+  - Blockers: Deterministic mutation ở `afterJournal` và từng rename boundary phải fail/rollback hoặc commit đúng declared bytes; artifact executable và runtime tar ngoài authority file đều nằm trong digest. Recovery không được xoá prior backup khi candidate payload drift.
+
+2026-08-09 — Phase D, Task D.3b test-fixture drift after exact product prevalidation
+  - Files: `tests/cli/mcp-commands.test.ts`, `tests/support/runtime-fixture.ts`, checklist và implementation notes
+  - Summary: MCP artifact integration còn dựng node/HyperFrames archive tối giản. Bootstrap nay đúng khi prevalidate exact media/Python/worker/native/migration/motion contract trước side effect, nên fixture cũ có thể fail `runtime_manifest_invalid` trước assertion prepare/migrate once-only.
+  - Decisions: Nâng fixture bằng canonical `productRuntimeFixtureEntries`; không nới validator và không tạo một product-contract copy thứ hai trong test. Giữ SQLite/filesystem thật và đếm migration/bootstrap như mục đích ban đầu.
+  - Blockers: Focused `mcp-commands` phải xanh với exact product fixture; missing-class vẫn phải fail trước publication/migration trong canonical validator suite.
+
+2026-08-09 — Phase D, Task D.3b exact product fixture closure
+  - Files: `tests/cli/mcp-commands.test.ts`, canonical runtime fixture helper, checklist và implementation notes
+  - Summary: MCP artifact integration dùng canonical node/HyperFrames/native product entries cùng shipped migrations thật; không còn archive tối giản bypass hoặc chết trước assertion mục tiêu.
+  - Decisions: Giữ one-source product contract từ helper chung. Test vẫn đo bootstrap/migration đúng một lần trên temp filesystem + SQLite thật và prior-current fail-closed.
+  - Blockers: Không có cho fixture. Focused 26/26, typecheck, scoped lint, boundaries và diff-check xanh. D.3b tổng thể vẫn chờ combined artifact publisher/SEA gates.
+
+2026-08-09 — Phase D, artifact publisher review (torn journal + partial backup cleanup)
+  - Files: `scripts/directory-generation-publish.mjs`, real child crash/recovery tests, checklist và implementation notes
+  - Summary: Ghi trực tiếp final transaction JSON có thể để journal rỗng/cụt khi kill/ENOSPC và làm mọi lần recovery sau chết ở JSON parse. Nhánh committed-new lại xoá backup đệ quy trước journal; kill giữa xoá để partial backup khiến recovery không validate được prior dù new published còn tốt.
+  - Decisions: Journal phải publish atomic từ temp file đã flush dưới owner lock. Backup cũ phải được rename atomically khỏi authoritative backup path trước khi clear journal; cleanup retired generation chỉ best-effort sau commit, không nằm trên đường recovery bắt buộc.
+  - Blockers: Real child kill/torn-write fixtures phải chứng minh restart không kẹt vĩnh viễn; kill ở từng cleanup boundary vẫn cho complete new hoặc prior, không partial backup dưới tên authority.
+
+2026-08-09 — Phase D, SEA immutable-input snapshot closure
+  - Files: `scripts/build-sea.mjs`, `scripts/verify-artifact.mjs`, `tests/build/{sea,artifact-provenance}.test.ts`, checklist và implementation notes
+  - Summary: Builder mở và bind sáu input chính xác, copy qua file descriptors sang private `.sea-inputs`, ghi byte/SHA manifest, revalidate identity trước seal và trước/sau blob+inject. SEA config chỉ trỏ snapshot; verifier đọc cùng snapshot rồi xoá trước publication.
+  - Decisions: Original source có thể đổi sau seal mà không đổi byte được embed; đổi trong lúc copy hoặc tamper snapshot phải fail. Symlink, hardlink và noncanonical input bị từ chối thay vì snapshot theo.
+  - Blockers: Không có cho SEA input TOCTOU. Focused SEA+provenance 38/38, typecheck, scoped lint và boundaries xanh. Còn chờ explicit unique generation API từ publisher để chạy combined/full production build.
+
+2026-08-09 — Phase D, Task D.3b + artifact generation publisher closure
+  - Files: `scripts/{directory-generation-publish,artifact-publish,build-runtime-archives,build-artifact,build-sea,verify-artifact}.mjs`, publisher/build/SEA tests, entrypoint/MCP fixtures, checklist và implementation notes
+  - Summary: Mỗi artifact build có generation ID riêng xuyên orchestrator→SEA→verifier. Publisher dùng lock PID/start/token, từ chối owner sống, recovery owner chết, digest toàn path/mode/size/byte, journal atomic và backup retire bằng rename trước cleanup. Settings/backup/recovery/coordinator/SEA cùng exact runtime authority.
+  - Decisions: PID đang sống luôn fail-closed kể cả khả năng reuse; cùng process có active guard. Candidate tamper được giữ ở generation path và prior-good phục hồi. Journal/tar/executable không dựa riêng manifest digest. Không nới boundary/lint/tools snapshot.
+  - Blockers: Không có cho D.3b/publisher. Artifact combined 10 file, 127/127; typecheck; lint 0 error/3 warning có sẵn; boundaries và diff-check xanh. Phase D còn production artifact render AC.
+
+2026-08-09 — Phase D production build discovery + fix (Python pin ordering)
+  - Files: `scripts/stage-artifact-runtime.mjs`, `tests/build/stage-artifact-runtime.test.ts`, checklist và implementation notes
+  - Summary: Production `build:artifact` dừng ở staging: metadata probe sort package **name** trước khi nối `==version`, nhưng validator/evidence sort full pin. Cặp prefix `pydantic`/`pydantic-core` vì dấu `=` và `-` tạo thứ tự khác, nên exact 55-package tree luôn bị báo không sorted dù unique.
+  - Decisions: Probe sort chính full `name==version` mà contract kiểm; không reorder input để che producer drift và không nới unique/sorted gate. Thêm regression prefix-name.
+  - Blockers: Build phải chạy lại từ đầu với cùng input SHA/tree. Staging chỉ được qua nếu runtime introspection khớp exact evidence sau fix.
+
+2026-08-09 — Phase D production build discovery + fix (portable archive modes)
+  - Files: `scripts/stage-artifact-runtime.mjs`, native-closure/stager tests, checklist và implementation notes
+  - Summary: Production build đi qua SEA injection rồi verifier bắt source esbuild/semver `0777` trong staged Bun store nhưng tar portable ghi `0755`; bytes/hash khớp, manifest mode từ raw stage không khớp mode thực được extract.
+  - Decisions: Native runtime closure canonicalize file có execute bit thành `0755`, file còn lại `0644` ngay tại stager. Không bỏ mode khỏi manifest/verifier và không special-case một package; tar chỉ nhận modes portable đã chốt.
+  - Blockers: Rerun real native closure phải chứng minh không file nào group/world-writable; production build lại từ đầu phải qua exact tar extraction/mode verifier.
+
+2026-08-09 — Phase D production build discovery + fix (canonical entry ordering)
+  - Files: `scripts/verify-artifact.mjs`, `tests/build/artifact-provenance.test.ts`, checklist và implementation notes
+  - Summary: Production verifier báo stage lệch manifest dù node archive có cùng đúng 7.836 path. Manifest được sort theo full UTF-8 path, còn stage/tar giữ DFS; cặp prefix directory như `annotated_doc/` và sibling `annotated_doc-0.0.5.dist-info/` làm thứ tự khác nhưng set/bytes không khác.
+  - Decisions: `assertFilesMatchEntries` canonicalize cả actual files và expected entries bằng cùng full-path UTF-8 comparator trước so path/hash/mode. Không bỏ exact-set/hash/mode checks và không sửa manifest để khớp traversal tình cờ.
+  - Blockers: Không có cho verifier ordering. Regression prefix-directory xanh trong artifact provenance 26/26; production artifact phải chạy lại từ đầu để chứng minh tar/stage/full verifier xanh.
+
+2026-08-09 — Phase D production build discovery + fix (secondary sourcemap marker bytes)
+  - Files: `scripts/build-cli-bundle.mjs`, `tests/build/cli-bundle.test.ts`, checklist và implementation notes
+  - Summary: Production SEA đã inject thành công nhưng L.1 bắt hai literal `/*# sourceMappingURL=` nằm trong code PostCSS dùng để nhận/tạo annotation, gồm một bản trong HyperFrames runtime string. Không có `.map` output, nhưng shipped bytes vẫn vi phạm forbidden marker gate.
+  - Decisions: Sau bundle, đổi `sourceMappingURL=` thành JavaScript escape tương đương `sourceMappingURL\x3d`; string và RegExp runtime vẫn tạo/match dấu `=` như cũ. Không nới scanner, không allowlist dependency và vẫn dùng `--sourcemap=none`.
+  - Blockers: Không có cho secondary marker. Real emitted CJS test chứng minh byte marker không còn, string/RegExp semantics giữ nguyên và CLI bundle 15/15 xanh; production artifact phải rebuild/reverify.
+
+2026-08-09 — Phase D production build discovery + fix (frozen Python console scripts)
+  - Files: `scripts/stage-artifact-runtime.mjs`, `tests/build/stage-artifact-runtime.test.ts`, production input evidence, checklist và implementation notes
+  - Summary: L.1 bắt `python/bin/cffi-gen-src` có shebang tuyệt đối trỏ checkout spike. Frozen tree còn nhiều package/stdlib console scripts dù runtime VieNeu chỉ gọi exact `python/bin/python3 worker.py`; giữ scripts vừa leak build root vừa mở CLI/build surface không cần thiết.
+  - Decisions: POSIX runtime chỉ giữ `bin/python3`; loại mọi sibling `bin/*`. Windows loại mọi `Scripts/*`; root `python.exe` vẫn giữ. Library/site-packages/native payload không đổi. Recompute `pythonRuntimeTreeSha256` bằng production copier+pruner thành `sha256:d62e8f…e99a`, không sửa source-tree pin.
+  - Blockers: Không có cho console scripts. Focused stager 18/18, input 19-key parse xanh; production build phải xác minh exact new projection và full TTS offline runtime sau extraction.
+
+2026-08-09 — Phase D production build discovery + fix (wheel RECORD false credential)
+  - Files: `scripts/stage-artifact-runtime.mjs`, `tests/build/stage-artifact-runtime.test.ts`, production input evidence, checklist và implementation notes
+  - Summary: L.1 bắt chuỗi `hf_5PV…` trong `pytz.dist-info/RECORD`; đây là base64url SHA-256 của timezone file, không phải Hugging Face credential. Quét toàn frozen tree cho thấy chỉ đúng RECORD này trúng forbidden patterns.
+  - Decisions: Không nới token scanner. Prune mọi `.dist-info/RECORD` vì đó là wheel installation inventory không cần cho import/version/synthesis; giữ `METADATA`, package code/native libraries và exact 55-distribution introspection. Runtime-tree digest đo lại bằng production helper thành `sha256:923842…f66d3`.
+  - Blockers: Không có cho RECORD. Focused stager 18/18 và regression giữ `METADATA`; production build/TTS offline phải chứng minh package inventory và synth không phụ thuộc RECORD.
+
+2026-08-09 — Phase D production build discovery + fix (host Node binary baseline scan)
+  - Files: `scripts/verify-artifact.mjs`, `tests/build/artifact-provenance.test.ts`, checklist và implementation notes
+  - Summary: Final executable scan bắt 6 AWS-shaped machine-code sequences và 4 sourcemap parser/example literals. Exact source Node 24.9.0 binary có cùng IDs, values và offsets; SEA final không thêm occurrence nào. Raw unique-ID scan không phân biệt pinned host baseline với VidCom-injected payload.
+  - Decisions: Giữ scanner cho primary/secondary/frontend/runtime nguyên vẹn. Riêng final SEA, thu exact occurrence `(id, byte offset, match digest)` của source `process.execPath` và chỉ trừ tuple giống hệt; bất kỳ occurrence mới/đổi offset/đổi bytes từ injected assets vẫn fail. Không allowlist theo ID hoặc package.
+  - Blockers: Không có cho baseline distinction. Regression chứng minh unchanged baseline + ordinary append xanh nhưng injected OpenAI-shaped key vẫn bị bắt; artifact provenance 27/27 và final failed-generation thực có additions `[]`. Production build phải rerun để publish.
+
+2026-08-09 — Phase D Acceptance Criterion (production artifact render + narration)
+  - Files: `dist/artifact/darwin-arm64/{vidcom,SHA256SUMS,artifact-manifest.json}`, production runtime archives, `/private/tmp/vidcom-phase-d-production-smoke.6mvwdf/EVIDENCE.md`, checklist, Design §16 và implementation notes
+  - Summary: `build:artifact --json` publish final binary 336.205.200 bytes, SHA-256 `5b111f…e2bc0`; checksum/provenance và exact runtime archive verification xanh. Clean app-data cold-extract, serve/render bằng chính artifact dưới PATH chỉ có bốn OS helper và không tìm thấy node/python/python3. Output MP4 SHA `744c8c…bdc0`, H.264/AAC 5 giây, narration non-silent và correlation 0,991181 với only authored WAV.
+  - Decisions: Prototype cũ không được dùng để tick; chỉ production published generation mới là authority. Browser cache seed chỉ tránh download lại, còn Node/FFmpeg/FFprobe/Python/worker đều dùng exact paths đã extract từ artifact. Post-validation correlation dùng decoded bytes, không nằm trong runtime path. Ghi riêng version display `not packaged` như finding deferred, không che nó bằng AC render.
+  - Blockers: AC D không còn blocker. Frozen Python packaged probe offline ready/14 voice/engine 3.2.4; ports 53487/53491 đóng, PID auto daemon dừng và discovery record bị xoá. Phase D vẫn chờ focused/global gates + exact-HEAD CI ba OS trước khi chuyển E.
+
+2026-08-09 — Phase D local verification gate
+  - Files: Phase D production/test diff, checklist và implementation notes; generated `.next`/`out`/`dist` được bảo toàn tại `/private/tmp/vidcom-phase-d-production-smoke.6mvwdf/build-output-preserved`
+  - Summary: Chạy lại official Phase D matrix 57/57 và expanded artifact matrix 129/129 sau production build. `typecheck`, `lint`, `test:boundaries`, `git diff --check` và `python3 -m py_compile packages/adapter/sidecars/vieneu/worker.py` đều xanh.
+  - Decisions: ESLint ban đầu đỏ chỉ vì quét CJS generated trong sáu failed-generation và build output; không sửa/nới ESLint. Di chuyển chính xác ba thư mục gitignored `.next`, `out`, `dist` sang evidence root có thể phục hồi, giữ cả published binary/manifests và failed generations để audit.
+  - Blockers: Local phase gate không còn blocker. Phase D vẫn đóng theo quy trình cho tới khi commit/push và GitHub Actions exact HEAD xanh trên Linux, macOS và Windows; MUST NOT bắt đầu E trước bằng chứng đó.
+
+2026-08-09 — Phase D adversarial closeout (final SEA raw-asset identity)
+  - Files: `packages/cli/src/sea-bootstrap.ts`, `scripts/{build-sea,verify-artifact}.mjs`, `tests/build/{sea,artifact-provenance}.test.ts`, Design §16, checklist và implementation notes
+  - Summary: Audit bắt snapshot/input hash chưa chứng minh bytes postject thật sự embed. Final SEA nay có hidden integrity protocol chạy trước extraction, liệt kê exact raw-asset key/size/SHA; primary bundle cũng là một raw asset. Verifier thực thi chính candidate và so report với sealed snapshot trước publish.
+  - Decisions: Không tin outer executable hash như bằng chứng nội dung; hash đó chỉ định danh một binary bất kỳ. Real tiny SEA dùng production primary, Node blob và pinned postject: generation A xanh, cố ý inject blob B nhưng verify snapshot A bị từ chối. Frontend provenance luôn build temp checkout mới, không reuse stale repo `out` và không để `.next/out` lại checkout.
+  - Blockers: Raw-asset proof focused 55/55 sau khi sửa temp build; repo-root generated outputs không tái xuất hiện. Phase D vẫn chờ các blocker closeout publisher/CLI đang được xử lý, rồi toàn bộ gate + production rebuild/smoke + CI exact HEAD.
+
+2026-08-09 — Phase D adversarial closeout (artifact generation capability)
+  - Files: `scripts/{directory-generation-publish,artifact-publish,build-sea,verify-artifact}.mjs`, `tests/build/{artifact-publish,sea,runtime-assets-publish}.test.ts`, Design §16, checklist và implementation notes
+  - Summary: Publisher lock bind PID với OS process-start identity và token; reused PID được reclaim, live owner không bị cướp. Atomic prepare trả generation + capability bind canonical parent chain và `dev/ino`; SEA builder/verifier revalidate trước/sau mọi mutation. Snapshot root phải absent, có identity riêng và cleanup chỉ chạy khi authority còn đúng.
+  - Decisions: Giữ wrapper cũ cho caller không mutate, nhưng production SEA bắt buộc dùng atomic capability. Không cố “cleanup” qua path đã đổi vì chính cleanup đó có thể xoá external bytes; orphan an toàn được để recovery xử lý. Regression đổi generation thành junction/symlink ra external sentinel và đổi thành real directory mới đều fail trước write/remove/lock.
+  - Blockers: Publisher focused 14/14 và combined SEA/CLI/publisher 84/84 xanh; typecheck/lint/boundaries của publisher xanh. Còn rerun toàn global matrix và production artifact exact HEAD.
+
+2026-08-09 — Phase D adversarial closeout (CLI process boundary)
+  - Files: `packages/cli/src/{main,boot}.ts`, `tests/cli/{cli-process-boundary,compiler-preload,sea-bootstrap}.test.ts`, checklist và implementation notes
+  - Summary: `doctor` và `render` trả code `0/1/130` xuyên `runVidcomCli` → `runCliMain`; launcher chỉ publish một lần, không còn ghi đè lỗi thành 0. Compiler preload lỗi trước runtime graph trả đúng một dòng `compiler_unavailable` và code 1, không rò stack hay absolute checkout/runtime path.
+  - Decisions: Chuẩn hoá preload ngay tại boot boundary trước dynamic import; không import runtime graph chỉ để format lỗi. Tests dùng child thật, temp filesystem + SQLite thật, và SEA archive delegate cho cả fail/cancel code.
+  - Blockers: Focused 29/29, expanded CLI/build 137/137 và official D 57/57 xanh từ subtask; main vẫn phải rerun cùng exact SEA/publisher snapshot trước production rebuild.
+
+2026-08-09 — Phase D documentation truth (adapter exports)
+  - Files: `llm-documents/steering/02-project-layout.md`, `eslint.config.mjs`, checklist và implementation notes
+  - Summary: Steering/comment cũ nói adapter chỉ có một export, trong khi C-10/C-11 đã thêm ba narrow bootstrap/compiler subpath. Wording nay phản ánh đúng public barrel + narrow CLI-only exports và giữ nguyên luật MCP cấm toàn bộ `@vidcom/adapter`/subpath.
+  - Decisions: Chỉ sửa mô tả factually stale; không đổi pattern ESLint, không nới `verify-import-boundaries.mjs`, không mở package boundary mới.
+  - Blockers: Không có; lint và boundaries sẽ được rerun trong final local gate.
+
+2026-08-09 — Phase D second adversarial closeout (no out-of-generation write)
+  - Files: `packages/cli/src/{sea-main-loader.cjs,sea-bootstrap.ts}`, `scripts/{artifact-layout,artifact-publish,build-sea,verify-artifact}.mjs`, `tests/build/{artifact-publish,sea,artifact-provenance}.test.ts`, Design §16, checklist và implementation notes
+  - Summary: Review 26/26 xanh vẫn bắt năm lỗ: nested snapshot parent link ghi ra ngoài, executable/provenance follow link, verifier recapture generation mới, main A tự báo raw primary B, và prepare recapture root thay thế. Snapshot nay walk/lstat/realpath từng parent; mọi destination/provenance dùng exclusive create; exact original authority được serialize/restore qua process.
+  - Decisions: Product primary không còn là SEA main được đọc hai lần. Main là loader built-in-only tối thiểu, lấy và thực thi chính raw primary; primary chỉ chấp nhận loader protocol marker. Authority record không chứa env/secret, schema exact ≤64 KiB và bị xoá trước publication. Cleanup mất capability để orphan an toàn thay vì follow path mới.
+  - Blockers: Focused SEA/provenance/publisher 60/60, typecheck, lint 0 error/3 warning cũ và boundaries xanh. Independent re-review lần hai và production rebuild exact HEAD vẫn mở.
+
+2026-08-09 — Phase D third adversarial closeout (active SEA resource extent)
+  - Files: `scripts/{sea-resource,verify-artifact,build-sea}.mjs`, `tests/build/sea.test.ts`, Design §16, checklist và implementation notes
+  - Summary: Review chứng minh phép tìm exact expected blob một lần trong executable vẫn sai: resource active có thể là `badBlob || expectedBlob`; Node đọc prefix và bỏ suffix, hidden raw-asset report vẫn xanh, bad main thật sự chạy, nhưng expected blob vẫn xuất hiện đúng một lần. Repro thật trên Node 24.9.0/Darwin ghi marker bad-main và old verifier chấp nhận.
+  - Decisions: Không tin self-report hoặc substring làm main authority. Verifier parse đúng loader-selected extent của Mach-O/ELF/PE, bind file identity trước/sau, yêu cầu declared size + mọi byte khớp retained `.sea-prep.blob` bằng stream 1 MiB; malformed/ambiguous/unsupported container fail-closed. Không thêm dependency hoặc gọi host tool.
+  - Blockers: Active-resource focused combined 61/61, typecheck, lint 0 error/3 warning có sẵn, boundaries và diff-check xanh. Independent parser re-review, toàn bộ local matrix và production rebuild/render exact HEAD vẫn mở trước Phase D CI.
+
+2026-08-09 — Phase D fourth adversarial closeout (cross-process SEA byte continuity)
+  - Files: `scripts/{sea-build-seal,build-artifact,build-sea,verify-artifact}.mjs`, `tests/build/{build-artifact,sea}.test.ts`, Design §16, checklist và implementation notes
+  - Summary: Generation capability bind directory nhưng không bind hai child file qua ranh giới process. Nếu thay đồng thời executable và retained blob sau `build-sea`, verifier cũ có thể tự nhất quán với cặp thay thế và chạy main chưa được xác thực.
+  - Decisions: Sau mutation cuối, `build-sea` phát đúng một strict JSON seal gồm tag/generation cùng byte-count + SHA-256 của cả artifact và blob. `build-artifact` giữ seal chỉ trong RAM và truyền canonical record thẳng cho verifier; không ghi seal thành authority file trong mutable generation. Verifier exact-schema/re-hash cả hai trước active-resource proof và trước mọi lần chạy candidate; coherent pair replacement, field thừa hoặc record sai generation đều fail và bad-main marker phải absent.
+  - Blockers: SEA/orchestrator/provenance/publisher closeout xanh 83/83; independent parser/seal review xanh 67/67 cùng Node 24.9.0/postject thật trên Mach-O, ELF x64 và PE x64. Review kế tiếp bắt thêm check-then-spawn race nên proof này bị supersede bởi closeout thụ động dưới đây. Artifact AC vẫn mở.
+
+2026-08-09 — Phase D fifth adversarial closeout (verifier không chạy candidate)
+  - Files: `scripts/{sea-build-seal,sea-resource,verify-artifact}.mjs`, `tests/build/sea.test.ts`, Design §16, checklist và implementation notes
+  - Summary: Re-hash pair ngay trước self-report vẫn đóng file handle rồi `spawn` mở lại pathname. Một coherent pair swap đúng khe này có thể cho bad main chạy side effect trước seal cuối báo lỗi; thêm check pathname không thể làm atomic.
+  - Decisions: Bỏ candidate execution khỏi production verifier. Parse thụ động exact prep-blob format của Node 24.9 trên ba target 64-bit little-endian đã hỗ trợ; require magic/flags/extension, bounded size/count/range, EOF exact, main bytes và exact asset key/content đều khớp sealed snapshot. Parent seal bind blob/executable qua process; active-resource parser bind blob vào loader-selected executable extent; không còn verification-time turn cho candidate.
+  - Blockers: Passive parser và deterministic after-last-check swap regression đã đóng candidate execution; review tiếp theo bắt authority của original snapshot input còn bị recapture, nên proof này bị supersede bởi closeout thứ sáu bên dưới. Full Phase D local matrix, exact-HEAD production rebuild/render và CI ba OS vẫn là gate bắt buộc.
+
+2026-08-09 — Phase D sixth adversarial closeout (original SEA snapshot projection)
+  - Files: `scripts/{build-sea,sea-build-seal,sea-blob,verify-artifact}.mjs`, `tests/build/{build-artifact,sea}.test.ts`, Design §16, checklist và implementation notes
+  - Summary: Review bắt snapshot root identity/projection chỉ tồn tại trong lúc tạo snapshot. Đường assert sau đó từng recapture lexical `.sea-inputs` cùng manifest hiện tại; rename original root rồi đặt một snapshot thay thế tự nhất quán, đổi main và cập nhật manifest có thể được chấp nhận như chính snapshot ban đầu. Closure nay tạo projection chỉ từ in-memory copy records và truyền nó trong parent-held seal, nên lexical path/manifest không còn quyền định nghĩa lại expected input generation.
+  - Decisions: Strict seal schema v1 có exact keys `artifact`, `blob`, `generationId`, `inputs`, `schemaVersion`, `tag`; `inputs` là `{codePath:".sea-inputs/main-loader.cjs",main:{bytes,sha256},assets:[{key,bytes,sha256}]}` với asset key unique và UTF-8 sorted. `build-sea` giữ original snapshot `dev/ino/birthtime` capability trước/sau blob/injection; verifier hash trực tiếp main/asset spans trong retained blob theo `seal.inputs`, so active executable resource, re-hash pair, rồi mới buộc current snapshot manifest/files khớp projection và capture root capability mới để bracket runtime/frontend/forbidden scans. Root replacement, same-root child + manifest replacement, coherent post-last-check artifact/blob replacement và malformed/missing/extra seal/input fields đều bị từ chối; bad-main marker vẫn `ENOENT`.
+  - Blockers: Production closure checkpoint xanh: combined SEA/build-artifact/provenance/publisher 84/84; SEA 22/22; typecheck; lint 0 error/3 warning không liên quan; boundaries và full diff-check; không còn generated `.compiler-bundle` directory. Artifact AC tiếp tục `[ ]`; full Phase D local matrix, exact-HEAD production rebuild/render-smoke và GitHub Actions exact HEAD trên Linux/macOS/Windows vẫn là gate bắt buộc trước Phase E.
 
 Format:
 ```

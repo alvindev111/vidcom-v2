@@ -5,7 +5,11 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 
 import { ErrorCode } from "@vidcom/contracts";
-import { VieNeuTtsProvider } from "@vidcom/adapter";
+import {
+  DOWNLOAD_CACHE_COMPONENTS,
+  DownloadCacheCoordinator,
+  VieNeuTtsProvider,
+} from "@vidcom/adapter";
 import type { ProcessPort, ProcessRunInput, TtsSynthesisRequest } from "@vidcom/core";
 
 const directories: string[] = [];
@@ -25,6 +29,10 @@ const PRESET_VOICES = ["Phạm Tuyên", "Minh Đức", "Trúc Ly"];
 
 interface SidecarBehaviour {
   probe?: { ready: boolean; gpu: boolean; voices?: string[] } | "crash";
+  offlineProbe?: { ready: boolean; gpu: boolean; voices?: string[] } | "crash";
+  probeStderr?: string;
+  offlineProbeStderr?: string;
+  probeTimedOut?: boolean;
   /** Device the fake sidecar claims it actually ran on; defaults to the requested one. */
   effectiveDevice?: "cpu" | "gpu";
   exitCode?: number;
@@ -39,8 +47,14 @@ function fakeSidecar(behaviour: SidecarBehaviour = {}, calls: ProcessRunInput[] 
     async run(input) {
       calls.push(input);
       if (input.command.includes("--probe")) {
-        if (behaviour.probe === "crash") throw new Error("spawn ENOENT");
-        const probe = behaviour.probe ?? { ready: true, gpu: false };
+        const offline = input.environment?.HF_HUB_OFFLINE === "1";
+        const selectedProbe = offline && behaviour.offlineProbe !== undefined
+          ? behaviour.offlineProbe
+          : behaviour.probe;
+        if (selectedProbe === "crash") {
+          throw new Error("spawn /Users/example/Downloads/python ENOENT");
+        }
+        const probe = selectedProbe ?? { ready: true, gpu: false };
         return {
           exitCode: 0,
           stdout: JSON.stringify({
@@ -49,8 +63,10 @@ function fakeSidecar(behaviour: SidecarBehaviour = {}, calls: ProcessRunInput[] 
             engineVersion: "3.2.4",
             ...probe,
           }),
-          stderr: "",
-          timedOut: false,
+          stderr: offline
+            ? behaviour.offlineProbeStderr ?? behaviour.probeStderr ?? ""
+            : behaviour.probeStderr ?? "",
+          timedOut: behaviour.probeTimedOut === true,
         };
       }
       attempts += 1;
@@ -92,6 +108,23 @@ async function provider(behaviour: SidecarBehaviour = {}, calls: ProcessRunInput
     command: () => ["python", "worker.py"],
     modelCacheRoot: await temporary("vidcom-models-"),
   });
+}
+
+async function cachedProvider(
+  behaviour: SidecarBehaviour = {},
+  calls: ProcessRunInput[] = [],
+  offline = false,
+) {
+  const appDataRoot = await temporary("vidcom-app-data-");
+  const cache = new DownloadCacheCoordinator({ cacheRoot: appDataRoot });
+  const subject = new VieNeuTtsProvider({
+    processes: fakeSidecar(behaviour, calls),
+    command: () => ["python", "worker.py"],
+    modelCacheRoot: cache.componentRoot(DOWNLOAD_CACHE_COMPONENTS.models),
+    downloadCache: cache,
+    offline,
+  });
+  return { appDataRoot, cache, subject };
 }
 
 /** Every test synthesizes after describing, the way the registry always does. */
@@ -138,6 +171,122 @@ describe("VieNeuTtsProvider", () => {
     // the library fall back to ~/.cache or the working directory.
     expect(environment.HF_HUB_CACHE).toContain("hub");
     expect(environment.TORCH_HOME).toContain("torch");
+  });
+
+  it("coordinates a cold probe, then forces synthesis to reuse the completed cache offline", async () => {
+    const calls: ProcessRunInput[] = [];
+    const { cache, subject } = await cachedProvider({}, calls);
+
+    expect((await subject.describe()).available).toBe(true);
+    expect(calls[0]?.environment?.HF_HUB_OFFLINE).toBeUndefined();
+    expect(calls[0]?.environment?.TRANSFORMERS_OFFLINE).toBeUndefined();
+    expect(await cache.status(DOWNLOAD_CACHE_COMPONENTS.models)).toMatchObject({ state: "ready" });
+
+    await subject.synthesize(request(), { scratchDir: await temporary("vidcom-scratch-") });
+    expect(calls.at(-1)?.environment).toMatchObject({
+      HF_HUB_OFFLINE: "1",
+      TRANSFORMERS_OFFLINE: "1",
+    });
+  });
+
+  it("automatically probes a warm cache offline after restart", async () => {
+    const calls: ProcessRunInput[] = [];
+    const { cache, subject } = await cachedProvider({}, calls);
+    await cache.markReady(DOWNLOAD_CACHE_COMPONENTS.models);
+
+    expect((await subject.describe()).available).toBe(true);
+    expect(calls[0]?.environment).toMatchObject({
+      HF_HUB_OFFLINE: "1",
+      TRANSFORMERS_OFFLINE: "1",
+    });
+  });
+
+  it("repairs a markerless-but-incomplete warm cache online in the same describe call", async () => {
+    const calls: ProcessRunInput[] = [];
+    const { cache, subject } = await cachedProvider({
+      offlineProbe: { ready: false, gpu: false, voices: [] },
+      offlineProbeStderr: "offline cache is empty",
+    }, calls);
+    await cache.markReady(DOWNLOAD_CACHE_COMPONENTS.models);
+
+    expect((await subject.describe()).available).toBe(true);
+    expect(calls).toHaveLength(2);
+    expect(calls[0]?.environment).toMatchObject({
+      HF_HUB_OFFLINE: "1",
+      TRANSFORMERS_OFFLINE: "1",
+    });
+    expect(calls[1]?.environment?.HF_HUB_OFFLINE).toBeUndefined();
+    expect(await cache.status(DOWNLOAD_CACHE_COMPONENTS.models)).toMatchObject({ state: "ready" });
+  });
+
+  it("does not repair a broken warm cache online during an explicit offline run", async () => {
+    const calls: ProcessRunInput[] = [];
+    const { cache, subject } = await cachedProvider({
+      offlineProbe: { ready: false, gpu: false, voices: [] },
+      offlineProbeStderr: "offline cache is empty",
+    }, calls, true);
+    await cache.markReady(DOWNLOAD_CACHE_COMPONENTS.models);
+
+    await expect(subject.describe()).rejects.toMatchObject({ code: ErrorCode.DownloadUnavailable });
+    expect(calls).toHaveLength(1);
+    expect(await cache.status(DOWNLOAD_CACHE_COMPONENTS.models)).toMatchObject({
+      state: "partial",
+      failureCode: ErrorCode.DownloadUnavailable,
+    });
+  });
+
+  it("keeps a ready model marker when the warm sidecar command is missing", async () => {
+    const { cache, subject } = await cachedProvider({ probe: "crash" });
+    await cache.markReady(DOWNLOAD_CACHE_COMPONENTS.models);
+
+    expect(await subject.describe()).toMatchObject({
+      available: false,
+      unavailableReason: "sidecar_missing",
+    });
+    expect(await cache.status(DOWNLOAD_CACHE_COMPONENTS.models)).toMatchObject({
+      state: "ready",
+    });
+  });
+
+  it("allows a partial model cache to resume online before switching offline", async () => {
+    const calls: ProcessRunInput[] = [];
+    const { cache, subject } = await cachedProvider({}, calls);
+    await cache.markPartial(DOWNLOAD_CACHE_COMPONENTS.models);
+
+    expect((await subject.describe()).available).toBe(true);
+    expect(calls[0]?.environment?.HF_HUB_OFFLINE).toBeUndefined();
+    expect(await cache.status(DOWNLOAD_CACHE_COMPONENTS.models)).toMatchObject({ state: "ready" });
+  });
+
+  it("fails a forced-offline first run without starting the sidecar", async () => {
+    const calls: ProcessRunInput[] = [];
+    const { subject } = await cachedProvider({}, calls, true);
+
+    await expect(subject.describe()).rejects.toMatchObject({ code: ErrorCode.DownloadUnavailable });
+    expect(calls).toEqual([]);
+  });
+
+  it("persists a coded TLS failure from the cold model probe", async () => {
+    const { cache, subject } = await cachedProvider({
+      probe: { ready: false, gpu: false },
+      probeStderr: "CERTIFICATE_VERIFY_FAILED",
+    });
+
+    await expect(subject.describe()).rejects.toMatchObject({ code: ErrorCode.DownloadTlsUntrusted });
+    expect(await cache.status(DOWNLOAD_CACHE_COMPONENTS.models)).toMatchObject({
+      state: "partial",
+      failureCode: ErrorCode.DownloadTlsUntrusted,
+    });
+  });
+
+  it("persists download_unavailable when the model probe reports a timeout", async () => {
+    const { cache, subject } = await cachedProvider({ probeTimedOut: true });
+
+    await expect(subject.describe()).rejects.toMatchObject({ code: ErrorCode.DownloadUnavailable });
+    expect(await cache.status(DOWNLOAD_CACHE_COMPONENTS.models)).toMatchObject({
+      state: "partial",
+      failureCode: ErrorCode.DownloadUnavailable,
+    });
   });
 
   it("offers CPU only until the probe has allocated on a real GPU", async () => {

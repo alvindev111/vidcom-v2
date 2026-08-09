@@ -4,8 +4,9 @@ Two modes, both driven entirely by argv and files:
 
     worker.py --probe
         Prints one JSON object on stdout: whether the engine imports, which
-        preset voices it offers, and whether a GPU can actually be used. Does
-        not load the model. VidCom calls this to build its voice catalog.
+        preset voices it offers, and whether a GPU can actually be used. It
+        resolves the requested model snapshot first, making a ready response
+        proof that synthesis can enter warm-offline mode.
 
     worker.py --request <path> --response <path>
         Builds the engine once, speaks every cue in the request, writes one WAV
@@ -126,9 +127,10 @@ def probe() -> int:
     """Report engine readiness, the preset voice list, and whether a GPU is usable.
 
     Upstream exposes `list_preset_voices()` only as an instance method, so this
-    has to construct the engine. Construction can therefore pull the weights on
-    a cold machine — which is exactly why `model_cache_root()` runs first: an
-    unset HF_HOME here would drop the download in the working directory. VidCom
+    has to construct the engine. The requested snapshot is resolved explicitly
+    first: engine construction alone does not prove that the revision synthesis
+    will request is complete. `model_cache_root()` runs before either operation,
+    so an unset HF_HOME cannot drop weights in the working directory. VidCom
     caches this result for the life of the process, so the cost is paid at most
     once per run.
     """
@@ -140,6 +142,11 @@ def probe() -> int:
         import vieneu
 
         version = engine_version()
+        # A successful probe is the cache-completeness boundary used by the
+        # TypeScript download coordinator. Constructing the engine alone is not
+        # sufficient proof: synthesis resolves an explicit revision snapshot,
+        # which can still be absent even when voices are available.
+        download_model(pinned_revision())
         engine = vieneu.Vieneu(backend=CPU_BACKEND)
         # The catalog is the engine's own list, never a copy maintained in
         # TypeScript: a hard-coded list drifts the moment upstream adds a voice,

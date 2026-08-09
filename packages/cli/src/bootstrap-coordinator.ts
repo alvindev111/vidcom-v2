@@ -10,6 +10,7 @@ import {
   type RuntimeAssetSource,
   type VidcomDatabase,
 } from "@vidcom/adapter";
+import { validatePackagedRuntimeManifest } from "@vidcom/adapter/runtime-bootstrap";
 import { ErrorCode } from "@vidcom/contracts";
 
 export const RUNTIME_BOOTSTRAP_LOCK_FILENAME = "runtime-bootstrap.lock";
@@ -60,6 +61,18 @@ export class BootstrapError extends Error {
   }
 }
 
+function packagedMigrationsFolder(archiveRoots: Readonly<Record<string, string>>): string {
+  const nodeArchiveRoot = archiveRoots.node;
+  if (!nodeArchiveRoot) {
+    throw new BootstrapError(
+      ErrorCode.RuntimeManifestInvalid,
+      "the packaged runtime is missing the node archive needed for database migrations",
+      { missing: ["node"] },
+    );
+  }
+  return path.join(nodeArchiveRoot, "drizzle");
+}
+
 /**
  * Serializes runtime extraction, migration and credential reconciliation.
  *
@@ -92,6 +105,10 @@ export class BootstrapCoordinator {
       );
     }
 
+    if (input.assetSource) {
+      validatePackagedRuntimeManifest(appDataRoot, input.assetSource.readManifest());
+    }
+
     const bootstrapLock = this.lock(appDataRoot, RUNTIME_BOOTSTRAP_LOCK_FILENAME);
     const lease = await bootstrapLock.acquire();
     let database: VidcomDatabase | undefined;
@@ -108,7 +125,11 @@ export class BootstrapCoordinator {
         : null;
 
       database = openVidcomDatabase(appDataRoot);
-      await this.migrate(database);
+      if (installation) {
+        await this.migrate(database, packagedMigrationsFolder(installation.archiveRoots));
+      } else {
+        await this.migrate(database);
+      }
 
       await this.reconcile(appDataRoot, database, lease);
 

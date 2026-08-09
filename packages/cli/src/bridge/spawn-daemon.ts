@@ -1,6 +1,32 @@
 import { spawn } from "node:child_process";
 
-import type { DaemonRecord } from "@vidcom/adapter";
+import { allowlistedEnvironment, type DaemonRecord } from "@vidcom/adapter";
+
+const DAEMON_CONFIGURATION = [
+  "APPDATA",
+  "XDG_DATA_HOME",
+  "VIDCOM_HOME",
+  "VIDCOM_SETTINGS",
+  "VIDCOM_APP_DATA",
+  "VIDCOM_NATIVE_DEPS",
+  "VIDCOM_RUNTIME_ASSETS",
+  "VIDCOM_CA_BUNDLE",
+  "VIDCOM_WORKSPACE",
+  "VIDCOM_BUILD_COMMIT",
+  "VIDCOM_DISABLE_ENUMERATORS",
+  "HYPERFRAMES_FFMPEG_PATH",
+  "HYPERFRAMES_FFPROBE_PATH",
+  "HF_HUB_OFFLINE",
+  "TRANSFORMERS_OFFLINE",
+  "ELEVENLABS_API_KEY",
+] as const;
+
+function daemonConfiguration(parent: NodeJS.ProcessEnv): Record<string, string> {
+  return Object.fromEntries(DAEMON_CONFIGURATION.flatMap((name) => {
+    const value = parent[name];
+    return value === undefined ? [] : [[name, value]];
+  }));
+}
 
 export interface SpawnDaemonOptions {
   workspaceRoot: string;
@@ -9,6 +35,8 @@ export interface SpawnDaemonOptions {
   /** Arguments that come before the mode, e.g. the script path outside a SEA. */
   prefixArgs?: readonly string[];
   spawnProcess?: typeof spawn;
+  /** Test seam; production inherits the current process through the allowlist. */
+  environment?: NodeJS.ProcessEnv;
 }
 
 /**
@@ -34,10 +62,15 @@ export function ensureDaemonArgs(workspaceRoot: string): string[] {
  */
 export function spawnEnsuredDaemon(options: SpawnDaemonOptions): void {
   const spawnProcess = options.spawnProcess ?? spawn;
+  const parentEnvironment = options.environment ?? process.env;
   const child = spawnProcess(
     options.executable ?? process.execPath,
     [...(options.prefixArgs ?? []), ...ensureDaemonArgs(options.workspaceRoot)],
-    { detached: true, stdio: "ignore" },
+    {
+      detached: true,
+      stdio: "ignore",
+      env: allowlistedEnvironment(parentEnvironment, daemonConfiguration(parentEnvironment)),
+    },
   );
   child.unref();
 }

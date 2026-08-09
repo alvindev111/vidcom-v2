@@ -1,7 +1,11 @@
 import { readdir } from "node:fs/promises";
 import path from "node:path";
 
-import { verifyBrowserExecutable, type BrowserVerdict } from "./browser-verification";
+import {
+  verifyBrowserExecutable,
+  verifyManagedBrowserExecutable,
+  type BrowserVerdict,
+} from "./browser-verification";
 
 export interface ChromeResolution {
   path: string;
@@ -18,6 +22,9 @@ export interface ChromeResolveInput {
 const SHELL_NAME = process.platform === "win32"
   ? "chrome-headless-shell.exe"
   : "chrome-headless-shell";
+// Production points HyperFrames at a synthetic HOME rooted at the coordinated
+// component. Its managed cache is `<root>/.cache/hyperframes/chrome/<version>/<platform>`.
+const MAX_CACHE_DEPTH = 6;
 
 async function candidatesUnder(cacheRoot: string): Promise<string[]> {
   // The download layout nests a version directory and then a platform
@@ -25,7 +32,7 @@ async function candidatesUnder(cacheRoot: string): Promise<string[]> {
   // walked rather than guessed at.
   const found: string[] = [];
   const visit = async (directory: string, depth: number): Promise<void> => {
-    if (depth > 4) return;
+    if (depth > MAX_CACHE_DEPTH) return;
     let entries;
     try {
       entries = await readdir(directory, { withFileTypes: true });
@@ -55,13 +62,17 @@ async function candidatesUnder(cacheRoot: string): Promise<string[]> {
  * would disagree exactly when it matters.
  */
 export async function resolveChrome(input: ChromeResolveInput): Promise<ChromeResolution | null> {
-  const candidates: string[] = [];
-  if (input.chromePathOverride) candidates.push(input.chromePathOverride);
-  if (input.browserCacheRoot) candidates.push(...await candidatesUnder(input.browserCacheRoot));
-
-  for (const candidate of candidates) {
-    const verdict: BrowserVerdict = await verifyBrowserExecutable(candidate);
-    if (verdict.usable) return { path: candidate, version: verdict.version };
+  if (input.chromePathOverride) {
+    const verdict: BrowserVerdict = await verifyBrowserExecutable(input.chromePathOverride);
+    if (verdict.usable) return { path: input.chromePathOverride, version: verdict.version };
+  }
+  if (input.browserCacheRoot) {
+    for (const candidate of await candidatesUnder(input.browserCacheRoot)) {
+      const verdict = await verifyManagedBrowserExecutable(candidate, input.browserCacheRoot);
+      if (verdict.usable) {
+        return { path: verdict.canonicalPath, version: verdict.version };
+      }
+    }
   }
   return null;
 }

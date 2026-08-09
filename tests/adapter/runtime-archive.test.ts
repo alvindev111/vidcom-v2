@@ -1,14 +1,18 @@
 import { execFile } from "node:child_process";
 import { realpathSync } from "node:fs";
-import { lstat, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { lstat, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
 
 import {
   extractRuntimeArchive,
+  FilesystemRuntimeAssetSource,
+  MAX_RUNTIME_PATH_SEGMENT_BYTES,
+  MAX_RUNTIME_RELATIVE_PATH_LENGTH,
   parseEmbeddedRuntimeManifest,
   resolveRuntimeArchives,
+  RUNTIME_MANIFEST_FILENAME,
   RuntimeAssetError,
   type EmbeddedArchive,
 } from "@vidcom/adapter";
@@ -150,6 +154,195 @@ describe.skipIf(!HOST_SUPPORTED)("embedded runtime manifest parsing", () => {
     const error = parseFailure(manifestValue(mutate));
     expect(error.code).toBe(ErrorCode.RuntimeManifestInvalid);
   });
+
+  it("accepts a 174-character frozen-Python source path", () => {
+    const longPath = `python/${"a".repeat(167)}`;
+    expect(longPath).toHaveLength(174);
+    const value = manifestValue((manifest) => {
+      const archive = (manifest.archives as Array<Record<string, unknown>>)[0]!;
+      (archive.entries as Array<Record<string, unknown>>)[0]!.path = longPath;
+    });
+
+    expect(parseEmbeddedRuntimeManifest(value).archives[0]?.entries[0]?.path).toBe(longPath);
+  });
+
+  it("rejects a runtime source path beyond the shared manifest bound", () => {
+    const value = manifestValue((manifest) => {
+      const archive = (manifest.archives as Array<Record<string, unknown>>)[0]!;
+      (archive.entries as Array<Record<string, unknown>>)[0]!.path =
+        `python/${"a".repeat(MAX_RUNTIME_RELATIVE_PATH_LENGTH)}`;
+    });
+
+    expect(parseFailure(value).message).toContain(String(MAX_RUNTIME_RELATIVE_PATH_LENGTH));
+  });
+
+  it("rejects a non-adjacent parent entry hidden by a lexical sibling", () => {
+    const value = manifestValue((manifest) => {
+      const archive = (manifest.archives as Array<Record<string, unknown>>)[0]!;
+      const entry = (archive.entries as Array<Record<string, unknown>>)[0]!;
+      archive.entries = [
+        { ...entry, path: "a" },
+        { ...entry, path: "a-b" },
+        { ...entry, path: "a/b" },
+      ];
+    });
+
+    expect(parseFailure(value).message).toContain("parent of another file");
+  });
+
+  it("rejects case-folded entry aliases in a Windows archive", () => {
+    const value = manifestValue((manifest) => {
+      const archive = (manifest.archives as Array<Record<string, unknown>>)[0]!;
+      archive.platform = "win32-x64";
+      const entry = (archive.entries as Array<Record<string, unknown>>)[0]!;
+      archive.entries = [
+        { ...entry, path: "Toolchain/Native" },
+        { ...entry, path: "toolchain/native" },
+      ];
+    });
+
+    expect(parseFailure(value).message).toContain("paths that alias");
+  });
+
+  it("rejects non-adjacent and case-folded target ownership collisions", () => {
+    const value = manifestValue((manifest) => {
+      const archive = (manifest.archives as Array<Record<string, unknown>>)[0]!;
+      manifest.archives = [
+        { ...archive, key: "node", target: "runtime" },
+        { ...archive, key: "ffmpeg", target: "runtime-other" },
+        { ...archive, key: "hyperframes", target: "runtime/child" },
+      ];
+    });
+    expect(parseFailure(value).message).toContain("targets");
+
+    const caseFolded = manifestValue((manifest) => {
+      const archive = (manifest.archives as Array<Record<string, unknown>>)[0]!;
+      manifest.archives = [
+        { ...archive, key: "node", platform: "darwin-arm64", target: "Toolchain/Native" },
+        { ...archive, key: "hyperframes", platform: "darwin-arm64", target: "toolchain/native" },
+      ];
+    });
+    expect(parseFailure(caseFolded).message).toContain("targets");
+  });
+
+  it.each(["runtime-manifest.json", "runtime-manifest.json/nested", "CURRENT.JSON/runtime"])(
+    "rejects reserved installed-metadata target %s",
+    (target) => {
+      const value = manifestValue((manifest) => {
+        const archive = (manifest.archives as Array<Record<string, unknown>>)[0]!;
+        archive.target = target;
+      });
+      expect(parseFailure(value).message).toContain("metadata namespace");
+    },
+  );
+
+  it.each([
+    "C:drive-relative",
+    "CON/file.txt",
+    "good/COM1",
+    "segment./child",
+    "nul\u0000byte",
+  ])("rejects Windows-invalid portable target and entry path %s", (unsafePath) => {
+    const target = manifestValue((manifest) => {
+      const archive = (manifest.archives as Array<Record<string, unknown>>)[0]!;
+      archive.platform = "win32-x64";
+      archive.target = unsafePath;
+    });
+    expect(parseFailure(target).code).toBe(ErrorCode.RuntimeManifestInvalid);
+
+    const entry = manifestValue((manifest) => {
+      const archive = (manifest.archives as Array<Record<string, unknown>>)[0]!;
+      archive.platform = "win32-x64";
+      (archive.entries as Array<Record<string, unknown>>)[0]!.path = unsafePath;
+    });
+    expect(parseFailure(entry).code).toBe(ErrorCode.RuntimeManifestInvalid);
+  });
+
+  it.each(["CON", "NUL", "COM1", "v1."])(
+    "rejects Windows-invalid artifact version segment %s",
+    (unsafeVersion) => {
+      const value = manifestValue((manifest) => { manifest.artifactVersion = unsafeVersion; });
+      expect(parseFailure(value).message).toContain("portable path segment");
+    },
+  );
+
+  it.each(["con", "nul", "com1", "node."])(
+    "rejects Windows-invalid archive key segment %s",
+    (unsafeKey) => {
+      const value = manifestValue((manifest) => {
+        (manifest.archives as Array<Record<string, unknown>>)[0]!.key = unsafeKey;
+      });
+      expect(parseFailure(value).message).toContain("not portable");
+    },
+  );
+
+  it.each([
+    ["ASCII", "a".repeat(MAX_RUNTIME_PATH_SEGMENT_BYTES + 1)],
+    ["multibyte UTF-8", "é".repeat(Math.floor(MAX_RUNTIME_PATH_SEGMENT_BYTES / 2) + 1)],
+  ])("rejects an over-bound %s target and entry component", (_label, overBoundSegment) => {
+    const target = manifestValue((manifest) => {
+      (manifest.archives as Array<Record<string, unknown>>)[0]!.target = overBoundSegment;
+    });
+    expect(parseFailure(target).code).toBe(ErrorCode.RuntimeManifestInvalid);
+
+    const entry = manifestValue((manifest) => {
+      const archive = (manifest.archives as Array<Record<string, unknown>>)[0]!;
+      (archive.entries as Array<Record<string, unknown>>)[0]!.path = overBoundSegment;
+    });
+    expect(parseFailure(entry).code).toBe(ErrorCode.RuntimeManifestInvalid);
+  });
+
+  it("accepts a multibyte component at the portable byte boundary", () => {
+    const withinBound = `${"é".repeat(127)}a`;
+    expect(Buffer.byteLength(withinBound, "utf8")).toBe(MAX_RUNTIME_PATH_SEGMENT_BYTES);
+    const value = manifestValue((manifest) => {
+      const archive = (manifest.archives as Array<Record<string, unknown>>)[0]!;
+      (archive.entries as Array<Record<string, unknown>>)[0]!.path = withinBound;
+    });
+    expect(parseEmbeddedRuntimeManifest(value).archives[0]?.entries[0]?.path).toBe(withinBound);
+  });
+
+  it("rejects NFC/NFD ownership aliases for Darwin entries and targets", () => {
+    const nfc = "café";
+    const nfd = "cafe\u0301";
+    const entries = manifestValue((manifest) => {
+      const archive = (manifest.archives as Array<Record<string, unknown>>)[0]!;
+      archive.platform = "darwin-arm64";
+      const entry = (archive.entries as Array<Record<string, unknown>>)[0]!;
+      archive.entries = [{ ...entry, path: nfc }, { ...entry, path: nfd }];
+    });
+    expect(parseFailure(entries).message).toContain("paths that alias");
+
+    const targets = manifestValue((manifest) => {
+      const archive = (manifest.archives as Array<Record<string, unknown>>)[0]!;
+      manifest.archives = [
+        { ...archive, key: "node", platform: "darwin-arm64", target: nfc },
+        { ...archive, key: "hyperframes", platform: "darwin-arm64", target: nfd },
+      ];
+    });
+    expect(parseFailure(targets).message).toContain("targets");
+  });
+
+  it.skipIf(process.platform !== "darwin")(
+    "rejects a real filesystem manifest containing APFS-normalized aliases",
+    async () => {
+      const root = await temporaryRoot();
+      const value = manifestValue((manifest) => {
+        const archive = (manifest.archives as Array<Record<string, unknown>>)[0]!;
+        archive.platform = "darwin-arm64";
+        const entry = (archive.entries as Array<Record<string, unknown>>)[0]!;
+        archive.entries = [
+          { ...entry, path: "café" },
+          { ...entry, path: "cafe\u0301" },
+        ];
+      });
+      await writeFile(path.join(root, RUNTIME_MANIFEST_FILENAME), JSON.stringify(value), "utf8");
+
+      expect(() => new FilesystemRuntimeAssetSource(root).readManifest())
+        .toThrow(RuntimeAssetError);
+      expect(await readdir(root)).toEqual([RUNTIME_MANIFEST_FILENAME]);
+    },
+  );
 });
 
 describe.skipIf(!HOST_SUPPORTED)("runtime archive resolution", () => {
@@ -340,6 +533,145 @@ describe.skipIf(!HOST_SUPPORTED)("runtime archive builder python package gate", 
     expect(manifest.archives.map((archive) => archive.key)).toEqual(["node"]);
     expect(manifest.pythonPackages[HOST_TAG]).toEqual([...pins]);
     expect(pins.length).toBe(HOST_TAG === "win32-x64" ? 57 : 55);
+    expect(new FilesystemRuntimeAssetSource(project.output).readManifest().artifactVersion)
+      .toBe("1.0.0");
+  });
+
+  it("builds a frozen-Python source path longer than the old generic string bound", async () => {
+    const project = await builderProject(await expectedPins());
+    const source = path.join(path.dirname(project.config), "src");
+    const longPath = `python/${"a".repeat(167)}`;
+    expect(longPath).toHaveLength(174);
+    await mkdir(path.dirname(path.join(source, longPath)), { recursive: true });
+    await writeFile(path.join(source, longPath), BODY);
+
+    await runBuilder(project);
+    const manifest = JSON.parse(
+      await readFile(path.join(project.output, "runtime-manifest.json"), "utf8"),
+    ) as { archives: Array<{ entries: Array<{ path: string }> }> };
+    expect(manifest.archives[0]?.entries.map((entry) => entry.path)).toContain(longPath);
+  });
+
+  it.skipIf(process.platform !== "linux")(
+    "orders distinct Unicode filenames by UTF-8 bytes independent of creation order",
+    async () => {
+      const pins = await expectedPins();
+      const first = await builderProject(pins);
+      const second = await builderProject(pins);
+      const names = ["é.txt", "e\u0301.txt"] as const;
+      const firstSource = path.join(path.dirname(first.config), "src");
+      const secondSource = path.join(path.dirname(second.config), "src");
+      for (const name of names) await writeFile(path.join(firstSource, name), BODY);
+      for (const name of [...names].reverse()) await writeFile(path.join(secondSource, name), BODY);
+
+      await runBuilder(first);
+      await runBuilder(second);
+
+      const firstManifest = await readFile(path.join(first.output, RUNTIME_MANIFEST_FILENAME));
+      const secondManifest = await readFile(path.join(second.output, RUNTIME_MANIFEST_FILENAME));
+      const firstArchive = await readFile(path.join(first.output, "runtime-archives", "node.tar.gz"));
+      const secondArchive = await readFile(path.join(second.output, "runtime-archives", "node.tar.gz"));
+      expect(firstManifest).toEqual(secondManifest);
+      expect(firstArchive).toEqual(secondArchive);
+
+      const manifest = JSON.parse(firstManifest.toString("utf8")) as {
+        archives: Array<{ entries: Array<{ path: string }> }>;
+      };
+      expect(manifest.archives[0]?.entries.map((entry) => entry.path)).toEqual([
+        "e\u0301.txt",
+        ENTRY_PATH,
+        "é.txt",
+      ]);
+    },
+  );
+
+  it("rejects an over-bound target before writing any archive output", async () => {
+    const project = await builderProject(await expectedPins());
+    const config = JSON.parse(await readFile(project.config, "utf8")) as {
+      archives: Array<{ target: string }>;
+    };
+    config.archives[0]!.target = "a".repeat(MAX_RUNTIME_RELATIVE_PATH_LENGTH + 1);
+    await writeFile(project.config, `${JSON.stringify(config, null, 2)}\n`, "utf8");
+
+    const failure = await runBuilder(project).catch((error: unknown) => error as { stderr: string });
+    expect(failure).toHaveProperty("stderr");
+    expect((failure as { stderr: string }).stderr).toContain("normalized portable relative path");
+    expect(await absent(project.output)).toBe(true);
+  });
+
+  it("rejects an over-bound dependency version before writing output", async () => {
+    const project = await builderProject(await expectedPins());
+    const config = JSON.parse(await readFile(project.config, "utf8")) as {
+      versions: { node: string };
+    };
+    config.versions.node = "v".repeat(129);
+    await writeFile(project.config, `${JSON.stringify(config, null, 2)}\n`, "utf8");
+
+    const failure = await runBuilder(project).catch((error: unknown) => error as { stderr: string });
+    expect(failure).toHaveProperty("stderr");
+    expect((failure as { stderr: string }).stderr).toContain("128 characters");
+    expect(await absent(project.output)).toBe(true);
+  });
+
+  it.each([
+    ["ASCII", "a".repeat(MAX_RUNTIME_PATH_SEGMENT_BYTES + 1)],
+    ["multibyte UTF-8", "é".repeat(Math.floor(MAX_RUNTIME_PATH_SEGMENT_BYTES / 2) + 1)],
+  ])("rejects an over-bound %s build-target component", async (_label, overBoundTarget) => {
+    const project = await builderProject(await expectedPins());
+    const config = JSON.parse(await readFile(project.config, "utf8")) as {
+      archives: Array<{ target: string }>;
+    };
+    config.archives[0]!.target = overBoundTarget;
+    await writeFile(project.config, `${JSON.stringify(config, null, 2)}\n`, "utf8");
+
+    const failure = await runBuilder(project).catch((error: unknown) => error as { stderr: string });
+    expect(failure).toHaveProperty("stderr");
+    expect((failure as { stderr: string }).stderr).toContain("normalized portable relative path");
+    expect(await absent(project.output)).toBe(true);
+  });
+
+  it("rejects Windows-invalid artifact versions and archive keys before writing output", async () => {
+    const pins = await expectedPins();
+    const cases: Array<{ field: "artifactVersion" | "key"; value: string }> = [
+      ...["CON", "NUL", "COM1", "v1."].map((value) => ({ field: "artifactVersion" as const, value })),
+      ...["con", "nul", "com1", "node."].map((value) => ({ field: "key" as const, value })),
+    ];
+    for (const current of cases) {
+      const project = await builderProject(pins);
+      const config = JSON.parse(await readFile(project.config, "utf8")) as {
+        artifactVersion: string;
+        archives: Array<{ key: string }>;
+      };
+      if (current.field === "artifactVersion") config.artifactVersion = current.value;
+      else config.archives[0]!.key = current.value;
+      await writeFile(project.config, `${JSON.stringify(config, null, 2)}\n`, "utf8");
+
+      const failure = await runBuilder(project).catch((error: unknown) => error as { stderr: string });
+      expect(failure).toHaveProperty("stderr");
+      expect((failure as { stderr: string }).stderr).toContain("portable");
+      expect(await absent(project.output)).toBe(true);
+    }
+  });
+
+  it.each([
+    "C:drive-relative",
+    "CON/file.txt",
+    "good/COM1",
+    "segment./child",
+    "nul\u0000byte",
+  ])("rejects Windows-invalid build target %s before writing output", async (unsafeTarget) => {
+    const project = await builderProject(await expectedPins());
+    const config = JSON.parse(await readFile(project.config, "utf8")) as {
+      archives: Array<{ platform: string; target: string }>;
+    };
+    config.archives[0]!.platform = "win32-x64";
+    config.archives[0]!.target = unsafeTarget;
+    await writeFile(project.config, `${JSON.stringify(config, null, 2)}\n`, "utf8");
+
+    const failure = await runBuilder(project).catch((error: unknown) => error as { stderr: string });
+    expect(failure).toHaveProperty("stderr");
+    expect((failure as { stderr: string }).stderr).toContain("normalized portable relative path");
+    expect(await absent(project.output)).toBe(true);
   });
 
   it.each([

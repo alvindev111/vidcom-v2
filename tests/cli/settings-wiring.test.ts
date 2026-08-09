@@ -1,4 +1,5 @@
-import { mkdtemp, rm } from "node:fs/promises";
+import { spawnSync } from "node:child_process";
+import { access, mkdtemp, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
@@ -43,4 +44,43 @@ describe("appDataRoot precedence", () => {
     expect(defaultAppDataRoot(DEFAULT_VIDCOM_SETTINGS)).toBe(platformDefault);
     expect(path.isAbsolute(platformDefault)).toBe(true);
   });
+
+  it("pins settings before the source launcher opens a legacy command database", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "vidcom-launcher-settings-"));
+    roots.push(root);
+    const settingsRoot = path.join(root, "settings-app-data");
+    const fakeHome = path.join(root, "platform-home");
+    const settingsPath = path.join(root, "setting.json");
+    await writeFile(settingsPath, JSON.stringify({ appDataRoot: settingsRoot }));
+
+    const environment: NodeJS.ProcessEnv = {
+      ...process.env,
+      APPDATA: path.join(root, "platform-roaming"),
+      HOME: fakeHome,
+      VIDCOM_SETTINGS: settingsPath,
+    };
+    delete environment.VIDCOM_APP_DATA;
+    const platformDefault = defaultAppDataRoot(undefined, {
+      environment,
+      homeDirectory: fakeHome,
+    });
+    expect(platformDefault).not.toBe(settingsRoot);
+
+    const result = spawnSync(process.execPath, [
+      "packages/cli/bin/vidcom.mjs",
+      "credential",
+      "list",
+    ], {
+      cwd: process.cwd(),
+      encoding: "utf8",
+      env: environment,
+      timeout: 30_000,
+    });
+
+    expect(result.error).toBeUndefined();
+    expect(result.status, result.stderr).toBe(0);
+    expect(JSON.parse(result.stdout.trim())).toEqual({ credentials: [] });
+    expect((await stat(path.join(settingsRoot, "vidcom.sqlite"))).isFile()).toBe(true);
+    await expect(access(platformDefault)).rejects.toMatchObject({ code: "ENOENT" });
+  }, 60_000);
 });

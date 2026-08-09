@@ -1,21 +1,28 @@
 import { randomBytes, randomUUID } from "node:crypto";
 import { spawn, type ChildProcess } from "node:child_process";
 import { realpathSync } from "node:fs";
+import { createRequire } from "node:module";
 import {
+  lstat,
   mkdtemp,
   mkdir,
   readFile,
   readdir,
+  rename,
   rm,
   stat,
+  symlink,
   unlink,
   writeFile,
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import { pathToFileURL } from "node:url";
 
 import {
   AtomicDirectoryLock,
+  parseRuntimeCurrentPointer,
+  readPublishedRuntimeInstallation,
   RUNTIME_MANIFEST_FILENAME,
   RuntimeAssetError,
   RuntimeAssetManager,
@@ -172,6 +179,71 @@ describe.skipIf(!HOST_SUPPORTED)("runtime installed-manifest byte bound", () => 
 });
 
 describe.skipIf(!HOST_SUPPORTED)("runtime repair and recovery", () => {
+  it.each([
+    "bad\0version",
+    "a".repeat(5_000),
+    "../escape",
+    "CON",
+    "current.json",
+  ])("treats an invalid persisted current version as recoverable: %j", async (artifactVersion) => {
+    const pointer = {
+      schemaVersion: 1,
+      artifactVersion,
+      platform: "linux-x64",
+      manifest: `${artifactVersion}/${RUNTIME_MANIFEST_FILENAME}`,
+    };
+    expect(parseRuntimeCurrentPointer(pointer)).toBeUndefined();
+
+    const appDataRoot = await temporaryRoot();
+    await mkdir(path.join(appDataRoot, "native"), { recursive: true, mode: 0o700 });
+    await writeFile(
+      path.join(appDataRoot, "native", "current.json"),
+      `${JSON.stringify(pointer)}\n`,
+      "utf8",
+    );
+    await expect(readPublishedRuntimeInstallation(appDataRoot, "linux", "x64"))
+      .resolves.toBeNull();
+  });
+
+  it("rejects archive targets that would publish over one another", async () => {
+    const appDataRoot = await temporaryRoot();
+    const first = archiveFor("node", [{ path: "node.txt", content: FIXTURE_BODY }], undefined, "runtime");
+    const second = archiveFor("ffmpeg", [{ path: "ffmpeg.txt", content: FIXTURE_BODY }], undefined, "runtime-other");
+    const third = archiveFor("hyperframes", [{ path: "hf.txt", content: FIXTURE_BODY }], undefined, "runtime/child");
+    const manifest = runtimeManifest("1.0.0", [first.archive, second.archive, third.archive]);
+
+    const failure = await manager(appDataRoot, assetSource(manifest, {
+      node: first.bytes,
+      ffmpeg: second.bytes,
+      hyperframes: third.bytes,
+    })).ensureAll().catch((error: unknown) => error);
+    expect(failure).toBeInstanceOf(RuntimeAssetError);
+    expect((failure as RuntimeAssetError).code).toBe(ErrorCode.RuntimeManifestInvalid);
+    expect(await readdir(appDataRoot)).toEqual([]);
+  });
+
+  it("publishes and later resolves the manifest target rather than guessing from the archive key", async () => {
+    const appDataRoot = await temporaryRoot();
+    const { bytes, archive } = archiveFor(
+      ARCHIVE_KEY,
+      [{ path: ENTRY_PATH, content: FIXTURE_BODY }],
+      undefined,
+      "toolchain/native",
+    );
+    const manifest = runtimeManifest("1.0.0", [archive]);
+    const source = assetSource(manifest, { [ARCHIVE_KEY]: bytes });
+
+    const installed = await manager(appDataRoot, source).ensureAll();
+    const expected = path.join(installed.versionRoot, "toolchain", "native");
+    expect(installed.archiveRoots[ARCHIVE_KEY]).toBe(expected);
+    expect(await readFile(path.join(expected, ENTRY_PATH))).toEqual(FIXTURE_BODY);
+
+    const published = await readPublishedRuntimeInstallation(appDataRoot);
+    expect(published?.versionRoot).toBe(installed.versionRoot);
+    expect(published?.archiveRoots[ARCHIVE_KEY]).toBe(expected);
+    expect((await manager(appDataRoot, source).inspect()).state).toBe("ready");
+  });
+
   it("reports broken and re-extracts a tampered payload", async () => {
     const appDataRoot = await temporaryRoot();
     const { source } = fixture("1.0.0");
@@ -195,10 +267,35 @@ describe.skipIf(!HOST_SUPPORTED)("runtime repair and recovery", () => {
     const broken = await manager(appDataRoot, source).inspect();
     expect(broken.state).toBe("broken");
     expect(broken.archives[0]?.reason).toBe("marker_missing");
+    expect(await readPublishedRuntimeInstallation(appDataRoot)).toBeNull();
 
     const healed = await manager(appDataRoot, source).ensureAll();
     expect(healed.extracted).toEqual([ARCHIVE_KEY]);
     expect((await manager(appDataRoot, source).inspect()).state).toBe("ready");
+  });
+
+  it("does not publish a root whose ready marker has the wrong identity", async () => {
+    const appDataRoot = await temporaryRoot();
+    const { manifest, source } = fixture("1.0.0");
+    const installed = await manager(appDataRoot, source).ensureAll();
+    const marker = markerPath(manifest, installed.versionRoot);
+    const value = JSON.parse(await readFile(marker, "utf8")) as Record<string, unknown>;
+    await writeFile(marker, `${JSON.stringify({ ...value, archiveKey: "not-node" }, null, 2)}\n`, "utf8");
+
+    expect((await manager(appDataRoot, source).inspect()).archives[0]?.reason).toBe("marker_invalid");
+    expect(await readPublishedRuntimeInstallation(appDataRoot)).toBeNull();
+  });
+
+  it("requires the installed manifest's exact canonical bytes", async () => {
+    const appDataRoot = await temporaryRoot();
+    const { source } = fixture("1.0.0");
+    const installed = await manager(appDataRoot, source).ensureAll();
+    const manifestPath = path.join(installed.versionRoot, RUNTIME_MANIFEST_FILENAME);
+    const value = JSON.parse(await readFile(manifestPath, "utf8"));
+    await writeFile(manifestPath, JSON.stringify(value), "utf8");
+
+    expect(await readPublishedRuntimeInstallation(appDataRoot)).toBeNull();
+    expect((await manager(appDataRoot, source).inspect()).state).toBe("broken");
   });
 
   it("rejects a repair for an archive outside the host manifest", async () => {
@@ -232,8 +329,175 @@ const CRASH_PHASES: readonly RuntimeAssetManagerPhase[] = [
   "afterRename",
   "beforeMarkerCommit",
 ];
+const PROCESS_CRASH_PHASES: readonly RuntimeAssetManagerPhase[] = [
+  ...CRASH_PHASES,
+  "afterMarker",
+];
 
 describe.skipIf(!HOST_SUPPORTED)("runtime crash recovery per publication phase", () => {
+  it.each(PROCESS_CRASH_PHASES)(
+    "recovers nested-target residue after the publishing child is killed at %s",
+    async (crashPhase) => {
+    const appDataRoot = await temporaryRoot();
+    const target = "layers/toolchain/native";
+    const current = archiveFor(
+      ARCHIVE_KEY,
+      [{ path: ENTRY_PATH, content: FIXTURE_BODY }],
+      undefined,
+      target,
+    );
+    const currentManifest = runtimeManifest("1.0.0", [current.archive]);
+    await manager(
+      appDataRoot,
+      assetSource(currentManifest, { [ARCHIVE_KEY]: current.bytes }),
+    ).ensureAll();
+
+    const replacementBody = Buffer.from("replacement after process kill\n", "utf8");
+    const replacement = archiveFor(
+      ARCHIVE_KEY,
+      [{ path: ENTRY_PATH, content: replacementBody }],
+      undefined,
+      target,
+    );
+    const replacementManifest = runtimeManifest("1.0.0", [replacement.archive]);
+    const inputPath = path.join(appDataRoot, "crash-child-input.json");
+    await writeFile(inputPath, JSON.stringify({
+      appDataRoot,
+      manifest: replacementManifest,
+      archive: replacement.bytes.toString("base64"),
+    }), "utf8");
+    const moduleUrl = pathToFileURL(
+      path.resolve("packages/adapter/src/runtime/runtime-asset-manager.ts"),
+    ).href;
+    const tsxApiUrl = pathToFileURL(
+      createRequire(path.resolve("packages/cli/package.json")).resolve("tsx/esm/api"),
+    ).href;
+    const program = `
+      import { register } from ${JSON.stringify(tsxApiUrl)};
+      import { readFile } from "node:fs/promises";
+      register();
+      const { RuntimeAssetManager } = await import(${JSON.stringify(moduleUrl)});
+      const input = JSON.parse(await readFile(${JSON.stringify(inputPath)}, "utf8"));
+      const source = {
+        readManifest: () => input.manifest,
+        readArchive: () => Buffer.from(input.archive, "base64"),
+      };
+      await new RuntimeAssetManager({
+        appDataRoot: input.appDataRoot,
+        source,
+        hooks: { onPhase: async (phase) => {
+          if (phase === ${JSON.stringify(crashPhase)}) {
+            process.stdout.write("READY\\n");
+            await new Promise(() => {});
+          }
+        } },
+      }).repair();
+    `;
+    const environment = { ...process.env };
+    delete environment.ESBUILD_BINARY_PATH;
+    delete environment.ESBUILD_WORKER_THREADS;
+    const child = spawn(process.execPath, ["--input-type=module", "--eval", program], {
+      cwd: path.resolve("."),
+      env: environment,
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    children.push(child);
+    await new Promise<void>((resolve, reject) => {
+      let stdout = "";
+      let stderr = "";
+      const timeout = setTimeout(() => reject(new Error(`crash child did not publish: ${stderr}`)), 30_000);
+      timeout.unref();
+      child.stdout?.on("data", (chunk) => {
+        stdout += String(chunk);
+        if (stdout.includes("READY\n")) {
+          clearTimeout(timeout);
+          resolve();
+        }
+      });
+      child.stderr?.on("data", (chunk) => { stderr += String(chunk); });
+      child.once("error", reject);
+      child.once("exit", (code, signal) => {
+        if (!stdout.includes("READY\n")) {
+          clearTimeout(timeout);
+          reject(new Error(`crash child exited ${String(code ?? signal)}: ${stderr}`));
+        }
+      });
+    });
+
+    const closed = new Promise<void>((resolve) => child.once("close", () => { resolve(); }));
+    child.kill("SIGKILL");
+    await closed;
+    const versionRoot = path.join(appDataRoot, "native", "1.0.0");
+    const residue = await readdir(versionRoot);
+    expect(residue.some((entry) => entry.endsWith(".tmp")))
+      .toBe(crashPhase === "afterExtract" || crashPhase === "afterValidate");
+    expect(residue.some((entry) => entry.endsWith(".quarantine")))
+      .toBe(crashPhase === "afterRename"
+        || crashPhase === "beforeMarkerCommit"
+        || crashPhase === "afterMarker");
+    const replacementMarker = path.join(
+      versionRoot,
+      target,
+      `.ready-${replacement.archive.sha256.slice("sha256:".length)}`,
+    );
+    expect(await lstat(replacementMarker).then(() => true, () => false))
+      .toBe(crashPhase === "afterMarker");
+
+    const replacementSource = assetSource(replacementManifest, { [ARCHIVE_KEY]: replacement.bytes });
+    const recovered = await manager(appDataRoot, replacementSource, { lockTimeoutMs: 30_000 }).ensureAll();
+    expect(recovered.extracted).toEqual(crashPhase === "afterMarker" ? [] : [ARCHIVE_KEY]);
+    expect(recovered.reused).toEqual(crashPhase === "afterMarker" ? [ARCHIVE_KEY] : []);
+    expect(await readFile(path.join(recovered.archiveRoots[ARCHIVE_KEY]!, ENTRY_PATH)))
+      .toEqual(replacementBody);
+    expect((await readdir(versionRoot)).some((entry) => entry.endsWith(".quarantine"))).toBe(false);
+    expect((await readdir(versionRoot)).some((entry) => entry.endsWith(".tmp"))).toBe(false);
+    expect((await manager(appDataRoot, replacementSource).inspect()).state).toBe("ready");
+    },
+    60_000,
+  );
+
+  it("restores a quarantined nested target when publication crashes after rename", async () => {
+    const appDataRoot = await temporaryRoot();
+    const target = "toolchain/native";
+    const current = archiveFor(
+      ARCHIVE_KEY,
+      [{ path: ENTRY_PATH, content: FIXTURE_BODY }],
+      undefined,
+      target,
+    );
+    const currentManifest = runtimeManifest("1.0.0", [current.archive]);
+    const currentSource = assetSource(currentManifest, { [ARCHIVE_KEY]: current.bytes });
+    const installed = await manager(appDataRoot, currentSource).ensureAll();
+    const payload = path.join(installed.archiveRoots[ARCHIVE_KEY]!, ENTRY_PATH);
+
+    const replacementBody = Buffer.from("replacement runtime fixture\n", "utf8");
+    const replacement = archiveFor(
+      ARCHIVE_KEY,
+      [{ path: ENTRY_PATH, content: replacementBody }],
+      undefined,
+      target,
+    );
+    const replacementManifest = runtimeManifest("1.0.0", [replacement.archive]);
+    const replacementSource = assetSource(replacementManifest, { [ARCHIVE_KEY]: replacement.bytes });
+    const failure = await manager(appDataRoot, replacementSource, {
+      hooks: {
+        onPhase: async (phase) => {
+          if (phase === "afterRename") throw new Error("simulated crash after nested target rename");
+        },
+      },
+    }).repair().catch((error: unknown) => error);
+    expect(failure).toBeInstanceOf(RuntimeAssetError);
+    expect((failure as RuntimeAssetError).details?.cause)
+      .toBe("simulated crash after nested target rename");
+
+    expect(await readFile(payload)).toEqual(FIXTURE_BODY);
+    expect((await manager(appDataRoot, currentSource).inspect()).state).toBe("ready");
+
+    const repaired = await manager(appDataRoot, replacementSource).repair();
+    expect(repaired.archiveRoots[ARCHIVE_KEY]).toBe(path.join(repaired.versionRoot, target));
+    expect(await readFile(payload)).toEqual(replacementBody);
+  });
+
   it.each(CRASH_PHASES)("recovers after a crash at %s", async (phase) => {
     const appDataRoot = await temporaryRoot();
     const { source } = fixture("1.0.0");
@@ -277,6 +541,84 @@ describe.skipIf(!HOST_SUPPORTED)("runtime crash recovery per publication phase",
 });
 
 describe.skipIf(!HOST_SUPPORTED)("runtime app-data confinement", () => {
+  it.skipIf(!POSIX)("fails closed after an intermediate nested-target directory becomes a symlink", async () => {
+    const appDataRoot = await temporaryRoot();
+    const outside = await temporaryRoot("vidcom-runtime-published-outside-");
+    const target = "layers/toolchain/native";
+    const { bytes, archive } = archiveFor(
+      ARCHIVE_KEY,
+      [{ path: ENTRY_PATH, content: FIXTURE_BODY }],
+      undefined,
+      target,
+    );
+    const manifest = runtimeManifest("1.0.0", [archive]);
+    const source = assetSource(manifest, { [ARCHIVE_KEY]: bytes });
+    const installed = await manager(appDataRoot, source).ensureAll();
+    const layers = path.join(installed.versionRoot, "layers");
+    const escapedLayers = path.join(outside, "layers");
+    await rename(layers, escapedLayers);
+    await symlink(escapedLayers, layers);
+
+    const inspection = await manager(appDataRoot, source).inspect();
+    expect(inspection.state).toBe("broken");
+    expect(inspection.archives[0]?.reason).toBe("target_not_directory");
+    expect(await readPublishedRuntimeInstallation(appDataRoot)).toBeNull();
+    const failure = await manager(appDataRoot, source).ensureAll().catch((error: unknown) => error);
+    expect(failure).toBeInstanceOf(RuntimeAssetError);
+    expect(await readFile(path.join(escapedLayers, "toolchain", "native", ENTRY_PATH)))
+      .toEqual(FIXTURE_BODY);
+  });
+
+  it("classifies a corrupt intermediate target parent as incomplete", async () => {
+    const appDataRoot = await temporaryRoot();
+    const target = "layers/toolchain/native";
+    const { bytes, archive } = archiveFor(
+      ARCHIVE_KEY,
+      [{ path: ENTRY_PATH, content: FIXTURE_BODY }],
+      undefined,
+      target,
+    );
+    const manifest = runtimeManifest("1.0.0", [archive]);
+    const source = assetSource(manifest, { [ARCHIVE_KEY]: bytes });
+    const installed = await manager(appDataRoot, source).ensureAll();
+    const layers = path.join(installed.versionRoot, "layers");
+    await rm(layers, { recursive: true });
+    await writeFile(layers, "not a directory\n", "utf8");
+
+    const inspection = await manager(appDataRoot, source).inspect();
+    expect(inspection.state).toBe("broken");
+    expect(inspection.archives[0]?.reason).toBe("target_not_directory");
+    expect(await readPublishedRuntimeInstallation(appDataRoot)).toBeNull();
+    await expect(manager(appDataRoot, source).ensureAll()).rejects.toBeInstanceOf(RuntimeAssetError);
+  });
+
+  it.skipIf(!POSIX)("rejects a symlinked parent for a nested archive target", async () => {
+    const appDataRoot = await temporaryRoot();
+    const outside = await temporaryRoot("vidcom-runtime-outside-");
+    const target = "toolchain/native";
+    const { bytes, archive } = archiveFor(
+      ARCHIVE_KEY,
+      [{ path: ENTRY_PATH, content: FIXTURE_BODY }],
+      undefined,
+      target,
+    );
+    const manifest = runtimeManifest("1.0.0", [archive]);
+    const source = assetSource(manifest, { [ARCHIVE_KEY]: bytes });
+    const failure = await manager(appDataRoot, source, {
+      hooks: {
+        onPhase: async (phase) => {
+          if (phase !== "afterValidate") return;
+          await symlink(outside, path.join(appDataRoot, "native", "1.0.0", "toolchain"));
+        },
+      },
+    }).ensureAll().catch((error: unknown) => error);
+
+    expect(failure).toBeInstanceOf(RuntimeAssetError);
+    expect((failure as RuntimeAssetError).code).toBe(ErrorCode.RuntimeExtractionIncomplete);
+    expect((failure as RuntimeAssetError).message).toContain("target parent is not a real directory");
+    expect(await readdir(outside)).toEqual([]);
+  });
+
   it.skipIf(!POSIX)("keeps every owned directory at 0700 and restores manifest modes", async () => {
     const appDataRoot = await temporaryRoot();
     const { source } = fixture("1.0.0");

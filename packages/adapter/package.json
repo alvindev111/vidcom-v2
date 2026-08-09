@@ -3,7 +3,12 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "exports": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts",
+    "./compiler-guard": "./src/hyperframes/compiler-guard.ts",
+    "./compiler-probe-child": "./src/hyperframes/compiler-probe-child.ts",
+    "./runtime-bootstrap": "./src/runtime/runtime-bootstrap.ts"
+  },
   "dependencies": {
     "@elevenlabs/elevenlabs-js": "2.59.0",
     "@hyperframes/core": "0.7.86",

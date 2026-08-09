@@ -154,7 +154,14 @@ export interface RenderBinaryProbeResult {
 }
 
 export interface BinaryProbePort {
-  probe(): Promise<Result<RenderBinaryProbeResult, DomainError>>;
+  /**
+   * Resolves the shipped render toolchain for one project.
+   *
+   * The project root is required even though binary paths themselves are
+   * process-wide: the adapter also compares the project's declared
+   * HyperFrames version with the version that this toolchain actually ships.
+   */
+  probe(projectRoot: AbsolutePath): Promise<Result<RenderBinaryProbeResult, DomainError>>;
 }
 
 /** Adapter-owned HyperFrames check execution; non-zero finding exits remain available results. */

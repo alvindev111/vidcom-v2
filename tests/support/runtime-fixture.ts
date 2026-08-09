@@ -8,7 +8,7 @@ import {
   type RuntimeAssetSource,
   type RuntimePlatformTag,
 } from "@vidcom/adapter";
-import type { ContentHash } from "@vidcom/contracts";
+import { MOTION_LIBRARIES, type ContentHash } from "@vidcom/contracts";
 
 export const HOST_TAG = `${process.platform}-${process.arch}` as RuntimePlatformTag;
 export const HOST_SUPPORTED = RUNTIME_PLATFORM_TAGS.includes(HOST_TAG);
@@ -85,11 +85,107 @@ export interface FixtureFile {
   mode?: number;
 }
 
+export interface ProductFixtureEntries {
+  node: readonly FixtureFile[];
+  hyperframes: readonly FixtureFile[];
+  native: readonly FixtureFile[];
+}
+
+/** Complete host product contract used by real-archive integration fixtures. */
+export function productRuntimeFixtureEntries(
+  migrations: readonly FixtureFile[] = [],
+): ProductFixtureEntries {
+  const windows = HOST_TAG === "win32-x64";
+  const suffix = windows ? ".exe" : "";
+  const commonNativePackageNames = [
+    "sharp",
+    "@img/colour",
+    "detect-libc",
+    "semver",
+    "esbuild",
+    "onnxruntime-node",
+    "onnxruntime-common",
+  ];
+  const platformPackageNames = HOST_TAG === "darwin-arm64"
+    ? ["@img/sharp-darwin-arm64", "@img/sharp-libvips-darwin-arm64", "@esbuild/darwin-arm64"]
+    : HOST_TAG === "linux-x64"
+      ? ["@img/sharp-linux-x64", "@img/sharp-libvips-linux-x64", "@esbuild/linux-x64"]
+      : ["@img/sharp-win32-x64", "@esbuild/win32-x64"];
+  const onnxPlatform = windows ? "win32" : HOST_TAG.split("-", 1)[0]!;
+  const onnxArchitecture = HOST_TAG.endsWith("-arm64") ? "arm64" : "x64";
+  const onnxRoot = `node_modules/onnxruntime-node/bin/napi-v3/${onnxPlatform}/${onnxArchitecture}`;
+  const platformEsbuild = windows
+    ? "node_modules/@esbuild/win32-x64/esbuild.exe"
+    : `node_modules/@esbuild/${HOST_TAG}/bin/esbuild`;
+  const native: FixtureFile[] = [
+    ...[...commonNativePackageNames, ...platformPackageNames].map((name) => ({
+      path: `node_modules/${name}/package.json`,
+      content: Buffer.from(`{"name":${JSON.stringify(name)}}\n`, "utf8"),
+    })),
+    {
+      path: "node_modules/onnxruntime-node/dist/index.js",
+      content: Buffer.from("module.exports = {};\n", "utf8"),
+    },
+    { path: `${onnxRoot}/onnxruntime_binding.node`, content: Buffer.from("binding\n", "utf8") },
+    {
+      path: windows
+        ? `${onnxRoot}/onnxruntime.dll`
+        : HOST_TAG === "darwin-arm64"
+          ? `${onnxRoot}/libonnxruntime.1.0.0.dylib`
+          : `${onnxRoot}/libonnxruntime.so.1`,
+      content: Buffer.from("runtime\n", "utf8"),
+    },
+    { path: platformEsbuild, content: Buffer.from("esbuild\n", "utf8"), mode: 0o755 },
+    {
+      path: `node_modules/@img/sharp-${HOST_TAG}/lib/sharp-${HOST_TAG}.node`,
+      content: Buffer.from("sharp\n", "utf8"),
+    },
+    ...windows ? [] : [{
+      path: `node_modules/@img/sharp-libvips-${HOST_TAG}/lib/libvips-cpp.${
+        HOST_TAG === "darwin-arm64" ? "1.dylib" : "so.1"
+      }`,
+      content: Buffer.from("libvips\n", "utf8"),
+    }],
+  ];
+  return {
+    node: [
+      { path: `bin/ffmpeg${suffix}`, content: Buffer.from("ffmpeg\n"), mode: 0o755 },
+      { path: `bin/ffprobe${suffix}`, content: Buffer.from("ffprobe\n"), mode: 0o755 },
+      { path: `bin/esbuild${suffix}`, content: Buffer.from("esbuild\n"), mode: 0o755 },
+      {
+        path: windows ? "python/python.exe" : "python/bin/python3",
+        content: Buffer.from("python\n"),
+        mode: 0o755,
+      },
+      { path: "vieneu/worker.py", content: Buffer.from("# worker\n") },
+      ...migrations,
+    ],
+    hyperframes: [
+      { path: "bin/hyperframes.mjs", content: Buffer.from("export {};\n", "utf8") },
+      { path: "package.json", content: Buffer.from('{"name":"hyperframes","version":"0.7.86"}\n', "utf8") },
+      { path: "bin/hyperframe.manifest.json", content: Buffer.from("{}\n", "utf8") },
+      { path: "bin/hyperframe.runtime.iife.js", content: Buffer.from("void 0;\n", "utf8") },
+      ...MOTION_LIBRARIES.flatMap((library) => [{
+        path: `motion-libraries/${library.packageName}/package.json`,
+        content: Buffer.from(
+          `{"name":${JSON.stringify(library.packageName)},"version":${JSON.stringify(library.version)}}\n`,
+          "utf8",
+        ),
+      }, ...library.files.map(({ packagePath }) => ({
+        path: `motion-libraries/${library.packageName}/${packagePath}`,
+        content: Buffer.from(`${library.packageName}:${packagePath}\n`, "utf8"),
+      }))]),
+    ],
+    native,
+  };
+}
+
 /** Builds one archive plus the manifest projection that exactly describes it. */
 export function archiveFor(
   key: string,
   files: readonly FixtureFile[],
   platform: RuntimePlatformTag = HOST_TAG,
+  target = key,
 ): { bytes: Buffer; archive: EmbeddedArchive } {
   const bytes = tarball(files.map((file) => ({
     path: file.path,
@@ -104,7 +200,7 @@ export function archiveFor(
       platform,
       sha256: digest(bytes),
       bytes: bytes.byteLength,
-      target: "runtime",
+      target,
       entries: files.map((file) => ({
         path: file.path,
         sha256: digest(file.content),
@@ -140,17 +236,17 @@ export function runtimeManifest(
     artifactVersion,
     versions: {
       node: "24.9.0",
-      hyperframes: "1.0.0",
-      esbuild: "0.25.0",
+      hyperframes: "0.7.86",
+      esbuild: "0.25.12",
       ffmpeg: "7.1",
-      cpython: "3.12.7",
-      vieneu: "1.0.0",
+      cpython: "3.12.13+20260805",
+      vieneu: "3.2.4",
       motion: {
-        animejs: "3.2.2",
-        gsap: "3.12.5",
-        "lottie-web": "5.12.2",
-        motion: "11.0.0",
-        three: "0.164.0",
+        animejs: "4.5.0",
+        gsap: "3.15.0",
+        "lottie-web": "5.13.0",
+        motion: "12.43.0",
+        three: "0.185.1",
       },
     },
     pythonPackages: pythonPackages(packageCount),

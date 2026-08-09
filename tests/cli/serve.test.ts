@@ -6,13 +6,16 @@ import path from "node:path";
 import { DaemonDiscoveryStore } from "@vidcom/adapter";
 import {
   CliInputError,
+  connectRenderClient,
   createSeaStaticAssetHost,
+  defaultAppDataRoot,
   parseServeCommandArgs,
   resolveStaticAssets,
   startServing,
   unbuiltFrontendTarget,
   type ServingDaemon,
 } from "@vidcom/cli";
+import { configureCompilerBeforeRuntime } from "../../packages/cli/src/compiler-preload";
 import { afterEach, describe, expect, it } from "vitest";
 
 const roots: string[] = [];
@@ -21,6 +24,7 @@ const daemons: ServingDaemon[] = [];
 afterEach(async () => {
   for (const daemon of daemons.splice(0)) await daemon.stop();
   delete process.env.VIDCOM_APP_DATA;
+  delete process.env.VIDCOM_SETTINGS;
   delete process.env.VIDCOM_WORKSPACE;
   await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
 });
@@ -116,6 +120,32 @@ describe("serve static assets", () => {
 });
 
 describe("serve", () => {
+  it("uses the preloaded settings root for discovery and render attachment", async () => {
+    const { appData, workspace } = await scratch();
+    const settingsPath = path.join(path.dirname(appData), "setting.json");
+    await writeFile(settingsPath, JSON.stringify({ appDataRoot: appData }));
+    delete process.env.VIDCOM_APP_DATA;
+    process.env.VIDCOM_SETTINGS = settingsPath;
+
+    await configureCompilerBeforeRuntime();
+    expect(process.env.VIDCOM_APP_DATA).toBe(appData);
+    expect(defaultAppDataRoot()).toBe(appData);
+
+    const daemon = await startServing({ workspace });
+    daemons.push(daemon);
+    expect(await new DaemonDiscoveryStore(appData).read(workspace)).toMatchObject({
+      instanceId: daemon.instanceId,
+      port: daemon.listener.port,
+    });
+
+    const attached = await connectRenderClient([
+      "project_settings_root",
+      "--workspace",
+      workspace,
+    ]);
+    await attached.client.detach(attached.attachmentId);
+  }, 60_000);
+
   it("publishes a discovery record only once it is answering", async () => {
     const { daemon, appData } = await serve();
     const record = await new DaemonDiscoveryStore(appData).read(daemon.workspaceRoot);

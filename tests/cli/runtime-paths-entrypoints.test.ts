@@ -2,18 +2,33 @@ import { readFile } from "node:fs/promises";
 import path from "node:path";
 
 import { RUNTIME_PATH_NAMES } from "@vidcom/adapter";
-import { VIDCOM_COMMAND_NAMES, runtimePathsFor } from "@vidcom/cli";
+import {
+  VIDCOM_COMMAND_NAMES,
+  runtimePathsFor,
+  type VidcomCommandName,
+} from "@vidcom/cli";
 import { describe, expect, it } from "vitest";
 
 /**
- * The modes that stand up a composition root.
+ * Every mode that needs the daemon's or its own composition runtime.
  *
- * Derived from the published mode union rather than written out again, so a
- * mode added to the CLI cannot quietly skip this file. `version`, `approve`,
- * `credential` and `backup` do not build one: they read or print, and giving
- * them runtime paths would claim a dependency they do not have.
+ * `backup` belongs here because restore builds one even though list and verify
+ * remain read-only. `version` and `approve` only read or print; `credential`
+ * manages a secret and is explicitly non-composing.
  */
-const COMPOSING_MODES = ["app", "serve", "mcp", "render", "doctor"] as const;
+type RuntimeAwareMode = Exclude<VidcomCommandName, "version" | "approve" | "credential">;
+
+const RUNTIME_ENTRYPOINT_SOURCES = {
+  app: "packages/cli/src/next-host.ts",
+  serve: "packages/cli/src/next-host.ts",
+  mcp: "packages/cli/src/commands/mcp.ts",
+  render: "packages/cli/src/next-host.ts",
+  doctor: "packages/cli/src/next-host.ts",
+  backup: "packages/cli/src/commands/backup.ts",
+  recovery: "packages/cli/src/commands/recovery.ts",
+} as const satisfies Record<RuntimeAwareMode, string>;
+
+const COMPOSING_MODES = Object.keys(RUNTIME_ENTRYPOINT_SOURCES) as RuntimeAwareMode[];
 
 describe("runtime paths reach every entrypoint", () => {
   it("names modes that the CLI actually publishes", () => {
@@ -44,13 +59,10 @@ describe("runtime paths reach every entrypoint", () => {
     // One helper rather than five call sites building their own: missing a
     // mode is the easy mistake here, and the forgotten one is usually the least
     // used, so it breaks long after the change and far from it.
-    const sources = await Promise.all([
-      // `app` and `serve` share the hosted runtime; `render` and `doctor` reach
-      // the daemon rather than composing a second one.
-      readFile("packages/cli/src/next-host.ts", "utf8"),
-      readFile("packages/cli/src/commands/mcp.ts", "utf8"),
-      readFile("packages/cli/src/commands/recovery.ts", "utf8"),
-    ]);
+    // `app` and `serve` share the hosted runtime; `render` and `doctor` reach
+    // the daemon rather than composing a second one.
+    const sources = await Promise.all([...new Set(Object.values(RUNTIME_ENTRYPOINT_SOURCES))]
+      .map((source) => readFile(source, "utf8")));
     for (const source of sources) {
       expect(source).toContain("runtimePathsFor");
     }

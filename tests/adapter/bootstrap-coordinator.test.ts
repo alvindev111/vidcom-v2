@@ -1,9 +1,13 @@
-import { realpathSync } from "node:fs";
-import { lstat, mkdir, mkdtemp, rm } from "node:fs/promises";
+import { existsSync, readFileSync, readdirSync, realpathSync } from "node:fs";
+import { lstat, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
-import { migrateDatabase, type RuntimeAssetSource } from "@vidcom/adapter";
+import {
+  migrateDatabase,
+  readPublishedRuntimeInstallation,
+  type RuntimeAssetSource,
+} from "@vidcom/adapter";
 import {
   BootstrapCoordinator,
   CREDENTIAL_LOCK_FILENAME,
@@ -19,11 +23,26 @@ import {
   archiveFor,
   assetSource,
   HOST_SUPPORTED,
+  HOST_TAG,
+  productRuntimeFixtureEntries,
   runtimeManifest,
 } from "../support/runtime-fixture";
 
 const ARCHIVE_KEY = "node";
 const BODY = Buffer.from("vidcom runtime fixture\n", "utf8");
+const PACKAGED_BOOT = {
+  path: "cli/boot.cjs",
+  content: Buffer.from("module.exports = {};\n"),
+};
+const MIGRATIONS_SOURCE = new URL("../../packages/adapter/drizzle/", import.meta.url);
+const SHIPPED_MIGRATIONS = readdirSync(MIGRATIONS_SOURCE, { withFileTypes: true })
+  .filter((entry) => entry.isDirectory()
+    && existsSync(new URL(`${entry.name}/migration.sql`, MIGRATIONS_SOURCE)))
+  .sort((left, right) => left.name.localeCompare(right.name, "en"))
+  .map((entry) => ({
+    path: path.posix.join("drizzle", entry.name, "migration.sql"),
+    content: readFileSync(new URL(`${entry.name}/migration.sql`, MIGRATIONS_SOURCE)),
+  }));
 
 const roots: string[] = [];
 
@@ -37,9 +56,29 @@ async function temporaryRoot(): Promise<string> {
   return root;
 }
 
+function hyperframesArchive() {
+  const product = productRuntimeFixtureEntries();
+  return archiveFor(
+    "hyperframes",
+    [...product.hyperframes, ...product.native],
+    HOST_TAG,
+    "hyperframes-runtime",
+  );
+}
+
 function source(): RuntimeAssetSource {
-  const { bytes, archive } = archiveFor(ARCHIVE_KEY, [{ path: "runtime.txt", content: BODY }]);
-  return assetSource(runtimeManifest("1.0.0", [archive]), { [ARCHIVE_KEY]: bytes });
+  const product = productRuntimeFixtureEntries(SHIPPED_MIGRATIONS);
+  const node = archiveFor(ARCHIVE_KEY, [
+    PACKAGED_BOOT,
+    { path: "runtime.txt", content: BODY },
+    ...product.node,
+    ...product.native,
+  ], HOST_TAG, "node-runtime");
+  const hyperframes = hyperframesArchive();
+  return assetSource(runtimeManifest("1.0.0", [node.archive, hyperframes.archive]), {
+    [ARCHIVE_KEY]: node.bytes,
+    hyperframes: hyperframes.bytes,
+  });
 }
 
 async function isDirectory(pathname: string): Promise<boolean> {
@@ -87,9 +126,9 @@ describe.skipIf(!HOST_SUPPORTED)("bootstrap coordinator", () => {
     const workspaceRoot = path.join(root, "workspace");
     await mkdir(workspaceRoot);
     let migrationCalls = 0;
-    const countedMigration: typeof migrateDatabase = async (database) => {
+    const countedMigration: typeof migrateDatabase = async (database, migrationsFolder) => {
       migrationCalls += 1;
-      await migrateDatabase(database);
+      await migrateDatabase(database, migrationsFolder);
     };
 
     const prepared = await new BootstrapCoordinator({ migrate: countedMigration }).prepare({
@@ -125,6 +164,132 @@ describe.skipIf(!HOST_SUPPORTED)("bootstrap coordinator", () => {
     } finally {
       await foundation.stop();
     }
+  });
+
+  it("migrates from the extracted node archive after the build source is unavailable", async () => {
+    const root = await temporaryRoot();
+    const appDataRoot = path.join(root, "app-data");
+    const buildSource = path.join(root, "build-source-drizzle");
+    for (const migration of SHIPPED_MIGRATIONS) {
+      const buildMigration = path.join(buildSource, ...migration.path.split("/").slice(1));
+      await mkdir(path.dirname(buildMigration), { recursive: true });
+      await writeFile(buildMigration, migration.content);
+    }
+    const buildMigrations = await Promise.all(SHIPPED_MIGRATIONS.map(async (migration) => ({
+      path: migration.path,
+      content: await readFile(path.join(buildSource, ...migration.path.split("/").slice(1))),
+    })));
+    const product = productRuntimeFixtureEntries(buildMigrations);
+
+    const { bytes, archive } = archiveFor(
+      ARCHIVE_KEY,
+      [
+        PACKAGED_BOOT,
+        { path: "runtime.txt", content: BODY },
+        ...product.node,
+        ...product.native,
+      ],
+      HOST_TAG,
+      "node-runtime",
+    );
+    await rm(buildSource, { recursive: true });
+    expect(await isDirectory(buildSource)).toBe(false);
+
+    let migrationCalls = 0;
+    let observedMigrationsFolder: string | undefined;
+    const artifactMigration: typeof migrateDatabase = async (database, migrationsFolder) => {
+      migrationCalls += 1;
+      if (!migrationsFolder) throw new Error("artifact migration folder was not provided");
+      observedMigrationsFolder = migrationsFolder;
+      await migrateDatabase(database, migrationsFolder);
+    };
+    const hyperframes = hyperframesArchive();
+    const prepared = await new BootstrapCoordinator({ migrate: artifactMigration }).prepare({
+      appDataRoot,
+      assetSource: assetSource(runtimeManifest("1.0.1", [archive, hyperframes.archive]), {
+        [ARCHIVE_KEY]: bytes,
+        hyperframes: hyperframes.bytes,
+      }),
+    });
+    try {
+      const extractedMigrations = path.join(
+        appDataRoot,
+        "native",
+        "1.0.1",
+        "node-runtime",
+        "drizzle",
+      );
+      expect(observedMigrationsFolder).toBe(extractedMigrations);
+      expect(await isDirectory(extractedMigrations)).toBe(true);
+      expect(prepared.database.$client.prepare(
+        "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'app_settings'",
+      ).get()).toBeDefined();
+      expect(prepared.database.$client.prepare(
+        "SELECT count(*) AS count FROM __drizzle_migrations",
+      ).get()).toEqual({ count: SHIPPED_MIGRATIONS.length });
+      expect(migrationCalls).toBe(1);
+    } finally {
+      await prepared.release();
+    }
+  });
+
+  it("rejects an incomplete product toolchain before publication or migration", async () => {
+    const appDataRoot = await temporaryRoot();
+    const good = await new BootstrapCoordinator().prepare({
+      appDataRoot,
+      assetSource: source(),
+    });
+    await good.release();
+
+    const completeNode = productRuntimeFixtureEntries(SHIPPED_MIGRATIONS);
+    const nodeOnly = archiveFor(ARCHIVE_KEY, [
+      PACKAGED_BOOT,
+      { path: "runtime.txt", content: BODY },
+      ...completeNode.node,
+      ...completeNode.native,
+    ], HOST_TAG, "node-runtime");
+    let invalidMigrationCalls = 0;
+    const invalidMigration: typeof migrateDatabase = async (database, migrationsFolder) => {
+      invalidMigrationCalls += 1;
+      await migrateDatabase(database, migrationsFolder);
+    };
+
+    await expect(new BootstrapCoordinator({ migrate: invalidMigration }).prepare({
+      appDataRoot,
+      assetSource: assetSource(runtimeManifest("2.0.0", [nodeOnly.archive]), {
+        [ARCHIVE_KEY]: nodeOnly.bytes,
+      }),
+    })).rejects.toMatchObject({ code: ErrorCode.RuntimeManifestInvalid });
+
+    const incompleteNode = productRuntimeFixtureEntries();
+    const nodeWithoutMigrations = archiveFor(ARCHIVE_KEY, [
+      PACKAGED_BOOT,
+      { path: "runtime.txt", content: BODY },
+      ...incompleteNode.node,
+      ...incompleteNode.native,
+    ], HOST_TAG, "node-runtime");
+    const hyperframes = hyperframesArchive();
+    await expect(new BootstrapCoordinator({ migrate: invalidMigration }).prepare({
+      appDataRoot,
+      assetSource: assetSource(runtimeManifest(
+        "3.0.0",
+        [nodeWithoutMigrations.archive, hyperframes.archive],
+      ), {
+        [ARCHIVE_KEY]: nodeWithoutMigrations.bytes,
+        hyperframes: hyperframes.bytes,
+      }),
+    })).rejects.toMatchObject({ code: ErrorCode.RuntimeManifestInvalid });
+
+    expect(invalidMigrationCalls).toBe(0);
+    expect(await isDirectory(path.join(appDataRoot, "native", "2.0.0"))).toBe(false);
+    expect(await isDirectory(path.join(appDataRoot, "native", "3.0.0"))).toBe(false);
+    const published = await readPublishedRuntimeInstallation(appDataRoot);
+    expect(published?.manifest.artifactVersion).toBe("1.0.0");
+    expect(published?.versionRoot).toBe(path.join(appDataRoot, "native", "1.0.0"));
+    expect(published?.archiveRoots).toMatchObject({
+      node: path.join(appDataRoot, "native", "1.0.0", "node-runtime"),
+      hyperframes: path.join(appDataRoot, "native", "1.0.0", "hyperframes-runtime"),
+    });
   });
 
   it("holds the bootstrap lock for the whole preparation and releases it after", async () => {

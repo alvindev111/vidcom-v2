@@ -135,7 +135,6 @@ export async function runRender(input: RenderRunOptions): Promise<number> {
   const pollMs = input.pollMs ?? 500;
 
   const { jobId } = await input.client.enqueueRender(input.projectId, {
-    projectId: input.projectId,
     idempotencyKey: renderIdempotencyKey(),
     ...(input.options.preset === undefined ? {} : { renderPresetId: input.options.preset }),
   });

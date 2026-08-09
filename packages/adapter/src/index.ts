@@ -41,6 +41,7 @@ export * from "./runtime/atomic-directory-lock";
 export * from "./runtime/runtime-asset-source";
 export * from "./runtime/runtime-asset-extractor";
 export * from "./runtime/runtime-asset-manager";
+export * from "./runtime/runtime-integrity";
 export * from "./runtime/runtime-paths";
 export * from "./runtime/download-cache";
 export * from "./tts/tts-audio-normalize";

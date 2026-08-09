@@ -91,19 +91,34 @@ describe("starting a daemon on demand", () => {
     expect(ensureDaemonArgs("/w")).toEqual(["serve", "--ensure", "--workspace", "/w"]);
   });
 
-  it("detaches the child and gives it no stdio", () => {
+  it("detaches the child, gives it no stdio, and passes only daemon configuration", () => {
     // The client exits long before the daemon does. A child sharing this
     // process's stdio would write into a pipe nobody reads — and when the
     // caller is the bridge, that pipe is the JSON-RPC stream.
-    let seen: { options?: { detached?: boolean; stdio?: unknown } } = {};
+    let seen: { options?: { detached?: boolean; stdio?: unknown; env?: NodeJS.ProcessEnv } } = {};
     spawnEnsuredDaemon({
       workspaceRoot: "/w",
+      environment: {
+        NODE_ENV: "test",
+        PATH: "/bin",
+        VIDCOM_APP_DATA: "/state",
+        ELEVENLABS_API_KEY: "provider-secret",
+        GH_KEY: "must-not-leak",
+      },
       spawnProcess: ((_command: string, _args: string[], options: Record<string, unknown>) => {
-        seen = { options };
+        seen = { options: options as typeof seen.options };
         return { unref: () => undefined };
       }) as never,
     });
     expect(seen.options).toMatchObject({ detached: true, stdio: "ignore" });
+    expect(seen.options?.env).toMatchObject({
+      PATH: "/bin",
+      VIDCOM_APP_DATA: "/state",
+      ELEVENLABS_API_KEY: "provider-secret",
+      PYTHONIOENCODING: "utf-8",
+      PYTHONUTF8: "1",
+    });
+    expect(seen.options?.env).not.toHaveProperty("GH_KEY");
   });
 
   it("waits for whichever daemon publishes, not for its own child", async () => {

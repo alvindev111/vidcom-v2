@@ -87,6 +87,41 @@ describe("daemon client", () => {
     ]);
   });
 
+  it("keeps render enqueue, read and cancel inside the authenticated bridge surface", async () => {
+    const { client, calls } = stub((call) => {
+      if (call.method === "POST" && call.url.endsWith("/renders")) {
+        return json({ jobId: "job_render" }, 202);
+      }
+      if (call.method === "GET") return json({ id: "job_render", status: "queued" });
+      return new Response(null, { status: 204 });
+    });
+
+    await client.enqueueRender("project/unsafe", {
+      idempotencyKey: "render-1",
+      renderPresetId: "vertical-shorts",
+    });
+    await client.getJob("job/unsafe");
+    await client.cancelJob("job/unsafe");
+
+    expect(calls.map(({ url, method, body }) => ({ url, method, body }))).toEqual([
+      {
+        url: "http://127.0.0.1:43127/api/bridge/v1/projects/project%2Funsafe/renders",
+        method: "POST",
+        body: { idempotencyKey: "render-1", renderPresetId: "vertical-shorts" },
+      },
+      {
+        url: "http://127.0.0.1:43127/api/bridge/v1/jobs/job%2Funsafe",
+        method: "GET",
+        body: undefined,
+      },
+      {
+        url: "http://127.0.0.1:43127/api/bridge/v1/jobs/job%2Funsafe/cancel",
+        method: "POST",
+        body: undefined,
+      },
+    ]);
+  });
+
   it("refuses a daemon that is not the instance discovery pointed at", async () => {
     // The daemon may have restarted between the discovery read and this call,
     // and it answers happily as itself. The client is the side that knows which

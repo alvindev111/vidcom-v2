@@ -15,6 +15,18 @@ export default defineConfig({
     alias: {
       "@": path.resolve(import.meta.dirname, "src"),
       "@vidcom/agent-kit": path.resolve(import.meta.dirname, "packages/agent-kit/src/index.ts"),
+      "@vidcom/adapter/compiler-guard": path.resolve(
+        import.meta.dirname,
+        "packages/adapter/src/hyperframes/compiler-guard.ts",
+      ),
+      "@vidcom/adapter/compiler-probe-child": path.resolve(
+        import.meta.dirname,
+        "packages/adapter/src/hyperframes/compiler-probe-child.ts",
+      ),
+      "@vidcom/adapter/runtime-bootstrap": path.resolve(
+        import.meta.dirname,
+        "packages/adapter/src/runtime/runtime-bootstrap.ts",
+      ),
       "@vidcom/adapter": path.resolve(import.meta.dirname, "packages/adapter/src/index.ts"),
       "@vidcom/cli": path.resolve(import.meta.dirname, "packages/cli/src/index.ts"),
       "@vidcom/contracts": path.resolve(

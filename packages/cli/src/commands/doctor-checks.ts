@@ -21,6 +21,8 @@ export interface ProbeResult {
   ok: boolean;
   detail?: string;
   version?: string;
+  /** Overrides the check's generic remedy when the probe knows a safer next step. */
+  remedy?: string;
   /** The thing is not there at all, as opposed to there and wrong. */
   absent?: boolean;
 }
@@ -70,7 +72,7 @@ function itemFrom(id: string, result: ProbeResult, remedy: string): DoctorItem {
     // collapsing them makes every remedy a guess.
     status: result.absent === true ? "missing" : "broken",
     ...(result.detail === undefined ? {} : { detail: result.detail }),
-    remedy,
+    remedy: result.remedy ?? remedy,
   };
 }
 

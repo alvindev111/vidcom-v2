@@ -261,6 +261,38 @@ describe("render job with real SQLite and filesystem", () => {
     }
   });
 
+  it("probes the shipped toolchain against the selected project root", async () => {
+    const fixture = await baseFixture();
+    try {
+      const project = await addProject(fixture, "version-probe", `<!doctype html><html><body>
+        <main data-composition-id="main" data-duration="1">
+          <section data-composition-id="scene-1" data-start="0" data-duration="1"></section>
+        </main></body></html>`);
+      const probedRoots: AbsolutePath[] = [];
+      const binaries: BinaryProbePort = {
+        async probe(projectRoot) {
+          probedRoots.push(projectRoot);
+          return fixture.binaries.probe(projectRoot);
+        },
+      };
+
+      const queued = await enqueueRenderJob({
+        workspace: fixture.workspace,
+        composition: new CompositionHf(),
+        journal: fixture.journal,
+        jobs: fixture.jobs,
+        ids: fixture.ids,
+        hashContent,
+        binaries,
+      }, { projectId: project.id });
+
+      expect(queued.ok).toBe(true);
+      expect(probedRoots).toEqual([project.projectRoot as AbsolutePath]);
+    } finally {
+      await fixture.database.destroy();
+    }
+  });
+
   it("renders through the real process, publishes MP4 and sidecar, and does not advance source revision", async (context) => {
     const [ffmpegPath, ffprobePath] = await Promise.all([findExecutable("ffmpeg"), findExecutable("ffprobe")]);
     if (!ffmpegPath || !ffprobePath) return context.skip("real render requires ffmpeg and ffprobe on PATH");
@@ -306,7 +338,7 @@ describe("render job with real SQLite and filesystem", () => {
         workspace: fixture.workspace,
         journal: fixture.journal,
         guard: new LoopbackRuntimeAssetGuard(),
-        binaries: new NodeRenderBinaryProbe(binaryPaths),
+        binaries: new NodeRenderBinaryProbe(binaryPaths, { appDataRoot: fixture.appDataRoot }),
         runtimeSource: hyperframesRuntimeSource,
         injectGuard: injectRuntimeAssetGuardDocument,
         clock,

@@ -1,13 +1,17 @@
 import { createHash } from "node:crypto";
+import { spawnSync } from "node:child_process";
 import { realpathSync } from "node:fs";
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import { pathToFileURL } from "node:url";
 
 import {
   buildFrontendPack,
   describeAsset,
   exportedFiles,
+  recoverFrontendPublication,
+  reportFrontendPackFailure,
 } from "../../scripts/build-frontend-pack.mjs";
 import { afterEach, describe, expect, it } from "vitest";
 
@@ -118,6 +122,176 @@ describe("frontend pack", () => {
     const second = await buildFrontendPack(exportDirectory, packPath, manifestPath);
     expect(second).toEqual(first);
     expect(await readFile(packPath)).toEqual(firstPack);
+  });
+
+  it("rejects a symlinked output parent without touching its external target", async () => {
+    const { exportDirectory, packPath, manifestPath } = await scratchExport({
+      "index.html": "safe export",
+    });
+    const outputDirectory = path.dirname(packPath);
+    const external = realpathSync(await mkdtemp(path.join(tmpdir(), "vidcom-pack-external-")));
+    roots.push(external);
+    const sentinel = path.join(external, "sentinel.txt");
+    await writeFile(sentinel, "keep", "utf8");
+    await symlink(external, outputDirectory, process.platform === "win32" ? "junction" : "dir");
+
+    await expect(buildFrontendPack(exportDirectory, packPath, manifestPath))
+      .rejects.toThrow(/parent chain must contain only real directories/u);
+    expect(await readFile(sentinel, "utf8")).toBe("keep");
+    await expect(readFile(path.join(external, path.basename(packPath))))
+      .rejects.toMatchObject({ code: "ENOENT" });
+    await expect(readFile(path.join(external, path.basename(manifestPath))))
+      .rejects.toMatchObject({ code: "ENOENT" });
+  });
+
+  it("rejects a symlink inside the export and preserves the published pair", async () => {
+    const { exportDirectory, packPath, manifestPath } = await scratchExport({
+      "index.html": "generation one",
+    });
+    await buildFrontendPack(exportDirectory, packPath, manifestPath);
+    const previousPack = await readFile(packPath);
+    const previousManifest = await readFile(manifestPath);
+
+    const external = realpathSync(await mkdtemp(path.join(tmpdir(), "vidcom-export-external-")));
+    roots.push(external);
+    const sentinel = path.join(external, "sentinel.txt");
+    await writeFile(sentinel, "do not pack", "utf8");
+    await symlink(
+      external,
+      path.join(exportDirectory, "external-assets"),
+      process.platform === "win32" ? "junction" : "dir",
+    );
+    await writeFile(path.join(exportDirectory, "index.html"), "generation two", "utf8");
+
+    await expect(buildFrontendPack(exportDirectory, packPath, manifestPath))
+      .rejects.toThrow(/only real directories and regular files/u);
+    expect(await readFile(sentinel, "utf8")).toBe("do not pack");
+    expect(await readFile(packPath)).toEqual(previousPack);
+    expect(await readFile(manifestPath)).toEqual(previousManifest);
+  });
+
+  it.skipIf(process.platform === "win32")(
+    "rejects a FIFO inside the export and preserves the published pair",
+    async () => {
+      const { exportDirectory, packPath, manifestPath } = await scratchExport({
+        "index.html": "generation one",
+      });
+      await buildFrontendPack(exportDirectory, packPath, manifestPath);
+      const previousPack = await readFile(packPath);
+      const previousManifest = await readFile(manifestPath);
+      await writeFile(path.join(exportDirectory, "index.html"), "generation two", "utf8");
+
+      const fifoPath = path.join(exportDirectory, "blocking-asset");
+      const fifo = spawnSync("mkfifo", [fifoPath], { encoding: "utf8", shell: false });
+      expect(fifo.error).toBeUndefined();
+      expect(fifo.status, fifo.stderr).toBe(0);
+      await expect(buildFrontendPack(exportDirectory, packPath, manifestPath))
+        .rejects.toThrow(/only real directories and regular files/u);
+      expect(await readFile(packPath)).toEqual(previousPack);
+      expect(await readFile(manifestPath)).toEqual(previousManifest);
+    },
+  );
+
+  it("requires the pack and manifest transaction paths to be disjoint", async () => {
+    const { exportDirectory, packPath } = await scratchExport({ "index.html": "safe export" });
+    await expect(buildFrontendPack(exportDirectory, packPath, packPath))
+      .rejects.toThrow(/paths must be disjoint/u);
+  });
+
+  it.skipIf(process.platform === "win32")(
+    "recovers the prior pair after a real second-boundary permission failure",
+    async () => {
+      const { exportDirectory, packPath, manifestPath } = await scratchExport({
+        "index.html": "generation one",
+      });
+      await buildFrontendPack(exportDirectory, packPath, manifestPath);
+      const previousPack = await readFile(packPath);
+      const previousManifest = await readFile(manifestPath);
+      await writeFile(path.join(exportDirectory, "index.html"), "generation two", "utf8");
+
+      const outputDirectory = path.dirname(packPath);
+      let failure: unknown;
+      try {
+        await buildFrontendPack(exportDirectory, packPath, manifestPath, {
+          afterPackPublished: async () => {
+            // The pack boundary has committed. Removing directory write access
+            // makes the manifest rename fail through the real filesystem.
+            await chmod(outputDirectory, 0o500);
+          },
+        });
+      } catch (error) {
+        failure = error;
+      } finally {
+        await chmod(outputDirectory, 0o700);
+      }
+
+      expect(failure).toBeInstanceOf(AggregateError);
+      const original = (failure as AggregateError).errors[0] as NodeJS.ErrnoException;
+      expect(["EACCES", "EPERM"]).toContain(original.code);
+      await recoverFrontendPublication(packPath, manifestPath);
+      expect(await readFile(packPath)).toEqual(previousPack);
+      expect(await readFile(manifestPath)).toEqual(previousManifest);
+    },
+  );
+
+  it("recovers a killed publisher without ever accepting a mixed pair", async () => {
+    const { exportDirectory, packPath, manifestPath } = await scratchExport({
+      "index.html": "generation one",
+    });
+    await buildFrontendPack(exportDirectory, packPath, manifestPath);
+    const previousPack = await readFile(packPath);
+    const previousManifest = await readFile(manifestPath);
+    await writeFile(path.join(exportDirectory, "index.html"), "generation two", "utf8");
+
+    const childPath = path.join(path.dirname(exportDirectory), "crash-publisher.mjs");
+    const moduleUrl = pathToFileURL(path.resolve("scripts/build-frontend-pack.mjs")).href;
+    await writeFile(childPath, [
+      `import { buildFrontendPack } from ${JSON.stringify(moduleUrl)};`,
+      `await buildFrontendPack(${JSON.stringify(exportDirectory)},`,
+      `  ${JSON.stringify(packPath)}, ${JSON.stringify(manifestPath)}, {`,
+      "    afterPackPublished() { process.exit(86); },",
+      "  });",
+      "",
+    ].join("\n"), "utf8");
+    const child = spawnSync(process.execPath, [childPath], {
+      cwd: process.cwd(),
+      encoding: "utf8",
+      timeout: 30_000,
+    });
+    expect(child.error).toBeUndefined();
+    expect(child.status, child.stderr).toBe(86);
+
+    // A killed process may leave one boundary absent, but never an old
+    // manifest beside a new pack. Recovery chooses the complete prior pair.
+    await expect(readFile(manifestPath)).rejects.toMatchObject({ code: "ENOENT" });
+    await recoverFrontendPublication(packPath, manifestPath);
+    expect(await readFile(packPath)).toEqual(previousPack);
+    expect(await readFile(manifestPath)).toEqual(previousManifest);
+
+    await buildFrontendPack(exportDirectory, packPath, manifestPath);
+    const nextPack = await readFile(packPath);
+    const nextManifest = JSON.parse(await readFile(manifestPath, "utf8")) as {
+      entries: ManifestEntry[];
+    };
+    const index = nextManifest.entries.find((entry) => entry.path === "index.html");
+    expect(index).toBeDefined();
+    expect(nextPack.subarray(index!.offset, index!.offset + index!.length).toString("utf8"))
+      .toBe("generation two");
+  });
+
+  it("turns an unclassified top-level filesystem rejection into a nonzero exit", () => {
+    const previous = process.exitCode;
+    let stderr = "";
+    try {
+      process.exitCode = 0;
+      reportFrontendPackFailure(new Error("raw fs rejection"), {
+        write(chunk: string) { stderr += chunk; return true; },
+      });
+      expect(process.exitCode).toBe(1);
+      expect(stderr).toContain("raw fs rejection");
+    } finally {
+      process.exitCode = previous;
+    }
   });
 
   it("says what to run first when there is no export", async () => {

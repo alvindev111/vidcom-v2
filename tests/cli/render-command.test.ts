@@ -1,4 +1,4 @@
-import type { DaemonClient, DaemonJob } from "@vidcom/adapter";
+import type { DaemonClient, DaemonJob, EnqueueRenderInput } from "@vidcom/adapter";
 import {
   CliInputError,
   RENDER_EXIT,
@@ -31,7 +31,7 @@ interface Sink { write(chunk: string): boolean }
 function daemon(options: {
   statuses?: string[];
   onCancel?: () => void;
-  onEnqueue?: (projectId: string, input: Record<string, unknown>) => void;
+  onEnqueue?: (projectId: string, input: EnqueueRenderInput) => void;
 }): DaemonClient {
   const statuses = [...(options.statuses ?? ["succeeded"])];
   return {
@@ -260,14 +260,15 @@ describe("render run", () => {
   });
 
   it("goes through the daemon client rather than a second HTTP client", async () => {
-    let seen: Record<string, unknown> | undefined;
+    let seen: EnqueueRenderInput | undefined;
     await runRender({
       client: daemon({ onEnqueue: (_projectId, input) => { seen = input; } }),
       projectId: "project_1",
       options: { target: "project_1", detach: true, preset: "vertical-shorts" },
       io: capture().io,
     });
-    expect(seen).toMatchObject({ projectId: "project_1", renderPresetId: "vertical-shorts" });
+    expect(seen).toMatchObject({ renderPresetId: "vertical-shorts" });
+    expect(seen).not.toHaveProperty("projectId");
     expect(String(seen?.["idempotencyKey"])).toMatch(/^render_/u);
   });
 });

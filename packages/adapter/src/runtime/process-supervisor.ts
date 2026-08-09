@@ -64,6 +64,13 @@ const execFileAsync = promisify(execFile);
 interface ProcessRow { pid: number; ppid: number | null; pgid: number | null; startedAt: string }
 interface CaptureState { pids: Map<number, string>; groups: Map<number, string>; exhaustive: boolean }
 
+export interface NodeProcessSupervisorOptions {
+  /** Trusted values required by every child; per-invocation duplicates cannot replace them. */
+  defaultEnvironment?: Readonly<Record<string, string>>;
+  /** Configured trust bundle for every supervised Node child. */
+  caBundlePath?: string;
+}
+
 /** One exact operating-system process instance, including its start identity. */
 export interface ProcessIdentity {
   pid: number;
@@ -132,16 +139,29 @@ export class ProcessTerminationUnverifiedError extends Error {
 
 /** Node implementation of the capture, kill and direct-probe process protocol. */
 export class NodeProcessSupervisor implements ProcessSupervisorPort {
-  constructor(private readonly defaultTimeoutMs: number = DEFAULT_TIMEOUT_MS) {}
+  constructor(
+    private readonly defaultTimeoutMs: number = DEFAULT_TIMEOUT_MS,
+    private readonly options: NodeProcessSupervisorOptions = {},
+  ) {}
 
   async run(input: ProcessRunInput): Promise<SupervisedProcessResult> {
     const [executable, ...args] = input.command;
     if (!executable) throw new TypeError("process command must name an executable");
     input.signal?.throwIfAborted();
+    const configuredEnvironment = {
+      ...this.options.defaultEnvironment,
+      ...(this.options.caBundlePath
+        ? { NODE_EXTRA_CA_CERTS: this.options.caBundlePath }
+        : {}),
+    };
 
     const child = spawn(executable, args, {
       cwd: input.cwd,
-      env: allowlistedEnvironment(process.env, input.environment),
+      env: allowlistedEnvironment(
+        process.env,
+        { ...input.environment, ...configuredEnvironment },
+        { caBundlePath: this.options.caBundlePath },
+      ),
       shell: false,
       detached: process.platform !== "win32",
       windowsHide: true,

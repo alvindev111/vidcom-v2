@@ -1,5 +1,5 @@
-import { existsSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { accessSync, constants, existsSync, lstatSync, realpathSync } from "node:fs";
+import { dirname, isAbsolute, join, relative, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
 /** Sidecar assets sit one directory per sidecar, both in the repo and after extraction. */
@@ -50,6 +50,49 @@ export function vieneuInterpreterPath(extractionRoot?: string): string | null {
   return existsSync(candidate) ? candidate : null;
 }
 
+function isContained(root: string, candidate: string): boolean {
+  const relation = relative(root, candidate);
+  return relation === ""
+    || (relation !== ".." && !relation.startsWith(`..${sep}`) && !isAbsolute(relation));
+}
+
+function requiredPackagedFile(
+  extractionRoot: string | undefined,
+  relativePath: string,
+  label: "interpreter" | "worker",
+  executable: boolean,
+): string {
+  const missing = `the packaged VieNeu ${label} is missing from the verified runtime`;
+  try {
+    if (extractionRoot === undefined || !isAbsolute(extractionRoot)) throw new Error(missing);
+    const rootMetadata = lstatSync(extractionRoot);
+    if (rootMetadata.isSymbolicLink() || !rootMetadata.isDirectory()) throw new Error(missing);
+
+    const segments = relativePath.split(sep).filter(Boolean);
+    let current = extractionRoot;
+    for (const [index, segment] of segments.entries()) {
+      current = join(current, segment);
+      const metadata = lstatSync(current);
+      if (metadata.isSymbolicLink()) throw new Error(missing);
+      const final = index === segments.length - 1;
+      if (!final && !metadata.isDirectory()) throw new Error(missing);
+      if (final && (
+        !metadata.isFile()
+        || metadata.nlink !== 1
+        || (executable && process.platform !== "win32" && (metadata.mode & 0o111) === 0)
+      )) throw new Error(missing);
+    }
+    if (executable && process.platform !== "win32") accessSync(current, constants.X_OK);
+
+    const realRoot = realpathSync(extractionRoot);
+    const realCandidate = realpathSync(current);
+    if (!isContained(realRoot, realCandidate)) throw new Error(missing);
+    return current;
+  } catch {
+    throw new Error(missing);
+  }
+}
+
 /**
  * Default sidecar invocation.
  *
@@ -61,10 +104,24 @@ export function vieneuInterpreterPath(extractionRoot?: string): string | null {
  * one. A user override in `~/.vidcom/setting.json` still wins over both, and is
  * applied by the caller.
  */
-export function defaultVieNeuCommand(extractionRoot?: string): readonly string[] {
+export function defaultVieNeuCommand(
+  extractionRoot?: string,
+  requirePackagedRuntime = false,
+): readonly string[] {
+  if (requirePackagedRuntime) {
+    return [
+      requiredPackagedFile(extractionRoot, FROZEN_INTERPRETER, "interpreter", true),
+      requiredPackagedFile(
+        extractionRoot,
+        join(SIDECAR_DIRECTORY, WORKER_SCRIPT),
+        "worker",
+        false,
+      ),
+    ];
+  }
+  const interpreter = vieneuInterpreterPath(extractionRoot);
   return [
-    vieneuInterpreterPath(extractionRoot)
-      ?? (process.platform === "win32" ? "python" : "python3"),
+    interpreter ?? (process.platform === "win32" ? "python" : "python3"),
     join(vieneuSidecarRoot(extractionRoot), WORKER_SCRIPT),
   ];
 }

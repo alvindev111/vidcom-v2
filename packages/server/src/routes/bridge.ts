@@ -1,10 +1,13 @@
 import { Hono } from "hono";
 
 import { ErrorCode, TOOL_SCHEMA_CATALOGUE } from "@vidcom/contracts";
+import type { JobStorePort } from "@vidcom/core";
 
 import type { AttachmentKind, AttachmentRegistry } from "../bridge/attachments";
 import { HttpBoundaryError } from "../middleware/error-mapper";
 import type { McpAuthEnv } from "../middleware/perimeter";
+import { enqueueRenderResponse, type DeliveryLoopRouteDependencies } from "./delivery-loop";
+import { jobId, publicJob, requestJobCancellation, requireJob } from "./jobs";
 
 export interface BridgeToolRequest {
   name: string;
@@ -31,6 +34,11 @@ export interface BridgeRouteDependencies {
   }>;
 }
 
+export interface BridgeRenderRouteDependencies {
+  enqueueRender: DeliveryLoopRouteDependencies["enqueueRender"];
+  jobs: JobStorePort;
+}
+
 const ATTACHMENT_KINDS = new Set<AttachmentKind>(["bridge", "ui", "render"]);
 
 function reject(code: ErrorCode, message: string, details?: Record<string, unknown>): never {
@@ -45,7 +53,10 @@ function reject(code: ErrorCode, message: string, details?: Record<string, unkno
  * through here would hand any configured agent the daemon's own lifecycle
  * controls — attach, detach, and the right to keep it alive.
  */
-export function createBridgeRoutes(dependencies: BridgeRouteDependencies): Hono<McpAuthEnv> {
+export function createBridgeRoutes(
+  dependencies: BridgeRouteDependencies,
+  render?: BridgeRenderRouteDependencies,
+): Hono<McpAuthEnv> {
   const routes = new Hono<McpAuthEnv>();
 
   // Scoped to the bridge prefix, not `*`. This router is mounted at the root of
@@ -118,6 +129,16 @@ export function createBridgeRoutes(dependencies: BridgeRouteDependencies): Hono<
     // Detaching something already gone is the state the caller wanted.
     return c.body(null, 204);
   });
+
+  if (render) {
+    routes.post("/bridge/v1/projects/:id/renders", (c) => enqueueRenderResponse(render, c));
+    routes.get("/bridge/v1/jobs/:jobId", async (c) =>
+      c.json(publicJob(await requireJob(render.jobs, jobId(c)))));
+    routes.post("/bridge/v1/jobs/:jobId/cancel", async (c) => {
+      await requestJobCancellation(render.jobs, jobId(c));
+      return c.body(null, 204);
+    });
+  }
 
   routes.post("/bridge/v1/tools/:name", async (c) => {
     const name = c.req.param("name");

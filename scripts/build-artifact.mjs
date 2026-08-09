@@ -1,6 +1,17 @@
 import { spawnSync } from "node:child_process";
+import { readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+
+import { artifactPath, createArtifactGenerationId } from "./artifact-publish.mjs";
+import {
+  SECONDARY_BUNDLE_PATH,
+  runtimeAssetRoot,
+  runtimeConfigPath,
+  runtimeInputPath,
+  runtimeStageRoot,
+} from "./artifact-layout.mjs";
+import { parseSeaBuildSeal, serializeSeaBuildSeal } from "./sea-build-seal.mjs";
 
 const REPOSITORY_ROOT = path.resolve(fileURLToPath(new URL("..", import.meta.url)));
 
@@ -13,9 +24,9 @@ const REPOSITORY_ROOT = path.resolve(fileURLToPath(new URL("..", import.meta.url
  * here is better than shipping that.
  */
 export const PLATFORM_TAGS = {
-  darwin: "darwin-arm64",
-  win32: "win32-x64",
-  linux: "linux-x64",
+  darwin: { arm64: "darwin-arm64" },
+  win32: { x64: "win32-x64" },
+  linux: { x64: "linux-x64" },
 };
 
 function fail(message, details) {
@@ -25,9 +36,13 @@ function fail(message, details) {
   throw new Error(message);
 }
 
-function platformTag() {
-  const tag = PLATFORM_TAGS[process.platform];
-  if (!tag) fail(`unsupported build platform ${process.platform}`, { supported: Object.keys(PLATFORM_TAGS) });
+export function hostPlatformTag(platform = process.platform, architecture = process.arch) {
+  const tag = PLATFORM_TAGS[platform]?.[architecture];
+  if (!tag) {
+    fail(`unsupported build host ${platform}-${architecture}`, {
+      supported: Object.values(PLATFORM_TAGS).flatMap((architectures) => Object.values(architectures)),
+    });
+  }
   return tag;
 }
 
@@ -39,19 +54,30 @@ function platformTag() {
  * artifact that only misbehaves once someone runs it, which is the most
  * expensive place to find out.
  */
-function step(name, command, args) {
+function step(name, command, args, captureStdout = false, forwardCapturedStdout = true) {
   process.stderr.write(`build-artifact: ${name}\n`);
   const result = spawnSync(command, args, {
     cwd: REPOSITORY_ROOT,
-    stdio: ["ignore", "inherit", "inherit"],
+    stdio: captureStdout ? ["ignore", "pipe", "inherit"] : ["ignore", "inherit", "inherit"],
     shell: false,
+    encoding: captureStdout ? "utf8" : undefined,
   });
+  if (captureStdout && forwardCapturedStdout && result.stdout) process.stderr.write(result.stdout);
   if (result.error) fail(`${name} could not start`, { cause: result.error.message });
   if (result.status !== 0) fail(`${name} failed`, { exitCode: result.status });
+  return captureStdout ? result.stdout ?? "" : "";
 }
 
-function commandLine(argv) {
-  const options = { json: false, target: undefined };
+export function verifierArgumentsWithSeaBuildSeal(args, record, tag, generationId) {
+  const seal = parseSeaBuildSeal(record);
+  if (seal.tag !== tag || seal.generationId !== generationId) {
+    fail("SEA build seal does not belong to this build plan");
+  }
+  return [...args, "--seal", serializeSeaBuildSeal(seal).trimEnd()];
+}
+
+export function parseBuildArtifactArguments(argv) {
+  const options = { json: false, target: undefined, runtimeInputs: undefined };
   for (let index = 0; index < argv.length; index += 1) {
     const flag = argv[index];
     if (flag === "--json") {
@@ -59,20 +85,45 @@ function commandLine(argv) {
       continue;
     }
     if (flag === "--target") {
-      options.target = argv[index + 1];
+      const value = argv[index + 1];
+      if (!value || value.startsWith("--")) {
+        fail("--target requires a platform tag", {
+          usage: "build-artifact [--target <tag>] [--runtime-inputs <file>] [--json]",
+        });
+      }
+      options.target = value;
       index += 1;
       continue;
     }
-    fail(`unknown argument ${flag}`, { usage: "build-artifact [--target <tag>] [--json]" });
+    if (flag === "--runtime-inputs") {
+      const value = argv[index + 1];
+      if (!value || value.startsWith("--")) {
+        fail("--runtime-inputs requires a file", {
+          usage: "build-artifact [--target <tag>] [--runtime-inputs <file>] [--json]",
+        });
+      }
+      options.runtimeInputs = value;
+      index += 1;
+      continue;
+    }
+    fail(`unknown argument ${flag}`, {
+      usage: "build-artifact [--target <tag>] [--runtime-inputs <file>] [--json]",
+    });
   }
   return options;
 }
 
-export function planSteps() {
+export function planSteps({
+  tag = hostPlatformTag(),
+  runtimeInputs = runtimeInputPath(tag),
+  generationId = "plan",
+} = {}) {
+  const stageRoot = runtimeStageRoot(tag);
+  const configPath = runtimeConfigPath(tag);
+  const assetRoot = runtimeAssetRoot(tag);
   // The order is the dependency order, and each entry names the checklist task
   // that owns it so a missing step is traceable to the work that adds it.
   return [
-    { name: "runtime archives (B.3)", command: process.execPath, args: ["scripts/build-runtime-archives.mjs"] },
     // `bun`, not `npm`: on Windows `npm` is a `.cmd` and Node refuses to spawn
     // one without a shell, so this step would fail there for a reason that has
     // nothing to do with the export. Bun is a real executable on all three.
@@ -82,31 +133,99 @@ export function planSteps() {
     // one the host applies at runtime, and the only way to guarantee that is to
     // ask the same function rather than restate its rules here.
     { name: "frontend pack (H.2)", command: "bun", args: ["scripts/build-frontend-pack.mjs"] },
-    { name: "cjs bundle (H.1)", command: process.execPath, args: ["scripts/build-cli-bundle.mjs"] },
-    { name: "sea native (H.4)", command: process.execPath, args: ["scripts/build-sea.mjs"] },
-    { name: "verify artifact (L.1)", command: process.execPath, args: ["scripts/verify-artifact.mjs"] },
+    { name: "secondary cjs bundle (H.1)", command: process.execPath, args: ["scripts/build-cli-bundle.mjs"] },
+    {
+      name: "runtime staging (D.3)",
+      command: process.execPath,
+      args: [
+        "scripts/stage-artifact-runtime.mjs",
+        "--inputs", path.resolve(runtimeInputs),
+        "--boot", SECONDARY_BUNDLE_PATH,
+        "--output", stageRoot,
+        "--config", configPath,
+      ],
+    },
+    {
+      name: "runtime archives (B.3)",
+      command: process.execPath,
+      args: [
+        "scripts/build-runtime-archives.mjs",
+        "--config", configPath,
+        "--output", assetRoot,
+      ],
+    },
+    { name: "SEA bootstrap bundle (H.1)", command: process.execPath, args: ["scripts/build-sea-bootstrap.mjs"] },
+    {
+      name: "sea native (H.4)",
+      command: process.execPath,
+      args: ["scripts/build-sea.mjs", tag, "--generation", generationId],
+      producesSeaBuildSeal: true,
+    },
+    {
+      name: "verify artifact (L.1)",
+      command: process.execPath,
+      args: ["scripts/verify-artifact.mjs", tag, "--generation", generationId],
+      requiresSeaBuildSeal: true,
+    },
   ];
 }
 
-export function assertBuildableTarget(target) {
-  const tag = platformTag();
+export function assertBuildableTarget(
+  target,
+  platform = process.platform,
+  architecture = process.arch,
+) {
+  const tag = hostPlatformTag(platform, architecture);
   if (target !== undefined && target !== tag) {
     fail("cross-building is not supported", { requested: target, host: tag });
   }
   return tag;
 }
 
+export function buildArtifactReport(artifact) {
+  const provenancePath = path.join(path.dirname(artifact), "artifact-manifest.json");
+  return JSON.parse(readFileSync(provenancePath, "utf8"));
+}
+
+export function formatBuildArtifactJson(artifact) {
+  return `${JSON.stringify(buildArtifactReport(artifact))}\n`;
+}
+
 function main(argv) {
-  const options = commandLine(argv);
+  const options = parseBuildArtifactArguments(argv);
   const tag = assertBuildableTarget(options.target);
+  const runtimeInputs = options.runtimeInputs === undefined
+    ? runtimeInputPath(tag)
+    : path.resolve(options.runtimeInputs);
+  const generationId = createArtifactGenerationId();
 
-  for (const entry of planSteps()) step(entry.name, entry.command, entry.args);
+  let seaBuildSeal;
+  for (const entry of planSteps({ tag, runtimeInputs, generationId })) {
+    const args = entry.requiresSeaBuildSeal
+      ? verifierArgumentsWithSeaBuildSeal(entry.args, seaBuildSeal, tag, generationId)
+      : entry.args;
+    const captureStdout = options.json || entry.producesSeaBuildSeal === true;
+    const stdout = step(
+      entry.name,
+      entry.command,
+      args,
+      captureStdout,
+      entry.producesSeaBuildSeal !== true,
+    );
+    if (entry.producesSeaBuildSeal) {
+      const seal = parseSeaBuildSeal(stdout);
+      if (seal.tag !== tag || seal.generationId !== generationId) {
+        fail("SEA build seal does not belong to this build plan");
+      }
+      seaBuildSeal = serializeSeaBuildSeal(seal).trimEnd();
+    }
+  }
 
-  const artifact = path.join(REPOSITORY_ROOT, "dist", "artifact", tag);
+  const artifact = artifactPath(tag);
   // stderr carries progress; stdout stays clean so `--json` can be piped.
   process.stderr.write(`build-artifact: ${artifact} (${tag})\n`);
   if (options.json) {
-    process.stdout.write(`${JSON.stringify({ artifact, platform: tag })}\n`);
+    process.stdout.write(formatBuildArtifactJson(artifact));
   }
 }
 
@@ -115,7 +234,10 @@ const invokedAsScript = process.argv[1]
 if (invokedAsScript) {
   try {
     main(process.argv.slice(2));
-  } catch {
-    // `fail` already reported the reason and set the exit code.
+  } catch (error) {
+    if (!process.exitCode) {
+      process.stderr.write(`build-artifact: ${error instanceof Error ? error.message : String(error)}\n`);
+      process.exitCode = 1;
+    }
   }
 }

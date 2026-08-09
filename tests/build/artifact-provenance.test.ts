@@ -1,31 +1,87 @@
 import { spawnSync } from "node:child_process";
-import { existsSync, realpathSync } from "node:fs";
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { createHash } from "node:crypto";
+import { realpathSync } from "node:fs";
+import { chmod, copyFile, cp, link, mkdir, mkdtemp, readFile, rm, stat, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
 import {
   ARTIFACT_ALLOWLIST,
   FORBIDDEN_PATTERNS,
+  assertAllowedRuntimeEntry,
+  artifactManifest,
+  finalExecutableForbiddenAdditions,
   formatChecksums,
+  scanFileForForbidden,
   scanForForbidden,
   unexpectedEntries,
+  verifyFrontendPayload,
+  verifyRuntimePayload,
+  writeNewArtifactFile,
 } from "../../scripts/verify-artifact.mjs";
 import { buildFrontendPack } from "../../scripts/build-frontend-pack.mjs";
+import { PACKAGED_RUNTIME_MIGRATION_ENTRIES } from "@vidcom/adapter/runtime-bootstrap";
+import type { ContentHash } from "@vidcom/contracts";
 import { afterEach, describe, expect, it } from "vitest";
 
+import {
+  HOST_TAG,
+  archiveFor,
+  productRuntimeFixtureEntries,
+  runtimeManifest,
+  type FixtureFile,
+} from "../support/runtime-fixture";
+
 const roots: string[] = [];
+function manifestHash(bytes: string | Buffer): ContentHash {
+  return `sha256:${createHash("sha256").update(bytes).digest("hex")}` as ContentHash;
+}
+
+async function writeFixtureFiles(root: string, files: readonly FixtureFile[]): Promise<void> {
+  for (const file of files) {
+    const filename = path.join(root, ...file.path.split("/"));
+    await mkdir(path.dirname(filename), { recursive: true });
+    await writeFile(filename, file.content);
+    await chmod(filename, file.mode ?? 0o644);
+  }
+}
 
 afterEach(async () => {
   await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
 });
 
 describe("artifact content scan", () => {
+  it.each(["hardlink", ...(process.platform === "win32" ? [] : ["symlink"])] as const)(
+    "does not overwrite external provenance through a pre-created %s",
+    async (kind) => {
+      const root = realpathSync(await mkdtemp(path.join(tmpdir(), `vidcom-provenance-${kind}-`)));
+      roots.push(root);
+      const generation = path.join(root, "generation");
+      const outside = path.join(root, "outside.txt");
+      const destination = path.join(generation, "artifact-manifest.json");
+      await mkdir(generation);
+      await writeFile(outside, "preserve-me\n");
+      if (kind === "hardlink") await link(outside, destination);
+      else await symlink(outside, destination, "file");
+
+      await expect(writeNewArtifactFile(destination, generation, "new-bytes\n"))
+        .rejects.toMatchObject({ code: "EEXIST" });
+      expect(await readFile(outside, "utf8")).toBe("preserve-me\n");
+    },
+  );
+
   it.each([
     ["a development origin", "fetch('http://localhost:3000/api')", "dev-origin"],
     ["a sourcemap link", "//# sourceMappingURL=main.js.map", "sourcemap-url"],
+    ["a spaced sourcemap link", "//# sourceMappingURL = main.js.map", "sourcemap-url"],
+    ["a legacy sourcemap link", "//@ sourceMappingURL=main.js.map", "sourcemap-url"],
+    ["a CSS sourcemap link", "/*# sourceMappingURL=main.css.map */", "sourcemap-url"],
     ["an AWS key", "const k = 'AKIAIOSFODNN7EXAMPLE'", "aws-key"],
     ["an API key", "const k = 'sk-abcdefghijklmnopqrstuvwxyz'", "openai-key"],
+    ["an Anthropic key", "const k = 'sk-ant-abcdefghijklmnopqrstuvwxyz'", "anthropic-key"],
+    ["a GitHub token", "const k = 'ghp_abcdefghijklmnopqrstuvwxyz1234567890'", "github-token"],
+    ["a fine-grained GitHub token", "const k = 'github_pat_abcdefghijklmnopqrstuvwxyz_123456'", "github-token"],
+    ["a Hugging Face token", "const k = 'hf_abcdefghijklmnopqrstuvwxyz'", "huggingface-token"],
     ["a private key", "-----BEGIN PRIVATE KEY-----", "private-key"],
   ])("refuses %s", (_label, text, id) => {
     // Each of these is invisible until it is embarrassing: a key that works, a
@@ -40,6 +96,25 @@ describe("artifact content scan", () => {
       .map((hit) => hit.id)).toContain("build-root");
   });
 
+  it("refuses a percent-encoded Windows file URL for a root with spaces", () => {
+    expect(scanForForbidden(
+      "const source = 'file:///C:/Build%20Root/vidcom-v2/packages/cli/src/main.ts'",
+      "C:\\Build Root\\vidcom-v2",
+    ).map((hit) => hit.id)).toContain("build-root");
+  });
+
+  it("refuses URL-component and JavaScript-escaped Windows root spellings", () => {
+    const root = "C:\\Build#Root\\vidcom-v2";
+    expect(scanForForbidden(
+      "const source = 'file:///C:/Build%23Root/vidcom-v2/packages/cli/src/main.ts'",
+      root,
+    ).map((hit) => hit.id)).toContain("build-root");
+    expect(scanForForbidden(
+      String.raw`const source = 'C:\\Build#Root\\vidcom-v2\\packages\\cli\\src\\main.ts'`,
+      root,
+    ).map((hit) => hit.id)).toContain("build-root");
+  });
+
   it("reports everything it found, not the first thing", () => {
     // A build that leaked two things should say so once, rather than across two
     // runs.
@@ -52,6 +127,37 @@ describe("artifact content scan", () => {
 
   it("passes ordinary content", () => {
     expect(scanForForbidden("const answer = 42;", "/Users/builder/vidcom")).toEqual([]);
+  });
+
+  it("detects a forbidden marker when it exists only in the primary or final binary", async () => {
+    const root = realpathSync(await mkdtemp(path.join(tmpdir(), "vidcom-final-scan-")));
+    roots.push(root);
+    const primary = path.join(root, "bootstrap.cjs");
+    const artifact = path.join(root, "vidcom");
+    await Promise.all([
+      writeFile(primary, "const key = 'sk-abcdefghijklmnopqrstuvwxyz';"),
+      writeFile(artifact, "prefix AKIAIOSFODNN7EXAMPLE suffix"),
+    ]);
+    expect((await scanFileForForbidden(primary, process.cwd())).map((hit) => hit.id)).toContain("openai-key");
+    expect((await scanFileForForbidden(artifact, process.cwd())).map((hit) => hit.id)).toContain("aws-key");
+  });
+
+  it("subtracts only exact forbidden occurrences inherited from the host executable", async () => {
+    const root = realpathSync(await mkdtemp(path.join(tmpdir(), "vidcom-binary-baseline-")));
+    roots.push(root);
+    const baseline = path.join(root, "node");
+    const unchanged = path.join(root, "unchanged-sea");
+    const injected = path.join(root, "injected-sea");
+    const nodeBytes = "prefix AKIAIOSFODNN7EXAMPLE and //# sourceMappingURL=fixture.map\n";
+    await Promise.all([
+      writeFile(baseline, nodeBytes),
+      writeFile(unchanged, `${nodeBytes}ordinary injected bytes\n`),
+      writeFile(injected, `${nodeBytes}const token = 'sk-abcdefghijklmnopqrstuvwxyz';\n`),
+    ]);
+    await expect(finalExecutableForbiddenAdditions(unchanged, baseline, "")).resolves.toEqual([]);
+    await expect(finalExecutableForbiddenAdditions(injected, baseline, "")).resolves.toEqual([
+      { id: "openai-key", why: "an OpenAI API key" },
+    ]);
   });
 
   it("gives every rule a reason a reader can act on", () => {
@@ -80,29 +186,319 @@ describe("artifact directory", () => {
     // install.
     expect(formatChecksums({ vidcom: "abc123" })).toBe("abc123  vidcom\n");
   });
+
+  it("binds exact tool versions and runtime archive hashes into provenance", async () => {
+    const root = realpathSync(await mkdtemp(path.join(tmpdir(), "vidcom-manifest-")));
+    roots.push(root);
+    const artifact = path.join(root, "vidcom");
+    await writeFile(artifact, "artifact bytes");
+    const versions = {
+      node: process.version.slice(1),
+      hyperframes: "0.7.86",
+      esbuild: "0.25.12",
+      ffmpeg: "6.0",
+      cpython: "3.12.13+20260805",
+      vieneu: "3.2.4",
+      motion: { animejs: "4", gsap: "3", "lottie-web": "5", motion: "12", three: "0.18" },
+    };
+    const runtimeManifest = {
+      artifactVersion: "fixture-v1",
+      versions,
+      archives: [
+        { key: "hyperframes", platform: HOST_TAG, sha256: `sha256:${"a".repeat(64)}`, bytes: 10 },
+        { key: "node", platform: HOST_TAG, sha256: `sha256:${"b".repeat(64)}`, bytes: 20 },
+      ],
+    };
+    const provenance = await artifactManifest(HOST_TAG, artifact, runtimeManifest);
+    expect(provenance.runtime).toEqual({
+      artifactVersion: "fixture-v1",
+      versions,
+      archives: {
+        hyperframes: { sha256: runtimeManifest.archives[0]!.sha256, bytes: 10 },
+        node: { sha256: runtimeManifest.archives[1]!.sha256, bytes: 20 },
+      },
+    });
+    expect(provenance.files.vidcom).toMatch(/^[0-9a-f]{64}$/u);
+  });
+});
+
+describe("runtime payload provenance", () => {
+  it("binds the exact staged entry set, archive bytes, and secondary bundle", async () => {
+    const root = realpathSync(await mkdtemp(path.join(tmpdir(), "vidcom-runtime-verify-")));
+    roots.push(root);
+    const assetRoot = path.join(root, "assets");
+    const stageRoot = path.join(root, "stage");
+    const archiveRoot = path.join(assetRoot, "runtime-archives");
+    const metadataRoot = path.join(stageRoot, ".build");
+    const secondaryBundle = path.join(root, "secondary.cjs");
+    await Promise.all([
+      mkdir(archiveRoot, { recursive: true }),
+      mkdir(metadataRoot, { recursive: true }),
+    ]);
+    const bootBytes = Buffer.from("module.exports = { runBootstrappedCli: async () => 0 };\n", "utf8");
+    const migrations = PACKAGED_RUNTIME_MIGRATION_ENTRIES.map((migration) => ({
+      path: migration,
+      content: Buffer.from(`-- ${migration}\n`, "utf8"),
+    }));
+    const fixture = productRuntimeFixtureEntries(migrations);
+    const baseNodeFiles: FixtureFile[] = [
+      { path: "cli/boot.cjs", content: bootBytes },
+      ...fixture.node,
+      ...fixture.native,
+      // A directory name which prefixes a sibling dist-info directory sorts
+      // differently under a depth-first walk than under a full-path sort.
+      { path: "node_modules/sharp/annotated_doc/__init__.js", content: Buffer.from("module.exports = {};\n") },
+      {
+        path: "node_modules/sharp/annotated_doc-0.0.5.dist-info/METADATA",
+        content: Buffer.from("Name: annotated-doc\nVersion: 0.0.5\n"),
+      },
+    ];
+    const hyperframesFiles: FixtureFile[] = [...fixture.hyperframes, ...fixture.native];
+    await Promise.all([
+      writeFixtureFiles(path.join(stageRoot, "node"), baseNodeFiles),
+      writeFixtureFiles(path.join(stageRoot, "hyperframes"), hyperframesFiles),
+    ]);
+    await Promise.all([
+      writeFile(secondaryBundle, bootBytes),
+      writeFile(path.join(metadataRoot, "python-packages.txt"), "fixture==1\n"),
+      writeFile(path.join(metadataRoot, "runtime-config.json"), "{}\n"),
+    ]);
+    const nodeArchive = path.join(archiveRoot, "node.tar.gz");
+    const hyperframesArchive = path.join(archiveRoot, "hyperframes.tar.gz");
+    const builtNode = archiveFor("node", baseNodeFiles, HOST_TAG, "native");
+    const builtHyperframes = archiveFor("hyperframes", hyperframesFiles, HOST_TAG, "hyperframes");
+    await Promise.all([
+      writeFile(nodeArchive, builtNode.bytes),
+      writeFile(hyperframesArchive, builtHyperframes.bytes),
+    ]);
+    const baseManifest = runtimeManifest("fixture-v1", [builtHyperframes.archive, builtNode.archive]);
+    const manifest = {
+      ...baseManifest,
+      archives: [
+        { ...builtHyperframes.archive, entries: [...builtHyperframes.archive.entries] },
+        { ...builtNode.archive, entries: [...builtNode.archive.entries] },
+      ],
+    };
+    const publishArchive = async (
+      key: "hyperframes" | "node",
+      files: readonly FixtureFile[],
+    ) => {
+      const index = key === "hyperframes" ? 0 : 1;
+      const target = key === "hyperframes" ? "hyperframes" : "native";
+      const archiveFile = key === "hyperframes" ? hyperframesArchive : nodeArchive;
+      const built = archiveFor(key, files, HOST_TAG, target);
+      await writeFile(archiveFile, built.bytes);
+      manifest.archives[index] = { ...built.archive, entries: [...built.archive.entries] };
+      await writeFile(path.join(assetRoot, "runtime-manifest.json"), JSON.stringify(manifest));
+    };
+    const publishNodeArchive = (files: readonly FixtureFile[]) => publishArchive("node", files);
+    await writeFile(path.join(assetRoot, "runtime-manifest.json"), JSON.stringify(manifest));
+
+    await expect(verifyRuntimePayload(HOST_TAG, { assetRoot, stageRoot, secondaryBundle }))
+      .resolves.toMatchObject({ manifest });
+
+    const completenessCases = [
+      { key: "node" as const, path: PACKAGED_RUNTIME_MIGRATION_ENTRIES[0] },
+      { key: "node" as const, path: baseNodeFiles.find((file) => file.path.startsWith("bin/ffmpeg"))!.path },
+      { key: "node" as const, path: baseNodeFiles.find((file) => file.path.startsWith("python/"))!.path },
+      { key: "node" as const, path: "node_modules/sharp/package.json" },
+      { key: "hyperframes" as const, path: "bin/hyperframes.mjs" },
+      { key: "hyperframes" as const, path: "motion-libraries/gsap/package.json" },
+    ];
+    for (const candidate of completenessCases) {
+      const baseFiles = candidate.key === "node" ? baseNodeFiles : hyperframesFiles;
+      const omitted = baseFiles.find((file) => file.path === candidate.path)!;
+      await rm(path.join(stageRoot, candidate.key, ...candidate.path.split("/")), { force: true });
+      await publishArchive(candidate.key, baseFiles.filter((file) => file.path !== candidate.path));
+      await expect(verifyRuntimePayload(HOST_TAG, { assetRoot, stageRoot, secondaryBundle }))
+        .rejects.toThrow(/missing required product entries/u);
+      await writeFixtureFiles(path.join(stageRoot, candidate.key), [omitted]);
+      await publishArchive(candidate.key, baseFiles);
+    }
+
+    const forbiddenSource = path.join(stageRoot, "node", "node_modules", "sharp", "src", "source.ts");
+    await mkdir(path.dirname(forbiddenSource), { recursive: true });
+    await writeFile(forbiddenSource, "export const leaked = true;\n");
+    await chmod(forbiddenSource, 0o644);
+    const forbiddenFile = {
+      path: "node_modules/sharp/src/source.ts",
+      content: await readFile(forbiddenSource),
+      mode: (await stat(forbiddenSource)).mode & 0o777,
+    };
+    await publishNodeArchive([...baseNodeFiles, forbiddenFile]);
+    await expect(verifyRuntimePayload(HOST_TAG, { assetRoot, stageRoot, secondaryBundle }))
+      .rejects.toThrow(/source, declaration, or sourcemap/u);
+
+    await rm(path.join(stageRoot, "node", "node_modules"), { recursive: true });
+    await writeFixtureFiles(path.join(stageRoot, "node"), fixture.native);
+    await publishNodeArchive(baseNodeFiles);
+
+    const foreignMigrationRelative = "drizzle/20990101000000_foreign/migration.sql";
+    const foreignMigration = path.join(stageRoot, "node", ...foreignMigrationRelative.split("/"));
+    await mkdir(path.dirname(foreignMigration), { recursive: true });
+    await writeFile(foreignMigration, "CREATE TABLE hostile(value TEXT);\n");
+    await chmod(foreignMigration, 0o644);
+    const foreignMigrationFile = {
+      path: foreignMigrationRelative,
+      content: await readFile(foreignMigration),
+      mode: (await stat(foreignMigration)).mode & 0o777,
+    };
+    await publishNodeArchive([...baseNodeFiles, foreignMigrationFile]);
+    await expect(verifyRuntimePayload(HOST_TAG, { assetRoot, stageRoot, secondaryBundle }))
+      .rejects.toThrow(/missing required product entries/u);
+
+    await rm(path.join(stageRoot, "node", "drizzle"), { recursive: true });
+    await writeFixtureFiles(path.join(stageRoot, "node"), migrations);
+    await publishNodeArchive(baseNodeFiles);
+
+    const unexpectedArchive = path.join(archiveRoot, "foreign.tar.gz");
+    await writeFile(unexpectedArchive, "foreign");
+    await expect(verifyRuntimePayload(HOST_TAG, { assetRoot, stageRoot, secondaryBundle }))
+      .rejects.toThrow(/unexpected or missing entries/u);
+    await rm(unexpectedArchive);
+    const unexpectedStage = path.join(stageRoot, "node", "unexpected.txt");
+    await writeFile(unexpectedStage, "not declared");
+    await expect(verifyRuntimePayload(HOST_TAG, { assetRoot, stageRoot, secondaryBundle }))
+      .rejects.toThrow(/differs from the archived entry set/u);
+    await rm(unexpectedStage);
+
+    const malformedBytes = Buffer.from("this is not a tar archive", "utf8");
+    await writeFile(nodeArchive, malformedBytes);
+    manifest.archives[1]!.sha256 = manifestHash(malformedBytes);
+    manifest.archives[1]!.bytes = malformedBytes.byteLength;
+    await writeFile(path.join(assetRoot, "runtime-manifest.json"), JSON.stringify(manifest));
+    await expect(verifyRuntimePayload(HOST_TAG, { assetRoot, stageRoot, secondaryBundle }))
+      .rejects.toThrow();
+  });
+
+  it("allows only exact motion catalogue files", () => {
+    const allowed = new Set([
+      "motion-libraries/gsap/package.json",
+      "motion-libraries/gsap/dist/gsap.min.js",
+    ]);
+    expect(() => assertAllowedRuntimeEntry(
+      "hyperframes",
+      HOST_TAG,
+      "motion-libraries/gsap/dist/gsap.min.js",
+      allowed,
+    )).not.toThrow();
+    expect(() => assertAllowedRuntimeEntry(
+      "hyperframes",
+      HOST_TAG,
+      "motion-libraries/gsap/extra.js",
+      allowed,
+    )).toThrow(/pinned product catalogue/u);
+  });
+});
+
+describe("frontend payload provenance", () => {
+  it("rejects a mixed manifest/pack generation, gaps, and trailing bytes", async () => {
+    const root = realpathSync(await mkdtemp(path.join(tmpdir(), "vidcom-frontend-verify-")));
+    roots.push(root);
+    const manifestFile = path.join(root, "frontend-manifest.json");
+    const packFile = path.join(root, "frontend.pack");
+    const pack = Buffer.from("abc", "utf8");
+    const entries = [
+      {
+        path: "a.html",
+        offset: 0,
+        length: 1,
+        sha256: createHash("sha256").update(pack.subarray(0, 1)).digest("hex"),
+        mime: "text/html; charset=utf-8",
+        cachePolicy: "no-store",
+      },
+      {
+        path: "b.js",
+        offset: 1,
+        length: 2,
+        sha256: createHash("sha256").update(pack.subarray(1)).digest("hex"),
+        mime: "text/javascript; charset=utf-8",
+        cachePolicy: "immutable",
+      },
+    ];
+    await Promise.all([
+      writeFile(packFile, pack),
+      writeFile(manifestFile, JSON.stringify({ entries })),
+    ]);
+    await expect(verifyFrontendPayload(manifestFile, packFile)).resolves.toEqual({ entries });
+
+    await writeFile(packFile, "abd");
+    await expect(verifyFrontendPayload(manifestFile, packFile)).rejects.toThrow(/do not match/u);
+    await writeFile(packFile, pack);
+    entries[1]!.offset = 2;
+    await writeFile(manifestFile, JSON.stringify({ entries }));
+    await expect(verifyFrontendPayload(manifestFile, packFile)).rejects.toThrow(/contiguously/u);
+    entries[1]!.offset = 1;
+    await writeFile(packFile, "abc-extra");
+    await writeFile(manifestFile, JSON.stringify({ entries }));
+    await expect(verifyFrontendPayload(manifestFile, packFile)).rejects.toThrow(/every pack byte/u);
+
+    const sourcemapEntry = {
+      ...entries[0]!,
+      path: "_next/static/app.js.map",
+      offset: 0,
+      length: pack.length,
+      sha256: createHash("sha256").update(pack).digest("hex"),
+    };
+    await writeFile(packFile, pack);
+    await writeFile(manifestFile, JSON.stringify({ entries: [sourcemapEntry] }));
+    await expect(verifyFrontendPayload(manifestFile, packFile)).rejects.toThrow(/sourcemap path/u);
+  });
 });
 
 describe("the frontend pack this build produces", () => {
   it("carries no development origin", async () => {
     // The dev origin is injected at runtime by the host and never inlined, so
     // there is nothing to leak — and this is the check that keeps it that way.
-    // The export is built here when it is missing, because the CI job runs the
-    // tests before the production build and a skipped check is one nobody
-    // notices went missing.
-    if (!existsSync(path.resolve("out"))) {
-      // Through bun, which is a real executable everywhere. `npm` on Windows is
-      // a `.cmd`, and Node refuses to spawn one without a shell — so the same
-      // line that works on macOS returns a null status there and the failure
-      // reads as "the export could not be built" rather than "wrong spawn".
-      const built = spawnSync("bun", ["run", "build"], { encoding: "utf8", shell: false });
-      expect(built.status, `the static export could not be built: ${built.stderr ?? built.error?.message ?? ""}`)
-        .toBe(0);
-    }
+    // Build every time in an isolated checkout projection. Reusing repo-root
+    // `out` made this test green on bytes from an older HEAD and left `.next`
+    // and `out` behind for lint to scan.
     const root = realpathSync(await mkdtemp(path.join(tmpdir(), "vidcom-provenance-")));
     roots.push(root);
+    const buildRoot = path.join(root, "build");
+    await mkdir(buildRoot);
+    for (const filename of [
+      "components.json",
+      "bun.lock",
+      "next-env.d.ts",
+      "next.config.ts",
+      "package.json",
+      "postcss.config.mjs",
+      "tsconfig.base.json",
+      "tsconfig.json",
+    ]) {
+      await copyFile(path.resolve(filename), path.join(buildRoot, filename));
+    }
+    await Promise.all([
+      cp(path.resolve("src"), path.join(buildRoot, "src"), { recursive: true }),
+      cp(path.resolve("packages"), path.join(buildRoot, "packages"), {
+        recursive: true,
+        filter(source) {
+          return !source.split(path.sep).includes("node_modules")
+            && !path.basename(source).startsWith(".artifact-")
+            && path.basename(source) !== "__pycache__";
+        },
+      }),
+    ]);
+    const installed = spawnSync("bun", ["install", "--frozen-lockfile"], {
+      cwd: buildRoot,
+      encoding: "utf8",
+      shell: false,
+    });
+    expect(installed.status, `isolated install failed: ${installed.stderr ?? installed.error?.message ?? ""}`)
+      .toBe(0);
+    // Through bun, which is a real executable everywhere. `npm` on Windows is
+    // a `.cmd`, and Node refuses to spawn one without a shell.
+    const built = spawnSync("bun", ["run", "build"], {
+      cwd: buildRoot,
+      encoding: "utf8",
+      shell: false,
+    });
+    expect(built.status, `the static export could not be built: ${built.stderr ?? built.error?.message ?? ""}`)
+      .toBe(0);
     const packPath = path.join(root, "frontend.pack");
     const manifestPath = path.join(root, "frontend-manifest.json");
-    await buildFrontendPack(path.resolve("out"), packPath, manifestPath);
+    await buildFrontendPack(path.join(buildRoot, "out"), packPath, manifestPath);
 
     const pack = await readFile(packPath, "latin1");
     expect(scanForForbidden(pack, process.cwd())).toEqual([]);

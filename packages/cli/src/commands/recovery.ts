@@ -14,15 +14,15 @@ import {
   type OrphanResolution,
 } from "@vidcom/core";
 
+import { earlyAppDataRoot } from "../app-data-root";
 import { CliInputError } from "../cli-error";
 import { createApplication, createInfrastructure } from "../composition-root";
 import { prepareRuntimeForCli, runtimePathsFor } from "../runtime-paths-source";
-import { defaultAppDataRoot } from "../next-host";
 import { writeJson, type CliOutput } from "../output";
 import { selectWorkspace } from "../workspace-selection";
 
 export interface RecoveryCommandDependencies {
-  appDataRoot(): string;
+  appDataRoot(): string | Promise<string>;
   stdout: CliOutput;
   now(): Date;
   newId(prefix: string): string;
@@ -30,7 +30,7 @@ export interface RecoveryCommandDependencies {
 }
 
 const defaultDependencies: RecoveryCommandDependencies = {
-  appDataRoot: defaultAppDataRoot,
+  appDataRoot: earlyAppDataRoot,
   stdout: process.stdout,
   now: () => new Date(),
   newId: (prefix) => `${prefix}_${randomUUID()}`,
@@ -70,10 +70,11 @@ function parseRecoveryOperation(argv: readonly string[]): RecoveryOperation {
 
 async function inspectRecovery(
   id: JournalId,
+  appDataRoot: string,
   dependencies: RecoveryCommandDependencies,
   database: VidcomDatabase,
 ): Promise<void> {
-  const largeContent = new LargePreviousContentStore(dependencies.appDataRoot());
+  const largeContent = new LargePreviousContentStore(appDataRoot);
   const mutation = await new MutationJournal(
     database,
     { now: dependencies.now },
@@ -104,13 +105,14 @@ async function inspectRecovery(
 
 async function recoveryWorkspaceRoot(
   dependencies: RecoveryCommandDependencies,
+  appDataRoot: string,
   journalId: JournalId,
   database: VidcomDatabase,
 ): Promise<AbsolutePath> {
   const journal = new MutationJournal(
     database,
     { now: dependencies.now },
-    new LargePreviousContentStore(dependencies.appDataRoot()),
+    new LargePreviousContentStore(appDataRoot),
   );
   const mutation = await journal.readPendingComposite(journalId);
   if (!mutation) throw new CliInputError("recovery_required");
@@ -161,11 +163,11 @@ export async function runRecoveryCommand(
   dependencies: RecoveryCommandDependencies = defaultDependencies,
 ): Promise<void> {
   const operation = parseRecoveryOperation(argv);
-  const appDataRoot = dependencies.appDataRoot();
+  const appDataRoot = await dependencies.appDataRoot();
   const prepared = await prepareRuntimeForCli(appDataRoot);
   if (operation.kind === "inspect") {
     try {
-      await inspectRecovery(operation.id, dependencies, prepared.database);
+      await inspectRecovery(operation.id, appDataRoot, dependencies, prepared.database);
     } finally {
       await prepared.release();
     }
@@ -175,7 +177,12 @@ export async function runRecoveryCommand(
   let workspaceRoot: AbsolutePath;
   let runtimePaths: RuntimePaths;
   try {
-    workspaceRoot = await recoveryWorkspaceRoot(dependencies, operation.id, prepared.database);
+    workspaceRoot = await recoveryWorkspaceRoot(
+      dependencies,
+      appDataRoot,
+      operation.id,
+      prepared.database,
+    );
     runtimePaths = runtimePathsFor(appDataRoot, prepared);
   } finally {
     await prepared.release();

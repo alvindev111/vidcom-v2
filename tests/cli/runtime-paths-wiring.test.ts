@@ -1,11 +1,17 @@
 import { realpathSync } from "node:fs";
-import { mkdir, mkdtemp, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
-import { resolveRuntimePaths, RUNTIME_PATH_NAMES } from "@vidcom/adapter";
+import {
+  NodeHyperframesDiagnosticsLint,
+  resolveRuntimePaths,
+  RUNTIME_PATH_NAMES,
+  VIDCOM_NODE_SENTINEL,
+} from "@vidcom/adapter";
 import { createInfrastructure } from "@vidcom/cli";
-import type { AbsolutePath } from "@vidcom/core";
+import type { ProjectId, RelPath } from "@vidcom/contracts";
+import type { AbsolutePath, ProcessPort, ProcessRunInput } from "@vidcom/core";
 import { afterEach, describe, expect, it } from "vitest";
 
 const roots: string[] = [];
@@ -74,5 +80,86 @@ describe("runtime path wiring", () => {
     } finally {
       await infrastructure.database.destroy();
     }
+  });
+
+  it("runs diagnostics from the extracted runtime without a require.resolve fallback", async () => {
+    const appDataRoot = realpathSync(await mkdtemp(path.join(tmpdir(), "vidcom-lint-path-")));
+    roots.push(appDataRoot);
+    const paths = resolveRuntimePaths({
+      mode: "artifact",
+      versionRoot: path.join(appDataRoot, "native", "1.0.0"),
+      appDataRoot,
+      archiveRoots: {
+        hyperframes: path.join(appDataRoot, "native", "1.0.0", "hyperframes"),
+        node: path.join(appDataRoot, "native", "1.0.0", "node"),
+      },
+    });
+    await mkdir(path.dirname(paths.hyperframesCliPath), { recursive: true });
+    await writeFile(paths.hyperframesCliPath, `process.stdout.write(JSON.stringify({
+      lint: { findings: [{
+        code: "extracted-runtime-cli",
+        severity: "info",
+        message: "loaded from the verified runtime"
+      }] }
+    }));\n`, "utf8");
+    const workspaceRoot = path.join(appDataRoot, "workspace");
+    await mkdir(workspaceRoot, { recursive: true });
+
+    const infrastructure = createInfrastructure({
+      appDataRoot,
+      workspaceRoot: workspaceRoot as AbsolutePath,
+      runtimePaths: paths,
+    });
+    try {
+      const result = await infrastructure.diagnosticLint.check({
+        id: "project_runtime_lint" as ProjectId,
+        slug: "runtime-lint",
+        root: workspaceRoot as AbsolutePath,
+        entry: "index.html" as RelPath,
+      });
+
+      expect((await stat(path.join(appDataRoot, "vidcom.sqlite"))).isFile()).toBe(true);
+      expect(result).toEqual({
+        available: true,
+        diagnostics: [{
+          code: "lint:extracted-runtime-cli",
+          severity: "info",
+          message: "loaded from the verified runtime",
+        }],
+      });
+    } finally {
+      await infrastructure.database.destroy();
+    }
+  });
+
+  it("re-enters the SEA node shim before running the extracted diagnostics CLI", async () => {
+    const calls: ProcessRunInput[] = [];
+    const processes: ProcessPort = {
+      async run(input) {
+        calls.push(input);
+        return { exitCode: 0, stdout: "{}", stderr: "", timedOut: false };
+      },
+    };
+    const cliPath = path.join(VERSION_ROOT, "hyperframes", "bin", "hyperframes.mjs") as AbsolutePath;
+    const lint = new NodeHyperframesDiagnosticsLint(processes, {
+      cliPath,
+      isSea: () => true,
+    });
+
+    await lint.check({
+      id: "project_sea_lint" as ProjectId,
+      slug: "sea-lint",
+      root: path.join(APP_DATA, "workspace") as AbsolutePath,
+      entry: "index.html" as RelPath,
+    });
+
+    expect(calls[0]?.command).toEqual([
+      process.execPath,
+      VIDCOM_NODE_SENTINEL,
+      cliPath,
+      "check",
+      "--json",
+      path.join(APP_DATA, "workspace"),
+    ]);
   });
 });

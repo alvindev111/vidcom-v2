@@ -31,6 +31,8 @@ import {
   LoopbackRuntimeAssetGuard,
   NodeProcessSupervisor,
   NodeRenderBinaryProbe,
+  DOWNLOAD_CACHE_COMPONENTS,
+  DownloadCacheCoordinator,
   NodeHyperframesDiagnosticsLint,
   NodeModulesMotionLibraryFiles,
   WorkspaceLease,
@@ -177,8 +179,10 @@ export function hashContent(content: string | Uint8Array): ContentHash {
 function vieneuCommand(
   settings: ResolvedVidcomSettings,
   extractionRoot?: string,
+  requirePackagedRuntime = false,
 ): readonly string[] {
-  return settings.tts.vieneu.command ?? defaultVieNeuCommand(extractionRoot);
+  return settings.tts.vieneu.command
+    ?? defaultVieNeuCommand(extractionRoot, requirePackagedRuntime);
 }
 
 /**
@@ -189,6 +193,15 @@ function vieneuCommand(
  */
 function elevenLabsApiKey(settings: ResolvedVidcomSettings): string | null {
   return process.env.ELEVENLABS_API_KEY?.trim() || settings.tts.elevenlabs.apiKey || null;
+}
+
+/**
+ * Offline model reads are opt-in: the first run must still be able to download
+ * weights. The standard Hugging Face/Transformers flags are also what the
+ * packaged-smoke offline pass can set without adding another public setting.
+ */
+function vieneuOffline(): boolean {
+  return process.env.HF_HUB_OFFLINE === "1" || process.env.TRANSFORMERS_OFFLINE === "1";
 }
 
 /** The sole production wiring point for concrete filesystem, SQLite and HyperFrames adapters. */
@@ -206,7 +219,12 @@ export function createInfrastructure(config: CompositionRootConfig) {
     increment() {},
     observeMilliseconds() {},
   };
+  const settings = config.settings ?? DEFAULT_VIDCOM_SETTINGS;
+  const caBundlePath = config.caBundlePath ?? settings.runtime.caBundlePath ?? undefined;
   const database = openVidcomDatabase(config.appDataRoot);
+  const downloads = new DownloadCacheCoordinator({ cacheRoot: config.appDataRoot });
+  const browserCacheRoot = (config.runtimePaths?.browserCacheRoot
+    ?? downloads.componentRoot(DOWNLOAD_CACHE_COMPONENTS.browser)) as AbsolutePath;
   const workspace = new WorkspaceFs(config.workspaceRoot);
   const largeContent = new LargePreviousContentStore(config.appDataRoot);
   const journal = new MutationJournal(database, clock, largeContent);
@@ -221,17 +239,27 @@ export function createInfrastructure(config: CompositionRootConfig) {
     clock,
   });
   const renderProjects = new FsRenderProjectAdapter();
-  const renderProcess = new NodeProcessSupervisor();
+  const renderProcess = new NodeProcessSupervisor(undefined, {
+    defaultEnvironment: { VIDCOM_APP_DATA: config.appDataRoot },
+    caBundlePath,
+  });
+  const processes = new NodeProcessRunner(undefined, caBundlePath);
   const renderGuard = new LoopbackRuntimeAssetGuard();
   // The probe falls back to require.resolve when a path is absent, which cannot
   // work inside a packaged binary. Handing it the resolved paths is what keeps
   // that fallback off the artifact path.
   const renderBinaries = new NodeRenderBinaryProbe({
     ...binaries,
+    browserCacheRoot,
     ...config.runtimePaths ? {
       hyperframesCliPath: config.runtimePaths.hyperframesCliPath as AbsolutePath,
       hyperframesPackagePath: config.runtimePaths.hyperframesPackagePath as AbsolutePath,
     } : {},
+  }, {
+    appDataRoot: config.appDataRoot,
+    caBundlePath,
+    processes,
+    downloadCache: downloads,
   });
   const events = new SqliteEventOutbox(database, clock);
   const cache = new ProjectCache();
@@ -258,12 +286,14 @@ export function createInfrastructure(config: CompositionRootConfig) {
     ids,
     config: { rotationOverlapMs: runtimeConfig.credentialRotationOverlapMs },
   });
-  const settings = config.settings ?? DEFAULT_VIDCOM_SETTINGS;
   // The Node half of D.7. The sidecar gets `SSL_CERT_FILE`/`REQUESTS_CA_BUNDLE`
   // from the TTS provider; every Node child started here gets the same bundle
   // as `NODE_EXTRA_CA_CERTS`.
-  const processes = new NodeProcessRunner(undefined, config.caBundlePath);
-  const diagnosticLint = new NodeHyperframesDiagnosticsLint(processes);
+  const diagnosticLint = new NodeHyperframesDiagnosticsLint(processes, {
+    ...(config.runtimePaths
+      ? { cliPath: config.runtimePaths.hyperframesCliPath as AbsolutePath }
+      : {}),
+  });
   // App-data, never the workspace or the checkout: these are engine
   // intermediates and model weights, and a project directory is watched, backed
   // up and committed by its owner.
@@ -278,8 +308,12 @@ export function createInfrastructure(config: CompositionRootConfig) {
         command: () => vieneuCommand(
           settings,
           config.runtimePaths?.nativeDependenciesRoot ?? config.nativeDependenciesRoot,
+          config.runtimePaths?.mode === "artifact",
         ),
-        modelCacheRoot: join(config.appDataRoot, "models"),
+        modelCacheRoot: downloads.componentRoot(DOWNLOAD_CACHE_COMPONENTS.models),
+        downloadCache: downloads,
+        caBundlePath,
+        offline: vieneuOffline(),
         modelRevision: settings.tts.vieneu.modelRevision,
       }),
     ],
@@ -306,6 +340,7 @@ export function createInfrastructure(config: CompositionRootConfig) {
     clock,
     ids,
     database,
+    downloads,
     workspace,
     largeContent,
     journal,

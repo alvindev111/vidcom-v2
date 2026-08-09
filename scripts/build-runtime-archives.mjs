@@ -14,8 +14,15 @@ import { createRequire } from "node:module";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
+import {
+  commitDirectoryGeneration,
+  recoverDirectoryGeneration,
+} from "./directory-generation-publish.mjs";
+
 const requireFromAdapter = createRequire(new URL("../packages/adapter/package.json", import.meta.url));
 const { create: createTar } = requireFromAdapter("tar");
+const requireFromCli = createRequire(new URL("../packages/cli/package.json", import.meta.url));
+const { tsImport } = requireFromCli("tsx/esm/api");
 
 const REPOSITORY_ROOT = fileURLToPath(new URL("..", import.meta.url));
 const DEFAULT_EVIDENCE_ROOT = path.join(
@@ -27,8 +34,12 @@ const MOTION_PACKAGES = ["animejs", "gsap", "lottie-web", "motion", "three"];
 const ARCHIVE_KEY_PATTERN = /^[a-z0-9][a-z0-9._-]*$/u;
 const ARTIFACT_VERSION_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._+-]*$/u;
 const READY_NAMESPACE_PATTERN = /^\.ready-/iu;
+const WINDOWS_FORBIDDEN_PATH_CHARACTER_PATTERN = /[<>:"|?*\u0000-\u001f\u007f]/u;
+const WINDOWS_RESERVED_DEVICE_PATTERN = /^(?:con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\.|$)/iu;
 const RUNTIME_CURRENT_FILENAME = "current.json";
 const RUNTIME_MANIFEST_FILENAME = "runtime-manifest.json";
+const MAX_RUNTIME_RELATIVE_PATH_LENGTH = 1024;
+const MAX_RUNTIME_PATH_SEGMENT_BYTES = 255;
 const EPOCH = new Date(0);
 
 const EVIDENCE_FILES = {
@@ -72,19 +83,69 @@ function canonicalString(value, label) {
   return value;
 }
 
+function manifestString(value, label) {
+  const text = canonicalString(value, label);
+  if (text.length > 128) fail(`${label} must be no longer than 128 characters`);
+  return text;
+}
+
+function portablePathSegment(segment) {
+  return segment.length > 0
+    && Buffer.byteLength(segment, "utf8") <= MAX_RUNTIME_PATH_SEGMENT_BYTES
+    && segment !== "."
+    && segment !== ".."
+    && !segment.endsWith(".")
+    && !segment.endsWith(" ")
+    && !WINDOWS_FORBIDDEN_PATH_CHARACTER_PATTERN.test(segment)
+    && !WINDOWS_RESERVED_DEVICE_PATTERN.test(segment);
+}
+
 function portableRelativePath(value, label) {
   const pathname = canonicalString(value, label);
+  const segments = pathname.split("/");
   if (
-    pathname.includes("\\")
+    pathname.length > MAX_RUNTIME_RELATIVE_PATH_LENGTH
+    || pathname.includes("\\")
     || pathname.endsWith("/")
     || path.posix.isAbsolute(pathname)
     || path.win32.isAbsolute(pathname)
     || path.posix.normalize(pathname) !== pathname
-    || pathname.split("/").some((part) => part === "" || part === "." || part === "..")
+    || segments.some((part) => !portablePathSegment(part))
   ) {
     fail(`${label} must be a normalized portable relative path`, { path: pathname });
   }
   return pathname;
+}
+
+function ownershipPath(pathname, platform) {
+  if (platform === "linux-x64") return pathname;
+  return (platform === "darwin-arm64" ? pathname.normalize("NFC") : pathname).toLowerCase();
+}
+
+function declaredParentPath(paths, child) {
+  let parent = path.posix.dirname(child);
+  while (parent !== ".") {
+    if (paths.has(parent)) return parent;
+    parent = path.posix.dirname(parent);
+  }
+  return undefined;
+}
+
+function assertNoOwnedPathOverlap(pathnames, platform, label) {
+  const originals = new Map();
+  for (const pathname of pathnames) {
+    const owned = ownershipPath(pathname, platform);
+    const previous = originals.get(owned);
+    if (previous !== undefined) fail(`${label} overlap`, { current: previous, next: pathname });
+    originals.set(owned, pathname);
+  }
+  const paths = new Set(originals.keys());
+  for (const [ownedChild, child] of originals) {
+    const ownedParent = declaredParentPath(paths, ownedChild);
+    if (ownedParent !== undefined) {
+      fail(`${label} overlap`, { current: originals.get(ownedParent), next: child });
+    }
+  }
 }
 
 export function normalizePythonPackageName(name) {
@@ -195,14 +256,22 @@ async function hashFile(filename) {
   return `sha256:${hash.digest("hex")}`;
 }
 
+/** A locale-independent total order matching the bytes ultimately written to tar. */
+function compareUtf8(left, right) {
+  return Buffer.compare(Buffer.from(left, "utf8"), Buffer.from(right, "utf8"));
+}
+
 async function walkRegularFiles(root) {
   const files = [];
   const visit = async (directory, relativeDirectory = "") => {
     const entries = await readdir(directory, { withFileTypes: true });
-    entries.sort((left, right) => left.name.localeCompare(right.name, "en"));
+    entries.sort((left, right) => compareUtf8(left.name, right.name));
     for (const entry of entries) {
       const absolute = path.join(directory, entry.name);
-      const relative = relativeDirectory ? `${relativeDirectory}/${entry.name}` : entry.name;
+      const relative = portableRelativePath(
+        relativeDirectory ? `${relativeDirectory}/${entry.name}` : entry.name,
+        "runtime archive source path",
+      );
       const metadata = await lstat(absolute);
       if (metadata.isSymbolicLink()) fail(`runtime archive source contains a symlink`, { path: relative });
       if (metadata.isDirectory()) {
@@ -247,19 +316,46 @@ async function buildArchive({ source, destination, entries }) {
   }
 }
 
+function runtimeAssetsBackup(outputRoot) {
+  return `${outputRoot}.previous`;
+}
+
+export async function recoverRuntimeAssetPublish(outputRoot) {
+  const output = path.resolve(outputRoot);
+  return recoverDirectoryGeneration({
+    kind: "runtime-assets",
+    published: output,
+    backup: runtimeAssetsBackup(output),
+    authorityFile: "runtime-manifest.json",
+  });
+}
+
+export async function commitRuntimeAssetGeneration(generationRoot, outputRoot, options = {}) {
+  const generation = path.resolve(generationRoot);
+  const output = path.resolve(outputRoot);
+  return commitDirectoryGeneration({
+    kind: "runtime-assets",
+    published: output,
+    backup: runtimeAssetsBackup(output),
+    generation,
+    authorityFile: "runtime-manifest.json",
+    onBoundary: options.onBoundary,
+  });
+}
+
 function parseVersions(value) {
   const versions = record(value, "config.versions");
   exactKeys(versions, ["node", "hyperframes", "esbuild", "ffmpeg", "cpython", "vieneu", "motion"], "config.versions");
   const motion = record(versions.motion, "config.versions.motion");
   exactKeys(motion, MOTION_PACKAGES, "config.versions.motion");
   return {
-    node: canonicalString(versions.node, "Node version"),
-    hyperframes: canonicalString(versions.hyperframes, "HyperFrames version"),
-    esbuild: canonicalString(versions.esbuild, "esbuild version"),
-    ffmpeg: canonicalString(versions.ffmpeg, "FFmpeg version"),
-    cpython: canonicalString(versions.cpython, "CPython version"),
-    vieneu: canonicalString(versions.vieneu, "VieNeu version"),
-    motion: Object.fromEntries(MOTION_PACKAGES.map((name) => [name, canonicalString(motion[name], `${name} version`)])),
+    node: manifestString(versions.node, "Node version"),
+    hyperframes: manifestString(versions.hyperframes, "HyperFrames version"),
+    esbuild: manifestString(versions.esbuild, "esbuild version"),
+    ffmpeg: manifestString(versions.ffmpeg, "FFmpeg version"),
+    cpython: manifestString(versions.cpython, "CPython version"),
+    vieneu: manifestString(versions.vieneu, "VieNeu version"),
+    motion: Object.fromEntries(MOTION_PACKAGES.map((name) => [name, manifestString(motion[name], `${name} version`)])),
   };
 }
 
@@ -268,8 +364,10 @@ async function parseConfig(configFile) {
   exactKeys(config, ["artifactVersion", "versions", "pythonPackages", "archives"], "runtime archive config");
   const artifactVersion = canonicalString(config.artifactVersion, "artifactVersion");
   if (
-    !ARTIFACT_VERSION_PATTERN.test(artifactVersion)
+    artifactVersion.length > 128
+    || !ARTIFACT_VERSION_PATTERN.test(artifactVersion)
     || artifactVersion.toLowerCase() === RUNTIME_CURRENT_FILENAME
+    || !portablePathSegment(artifactVersion)
   ) fail("artifactVersion must be a portable path segment");
   const packages = record(config.pythonPackages, "config.pythonPackages");
   for (const platform of Object.keys(packages)) {
@@ -283,20 +381,34 @@ async function parseConfig(configFile) {
     exactKeys(archive, ["key", "platform", "source", "target"], `config.archives[${index}]`);
     const key = canonicalString(archive.key, `config.archives[${index}].key`);
     if (
-      !ARCHIVE_KEY_PATTERN.test(key)
+      key.length > 128
+      || !ARCHIVE_KEY_PATTERN.test(key)
+      || !portablePathSegment(key)
       || key === RUNTIME_MANIFEST_FILENAME
       || keys.has(key)
     ) fail(`archive key ${key} must be unique and portable`);
     keys.add(key);
     const platform = canonicalString(archive.platform, `archive ${key} platform`);
     if (!PLATFORM_TAGS.includes(platform)) fail(`archive ${key} has unsupported platform ${platform}`);
+    const target = portableRelativePath(archive.target, `archive ${key} target`);
+    const targetNamespace = target.split("/", 1)[0]?.toLowerCase();
+    if (targetNamespace === RUNTIME_MANIFEST_FILENAME || targetNamespace === RUNTIME_CURRENT_FILENAME) {
+      fail(`archive ${key} target collides with the installed runtime metadata namespace`, { target });
+    }
     return {
       key,
       platform,
       source: path.resolve(path.dirname(configFile), canonicalString(archive.source, `archive ${key} source`)),
-      target: portableRelativePath(archive.target, `archive ${key} target`),
+      target,
     };
   });
+  for (const platform of PLATFORM_TAGS) {
+    assertNoOwnedPathOverlap(
+      archives.filter((archive) => archive.platform === platform).map((archive) => archive.target),
+      platform,
+      `runtime archive targets on ${platform}`,
+    );
+  }
   return { artifactVersion, versions: parseVersions(config.versions), packages, archives };
 }
 
@@ -310,44 +422,62 @@ export async function buildRuntimeArchives({ configFile, outputRoot, evidenceRoo
     await verifyPythonPackageSet({ platform, actualFile, expectedPackages });
   }
 
-  const archiveRoot = path.join(path.resolve(outputRoot), "runtime-archives");
-  const manifestArchives = [];
-  for (const archive of [...config.archives].sort((left, right) => left.key.localeCompare(right.key, "en"))) {
-    const sourceStat = await lstat(archive.source);
-    if (!sourceStat.isDirectory()) fail(`archive source must be a directory`, { source: archive.source });
-    const entries = await walkRegularFiles(archive.source);
-    const destination = path.join(archiveRoot, `${archive.key}.tar.gz`);
-    await buildArchive({ source: archive.source, destination, entries });
-    const archiveStat = await stat(destination);
-    manifestArchives.push({
-      key: archive.key,
-      platform: archive.platform,
-      sha256: await hashFile(destination),
-      bytes: archiveStat.size,
-      target: archive.target,
-      entries,
-    });
-  }
-
-  const manifest = {
-    schemaVersion: 1,
-    artifactVersion: config.artifactVersion,
-    versions: config.versions,
-    pythonPackages: expectedPackages,
-    archives: manifestArchives,
-  };
   const output = path.resolve(outputRoot);
-  await mkdir(output, { recursive: true });
-  const destination = path.join(output, "runtime-manifest.json");
-  const temporary = `${destination}.${process.pid}.${randomUUID()}.tmp`;
+  await mkdir(path.dirname(output), { recursive: true });
+  await recoverRuntimeAssetPublish(output);
+  const generation = `${output}.build-${process.pid}-${randomUUID()}`;
+  await rm(generation, { recursive: true, force: true });
+  const archiveRoot = path.join(generation, "runtime-archives");
+  const manifestArchives = [];
   try {
-    await writeFile(temporary, `${JSON.stringify(manifest, null, 2)}\n`, { flag: "wx", mode: 0o600 });
-    await rm(destination, { force: true });
-    await rename(temporary, destination);
+    for (const archive of [...config.archives].sort((left, right) => compareUtf8(left.key, right.key))) {
+      const sourceStat = await lstat(archive.source);
+      if (!sourceStat.isDirectory()) fail(`archive source must be a directory`, { source: archive.source });
+      const entries = await walkRegularFiles(archive.source);
+      assertNoOwnedPathOverlap(
+        entries.map((entry) => entry.path),
+        archive.platform,
+        `runtime archive entries for ${archive.key}`,
+      );
+      const destination = path.join(archiveRoot, `${archive.key}.tar.gz`);
+      await buildArchive({ source: archive.source, destination, entries });
+      const archiveStat = await stat(destination);
+      manifestArchives.push({
+        key: archive.key,
+        platform: archive.platform,
+        sha256: await hashFile(destination),
+        bytes: archiveStat.size,
+        target: archive.target,
+        entries,
+      });
+    }
+
+    const manifest = {
+      schemaVersion: 1,
+      artifactVersion: config.artifactVersion,
+      versions: config.versions,
+      pythonPackages: expectedPackages,
+      archives: manifestArchives,
+    };
+    // The runtime parser is the final authority. Running the emitted projection
+    // through it here prevents duplicated build validation from drifting into an
+    // artifact that succeeds at build time but cannot boot.
+    const { parseEmbeddedRuntimeManifest } = await tsImport(
+      "../packages/adapter/src/runtime/runtime-asset-source.ts",
+      import.meta.url,
+    );
+    parseEmbeddedRuntimeManifest(manifest);
+    await mkdir(generation, { recursive: true });
+    await writeFile(
+      path.join(generation, "runtime-manifest.json"),
+      `${JSON.stringify(manifest, null, 2)}\n`,
+      { flag: "wx", mode: 0o600 },
+    );
+    await commitRuntimeAssetGeneration(generation, output);
+    return manifest;
   } finally {
-    await rm(temporary, { force: true });
+    await rm(generation, { recursive: true, force: true });
   }
-  return manifest;
 }
 
 function commandLine(argv) {
