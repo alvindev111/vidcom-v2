@@ -937,8 +937,15 @@ Mỗi phase chạy focused command dưới đây trên SQLite/filesystem thật,
   - Route đọc `credentialId` từ chính perimeter rồi truyền xuống invoker; nó **không tự tạo** danh tính nào. Audit do `ToolRegistry` của daemon ghi (actor `agent` đã cố định ở đó), nên bridge chết giữa lời gọi không mang theo bản ghi của lời gọi
   - [`bridge-routes.test.ts`](../../../../tests/server/bridge-routes.test.ts) 14 test trên `createServerApp` thật, gồm cả hai ca từ chối bearer và ca forward danh tính
   - _Requirements: R2.9_ — _Design: §5.7, DR-6_
-- [ ] I.8 Auto-start + race
+- [~] I.8 Auto-start + race — **resolver xong, child `serve --ensure` thuộc J.2**
   - `ensure` spawn `serve --ensure` khi cần; kẻ thua race lease **chuyển thành client**, không throw rồi chết. Daemon sinh theo đường này MUST NOT mở browser
+  - [`ensure-daemon.ts`](../../../../packages/cli/src/bridge/ensure-daemon.ts): đọc record → handshake → attach; hỏng ở bất kỳ bước nào thì **khởi một daemon** rồi nhìn lại
+  - **Kẻ thua race là client, không phải lỗi**: hai client cùng thấy không có record và cùng khởi daemon; đúng một cái thắng lease, cái kia thoát. Client đã khởi cái thua **vẫn muốn một daemon, và đang có một** — nên spawn hỏng đi tiếp bằng cách nhìn lại, chỉ lần nhìn thứ hai rỗng mới là lỗi
+  - Giữ nguyên lý do spawn hỏng để báo cáo nói đúng **lỗi thật** thay vì "không thấy daemon nào xuất hiện"
+  - Record sống lâu hơn tiến trình nó mô tả là ca riêng: record trông hoàn toàn hợp lệ, chỉ handshake mới phát hiện ra
+  - `kind` attach không phải nhãn: nó quyết định daemon có bao giờ được tự tắt không, nên test chốt nó được truyền đúng
+  - **Còn lại**: `spawnDaemon` thật (child `serve --ensure`, và luật MUST NOT mở browser) — `serve` là mode của **J.2**. Seam đã inject sẵn, nối vào là xong
+  - [`bridge-attachment.test.ts`](../../../../tests/cli/bridge-attachment.test.ts) 7 test
   - _Requirements: R2.4, R2.10, R2.15_ — _Design: §5.6_
 - [ ] I.9 `stdout` của bridge chỉ JSON-RPC
   - Mọi log/cảnh báo/tiến trình qua `stderr` hoặc log store; test bắt được một dòng lạc
@@ -1576,6 +1583,12 @@ Chi tiết: [Detailed Goals](./spec-packaging-and-distribution-detailed-goal.md)
   - Summary: Thêm `invoker` tuỳ chọn (mặc định là chính registry) xuyên qua `createMcpHttpHandlers` → `createServerFactory` → `registerRegistryTools`, cộng test parity local ↔ remote.
   - Decisions: Đặt seam ở tầng đăng ký tool chứ không ở registry: registry phải tiếp tục là nguồn duy nhất của `list`/schema/era, còn invoker chỉ đổi chỗ thực thi — đổi ở tầng registry là tạo hai catalogue không phân xử được. Stub daemon trong test **ném đúng `DaemonClientError`** với mã ổn định, vì stub dễ dãi hơn sẽ biến parity test thành test cho chính stub.
   - Blockers: Không có. Hành vi local không đổi: `test:mcp-contract` 71/71, `test:golden` 40/40, catalogue xanh, `tools/list` snapshot không đổi byte. `tests/mcp` 70/70, typecheck, lint 0 error, boundaries xanh.
+
+2026-08-09 — Phase I, Task I.8 (một phần)
+  - Files: `packages/cli/src/bridge/ensure-daemon.ts`, `packages/cli/src/index.ts`, `tests/cli/bridge-attachment.test.ts`, checklist và implementation notes
+  - Summary: Resolver `ensureDaemon` — dùng daemon đang phục vụ nếu có, khởi một cái nếu không, và coi kẻ thua race lease là client.
+  - Decisions: Spawn hỏng **không** ném ngay mà nhìn lại record một lần nữa, vì mất race lease trông y hệt spawn hỏng và client đã khởi cái thua vẫn đang có một daemon để dùng. Giữ lý do spawn hỏng để lần nhìn thứ hai rỗng còn báo được lỗi thật. Mọi I/O đi qua seam inject nên test không cần tiến trình thật.
+  - Blockers: `spawnDaemon` thật cần mode `serve --ensure` của **J.2**, gồm cả luật MUST NOT mở browser. 7/7 test, typecheck, lint 0 error, boundaries xanh.
 
 Format:
 ```
