@@ -955,9 +955,14 @@ Mỗi phase chạy focused command dưới đây trên SQLite/filesystem thật,
 - [x] I.10 Contract parity test local ↔ remote
   - Cùng input ⇒ cùng schema, cùng revision, cùng mã lỗi
   - _Requirements: R2.3_
-- [ ] I.11 Integration test
+- [x] I.11 Integration test
   - Port bị chiếm bởi app khác ⇒ handshake từ chối · record stale ⇒ rediscovery có giới hạn · daemon biến mất giữa phiên ⇒ lỗi có mã, **không treo**, không trả kết quả giả
   - Hai bridge auto-start đồng thời ⇒ kẻ thua nối vào kẻ thắng · bridge cuối detach chỉ tắt daemon auto
+  - [`bridge-integration.test.ts`](../../../../tests/cli/bridge-integration.test.ts) 6 test trên **listener loopback thật** + `createServerApp` thật + discovery store trên **filesystem thật** trong temp directory
+  - **Test này tìm ra một bug thật của I.1, không phải bug giả định**: tên file temp trong `publish` lấy theo `instanceId`, nên hai lần publish cùng record dùng chung một đường dẫn — cái thua `wx` **xoá đúng file cái thắng đang ghi**, cả hai hỏng, và không record nào được publish. Kết cục: một workspace có daemon sống mà không ai tìm thấy. Đã đổi sang `randomUUID()` và thêm regression test publish đồng thời vào [`daemon-discovery.test.ts`](../../../../tests/adapter/daemon-discovery.test.ts)
+  - Ca "port thuộc về app khác" dựng bằng **một daemon thật thứ hai** đang nghe: nó trả lời, và nếu không có kiểm identity thì client sẽ coi thứ trả lời đó là daemon của mình
+  - Ca "daemon biến mất giữa phiên" đóng listener thật rồi gọi tiếp: trả `daemon_unavailable`, **không treo**, không kết quả giả
+  - Stub lease trong test là cờ **atomic**, không phải read-then-write: read-then-write cho phép cả hai caller tin mình thắng, đúng kết cục mà lease thật không thể tạo ra
   - _Requirements: R2.7, R2.10, R2.13, R2.15_
 - [ ] I.12 Integration test: agent ghi qua bridge ⇒ UI nhận event
   - Đường watcher/event outbox Phase 1 còn nguyên tác dụng, không cần reload
@@ -1591,6 +1596,12 @@ Chi tiết: [Detailed Goals](./spec-packaging-and-distribution-detailed-goal.md)
   - Summary: Resolver `ensureDaemon` — dùng daemon đang phục vụ nếu có, khởi một cái nếu không, và coi kẻ thua race lease là client.
   - Decisions: Spawn hỏng **không** ném ngay mà nhìn lại record một lần nữa, vì mất race lease trông y hệt spawn hỏng và client đã khởi cái thua vẫn đang có một daemon để dùng. Giữ lý do spawn hỏng để lần nhìn thứ hai rỗng còn báo được lỗi thật. Mọi I/O đi qua seam inject nên test không cần tiến trình thật.
   - Blockers: `spawnDaemon` thật cần mode `serve --ensure` của **J.2**, gồm cả luật MUST NOT mở browser. 7/7 test, typecheck, lint 0 error, boundaries xanh.
+
+2026-08-09 — Phase I, Task I.9 + I.11
+  - Files: `tests/cli/bridge-integration.test.ts`, `tests/cli/bridge-attachment.test.ts`, `packages/adapter/src/fs/daemon-discovery.ts`, `tests/adapter/daemon-discovery.test.ts`, checklist và implementation notes
+  - Summary: Integration test bridge trên listener loopback thật + filesystem thật; thêm guard stdout cho `packages/cli/src/bridge/**`.
+  - Decisions: **Sửa một bug thật do integration test tìm ra**: temp file của `publish` đặt tên theo `instanceId`, nên hai publish đồng thời dùng chung đường dẫn và cái thua `wx` xoá file cái thắng đang ghi — cả hai hỏng, không record nào tồn tại, workspace có daemon sống mà không ai tìm thấy. Đổi sang `randomUUID()` (đúng cách credential store đang làm) và thêm regression test. Stub lease trong test dùng cờ atomic vì read-then-write cho phép cả hai caller tin mình thắng, thứ lease thật không tạo ra được.
+  - Blockers: Không có; `tests/cli` bridge 6/6 + 8/8, discovery 14/14, typecheck, lint 0 error, boundaries xanh.
 
 Format:
 ```

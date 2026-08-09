@@ -1,4 +1,4 @@
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { mkdir, open, readFile, rename, rm } from "node:fs/promises";
 import path from "node:path";
 
@@ -95,7 +95,11 @@ export class DaemonDiscoveryStore {
     await mkdir(directory, { recursive: true });
     secureAppDataDirectorySync(directory);
 
-    const temporary = path.join(directory, `.${path.basename(pathname)}.${record.instanceId}.tmp`);
+    // Unique per call, not per instance. Two publishes of the same record —
+    // a retry, or two processes racing to start a daemon — would otherwise
+    // share one temp path, and the one that loses `wx` deletes the file the
+    // winner is still writing. Both then fail and no record is ever published.
+    const temporary = path.join(directory, `.${path.basename(pathname)}.${randomUUID()}.tmp`);
     try {
       const handle = await open(temporary, "wx", 0o600);
       try {

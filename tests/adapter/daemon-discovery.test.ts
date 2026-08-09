@@ -95,6 +95,19 @@ describe("daemon discovery store", () => {
     expect(entries).toHaveLength(1);
   });
 
+  it("survives two publishes racing each other", async () => {
+    // Found by the bridge integration test, not by reading this file. The temp
+    // name used to be derived from the instance id, so two publishes of the
+    // same record shared one path: the one that lost the exclusive create
+    // deleted the file the winner was still writing, both failed, and no
+    // record was ever published — a workspace with a live daemon nobody can
+    // find.
+    const store = new DaemonDiscoveryStore(await appData());
+    const published = record("/canonical/workspace");
+    await Promise.all([store.publish(published), store.publish(published)]);
+    expect(await store.read("/canonical/workspace")).toEqual(published);
+  });
+
   it("does not let an old daemon delete the record of the one that replaced it", async () => {
     // The slow shutdown of a previous daemon would otherwise make a perfectly
     // healthy replacement invisible, which is the hardest shape of this bug to
