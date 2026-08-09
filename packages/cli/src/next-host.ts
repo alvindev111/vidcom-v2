@@ -2,12 +2,13 @@ import path from "node:path";
 import os from "node:os";
 
 import {
+  AttachmentRegistry,
   createServerApp,
   InMemoryNonceStore,
   InMemorySessionStore,
   type ServerAppDependencies,
 } from "@vidcom/server";
-import { ensureVidcomSettingsFile, nodeSchedulerTimers, readVidcomSettings } from "@vidcom/adapter";
+import { AppSettingsStore, ensureVidcomSettingsFile, nodeSchedulerTimers, readVidcomSettings } from "@vidcom/adapter";
 import type { ResolvedVidcomSettings } from "@vidcom/contracts";
 import type { AbsolutePath } from "@vidcom/core";
 import { JobScheduler, type ProjectIdentity } from "@vidcom/core";
@@ -17,13 +18,19 @@ import { enqueueRenderJob, enqueueSnapshotJob } from "@vidcom/worker";
 import { createJobTypes, createMcpRegistry, createSystemClock, hashContent } from "./composition-root";
 import { startVidcomFoundation } from "./startup";
 import { BrowseTokenStore } from "@vidcom/core";
-import { ErrorCode } from "@vidcom/contracts";
+import { ErrorCode, SUPPORTED_REVISIONS } from "@vidcom/contracts";
+import { BRIDGE_CREDENTIAL_SETTING } from "./bridge-credential";
+import { VIDCOM_VERSION } from "./commands/version";
 import { selectWorkspace } from "./workspace-selection";
 
-interface NextHostedRuntime {
+export interface NextHostedRuntime {
   app: ReturnType<typeof createServerApp>;
   foundation: Awaited<ReturnType<typeof startVidcomFoundation<null>>>;
   nonces: InMemoryNonceStore;
+  /** Identifies this process for the lifetime of one start, for discovery and handshake. */
+  instanceId: string;
+  workspaceRoot: string;
+  attachments: AttachmentRegistry;
 }
 
 interface RuntimeGlobal {
@@ -89,6 +96,11 @@ async function startNextHostedRuntime(port: number, explicitWorkspace?: string):
   delete process.env.VIDCOM_BOOTSTRAP_NONCE;
   if (bootstrapNonce) nonces.register(bootstrapNonce);
   const sessions = new InMemorySessionStore(clock);
+  // New on every start, deliberately. A restarted daemon that reused its id
+  // would satisfy a handshake meant for the process that died, and every check
+  // after that would pass.
+  const instanceId = `daemon_${crypto.randomUUID()}`;
+  let leaseHeld = true;
   // Settings first: the file is allowed to say where application data lives, so
   // nothing that depends on that path can be computed before it is read.
   const settings = await readVidcomSettings();
@@ -128,7 +140,10 @@ async function startNextHostedRuntime(port: number, explicitWorkspace?: string):
       return infrastructure.watcher;
     },
     async openListener() { return null; },
-    onLeaseLost() { sessions.revokeAll(); },
+    onLeaseLost() {
+      leaseHeld = false;
+      sessions.revokeAll();
+    },
   });
   const origins = [`http://127.0.0.1:${port}`, `http://localhost:${port}`];
   const projectReads: NonNullable<ServerAppDependencies["projectReads"]> = {
@@ -140,10 +155,16 @@ async function startNextHostedRuntime(port: number, explicitWorkspace?: string):
     ...foundation.application.writeDependencies,
     reads: foundation.application.readDependencies,
   };
-  const mcp = createMcpHttpHandlers(createMcpRegistry(
-    foundation.infrastructure,
-    foundation.application,
-  ));
+  const registry = createMcpRegistry(foundation.infrastructure, foundation.application);
+  const mcp = createMcpHttpHandlers(registry);
+  const attachments = new AttachmentRegistry({
+    clock,
+    instanceId,
+    // Only a daemon something started on demand may retire itself. This host is
+    // started by a person, so it never does.
+    autoStarted: false,
+    hasActiveWork: () => foundation.infrastructure.jobs.hasNonTerminalJob?.() ?? false,
+  });
   const workspaceOverview = async () => {
     const entries = await foundation.application.scanWorkspace();
     return {
@@ -180,6 +201,9 @@ async function startNextHostedRuntime(port: number, explicitWorkspace?: string):
   return {
     foundation,
     nonces,
+    instanceId,
+    workspaceRoot,
+    attachments,
     app: createServerApp({
       port,
       uiOrigins: origins,
@@ -187,6 +211,32 @@ async function startNextHostedRuntime(port: number, explicitWorkspace?: string):
       sessions,
       mcpCredentials: foundation.infrastructure.credentials,
       mcp,
+      bridge: {
+        instanceId,
+        workspaceRoot,
+        daemonVersion: VIDCOM_VERSION,
+        protocolVersions: [...SUPPORTED_REVISIONS],
+        attachments,
+        bridgeCredentialId: () => Promise.resolve(
+          new AppSettingsStore(foundation.infrastructure.database).get(BRIDGE_CREDENTIAL_SETTING),
+        ),
+        leaseHeld: () => leaseHeld,
+        // The daemon's own registry runs the tool, so the audit entry is written
+        // here. A bridge that dies mid-call cannot take the record with it.
+        invokeTool: async (request) => {
+          const result = await registry.invoke(request.name, request.input, {
+            era: "modern",
+            protocolVersion: request.protocolVersion,
+            credentialId: request.credentialId,
+            requestInput: () => Promise.reject(
+              new Error("the bridge cannot elicit input from a person"),
+            ),
+          });
+          return result.ok
+            ? { ok: true as const, value: result.value }
+            : { ok: false as const, error: result.error };
+        },
+      },
       projectReads,
       projectWrites,
       narration: {

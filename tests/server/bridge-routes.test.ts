@@ -127,6 +127,17 @@ describe("bridge routes", () => {
     expect(await response.json()).toMatchObject({ error: { code: ErrorCode.CredentialInvalid } });
   });
 
+  it("guards only its own routes, not the whole API", async () => {
+    // This router mounts at the root of the API app. A `*` guard would demand
+    // the system bridge credential on every browser request in the product, and
+    // it showed up as a 503 on `/v1/projects` that had nothing to do with the
+    // bridge. Found by the runtime smoke, not by reading the router.
+    const { call } = build({ bridgeCredentialId: () => Promise.resolve(null) });
+    const response = await call("/api/v1/health");
+    const body = await response.json() as { error?: { code?: string } };
+    expect(body.error?.code).not.toBe(ErrorCode.BridgeCredentialUnavailable);
+  });
+
   it("says so when the daemon has no system credential yet", async () => {
     const { call } = build({ bridgeCredentialId: () => Promise.resolve(null) });
     const response = await call("/api/bridge/v1/ready", { token: "system-token" });

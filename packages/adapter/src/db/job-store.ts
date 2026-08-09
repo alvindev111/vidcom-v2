@@ -260,6 +260,20 @@ export class SqliteJobStore implements JobStorePort {
     `)?.present === 1;
   }
 
+  /**
+   * True while any job in this workspace has not reached a terminal state.
+   *
+   * The daemon serves exactly one workspace, so "any job" and "this
+   * workspace's jobs" are the same set. This is what holds an auto-started
+   * daemon open: `render --detach` lets the client exit at once, so a refcount
+   * built from live clients alone would shut the daemon down mid-render.
+   */
+  async hasNonTerminalJob(): Promise<boolean> {
+    return this.database.get<{ present: number }>(sql`
+      SELECT 1 AS present FROM job WHERE status IN ('queued', 'running') LIMIT 1
+    `)?.present === 1;
+  }
+
   async listCleanupPendingIds(): Promise<JobId[]> {
     return this.database.all<{ id: string }>(sql`
       SELECT id FROM job WHERE cleanup_pending = 1 ORDER BY id

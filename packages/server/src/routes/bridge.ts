@@ -47,7 +47,11 @@ function reject(code: ErrorCode, message: string, details?: Record<string, unkno
 export function createBridgeRoutes(dependencies: BridgeRouteDependencies): Hono<McpAuthEnv> {
   const routes = new Hono<McpAuthEnv>();
 
-  routes.use("*", async (c, next) => {
+  // Scoped to the bridge prefix, not `*`. This router is mounted at the root of
+  // the API app, so a `*` guard would demand the system bridge credential on
+  // every browser request in the product — which fails as a 503 that has
+  // nothing to do with the route being called.
+  routes.use("/bridge/v1/*", async (c, next) => {
     const expected = await dependencies.bridgeCredentialId();
     if (expected === null) {
       reject(ErrorCode.BridgeCredentialUnavailable, "the daemon has no system bridge credential");

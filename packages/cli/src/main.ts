@@ -11,14 +11,11 @@ import { runApproveCommand } from "./commands/approve";
 import { runCredentialCommand } from "./commands/credential";
 import { runBackupCommand } from "./commands/backup";
 import { runRecoveryCommand } from "./commands/recovery";
-import { runVersionCommand } from "./commands/version";
+import { VIDCOM_VERSION, runVersionCommand } from "./commands/version";
 import { isNodeSentinel, runNodeSentinel } from "./node-sentinel";
 import { CliInputError } from "./cli-error";
 
 export { CliInputError } from "./cli-error";
-
-/** Kept beside the parser so one file answers "what is this build". */
-export const VIDCOM_VERSION = "0.1.0";
 
 export type VidcomCommandName =
   | "app"

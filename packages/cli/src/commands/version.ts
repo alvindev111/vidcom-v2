@@ -1,5 +1,14 @@
 import { CliInputError } from "../cli-error";
 
+/**
+ * The version this build reports.
+ *
+ * Kept here rather than beside the command parser: the host also needs it, for
+ * the handshake, and importing the parser from the host closes a cycle that
+ * only shows up at runtime as a half-initialised module.
+ */
+export const VIDCOM_VERSION = "0.1.0";
+
 export interface VersionReport {
   vidcom: string;
   hyperframes: string | null;

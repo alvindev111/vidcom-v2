@@ -513,6 +513,8 @@ export interface JobStorePort {
   listProjectJobs?(projectId: ProjectId): Promise<Job[]>;
   /** True only while a queued/running job currently blocks project rename or deletion. */
   hasRunningProjectJob?(projectId: ProjectId): Promise<boolean>;
+  /** True while any job in this workspace is still queued or running. */
+  hasNonTerminalJob?(): Promise<boolean>;
   /** Claims a queued job atomically; `false` means another worker won or it is not queued. */
   claim(id: JobId, workerId: string): Promise<boolean>;
   /** Reads the oldest eligible queued job; `null` means none is ready. */
