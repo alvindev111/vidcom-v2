@@ -66,16 +66,36 @@ export async function runDoctor(input: DoctorRunInput): Promise<number> {
     if (input.repair === undefined) {
       throw new CliInputError("this build cannot repair itself");
     }
-    const repaired = await input.repair(failing);
-    // The report is rebuilt from the repaired items rather than patched in
-    // place: a repair that half-worked has to show as it is now, not as a mix
-    // of before and after.
-    report = {
-      ...report,
-      items: report.items.map(
-        (item) => repaired.items.find((entry) => entry.id === item.id) ?? item,
-      ),
-    };
+    // A repair that cannot run must not take the diagnosis with it. This is a
+    // command whose whole job is to say what is wrong; throwing here left it
+    // saying nothing at all, which the packaged smoke caught.
+    let repaired: RepairOutcome | null = null;
+    let repairFailure: string | null = null;
+    try {
+      repaired = await input.repair(failing);
+    } catch (error) {
+      repairFailure = error instanceof Error ? error.message : String(error);
+    }
+    if (repaired) {
+      // The report is rebuilt from the repaired items rather than patched in
+      // place: a repair that half-worked has to show as it is now, not as a mix
+      // of before and after.
+      report = {
+        ...report,
+        items: report.items.map(
+          (item) => repaired.items.find((entry) => entry.id === item.id) ?? item,
+        ),
+      };
+    } else if (repairFailure !== null) {
+      // Recorded against the items it was meant to fix, so the reason travels
+      // with the thing that is still broken rather than in a separate line.
+      report = {
+        ...report,
+        items: report.items.map((item) => failing.some((entry) => entry.id === item.id)
+          ? { ...item, remedy: `${item.remedy ?? "repair could not run"} (repair failed: ${repairFailure})` }
+          : item),
+      };
+    }
   }
 
   const redacted = redactDoctorReport(report, input.buildRoots ?? []);

@@ -2440,6 +2440,12 @@ Chi tiết: [Detailed Goals](./spec-packaging-and-distribution-detailed-goal.md)
   - Decisions: Lọc PATH theo tên thư mục là **sai** — `/opt/homebrew/bin` chứa `node` mà không chứa chữ nào bộ lọc tìm; giờ đưa **PATH rỗng**. Probe health trước khi có session cũng sai: perimeter đòi session ở mọi path trừ exchange và `tests/server/security.test.ts` **ghim điều đó**, nên tôi đã thử nới perimeter, thấy 4 test bảo mật đỏ, và **lùi lại** — khẳng định ngược một quyết định cố ý không phải là sửa. `serve` headless không mint token nên cấp nonce bootstrap như mode `app` vẫn làm. Lỗi 400 khi tạo project là **của smoke**: schema strict đòi `presetId`, smoke gửi `preset`. `doctor` exit ≠ 0 trên máy sạch là **đúng** (chưa chọn workspace, chưa có key ElevenLabs) — đòi exit 0 là bắt một bản cài mới phải tự nhận mình hỏng; giờ chỉ đòi mọi hạng mục **thuộc về artifact** phải `ok`.
   - Blockers: **Lỗi sản phẩm thật, chưa sửa**: với `VIDCOM_DOCTOR_STRICT=1` trên app-data sạch, `doctor --repair` in ra `this build has no runtime archives to re-extract from` và **không in JSON**, trong khi cùng lệnh không strict lại chạy đủ và in report. Cần điều tra: repair dưới strict đi đường khác và không thấy archive nhúng. `version` đã sửa (đọc manifest nhúng, trước đó trả `null` — chính smoke phát hiện).
 
+2026-08-09 — `doctor --repair` không bao giờ repair được, và nuốt luôn chẩn đoán
+  - Files: `packages/cli/src/main.ts`, `packages/cli/src/commands/doctor.ts`, `tests/cli/{doctor,serve}.test.ts`, checklist
+  - Summary: Hai lỗi chồng nhau, packaged smoke tìm ra cả hai.
+  - Decisions: (1) `reextract` bị **nối cứng vào một lời từ chối**, nên `--repair` chưa bao giờ sửa được gì; giờ nối vào `prepareRuntimeForCli` với asset source thật, và chỉ giữ thông báo "không có archive" cho source checkout — nơi câu đó **đúng**. (2) `await input.repair(...)` ném thì **cả report không được in**: một lệnh mà toàn bộ nhiệm vụ là nói ra cái gì hỏng lại không nói gì cả. Giờ bắt lỗi, giữ report trước repair, và gắn lý do vào **chính hạng mục** nó định sửa để lý do đi cùng thứ còn hỏng. Đó là lý do dưới `VIDCOM_DOCTOR_STRICT=1` nó im lặng: strict biến skip thành missing ⇒ repair chạy ⇒ ném ⇒ không có JSON.
+  - Blockers: Không có; `tests/cli` + `tests/golden` 315/315, full suite 1778 pass / 5 skip, typecheck xanh. Cũng sửa `serve.test.ts` khỏi phụ thuộc việc có ai chạy `build:artifact` chưa — nó kiểm hai path tới hai target khác nhau, không kiểm content-type cụ thể.
+
 Format:
 ```
 YYYY-MM-DD — Phase X, Task X.Y

@@ -155,6 +155,31 @@ describe("doctor skips", () => {
     expect(items.find((item) => item.id === "runtime.integrity")?.remedy).toContain("--deep");
   });
 
+  it("still reports when the repair itself cannot run", async () => {
+    // Found by the packaged smoke: `--repair` threw before anything was
+    // printed, so the one command whose job is to say what is wrong said
+    // nothing at all. The diagnosis has to survive a repair that fails, and the
+    // reason belongs on the item it was meant to fix.
+    const output = capture();
+    await runDoctor({
+      context: context({
+        probes: probes({
+          ffmpeg: () => Promise.resolve({ ok: false, detail: "no ffmpeg" }),
+        }),
+      }),
+      options: { json: true, repair: true },
+      repair: () => Promise.reject(new Error("no runtime archives to re-extract from")),
+      io: output.io,
+    });
+    const report = JSON.parse(output.out.join("")) as {
+      items: Array<{ status: string; remedy?: string }>;
+    };
+    expect(report.items.length).toBeGreaterThan(0);
+    const broken = report.items.filter((item) => item.status !== "ok" && item.status !== "skipped");
+    expect(broken.length).toBeGreaterThan(0);
+    for (const item of broken) expect(item.remedy).toContain("repair failed");
+  });
+
   it("counts a skipped required item as missing under strict", async () => {
     // R8.4 says the packaged smoke fails when a required component is absent,
     // while the exit rule says skipped is not a failure. Strict mode is where

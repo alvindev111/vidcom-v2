@@ -188,6 +188,11 @@ describe("serve", () => {
     const api = await fetch(`${daemon.baseUrl}/api/v1/health`, { headers: { Host: host } });
     const page = await fetch(`${daemon.baseUrl}/`, { headers: { Host: host } });
     expect(api.headers.get("content-type")).toContain("application/json");
-    expect(page.headers.get("content-type")).toContain("text/plain");
+    // The page target is whichever one this checkout has: `text/html` once a
+    // build has produced a pack, `text/plain` for the "not built yet" notice.
+    // Asserting one of them made this test depend on whether somebody had run
+    // build:artifact, which is not what it is checking — the claim is that the
+    // two paths reach different targets on one port.
+    expect(page.headers.get("content-type")).not.toContain("application/json");
   }, 60_000);
 });

@@ -23,7 +23,7 @@ import {
   runNodeSentinel,
 } from "./node-sentinel";
 import { CliInputError } from "./cli-error";
-import { runtimeAssetSourceForProcess } from "./runtime-paths-source";
+import { prepareRuntimeForCli, runtimeAssetSourceForProcess } from "./runtime-paths-source";
 
 export { CliInputError } from "./cli-error";
 
@@ -201,9 +201,19 @@ export async function runVidcomCli(argv: readonly string[] = process.argv.slice(
           activeWorkspace: () => context.probes.activeWorkspace()
             .then((result) => result.detail ?? null),
           discovery: new DaemonDiscoveryStore(context.appDataRoot),
-          reextract: () => Promise.reject(new CliInputError(
-            "this build has no runtime archives to re-extract from",
-          )),
+          // Wired to the real bootstrap. It used to be a hardwired rejection,
+          // so `--repair` could never repair anything — and under strict, where
+          // a skipped required component counts as missing, the rejection threw
+          // before the report was printed. The packaged smoke found that: a
+          // command whose whole job is to say what is wrong, saying nothing.
+          reextract: async () => {
+            const assetSource = runtimeAssetSourceForProcess();
+            if (!assetSource) {
+              // Correct answer for a source checkout, which carries no archives.
+              throw new CliInputError("this build has no runtime archives to re-extract from");
+            }
+            await prepareRuntimeForCli(context.appDataRoot, { repair: true, assetSource });
+          },
         }),
         // The packaged smoke sets this, and there a skipped required component is
         // a failure rather than a "not yet".
