@@ -1783,6 +1783,12 @@ Chi tiết: [Detailed Goals](./spec-packaging-and-distribution-detailed-goal.md)
   - Decisions: **Không tick AC.** AC đòi đếm bằng counter, và chính nó cảnh báo "đừng tick bằng test đếm giả". Test này chứng minh kết quả nhất quán chứ không chứng minh số lần gọi; seam để đếm chỉ tồn tại khi `BootstrapCoordinator` sở hữu migration ở entrypoint. Giữ test lại vì nó vẫn bắt được một lần migrate lặp gây trùng hàng hoặc lỗi, nhưng nó không phải thứ AC hỏi.
   - Blockers: AC C.3 vẫn mở, đúng như C.3 đã ghi từ đầu.
 
+2026-08-09 — Phase L, CI remediation Windows (run 31288921999)
+  - Files: `tests/build/artifact-provenance.test.ts`, checklist và implementation notes
+  - Summary: Linux và macOS xanh, Windows đỏ đúng một test — ca pack thật tự build static export.
+  - Decisions: Nguyên nhân là cách spawn, không phải build: `npm` trên Windows là một `.cmd`, và Node từ chối spawn nó khi không có shell, nên `status` về `null` và lỗi đọc thành "không build được export" thay vì "spawn sai". Đổi sang `bun`, vốn là executable thật trên cả ba OS và đã có sẵn trong job. Kèm `stderr` vào message để lần sau lỗi tự nói ra nguyên nhân.
+  - Blockers: Không có; 12/12 test file đó sau khi xoá `out/`, typecheck và lint xanh.
+
 Format:
 ```
 YYYY-MM-DD — Phase X, Task X.Y

@@ -90,8 +90,13 @@ describe("the frontend pack this build produces", () => {
     // tests before the production build and a skipped check is one nobody
     // notices went missing.
     if (!existsSync(path.resolve("out"))) {
-      const built = spawnSync("npm", ["run", "build"], { stdio: "ignore", shell: false });
-      expect(built.status, "the static export could not be built").toBe(0);
+      // Through bun, which is a real executable everywhere. `npm` on Windows is
+      // a `.cmd`, and Node refuses to spawn one without a shell — so the same
+      // line that works on macOS returns a null status there and the failure
+      // reads as "the export could not be built" rather than "wrong spawn".
+      const built = spawnSync("bun", ["run", "build"], { encoding: "utf8", shell: false });
+      expect(built.status, `the static export could not be built: ${built.stderr ?? built.error?.message ?? ""}`)
+        .toBe(0);
     }
     const root = realpathSync(await mkdtemp(path.join(tmpdir(), "vidcom-provenance-")));
     roots.push(root);
