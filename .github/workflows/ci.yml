@@ -138,7 +138,7 @@ jobs:
       # the generic runner may happen to contain Chrome, but must not run that
       # heavyweight suite a second time merely because of ambient software.
       - name: Test
-        run: npm run test
+        run: npm run test -- --exclude tests/adapter/remote-asset-browser.test.ts
         env:
           VIDCOM_REQUIRE_FFMPEG: "1"
 

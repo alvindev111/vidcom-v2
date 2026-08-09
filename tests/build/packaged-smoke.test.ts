@@ -140,12 +140,22 @@ describe("native packaged-smoke inputs", () => {
 
   it("keeps real-browser coverage in the browser workflow, not process supervision", async () => {
     const workflow = await readFile(".github/workflows/process-supervision.yml", "utf8");
+    const ciWorkflow = await readFile(".github/workflows/ci.yml", "utf8");
+    const manifest = JSON.parse(await readFile("package.json", "utf8")) as {
+      scripts: Record<string, string>;
+    };
     const contractStep = workflow.match(
       /- name: Production supervisor adapter contract\n\s+run: ([^\n]+)/u,
     );
     expect(contractStep?.[1]).toBeDefined();
     expect(contractStep?.[1]).not.toContain("remote-asset-browser.test.ts");
     expect(workflow).toContain('- "tests/adapter/remote-asset-browser.test.ts"');
+    expect(ciWorkflow).toContain(
+      "npm run test -- --exclude tests/adapter/remote-asset-browser.test.ts",
+    );
+    expect(manifest.scripts["test:browser-session"]).toContain(
+      "tests/adapter/remote-asset-browser.test.ts",
+    );
   });
 
   it("has an explicit runner-level network cut for each release platform", () => {

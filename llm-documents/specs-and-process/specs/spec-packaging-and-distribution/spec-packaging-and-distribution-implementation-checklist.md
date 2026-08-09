@@ -2782,9 +2782,9 @@ Chi tiết: [Detailed Goals](./spec-packaging-and-distribution-detailed-goal.md)
   - Blockers: Chỉ còn production supply-chain human gate và production `build:artifact --json`/private-PATH render proof; không được suy diễn evidence fixture thành release artifact.
 
 2026-08-10 — Phase M CI Linux: tách browser integration khỏi process contract C-52
-  - Files: `.github/workflows/process-supervision.yml`, `tests/build/packaged-smoke.test.ts`, Design §16 và implementation notes
-  - Summary: Exact-head run `31340373970` đỏ ở `remote-asset-browser.test.ts` vì Linux runner tình cờ có Chrome nhưng launch trong process matrix chạm hook timeout 30 s; Browser session Linux cùng head đã xanh.
-  - Decisions: Giữ file trong path trigger để thay đổi remote-asset vẫn gọi process review, nhưng bỏ real-browser test khỏi bước `Production supervisor adapter contract`. Browser workflow chuyên biệt có exact Chrome và `VIDCOM_REQUIRE_BROWSER=1` tiếp tục là authority; regression khóa ranh giới này.
+  - Files: `package.json`, `.github/workflows/{ci,process-supervision}.yml`, `tests/build/packaged-smoke.test.ts`, Design §16 và implementation notes
+  - Summary: Exact-head process run `31340373970` đỏ ở `remote-asset-browser.test.ts` vì Linux runner tình cờ có Chrome nhưng launch trong process matrix chạm hook timeout 30 s; CI run `31340592625` sau đó đứng hơn 30 phút ở Windows full Test cùng ambient-browser gap.
+  - Decisions: Giữ file trong process path trigger nhưng bỏ khỏi process adapter contract; generic CI exclude rõ ràng. Thêm test này vào `test:browser-session`, nên workflow chuyên biệt có exact Chrome và `VIDCOM_REQUIRE_BROWSER=1` là authority thật; regression khóa đủ ba wiring.
   - Blockers: Cần local gate và exact-head Process supervision rerun; production supply-chain human gate vẫn mở độc lập.
 
 Format:
