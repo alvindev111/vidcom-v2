@@ -849,7 +849,7 @@ Mỗi phase chạy focused command dưới đây trên SQLite/filesystem thật,
   - _Requirements: R4.3, R4.2, R4.6_
 
 **Acceptance Criteria**:
-- [ ] Artifact không chứa `next` ở đường chạy
+- [x] Artifact không chứa `next` ở đường chạy — test build thật rồi quét bundle, không có `node_modules/next/`
 - [ ] Cold/warm nằm trong trần §9.1 trên runner đang build
 
 **Deliverables**: `scripts/build-artifact.mjs` · `packages/cli/src/sea-static-host.ts` · `.github/perf-baseline/`
@@ -964,15 +964,16 @@ Mỗi phase chạy focused command dưới đây trên SQLite/filesystem thật,
   - Ca "daemon biến mất giữa phiên" đóng listener thật rồi gọi tiếp: trả `daemon_unavailable`, **không treo**, không kết quả giả
   - Stub lease trong test là cờ **atomic**, không phải read-then-write: read-then-write cho phép cả hai caller tin mình thắng, đúng kết cục mà lease thật không thể tạo ra
   - _Requirements: R2.7, R2.10, R2.13, R2.15_
-- [ ] I.12 Integration test: agent ghi qua bridge ⇒ UI nhận event
+- [ ] I.12 Integration test: agent ghi qua bridge ⇒ UI nhận event — **CHẶN NGƯỢC: cần J.2**
   - Đường watcher/event outbox Phase 1 còn nguyên tác dụng, không cần reload
+  - **Vì sao chưa làm**: test phải chạy trên một daemon **đã compose đủ** — route bridge cắm vào cùng app đang giữ project writes và event outbox. `createServerApp` đã nhận `bridge`, nhưng chỗ dựng nó với `instanceId`/`workspaceRoot`/lease thật là mode `serve` của **J.2**. Dựng một app nửa vời chỉ cho test là kiểm một thứ không ai chạy
   - _Requirements: R2.8_
 
 **Acceptance Criteria**:
 - [ ] Mở app rồi chạy Codex ⇒ **cả hai dùng được**, vẫn đúng một writer
 - [ ] Tool destructive vẫn cần approval do con người phát hành
-- [ ] `rtk bun run test:boundaries` xanh, và [`packages/mcp/package.json`](../../../../packages/mcp/package.json) **vẫn đúng 5 dependency** như trước phase (`@modelcontextprotocol/core`, `@modelcontextprotocol/server`, `@vidcom/contracts`, `@vidcom/core`, `zod`) — đây là cách kiểm C-1 không lặng lẽ trôi ngược
-- [ ] `git diff scripts/verify-import-boundaries.mjs` không có dòng nào **nới** luật (thêm fixture thì được)
+- [x] `rtk bun run test:boundaries` xanh, và [`packages/mcp/package.json`](../../../../packages/mcp/package.json) **vẫn đúng 5 dependency** như trước phase (`@modelcontextprotocol/core`, `@modelcontextprotocol/server`, `@vidcom/contracts`, `@vidcom/core`, `zod`) — đây là cách kiểm C-1 không lặng lẽ trôi ngược
+- [x] `git diff scripts/verify-import-boundaries.mjs` không có dòng nào **nới** luật (thêm fixture thì được)
 
 **Deliverables**: `packages/adapter/src/daemon/**` · `packages/adapter/src/fs/daemon-discovery.ts` · `packages/cli/src/bridge/remote-tool-invoker.ts` · `packages/mcp/src/registry/types.ts` (chỉ thêm interface) · `packages/server/src/routes/bridge.ts`
 

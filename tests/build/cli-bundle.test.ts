@@ -68,6 +68,17 @@ describe("cjs bundle", () => {
     expect(findTopLevelAwait(await readFile(CLI_ENTRY, "utf8"))).toBeNull();
   });
 
+  it("leaves Next out of the run path entirely", async () => {
+    // The artifact serves a pre-rendered pack; nothing renders at request time.
+    // A Next module reaching the bundle would mean some import still pulls the
+    // framework in, and it would only show up as size and start-up cost that
+    // nobody could explain.
+    const root = await scratchDirectory();
+    const outfile = path.join(root, "main.cjs");
+    await buildCliBundle(CLI_ENTRY, outfile);
+    expect(await readFile(outfile, "utf8")).not.toContain("node_modules/next/");
+  }, 120_000);
+
   it("emits a bundle the embedded Node loads with nothing else on disk", async () => {
     // The whole point of the bundle is that the SEA has no `node_modules` to
     // fall back on. Building into a temp directory and loading it from there
