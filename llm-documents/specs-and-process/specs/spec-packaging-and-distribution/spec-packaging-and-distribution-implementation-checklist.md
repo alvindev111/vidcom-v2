@@ -843,9 +843,12 @@ Mỗi phase chạy focused command dưới đây trên SQLite/filesystem thật,
   - MIME là **bảng đóng**: pack chỉ chứa thứ export ghi ra, nên một đuôi ngoài danh sách nghĩa là build sinh ra thứ không ai dự tính. Trả `application/octet-stream` để trình duyệt **tải về thay vì chạy** — cách sai an toàn
   - Traversal trả `null`, tức rơi vào đường 404 của host, chứ không tìm thấy một manifest key khác
   - _Requirements: R4.5_
-- [ ] H.8 Integration test artifact — **CHẶN NGƯỢC: cần J.2**
+- [x] H.8 Integration test artifact
   - Chạy với `cwd` là thư mục tạm **rỗng**; cạnh artifact không xuất hiện thư mục asset nào; SSE không bị buffer; upload 20 MB đi qua; 21 MB trả 413
-  - **Đã kiểm được một nửa bằng tay ở H.4**: artifact chạy trong thư mục tạm rỗng, exit theo contract CLI, **không sinh file nào cạnh nó**. Ba khẳng định còn lại cần artifact **mở listener**, tức mode `serve`/`app` của J.2
+  - [`artifact-integration.test.ts`](../../../../tests/cli/artifact-integration.test.ts) chạy daemon của J.2 trên **socket thật**: thư mục khởi chạy vẫn rỗng, SSE có `x-accel-buffering: no`, upload đúng `MAX_BGM_BYTES` đi qua, thêm một block nữa trả **413**
+  - Qua socket thật chứ không gọi thẳng app: một body limit chỉ đúng với `Request` trong bộ nhớ là giới hạn mà **đường mạng chưa từng được hỏi**
+  - **Lệch spec, ghi lại chứ không đổi tên**: mã lỗi thật là `too_large`, checklist H.5 viết `payload_too_large`. Wire contract đã phát hành nên nó thắng
+  - Nửa "chạy chính executable đã đóng gói" đã kiểm tay ở H.4 (127 MB, thư mục tạm rỗng, không sinh file), và **được ghim tự động ở M** — packaged smoke là chỗ duy nhất có artifact thật để chạy
   - _Requirements: R4.3, R4.2, R4.6_
 
 **Acceptance Criteria**:
