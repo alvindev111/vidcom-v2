@@ -91,6 +91,17 @@ describe("serve static assets", () => {
     expect(reads).toBeGreaterThan(0);
   });
 
+  it("asks Node for the embedded assets rather than a global require", async () => {
+    // Found by reviewing the diff. Inside a single executable `require` is a
+    // module-scope binding, not a global — reaching for it through `globalThis`
+    // finds nothing, and a packaged build would fall through to the on-disk
+    // branch and serve "not built" while carrying the frontend.
+    const { readFile } = await import("node:fs/promises");
+    const source = await readFile("packages/cli/src/commands/serve.ts", "utf8");
+    expect(source).toContain("process.getBuiltinModule");
+    expect(source).not.toContain("globalThis as { require");
+  });
+
   it("says what is missing rather than serving an empty page", async () => {
     const root = realpathSync(await mkdtemp(path.join(tmpdir(), "vidcom-assets-")));
     roots.push(root);

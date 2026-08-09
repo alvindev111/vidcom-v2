@@ -76,14 +76,16 @@ export function freeLoopbackPort(): Promise<number> {
  * neither gets `null`, and the daemon says so instead of serving an empty page.
  */
 export function resolveStaticAssets(distDirectory: string): SeaAssetSource | null {
-  const sea = (globalThis as { process?: { versions?: Record<string, string> } })
-    .process?.versions?.["sea"];
-  if (sea !== undefined) {
-    // Required lazily: `node:sea` does not exist outside a packaged build, and
-    // importing it at module scope would break every other mode.
-    const runtime = (globalThis as { require?: (id: string) => { getRawAsset(key: string): ArrayBuffer } })
-      .require?.("node:sea");
-    if (runtime) return { getRawAsset: (key) => runtime.getRawAsset(key) };
+  // `process.getBuiltinModule`, not `globalThis.require`. Inside a single
+  // executable `require` is a module-scope binding rather than a global, so
+  // reaching for it through `globalThis` silently finds nothing — and a
+  // packaged build would fall through to the on-disk branch and serve the
+  // "not built" page instead of the frontend it is carrying.
+  const embedded = process.getBuiltinModule?.("node:sea") as
+    | { isSea(): boolean; getRawAsset(key: string): ArrayBuffer }
+    | undefined;
+  if (embedded?.isSea() === true) {
+    return { getRawAsset: (key) => embedded.getRawAsset(key) };
   }
   try {
     const files = new Map([
