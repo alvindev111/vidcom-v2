@@ -94,6 +94,20 @@ export async function createDoctorContext(options: DoctorContextOptions): Promis
 
     databaseMigration: () => {
       try {
+        // The schema first, then the integrity check. `foreign_key_check` alone
+        // is happy with an empty database, so on its own it would call an
+        // unmigrated install healthy — which is exactly the install where
+        // every later check reads from a table that is not there.
+        const applied = database.$client.prepare(
+          "SELECT count(*) AS count FROM sqlite_master WHERE type = 'table' AND name = 'app_settings'",
+        ).get() as { count?: number } | undefined;
+        if (applied?.count !== 1) {
+          return Promise.resolve({
+            ok: false,
+            absent: true,
+            detail: "the database has not been migrated",
+          });
+        }
         const violations = database.$client.prepare("PRAGMA foreign_key_check").all();
         return Promise.resolve(violations.length === 0
           ? { ok: true }
@@ -140,7 +154,7 @@ export async function createDoctorContext(options: DoctorContextOptions): Promis
     ttsModelCache: () => Promise.resolve(present(path.join(appDataRoot, "models"))),
 
     activeWorkspace: () => {
-      const active = appSettings.get("active_workspace");
+      const active = readSetting(appSettings, "active_workspace");
       if (active === null) {
         return Promise.resolve({ ok: false, absent: true, detail: "no workspace is recorded" });
       }
@@ -171,7 +185,7 @@ export async function createDoctorContext(options: DoctorContextOptions): Promis
   const history: DoctorHistory = {
     hasRenderedBefore: () => Promise.resolve(hasTerminalJob(database, ["render", "snapshot"])),
     hasSynthesisedBefore: () => Promise.resolve(hasTerminalJob(database, ["tts"])),
-    hasChosenWorkspace: () => Promise.resolve(appSettings.get("active_workspace") !== null),
+    hasChosenWorkspace: () => Promise.resolve(readSetting(appSettings, "active_workspace") !== null),
     hasSettingsFile: () => Promise.resolve(settings !== null),
   };
 
@@ -182,6 +196,21 @@ export async function createDoctorContext(options: DoctorContextOptions): Promis
     probes,
     history,
   };
+}
+
+/**
+ * Reads a setting from a database that may not have the table yet.
+ *
+ * `doctor` is the command people run when the install is broken, so every probe
+ * has to survive the broken case. A missing table means "nothing recorded",
+ * which is what an unmigrated install actually has.
+ */
+function readSetting(settings: AppSettingsStore, key: string): string | null {
+  try {
+    return settings.get(key);
+  } catch {
+    return null;
+  }
 }
 
 /** Read from the job table, which already records this. No new table for it. */

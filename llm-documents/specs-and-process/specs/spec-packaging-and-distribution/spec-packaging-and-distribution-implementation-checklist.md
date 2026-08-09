@@ -1063,13 +1063,15 @@ Mỗi phase chạy focused command dưới đây trên SQLite/filesystem thật,
   - Payload ổn định; thứ tự check deterministic
   - [`doctor-report.test.ts`](../../../../tests/golden/doctor-report.test.ts) **viết cả payload ra**, không suy từ code sinh ra nó — suy lại thì test chỉ chứng minh code bằng chính nó. Đổi thứ tự, đổi tên id hay đổi vocabulary status đều hiện thành một diff phải giải thích
   - _Requirements: R3.8_
-- [ ] J.10 Integration test
+- [x] J.10 Integration test
   - Từng check fail độc lập ⇒ exit code đúng; `--repair` khi daemon sống ⇒ swap hoặc từ chối, không để lại trạng thái nửa vời
+  - [`doctor-integration.test.ts`](../../../../tests/cli/doctor-integration.test.ts) chạy trên app-data thật + SQLite thật, và dựng **daemon thật của J.2** cho ca repair: daemon sống ⇒ từ chối kèm `instanceId`; daemon đã dừng ⇒ cho phép. "Đã dừng" quan sát được chứ không đoán theo thời gian, vì daemon xoá record **trước khi** nhả lease
+  - **Bug thật do test này bắt**: `db.migration` chỉ chạy `foreign_key_check`, mà check đó hài lòng với một database rỗng — nên nó gọi một install **chưa migrate** là khoẻ mạnh, đúng cái install mà mọi probe sau đó đọc từ bảng không tồn tại. Đã kiểm schema trước. Cùng lúc, đọc `app_settings` được bọc lại: `doctor` là lệnh người ta chạy **khi install đang hỏng**, nên từng probe phải sống sót qua ca hỏng
   - _Requirements: R3.9, R3.13_
 
 **Acceptance Criteria**:
-- [ ] `doctor` nói được **cái gì thiếu và sửa thế nào** cho mọi mục không `ok`
-- [ ] MCP stdout vẫn sạch sau khi thêm mode mới
+- [x] `doctor` nói được **cái gì thiếu và sửa thế nào** cho mọi mục không `ok` — test quét toàn bộ item và đòi mọi mục không `ok`/`skipped` đều có `remedy`
+- [x] MCP stdout vẫn sạch sau khi thêm mode mới — `test:mcp-contract` 71/71 và e2e stdio host giữ nguyên sau khi thêm bốn mode
 
 **Deliverables**: `packages/cli/src/commands/**` · `packages/core/src/service/doctor.ts`
 
@@ -1667,6 +1669,12 @@ Chi tiết: [Detailed Goals](./spec-packaging-and-distribution-detailed-goal.md)
   - Summary: Khung `DoctorCheck` với thứ tự cố định trong core, 17 check (11 artifact + 6 máy/người dùng), `skipped` lấy từ job store và `app_settings`, exit code + `--json` + redaction, `--repair` giới hạn ở runtime, golden report viết tay.
   - Decisions: Thứ tự nằm ở `DOCTOR_CHECK_ORDER` trong core chứ không theo thứ tự đăng ký — đăng ký chạy theo import và không ai điều khiển import. Probe được inject nên mọi nhánh hỏng chạy được trong test. `missing` tách khỏi `broken` vì hai cái cần hai remedy khác nhau. Repair từ chối khi daemon còn sống: trên Windows daemon giữ đúng file mà repair phải thay. Golden viết cả payload ra tay thay vì suy từ code sinh ra nó.
   - Blockers: Không có. **Hai audit có sẵn bắt được hai lỗi thật khi thêm code này**: `compiler-timeout-audit` bắt `doctor-repair.ts` nhắc `esbuild` (đã khai miễn trừ kèm lý do — nó không chạy gì), và `spawn-environment-audit` bắt probe spawn **không đi qua `allowlistedEnvironment`** — đúng thứ D.5 tồn tại để ép, và nếu để nguyên thì `runtime.python-utf8` sẽ kiểm một environment mà sản phẩm không bao giờ chạy. Đã sửa. Full suite 1409 pass / 4 skip, typecheck, lint 0 error, boundaries xanh.
+
+2026-08-09 — Phase J, Task J.10 + AC
+  - Files: `packages/cli/src/commands/doctor-context.ts`, `tests/cli/doctor-integration.test.ts`, checklist và implementation notes
+  - Summary: Integration test doctor trên app-data thật, SQLite thật và daemon thật; đóng hai Acceptance Criteria của Phase J.
+  - Decisions: Ca repair dùng daemon thật của J.2 thay vì stub, vì thứ cần chứng minh là "daemon sống thì từ chối" và discovery record là bằng chứng quan sát được — daemon xoá record trước khi nhả lease nên "đã dừng" không phải phỏng đoán theo thời gian.
+  - Blockers: Không có. **Bug thật do test bắt**: `db.migration` chỉ chạy `foreign_key_check`, mà nó hài lòng với database rỗng, nên doctor gọi một install chưa migrate là khoẻ mạnh. Đã kiểm schema trước khi kiểm integrity, và bọc đường đọc `app_settings` vì doctor là lệnh chạy đúng lúc install đang hỏng. Full suite 1413 pass / 4 skip.
 
 Format:
 ```
