@@ -2421,6 +2421,12 @@ Chi tiết: [Detailed Goals](./spec-packaging-and-distribution-detailed-goal.md)
   - Decisions: Thêm diagnostic in ra **những thư mục đã tìm** thay vì đoán vòng thứ tư — và nó cho thấy thư mục **có tồn tại**. Nguyên nhân thật: `assertRegularFile` đòi `nlink === 1`, mà **Bun hardlink package từ cache toàn cục trên Linux**, nên mọi `package.json` trong `node_modules` có nlink ≥ 2 và bị từ chối. macOS xanh vì cùng installer đó **copy** thay vì hardlink. Luật một-liên-kết **đúng cho thứ build phát hành** (file staged có tên thứ hai thì ghi đè được qua tên kia sau khi đã verify — lỗ hổng provenance) nhưng **sai cho thứ build đọc vào**. Tách hai vai bằng tham số `shared`, không nới luật ở chỗ nó thuộc về.
   - Blockers: Không có; `tests/build/stage-artifact-runtime.test.ts` 18/18, full suite xanh, typecheck và lint 0 error.
 
+2026-08-09 — Phase M, FFmpeg dựng từ source xong (darwin-arm64)
+  - Files: `scripts/build-ffmpeg.mjs`, checklist
+  - Summary: `ffmpeg`/`ffprobe` 7.1.1 static, **không một dependency ngoài System framework**, đủ cả năm encoder pipeline cần (`libx264 libx265 libvpx-vp9 libopus aac`).
+  - Decisions: Source ghim bằng URL **và** digest, mọi digest **đo bằng cách tải thật**; FFmpeg đối chiếu thêm với giá trị project công bố, x264 tải hai lần để xác nhận archive byte-stable. x264 ghim theo **commit** vì nó không phát hành tarball và `stable` là nhánh động. Bốn lần x265 hỏng, mỗi lần một gốc khác, đã ghi hết vào script: script nuốt lỗi bằng `;` (rồi FFmpeg lặng lẽ link dylib homebrew), `cmake_policy(SET ... OLD)` bị CMake 4 từ chối, `cmake_minimum_required` quá cũ, và NEON aarch64 không compile với Apple clang hiện tại. **`PKG_CONFIG_LIBDIR` chứ không chỉ `PKG_CONFIG_PATH`** — pkg-config giữ danh sách mặc định riêng, và đó là đường một build "static" vẫn nuốt dylib hệ thống.
+  - Blockers: **Đánh đổi cần duyệt**: assembly của x265 bị tắt ⇒ HEVC encode chậm hơn. Đây là mất mát hẹp hơn — x264 giữ nguyên assembly và H.264 là codec pipeline dùng mặc định. Runtime tree giữ **ngoài repo** (`/tmp/vidcom-runtime`, `/tmp/vidcom-ffmpeg`) sau khi lệnh dọn `dist/` cho lint xoá mất cây Python 482 MB một lần.
+
 Format:
 ```
 YYYY-MM-DD — Phase X, Task X.Y
