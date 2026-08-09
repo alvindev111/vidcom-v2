@@ -2775,6 +2775,12 @@ Chi tiết: [Detailed Goals](./spec-packaging-and-distribution-detailed-goal.md)
   - Decisions: PR chỉ dùng standalone Packaged/Browser authority; CI chỉ gọi reusable versions khi manual `workflow_dispatch`. Regression chốt đúng hai condition dispatch-only, không giảm OS hay step coverage.
   - Blockers: Cần exact-head rerun của cả bốn workflow; production supply-chain human gate vẫn mở độc lập.
 
+2026-08-10 — Phase M: exact-head Actions và baseline evidence sau C-51
+  - Files: evidence run `31339333590`, CI `31339333733`, Browser `31339333585`, Process `31339333589`, checklist và implementation notes
+  - Summary: Commit `26f0271` xanh cả bốn workflow. Packaged smoke qua đủ 13/13 required step, zero skip trên macOS arm64, Linux x64 và Windows x64; static CI Linux/Windows, Chrome session Linux/Windows và process supervision Linux/Windows đều xanh.
+  - Decisions: Evidence JSON xác nhận `baselinePresent=true`, mọi startup evaluation `ok`; serve cold/warm lần lượt darwin `830/611 ms`, Linux `1005/1004 ms`, Windows `2031/1817 ms`. CI wrapper skip đúng hai reusable job ở PR nên không còn duplicate concurrency cancellation. Production gate không đổi vì runtime CI vẫn là digest-pinned non-release fixture có explicit opt-in.
+  - Blockers: Chỉ còn production supply-chain human gate và production `build:artifact --json`/private-PATH render proof; không được suy diễn evidence fixture thành release artifact.
+
 Format:
 ```
 YYYY-MM-DD — Phase X, Task X.Y
