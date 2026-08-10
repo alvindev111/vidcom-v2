@@ -78,6 +78,10 @@ const ERROR_STATUS = {
   [ErrorCode.PathTimeout]: 504,
   [ErrorCode.BrowseTokenInvalid]: 400,
   [ErrorCode.ProjectImportConflict]: 409,
+  // 503: the agent CLI is missing from the machine, not from the request.
+  [ErrorCode.AgentUnavailable]: 503,
+  // 409: another terminal has to be closed first, and then this same call works.
+  [ErrorCode.AgentSessionLimit]: 409,
 } as const satisfies Record<ErrorCode, number>;
 
 export class HttpBoundaryError extends Error {

@@ -68,6 +68,10 @@ function protocolCode(error: DomainError, era: Era): number {
     case ErrorCode.RuntimeExtractionIncomplete:
     case ErrorCode.BootstrapLockTimeout:
     case ErrorCode.PathTimeout:
+    // The agent terminal is a UI capability, so an MCP caller can neither cause
+    // nor fix either of these; both are machine state to it.
+    case ErrorCode.AgentUnavailable:
+    case ErrorCode.AgentSessionLimit:
       return MCP_INTERNAL_ERROR;
     case ErrorCode.SchemaInvalid:
     case ErrorCode.PathRequired:

@@ -223,6 +223,10 @@ export async function startServing(
       // both reach here, and running it twice releases a lease this process no
       // longer holds.
       return stopped ??= (async () => {
+        // Agents first: they are the only children that outlive their request,
+        // and a daemon that closed its listener before killing them would leave
+        // model processes with nothing left to read them.
+        runtime.hostState.terminals?.closeAll();
         if (currentRecord) await discovery.remove(currentRecord.workspaceRoot, currentRecord.instanceId);
         const active = listener;
         listener = null;

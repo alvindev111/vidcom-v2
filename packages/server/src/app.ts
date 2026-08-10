@@ -16,6 +16,7 @@ import {
   type McpAuthEnv,
   type McpCredentialVerifier,
 } from "./middleware/perimeter";
+import { createAgentTerminalRoutes, type AgentTerminalRouteDependencies } from "./routes/agent-terminal";
 import { createAuthRoutes } from "./routes/auth";
 import { createProjectReadRoutes, type ProjectReadRouteDependencies } from "./routes/project-reads";
 import { createJobRoutes } from "./routes/jobs";
@@ -45,6 +46,7 @@ export interface ServerAppDependencies {
   projectWrites?: ProjectWriteRouteDependencies;
   narration?: NarrationRouteDependencies;
   deliveryLoop?: DeliveryLoopRouteDependencies;
+  agentTerminal?: AgentTerminalRouteDependencies;
   /** Bootstrap-only workspace activation; active runtimes use `deliveryLoop`. */
   workspaceActivation?(selectionToken: string): Promise<Result<{
     workspaceRoot: string;
@@ -116,6 +118,7 @@ export function createServerApp(deps: ServerAppDependencies) {
   if (deps.projectWrites) app.route("/", createProjectWriteRoutes(deps.projectWrites));
   if (deps.narration) app.route("/", createNarrationRoutes(deps.narration));
   if (deps.deliveryLoop) app.route("/", createDeliveryLoopRoutes(deps.deliveryLoop));
+  if (deps.agentTerminal) app.route("/", createAgentTerminalRoutes(deps.agentTerminal));
   if (deps.workspaceActivation) app.put("/v1/workspace/active", async (c) => {
     const parsed = ActivateWorkspaceRequestSchema.safeParse(await c.req.json().catch(() => null));
     if (!parsed.success) {

@@ -1,5 +1,6 @@
 export * from "./diagnostics";
 export * from "./agent-kit";
+export * from "./agent-terminal";
 export * from "./domain";
 export * from "./dto";
 export * from "./delivery-loop-http";

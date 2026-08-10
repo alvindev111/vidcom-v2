@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import { usePathname } from "next/navigation";
 import type { StudioSnapshotResponse } from "@vidcom/contracts";
 
 import { StudioShell } from "@/components/studio/studio-shell";
@@ -43,18 +44,20 @@ export function projectSlugFromPath(pathname: string): string | null {
 }
 
 export default function ComposerClient() {
-  // Read during render, not in an effect: an effect that sets state on mount
-  // costs an extra render and is what `react-hooks/set-state-in-effect` exists
-  // to stop. `window` is absent while the shell is prerendered, and null is the
-  // honest answer there.
-  const [projectId] = React.useState<string | null>(() =>
-    typeof window === "undefined" ? null : projectSlugFromPath(window.location.pathname));
+  // `usePathname`, not a one-shot read of `window.location`: the router updates
+  // the address bar as part of the transition, so a value captured while this
+  // component first mounts is still the page the user came *from*. Opening a
+  // project from the list is a client navigation, and reading once left
+  // `projectId` null there — nothing to fetch, no error, "Loading studio…"
+  // forever. Reloading appeared to fix it only because a fresh load already has
+  // the right URL before anything mounts.
+  const projectId = projectSlugFromPath(usePathname());
   const [snapshot, setSnapshot] = React.useState<StudioSnapshotResponse | null>(null);
   const [error, setError] = React.useState<string | null>(null);
 
   const loadSnapshot = React.useCallback(async () => {
-    // The slug arrives from the address bar after mount, so the first render
-    // has nothing to fetch yet. Returning is not a failure state.
+    // The prerendered shell carries the sentinel rather than a project, so
+    // there is genuinely nothing to fetch. Returning is not a failure state.
     if (!projectId) return;
     await ensureBrowserSession();
     const response = await fetch(`/api/v1/projects/${encodeURIComponent(projectId)}/studio-snapshot`, { cache: "no-store" });

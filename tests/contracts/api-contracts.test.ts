@@ -142,6 +142,8 @@ describe("API request contracts", () => {
 describe("API response contracts", () => {
   it("locks the shared ErrorCode vocabulary", () => {
     expect(Object.values(ErrorCode).sort()).toEqual([
+      "agent_session_limit",
+      "agent_unavailable",
       "approval_expired",
       "approval_invalid",
       "approval_required",

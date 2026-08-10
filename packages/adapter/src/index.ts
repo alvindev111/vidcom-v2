@@ -1,3 +1,6 @@
+export * from "./agent/agent-cli-invocation";
+export * from "./agent/agent-terminal-pty";
+export * from "./agent/executable-lookup";
 export * from "./db/client";
 export * from "./db/delivery-loop-migration-rollback";
 export * from "./db/approval-grants";

@@ -46,6 +46,8 @@
     "@hyperframes/player": "^0.7.86",
     "@hyperframes/sdk": "^0.7.86",
     "@hyperframes/studio-server": "^0.7.86",
+    "@xterm/addon-fit": "^0.11.0",
+    "@xterm/xterm": "^6.0.0",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "codemirror": "^6.0.2",

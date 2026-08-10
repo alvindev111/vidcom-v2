@@ -83,6 +83,10 @@ export enum ErrorCode {
   PathTimeout = "path_timeout",
   BrowseTokenInvalid = "browse_token_invalid",
   ProjectImportConflict = "project_import_conflict",
+  /** The agent CLI is not installed, or the PTY layer refused to start it. */
+  AgentUnavailable = "agent_unavailable",
+  /** Opening another agent terminal would cross the concurrent-process ceiling. */
+  AgentSessionLimit = "agent_session_limit",
 }
 
 /** Stable machine-readable warning codes exposed with job results. */

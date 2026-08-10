@@ -9,6 +9,7 @@ import {
 } from "@vidcom/server";
 import {
   AppSettingsStore,
+  NodePtyAgentTerminals,
   WorkerFilesystemBrowser,
   ensureVidcomSettingsFile,
   migrateDatabase,
@@ -17,7 +18,7 @@ import {
   type RuntimePaths,
   type VidcomDatabase,
 } from "@vidcom/adapter";
-import type { AbsolutePath, JobId } from "@vidcom/core";
+import type { AbsolutePath, JobId, McpServerDescriptor } from "@vidcom/core";
 import { canonicalizeJson, JobScheduler, type ProjectIdentity } from "@vidcom/core";
 import { createMcpHttpHandlers } from "@vidcom/mcp";
 import { enqueueRenderJob, enqueueSnapshotJob } from "@vidcom/worker";
@@ -26,6 +27,7 @@ import { createJobTypes, createMcpRegistry, createSystemClock, hashContent } fro
 import { startVidcomFoundation, type DaemonRuntime } from "./startup";
 import { BrowseTokenStore, FilesystemBrowserService } from "@vidcom/core";
 import { ErrorCode, SUPPORTED_REVISIONS } from "@vidcom/contracts";
+import { agentMcpServer } from "./agent-mcp-server";
 import { BRIDGE_CREDENTIAL_SETTING } from "./bridge-credential";
 import { VIDCOM_VERSION } from "./commands/version";
 import { prepareRuntimeForCli, runtimePathsFor } from "./runtime-paths-source";
@@ -76,6 +78,14 @@ interface HostedRuntimeState {
   readonly sessions: InMemorySessionStore;
   readonly instanceId: string;
   attachments?: AttachmentRegistry;
+  /**
+   * Held on the daemon rather than on one workspace foundation: the pty
+   * sessions are the user's, and the process that owns them has to be the one
+   * that can still kill them after a workspace switch replaced the foundation.
+   */
+  terminals?: NodePtyAgentTerminals;
+  /** Minted once per daemon start and reused across workspace switches, like the sessions above. */
+  agentMcp?: McpServerDescriptor;
   activeRuntime: NextHostedRuntime | null;
   switching: boolean;
   host?: HostedRuntimeHost;
@@ -264,6 +274,15 @@ export async function startNextHostedRuntime(
     autoStarted: options.autoStarted ?? false,
     hasActiveWork: () => hostState.activeRuntime?.foundation.infrastructure.jobs.hasNonTerminalJob?.() ?? false,
   });
+  const terminals = hostState.terminals ??= new NodePtyAgentTerminals(
+    path.join(appDataRoot, "agent-terminals"),
+  );
+  // Issued per daemon start, not per session: a credential per terminal would
+  // leave one row behind for every tab the user ever opened.
+  const agentMcp = hostState.agentMcp ??= await agentMcpServer(
+    foundation.infrastructure.credentials,
+    port,
+  );
   const workspaceOverview = async () => {
     const entries = await foundation.application.scanWorkspace();
     return {
@@ -375,6 +394,10 @@ export async function startNextHostedRuntime(
         ...(hostState.host === undefined ? {} : { host: hostState.host }),
         ...(options.migrate === undefined ? {} : { migrate: options.migrate }),
       });
+      // Before the old foundation goes: every open agent is cd'd into a project
+      // of the workspace being left, so keeping it alive would leave an agent
+      // editing files the daemon no longer serves.
+      hostState.terminals?.closeAll();
       await current.foundation.stop();
       new AppSettingsStore(replacement.foundation.infrastructure.database).set(
         "active_workspace",
@@ -471,6 +494,13 @@ export async function startNextHostedRuntime(
           actor: "user",
         }),
         mimeFromPath: foundation.infrastructure.mimeFromPath,
+      },
+      agentTerminal: {
+        workspace: foundation.infrastructure.workspace,
+        terminals,
+        mcpServer: agentMcp,
+        workspaceRoot,
+        agentKit: foundation.application.agentKit,
       },
     });
   const bootstrapApp = createServerApp({

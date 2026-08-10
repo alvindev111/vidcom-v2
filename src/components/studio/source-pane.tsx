@@ -116,6 +116,7 @@ export function SourcePane({
       </TabsContent>
       <TabsContent value="ai" className="min-h-0 flex-1 border-t">
         <AiComposerPanel
+          projectId={projectId}
           projectSlug={projectSlug}
           onProjectChanged={onProjectChanged}
         />
