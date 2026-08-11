@@ -101,6 +101,29 @@ describe("all registered tool handlers", () => {
         ok: false as const,
         error: { code: "project_not_found", message: "project was not found" },
       }),
+      mimeFromPath: () => "video/mp4",
+      lifecycle: {
+        create: async () => ({
+          ok: false as const,
+          error: { code: "project_not_found", message: "workspace fixture is unavailable" },
+        }),
+        adopt: async () => ({
+          ok: false as const,
+          error: { code: "project_not_found", message: "workspace fixture is unavailable" },
+        }),
+        rename: async () => ({
+          ok: false as const,
+          error: { code: "project_not_found", message: "project was not found" },
+        }),
+        planRemove: async () => ({
+          ok: false as const,
+          error: { code: "project_not_found", message: "project was not found" },
+        }),
+        remove: async () => ({
+          ok: false as const,
+          error: { code: "project_not_found", message: "project was not found" },
+        }),
+      },
     } as unknown as VidcomToolDependencies;
     dependencies.reads = dependencies;
     registerVidcomTools(tools, dependencies);
@@ -127,6 +150,19 @@ describe("all registered tool handlers", () => {
       start_render: { projectId },
       install_agent_kit: { operation: "install", hosts: ["codex"] },
       install_motion_library: { projectId, libraryId: "gsap" },
+      create_project: { name: "Project Tools Two", presetId: "vertical-shorts" },
+      adopt_project: { slug: "candidate" },
+      rename_project: { projectId, name: "Project Tools Renamed" },
+      delete_project: { projectId, confirmed: true },
+      list_project_assets: { projectId },
+      set_preview_settings: { projectId, patch: { subtitles: { enabled: true } }, expectedRevision: 0 },
+      get_narration_cues: { projectId, sceneId: "scene-1" },
+      replace_narration_cues: { projectId, sceneId: "scene-1", cues: [], expectedContentHash: null },
+      patch_narration_cue: {
+        projectId, sceneId: "scene-1", cueId: "scene-1", text: "Hello", expectedContentHash: digest("1"),
+      },
+      cancel_job: { jobId: "job-1" },
+      get_render_output: { jobId: "job-1" },
     };
     expect(Object.keys(cases).sort()).toEqual(tools.list("modern").map((tool) => tool.name));
 
@@ -140,8 +176,8 @@ describe("all registered tool handlers", () => {
       else if (name === "start_tts") {
         expect(result).toMatchObject({ ok: false, error: { code: "tts_provider_unavailable" } });
       }
-      // get_job_status is not project-scoped; an absent job is a plain not_found.
-      else if (name === "get_job_status") {
+      // The job-scoped tools are not project-scoped; an absent job is a plain not_found.
+      else if (name === "get_job_status" || name === "cancel_job" || name === "get_render_output") {
         expect(result).toMatchObject({ ok: false, error: { code: "not_found" } });
       }
       else expect(result).toMatchObject({ ok: false, error: { code: "project_not_found" } });

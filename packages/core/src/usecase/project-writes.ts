@@ -99,6 +99,7 @@ export async function patchPreviewSettings(
   dependencies: ProjectWriteDependencies,
   input: { projectId: ProjectId; patch: PreviewSettingsPatchDto; expectedRevision: number },
   actor: Actor,
+  invocation: WriteInvocation = { toolAudit: null },
 ) {
   const ref = await findRef(dependencies, input.projectId);
   if (!ref.ok) return ref;
@@ -108,7 +109,7 @@ export async function patchPreviewSettings(
     entity: "preview-settings",
     patch: input.patch,
     expectedRevision: input.expectedRevision,
-  }, actor);
+  }, actor, invocation);
   return written.ok
     ? ok({
         previewSettings: written.value.previewSettings!,
@@ -763,6 +764,7 @@ async function persistNarrationCues(
     expectedContentHash: ContentHash | null;
   },
   actor: Actor,
+  invocation: WriteInvocation = { toolAudit: null },
 ) {
   const ref = await findRef(dependencies, input.projectId);
   if (!ref.ok) return ref;
@@ -789,7 +791,7 @@ async function persistNarrationCues(
     path,
     content: serializeNarrationSidecar(input.sceneId, cues, revision + 1, dependencies.clock.now().toISOString()),
     expectedContentHash: input.expectedContentHash,
-  }, actor);
+  }, actor, invocation);
   return written.ok ? ok({ cues, contentHash: written.value.contentHash, revision: written.value.revision }) : written;
 }
 
@@ -803,6 +805,7 @@ export function replaceNarrationCues(
     expectedContentHash: ContentHash | null;
   },
   actor: Actor,
+  invocation: WriteInvocation = { toolAudit: null },
 ) {
   return persistNarrationCues(dependencies, {
     ...input,
@@ -811,7 +814,7 @@ export function replaceNarrationCues(
       voice: cue.voice,
       offsetSeconds: cue.offsetSeconds,
     })),
-  }, actor);
+  }, actor, invocation);
 }
 
 /** Updates one narration cue without rebuilding metadata for it or its siblings. */
@@ -825,6 +828,7 @@ export async function patchNarrationCue(
     expectedContentHash: ContentHash;
   },
   actor: Actor,
+  invocation: WriteInvocation = { toolAudit: null },
 ) {
   const current = await readNarrationCues(dependencies, input);
   if (!current.ok) return current;
@@ -847,5 +851,5 @@ export async function patchNarrationCue(
       staleSince,
     } : candidate),
     expectedContentHash: input.expectedContentHash,
-  }, actor);
+  }, actor, invocation);
 }

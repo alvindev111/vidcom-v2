@@ -13,8 +13,10 @@ import { createMcpHttpHandlers } from "@vidcom/mcp";
 import {
   CONTRACT_MATRIX_CASES,
   createContractMatrixRegistry,
+  matrixBgmPath,
   matrixHash,
   matrixNewHash,
+  matrixRenderPath,
 } from "./support";
 
 const fixture = fileURLToPath(new URL("./fixtures/contract-matrix-server.ts", import.meta.url));
@@ -84,6 +86,37 @@ const expectedSuccess: Record<string, object> = {
     status: "installed",
     library: { id: "gsap", loader: "global", globalName: "gsap" },
     revision: 3,
+  },
+  create_project: { projectId: "project_matrix", slug: "matrix-two" },
+  adopt_project: { projectId: "project_matrix" },
+  rename_project: { slug: "contract-matrix-renamed" },
+  delete_project: { backupId: "backup-contract-matrix" },
+  list_project_assets: {
+    assets: [{ path: matrixBgmPath, kind: "audio", referencedByPreviewSettings: false }],
+    truncated: false,
+  },
+  set_preview_settings: { revision: 3, diagnostics: [] },
+  get_narration_cues: {
+    cues: [{ cueId: "scene-1", voice: "matrix-voice", offsetSeconds: 0 }],
+    contentHash: matrixHash,
+  },
+  replace_narration_cues: {
+    cues: [{ cueId: "scene-1", text: "Xin chào" }],
+    contentHash: matrixNewHash,
+    revision: 3,
+  },
+  patch_narration_cue: {
+    cues: [{ cueId: "scene-1", text: "Chào bạn" }],
+    contentHash: matrixNewHash,
+    revision: 3,
+  },
+  cancel_job: { jobId: "job_matrix", status: "succeeded", requested: false },
+  get_render_output: {
+    jobId: "job_render",
+    projectId,
+    path: matrixRenderPath,
+    mediaType: "video/mp4",
+    outcome: "succeeded",
   },
 };
 

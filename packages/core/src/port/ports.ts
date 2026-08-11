@@ -26,6 +26,7 @@ import type {
   PathPurpose,
   PathRejection,
   PendingMutation,
+  PendingToolAudit,
   ProjectRegistration,
   PreviewSettings,
   ResolvedPath,
@@ -308,6 +309,8 @@ export interface MutationJournalPort {
     seed: EntitySeed,
     intent: MutationIntent,
     duplicateFrom: ProjectId | null,
+    /** Durable MCP context; when present the bootstrap journal owns this invocation's audit. */
+    toolAudit?: PendingToolAudit | null,
   ): Promise<JournalId>;
   /** Recovers a completed filesystem write and marks the journal `recovered` atomically. */
   recover(id: JournalId, result: MutationResult): Promise<number>;

@@ -459,6 +459,42 @@ describe("complete tool descriptor contract", () => {
               "openWorldHint": false,
               "readOnlyHint": false,
             },
+            "description": "Use when a HyperFrames folder already sits in the workspace unowned and needs a VidCom identity before it can be edited. Do not use for a folder outside the workspace, for a project that already has vidcom.json, or to create a project from nothing. Preconditions: slug is the folder name directly inside the active workspace, and that folder must contain hyperframes.json but no vidcom.json. Side effects: writes vidcom.json with a new projectId, seeds preview settings, and registers the project in one journaled bootstrap write. Errors/recovery: project_not_found means no such folder; write_conflict means it is already adopted; composition_parse_error means its index.html must be fixed before adoption.",
+            "level": "write",
+            "name": "adopt_project",
+            "title": "Adopt a workspace folder",
+          },
+          {
+            "annotations": {
+              "destructiveHint": false,
+              "idempotentHint": false,
+              "openWorldHint": false,
+              "readOnlyHint": false,
+            },
+            "description": "Use when a render, snapshot or narration job you queued is no longer wanted and should stop before it finishes. Do not use to delete a finished artifact, and do not treat it as proof the work stopped. Preconditions: jobId comes from the tool that queued the work. Side effects: records a cooperative cancellation request; a job already succeeded, partial, failed or cancelled is left untouched and returns requested=false. Errors/recovery: not_found means the jobId is unknown; after requested=true keep polling get_job_status until it reports the cancelled outcome, because cancellation is not instant.",
+            "level": "job",
+            "name": "cancel_job",
+            "title": "Cancel a background job",
+          },
+          {
+            "annotations": {
+              "destructiveHint": false,
+              "idempotentHint": false,
+              "openWorldHint": false,
+              "readOnlyHint": false,
+            },
+            "description": "Use when starting a new video from nothing, before any other project-scoped tool can be called. Do not use to re-create an existing project, to adopt a folder that already holds a composition, or to choose where the project is stored. Preconditions: name must produce a slug of letters, digits and hyphens; presetId is vertical-shorts, horizontal-youtube, or custom, and only custom accepts width, height and fps. Side effects: creates the project directory inside the active workspace with vidcom.json, hyperframes.json, preview-settings.json and an index.html root composition, as one journaled lifecycle write. Errors/recovery: fix schema_invalid on the name or preset fields; write_conflict means that slug is taken, so choose another name; storage_unavailable means no workspace is active, which only the UI or CLI can fix.",
+            "level": "write",
+            "name": "create_project",
+            "title": "Create a VidCom project",
+          },
+          {
+            "annotations": {
+              "destructiveHint": false,
+              "idempotentHint": false,
+              "openWorldHint": false,
+              "readOnlyHint": false,
+            },
             "description": "Use when adding one new mounted scene with a source file and narration sidecar. Do not use to edit an existing scene or save an arbitrary source file. Preconditions: entry-file expectedContentHash must be the current entry-composition hash from get_project_context or read_composition. Side effects: atomically creates the scene source and narration, updates the entry composition and root duration, and commits one revision. Errors/recovery: on write_conflict refresh context and re-plan; on recovery_required stop writes and recover; committed_response_error means the mutation committed, so do not retry it.",
             "level": "write",
             "name": "create_scene",
@@ -475,6 +511,18 @@ describe("complete tool descriptor contract", () => {
             "level": "destructive",
             "name": "delete_file",
             "title": "Delete an unreferenced source file",
+          },
+          {
+            "annotations": {
+              "destructiveHint": true,
+              "idempotentHint": false,
+              "openWorldHint": false,
+              "readOnlyHint": false,
+            },
+            "description": "Use when permanently removing one entire project directory with a verified backup. Do not use to remove a single scene or file, to archive a project, or without the user asking for deletion in those words. Preconditions: projectId comes from list_projects, confirmed must be true, and omitting grantId creates an approval request to retry once with the issued grantId. Side effects: after approval, verifies a full backup, quarantines and removes the directory, consumes the grant, and commits one destructive lifecycle revision returning backupId. Errors/recovery: write_conflict means a running job or a file that changed after approval, so re-plan; backup_failed means nothing was deleted; request new approval after approval_invalid or approval_expired; recovery_required means the deletion is half-applied and must be recovered before anything else.",
+            "level": "destructive",
+            "name": "delete_project",
+            "title": "Delete a project",
           },
           {
             "annotations": {
@@ -507,10 +555,34 @@ describe("complete tool descriptor contract", () => {
               "openWorldHint": false,
               "readOnlyHint": true,
             },
+            "description": "Use when you need one scene's authored narration cues, their offsets and their synthesis staleness before writing cues or calling start_tts. Do not use to read composition source or to list scenes. Preconditions: projectId comes from list_projects and sceneId comes from list_scenes. Side effects: read-only; a scene with no sidecar returns an empty cue list and a null contentHash instead of an error. Errors/recovery: project_invalid means the sidecar is corrupt and must be replaced with replace_narration_cues; carry contentHash into the next cue write as its precondition.",
+            "level": "read",
+            "name": "get_narration_cues",
+            "title": "Read scene narration cues",
+          },
+          {
+            "annotations": {
+              "destructiveHint": false,
+              "idempotentHint": true,
+              "openWorldHint": false,
+              "readOnlyHint": true,
+            },
             "description": "Use when planning an edit and you need compact scenes, canonical file hashes, revisions, diagnostics, preview settings, and the recovery gate. Do not use when you need full composition source; use read_composition instead. Preconditions: projectId comes from list_projects; this read has no mutation precondition. Side effects: read-only; no project files or revisions are changed. Errors/recovery: refresh list_projects after project_not_found; when recovery is blocked, stop mutations and complete the configured recovery flow before retrying.",
             "level": "read",
             "name": "get_project_context",
             "title": "Get project editing context",
+          },
+          {
+            "annotations": {
+              "destructiveHint": false,
+              "idempotentHint": true,
+              "openWorldHint": false,
+              "readOnlyHint": true,
+            },
+            "description": "Use when a render job has succeeded and you need the produced file's path, size, hash and media type to report or open it. Do not use to poll progress, to fetch the video bytes through this tool, or for snapshot jobs. Preconditions: jobId comes from start_render and get_job_status must already report succeeded or partial. Side effects: read-only; the artifact stays where the render wrote it. Errors/recovery: precondition_required means the job has not finished, so keep polling get_job_status; not_found means the job is not a render or its artifact is gone, so render again; a partial outcome means the file exists but the render reported warnings worth repeating.",
+            "level": "read",
+            "name": "get_render_output",
+            "title": "Locate a finished render",
           },
           {
             "annotations": {
@@ -535,6 +607,18 @@ describe("complete tool descriptor contract", () => {
             "level": "write",
             "name": "install_motion_library",
             "title": "Vendor a motion library",
+          },
+          {
+            "annotations": {
+              "destructiveHint": false,
+              "idempotentHint": true,
+              "openWorldHint": false,
+              "readOnlyHint": true,
+            },
+            "description": "Use when you need to discover the audio, image, video and font files that exist in the project, including one a person just copied into it by hand. Do not use to read composition source, to list scenes, or to browse anything outside this project. Preconditions: projectId comes from list_projects; pass directory to narrow to one project-relative folder such as preview-assets/bgm or assets. Side effects: read-only; nothing is written and no revision is created. Errors/recovery: path_invalid means the directory is not project-relative; truncated=true means only the first page is listed, so narrow with directory; referencedByPreviewSettings=true marks the track preview settings already point at.",
+            "level": "read",
+            "name": "list_project_assets",
+            "title": "List project media assets",
           },
           {
             "annotations": {
@@ -575,6 +659,18 @@ describe("complete tool descriptor contract", () => {
           {
             "annotations": {
               "destructiveHint": false,
+              "idempotentHint": false,
+              "openWorldHint": false,
+              "readOnlyHint": false,
+            },
+            "description": "Use when correcting the text, voice or offset of exactly one existing cue while its siblings keep their synthesis state. Do not use to add or remove cues, which replace_narration_cues owns, and do not use to synthesize audio. Preconditions: projectId, sceneId, cueId and expectedContentHash come from get_narration_cues, and at least one of text, voice or offsetSeconds must be present. Side effects: rewrites the sidecar as one journaled write and commits one revision; changing text or voice marks only that cue stale, while an offset change keeps its audio valid. Errors/recovery: not_found means that cueId is gone; write_conflict means the sidecar changed, so re-read it; re-run start_tts for cues whose staleSince is set.",
+            "level": "write",
+            "name": "patch_narration_cue",
+            "title": "Update one narration cue",
+          },
+          {
+            "annotations": {
+              "destructiveHint": false,
               "idempotentHint": true,
               "openWorldHint": false,
               "readOnlyHint": true,
@@ -591,10 +687,46 @@ describe("complete tool descriptor contract", () => {
               "openWorldHint": false,
               "readOnlyHint": false,
             },
+            "description": "Use when the project's title and folder slug must change together. Do not use to move a project between workspaces, to change composition content, or while one of its jobs is running. Preconditions: projectId comes from list_projects and name must produce a valid slug. Side effects: renames the project directory and updates its registration in one journaled lifecycle write; every project-relative path stays valid. Errors/recovery: schema_invalid means the name yields no slug; write_conflict means the target slug exists or a render, snapshot or narration job is running, so wait for get_job_status to report a terminal outcome and retry.",
+            "level": "write",
+            "name": "rename_project",
+            "title": "Rename a project",
+          },
+          {
+            "annotations": {
+              "destructiveHint": false,
+              "idempotentHint": false,
+              "openWorldHint": false,
+              "readOnlyHint": false,
+            },
+            "description": "Use when writing or rewriting the complete spoken script of one scene before start_tts. Do not use to edit a single cue, to change on-screen text, or to synthesize audio. Preconditions: projectId and sceneId come from project context, cueIds must be unique, and expectedContentHash comes from get_narration_cues — null when that scene has no sidecar yet. Side effects: rewrites narration/<sceneId>.json as one journaled write, resets synthesis metadata for every cue, and commits one project revision; existing audio becomes stale. Errors/recovery: write_conflict means the sidecar changed, so re-read get_narration_cues; schema_invalid on cues means duplicate cueIds; run start_tts afterwards to produce audio again.",
+            "level": "write",
+            "name": "replace_narration_cues",
+            "title": "Replace scene narration cues",
+          },
+          {
+            "annotations": {
+              "destructiveHint": false,
+              "idempotentHint": false,
+              "openWorldHint": false,
+              "readOnlyHint": false,
+            },
             "description": "Use when replacing the complete content of one allowlisted project-relative text or composition source. Do not use for binary assets, oversized content, or targeted text edits better handled by set_text. Protected project metadata is rejected. Preconditions: path and expectedContentHash come from read_composition or current project context; the hash is for that exact file. Side effects: atomically replaces that source file, returns its new content hash, and commits one revision. Errors/recovery: correct path or size errors; on write_conflict re-read and re-plan; on recovery_required recover first; never retry a committed_response_error mutation.",
             "level": "write",
             "name": "save_file",
             "title": "Save composition source",
+          },
+          {
+            "annotations": {
+              "destructiveHint": false,
+              "idempotentHint": false,
+              "openWorldHint": false,
+              "readOnlyHint": false,
+            },
+            "description": "Use when changing tone, theme variables, subtitle styling, per-scene transition or reveal sounds, or attaching background music from a file already in the project. Do not use to edit composition source, to upload bytes, or to change scene timing. Preconditions: projectId and expectedRevision come from get_project_context; a bgm.track path must name an existing mp3, wav, ogg or m4a asset listed by list_project_assets, and setting bgm.track to null detaches the music. Side effects: merges the patch into preview-settings.json as one journaled entity mutation, returning the complete settings and their new revision. Errors/recovery: no_file or unsupported_media means the track is missing or not audio, so run list_project_assets; write_conflict means expectedRevision is stale, so re-read get_project_context; never retry a committed_response_error mutation.",
+            "level": "write",
+            "name": "set_preview_settings",
+            "title": "Patch preview settings",
           },
           {
             "annotations": {

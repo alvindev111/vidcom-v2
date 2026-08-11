@@ -1,6 +1,175 @@
 {
   "tools": [
     {
+      "name": "adopt_project",
+      "title": "Adopt a workspace folder",
+      "description": "Use when a HyperFrames folder already sits in the workspace unowned and needs a VidCom identity before it can be edited. Do not use for a folder outside the workspace, for a project that already has vidcom.json, or to create a project from nothing. Preconditions: slug is the folder name directly inside the active workspace, and that folder must contain hyperframes.json but no vidcom.json. Side effects: writes vidcom.json with a new projectId, seeds preview settings, and registers the project in one journaled bootstrap write. Errors/recovery: project_not_found means no such folder; write_conflict means it is already adopted; composition_parse_error means its index.html must be fixed before adoption.",
+      "inputSchema": {
+        "type": "object",
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "slug": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 255
+          }
+        },
+        "required": [
+          "slug"
+        ],
+        "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": false
+      },
+      "outputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "projectId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 255
+          }
+        },
+        "required": [
+          "projectId"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "cancel_job",
+      "title": "Cancel a background job",
+      "description": "Use when a render, snapshot or narration job you queued is no longer wanted and should stop before it finishes. Do not use to delete a finished artifact, and do not treat it as proof the work stopped. Preconditions: jobId comes from the tool that queued the work. Side effects: records a cooperative cancellation request; a job already succeeded, partial, failed or cancelled is left untouched and returns requested=false. Errors/recovery: not_found means the jobId is unknown; after requested=true keep polling get_job_status until it reports the cancelled outcome, because cancellation is not instant.",
+      "inputSchema": {
+        "type": "object",
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "jobId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 255
+          }
+        },
+        "required": [
+          "jobId"
+        ],
+        "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": false
+      },
+      "outputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "jobId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 255
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "queued",
+              "running",
+              "succeeded",
+              "partial",
+              "failed",
+              "cancelled"
+            ]
+          },
+          "requested": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "jobId",
+          "status",
+          "requested"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "create_project",
+      "title": "Create a VidCom project",
+      "description": "Use when starting a new video from nothing, before any other project-scoped tool can be called. Do not use to re-create an existing project, to adopt a folder that already holds a composition, or to choose where the project is stored. Preconditions: name must produce a slug of letters, digits and hyphens; presetId is vertical-shorts, horizontal-youtube, or custom, and only custom accepts width, height and fps. Side effects: creates the project directory inside the active workspace with vidcom.json, hyperframes.json, preview-settings.json and an index.html root composition, as one journaled lifecycle write. Errors/recovery: fix schema_invalid on the name or preset fields; write_conflict means that slug is taken, so choose another name; storage_unavailable means no workspace is active, which only the UI or CLI can fix.",
+      "inputSchema": {
+        "type": "object",
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 255
+          },
+          "presetId": {
+            "type": "string",
+            "enum": [
+              "vertical-shorts",
+              "horizontal-youtube",
+              "custom"
+            ]
+          },
+          "width": {
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
+          },
+          "height": {
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
+          },
+          "fps": {
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
+          }
+        },
+        "required": [
+          "name",
+          "presetId"
+        ],
+        "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": false
+      },
+      "outputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "projectId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 255
+          },
+          "slug": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 255
+          }
+        },
+        "required": [
+          "projectId",
+          "slug"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
       "name": "create_scene",
       "title": "Create a scene",
       "description": "Use when adding one new mounted scene with a source file and narration sidecar. Do not use to edit an existing scene or save an arbitrary source file. Preconditions: entry-file expectedContentHash must be the current entry-composition hash from get_project_context or read_composition. Side effects: atomically creates the scene source and narration, updates the entry composition and root duration, and commits one revision. Errors/recovery: on write_conflict refresh context and re-plan; on recovery_required stop writes and recover; committed_response_error means the mutation committed, so do not retry it.",
@@ -534,6 +703,57 @@
         "required": [
           "deleted",
           "envelope",
+          "backupId"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "delete_project",
+      "title": "Delete a project",
+      "description": "Use when permanently removing one entire project directory with a verified backup. Do not use to remove a single scene or file, to archive a project, or without the user asking for deletion in those words. Preconditions: projectId comes from list_projects, confirmed must be true, and omitting grantId creates an approval request to retry once with the issued grantId. Side effects: after approval, verifies a full backup, quarantines and removes the directory, consumes the grant, and commits one destructive lifecycle revision returning backupId. Errors/recovery: write_conflict means a running job or a file that changed after approval, so re-plan; backup_failed means nothing was deleted; request new approval after approval_invalid or approval_expired; recovery_required means the deletion is half-applied and must be recovered before anything else.",
+      "inputSchema": {
+        "type": "object",
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "projectId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 255
+          },
+          "confirmed": {
+            "type": "boolean",
+            "const": true
+          },
+          "grantId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 255
+          }
+        },
+        "required": [
+          "projectId",
+          "confirmed"
+        ],
+        "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": false
+      },
+      "outputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "backupId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 255
+          }
+        },
+        "required": [
           "backupId"
         ],
         "additionalProperties": false
@@ -1088,6 +1308,141 @@
           "finishedAt",
           "outcome",
           "pollAfterMs"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "get_narration_cues",
+      "title": "Read scene narration cues",
+      "description": "Use when you need one scene's authored narration cues, their offsets and their synthesis staleness before writing cues or calling start_tts. Do not use to read composition source or to list scenes. Preconditions: projectId comes from list_projects and sceneId comes from list_scenes. Side effects: read-only; a scene with no sidecar returns an empty cue list and a null contentHash instead of an error. Errors/recovery: project_invalid means the sidecar is corrupt and must be replaced with replace_narration_cues; carry contentHash into the next cue write as its precondition.",
+      "inputSchema": {
+        "type": "object",
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "projectId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 255
+          },
+          "sceneId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 255
+          }
+        },
+        "required": [
+          "projectId",
+          "sceneId"
+        ],
+        "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "outputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "cues": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "cueId": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 255
+                },
+                "text": {
+                  "type": "string"
+                },
+                "voice": {
+                  "type": "string"
+                },
+                "offsetSeconds": {
+                  "type": "number",
+                  "minimum": 0
+                },
+                "durationSeconds": {
+                  "anyOf": [
+                    {
+                      "type": "number",
+                      "minimum": 0
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "staleSince": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "status": {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "enum": [
+                        "mock",
+                        "generated"
+                      ]
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "audioPath": {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 4096
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              },
+              "required": [
+                "cueId",
+                "text",
+                "voice",
+                "offsetSeconds",
+                "durationSeconds",
+                "staleSince",
+                "status",
+                "audioPath"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "contentHash": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^sha256:[0-9a-f]{64}$"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "cues",
+          "contentHash"
         ],
         "additionalProperties": false
       }
@@ -1844,6 +2199,89 @@
       }
     },
     {
+      "name": "get_render_output",
+      "title": "Locate a finished render",
+      "description": "Use when a render job has succeeded and you need the produced file's path, size, hash and media type to report or open it. Do not use to poll progress, to fetch the video bytes through this tool, or for snapshot jobs. Preconditions: jobId comes from start_render and get_job_status must already report succeeded or partial. Side effects: read-only; the artifact stays where the render wrote it. Errors/recovery: precondition_required means the job has not finished, so keep polling get_job_status; not_found means the job is not a render or its artifact is gone, so render again; a partial outcome means the file exists but the render reported warnings worth repeating.",
+      "inputSchema": {
+        "type": "object",
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "jobId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 255
+          }
+        },
+        "required": [
+          "jobId"
+        ],
+        "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "outputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "jobId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 255
+          },
+          "projectId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 255
+          },
+          "path": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 4096,
+            "pattern": "^(?!\\/)(?![A-Za-z]:)(?!.*\\\\)(?!.*\\0)(?!.*\\/\\/)(?!\\.{1,2}(?:\\/|$))(?!.*\\/\\.{1,2}(?:\\/|$)).+$"
+          },
+          "absolutePath": {
+            "type": "string",
+            "minLength": 1
+          },
+          "byteSize": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "contentHash": {
+            "type": "string",
+            "pattern": "^sha256:[0-9a-f]{64}$"
+          },
+          "mediaType": {
+            "type": "string",
+            "minLength": 1
+          },
+          "outcome": {
+            "type": "string",
+            "enum": [
+              "succeeded",
+              "partial"
+            ]
+          }
+        },
+        "required": [
+          "jobId",
+          "projectId",
+          "path",
+          "absolutePath",
+          "byteSize",
+          "contentHash",
+          "mediaType",
+          "outcome"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
       "name": "install_agent_kit",
       "title": "Install the VidCom agent kit",
       "description": "Use when explicitly installing or repairing VidCom instructions and native skill routers for selected agent hosts. Do not use to install both hosts implicitly or overwrite foreign/newer files. Preconditions: install requires non-empty unique hosts; link is Claude-only; replace requires one manifest path and its current expectedContentHash. Side effects: writes one journaled workspace batch, or records an audited no-change when everything selected is pristine. Errors/recovery: follow installationState.recovery; re-read hashes after write_conflict and never invent a Codex import line.",
@@ -2280,6 +2718,96 @@
           "library",
           "files",
           "revision"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "list_project_assets",
+      "title": "List project media assets",
+      "description": "Use when you need to discover the audio, image, video and font files that exist in the project, including one a person just copied into it by hand. Do not use to read composition source, to list scenes, or to browse anything outside this project. Preconditions: projectId comes from list_projects; pass directory to narrow to one project-relative folder such as preview-assets/bgm or assets. Side effects: read-only; nothing is written and no revision is created. Errors/recovery: path_invalid means the directory is not project-relative; truncated=true means only the first page is listed, so narrow with directory; referencedByPreviewSettings=true marks the track preview settings already point at.",
+      "inputSchema": {
+        "type": "object",
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "projectId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 255
+          },
+          "directory": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 4096
+          }
+        },
+        "required": [
+          "projectId"
+        ],
+        "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "outputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "assets": {
+            "maxItems": 500,
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "path": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 4096,
+                  "pattern": "^(?!\\/)(?![A-Za-z]:)(?!.*\\\\)(?!.*\\0)(?!.*\\/\\/)(?!\\.{1,2}(?:\\/|$))(?!.*\\/\\.{1,2}(?:\\/|$)).+$"
+                },
+                "kind": {
+                  "type": "string",
+                  "enum": [
+                    "audio",
+                    "image",
+                    "video",
+                    "font",
+                    "other"
+                  ]
+                },
+                "byteSize": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                },
+                "modifiedAt": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "referencedByPreviewSettings": {
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "path",
+                "kind",
+                "byteSize",
+                "modifiedAt",
+                "referencedByPreviewSettings"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "truncated": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "assets",
+          "truncated"
         ],
         "additionalProperties": false
       }
@@ -2926,6 +3454,162 @@
       }
     },
     {
+      "name": "patch_narration_cue",
+      "title": "Update one narration cue",
+      "description": "Use when correcting the text, voice or offset of exactly one existing cue while its siblings keep their synthesis state. Do not use to add or remove cues, which replace_narration_cues owns, and do not use to synthesize audio. Preconditions: projectId, sceneId, cueId and expectedContentHash come from get_narration_cues, and at least one of text, voice or offsetSeconds must be present. Side effects: rewrites the sidecar as one journaled write and commits one revision; changing text or voice marks only that cue stale, while an offset change keeps its audio valid. Errors/recovery: not_found means that cueId is gone; write_conflict means the sidecar changed, so re-read it; re-run start_tts for cues whose staleSince is set.",
+      "inputSchema": {
+        "type": "object",
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "projectId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 255
+          },
+          "sceneId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 255
+          },
+          "cueId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 255
+          },
+          "text": {
+            "type": "string"
+          },
+          "voice": {
+            "type": "string",
+            "minLength": 1
+          },
+          "offsetSeconds": {
+            "type": "number",
+            "minimum": 0
+          },
+          "expectedContentHash": {
+            "type": "string",
+            "pattern": "^sha256:[0-9a-f]{64}$"
+          }
+        },
+        "required": [
+          "projectId",
+          "sceneId",
+          "cueId",
+          "expectedContentHash"
+        ],
+        "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": false
+      },
+      "outputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "cues": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "cueId": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 255
+                },
+                "text": {
+                  "type": "string"
+                },
+                "voice": {
+                  "type": "string"
+                },
+                "offsetSeconds": {
+                  "type": "number",
+                  "minimum": 0
+                },
+                "durationSeconds": {
+                  "anyOf": [
+                    {
+                      "type": "number",
+                      "minimum": 0
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "staleSince": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "status": {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "enum": [
+                        "mock",
+                        "generated"
+                      ]
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "audioPath": {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 4096
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              },
+              "required": [
+                "cueId",
+                "text",
+                "voice",
+                "offsetSeconds",
+                "durationSeconds",
+                "staleSince",
+                "status",
+                "audioPath"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "contentHash": {
+            "type": "string",
+            "pattern": "^sha256:[0-9a-f]{64}$"
+          },
+          "revision": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          }
+        },
+        "required": [
+          "cues",
+          "contentHash",
+          "revision"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
       "name": "read_composition",
       "title": "Read composition source",
       "description": "Use when you need one allowlisted project-relative composition source and its current content hash before a source write. Do not use for binary assets, external paths, or project-wide context. Preconditions: projectId comes from list_projects and path comes from project context or another trusted project-relative reference; no expected hash is required. Side effects: read-only; no source file or revision is changed. Errors/recovery: correct path_invalid, path_outside_project, asset_not_allowed, not_found, or source-size limit errors; if recovery is blocked, recover the project before writing.",
@@ -3021,6 +3705,232 @@
           "content",
           "contentHash",
           "recovery"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "rename_project",
+      "title": "Rename a project",
+      "description": "Use when the project's title and folder slug must change together. Do not use to move a project between workspaces, to change composition content, or while one of its jobs is running. Preconditions: projectId comes from list_projects and name must produce a valid slug. Side effects: renames the project directory and updates its registration in one journaled lifecycle write; every project-relative path stays valid. Errors/recovery: schema_invalid means the name yields no slug; write_conflict means the target slug exists or a render, snapshot or narration job is running, so wait for get_job_status to report a terminal outcome and retry.",
+      "inputSchema": {
+        "type": "object",
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "projectId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 255
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 255
+          }
+        },
+        "required": [
+          "projectId",
+          "name"
+        ],
+        "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": false
+      },
+      "outputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "slug": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 255
+          }
+        },
+        "required": [
+          "slug"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "replace_narration_cues",
+      "title": "Replace scene narration cues",
+      "description": "Use when writing or rewriting the complete spoken script of one scene before start_tts. Do not use to edit a single cue, to change on-screen text, or to synthesize audio. Preconditions: projectId and sceneId come from project context, cueIds must be unique, and expectedContentHash comes from get_narration_cues — null when that scene has no sidecar yet. Side effects: rewrites narration/<sceneId>.json as one journaled write, resets synthesis metadata for every cue, and commits one project revision; existing audio becomes stale. Errors/recovery: write_conflict means the sidecar changed, so re-read get_narration_cues; schema_invalid on cues means duplicate cueIds; run start_tts afterwards to produce audio again.",
+      "inputSchema": {
+        "type": "object",
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "projectId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 255
+          },
+          "sceneId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 255
+          },
+          "cues": {
+            "maxItems": 50,
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "cueId": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 255
+                },
+                "text": {
+                  "type": "string"
+                },
+                "voice": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "offsetSeconds": {
+                  "type": "number",
+                  "minimum": 0
+                }
+              },
+              "required": [
+                "cueId",
+                "text",
+                "voice",
+                "offsetSeconds"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "expectedContentHash": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^sha256:[0-9a-f]{64}$"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "projectId",
+          "sceneId",
+          "cues",
+          "expectedContentHash"
+        ],
+        "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": false
+      },
+      "outputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "cues": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "cueId": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 255
+                },
+                "text": {
+                  "type": "string"
+                },
+                "voice": {
+                  "type": "string"
+                },
+                "offsetSeconds": {
+                  "type": "number",
+                  "minimum": 0
+                },
+                "durationSeconds": {
+                  "anyOf": [
+                    {
+                      "type": "number",
+                      "minimum": 0
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "staleSince": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "status": {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "enum": [
+                        "mock",
+                        "generated"
+                      ]
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "audioPath": {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 4096
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              },
+              "required": [
+                "cueId",
+                "text",
+                "voice",
+                "offsetSeconds",
+                "durationSeconds",
+                "staleSince",
+                "status",
+                "audioPath"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "contentHash": {
+            "type": "string",
+            "pattern": "^sha256:[0-9a-f]{64}$"
+          },
+          "revision": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          }
+        },
+        "required": [
+          "cues",
+          "contentHash",
+          "revision"
         ],
         "additionalProperties": false
       }
@@ -3217,6 +4127,677 @@
         "required": [
           "file",
           "envelope"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "set_preview_settings",
+      "title": "Patch preview settings",
+      "description": "Use when changing tone, theme variables, subtitle styling, per-scene transition or reveal sounds, or attaching background music from a file already in the project. Do not use to edit composition source, to upload bytes, or to change scene timing. Preconditions: projectId and expectedRevision come from get_project_context; a bgm.track path must name an existing mp3, wav, ogg or m4a asset listed by list_project_assets, and setting bgm.track to null detaches the music. Side effects: merges the patch into preview-settings.json as one journaled entity mutation, returning the complete settings and their new revision. Errors/recovery: no_file or unsupported_media means the track is missing or not audio, so run list_project_assets; write_conflict means expectedRevision is stale, so re-read get_project_context; never retry a committed_response_error mutation.",
+      "inputSchema": {
+        "type": "object",
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "projectId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 255
+          },
+          "patch": {
+            "type": "object",
+            "properties": {
+              "tone": {
+                "type": "object",
+                "properties": {
+                  "enabled": {
+                    "type": "boolean"
+                  },
+                  "colorMode": {
+                    "type": "string",
+                    "enum": [
+                      "dark",
+                      "cream"
+                    ]
+                  },
+                  "backgroundColor": {
+                    "type": "string",
+                    "pattern": "^#[0-9a-fA-F]{6}$"
+                  },
+                  "backgroundFx": {
+                    "type": "string",
+                    "enum": [
+                      "none",
+                      "scan",
+                      "particles",
+                      "rings",
+                      "lorenz"
+                    ]
+                  },
+                  "mainLight": {
+                    "type": "string",
+                    "pattern": "^#[0-9a-fA-F]{6}$"
+                  },
+                  "mainLightPosition": {
+                    "type": "string",
+                    "enum": [
+                      "top-left",
+                      "top-center",
+                      "top-right",
+                      "center-left",
+                      "center",
+                      "center-right",
+                      "bottom-left",
+                      "bottom-center",
+                      "bottom-right"
+                    ]
+                  },
+                  "mainLightIntensity": {
+                    "type": "string",
+                    "enum": [
+                      "low",
+                      "medium",
+                      "high",
+                      "max"
+                    ]
+                  },
+                  "softLight": {
+                    "type": "string",
+                    "pattern": "^#[0-9a-fA-F]{6}$"
+                  },
+                  "softLightPosition": {
+                    "type": "string",
+                    "enum": [
+                      "top-left",
+                      "top-center",
+                      "top-right",
+                      "center-left",
+                      "center",
+                      "center-right",
+                      "bottom-left",
+                      "bottom-center",
+                      "bottom-right"
+                    ]
+                  },
+                  "softLightIntensity": {
+                    "type": "string",
+                    "enum": [
+                      "low",
+                      "medium",
+                      "high",
+                      "max"
+                    ]
+                  }
+                },
+                "additionalProperties": false
+              },
+              "theme": {
+                "type": "object",
+                "properties": {
+                  "variables": {
+                    "type": "object",
+                    "properties": {
+                      "--primary": {
+                        "type": "string"
+                      },
+                      "--primary-light": {
+                        "type": "string"
+                      },
+                      "--accent": {
+                        "type": "string"
+                      },
+                      "--accent-light": {
+                        "type": "string"
+                      },
+                      "--success": {
+                        "type": "string"
+                      },
+                      "--info": {
+                        "type": "string"
+                      }
+                    },
+                    "additionalProperties": false
+                  }
+                },
+                "additionalProperties": false
+              },
+              "bgm": {
+                "type": "object",
+                "properties": {
+                  "enabled": {
+                    "type": "boolean"
+                  },
+                  "volume": {
+                    "type": "number",
+                    "minimum": 0,
+                    "maximum": 1
+                  },
+                  "loop": {
+                    "type": "boolean"
+                  },
+                  "track": {
+                    "anyOf": [
+                      {
+                        "type": "object",
+                        "properties": {
+                          "name": {
+                            "type": "string",
+                            "minLength": 1
+                          },
+                          "path": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 4096
+                          }
+                        },
+                        "required": [
+                          "name",
+                          "path"
+                        ],
+                        "additionalProperties": false
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "additionalProperties": false
+              },
+              "subtitles": {
+                "type": "object",
+                "properties": {
+                  "enabled": {
+                    "type": "boolean"
+                  },
+                  "override": {
+                    "type": "boolean"
+                  },
+                  "color": {
+                    "type": "string",
+                    "pattern": "^#[0-9a-fA-F]{6}$"
+                  },
+                  "activeColor": {
+                    "type": "string",
+                    "pattern": "^#[0-9a-fA-F]{6}$"
+                  },
+                  "fontSize": {
+                    "type": "number"
+                  },
+                  "bottom": {
+                    "type": "number"
+                  }
+                },
+                "additionalProperties": false
+              },
+              "scenes": {
+                "type": "object",
+                "propertyNames": {
+                  "type": "string"
+                },
+                "additionalProperties": {
+                  "type": "object",
+                  "properties": {
+                    "transitionSound": {
+                      "type": "string",
+                      "enum": [
+                        "gong",
+                        "rise",
+                        "bass",
+                        "chime",
+                        "sweep",
+                        "boom",
+                        "alarm",
+                        "chord",
+                        "ascending",
+                        "retro",
+                        "minimal",
+                        "dramatic"
+                      ]
+                    },
+                    "revealSound": {
+                      "type": "string",
+                      "enum": [
+                        "ping",
+                        "pop",
+                        "chime",
+                        "click",
+                        "bubble",
+                        "woosh",
+                        "sparkle",
+                        "drop",
+                        "tick",
+                        "bell",
+                        "blip",
+                        "snap"
+                      ]
+                    },
+                    "hidden": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "transitionSound",
+                    "revealSound",
+                    "hidden"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "scenesRemove": {
+                "maxItems": 1000,
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 255
+                }
+              }
+            },
+            "additionalProperties": false
+          },
+          "expectedRevision": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          }
+        },
+        "required": [
+          "projectId",
+          "patch",
+          "expectedRevision"
+        ],
+        "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": false
+      },
+      "outputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "previewSettings": {
+            "type": "object",
+            "properties": {
+              "tone": {
+                "type": "object",
+                "properties": {
+                  "enabled": {
+                    "type": "boolean"
+                  },
+                  "colorMode": {
+                    "type": "string",
+                    "enum": [
+                      "dark",
+                      "cream"
+                    ]
+                  },
+                  "backgroundColor": {
+                    "type": "string",
+                    "pattern": "^#[0-9a-fA-F]{6}$"
+                  },
+                  "backgroundFx": {
+                    "type": "string",
+                    "enum": [
+                      "none",
+                      "scan",
+                      "particles",
+                      "rings",
+                      "lorenz"
+                    ]
+                  },
+                  "mainLight": {
+                    "type": "string",
+                    "pattern": "^#[0-9a-fA-F]{6}$"
+                  },
+                  "mainLightPosition": {
+                    "type": "string",
+                    "enum": [
+                      "top-left",
+                      "top-center",
+                      "top-right",
+                      "center-left",
+                      "center",
+                      "center-right",
+                      "bottom-left",
+                      "bottom-center",
+                      "bottom-right"
+                    ]
+                  },
+                  "mainLightIntensity": {
+                    "type": "string",
+                    "enum": [
+                      "low",
+                      "medium",
+                      "high",
+                      "max"
+                    ]
+                  },
+                  "softLight": {
+                    "type": "string",
+                    "pattern": "^#[0-9a-fA-F]{6}$"
+                  },
+                  "softLightPosition": {
+                    "type": "string",
+                    "enum": [
+                      "top-left",
+                      "top-center",
+                      "top-right",
+                      "center-left",
+                      "center",
+                      "center-right",
+                      "bottom-left",
+                      "bottom-center",
+                      "bottom-right"
+                    ]
+                  },
+                  "softLightIntensity": {
+                    "type": "string",
+                    "enum": [
+                      "low",
+                      "medium",
+                      "high",
+                      "max"
+                    ]
+                  }
+                },
+                "required": [
+                  "enabled",
+                  "colorMode",
+                  "backgroundColor",
+                  "backgroundFx",
+                  "mainLight",
+                  "mainLightPosition",
+                  "mainLightIntensity",
+                  "softLight",
+                  "softLightPosition",
+                  "softLightIntensity"
+                ],
+                "additionalProperties": false
+              },
+              "theme": {
+                "type": "object",
+                "properties": {
+                  "variables": {
+                    "type": "object",
+                    "properties": {
+                      "--primary": {
+                        "type": "string"
+                      },
+                      "--primary-light": {
+                        "type": "string"
+                      },
+                      "--accent": {
+                        "type": "string"
+                      },
+                      "--accent-light": {
+                        "type": "string"
+                      },
+                      "--success": {
+                        "type": "string"
+                      },
+                      "--info": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "--primary",
+                      "--primary-light",
+                      "--accent",
+                      "--accent-light",
+                      "--success",
+                      "--info"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                "required": [
+                  "variables"
+                ],
+                "additionalProperties": false
+              },
+              "bgm": {
+                "type": "object",
+                "properties": {
+                  "enabled": {
+                    "type": "boolean"
+                  },
+                  "volume": {
+                    "type": "number",
+                    "minimum": 0,
+                    "maximum": 1
+                  },
+                  "loop": {
+                    "type": "boolean"
+                  },
+                  "track": {
+                    "anyOf": [
+                      {
+                        "type": "object",
+                        "properties": {
+                          "name": {
+                            "type": "string",
+                            "minLength": 1
+                          },
+                          "path": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 4096
+                          }
+                        },
+                        "required": [
+                          "name",
+                          "path"
+                        ],
+                        "additionalProperties": false
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "enabled",
+                  "volume",
+                  "loop",
+                  "track"
+                ],
+                "additionalProperties": false
+              },
+              "subtitles": {
+                "type": "object",
+                "properties": {
+                  "enabled": {
+                    "type": "boolean"
+                  },
+                  "override": {
+                    "type": "boolean"
+                  },
+                  "color": {
+                    "type": "string",
+                    "pattern": "^#[0-9a-fA-F]{6}$"
+                  },
+                  "activeColor": {
+                    "type": "string",
+                    "pattern": "^#[0-9a-fA-F]{6}$"
+                  },
+                  "fontSize": {
+                    "type": "number"
+                  },
+                  "bottom": {
+                    "type": "number"
+                  }
+                },
+                "required": [
+                  "enabled",
+                  "override",
+                  "color",
+                  "activeColor",
+                  "fontSize",
+                  "bottom"
+                ],
+                "additionalProperties": false
+              },
+              "scenes": {
+                "type": "object",
+                "propertyNames": {
+                  "type": "string"
+                },
+                "additionalProperties": {
+                  "type": "object",
+                  "properties": {
+                    "transitionSound": {
+                      "type": "string",
+                      "enum": [
+                        "gong",
+                        "rise",
+                        "bass",
+                        "chime",
+                        "sweep",
+                        "boom",
+                        "alarm",
+                        "chord",
+                        "ascending",
+                        "retro",
+                        "minimal",
+                        "dramatic"
+                      ]
+                    },
+                    "revealSound": {
+                      "type": "string",
+                      "enum": [
+                        "ping",
+                        "pop",
+                        "chime",
+                        "click",
+                        "bubble",
+                        "woosh",
+                        "sparkle",
+                        "drop",
+                        "tick",
+                        "bell",
+                        "blip",
+                        "snap"
+                      ]
+                    },
+                    "hidden": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "transitionSound",
+                    "revealSound",
+                    "hidden"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            },
+            "required": [
+              "tone",
+              "theme",
+              "bgm",
+              "subtitles",
+              "scenes"
+            ],
+            "additionalProperties": false
+          },
+          "revision": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "diagnostics": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "severity": {
+                  "type": "string",
+                  "enum": [
+                    "error",
+                    "warning",
+                    "info"
+                  ]
+                },
+                "code": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "sceneId": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 255
+                },
+                "elementId": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 255
+                },
+                "effectId": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 255
+                },
+                "file": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 4096
+                },
+                "line": {
+                  "type": "integer",
+                  "exclusiveMinimum": 0,
+                  "maximum": 9007199254740991
+                },
+                "message": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "fix": {
+                  "type": "object",
+                  "properties": {
+                    "kind": {
+                      "type": "string",
+                      "const": "set-attribute"
+                    },
+                    "target": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "attribute": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "value": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "kind",
+                    "target",
+                    "attribute",
+                    "value"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "required": [
+                "severity",
+                "code",
+                "message"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "previewSettings",
+          "revision",
+          "diagnostics"
         ],
         "additionalProperties": false
       }

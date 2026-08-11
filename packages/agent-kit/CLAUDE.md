@@ -33,11 +33,13 @@ On `write_conflict`, re-read and merge. Never remove a precondition. Destructive
 
 | Level | Tools |
 | --- | --- |
-| Read | `list_projects`, `get_project_context`, `list_scenes`, `read_composition`, `list_tts_voices`, `validate_project`, `get_job_status` |
-| Write | `create_scene`, `set_scene_timing`, `set_text`, `save_file`, `install_motion_library` |
-| Job | `start_snapshot`, `start_tts`, `start_render` |
-| Destructive | `delete_file`, `delete_scene` |
+| Read | `list_projects`, `get_project_context`, `list_scenes`, `read_composition`, `list_project_assets`, `get_narration_cues`, `list_tts_voices`, `validate_project`, `get_job_status`, `get_render_output` |
+| Write | `create_project`, `adopt_project`, `rename_project`, `create_scene`, `set_scene_timing`, `set_text`, `save_file`, `set_preview_settings`, `replace_narration_cues`, `patch_narration_cue`, `install_motion_library` |
+| Job | `start_snapshot`, `start_tts`, `start_render`, `cancel_job` |
+| Destructive | `delete_file`, `delete_scene`, `delete_project` |
 | Workspace | `install_agent_kit` |
+
+No UI is required: `create_project` or `adopt_project` starts the work, `set_preview_settings` handles look and BGM, and `get_render_output` names the finished MP4 on disk. Only choosing the workspace directory and browsing the filesystem stay outside the tool surface.
 
 ## Project structure
 
@@ -55,7 +57,8 @@ On `write_conflict`, re-read and merge. Never remove a precondition. Destructive
 - Add a motion library with `install_motion_library` and reference the vendored path it returns. Never load one from a CDN: the render stops being reproducible and resolves nothing offline.
 - Put every new scene in a separate sub-composition file mounted with `data-composition-src`.
 - A tween after its scene clip ends never runs; move it or extend the clip.
-- Change tone, subtitle styling, and BGM through preview settings, not composition source.
+- Change tone, subtitle styling, and BGM through `set_preview_settings`, not composition source.
+- A file a person copied into the project never announces itself: run `list_project_assets` to find it, then attach a track with `set_preview_settings`.
 - Keep rendering deterministic: no `Date.now()`, `Math.random()`, or network fetch.
 - Do not edit project files with host file tools or run HyperFrames CLI beside VidCom. If raw source editing is explicitly requested, use `save_file` with `expectedContentHash`.
 

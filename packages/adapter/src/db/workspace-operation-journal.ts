@@ -280,8 +280,10 @@ export class WorkspaceOperationJournal implements WorkspaceOperationJournalPort 
     return this.database.transaction((transaction) => {
       const operation = transaction.get<{
         kind: string; projectId: string | null; actor: string; backupId: string | null; grantId: string | null;
+        toolAuditJson: string | null;
       }>(sql`
-        SELECT kind, project_id AS projectId, actor, backup_id AS backupId, grant_id AS grantId
+        SELECT kind, project_id AS projectId, actor, backup_id AS backupId, grant_id AS grantId,
+          tool_audit_json AS toolAuditJson
         FROM workspace_operation WHERE id = ${id} AND status IN ('pending', 'orphaned')
       `);
       const expectedKind = `project_${result.kind}`;
@@ -374,6 +376,20 @@ export class WorkspaceOperationJournal implements WorkspaceOperationJournalPort 
         ) VALUES (
           ${result.projectId}, ${`project.${result.kind}`}, ${result.actor}, ${revisionId}, NULL, NULL,
           'ok', NULL, ${JSON.stringify({ operationId: id, recovered, ...(result.kind === "delete" ? { backupId: result.backupId } : {}) })}, ${now}
+        )
+      `);
+      // A lifecycle write invoked through MCP records its invocation too. The
+      // abort path already does this; without it here, a successful
+      // create/rename/delete would be the only tool write with no tool row.
+      const toolAudit = operation.toolAuditJson ? parsePendingToolAudit(operation.toolAuditJson) : null;
+      if (toolAudit) transaction.run(sql`
+        INSERT INTO audit_entry (
+          project_id, action, actor, revision_id, job_id, protocol_version,
+          outcome, error_code, detail, created_at
+        ) VALUES (
+          ${result.projectId}, ${`tool:${toolAudit.tool}`}, ${result.actor}, ${revisionId}, NULL,
+          ${toolAudit.protocolVersion}, 'ok', NULL,
+          ${terminalAuditDetail(toolAudit, now, { operationId: id, recovered })}, ${now}
         )
       `);
       transaction.run(result.projectId === null ? sql`

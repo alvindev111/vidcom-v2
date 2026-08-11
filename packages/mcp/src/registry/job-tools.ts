@@ -1,14 +1,19 @@
 import type { z } from "zod";
 
 import {
+  CancelJobInputSchema,
+  CancelJobOutputSchema,
   DEFAULT_TTS_COMPUTE_DEVICE,
   ErrorCode,
   GetJobStatusInputSchema,
   GetJobStatusOutputSchema,
+  GetRenderOutputInputSchema,
+  GetRenderOutputOutputSchema,
   ListTtsVoicesInputSchema,
   ListTtsVoicesOutputSchema,
   StartTtsInputSchema,
   StartTtsOutputSchema,
+  TERMINAL_JOB_STATUSES,
   type ContentHash,
   type ProjectId,
 } from "@vidcom/contracts";
@@ -18,6 +23,7 @@ import {
   listTtsVoices,
   ok,
   planNarrationSynthesis,
+  readRenderOutput,
   type IdPort,
   type JobId,
   type JobStorePort,
@@ -34,6 +40,7 @@ export interface JobToolDependencies {
   tts: TtsPort;
   ids: IdPort;
   hashContent(content: string | Uint8Array): ContentHash;
+  mimeFromPath(path: string): string | null;
 }
 
 /**
@@ -178,8 +185,74 @@ export function getJobStatusTool(
   };
 }
 
+/**
+ * Asks a running job to stop cooperatively.
+ *
+ * The job decides when it is safe to stop, so this returns what was requested
+ * rather than claiming the process is already gone; `get_job_status` reports the
+ * terminal outcome.
+ */
+export function cancelJobTool(
+  dependencies: JobToolDependencies,
+): ToolDefinition<z.infer<typeof CancelJobInputSchema>, z.infer<typeof CancelJobOutputSchema>> {
+  return {
+    name: "cancel_job",
+    title: "Cancel a background job",
+    level: "job",
+    description: [
+      "Use when a render, snapshot or narration job you queued is no longer wanted and should stop before it finishes.",
+      "Do not use to delete a finished artifact, and do not treat it as proof the work stopped.",
+      "Preconditions: jobId comes from the tool that queued the work.",
+      "Side effects: records a cooperative cancellation request; a job already succeeded, partial, failed or cancelled is left untouched and returns requested=false.",
+      "Errors/recovery: not_found means the jobId is unknown; after requested=true keep polling get_job_status until it reports the cancelled outcome, because cancellation is not instant.",
+    ].join(" "),
+    input: CancelJobInputSchema,
+    output: CancelJobOutputSchema,
+    annotations: annotationsForLevel("job"),
+    availableInLegacy: true,
+    projectIdOf: () => null,
+    handler: async (_context, input) => {
+      const job = await dependencies.jobs.get(input.jobId as JobId);
+      if (!job) return err({ code: ErrorCode.NotFound, message: "job was not found" });
+      const terminal = (TERMINAL_JOB_STATUSES as readonly string[]).includes(job.status);
+      if (!terminal) await dependencies.jobs.requestCancel(job.id as JobId);
+      return ok({ jobId: job.id, status: job.status, requested: !terminal });
+    },
+  };
+}
+
+/** Names the finished MP4 on disk so a local agent host can open it without streaming bytes. */
+export function getRenderOutputTool(
+  dependencies: JobToolDependencies,
+): ToolDefinition<z.infer<typeof GetRenderOutputInputSchema>, z.infer<typeof GetRenderOutputOutputSchema>> {
+  return {
+    name: "get_render_output",
+    title: "Locate a finished render",
+    level: "read",
+    description: [
+      "Use when a render job has succeeded and you need the produced file's path, size, hash and media type to report or open it.",
+      "Do not use to poll progress, to fetch the video bytes through this tool, or for snapshot jobs.",
+      "Preconditions: jobId comes from start_render and get_job_status must already report succeeded or partial.",
+      "Side effects: read-only; the artifact stays where the render wrote it.",
+      "Errors/recovery: precondition_required means the job has not finished, so keep polling get_job_status; not_found means the job is not a render or its artifact is gone, so render again; a partial outcome means the file exists but the render reported warnings worth repeating.",
+    ].join(" "),
+    input: GetRenderOutputInputSchema,
+    output: GetRenderOutputOutputSchema,
+    annotations: annotationsForLevel("read"),
+    availableInLegacy: true,
+    projectIdOf: () => null,
+    handler: async (_context, input) => readRenderOutput({
+      ...dependencies.reads,
+      jobs: dependencies.jobs,
+      mimeFromPath: dependencies.mimeFromPath,
+    }, input.jobId),
+  };
+}
+
 export function registerJobTools(registry: ToolRegistry, dependencies: JobToolDependencies): void {
   registry.register(listTtsVoicesTool(dependencies));
   registry.register(startTtsTool(dependencies));
   registry.register(getJobStatusTool(dependencies));
+  registry.register(cancelJobTool(dependencies));
+  registry.register(getRenderOutputTool(dependencies));
 }

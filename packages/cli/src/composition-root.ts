@@ -436,6 +436,8 @@ export function createMcpRegistry(
     workspaceRoot: infrastructure.workspaceRoot,
     diagnostics: application.diagnostics,
     agentKit: application.agentKit,
+    lifecycle: application.lifecycle,
+    mimeFromPath: infrastructure.mimeFromPath,
     enqueueRender: (input) => enqueueRenderJob({
       workspace: infrastructure.workspace,
       composition: infrastructure.composition,

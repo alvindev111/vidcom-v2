@@ -24,6 +24,7 @@ import type {
   MutationCapture,
   PathPurpose,
   PathRejection,
+  PendingToolAudit,
   ResolvedPath,
   StepIntent,
   WriteEnvelope,
@@ -123,6 +124,8 @@ export interface AdoptProjectIdentityRequest {
   actor?: Actor;
   /** Omitted for candidate adoption; required when replacing an invalid recovery marker. */
   expectedContentHash?: ContentHash;
+  /** Present only for an MCP-invoked adoption, which the bootstrap journal then owns. */
+  toolAudit?: PendingToolAudit | null;
 }
 
 class ProjectMutex {
@@ -1071,7 +1074,7 @@ export class WriteAuthority {
       previousContent: current?.content ?? null,
       toHash,
       actor: request.actor ?? "system",
-    }, null);
+    }, null, request.toolAudit ?? null);
     return this.completeBootstrapIdentity({
       ref: request.ref,
       journalId,

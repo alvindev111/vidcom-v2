@@ -29,6 +29,9 @@ import {
 const matrixProjectId = "project-contract-matrix" as ProjectId;
 export const matrixHash = `sha256:${"1".repeat(64)}` as ContentHash;
 export const matrixNewHash = `sha256:${"2".repeat(64)}` as ContentHash;
+/** Stands in for a track a person copied into the project by hand. */
+export const matrixBgmPath = "preview-assets/bgm/theme.mp3";
+export const matrixRenderPath = "renders/contract-matrix.mp4";
 
 export const CONTRACT_MATRIX_CASES: Record<string, Record<string, unknown>> = {
   list_projects: {},
@@ -78,6 +81,32 @@ export const CONTRACT_MATRIX_CASES: Record<string, Record<string, unknown>> = {
   start_render: { projectId: matrixProjectId, bestEffort: true },
   install_agent_kit: { operation: "install", hosts: ["codex"] },
   install_motion_library: { projectId: matrixProjectId, libraryId: "gsap" },
+  create_project: { name: "Matrix Two", presetId: "vertical-shorts" },
+  adopt_project: { slug: "contract-matrix-candidate" },
+  rename_project: { projectId: matrixProjectId, name: "Contract Matrix Renamed" },
+  delete_project: { projectId: matrixProjectId, confirmed: true, grantId: "grant-contract-matrix" },
+  list_project_assets: { projectId: matrixProjectId, directory: "preview-assets/bgm" },
+  set_preview_settings: {
+    projectId: matrixProjectId,
+    patch: { bgm: { enabled: true, track: { name: "theme.mp3", path: matrixBgmPath } } },
+    expectedRevision: 1,
+  },
+  get_narration_cues: { projectId: matrixProjectId, sceneId: "scene-1" },
+  replace_narration_cues: {
+    projectId: matrixProjectId,
+    sceneId: "scene-1",
+    cues: [{ cueId: "scene-1", text: "Xin chào", voice: "matrix-voice", offsetSeconds: 0 }],
+    expectedContentHash: matrixHash,
+  },
+  patch_narration_cue: {
+    projectId: matrixProjectId,
+    sceneId: "scene-1",
+    cueId: "scene-1",
+    text: "Chào bạn",
+    expectedContentHash: matrixHash,
+  },
+  cancel_job: { jobId: "job_matrix" },
+  get_render_output: { jobId: "job_render" },
 };
 
 function createBaseRegistry(auditEntries: ToolAuditEntry[] = [], journalOwned = false): ToolRegistry {
@@ -123,6 +152,10 @@ export function createContractMatrixRegistry(): ToolRegistry {
       updatedAt: "2026-08-02T00:00:00.000Z",
       staleSince: null,
     })}\n`],
+    // Neither file was written through a tool: they stand for media dropped into
+    // the project directory and an artifact a render left behind.
+    [matrixBgmPath, "ID3 contract matrix"],
+    [matrixRenderPath, "mp4 contract matrix"],
   ]);
   const model: CompositionModel = {
     project: {
@@ -187,9 +220,18 @@ export function createContractMatrixRegistry(): ToolRegistry {
       stat: async (path: ResolvedPath) => files.has(path)
         ? { size: files.get(path)!.length, modifiedAt: new Date(0), kind: "file" as const }
         : null,
+      exists: async (path: ResolvedPath) => files.has(path),
       readTree: async () => [
         { path: "index.html" as RelPath, name: "index.html", kind: "file" as const },
-        { path: "compositions" as RelPath, name: "compositions", kind: "directory" as const },
+        { path: "compositions" as RelPath, name: "compositions", kind: "folder" as const, children: [
+          { path: "compositions/scene-1.html" as RelPath, name: "scene-1.html", kind: "file" as const },
+        ] },
+        { path: "preview-assets" as RelPath, name: "preview-assets", kind: "folder" as const, children: [
+          { path: matrixBgmPath as RelPath, name: "theme.mp3", kind: "file" as const },
+        ] },
+        { path: "renders" as RelPath, name: "renders", kind: "folder" as const, children: [
+          { path: matrixRenderPath as RelPath, name: "contract-matrix.mp4", kind: "file" as const },
+        ] },
       ],
     },
     composition: {
@@ -219,6 +261,7 @@ export function createContractMatrixRegistry(): ToolRegistry {
             contentHash: matrixNewHash,
             revision: 3,
             diagnostics: [],
+            ...(request.kind === "entity" ? { previewSettings: DEFAULT_PREVIEW_SETTINGS } : {}),
           });
         }
         const fileHashes = Object.fromEntries(
@@ -277,7 +320,23 @@ export function createContractMatrixRegistry(): ToolRegistry {
         },
         reused: false,
       }),
-      get: async () => ({
+      requestCancel: async () => undefined,
+      get: async (id: string) => id === "job_render" ? {
+        id: "job_render",
+        projectId: matrixProjectId,
+        type: "render",
+        status: "succeeded" as const,
+        progress: 1,
+        stage: null,
+        result: { artifactPath: matrixRenderPath, revision: 3 },
+        error: null,
+        warnings: null,
+        cleanupPending: false,
+        attempt: 1,
+        createdAt: "2026-08-02T00:00:00.000Z",
+        startedAt: "2026-08-02T00:00:01.000Z",
+        finishedAt: "2026-08-02T00:00:02.000Z",
+      } : {
         id: "job_matrix",
         type: "tts",
         status: "succeeded" as const,
@@ -291,10 +350,28 @@ export function createContractMatrixRegistry(): ToolRegistry {
         createdAt: "2026-08-02T00:00:00.000Z",
         startedAt: "2026-08-02T00:00:01.000Z",
         finishedAt: "2026-08-02T00:00:02.000Z",
-      }),
+      },
     },
     ids: { newId: (prefix: string) => `${prefix}_matrix` },
     workspaceRoot: "/workspace" as AbsolutePath,
+    mimeFromPath: () => "video/mp4",
+    lifecycle: {
+      create: async () => ok({ projectId: "project_matrix" as ProjectId, slug: "matrix-two" }),
+      adopt: async () => ok({ projectId: "project_matrix" as ProjectId }),
+      rename: async () => ok({ slug: "contract-matrix-renamed" }),
+      planRemove: async () => ok({
+        binding: {
+          tool: "delete_project",
+          projectId: matrixProjectId,
+          target: matrixProjectId,
+          expectedRevision: 2,
+          targetHashes: { ["index.html" as RelPath]: matrixHash },
+          planDigest: matrixHash,
+        },
+        summary: "Delete project contract-matrix",
+      }),
+      remove: async () => ok({ backupId: "backup-contract-matrix" }),
+    },
     diagnostics: {
       forProject: async () => ok({
         diagnostics: [],
