@@ -76,6 +76,7 @@ function request(voiceId: string): TtsSynthesisRequest {
     languageCode: "vi",
     ratePercent: 0,
     computeDevice: "cpu",
+    seed: 4_242,
   };
 }
 

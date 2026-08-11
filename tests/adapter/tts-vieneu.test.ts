@@ -39,6 +39,11 @@ interface SidecarBehaviour {
   stderr?: string;
   /** Fails the first N synthesis attempts, mimicking a truncated model download. */
   failFirst?: number;
+  /**
+   * What the sidecar echoes back as applied. Defaults to the request's own block;
+   * `"omit"` mimics a worker.py older than the sampling controls.
+   */
+  sampling?: unknown;
 }
 
 function fakeSidecar(behaviour: SidecarBehaviour = {}, calls: ProcessRunInput[] = []): ProcessPort {
@@ -81,6 +86,7 @@ function fakeSidecar(behaviour: SidecarBehaviour = {}, calls: ProcessRunInput[] 
       const request = JSON.parse(await readFile(requestPath, "utf8")) as {
         device: "cpu" | "gpu";
         outputDir: string;
+        sampling?: unknown;
         cues: { id: string }[];
       };
       const assets = [];
@@ -95,6 +101,12 @@ function fakeSidecar(behaviour: SidecarBehaviour = {}, calls: ProcessRunInput[] 
         modelId: "vieneu-v3-turbo",
         modelRevision: "abc1234",
         effectiveDevice: behaviour.effectiveDevice ?? request.device,
+        // The real sidecar echoes what it applied rather than what it was asked
+        // for. `sampling: "omit"` stands in for a worker.py older than the
+        // sampling controls, which reports none of it.
+        ...(behaviour.sampling === "omit"
+          ? {}
+          : { sampling: behaviour.sampling ?? request.sampling }),
         assets,
       }), "utf8");
       return { exitCode: 0, stdout: "", stderr: "", timedOut: false };
@@ -143,6 +155,7 @@ function request(overrides: Partial<TtsSynthesisRequest> = {}): TtsSynthesisRequ
     languageCode: "vi",
     ratePercent: 0,
     computeDevice: "cpu",
+    seed: 4_242,
     ...overrides,
   };
 }
@@ -171,6 +184,48 @@ describe("VieNeuTtsProvider", () => {
     // the library fall back to ~/.cache or the working directory.
     expect(environment.HF_HUB_CACHE).toContain("hub");
     expect(environment.TORCH_HOME).toContain("torch");
+  });
+
+  it("asks the sidecar to pin the sampler and hold the temperature down", async () => {
+    const calls: ProcessRunInput[] = [];
+    const subject = await described({}, calls);
+    const scratchDir = await temporary("vidcom-scratch-");
+
+    const produced = await subject.synthesize(request({ seed: 4_242 }), { scratchDir });
+
+    const requestPath = calls.at(-1)!.command[calls.at(-1)!.command.indexOf("--request") + 1]!;
+    const sent = JSON.parse(await readFile(requestPath, "utf8")) as {
+      sampling?: { seed?: number; temperature?: number };
+    };
+    // v3 Turbo draws its prosody per call, so an unpinned sampler at the engine's
+    // own 0.8 made each scene a different take of the same script.
+    expect(sent.sampling?.seed).toBe(4_242);
+    expect(sent.sampling?.temperature).toBeLessThan(0.8);
+    expect(produced[0]?.metadata).toMatchObject({ seed: 4_242 });
+  });
+
+  it("records nothing about sampling when the installed sidecar is too old to report it", async () => {
+    const subject = await described({ sampling: "omit" });
+    const scratchDir = await temporary("vidcom-scratch-");
+
+    const produced = await subject.synthesize(request(), { scratchDir });
+
+    // `tts.vieneu.command` points at a worker.py the user configured, which can
+    // predate these controls. Silence is the honest record: claiming the cue was
+    // pinned when the sidecar ignored the request is the failure to avoid.
+    expect(produced[0]?.metadata.seed).toBeUndefined();
+    expect(produced[0]?.metadata.temperature).toBeUndefined();
+  });
+
+  it("drops a sampling echo that is not the shape it should be", async () => {
+    const subject = await described({ sampling: { seed: "four thousand", temperature: null } });
+    const scratchDir = await temporary("vidcom-scratch-");
+
+    const produced = await subject.synthesize(request(), { scratchDir });
+
+    // The echo ends up in the narration sidecar, which holds scalars only.
+    expect(produced[0]?.metadata.seed).toBeUndefined();
+    expect(produced[0]?.metadata.temperature).toBeUndefined();
   });
 
   it("coordinates a cold probe, then forces synthesis to reuse the completed cache offline", async () => {

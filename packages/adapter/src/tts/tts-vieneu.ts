@@ -32,6 +32,17 @@ const PROBE_TIMEOUT_MS = 10 * 60 * 1_000;
 /** Two attempts, because the failure this covers is a truncated model download, not a bad request. */
 const MAX_ATTEMPTS = 2;
 
+/**
+ * Below the engine's own 0.8 default.
+ *
+ * v3 Turbo samples its prosody autoregressively, so temperature governs how much
+ * pitch, pace and energy wander between one `infer` call and the next — and VidCom
+ * makes one call per scene. At 0.8 consecutive scenes came back sounding like
+ * different takes of the same script. Lower trades a little expressive variety for
+ * a narrator who stays recognisably one person across a scene change.
+ */
+const SYNTHESIS_TEMPERATURE = 0.65;
+
 /** Raw sidecar output must at least carry a WAV header and a sample or two. */
 const MINIMUM_RAW_BYTES = 256;
 
@@ -125,6 +136,13 @@ interface WorkerResponse {
   /** Commit the weights were resolved to, so a WAV is traceable to what produced it. */
   modelRevision: string;
   effectiveDevice: TtsComputeDeviceDto;
+  /**
+   * What the sidecar actually applied, echoed back rather than assumed.
+   *
+   * Absent from a sidecar older than the sampling controls, which is the honest
+   * answer for one that ignored them.
+   */
+  sampling?: { seed: number | null; temperature: number };
   assets: { cueId: string; path: string }[];
 }
 
@@ -301,6 +319,12 @@ export class VieNeuTtsProvider implements TtsProviderAdapter {
       device: request.computeDevice,
       voice: engineVoice,
       outputDir: context.scratchDir,
+      // Additive within schema 1, not a version bump: `tts.vieneu.command` points
+      // at a worker.py the user configured, which can be an older copy than this
+      // build. An old sidecar ignores these and reports no `sampling`, so the
+      // narration sidecar shows the cue was left to chance rather than silently
+      // claiming it was pinned.
+      sampling: { seed: request.seed, temperature: SYNTHESIS_TEMPERATURE },
       cues: request.cues.map((cue) => ({ id: cue.id, text: cue.text })),
     }), "utf8");
 
@@ -328,6 +352,12 @@ export class VieNeuTtsProvider implements TtsProviderAdapter {
           modelRevision: response.modelRevision,
           effectiveDevice: response.effectiveDevice,
           engineVoice,
+          ...(response.sampling
+            ? {
+              temperature: response.sampling.temperature,
+              ...(response.sampling.seed === null ? {} : { seed: response.sampling.seed }),
+            }
+            : {}),
         },
       });
       context.onCueDone?.(index + 1, request.cues.length);
@@ -514,5 +544,19 @@ function parseWorkerResponse(raw: string, requestedDevice: TtsComputeDeviceDto):
       ErrorCode.TtsProviderUnavailable,
     );
   }
-  return value as WorkerResponse;
+  // Dropped rather than rejected when it is not the expected shape: the echo is
+  // provenance, and a sidecar that reports it badly is the same situation as one
+  // too old to report it at all. It reaches the narration sidecar, which accepts
+  // only scalars, so it cannot be forwarded unchecked.
+  const sampling = parseSampling(value.sampling);
+  return { ...(value as WorkerResponse), ...(sampling ? { sampling } : { sampling: undefined }) };
+}
+
+function parseSampling(value: unknown): WorkerResponse["sampling"] {
+  if (typeof value !== "object" || value === null) return undefined;
+  const record = value as { seed?: unknown; temperature?: unknown };
+  if (typeof record.temperature !== "number" || !Number.isFinite(record.temperature)) return undefined;
+  const seed = record.seed;
+  if (seed !== null && (typeof seed !== "number" || !Number.isFinite(seed))) return undefined;
+  return { seed, temperature: record.temperature };
 }

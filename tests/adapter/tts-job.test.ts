@@ -124,6 +124,8 @@ function succeeds(cueCount: number, report: (done: number, total: number) => voi
     cueId,
     audio: new Uint8Array([1]),
     durationSeconds: 2,
+    speechStartSeconds: 0.12,
+    speechDurationSeconds: 1.76,
     words: [],
     metadata: {},
   })));

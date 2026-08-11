@@ -18,7 +18,13 @@ import {
 } from "../domain/word-timings";
 import { err, ok, type Result } from "../error/result";
 import type { CompositeStep } from "../port/types";
-import type { SynthesizedCue, TtsPort, TtsSynthesisOptions, TtsWordTiming } from "../port/tts-port";
+import {
+  DEFAULT_NARRATION_SEED,
+  type SynthesizedCue,
+  type TtsPort,
+  type TtsSynthesisOptions,
+  type TtsWordTiming,
+} from "../port/tts-port";
 import type { ProjectWriteDependencies } from "./project-writes";
 
 export interface SynthesizeNarrationDependencies extends ProjectWriteDependencies {
@@ -107,6 +113,10 @@ export async function synthesizeNarration(
     languageCode: cues.value[0]?.languageCode ?? "vi",
     ratePercent: input.ratePercent,
     computeDevice: input.computeDevice,
+    // Fixed rather than per-request: the cues of one batch have to sound like one
+    // narrator, and a seed that moved between runs would also make regenerating a
+    // single scene produce a voice the neighbouring scenes no longer match.
+    seed: DEFAULT_NARRATION_SEED,
   }, options);
   if (!synthesized.ok) return synthesized;
 
@@ -126,7 +136,8 @@ export async function synthesizeNarration(
     const timings = resolveWordTimings({
       engineWords: audio.words,
       text: cue.text,
-      durationSeconds: audio.durationSeconds,
+      speechStartSeconds: audio.speechStartSeconds,
+      speechEndSeconds: audio.speechStartSeconds + audio.speechDurationSeconds,
     });
     const checked = checkWordTimings(timings.words, audio.durationSeconds);
     if (!checked.ok) return err({ ...checked.error, details: { sceneId: cue.sceneId } });
