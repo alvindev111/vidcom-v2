@@ -1291,9 +1291,10 @@ Mỗi phase chạy focused command dưới đây trên SQLite/filesystem thật,
 - [ ] M.6 Upload bằng chứng — **REOPEN: thiếu DoctorReport/raw ffprobe/platform metadata và success evidence fail-closed**
   - DoctorReport, artifact manifest, `SHA256SUMS`, kết quả ffprobe, platform metadata
   - _Requirements: R8.3_ — _Design: §9.4_
-- [ ] M.7 Chốt lại hai trần còn tạm — **REOPEN: topology/runtime size đã đổi**
-  - Cold thật trên phần cứng runner đã trả lời câu hỏi trần tạm: Linux nặng hơn darwin ~24 % (595 so với 481 MB) nhưng serve/doctor cold vẫn dư địa lớn dưới 120 s
-  - Evidence Linux `1007/1004 ms`, doctor cold `23974 ms`, toàn job `10m12s`; giữ 120 s vì còn dư địa lớn. Windows `2637/2461 ms`, doctor cold `133284 ms`; giữ 180 s. Ba baseline v1 commit theo runner và bắt hồi quy 1,5×
+- [x] M.7 Chốt lại hai trần còn tạm
+  - Exact isolated hosted-runner artifact `b4ba4ce`: cold/warm macOS `4061/3646 ms`, Linux `7223/7022 ms`, Windows `11792/11508 ms`. Các run contention `9921c796` bị loại khỏi baseline
+  - Commit exact measurement làm baseline v1 và giữ gate hồi quy `1,5×`; hard warm ceiling là quantum 1 giây kế trên gate: macOS `6000`, Linux `11000`, Windows `18000 ms`. Cold giữ `120/120/180 s`; warm-app giữ `2/2/3 s` vì M.3a chưa có current measurement tương đương
+  - Regression test buộc mỗi hard warm ceiling `>= 1,5× baseline` và `< limit + 1000 ms`, nên threshold không thể âm thầm nới vô hạn
   - _Requirements: R4.9, R8.3_ — _Design: §9.1, §5.13_
 - [ ] M.8 Ghi lại bằng chứng TTS Windows — **REOPEN: cần exact HEAD mới**
   - Máy phát triển bị N-1 (TLS inspection) chặn; runner CI không có ⇒ đây là **bằng chứng đầu tiên**, MUST NOT suy từ darwin
@@ -2805,6 +2806,12 @@ Chi tiết: [Detailed Goals](./spec-packaging-and-distribution-detailed-goal.md)
   - Summary: Apollo 300 s bị supervisor kill ở 308,122 s vì render invocation không truyền timeout và nhận default 300 s. Năm short thật chạy 1,287–1,364× realtime, xác nhận đây là deterministic ceiling chứ không phải scene/render failure.
   - Decisions: Budget explicit theo duration × pixel ratio × fps, cộng 120 s headroom và multiplier 3; floor 10 phút, cap 90 phút. Job outer 95 phút để process cap vẫn có thời gian termination proof/cleanup. Không nới supervisor default cho TTS/diagnostics và không bỏ bounded timeout.
   - Blockers: Cần restart daemon chứa commit mới rồi rerender Apollo→Grid exact revision. 5/5 shorts final đã pass; 5 YouTube chưa được tính acceptance. Exact cross-platform/baseline M.7 vẫn đang chạy.
+
+2026-08-13 — Phase M.7 recalibrate startup từ isolated hosted runners
+  - Files: `.github/perf-baseline/*.json`, `scripts/measure-startup.mjs`, `tests/build/startup-baseline.test.ts`, Design §9.1, checklist và implementation notes
+  - Summary: Exact artifact `b4ba4ce` đo cold/warm macOS `4061/3646`, Linux `7223/7022`, Windows `11792/11508 ms`; các sample duplicate-wrapper contention bị loại. Baseline cũ có trước topology mandatory double deep integrity của generation ~638 MB/8067 file.
+  - Decisions: Giữ regression factor 1,5×; hard warm ceiling là quantum 1 giây kế trên giới hạn: `6/11/18 s`. Cold `120/120/180 s` và warm-app `2/2/3 s` không đổi. Invariant test ngăn hard ceiling thấp hơn gate hoặc nới quá một quantum.
+  - Blockers: Final exact-head matrix phải chứng minh threshold mới và canonical smoke root trên đủ ba OS. Production source human gate và video cuối 600 s vẫn mở.
 
 Format:
 ```

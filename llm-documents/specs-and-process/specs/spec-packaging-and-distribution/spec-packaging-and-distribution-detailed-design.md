@@ -1220,7 +1220,7 @@ Windows nới hơn vì antivirus quét file vừa giải nén — stack Python (
 
 **Số đã đo trên Windows thật** ([S9](../../../../spikes/phase-4/s9-windows-runtime/README.md)): giải nén archive Python `155,2 MB nén → 510 MB` mất **26,9 s**, **đã bao gồm quét on-access** — máy đo chạy **Sophos Intercept X** với real-time protection bật (Defender tắt là vì Sophos sở hữu vai trò đó, không phải vì máy không có AV). Hosted runner evidence ở trên nay là authority cho trần CI; phép đo S9 còn giá trị giải thích vì sao Windows được 180 s thay vì bị ép theo macOS.
 
-Trần darwin đặt từ thứ đã đo: SEA base 116 MB, archive Python 146 MB nén → 492 MB giải nén (§5.13). Exact runner `0fdbd35` đo serve cold/warm **813/611 ms**, doctor **15.673/3.294 s**, toàn job **7m10s**; giữ trần 120/3 s và baseline riêng ở `.github/perf-baseline/darwin-arm64.json`.
+Trần cold giữ từ topology đã đo: SEA base 116 MB, archive Python 146 MB nén → 492 MB giải nén (§5.13). Sau remediation archive/native closure, exact isolated hosted-runner artifact `b4ba4ce` đo serve cold/warm: macOS **4.061/3.646 s**, Linux **7.223/7.022 s**, Windows **11.792/11.508 s**. Warm boot hiện authenticate generation khoảng 638 MB/8067 file ở outer SEA rồi inner CLI bootstrap; baseline cũ `0fdbd35` có trước topology này nên không còn đại diện. Giữ regression gate **1,5×** và đặt hard warm ceiling ở quantum 1 giây kế trên giới hạn đó: **6/11/18 s**; cold ceiling vẫn **120/120/180 s**. Warm-app **2/2/3 s** giữ nguyên vì chưa có measurement authority tương đương trong M.3a.
 
 > Cả hai con số kích thước ở trên đo **khi stack còn `pip`**. §5.13 đã gỡ nó (−12 MB đo trên Windows), nên lần smoke đầu tiên của mỗi runner MUST ghi lại con số sau khi gỡ và cập nhật mục này.
 

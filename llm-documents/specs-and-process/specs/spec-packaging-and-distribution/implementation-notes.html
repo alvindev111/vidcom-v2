@@ -1458,6 +1458,16 @@
           <div><dt class="font-semibold text-slate-200">Outer cleanup</dt><dd class="mt-1 text-slate-300">Job cap 95 phút lớn hơn process cap để còn verified termination và cleanup. Focused 16/16, typecheck, ESLint và diff-check xanh; các YouTube phải render lại trên daemon mới.</dd></div>
         </dl>
       </section>
+      <section class="mt-6 rounded-2xl border border-lime-400/30 bg-lime-950/20 p-6 shadow-xl">
+        <p class="text-xs font-semibold uppercase tracking-[0.24em] text-lime-300">2026-08-13 · M.7 · isolated hosted runner</p>
+        <h2 class="mt-2 text-xl font-bold text-white">Baseline theo topology hiện tại, không theo số contention</h2>
+        <dl class="mt-5 grid gap-4 md:grid-cols-2">
+          <div><dt class="font-semibold text-slate-200">Số được nhận</dt><dd class="mt-1 text-slate-300">Exact artifact <code>b4ba4ce</code>: macOS 4061/3646 ms, Linux 7223/7022 ms, Windows 11792/11508 ms cho cold/warm serve.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Số bị loại</dt><dd class="mt-1 text-slate-300">Run wrapper và standalone cùng lúc tạo contention 4.6–16 s và nhiều failure downstream. Chúng không được dùng làm baseline vì không đại diện một packaged job isolated.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Hai gate vẫn độc lập</dt><dd class="mt-1 text-slate-300">Regression gate giữ 1,5× exact baseline. Hard warm ceiling đặt ở quantum 1 giây kế trên limit: macOS 6 s, Linux 11 s, Windows 18 s. Cold vẫn 120/120/180 s.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Không nới vô hạn</dt><dd class="mt-1 text-slate-300">Test buộc ceiling không thấp hơn 1,5× baseline và không cao hơn limit một quantum. Warm-app giữ nguyên vì chưa có measurement authority hiện tại.</dd></div>
+        </dl>
+      </section>
     </main>
   </body>
 </html>
