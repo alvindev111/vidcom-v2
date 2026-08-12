@@ -1,6 +1,5 @@
 import { randomBytes } from "node:crypto";
-import { realpathSync } from "node:fs";
-import { cp, mkdtemp, mkdir, readdir, rm } from "node:fs/promises";
+import { cp, mkdtemp, mkdir, readdir, realpath, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
@@ -26,18 +25,18 @@ export function emptyPath(binDirectory) {
  * caches are seeded because their absence is a different test — R8.2 is about a
  * clean machine, not a machine without a network.
  */
-export function smokeEnvironment(root, base = process.env) {
-  const home = path.join(root, "home");
+export function smokeEnvironment(root, base = process.env, directories = {}) {
+  const home = directories.home ?? path.join(root, "home");
   return {
     ...Object.fromEntries(Object.entries(base).filter(([key]) => !key.startsWith("VIDCOM_"))),
-    PATH: emptyPath(path.join(root, "empty-bin")),
+    PATH: emptyPath(directories.emptyBin ?? path.join(root, "empty-bin")),
     HOME: home,
     USERPROFILE: home,
     // Seeded caches live under the temporary HOME, so a warm run reads them and
     // a cold run is genuinely cold.
     XDG_CACHE_HOME: path.join(home, ".cache"),
     HF_HOME: path.join(home, ".cache", "huggingface"),
-    VIDCOM_APP_DATA: path.join(root, "app-data"),
+    VIDCOM_APP_DATA: directories.appData ?? path.join(root, "app-data"),
     // The same hand-off `app` mode mints for a browser, supplied here instead.
     // `serve` is headless by design and opens nothing, so a smoke that waited
     // for it to print a token would wait forever — and using `app` would put a
@@ -51,6 +50,18 @@ export function smokeEnvironment(root, base = process.env) {
       ? { VIDCOM_SMOKE_EXPECTED_COMMIT: base.VIDCOM_SMOKE_EXPECTED_COMMIT }
       : {}),
   };
+}
+
+/**
+ * Resolves every harness path after creation so Windows 8.3 aliases cannot split identity.
+ *
+ * @param {Record<string, string>} directories
+ * @param {(pathname: string) => Promise<string>} canonicalize
+ */
+export async function canonicalSmokeDirectories(directories, canonicalize = realpath) {
+  return Object.freeze(Object.fromEntries(await Promise.all(
+    Object.entries(directories).map(async ([name, pathname]) => [name, await canonicalize(pathname)]),
+  )));
 }
 
 export async function copyCacheContents(source, destination) {
@@ -73,23 +84,32 @@ export async function copyCacheContents(source, destination) {
 }
 
 export async function createSmokeRoot() {
-  // Canonical from the start. On macOS `mkdtemp` hands back a path under
-  // `/var`, which is a symlink to `/private/var` — and the filesystem browser
-  // walks real directories, so a fixture addressed through the symlink cannot
-  // be descended into.
-  const root = realpathSync(await mkdtemp(path.join(tmpdir(), "vidcom-smoke-")));
-  const workspace = path.join(root, "workspace");
+  const requestedRoot = await mkdtemp(path.join(tmpdir(), "vidcom-smoke-"));
+  const requested = {
+    root: requestedRoot,
+    workspace: path.join(requestedRoot, "workspace"),
+    cwd: path.join(requestedRoot, "cwd"),
+    appData: path.join(requestedRoot, "app-data"),
+    home: path.join(requestedRoot, "home"),
+    emptyBin: path.join(requestedRoot, "empty-bin"),
+  };
   await Promise.all([
-    mkdir(path.join(root, "home", ".cache", "huggingface"), { recursive: true }),
-    mkdir(path.join(root, "app-data"), { recursive: true }),
-    mkdir(workspace, { recursive: true }),
+    mkdir(path.join(requested.home, ".cache", "huggingface"), { recursive: true }),
+    mkdir(requested.appData, { recursive: true }),
+    mkdir(requested.workspace, { recursive: true }),
     // The artifact is launched from here, so anything it drops beside its
     // working directory shows up as an entry nobody put there.
-    mkdir(path.join(root, "cwd"), { recursive: true }),
+    mkdir(requested.cwd, { recursive: true }),
     // The only directory on PATH, and it stays empty: `which node` has to come
     // back with nothing rather than with something the runner installed.
-    mkdir(path.join(root, "empty-bin"), { recursive: true }),
+    mkdir(requested.emptyBin, { recursive: true }),
   ]);
+  // Canonicalize the children, not just the temp parent. Windows can report the
+  // parent through RUNNER~1 while production opens app-data/workspace through
+  // their long names; discovery hashes the workspace string, so those aliases
+  // must collapse before the harness derives either identity.
+  const directories = await canonicalSmokeDirectories(requested);
+  const { root, workspace, cwd, appData, home, emptyBin } = directories;
   const cacheRoot = process.env.VIDCOM_SMOKE_CACHE_ROOT
     ? path.resolve(process.env.VIDCOM_SMOKE_CACHE_ROOT)
     : null;
@@ -103,9 +123,9 @@ export async function createSmokeRoot() {
   return {
     root,
     workspace,
-    cwd: path.join(root, "cwd"),
-    appData: path.join(root, "app-data"),
-    environment: smokeEnvironment(root),
+    cwd,
+    appData,
+    environment: smokeEnvironment(root, process.env, { home, emptyBin, appData }),
     async dispose() {
       if (cacheRoot) {
         await Promise.all([

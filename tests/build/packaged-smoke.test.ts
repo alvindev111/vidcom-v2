@@ -19,7 +19,11 @@ import {
   macNetworkCutRoutes,
   networkCutPlan,
 } from "../../scripts/packaged-smoke/network-cut.mjs";
-import { copyCacheContents, smokeEnvironment } from "../../scripts/packaged-smoke/environment.mjs";
+import {
+  canonicalSmokeDirectories,
+  copyCacheContents,
+  smokeEnvironment,
+} from "../../scripts/packaged-smoke/environment.mjs";
 import {
   EXPECTED_DOCTOR_ITEM_IDS,
   PRIVATE_PATH_FORBIDDEN_TOOLS,
@@ -46,6 +50,30 @@ function results(entries: Array<Partial<StepResult> & { id: string }>): StepResu
 }
 
 describe("packaged smoke steps", () => {
+  it("collapses a Windows short alias before deriving daemon discovery identity", async () => {
+    const shortRoot = "C:\\Users\\RUNNER~1\\AppData\\Local\\Temp\\vidcom-smoke-fixture";
+    const longRoot = "C:\\Users\\runneradmin\\AppData\\Local\\Temp\\vidcom-smoke-fixture";
+    const requested = {
+      root: shortRoot,
+      workspace: `${shortRoot}\\workspace`,
+      cwd: `${shortRoot}\\cwd`,
+      appData: `${shortRoot}\\app-data`,
+      home: `${shortRoot}\\home`,
+      emptyBin: `${shortRoot}\\empty-bin`,
+    };
+    const canonical = await canonicalSmokeDirectories(
+      requested,
+      async (pathname) => pathname.replace(shortRoot, longRoot),
+    );
+    const environment = smokeEnvironment(canonical.root, { NODE_ENV: "test" }, canonical);
+
+    expect(canonical.workspace).toBe(`${longRoot}\\workspace`);
+    expect(environment.VIDCOM_APP_DATA).toBe(`${longRoot}\\app-data`);
+    expect(environment.HOME).toBe(`${longRoot}\\home`);
+    expect(createHash("sha256").update(canonical.workspace).digest("hex"))
+      .toBe(createHash("sha256").update(`${longRoot}\\workspace`).digest("hex"));
+  });
+
   it("walks canonical Windows paths without preserving 8.3 aliases or display casing", () => {
     expect(browsePathSegments(
       "C:\\",
