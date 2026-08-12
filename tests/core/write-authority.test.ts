@@ -713,6 +713,24 @@ describe("WriteAuthority file mutations", () => {
     expect(workspace.writes).toBe(1);
   });
 
+  it("tells the caller when nothing was written, because no journal owns that invocation", async () => {
+    const { authority } = setup();
+    const request = {
+      kind: "file" as const,
+      ref: project,
+      path: "compositions/new.html" as RelPath,
+      content: "new",
+      expectedContentHash: null,
+    };
+    let unchanged = 0;
+    const invocation = { toolAudit: null, noteUnchanged: () => { unchanged += 1; } };
+
+    await authority.mutateSource(request, "user", invocation);
+    expect(unchanged).toBe(0);
+    await authority.mutateSource({ ...request, expectedContentHash: digest("new") }, "user", invocation);
+    expect(unchanged).toBe(1);
+  });
+
   it("normalizes a conflict revision to zero when no revision exists", async () => {
     const { authority, workspace } = setup();
     workspace.files.set("index.html", "current");

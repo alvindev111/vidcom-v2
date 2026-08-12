@@ -57,6 +57,16 @@ export interface ToolDefinition<I, O> {
   output: z.ZodType<O>;
   annotations: ToolAnnotations;
   availableInLegacy: boolean;
+  /**
+   * Whether this tool's write lands in a project's mutation journal.
+   *
+   * Defaults to true for `write`/`destructive`, which is what a project mutation
+   * does and what the registry verifies before reporting the write as durable. A
+   * tool that changes machine-level state instead — an install-wide library, a
+   * cache — has no project journal to own its audit, and must say so rather than
+   * be declared `read` and lie about mutating.
+   */
+  journalOwned?: boolean;
   projectIdOf(input: I): ProjectId | null;
   handler(context: ToolContext, input: I): Promise<Result<O, DomainError>>;
 }

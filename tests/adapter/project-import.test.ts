@@ -16,6 +16,8 @@ import {
 import { assertSourceUnchanged, planProjectImport, type AbsolutePath } from "@vidcom/core";
 import { afterEach, describe, expect, it } from "vitest";
 
+import { writeSampleProject } from "../support/sample-project";
+
 const roots: string[] = [];
 
 afterEach(async () => {
@@ -220,18 +222,30 @@ describe("import recovery", () => {
   });
 });
 
-describe("import of the projects shipped with this repository", () => {
-  it.each(["swiss-grid", "kinetic-type", "warm-grain"])("imports %s", async (name) => {
-    // Real projects rather than a fixture: they carry the shapes an import has
-    // to survive, and a fixture only carries the ones somebody thought of.
+describe("import of a real project directory", () => {
+  it.each([
+    ["landscape", { width: 1920, height: 1080 }],
+    ["portrait", { width: 1080, height: 1920 }],
+  ])("imports a %s project with its identity and sub-composition", async (_shape, size) => {
+    // A generated project rather than a committed one: the shapes an import has
+    // to survive are a marker, an identity, a sub-composition directory and
+    // preview settings, and those are written here where they can be read.
     const { workspace } = await scratch();
-    const source = path.resolve("projects", name);
-    const plan = planFor(source, workspace, await sourceIdentityOf(source));
+    const outside = await mkdtemp(path.join(tmpdir(), "vidcom-import-source-"));
+    roots.push(outside);
+    const sample = await writeSampleProject(outside, {
+      slug: "sample",
+      id: "project_import_sample",
+      ...size,
+    });
+    const plan = planFor(sample.root, workspace, await sourceIdentityOf(sample.root));
     const staging = stagingPathFor(plan, "op-1");
-    const report = await copyIntoStaging(source, staging);
+    const report = await copyIntoStaging(sample.root, staging);
     expect(report, JSON.stringify(report)).toMatchObject({ files: expect.any(Number) });
     expect(await commitStaging(staging, plan.target)).toBeNull();
-    expect(await readdir(plan.target)).toContain("vidcom.json");
+    const landed = await readdir(plan.target);
+    expect(landed).toContain("vidcom.json");
+    expect(landed).toContain("compositions");
   }, 60_000);
 });
 

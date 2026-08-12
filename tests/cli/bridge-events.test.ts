@@ -1,12 +1,13 @@
 import { createHash } from "node:crypto";
 import { realpathSync } from "node:fs";
-import { cp, mkdir, mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
 import { BridgeCredentialStore } from "@vidcom/adapter";
 import { startServing, type ServingDaemon } from "@vidcom/cli";
 import { afterEach, describe, expect, it } from "vitest";
+import { writeSampleProject } from "../support/sample-project";
 
 const roots: string[] = [];
 const daemons: ServingDaemon[] = [];
@@ -43,9 +44,7 @@ describe("an agent write reaches the UI", () => {
     roots.push(root);
     const workspace = path.join(root, "workspace");
     await mkdir(workspace, { recursive: true });
-    await cp(path.resolve("projects/swiss-grid"), path.join(workspace, "swiss-grid"), {
-      recursive: true,
-    });
+    await writeSampleProject(workspace, { slug: "swiss-grid", id: "project_swiss_grid" });
     const appData = path.join(root, "app-data");
     process.env.VIDCOM_APP_DATA = appData;
 

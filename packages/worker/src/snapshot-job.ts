@@ -178,7 +178,19 @@ export async function enqueueSnapshotJob(
     : ok(enqueued.job);
 }
 
-const normalizedTimestamp = (value: number): string => Number(value.toFixed(6)).toString();
+/**
+ * The timestamp form both sides of the snapshot handshake agree on.
+ *
+ * Three decimals because that is what HyperFrames puts in the filename it writes
+ * (`frame-NN-at-<Number(t.toFixed(3))>s.png`). A scene midpoint is
+ * `start + duration / 2`, and halving a three-decimal duration produces a fourth
+ * decimal, so a finer form here asked for `--at 3.6055` and then failed to
+ * recognise the `frame-00-at-3.606s.png` that came back — reporting most of the
+ * project as missing on a snapshot that had actually captured it.
+ */
+const SNAPSHOT_TIMESTAMP_DECIMALS = 3;
+const normalizedTimestamp = (value: number): string =>
+  Number(value.toFixed(SNAPSHOT_TIMESTAMP_DECIMALS)).toString();
 
 export function snapshotTimestampFromFilename(filename: string): number | null {
   const match = /-at-(-?\d+(?:\.\d+)?)s\.png$/iu.exec(filename);

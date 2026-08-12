@@ -32,6 +32,18 @@ export const matrixNewHash = `sha256:${"2".repeat(64)}` as ContentHash;
 /** Stands in for a track a person copied into the project by hand. */
 export const matrixBgmPath = "preview-assets/bgm/theme.mp3";
 export const matrixRenderPath = "renders/contract-matrix.mp4";
+/** One library entry, so the matrix exercises the library branch and not just the beds. */
+export const matrixBgmEntry = {
+  id: "bgm_matrix",
+  name: "theme.mp3",
+  source: "import" as const,
+  bedId: null,
+  durationSeconds: 30,
+  byteSize: 24_467,
+  contentHash: `sha256:${"3".repeat(64)}`,
+  license: { kind: "own-work" as const, holder: "Contract Matrix", url: null, note: null },
+  addedAt: "2026-08-02T00:00:00.000Z",
+};
 
 export const CONTRACT_MATRIX_CASES: Record<string, Record<string, unknown>> = {
   list_projects: {},
@@ -107,6 +119,18 @@ export const CONTRACT_MATRIX_CASES: Record<string, Record<string, unknown>> = {
   },
   cancel_job: { jobId: "job_matrix" },
   get_render_output: { jobId: "job_render" },
+  list_bgm_beds: {},
+  install_bgm: { projectId: matrixProjectId, bedId: "ambient", seconds: 12, expectedRevision: 1 },
+  import_bgm: {
+    projectId: matrixProjectId,
+    path: matrixBgmPath,
+    name: "theme.mp3",
+    license: { kind: "own-work", holder: "Contract Matrix", url: null, note: null },
+  },
+  record_bgm_license: {
+    trackId: "corporate-synth",
+    license: { kind: "cc-by", holder: "Contract Matrix", url: "https://example.test/track", note: null },
+  },
 };
 
 function createBaseRegistry(auditEntries: ToolAuditEntry[] = [], journalOwned = false): ToolRegistry {
@@ -217,6 +241,13 @@ export function createContractMatrixRegistry(): ToolRegistry {
         return content === undefined ? null : { content, contentHash: matrixHash };
       },
       readHash: async (path: ResolvedPath) => files.has(path) ? matrixHash : null,
+      // import_bgm reads the asset's bytes, not its text.
+      readBytes: async (path: ResolvedPath) => {
+        const content = files.get(path);
+        return content === undefined
+          ? null
+          : { bytes: new TextEncoder().encode(content), contentHash: matrixHash };
+      },
       stat: async (path: ResolvedPath) => files.has(path)
         ? { size: files.get(path)!.length, modifiedAt: new Date(0), kind: "file" as const }
         : null,
@@ -253,6 +284,15 @@ export function createContractMatrixRegistry(): ToolRegistry {
         contentHash: matrixNewHash,
         revision: 3,
         diagnostics: [],
+      }),
+      // install_bgm rides the staged-asset + preview-settings mutation, so the
+      // matrix needs that seam too, not only mutateSource.
+      uploadBgm: async () => ok({
+        path: null,
+        contentHash: matrixNewHash,
+        revision: 3,
+        diagnostics: [],
+        previewSettings: DEFAULT_PREVIEW_SETTINGS,
       }),
       mutateSource: async (request: CompositeRequest | MutationRequest) => {
         if (!("steps" in request)) {
@@ -355,6 +395,16 @@ export function createContractMatrixRegistry(): ToolRegistry {
     ids: { newId: (prefix: string) => `${prefix}_matrix` },
     workspaceRoot: "/workspace" as AbsolutePath,
     mimeFromPath: () => "video/mp4",
+    bgmSynth: { render: () => new Uint8Array([82, 73, 70, 70, 0, 0, 0, 0]) },
+    bgmLibrary: {
+      list: async () => [matrixBgmEntry],
+      hasShipped: async () => true,
+      readShipped: async () => new Uint8Array([73, 68, 51, 4]),
+      shippedLicenses: async () => ({}),
+      recordShippedLicense: async () => undefined,
+      read: async () => new Uint8Array([82, 73, 70, 70, 0, 0, 0, 0]),
+      add: async () => ok({ entry: matrixBgmEntry, alreadyPresent: false }),
+    },
     lifecycle: {
       create: async () => ok({ projectId: "project_matrix" as ProjectId, slug: "matrix-two" }),
       adopt: async () => ok({ projectId: "project_matrix" as ProjectId }),

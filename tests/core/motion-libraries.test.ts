@@ -174,17 +174,26 @@ describe("installMotionLibrary", () => {
     expect(requests[0]!.steps.every((step) => step.kind === "write" && step.expectedContentHash === null)).toBe(true);
   });
 
-  it("is a no-op when every file already matches", async () => {
+  it("is a no-op when every file already matches, and reports that nothing was written", async () => {
     const gsap = findMotionLibrary("gsap")!;
     const files = new Map([[gsap.entry, `/* ${gsap.entry} */\n`]]);
     const { dependencies, requests } = harness({ files });
-    const result = await installMotionLibrary(dependencies, { projectId, libraryId: "gsap" }, "agent");
+    // An MCP caller needs the signal: write authority is never reached here, so no
+    // journal exists to own the invocation's audit.
+    let unchanged = 0;
+    const result = await installMotionLibrary(
+      dependencies,
+      { projectId, libraryId: "gsap" },
+      "agent",
+      { toolAudit: null, noteUnchanged: () => { unchanged += 1; } },
+    );
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(result.value.status).toBe("already_installed");
     expect(result.value.revision).toBeNull();
     expect(result.value.files).toEqual([{ path: gsap.entry, contentHash: existingHash }]);
     expect(requests).toHaveLength(0);
+    expect(unchanged).toBe(1);
   });
 
   it("overwrites a stale copy against its current hash", async () => {

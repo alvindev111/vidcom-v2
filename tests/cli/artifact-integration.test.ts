@@ -1,11 +1,12 @@
 import { realpathSync } from "node:fs";
-import { cp, mkdir, mkdtemp, readdir, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, readdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
 import { MAX_BGM_BYTES } from "@vidcom/contracts";
 import { startServing, type ServingDaemon } from "@vidcom/cli";
 import { beforeAll, describe, expect, it } from "vitest";
+import { writeSampleProject } from "../support/sample-project";
 
 const roots: string[] = [];
 const daemons: ServingDaemon[] = [];
@@ -26,9 +27,7 @@ beforeAll(async () => {
   roots.push(root);
   const workspace = path.join(root, "workspace");
   await mkdir(workspace, { recursive: true });
-  await cp(path.resolve("projects/swiss-grid"), path.join(workspace, "swiss-grid"), {
-    recursive: true,
-  });
+  await writeSampleProject(workspace, { slug: "swiss-grid", id: "project_swiss_grid" });
   // The directory the daemon runs beside. Nothing may appear in it: an artifact
   // that unpacks assets next to itself turns a single file into a folder the
   // user did not ask for and cannot move.

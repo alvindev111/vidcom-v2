@@ -55,3 +55,4 @@ export * from "./usecase/synthesize-narration";
 export * from "./usecase/project-reads";
 export * from "./usecase/project-writes";
 export * from "./usecase/project-assets";
+export * from "./usecase/bgm-library";

@@ -144,5 +144,14 @@ export function usePreviewSettings(
     [projectId, save],
   );
 
-  return { settings, pending, error, patch, patchScene, uploadBgm };
+  /**
+   * The revision the next write must send.
+   *
+   * A getter rather than state: the value is authoritative in the ref that every
+   * response updates, and re-rendering the studio because a precondition moved
+   * would be a render for nobody to see.
+   */
+  const currentRevision = React.useCallback(() => revision.current, []);
+
+  return { settings, pending, error, patch, patchScene, uploadBgm, currentRevision };
 }

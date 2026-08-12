@@ -33,8 +33,8 @@ On `write_conflict`, re-read and merge. Never remove a precondition. Destructive
 
 | Level | Tools |
 | --- | --- |
-| Read | `list_projects`, `get_project_context`, `list_scenes`, `read_composition`, `list_project_assets`, `get_narration_cues`, `list_tts_voices`, `validate_project`, `get_job_status`, `get_render_output` |
-| Write | `create_project`, `adopt_project`, `rename_project`, `create_scene`, `set_scene_timing`, `set_text`, `save_file`, `set_preview_settings`, `replace_narration_cues`, `patch_narration_cue`, `install_motion_library` |
+| Read | `list_projects`, `get_project_context`, `list_scenes`, `read_composition`, `list_project_assets`, `get_narration_cues`, `list_tts_voices`, `list_bgm_beds`, `validate_project`, `get_job_status`, `get_render_output` |
+| Write | `create_project`, `adopt_project`, `rename_project`, `create_scene`, `set_scene_timing`, `set_text`, `save_file`, `set_preview_settings`, `replace_narration_cues`, `patch_narration_cue`, `install_motion_library`, `install_bgm`, `import_bgm`, `record_bgm_license` |
 | Job | `start_snapshot`, `start_tts`, `start_render`, `cancel_job` |
 | Destructive | `delete_file`, `delete_scene`, `delete_project` |
 | Workspace | `install_agent_kit` |
@@ -57,8 +57,10 @@ No UI is required: `create_project` or `adopt_project` starts the work, `set_pre
 - Add a motion library with `install_motion_library` and reference the vendored path it returns. Never load one from a CDN: the render stops being reproducible and resolves nothing offline.
 - Put every new scene in a separate sub-composition file mounted with `data-composition-src`.
 - A tween after its scene clip ends never runs; move it or extend the clip.
+- End on a held frame: the last scene runs 1-3s past its narration, every other scene about 0.3s. A video that stops on the final consonant feels cut off, not finished.
 - Change tone, subtitle styling, and BGM through `set_preview_settings`, not composition source.
 - A file a person copied into the project never announces itself: run `list_project_assets` to find it, then attach a track with `set_preview_settings`.
+- A project with no music does not need a download: `list_bgm_beds` shows five built-in beds, and `install_bgm` renders one at the project's own length. `import_bgm` puts a supplied track into the machine's library with the licence it is allowed under — state `unknown` rather than guessing, and `record_bgm_license` fills that gap later once somebody establishes the answer.
 - Keep rendering deterministic: no `Date.now()`, `Math.random()`, or network fetch.
 - Do not edit project files with host file tools or run HyperFrames CLI beside VidCom. If raw source editing is explicitly requested, use `save_file` with `expectedContentHash`.
 

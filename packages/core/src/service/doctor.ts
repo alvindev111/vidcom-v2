@@ -44,6 +44,7 @@ export const DOCTOR_CHECK_ORDER: readonly string[] = [
   "compiler.probe",
   "runtime.hyperframes",
   "runtime.motion",
+  "runtime.bgm",
   "runtime.python",
   "runtime.python-utf8",
   "chrome.cache",

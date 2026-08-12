@@ -102,6 +102,19 @@ describe("all registered tool handlers", () => {
         error: { code: "project_not_found", message: "project was not found" },
       }),
       mimeFromPath: () => "video/mp4",
+      bgmSynth: { render: () => new Uint8Array([82, 73, 70, 70]) },
+      bgmLibrary: {
+        list: async () => [],
+        hasShipped: async () => false,
+        readShipped: async () => null,
+        shippedLicenses: async () => ({}),
+        recordShippedLicense: async () => undefined,
+        read: async () => null,
+        add: async () => ({
+          ok: false as const,
+          error: { code: "project_not_found", message: "workspace fixture is unavailable" },
+        }),
+      },
       lifecycle: {
         create: async () => ({
           ok: false as const,
@@ -163,6 +176,17 @@ describe("all registered tool handlers", () => {
       },
       cancel_job: { jobId: "job-1" },
       get_render_output: { jobId: "job-1" },
+      list_bgm_beds: {},
+      install_bgm: { projectId, bedId: "ambient", seconds: 10, expectedRevision: 0 },
+      import_bgm: {
+        projectId,
+        path: "preview-assets/bgm/theme.mp3",
+        license: { kind: "unknown", holder: null, url: null, note: null },
+      },
+      record_bgm_license: {
+        trackId: "corporate-synth",
+        license: { kind: "own-work", holder: null, url: null, note: null },
+      },
     };
     expect(Object.keys(cases).sort()).toEqual(tools.list("modern").map((tool) => tool.name));
 
@@ -177,6 +201,12 @@ describe("all registered tool handlers", () => {
         expect(result).toMatchObject({ ok: false, error: { code: "tts_provider_unavailable" } });
       }
       // The job-scoped tools are not project-scoped; an absent job is a plain not_found.
+      else if (name === "record_bgm_license") {
+        expect(result).toMatchObject({ ok: true, value: { trackId: "corporate-synth" } });
+      }
+      else if (name === "list_bgm_beds") {
+        expect(result).toMatchObject({ ok: true, value: { library: [] } });
+      }
       else if (name === "get_job_status" || name === "cancel_job" || name === "get_render_output") {
         expect(result).toMatchObject({ ok: false, error: { code: "not_found" } });
       }
@@ -184,10 +214,26 @@ describe("all registered tool handlers", () => {
     }
     expect(records).toHaveLength(Object.keys(cases).length);
     expect(new Set(records.map((entry) => entry.tool))).toEqual(new Set(Object.keys(cases)));
+
+    // Every selector install_bgm publishes has to reach the use case. The table
+    // above only exercises bedId, and a handler that forwarded two of the three
+    // failed schema validation on a valid call — with the schema itself correct,
+    // so nothing but this could catch it.
+    for (const selector of [{ bedId: "ambient" }, { trackId: "lofi-chill" }, { libraryEntryId: "bgm-1" }]) {
+      expect(await tools.invoke(
+        "install_bgm",
+        { projectId, ...selector, expectedRevision: 0 },
+        request,
+      )).toMatchObject({ ok: false, error: { code: "project_not_found" } });
+    }
   });
 });
 
-function writeDependencies(captured: Array<{ tool: string; invocation: WriteInvocation }>): WriteToolDependencies {
+function writeDependencies(
+  captured: Array<{ tool: string; invocation: WriteInvocation }>,
+  /** Lets a test stand in for write authority's proven no-op path. */
+  onMutate?: (invocation: WriteInvocation) => void,
+): WriteToolDependencies {
   const model: CompositionModel = {
     project: {
       id: projectId,
@@ -224,6 +270,7 @@ function writeDependencies(captured: Array<{ tool: string; invocation: WriteInvo
       tool: mutation.kind === "file" && mutation.path === "index.html" ? "set_scene_timing" : "save_file",
       invocation: invocation!,
     });
+    if (invocation) onMutate?.(invocation);
     return ok({
       revision: captured.length,
       contentHash: digest(String(captured.length + 1)),
@@ -277,6 +324,41 @@ describe("write tool invocation forwarding", () => {
     });
     expect(captured[1]!.invocation.toolAudit).toMatchObject({
       tool: "set_scene_timing", invocationId: "invocation-2", projectId, credentialId: "credential-1",
+    });
+  });
+
+  it("accepts a write whose request was already satisfied and audits it like a read", async () => {
+    // Re-sending content the project already holds opens no journal, so the
+    // invocation cannot be journal-owned. It is still a successful write, and it
+    // has to leave an audit row rather than an `internal` error.
+    const records: ToolAuditEntry[] = [];
+    const captured: Array<{ tool: string; invocation: WriteInvocation }> = [];
+    const dependencies = writeDependencies(captured, (invocation) => invocation.noteUnchanged?.());
+    const tools = registry(records, false);
+    tools.register(saveFileTool(dependencies));
+
+    await expect(tools.invoke("save_file", {
+      projectId,
+      path: "compositions/scene-1.html",
+      content: "<main>before</main>",
+      expectedContentHash: digest("1"),
+    }, request)).resolves.toMatchObject({ ok: true });
+    expect(records).toMatchObject([{ tool: "save_file", level: "write", outcome: "ok" }]);
+  });
+
+  it("still rejects a write that commits without journal ownership and does not claim it was unchanged", async () => {
+    const records: ToolAuditEntry[] = [];
+    const tools = registry(records, false);
+    tools.register(saveFileTool(writeDependencies([])));
+
+    await expect(tools.invoke("save_file", {
+      projectId,
+      path: "compositions/scene-1.html",
+      content: "<main>after</main>",
+      expectedContentHash: digest("1"),
+    }, request)).resolves.toMatchObject({
+      ok: false,
+      error: { code: "internal", message: "write tool completed without durable journal audit ownership" },
     });
   });
 });

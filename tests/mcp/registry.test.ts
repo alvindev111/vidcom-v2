@@ -543,7 +543,7 @@ describe("complete tool descriptor contract", () => {
               "openWorldHint": false,
               "readOnlyHint": true,
             },
-            "description": "Use when you need to poll a jobId returned by start_tts, start_snapshot, or start_render until it reaches a terminal outcome. Do not use to list jobs or to cancel one. Preconditions: jobId comes from the tool that queued the work. Side effects: read-only. Errors/recovery: wait pollAfterMs before the next poll; terminal outcome is explicit, including partial. On failed, fix error.code before a deliberate resubmission.",
+            "description": "Use when you need to poll a jobId returned by start_tts, start_snapshot, or start_render until it reaches a terminal outcome. Do not use to list jobs or to cancel one. Preconditions: jobId comes from the tool that queued the work. Side effects: read-only. Errors/recovery: wait pollAfterMs before the next poll and stop as soon as outcome is non-null — outcome, not status, is the terminal signal, and partial is one of its values (succeeded, partial, failed, cancelled), so a loop that waits only for succeeded polls forever. On failed, fix error.code before a deliberate resubmission.",
             "level": "read",
             "name": "get_job_status",
             "title": "Get background job status",
@@ -591,6 +591,18 @@ describe("complete tool descriptor contract", () => {
               "openWorldHint": false,
               "readOnlyHint": false,
             },
+            "description": "Use when a track already inside the project should become reusable by every project on this machine, with the licence it is allowed under recorded alongside it. Do not use to attach music to a project — that is install_bgm — and do not use for a file outside the project. Preconditions: projectId comes from list_projects and path is a project-relative mp3, wav, ogg or m4a as listed by list_project_assets; license.kind must be stated, and unknown is the honest value when nobody knows. Side effects: copies the bytes into the machine's BGM library and appends one ledger entry; the library is content-addressed, so importing the same bytes twice returns alreadyPresent=true and adds nothing. Errors/recovery: no_file means the path is not in the project; unsupported_media means the extension or the duration could not be read, so re-encode it; asset_not_allowed means the path is outside the project's asset allowlist.",
+            "level": "write",
+            "name": "import_bgm",
+            "title": "Import a track into the BGM library",
+          },
+          {
+            "annotations": {
+              "destructiveHint": false,
+              "idempotentHint": false,
+              "openWorldHint": false,
+              "readOnlyHint": false,
+            },
             "description": "Use when explicitly installing or repairing VidCom instructions and native skill routers for selected agent hosts. Do not use to install both hosts implicitly or overwrite foreign/newer files. Preconditions: install requires non-empty unique hosts; link is Claude-only; replace requires one manifest path and its current expectedContentHash. Side effects: writes one journaled workspace batch, or records an audited no-change when everything selected is pristine. Errors/recovery: follow installationState.recovery; re-read hashes after write_conflict and never invent a Codex import line.",
             "level": "write",
             "name": "install_agent_kit",
@@ -603,10 +615,34 @@ describe("complete tool descriptor contract", () => {
               "openWorldHint": false,
               "readOnlyHint": false,
             },
+            "description": "Use when a project needs background music: renders a built-in bed at the project's own length, or copies one shipped or imported track in, and attaches it in preview settings as one mutation. Do not use to change only volume or to detach music — that is set_preview_settings — and do not use to add narration or a sound effect. Preconditions: projectId and expectedRevision come from get_project_context; pass exactly one of bedId, trackId or libraryEntryId from list_bgm_beds; omit seconds to match the project duration. Side effects: writes preview-assets/bgm/<name> and commits one revision that also sets bgm.enabled, its track, volume and loop; re-installing the same name is rejected rather than silently replaced. Errors/recovery: no_composition means the project has no duration yet, so pass seconds; write_conflict means expectedRevision is stale, so re-read get_project_context; storage_unavailable means this daemon cannot stage assets.",
+            "level": "write",
+            "name": "install_bgm",
+            "title": "Install background music",
+          },
+          {
+            "annotations": {
+              "destructiveHint": false,
+              "idempotentHint": false,
+              "openWorldHint": false,
+              "readOnlyHint": false,
+            },
             "description": "Use when a composition needs GSAP, Anime.js, Motion One, Lottie, or Three.js, before referencing it in source. Do not use to add a CDN script tag, to install an arbitrary npm package, or to write the composition markup itself. Preconditions: projectId comes from list_projects; the library version is pinned by the studio and is not caller-selectable. Side effects: copies the pinned library into assets/vendor/ as one atomic mutation and commits one revision; re-running returns already_installed without a write. Errors/recovery: returns the paste-ready scriptTag and entry path to use; on write_conflict re-read and retry; storage_unavailable means the studio install is incomplete, so report it instead of falling back to a CDN.",
             "level": "write",
             "name": "install_motion_library",
             "title": "Vendor a motion library",
+          },
+          {
+            "annotations": {
+              "destructiveHint": false,
+              "idempotentHint": true,
+              "openWorldHint": false,
+              "readOnlyHint": true,
+            },
+            "description": "Use when choosing background music, before install_bgm, to see the built-in beds and the tracks this machine has imported. Do not use to read a project's current music; get_project_context returns previewSettings.bgm. Preconditions: none; the built-in beds are always available offline and need no credential. Side effects: read-only; nothing is synthesized or written until install_bgm. Errors/recovery: an empty library is normal on a fresh install — pick a bed id instead; each library entry carries the licence it was imported under, and license.kind=unknown means nobody recorded one.",
+            "level": "read",
+            "name": "list_bgm_beds",
+            "title": "List background music options",
           },
           {
             "annotations": {
@@ -679,6 +715,18 @@ describe("complete tool descriptor contract", () => {
             "level": "read",
             "name": "read_composition",
             "title": "Read composition source",
+          },
+          {
+            "annotations": {
+              "destructiveHint": false,
+              "idempotentHint": false,
+              "openWorldHint": false,
+              "readOnlyHint": false,
+            },
+            "description": "Use when the licence of a shipped BGM track has been established and should be recorded, replacing the catalogue's unknown. Do not use to guess a licence, and do not use for a library entry — an import records its own licence. Preconditions: trackId comes from list_bgm_beds; license.kind must be the licence that was actually established, and holder plus url are required by attribution licences such as cc-by. Side effects: writes one entry into this machine's BGM ledger; every project on this install then reports that licence instead of unknown. Errors/recovery: not_found means the trackId is not a shipped track; recording again replaces the previous answer rather than failing.",
+            "level": "write",
+            "name": "record_bgm_license",
+            "title": "Record a shipped track's licence",
           },
           {
             "annotations": {

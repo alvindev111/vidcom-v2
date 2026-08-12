@@ -190,6 +190,22 @@ describe("snapshot job with real SQLite and filesystem", () => {
     expect(mapped.missingSceneIds).toEqual(["scene-2"]);
   });
 
+  it("matches a midpoint with a fourth decimal against the filename HyperFrames writes", async () => {
+    // `start + duration / 2` over three-decimal durations lands on four decimals,
+    // and HyperFrames rounds the filename to three. Before these agreed, a nine
+    // scene project reported six of them missing from a snapshot that had them.
+    const captured = new Uint8Array([7]);
+    const mapped = mapSnapshotArtifacts(
+      [{ id: "scene-1", midpoint: 3.6055 }, { id: "scene-2", midpoint: 48.7775 }],
+      [
+        { name: "frame-00-at-3.606s.png", content: captured },
+        { name: "frame-01-at-48.778s.png", content: captured },
+      ],
+    );
+    expect(mapped.missingSceneIds).toEqual([]);
+    expect([...mapped.images.keys()]).toEqual(["scene-1", "scene-2"]);
+  });
+
   it("succeeds empty without spawning and rejects out-of-range midpoint before spawning", async () => {
     let spawns = 0;
     const processPort: ProcessSupervisorPort = {

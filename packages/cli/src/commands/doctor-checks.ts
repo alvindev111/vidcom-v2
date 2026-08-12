@@ -37,6 +37,8 @@ export interface DoctorProbes {
   compilerProbe(): Promise<ProbeResult>;
   hyperframes(): Promise<ProbeResult>;
   motionLibraries(): Promise<ProbeResult>;
+  /** Whether the shipped background-music audio was extracted with the runtime. */
+  bgmAudio(): Promise<ProbeResult>;
   pythonStack(): Promise<ProbeResult>;
   pythonUtf8(): Promise<ProbeResult>;
   chromeCache(): Promise<ProbeResult>;
@@ -139,6 +141,9 @@ export function createDoctorChecks(): DoctorCheck<DoctorContext>[] {
 
     check("runtime.motion", true, async (context) =>
       itemFrom("runtime.motion", await context.probes.motionLibraries(), REPAIR_REMEDY)),
+
+    check("runtime.bgm", true, async (context) =>
+      itemFrom("runtime.bgm", await context.probes.bgmAudio(), REPAIR_REMEDY)),
 
     check("runtime.python", true, async (context) =>
       // Listed with `importlib.metadata`, which is standard library. pip was

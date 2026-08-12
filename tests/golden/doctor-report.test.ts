@@ -9,7 +9,7 @@ import { describe, expect, it } from "vitest";
 
 const PROBE_NAMES = [
   "appDataWritable", "databaseMigration", "runtimeManifest", "runtimeIntegrity",
-  "ffmpeg", "esbuildBinary", "compilerProbe", "hyperframes", "motionLibraries",
+  "ffmpeg", "esbuildBinary", "compilerProbe", "hyperframes", "motionLibraries", "bgmAudio",
   "pythonStack", "pythonUtf8", "chromeCache", "ttsModelCache", "activeWorkspace",
   "loopbackPort", "settingsFile", "elevenLabsKey",
 ] as const;
@@ -60,6 +60,7 @@ describe("doctor --json", () => {
         { id: "compiler.probe", status: "ok" },
         { id: "runtime.hyperframes", status: "ok" },
         { id: "runtime.motion", status: "ok" },
+        { id: "runtime.bgm", status: "ok" },
         { id: "runtime.python", status: "ok" },
         { id: "runtime.python-utf8", status: "ok" },
         { id: "chrome.cache", status: "ok" },
@@ -86,6 +87,7 @@ describe("doctor --json", () => {
       "compiler.probe=ok",
       "runtime.hyperframes=ok",
       "runtime.motion=ok",
+      "runtime.bgm=ok",
       "runtime.python=ok",
       "runtime.python-utf8=ok",
       "chrome.cache=skipped",

@@ -34,7 +34,9 @@ import {
   DOWNLOAD_CACHE_COMPONENTS,
   DownloadCacheCoordinator,
   NodeHyperframesDiagnosticsLint,
+  BgmLibraryStore,
   NodeModulesMotionLibraryFiles,
+  synthesizeBgmBed,
   WorkspaceLease,
   hyperframesRuntimeSource,
   mimeFromPath,
@@ -410,9 +412,36 @@ export function createInfrastructure(config: CompositionRootConfig) {
     resolveProjectRef,
     runtimeSource: hyperframesRuntimeSource,
     mimeFromPath,
+    // An artifact vendors from the directory it extracted, and fails when that is
+    // missing rather than substituting whatever the machine has installed. A source
+    // checkout names no root: its `motionLibraryRoot` points inside app-data, where
+    // nothing extracts during development, so passing it made every
+    // `install_motion_library` call report the library as unavailable while the
+    // pinned package sat in `node_modules`. The version pin is checked either way.
     motionLibraries: new NodeModulesMotionLibraryFiles(
-      (config.runtimePaths?.motionLibraryRoot ?? config.motionLibraryRoot) as AbsolutePath | undefined,
+      config.runtimePaths && config.runtimePaths.mode !== "artifact"
+        ? undefined
+        : (config.runtimePaths?.motionLibraryRoot ?? config.motionLibraryRoot) as AbsolutePath | undefined,
     ),
+    bgmSynth: { render: synthesizeBgmBed },
+    bgmLibrary: new BgmLibraryStore({
+      appDataRoot: config.appDataRoot,
+      // From the extracted runtime in an artifact; a checkout resolves it inside
+      // the adapter package, where the audio is committed.
+      ...(config.runtimePaths?.bgmAssetRoot === undefined
+        ? {}
+        : { shippedTrackRoot: config.runtimePaths.bgmAssetRoot }),
+      // FFprobe is how a non-WAV import gets its duration; the store parses WAV
+      // headers itself, so a missing probe only limits which formats import.
+      probeDurationSeconds: async (file) => {
+        const probed = await processes.run({
+          command: [binaries.ffprobePath, "-v", "error", "-show_entries",
+            "format=duration", "-of", "csv=p=0", file],
+        });
+        const seconds = Number(String(probed.stdout ?? "").trim());
+        return Number.isFinite(seconds) && seconds > 0 ? seconds : null;
+      },
+    }),
   };
 }
 
@@ -432,6 +461,8 @@ export function createMcpRegistry(
     reads: application.readDependencies,
     jobs: infrastructure.jobs,
     tts: infrastructure.tts,
+    bgmSynth: infrastructure.bgmSynth,
+    bgmLibrary: infrastructure.bgmLibrary,
     ids: infrastructure.ids,
     workspaceRoot: infrastructure.workspaceRoot,
     diagnostics: application.diagnostics,

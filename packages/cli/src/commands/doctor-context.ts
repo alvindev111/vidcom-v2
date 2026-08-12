@@ -299,6 +299,11 @@ export async function createDoctorContext(
     motionLibraries: () => Promise.resolve(runtimePaths
       ? present(runtimePaths.motionLibraryRoot)
       : unavailableRuntime("motion libraries")),
+    // A directory check, not a per-track one: the archive is extracted whole or
+    // not at all, and `list_bgm_beds` already reports per-track availability.
+    bgmAudio: () => Promise.resolve(runtimePaths
+      ? present(runtimePaths.bgmAssetRoot)
+      : unavailableRuntime("background music")),
     pythonStack: () => Promise.resolve(runtimePaths
       ? runs(
           executable(

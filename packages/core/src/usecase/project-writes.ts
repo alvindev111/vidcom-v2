@@ -368,7 +368,7 @@ export async function setSceneScript(
   const written = await dependencies.authority.mutateSource({
     ref: ref.value,
     steps,
-    toolAudit: invocation.toolAudit,
+    ...invocation,
     backup: false,
   }, actor);
   if (!written.ok) return written;
@@ -602,7 +602,7 @@ export async function createScene(
           expectedContentHash: null,
         },
       ],
-      toolAudit: invocation.toolAudit,
+      ...invocation,
       backup: false,
     }, actor);
     if (!written.ok) return written;
@@ -707,7 +707,7 @@ export async function createScene(
         expectedContentHash: null,
       },
     ],
-    toolAudit: invocation.toolAudit,
+    ...invocation,
     backup: false,
   }, actor);
   if (!written.ok) return written;

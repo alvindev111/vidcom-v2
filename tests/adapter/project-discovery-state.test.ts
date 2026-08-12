@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process";
-import { cp, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
@@ -27,6 +27,7 @@ import {
 import { selectWorkspace } from "../../packages/cli/src/workspace-selection";
 
 import { dbOne, dbRun } from "../support/database";
+import { writeSampleProject } from "../support/sample-project";
 
 const run = promisify(execFile);
 const roots: string[] = [];
@@ -249,9 +250,15 @@ describe("workspace discovery and project state on real SQLite/filesystem", () =
     const workspaceRoot = path.join(root, "workspace");
     const appDataRoot = path.join(root, "app-data");
     await mkdir(workspaceRoot);
-    const slugs = ["kinetic-type", "swiss-grid", "warm-grain"];
+    // Legacy markers: id only, no platform — the exact state backfill repairs.
+    const slugs = ["portrait-sample", "square-sample", "landscape-sample"] as const;
+    const shapes: Record<(typeof slugs)[number], { width: number; height: number }> = {
+      "portrait-sample": { width: 1080, height: 1920 },
+      "square-sample": { width: 1080, height: 1080 },
+      "landscape-sample": { width: 1920, height: 1080 },
+    };
     for (const slug of slugs) {
-      await cp(path.resolve("projects", slug), path.join(workspaceRoot, slug), { recursive: true });
+      await writeSampleProject(workspaceRoot, { slug, id: `project_${slug}`, ...shapes[slug] });
     }
     const initialized = await initializeDatabase(appDataRoot);
     await initialized.destroy();

@@ -1,4 +1,9 @@
 import type {
+  BgmBed,
+  BgmBedId,
+  BgmLibraryEntry,
+  BgmLibrarySource,
+  BgmLicense,
   ContentHash,
   Diagnostic,
   DomainError,
@@ -175,6 +180,39 @@ export interface MotionLibraryFilesPort {
   read(library: MotionLibrary): Promise<Result<Array<{ projectPath: RelPath; content: string }>, DomainError>>;
 }
 
+/** Renders a background bed from its recipe; deterministic for one bed and length. */
+export interface BgmSynthPort {
+  render(bed: BgmBed, seconds: number): Uint8Array;
+}
+
+/**
+ * The machine's reusable BGM library, with the licence each imported track was
+ * declared under. Machine-level rather than per project: a bed is worth having
+ * everywhere on this install, and the ledger is the only record of what a track
+ * may legally be used for.
+ */
+export interface BgmLibraryPort {
+  list(): Promise<BgmLibraryEntry[]>;
+  /** Whether a shipped track's audio is present in this build. */
+  hasShipped(filename: string): Promise<boolean>;
+  /** Licences this install recorded for shipped tracks, keyed by track id. */
+  shippedLicenses(): Promise<Record<string, BgmLicense>>;
+  /** Records what a shipped track may be used for; the catalogue ships `unknown`. */
+  recordShippedLicense(trackId: string, license: BgmLicense): Promise<void>;
+  /** Bytes of a shipped track; `null` when the build omitted the audio. */
+  readShipped(filename: string): Promise<Uint8Array | null>;
+  /** Track bytes, or `null` when the entry is gone from disk. */
+  read(id: string): Promise<Uint8Array | null>;
+  add(input: {
+    name: string;
+    extension: string;
+    bytes: Uint8Array;
+    source: BgmLibrarySource;
+    bedId: BgmBedId | null;
+    license: BgmLicense;
+  }): Promise<Result<{ entry: BgmLibraryEntry; alreadyPresent: boolean }, DomainError>>;
+}
+
 /** Filesystem access for the selected workspace; every method performs I/O. */
 export interface WorkspacePort {
   /** Lists direct child directories only; classification and ignore rules stay in Core. */
@@ -276,8 +314,14 @@ export interface CompositionPort {
 
 /** Durable unit of work joining mutation, revision, audit, entity and event records. */
 export interface MutationJournalPort {
-  /** Persists a pending intent before filesystem I/O and returns its durable ID. */
-  begin(intent: MutationIntent): Promise<JournalId>;
+  /**
+   * Persists a pending intent before filesystem I/O and returns its durable ID.
+   *
+   * `toolAudit` is present only for an MCP-invoked mutation; the journal then owns
+   * that invocation's audit, which is what the tool registry checks before it
+   * reports the write as durable.
+   */
+  begin(intent: MutationIntent, toolAudit?: PendingToolAudit | null): Promise<JournalId>;
   /** Atomically commits all mutation-owned database rows and returns the assigned revision. */
   commit(id: JournalId, result: MutationResult): Promise<number>;
   /** Marks an intent aborted with its stable reason; this performs database I/O. */

@@ -21,6 +21,16 @@ import {
   TtsProviderSchema,
 } from "./tts";
 import { InstallAgentKitInputSchema, InstallAgentKitOutputSchema } from "./agent-kit";
+import {
+  ImportBgmInputSchema,
+  ImportBgmOutputSchema,
+  InstallBgmInputSchema,
+  InstallBgmOutputSchema,
+  ListBgmBedsInputSchema,
+  ListBgmBedsOutputSchema,
+  RecordBgmLicenseInputSchema,
+  RecordBgmLicenseOutputSchema,
+} from "./bgm";
 import { NarrationCueInputSchema } from "./delivery-loop-http";
 import { ErrorCode } from "./errors";
 import { MotionLibraryIdSchema } from "./motion-libraries";
@@ -547,6 +557,21 @@ export const TOOL_SCHEMA_CATALOGUE = {
     output: CancelJobOutputSchema,
     level: "job",
   },
+  import_bgm: {
+    input: ImportBgmInputSchema,
+    output: ImportBgmOutputSchema,
+    level: "write",
+  },
+  install_bgm: {
+    input: InstallBgmInputSchema,
+    output: InstallBgmOutputSchema,
+    level: "write",
+  },
+  list_bgm_beds: {
+    input: ListBgmBedsInputSchema,
+    output: ListBgmBedsOutputSchema,
+    level: "read",
+  },
   create_project: {
     input: CreateProjectInputSchema,
     output: CreateProjectOutputSchema,
@@ -625,6 +650,11 @@ export const TOOL_SCHEMA_CATALOGUE = {
   patch_narration_cue: {
     input: PatchNarrationCueInputSchema,
     output: NarrationCuesWriteOutputSchema,
+    level: "write",
+  },
+  record_bgm_license: {
+    input: RecordBgmLicenseInputSchema,
+    output: RecordBgmLicenseOutputSchema,
     level: "write",
   },
   read_composition: {

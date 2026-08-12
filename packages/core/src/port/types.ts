@@ -216,6 +216,8 @@ export interface CompositeRequest {
   ref: ProjectRef;
   steps: CompositeStep[];
   toolAudit: PendingToolAudit | null;
+  /** See `WriteInvocation.noteUnchanged`; carried so composite callers keep the signal. */
+  noteUnchanged?: () => void;
   commandAudit?: PendingCommandAudit;
   diagnostics?: Diagnostic[];
   backup: boolean;
@@ -375,6 +377,16 @@ export type McpCredentialSummary = Omit<McpCredentialRecord, "secretHash">;
 /** Optional SDK-neutral context forwarded from a tool registry into write authority. */
 export interface WriteInvocation {
   toolAudit: PendingToolAudit | null;
+  /**
+   * Called when the request was already satisfied, so no journal was opened.
+   *
+   * Write authority proves this rather than assuming it: every step's `fromHash`
+   * equals its `toHash`, which means nothing was written and there is no journal
+   * to own this invocation's audit. Without the signal a caller cannot tell that
+   * apart from a handler that mutated the filesystem behind the journal's back —
+   * and the registry has to treat the second case as a fault.
+   */
+  noteUnchanged?(): void;
 }
 
 /** Canonical mutation result across file, entity, and composite writes. */

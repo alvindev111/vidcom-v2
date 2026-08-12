@@ -440,7 +440,7 @@ describe("artifact runtime staging", () => {
     expect(await readFile(metadata, "utf8")).toContain("Version: 1.0");
   });
 
-  it("stages two deterministic archive roots through real filesystem and child processes", async () => {
+  it("stages every deterministic archive root through real filesystem and child processes", async () => {
     const input = await fixture();
     const esbuildPackageName = nativePackageNamesFor(HOST_TAG)
       .find((packageName: string) => packageName.startsWith("@esbuild/"));
@@ -527,6 +527,9 @@ describe("artifact runtime staging", () => {
     expect(config.archives).toEqual([
       expect.objectContaining({ key: "hyperframes", target: "hyperframes" }),
       expect.objectContaining({ key: "node", target: "native" }),
+      // The shipped BGM audio is its own archive: an artifact has no
+      // packages/adapter/assets to read it from.
+      expect.objectContaining({ key: "bgm", target: "bgm" }),
     ]);
     expect(config.pythonPackages).toEqual({ [HOST_TAG]: result.pinsFile });
     expect(await readFile(result.pinsFile, "utf8")).toBe("demo==1.0\nvieneu==3.2.4\n");

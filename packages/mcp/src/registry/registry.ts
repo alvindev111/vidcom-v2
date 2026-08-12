@@ -169,7 +169,8 @@ export class ToolRegistry {
     }
     const revisionBefore = await this.dependencies.audit.currentRevision(projectId);
     const detail = { input, invocationId };
-    const journalOwned = definition.level === "write" || definition.level === "destructive";
+    const journalOwned = definition.journalOwned
+      ?? (definition.level === "write" || definition.level === "destructive");
     const pending = journalOwned
       ? this.dependencies.audit.prepareWrite({
           invocationId,
@@ -184,6 +185,10 @@ export class ToolRegistry {
           revisionBefore,
         })
       : null;
+    // Set when write authority proves the project already matched the request, so
+    // no journal was opened. Nothing else may set it: the ownership check below is
+    // what catches a handler mutating outside the journal.
+    let unchanged = false;
     const context = {
       actor: "agent" as const,
       era: request.era,
@@ -191,7 +196,7 @@ export class ToolRegistry {
       grantId: definition.level === "destructive" ? grantIdOf(input) : null,
       credentialId: request.credentialId,
       invocationId,
-      writeInvocation: { toolAudit: pending },
+      writeInvocation: { toolAudit: pending, noteUnchanged: () => { unchanged = true; } },
       requestInput: request.requestInput,
     };
 
@@ -257,7 +262,12 @@ export class ToolRegistry {
       await this.dependencies.audit.recordFailureIfCallerOwned(invocationId, terminal);
     } else {
       const ownership = await this.dependencies.audit.ownershipOf(invocationId, definition.name);
-      if (ownership !== "journal_owned") {
+      if (ownership === "caller_owned" && unchanged) {
+        // An idempotent write: the request was already satisfied, so there is no
+        // journal to own the audit and the invocation is recorded the way a read
+        // is. Rejecting it would make re-sending the same content a hard failure.
+        await this.dependencies.audit.recordRead(terminal);
+      } else if (ownership !== "journal_owned") {
         return failure(ErrorCode.Internal, ownership === "unknown"
           ? "tool audit ownership could not be determined"
           : "write tool completed without durable journal audit ownership");

@@ -20,10 +20,11 @@ function artifactInput(archiveRoots: Record<string, string>) {
 const COMPLETE_ARCHIVES = {
   hyperframes: path.join(VERSION_ROOT, "hyperframes"),
   node: path.join(VERSION_ROOT, "node"),
+  bgm: path.join(VERSION_ROOT, "bgm"),
 };
 
 describe("runtime path resolution", () => {
-  it("resolves all five paths from the extracted runtime in artifact mode", () => {
+  it("resolves every path from the extracted runtime in artifact mode", () => {
     const paths = resolveRuntimePaths(artifactInput(COMPLETE_ARCHIVES));
     expect(paths.mode).toBe("artifact");
     for (const name of RUNTIME_PATH_NAMES) {
@@ -33,6 +34,7 @@ describe("runtime path resolution", () => {
       path.join(VERSION_ROOT, "hyperframes", "bin", "hyperframes.mjs"),
     );
     expect(paths.nativeDependenciesRoot).toBe(path.join(VERSION_ROOT, "node"));
+    expect(paths.bgmAssetRoot).toBe(path.join(VERSION_ROOT, "bgm"));
   });
 
   it("never reaches require.resolve on the artifact path", () => {

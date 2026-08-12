@@ -1,5 +1,9 @@
 import {
+  BgmLicenseSchema,
   ErrorCode,
+  findShippedBgmTrack,
+  ImportBgmInputSchema,
+  InstallBgmInputSchema,
   InstallMotionLibraryRequestSchema,
   MAX_BGM_BYTES,
   MAX_SOURCE_BYTES,
@@ -15,7 +19,11 @@ import {
 } from "@vidcom/contracts";
 import {
   createScene,
+  importBgm,
+  installBgm,
   installMotionLibrary,
+  listBgmSources,
+  recordShippedBgmLicense,
   patchPreviewSettings,
   regenerateNarration,
   readSourceFile,
@@ -24,6 +32,7 @@ import {
   setSceneScript,
   setSceneTiming,
   uploadBgm,
+  type BgmDependencies,
   type MotionLibraryInstallDependencies,
   type ProjectReadDependencies,
   type ProjectWriteDependencies,
@@ -36,6 +45,22 @@ export interface ProjectWriteRouteDependencies extends ProjectWriteDependencies 
   reads: ProjectReadDependencies;
   /** Declared separately: the install use case narrows `authority` to the composite overload. */
   motionLibraries: MotionLibraryInstallDependencies["motionLibraries"];
+  bgmSynth: BgmDependencies["bgmSynth"];
+  bgmLibrary: BgmDependencies["bgmLibrary"];
+  hashContent: BgmDependencies["hashContent"];
+  mimeFromPath(path: string): string | null;
+}
+
+/** Immutable audio: content-addressed on this install, so it can be cached hard. */
+function audioResponse(c: Context, bytes: Uint8Array, mime: string): Response {
+  return new Response(Uint8Array.from(bytes).buffer, {
+    headers: {
+      "Content-Type": mime,
+      "Content-Length": String(bytes.byteLength),
+      "Cache-Control": "private, max-age=3600",
+      "Accept-Ranges": "none",
+    },
+  });
 }
 
 function fail(error: { code: ErrorCode; message: string; field?: string; details?: Record<string, unknown> }): never {
@@ -135,6 +160,60 @@ export function createProjectWriteRoutes(dependencies: ProjectWriteRouteDependen
       projectId: projectId(c), name: parsed.data.file.name, bytes,
       expectedRevision: parsed.data.expectedRevision,
     }, "user")));
+  });
+  // The built-in beds and this machine's library, in one read: a picker needs both
+  // and a fresh install has only the first.
+  routes.get("/v1/bgm", async (c) => c.json(await listBgmSources(dependencies)));
+  // Audition before installing: a picker that cannot play a track is a list of
+  // filenames. Bytes, not a path — the shipped audio lives outside the project
+  // and the library lives outside the workspace, so neither is reachable through
+  // the project asset route.
+  // Closing the licence gap is a machine-level fact, so it is recorded once here
+  // rather than per project or by editing the shipped catalogue.
+  routes.put("/v1/bgm/tracks/:trackId/license", async (c) => {
+    const parsed = BgmLicenseSchema.safeParse(await json(c));
+    if (!parsed.success) fail({ code: ErrorCode.SchemaInvalid, message: "licence payload is invalid", field: "kind" });
+    return c.json(valueOf(await recordShippedBgmLicense(dependencies, {
+      trackId: c.req.param("trackId") ?? "",
+      license: parsed.data,
+    })));
+  });
+  routes.get("/v1/bgm/tracks/:trackId/audio", async (c) => {
+    const track = findShippedBgmTrack(c.req.param("trackId") ?? "");
+    if (!track) fail({ code: ErrorCode.NotFound, message: "unknown shipped track", field: "trackId" });
+    const bytes = await dependencies.bgmLibrary.readShipped(track.filename);
+    if (!bytes) {
+      fail({ code: ErrorCode.NoFile, message: "this build ships the catalogue entry but not its audio" });
+    }
+    return audioResponse(c, bytes, dependencies.mimeFromPath(track.filename) ?? "audio/mpeg");
+  });
+  routes.get("/v1/bgm/library/:entryId/audio", async (c) => {
+    const entryId = c.req.param("entryId") ?? "";
+    const entry = (await dependencies.bgmLibrary.list()).find((candidate) => candidate.id === entryId);
+    if (!entry) fail({ code: ErrorCode.NotFound, message: "unknown library entry", field: "entryId" });
+    const bytes = await dependencies.bgmLibrary.read(entry.id);
+    if (!bytes) fail({ code: ErrorCode.NoFile, message: "the entry is registered but its file is gone" });
+    return audioResponse(c, bytes, dependencies.mimeFromPath(entry.name) ?? "audio/mpeg");
+  });
+  routes.post("/v1/projects/:id/bgm", async (c) => {
+    const parsed = InstallBgmInputSchema.safeParse({ ...(await json(c) as object), projectId: c.req.param("id") });
+    if (!parsed.success) {
+      fail({ code: ErrorCode.SchemaInvalid, message: "BGM install payload is invalid", field: "bedId" });
+    }
+    return c.json(valueOf(await installBgm(dependencies, {
+      ...parsed.data,
+      projectId: parsed.data.projectId as ProjectId,
+    }, "user")));
+  });
+  routes.post("/v1/projects/:id/bgm/library", async (c) => {
+    const parsed = ImportBgmInputSchema.safeParse({ ...(await json(c) as object), projectId: c.req.param("id") });
+    if (!parsed.success) {
+      fail({ code: ErrorCode.SchemaInvalid, message: "BGM import payload is invalid", field: "path" });
+    }
+    return c.json(valueOf(await importBgm(dependencies, {
+      ...parsed.data,
+      projectId: parsed.data.projectId as ProjectId,
+    })), 201);
   });
   routes.post("/v1/projects/:id/motion-libraries", async (c) => {
     const parsed = InstallMotionLibraryRequestSchema.safeParse(await json(c));

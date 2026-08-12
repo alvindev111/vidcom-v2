@@ -25,7 +25,7 @@ function probes(overrides: Partial<DoctorProbes> = {}): DoctorProbes {
   const base = {} as Record<string, () => Promise<ProbeResult>>;
   for (const name of [
     "appDataWritable", "databaseMigration", "runtimeManifest", "runtimeIntegrity",
-    "ffmpeg", "esbuildBinary", "compilerProbe", "hyperframes", "motionLibraries",
+    "ffmpeg", "esbuildBinary", "compilerProbe", "hyperframes", "motionLibraries", "bgmAudio",
     "pythonStack", "pythonUtf8", "chromeCache", "ttsModelCache", "activeWorkspace",
     "loopbackPort", "settingsFile", "elevenLabsKey",
   ]) base[name] = () => Promise.resolve(HEALTHY);

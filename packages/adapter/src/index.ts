@@ -1,4 +1,6 @@
 export * from "./agent/agent-cli-invocation";
+export * from "./bgm/bed-synth";
+export * from "./bgm/bgm-library-store";
 export * from "./agent/agent-terminal-pty";
 export * from "./agent/executable-lookup";
 export * from "./db/client";

@@ -932,18 +932,20 @@ export class MutationJournal implements MutationJournalPort, CompositeMutationJo
     }
   }
 
-  async begin(intent: MutationIntent): Promise<JournalId> {
+  async begin(intent: MutationIntent, toolAudit: PendingToolAudit | null = null): Promise<JournalId> {
     const previous = await this.preparePrevious(intent.previousContent);
     return this.database.transaction((transaction) => {
       const row = transaction.get<{ id: number }>(sql`
         INSERT INTO mutation_journal (
           project_id, kind, path, entity, from_hash, previous_content, previous_object_hash, previous_byte_size,
-          staged_tmp_path, staged_target_path, staged_content_hash, to_hash, actor, created_at, settled_at
+          staged_tmp_path, staged_target_path, staged_content_hash, to_hash, actor, tool_audit_json,
+          created_at, settled_at
         ) VALUES (
           ${intent.projectId}, ${intent.kind}, ${intent.path}, ${intent.entity}, ${intent.fromHash},
           ${previous.inline}, ${previous.objectHash}, ${previous.byteSize}, ${intent.stagedAsset?.temporaryPath ?? null},
           ${intent.stagedAsset?.targetPath ?? null}, ${intent.stagedAsset?.contentHash ?? null},
-          ${intent.toHash}, ${intent.actor}, ${this.clock.now().toISOString()}, NULL
+          ${intent.toHash}, ${intent.actor}, ${toolAudit === null ? null : serializePendingToolAudit(toolAudit)},
+          ${this.clock.now().toISOString()}, NULL
         ) RETURNING id
       `);
       if (!row) throw new Error("mutation journal insert returned no id");

@@ -118,6 +118,38 @@ const expectedSuccess: Record<string, object> = {
     mediaType: "video/mp4",
     outcome: "succeeded",
   },
+  list_bgm_beds: {
+    // toMatchObject compares arrays element-wise, so every entry is listed; the
+    // ids and the selection metadata are what a picker actually reads.
+    beds: [
+      { id: "ambient", selection: { tempo: "slow", hasVocals: false } },
+      { id: "cinematic" },
+      { id: "lofi" },
+      { id: "piano" },
+      { id: "dark" },
+    ],
+    // The shipped catalogue always lists; `available` reports whether this build
+    // actually carries the audio, and the licence gap is visible in the data.
+    tracks: [
+      { id: "corporate-synth", available: true, license: { kind: "unknown" } },
+      { id: "corporate-marimba", available: true },
+      { id: "lofi-chill", available: true },
+      { id: "promo-dance", available: true },
+    ],
+    library: [{ id: "bgm_matrix", source: "import" }],
+    defaultVolume: 0.12,
+  },
+  install_bgm: {
+    track: { name: "ambient.wav", path: "preview-assets/bgm/ambient.wav", durationSeconds: 12 },
+    volume: 0.12,
+    loop: true,
+    revision: 3,
+  },
+  import_bgm: { entry: { id: "bgm_matrix" }, alreadyPresent: false },
+  record_bgm_license: {
+    trackId: "corporate-synth",
+    license: { kind: "cc-by", holder: "Contract Matrix" },
+  },
 };
 
 async function exercise(client: LegacyClient | ModernClient): Promise<void> {

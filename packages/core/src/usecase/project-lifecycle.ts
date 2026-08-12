@@ -93,7 +93,7 @@ export class ProjectLifecycle {
       projectId,
       slug,
       actor: input.actor ?? "user",
-      toolAudit: invocation.toolAudit,
+      ...invocation,
       files: [
         { path: "vidcom.json" as RelPath, content: identity },
         { path: "hyperframes.json" as RelPath, content: "{}\n" },
@@ -141,7 +141,7 @@ export class ProjectLifecycle {
       content: this.dependencies.identity.serialize(identityFor(projectId, platform, now)),
       occurredAt: now,
       actor: input.actor ?? "user",
-      toolAudit: invocation.toolAudit,
+      ...invocation,
     });
     return adopted.ok ? ok({ projectId }) : adopted;
   }
@@ -262,7 +262,7 @@ export class ProjectLifecycle {
       fromSlug: ref.value.slug,
       toSlug: slug,
       actor,
-      toolAudit: invocation.toolAudit,
+      ...invocation,
     });
     if (renamed.ok && locator.kind === "entry") {
       this.dependencies.entries.relocate(locator.entryId, slug, renamed.value.root);
@@ -325,7 +325,7 @@ export class ProjectLifecycle {
       verifiedBackupId: backup.id,
       expectedTargetHashes: binding.value.targetHashes,
       actor: authority.actor,
-      toolAudit: invocation.toolAudit,
+      ...invocation,
       ...(grantId ? { grantId } : {}),
     });
     if (removed.ok && locator.kind === "entry") this.dependencies.entries.revoke(locator.entryId);

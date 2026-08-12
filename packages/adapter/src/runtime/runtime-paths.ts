@@ -1,5 +1,6 @@
 import { createRequire } from "node:module";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 
 import { ErrorCode } from "@vidcom/contracts";
 
@@ -14,6 +15,16 @@ export interface RuntimePaths {
   motionLibraryRoot: string;
   nativeDependenciesRoot: string;
   browserCacheRoot: string;
+  /**
+   * Directory holding the shipped background-music audio.
+   *
+   * Always a path, never a required archive. The other locations decide whether
+   * the product can render at all, so a missing one is a bootstrap error; missing
+   * music only means the four shipped tracks report `available: false`, which the
+   * BGM surface already models. Turning that into a failed boot would trade a
+   * visible gap for a dead install.
+   */
+  bgmAssetRoot: string;
 }
 
 export const RUNTIME_PATH_NAMES = [
@@ -22,6 +33,7 @@ export const RUNTIME_PATH_NAMES = [
   "motionLibraryRoot",
   "nativeDependenciesRoot",
   "browserCacheRoot",
+  "bgmAssetRoot",
 ] as const;
 
 export type RuntimePathName = (typeof RUNTIME_PATH_NAMES)[number];
@@ -87,6 +99,8 @@ function artifactPaths(input: ArtifactRuntimePathsInput): RuntimePaths {
     motionLibraryRoot: path.join(hyperframes!, "motion-libraries"),
     nativeDependenciesRoot: node!,
     browserCacheRoot: path.join(input.appDataRoot, "browser-cache"),
+    // Where the `bgm` archive extracts to, whether or not this build shipped it.
+    bgmAssetRoot: input.archiveRoots.bgm ?? path.join(input.versionRoot, "bgm"),
   };
   assertComplete(paths);
   return paths;
@@ -102,6 +116,10 @@ function developmentPaths(input: DevelopmentRuntimePathsInput): RuntimePaths {
     motionLibraryRoot: path.join(input.appDataRoot, "motion-libraries"),
     nativeDependenciesRoot: path.join(input.appDataRoot, "native"),
     browserCacheRoot: path.join(input.appDataRoot, "browser-cache"),
+    // Relative to this module rather than a resolved specifier: the audio is
+    // committed inside this package, and adding a third `require.resolve` here
+    // would widen what development mode depends on for no gain.
+    bgmAssetRoot: path.join(fileURLToPath(new URL("../../assets/bgm", import.meta.url))),
   };
   assertComplete(paths);
   return paths;

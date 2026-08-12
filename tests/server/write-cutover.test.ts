@@ -1,8 +1,8 @@
-import { cp, mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
-import { startVidcomFoundation } from "@vidcom/cli";
+import { hashContent, startVidcomFoundation } from "@vidcom/cli";
 import {
   InstallMotionLibraryOutputSchema,
   LegacyGenerateResponseSchema,
@@ -19,6 +19,7 @@ import { createServerApp, InMemoryNonceStore, InMemorySessionStore } from "@vidc
 import { afterEach, describe, expect, it } from "vitest";
 
 import { createSequentialIdPort } from "../support/deterministic";
+import { writeSampleProject } from "../support/sample-project";
 
 const roots: string[] = [];
 
@@ -31,7 +32,7 @@ describe("Phase N write cutover", () => {
     const root = await mkdtemp(path.join(tmpdir(), "vidcom-write-cutover-"));
     roots.push(root);
     const workspace = path.join(root, "workspace");
-    await cp(path.resolve("projects/warm-grain"), path.join(workspace, "warm-grain"), { recursive: true });
+    await writeSampleProject(workspace, { slug: "warm-grain", id: "project_warm_grain" });
     const clock = { now: () => new Date("2026-08-01T00:00:00.000Z") };
     const foundation = await startVidcomFoundation({
       appDataRoot: path.join(root, "app-data"),
@@ -52,7 +53,14 @@ describe("Phase N write cutover", () => {
     };
     const app = createServerApp({
       port, uiOrigins: [], nonces, sessions, projectReads,
-      projectWrites: { ...foundation.application.writeDependencies, reads: foundation.application.readDependencies },
+      projectWrites: {
+        ...foundation.application.writeDependencies,
+        reads: foundation.application.readDependencies,
+        bgmSynth: foundation.infrastructure.bgmSynth,
+        bgmLibrary: foundation.infrastructure.bgmLibrary,
+        hashContent,
+        mimeFromPath: foundation.infrastructure.mimeFromPath,
+      },
     });
     const base = async (pathname: string, init: RequestInit = {}) => {
       const headers = new Headers(init.headers);
@@ -153,7 +161,7 @@ describe("Phase N write cutover", () => {
     const root = await mkdtemp(path.join(tmpdir(), "vidcom-motion-route-"));
     roots.push(root);
     const workspace = path.join(root, "workspace");
-    await cp(path.resolve("projects/warm-grain"), path.join(workspace, "warm-grain"), { recursive: true });
+    await writeSampleProject(workspace, { slug: "warm-grain", id: "project_warm_grain" });
     const clock = { now: () => new Date("2026-08-01T00:00:00.000Z") };
     const foundation = await startVidcomFoundation({
       appDataRoot: path.join(root, "app-data"),
@@ -177,7 +185,14 @@ describe("Phase N write cutover", () => {
         runtimeSource: foundation.infrastructure.runtimeSource,
         mimeFromPath: foundation.infrastructure.mimeFromPath,
       },
-      projectWrites: { ...foundation.application.writeDependencies, reads: foundation.application.readDependencies },
+      projectWrites: {
+        ...foundation.application.writeDependencies,
+        reads: foundation.application.readDependencies,
+        bgmSynth: foundation.infrastructure.bgmSynth,
+        bgmLibrary: foundation.infrastructure.bgmLibrary,
+        hashContent,
+        mimeFromPath: foundation.infrastructure.mimeFromPath,
+      },
     });
     const base = async (pathname: string, init: RequestInit = {}) => {
       const headers = new Headers(init.headers);
@@ -198,8 +213,15 @@ describe("Phase N write cutover", () => {
     try {
       projectId = (await foundation.infrastructure.workspace.listProjects())[0]!.id as ProjectId;
 
-      // warm-grain already ships the vendored GSAP, so the first call must cost
-      // no revision — the UI can offer it without risking a pointless write.
+      // The sample project ships no vendored library, so the first install writes
+      // and the second must cost no revision — the UI can offer it repeatedly
+      // without risking a pointless write.
+      const first = await install("gsap");
+      expect(first.status).toBe(200);
+      expect(await first.json()).toMatchObject({
+        status: "installed",
+        library: { id: "gsap", loader: "global", globalName: "gsap", importSpecifier: null },
+      });
       const already = await install("gsap");
       expect(already.status).toBe(200);
       expect(await already.json()).toMatchObject({

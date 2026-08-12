@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { LayersIcon, SlidersHorizontalIcon, SparklesIcon } from "lucide-react";
+import { LayersIcon, MusicIcon, SlidersHorizontalIcon, SparklesIcon } from "lucide-react";
 
 import {
   ResizableHandle,
@@ -13,6 +13,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { sceneSettings } from "@/lib/studio/preview-settings";
 import type { FileNode, Scene, SceneScriptLine, SourceFile } from "@/lib/studio/types";
 import { MotionLibraryPanel } from "./motion-library-panel";
+import { BgmPanel } from "./bgm-panel";
 import { PreviewEditor } from "./preview-editor";
 import { SceneDetail } from "./scene-detail";
 import { SceneStoryboard } from "./scene-storyboard";
@@ -152,6 +153,10 @@ export function ScenePane({
               <SparklesIcon className="size-3.5" />
               Motion
             </TabsTrigger>
+            <TabsTrigger value="music" className="h-8 gap-1.5 text-xs">
+              <MusicIcon className="size-3.5" />
+              Music
+            </TabsTrigger>
           </TabsList>
 
           <TabsContent value="scene" className="min-h-0 flex-1">
@@ -208,6 +213,20 @@ export function ScenePane({
                 onPatch={preview.patch}
                 onUploadBgm={preview.uploadBgm}
               />
+            </ScrollArea>
+          </TabsContent>
+
+          <TabsContent value="music" className="min-h-0 flex-1">
+            <ScrollArea className="h-full">
+              <div className="p-3">
+                <BgmPanel
+                  projectId={projectId}
+                  currentTrackPath={preview.settings.bgm.track?.path ?? null}
+                  revision={preview.currentRevision()}
+                  tree={tree}
+                  onProjectChanged={onProjectChanged}
+                />
+              </div>
             </ScrollArea>
           </TabsContent>
 

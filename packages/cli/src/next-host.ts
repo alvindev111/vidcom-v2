@@ -263,6 +263,10 @@ export async function startNextHostedRuntime(
   const projectWrites: NonNullable<ServerAppDependencies["projectWrites"]> = {
     ...foundation.application.writeDependencies,
     reads: foundation.application.readDependencies,
+    bgmSynth: foundation.infrastructure.bgmSynth,
+    bgmLibrary: foundation.infrastructure.bgmLibrary,
+    hashContent,
+    mimeFromPath: foundation.infrastructure.mimeFromPath,
   };
   const registry = createMcpRegistry(foundation.infrastructure, foundation.application);
   const mcp = createMcpHttpHandlers(registry);

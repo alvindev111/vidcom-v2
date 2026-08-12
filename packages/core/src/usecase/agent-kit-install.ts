@@ -125,7 +125,7 @@ export class AgentKitInstaller {
         writes,
         actor: invocation.actor ?? this.dependencies.actor,
         action: "agent-kit.install",
-        toolAudit: invocation.toolAudit,
+        ...invocation,
       });
       if (!mutation.ok) return mutation;
       changedFiles = writes.map((write) => ({ relativePath: write.path, contentHash: mutation.value.fileHashes[write.path]! }));
@@ -135,7 +135,7 @@ export class AgentKitInstaller {
         writes: [],
         actor: invocation.actor ?? this.dependencies.actor,
         action: "agent-kit.install",
-        toolAudit: invocation.toolAudit,
+        ...invocation,
       });
       if (!auditedNoChange.ok) return auditedNoChange;
     }

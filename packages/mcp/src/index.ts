@@ -9,6 +9,7 @@ export * from "./registry/delivery-loop-tools";
 export * from "./registry/lifecycle-tools";
 export * from "./registry/asset-tools";
 export * from "./registry/narration-tools";
+export * from "./registry/bgm-tools";
 export * from "./registry/all-tools";
 export * from "./server";
 export * from "./stdio";

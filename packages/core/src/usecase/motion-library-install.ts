@@ -114,6 +114,10 @@ export async function installMotionLibrary(
       expectedContentHash: currentHash,
     }));
   if (steps.length === 0) {
+    // The vendored bytes already match, so write authority is never reached and
+    // no journal opens. Say so, or an MCP caller's successful re-install fails its
+    // audit-ownership check instead of reporting `already_installed`.
+    invocation.noteUnchanged?.();
     return ok({
       status: "already_installed",
       library: describe(library),
@@ -125,7 +129,7 @@ export async function installMotionLibrary(
   const written = await dependencies.authority.mutateSource({
     ref,
     steps,
-    toolAudit: invocation.toolAudit,
+    ...invocation,
     backup: false,
   }, actor);
   if (!written.ok) return written;

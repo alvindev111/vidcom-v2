@@ -1535,6 +1535,7 @@ export async function stageArtifactRuntime(paths, options = {}) {
 
   const nodeRoot = path.join(temporaryRoot, "node");
   const hyperframesStageRoot = path.join(temporaryRoot, "hyperframes");
+  const bgmStageRoot = path.join(temporaryRoot, "bgm");
   try {
     const probeRoot = path.join(temporaryRoot, ".probe");
     const probeHome = path.join(probeRoot, "home");
@@ -1680,6 +1681,19 @@ export async function stageArtifactRuntime(paths, options = {}) {
         package: esbuildManifest.version,
       });
     }
+    // The shipped BGM audio, staged as its own generation: an artifact has no
+    // `packages/adapter/assets`, so a build that skipped this would list four
+    // tracks and fail to read any of them.
+    await mkdir(bgmStageRoot, { recursive: true });
+    const bgmSourceRoot = path.join(REPOSITORY_ROOT, "packages", "adapter", "assets", "bgm");
+    const bgmFiles = (await readdir(bgmSourceRoot)).filter((name) => name.endsWith(".mp3")).sort();
+    if (bgmFiles.length === 0) {
+      fail("no shipped BGM audio was found to stage", { source: bgmSourceRoot });
+    }
+    for (const name of bgmFiles) {
+      await copyFile(path.join(bgmSourceRoot, name), path.join(bgmStageRoot, name));
+    }
+
     const config = {
       artifactVersion: input.artifactVersion,
       versions: {
@@ -1705,6 +1719,12 @@ export async function stageArtifactRuntime(paths, options = {}) {
           source: path.join(normalizedPaths.outputRoot, "node"),
           target: "native",
         },
+        {
+          key: "bgm",
+          platform: input.platform,
+          source: path.join(normalizedPaths.outputRoot, "bgm"),
+          target: "bgm",
+        },
       ],
     };
     const temporaryBuildRoot = path.join(temporaryRoot, ".build");
@@ -1722,7 +1742,7 @@ export async function stageArtifactRuntime(paths, options = {}) {
     await rm(probeRoot, { recursive: true });
     await walkRegularTree(temporaryRoot);
     const topLevel = (await readdir(temporaryRoot)).sort();
-    if (JSON.stringify(topLevel) !== JSON.stringify([".build", "hyperframes", "node"])) {
+    if (JSON.stringify(topLevel) !== JSON.stringify([".build", "bgm", "hyperframes", "node"])) {
       fail("runtime staging root must contain exactly one complete build generation", { topLevel });
     }
     await commitRuntimeGeneration(

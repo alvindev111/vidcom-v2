@@ -151,7 +151,7 @@ export function getJobStatusTool(
       "Do not use to list jobs or to cancel one.",
       "Preconditions: jobId comes from the tool that queued the work.",
       "Side effects: read-only.",
-      "Errors/recovery: wait pollAfterMs before the next poll; terminal outcome is explicit, including partial. On failed, fix error.code before a deliberate resubmission.",
+      "Errors/recovery: wait pollAfterMs before the next poll and stop as soon as outcome is non-null — outcome, not status, is the terminal signal, and partial is one of its values (succeeded, partial, failed, cancelled), so a loop that waits only for succeeded polls forever. On failed, fix error.code before a deliberate resubmission.",
     ].join(" "),
     input: GetJobStatusInputSchema,
     output: GetJobStatusOutputSchema,

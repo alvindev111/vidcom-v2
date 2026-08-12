@@ -84,7 +84,10 @@ describe("NodeModulesMotionLibraryFiles", () => {
     expect(result.ok, JSON.stringify(result.ok ? null : result.error)).toBe(true);
     if (result.ok) expect(result.value).toEqual(fromCheckout.value);
 
-    // An empty distribution must fail loudly rather than silently skip vendoring.
+    // An empty distribution must fail loudly rather than silently skip vendoring,
+    // and must not quietly substitute the checkout's installed copy: a named root
+    // is the packaged path's proof that the distribution shipped the library.
+    // Development names no root at all — see `composition-root`.
     const empty = new NodeModulesMotionLibraryFiles(
       (await mkdtemp(path.join(tmpdir(), "vidcom-motion-empty-"))) as AbsolutePath,
     );

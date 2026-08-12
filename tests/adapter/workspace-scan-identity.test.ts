@@ -1,10 +1,12 @@
 import { createHash } from "node:crypto";
-import { cp, mkdtemp, mkdir, readFile, realpath, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, realpath, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { performance } from "node:perf_hooks";
 
 import { afterEach, describe, expect, it } from "vitest";
+
+import { writeSampleProject } from "../support/sample-project";
 
 import {
   AppDataAssetStager,
@@ -207,9 +209,15 @@ describe("workspace scan and project identity on real filesystem", () => {
     const workspaceRoot = path.join(root, "workspace");
     const appData = path.join(root, "app-data");
     await mkdir(workspaceRoot, { recursive: true });
-    const slugs = ["kinetic-type", "swiss-grid", "warm-grain"] as const;
+    // Legacy markers: id only, no platform — the exact state backfill repairs.
+    const slugs = ["portrait-sample", "square-sample", "landscape-sample"] as const;
+    const shapes = {
+      "portrait-sample": { width: 1080, height: 1920 },
+      "square-sample": { width: 1080, height: 1080 },
+      "landscape-sample": { width: 1920, height: 1080 },
+    } as const;
     for (const slug of slugs) {
-      await cp(new URL(`../../projects/${slug}`, import.meta.url), path.join(workspaceRoot, slug), { recursive: true });
+      await writeSampleProject(workspaceRoot, { slug, id: `project_${slug}`, ...shapes[slug] });
     }
     const database = await initializeDatabase(appData);
     databases.push(database);
