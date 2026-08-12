@@ -35,6 +35,9 @@ import {
   DownloadCacheCoordinator,
   NodeHyperframesDiagnosticsLint,
   BgmLibraryStore,
+  BgmProviderRegistry,
+  CcMixterBgmProvider,
+  OpenverseBgmProvider,
   NodeModulesMotionLibraryFiles,
   synthesizeBgmBed,
   WorkspaceLease,
@@ -424,6 +427,10 @@ export function createInfrastructure(config: CompositionRootConfig) {
         : (config.runtimePaths?.motionLibraryRoot ?? config.motionLibraryRoot) as AbsolutePath | undefined,
     ),
     bgmSynth: { render: synthesizeBgmBed },
+    bgmProviders: new BgmProviderRegistry([
+      new OpenverseBgmProvider(),
+      new CcMixterBgmProvider(),
+    ]),
     bgmLibrary: new BgmLibraryStore({
       appDataRoot: config.appDataRoot,
       // From the extracted runtime in an artifact; a checkout resolves it inside
@@ -463,6 +470,7 @@ export function createMcpRegistry(
     tts: infrastructure.tts,
     bgmSynth: infrastructure.bgmSynth,
     bgmLibrary: infrastructure.bgmLibrary,
+    bgmProviders: infrastructure.bgmProviders,
     ids: infrastructure.ids,
     workspaceRoot: infrastructure.workspaceRoot,
     diagnostics: application.diagnostics,

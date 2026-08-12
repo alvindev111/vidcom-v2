@@ -14,6 +14,7 @@ import {
   CONTRACT_MATRIX_CASES,
   createContractMatrixRegistry,
   matrixBgmPath,
+  matrixBgmProviderTrack,
   matrixHash,
   matrixNewHash,
   matrixRenderPath,
@@ -139,8 +140,17 @@ const expectedSuccess: Record<string, object> = {
     library: [{ id: "bgm_matrix", source: "import" }],
     defaultVolume: 0.12,
   },
+  search_bgm: {
+    tracks: [matrixBgmProviderTrack],
+    providers: [{ providerId: "matrix-music", status: "ok", resultCount: 1 }],
+    offlineFallbackAvailable: true,
+  },
   install_bgm: {
-    track: { name: "ambient.wav", path: "preview-assets/bgm/ambient.wav", durationSeconds: 12 },
+    track: {
+      name: "bgm_matrix_remote.mp3",
+      path: "preview-assets/bgm/bgm_matrix_remote.mp3",
+      durationSeconds: 90,
+    },
     volume: 0.12,
     loop: true,
     revision: 3,

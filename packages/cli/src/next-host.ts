@@ -265,6 +265,7 @@ export async function startNextHostedRuntime(
     reads: foundation.application.readDependencies,
     bgmSynth: foundation.infrastructure.bgmSynth,
     bgmLibrary: foundation.infrastructure.bgmLibrary,
+    bgmProviders: foundation.infrastructure.bgmProviders,
     hashContent,
     mimeFromPath: foundation.infrastructure.mimeFromPath,
   };

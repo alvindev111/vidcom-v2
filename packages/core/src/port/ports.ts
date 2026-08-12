@@ -4,6 +4,9 @@ import type {
   BgmLibraryEntry,
   BgmLibrarySource,
   BgmLicense,
+  BgmProviderProvenance,
+  BgmProviderTrack,
+  BgmProviderTrackRef,
   ContentHash,
   Diagnostic,
   DomainError,
@@ -185,6 +188,24 @@ export interface BgmSynthPort {
   render(bed: BgmBed, seconds: number): Uint8Array;
 }
 
+export interface BgmProviderSearchResult {
+  tracks: BgmProviderTrack[];
+  providers: Array<{
+    providerId: string;
+    status: "ok" | "empty" | "unavailable";
+    resultCount: number;
+    message: string | null;
+  }>;
+}
+
+/** Aggregate remote BGM catalogue; provider failures remain isolated and visible. */
+export interface BgmProviderPort {
+  /** Searches every configured provider and merges openly licensed candidates. */
+  search(input: { mood: string; limit: number }): Promise<BgmProviderSearchResult>;
+  /** Downloads the exact chosen track; it never substitutes a different work. */
+  download(ref: BgmProviderTrackRef): Promise<Result<{ track: BgmProviderTrack; bytes: Uint8Array }, DomainError>>;
+}
+
 /**
  * The machine's reusable BGM library, with the licence each imported track was
  * declared under. Machine-level rather than per project: a bed is worth having
@@ -210,6 +231,7 @@ export interface BgmLibraryPort {
     source: BgmLibrarySource;
     bedId: BgmBedId | null;
     license: BgmLicense;
+    provenance?: BgmProviderProvenance;
   }): Promise<Result<{ entry: BgmLibraryEntry; alreadyPresent: boolean }, DomainError>>;
 }
 

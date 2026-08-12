@@ -2,7 +2,7 @@
 
 > **Cập nhật backend Phase 2 (2026-08-02):** phần `/api/hf/*` bên dưới mô tả compatibility routes cũ. Backend Hono hiện còn phục vụ `/api/v1/*`, SSE và MCP. MCP có entry `/api/mcp`, exact revision `/api/mcp/<revision>` và moving alias `/api/mcp/latest`; tất cả `/api/mcp*` bắt buộc bearer credential, chạy sau Host/CORS perimeter và không chấp nhận browser session cookie thay thế.
 
-MCP HTTP dùng cùng Tool Registry 10 tool với stdio. Exact revisions hiện support: modern `2026-07-28` và legacy `2025-11-25`, `2025-06-18`, `2025-03-26`, `2024-11-05`, `2024-10-07`. Unknown pin trả MCP error `-32022` kèm allowlist; không header giữ legacy default. Credential chỉ được lưu dạng hash, có issue/list/rotate/revoke qua trusted CLI và `credentialId` được audit mà không log bearer plaintext.
+MCP HTTP dùng cùng Tool Registry **34 production tools** với stdio; schema được sinh từ catalogue chung, không duy trì một danh sách transport riêng. Exact revisions hiện support: modern `2026-07-28` và legacy `2025-11-25`, `2025-06-18`, `2025-03-26`, `2024-11-05`, `2024-10-07`. Unknown pin trả MCP error `-32022` kèm allowlist; không header giữ legacy default. Credential chỉ được lưu dạng hash, có issue/list/rotate/revoke qua trusted CLI và `credentialId` được audit mà không log bearer plaintext.
 
 Tất cả route nằm dưới `/api/hf/`, đều `export const dynamic = "force-dynamic"`.
 
@@ -214,6 +214,41 @@ Không validate `text` rỗng.
   "transcript": [ {"kind":"command","text":"codex"}, … ] }
 ```
 - **400:** `{"error":"prompt is empty"}` | `{"error":"project not found"}` | `{"error":"composition not found"}` | `{"error":"root composition not found"}` | message `can()` | `{"error":"insert rejected by the SDK"}`
+
+---
+
+## v1 — Background music (2026-08-12)
+
+Các endpoint dưới đây dùng cùng Core use case với MCP `search_bgm`, `list_bgm_beds` và `install_bgm`.
+
+### `GET /api/v1/bgm/search?mood=<text>&limit=<1..12>`
+
+- Query bắt buộc `mood`, `limit` mặc định 8.
+- Tìm đồng thời qua Openverse và ccMixter; adapter mở rộng một taxonomy mood nhỏ (gồm các từ Việt phổ biến) sang tag tìm kiếm tiếng Anh rồi interleave kết quả để không lệ thuộc một catalog.
+- Chỉ trả track Public Domain, CC0 hoặc CC BY; CC BY bắt buộc holder + URL HTTP(S). Mỗi track có `providerId`, `trackId`, `sourceUrl`, `attribution`, duration, extension và tags, nhưng không lộ download URL cho agent.
+- Response có `providers[]` với `ok | empty | unavailable` và message fail-soft, cộng `offlineFallbackAvailable: true`. Mọi provider cùng lỗi vẫn trả `200` với `tracks: []`; client chuyển sang `GET /api/v1/bgm`.
+- Request outbound chỉ HTTPS, timeout 8 giây, chặn địa chỉ private/link-local/loopback ở mỗi redirect và pin DNS lúc connect. JSON tối đa 1 MiB; audio tối đa 20 MiB và phải khớp content type + magic bytes.
+
+### `GET /api/v1/bgm`
+
+Trả năm bed synth, shipped tracks và thư viện máy. Đây là đường offline; availability và licence được báo theo dữ liệu thật, không tự gắn nhãn “royalty-free”.
+
+### `POST /api/v1/projects/:id/bgm`
+
+Body phải có đúng một selector: `bedId`, `trackId`, `libraryEntryId` hoặc `providerTrack`, cùng `expectedRevision`. Với remote selector:
+
+```json
+{
+  "providerTrack": { "providerId": "openverse", "trackId": "<exact-id>" },
+  "expectedRevision": 4,
+  "volume": 0.12,
+  "loop": true
+}
+```
+
+Server tải lại và revalidate **đúng** identity đó, không tự đổi track; đóng băng bytes + licence + attribution + source provenance trong machine library, rồi ghi asset và preview settings bằng một mutation có optimistic concurrency. Render sau đó chỉ dùng asset local.
+
+MCP là surface ưu tiên cho agent: `search_bgm` có `openWorldHint: true`; `install_bgm` cũng open-world khi dùng `providerTrack`. REST phục vụ studio/client nhưng giữ cùng schema và use case.
 
 ---
 

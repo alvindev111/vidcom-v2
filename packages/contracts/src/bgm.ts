@@ -8,7 +8,7 @@ import { ContentHashSchema, IdentifierSchema, RelativePathSchema } from "./dto";
  * A project that has no music yet is the common case, and every other route to a
  * bed has a cost the user did not sign up for: a music service needs an account,
  * a local generator needs a multi-gigabyte model, and a track from the web needs
- * a licence somebody has to read. These five are **synthesized from the recipe
+ * a licence somebody has to verify. These five are **synthesized from the recipe
  * below**, so they ship as a few hundred bytes of numbers, carry no licence at
  * all, and render at whatever length the video happens to be.
  *
@@ -344,9 +344,9 @@ export const BGM_AUDIO_EXTENSIONS: readonly string[] = ["mp3", "wav", "ogg", "m4
  * How a library entry got there.
  *
  * `synth` entries are reproducible from a recipe id; `import` entries are bytes
- * somebody supplied, and only those can carry a licence obligation.
+ * somebody supplied; `provider` entries are downloaded bytes with provenance.
  */
-export const BgmLibrarySourceSchema = z.enum(["synth", "import"]);
+export const BgmLibrarySourceSchema = z.enum(["synth", "import", "provider"]);
 
 /**
  * Licence recorded for an imported track.
@@ -366,6 +366,46 @@ export const BgmLicenseSchema = z.strictObject({
   note: z.string().max(1_024).nullable(),
 });
 
+const BgmWebUrlSchema = z.string().url().max(2_048).refine((value) => {
+  try { return ["http:", "https:"].includes(new URL(value).protocol); }
+  catch { return false; }
+}, "BGM source URL must use HTTP or HTTPS");
+
+/** Licence accepted for a new remote result; attribution facts may not be omitted. */
+export const VerifiedBgmLicenseSchema = BgmLicenseSchema.superRefine((license, context) => {
+  if (!["public-domain", "cc0", "cc-by"].includes(license.kind)) {
+    context.addIssue({
+      code: "custom",
+      path: ["kind"],
+      message: "remote music must be public-domain, CC0, or CC BY",
+    });
+    return;
+  }
+  if (license.kind !== "cc-by") return;
+  if (!license.holder?.trim()) context.addIssue({
+    code: "custom",
+    path: ["holder"],
+    message: "CC BY music requires an attribution holder",
+  });
+  let verifiedUrl = false;
+  try {
+    verifiedUrl = license.url !== null && ["http:", "https:"].includes(new URL(license.url).protocol);
+  } catch { /* reported below */ }
+  if (!verifiedUrl) context.addIssue({
+    code: "custom",
+    path: ["url"],
+    message: "CC BY music requires a valid web source or licence URL",
+  });
+});
+
+/** Provenance frozen beside a remote track when it enters the local library. */
+export const BgmProviderProvenanceSchema = z.strictObject({
+  providerId: IdentifierSchema,
+  trackId: z.string().min(1).max(255),
+  sourceUrl: BgmWebUrlSchema,
+  attribution: z.string().min(1).max(2_048),
+});
+
 /** One track in the machine-level library, usable by every project on this install. */
 export const BgmLibraryEntrySchema = z.strictObject({
   id: IdentifierSchema,
@@ -377,7 +417,23 @@ export const BgmLibraryEntrySchema = z.strictObject({
   byteSize: z.number().int().nonnegative(),
   contentHash: ContentHashSchema,
   license: BgmLicenseSchema,
+  /** Present for bytes downloaded from a remote provider; absent on older ledgers. */
+  provenance: BgmProviderProvenanceSchema.optional(),
   addedAt: z.string().min(1),
+}).superRefine((entry, context) => {
+  if (entry.source === "provider" && entry.provenance === undefined) context.addIssue({
+    code: "custom",
+    path: ["provenance"],
+    message: "provider music requires frozen provenance",
+  });
+  if (entry.source === "provider") {
+    const verified = VerifiedBgmLicenseSchema.safeParse(entry.license);
+    if (!verified.success) for (const issue of verified.error.issues) context.addIssue({
+      code: "custom",
+      path: ["license", ...issue.path],
+      message: issue.message,
+    });
+  }
 });
 
 /** Selection metadata as it crosses the wire; the shape a picker reads. */
@@ -419,6 +475,43 @@ export const ListBgmBedsOutputSchema = z.strictObject({
   defaultVolume: z.number().min(0).max(1),
 });
 
+/** One openly licensed remote BGM candidate, with no direct download URL exposed. */
+export const BgmProviderTrackSchema = z.strictObject({
+  providerId: IdentifierSchema,
+  trackId: z.string().min(1).max(255),
+  title: z.string().min(1).max(255),
+  creator: z.string().min(1).max(255),
+  durationSeconds: z.number().positive(),
+  extension: z.enum(["mp3", "wav", "ogg", "m4a"]),
+  license: VerifiedBgmLicenseSchema,
+  sourceUrl: BgmWebUrlSchema,
+  attribution: z.string().min(1).max(2_048),
+  tags: z.array(z.string().min(1).max(100)).max(100),
+});
+
+/** Input for `search_bgm`; mood language is expanded by each provider adapter. */
+export const SearchBgmInputSchema = z.strictObject({
+  mood: z.string().trim().min(1).max(120),
+  limit: z.number().int().min(1).max(12).default(8),
+});
+
+/** Output keeps per-provider failures visible while preserving offline fallback. */
+export const SearchBgmOutputSchema = z.strictObject({
+  tracks: z.array(BgmProviderTrackSchema),
+  providers: z.array(z.strictObject({
+    providerId: IdentifierSchema,
+    status: z.enum(["ok", "empty", "unavailable"]),
+    resultCount: z.number().int().nonnegative(),
+    message: z.string().max(512).nullable(),
+  })),
+  offlineFallbackAvailable: z.boolean(),
+});
+
+export const BgmProviderTrackRefSchema = z.strictObject({
+  providerId: IdentifierSchema,
+  trackId: z.string().min(1).max(255),
+});
+
 /** Input for `install_bgm`. */
 export const InstallBgmInputSchema = z.strictObject({
   projectId: IdentifierSchema,
@@ -428,6 +521,8 @@ export const InstallBgmInputSchema = z.strictObject({
   trackId: z.enum(["corporate-synth", "corporate-marimba", "lofi-chill", "promo-dance"]).optional(),
   /** A library entry id from `list_bgm_beds`. */
   libraryEntryId: IdentifierSchema.optional(),
+  /** A remote result from `search_bgm`; it is downloaded and frozen locally before use. */
+  providerTrack: BgmProviderTrackRefSchema.optional(),
   /**
    * Bed length in seconds. Omitted means the project's own duration, which is
    * what a bed should be — a track that stops before the last scene is worse
@@ -439,9 +534,9 @@ export const InstallBgmInputSchema = z.strictObject({
   /** Preview-settings revision, from get_project_context. */
   expectedRevision: z.number().int().nonnegative(),
 }).refine(
-  (input) => [input.bedId, input.trackId, input.libraryEntryId]
+  (input) => [input.bedId, input.trackId, input.libraryEntryId, input.providerTrack]
     .filter((value) => value !== undefined).length === 1,
-  { message: "pass exactly one of bedId, trackId or libraryEntryId", path: ["bedId"] },
+  { message: "pass exactly one BGM source", path: ["bedId"] },
 );
 
 /** Output for `install_bgm`. */
@@ -486,3 +581,6 @@ export const RecordBgmLicenseOutputSchema = z.strictObject({
 export type BgmLicense = z.infer<typeof BgmLicenseSchema>;
 export type BgmLibraryEntry = z.infer<typeof BgmLibraryEntrySchema>;
 export type BgmLibrarySource = z.infer<typeof BgmLibrarySourceSchema>;
+export type BgmProviderTrack = z.infer<typeof BgmProviderTrackSchema>;
+export type BgmProviderTrackRef = z.infer<typeof BgmProviderTrackRefSchema>;
+export type BgmProviderProvenance = z.infer<typeof BgmProviderProvenanceSchema>;

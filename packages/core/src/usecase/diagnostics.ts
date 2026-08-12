@@ -11,6 +11,7 @@ import {
 
 import type { CompositionSource, ProjectRef } from "../domain/models";
 import { findMotionLibrary, scanRemoteMotionLibraries } from "../domain/motion-libraries";
+import { storyMotionDiagnostics } from "../domain/story-motion";
 import { err, ok, type Result } from "../error/result";
 import type { CompositionPort, DiagnosticsLintPort, MutationJournalPort, WorkspacePort } from "../port/ports";
 import { canonicalizeJson } from "../service/canonical-json";
@@ -159,7 +160,14 @@ export class DiagnosticsService {
         diagnostics.push({ severity: "error", code: "composition_parse_error", message: "Composition could not be parsed." });
       }
       if (model) {
-        diagnostics.push(...model.diagnostics, ...model.scenes.flatMap(sceneDiagnostics));
+        diagnostics.push(
+          ...model.diagnostics,
+          ...model.scenes.flatMap(sceneDiagnostics),
+          // VidCom-authored story beats are mounted sub-compositions. Inline
+          // legacy/utility scenes stay readable; the agent-kit creates every new
+          // story scene as its own source and therefore cannot bypass this gate.
+          ...storyMotionDiagnostics(model.scenes.filter((scene) => scene.src !== null)),
+        );
         if (model.scenes.length === 0) diagnostics.push({
           severity: "info", code: "no-scenes", message: "Composition has no scenes yet.",
         });

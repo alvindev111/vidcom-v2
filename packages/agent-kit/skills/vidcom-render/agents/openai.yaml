@@ -1,4 +1,4 @@
-# x-vidcom-agent-kit: 4
+# x-vidcom-agent-kit: 5
 interface:
   display_name: "VidCom Render"
   short_description: "Preview and render VidCom projects"

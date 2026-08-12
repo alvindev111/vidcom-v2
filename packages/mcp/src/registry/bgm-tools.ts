@@ -9,6 +9,8 @@ import {
   ListBgmBedsOutputSchema,
   RecordBgmLicenseInputSchema,
   RecordBgmLicenseOutputSchema,
+  SearchBgmInputSchema,
+  SearchBgmOutputSchema,
   type ProjectId,
 } from "@vidcom/contracts";
 import {
@@ -17,6 +19,7 @@ import {
   listBgmSources,
   ok,
   recordShippedBgmLicense,
+  searchBgmSources,
   type BgmDependencies,
 } from "@vidcom/core";
 
@@ -55,6 +58,30 @@ export function listBgmBedsTool(
   };
 }
 
+/** Searches keyless remote catalogues and reports each provider's health independently. */
+export function searchBgmTool(
+  dependencies: BgmToolDependencies,
+): ToolDefinition<z.infer<typeof SearchBgmInputSchema>, z.infer<typeof SearchBgmOutputSchema>> {
+  return {
+    name: "search_bgm",
+    title: "Search open background music",
+    level: "read",
+    description: [
+      "Use when the built-in beds are not expressive enough and you need openly licensed music matched to a mood before install_bgm.",
+      "Do not use after choosing a track, to fetch arbitrary URLs, or to assume a search result is publication clearance; verify its source link and attribution.",
+      "Preconditions: describe the intended mood in plain language; results are restricted to CC0, public-domain, or CC BY sources and vocal-tagged tracks are excluded.",
+      "Side effects: calls Openverse and ccMixter but writes nothing; provider failures are isolated and offlineFallbackAvailable remains true.",
+      "Errors/recovery: unavailable or empty providers are reported in the output; fall back to list_bgm_beds when every remote source is unavailable.",
+    ].join(" "),
+    input: SearchBgmInputSchema,
+    output: SearchBgmOutputSchema,
+    annotations: { ...annotationsForLevel("read"), openWorldHint: true },
+    availableInLegacy: true,
+    projectIdOf: () => null,
+    handler: async (_context, input) => ok(SearchBgmOutputSchema.parse(await searchBgmSources(dependencies, input))),
+  };
+}
+
 /**
  * Puts music in the project and points preview settings at it.
  *
@@ -69,15 +96,15 @@ export function installBgmTool(
     title: "Install background music",
     level: "write",
     description: [
-      "Use when adding background music, which is the default for every video after its composition has a duration unless the user explicitly requests no music or silence is editorially required: renders a built-in bed at the project's own length, or copies one shipped or imported track in, and attaches it in preview settings as one mutation.",
+      "Use when adding background music, which is the default for every video after its composition has a duration unless the user explicitly requests no music or silence is editorially required: renders a built-in bed, copies a shipped or imported track, or downloads the exact provider result and freezes it locally before attaching it.",
       "Do not use to change only volume or to detach music — that is set_preview_settings — and do not use to add narration or a sound effect.",
-      "Preconditions: projectId and expectedRevision come from get_project_context; pass exactly one of bedId, trackId or libraryEntryId from list_bgm_beds; omit seconds to match the project duration.",
-      "Side effects: writes preview-assets/bgm/<name> and commits one revision that also sets bgm.enabled, its track, volume and loop; re-installing the same name is rejected rather than silently replaced.",
+      "Preconditions: projectId and expectedRevision come from get_project_context; pass exactly one offline source from list_bgm_beds or providerTrack from search_bgm; verify the provider result's source and attribution before publishing; omit seconds to match the project duration.",
+      "Side effects: provider music is first frozen in the machine library with its licence and provenance; then preview-assets/bgm/<name> is written and one revision sets bgm.enabled, track, volume and loop. Re-installing the same name is rejected rather than silently replaced.",
       "Errors/recovery: no_composition means the project has no duration yet, so pass seconds; write_conflict means expectedRevision is stale, so re-read get_project_context; storage_unavailable means this daemon cannot stage assets.",
     ].join(" "),
     input: InstallBgmInputSchema,
     output: InstallBgmOutputSchema,
-    annotations: annotationsForLevel("write"),
+    annotations: { ...annotationsForLevel("write"), openWorldHint: true },
     availableInLegacy: true,
     projectIdOf: (input) => input.projectId as ProjectId,
     handler: async (context, input) => {
@@ -86,6 +113,7 @@ export function installBgmTool(
         ...(input.bedId === undefined ? {} : { bedId: input.bedId }),
         ...(input.trackId === undefined ? {} : { trackId: input.trackId }),
         ...(input.libraryEntryId === undefined ? {} : { libraryEntryId: input.libraryEntryId }),
+        ...(input.providerTrack === undefined ? {} : { providerTrack: input.providerTrack }),
         ...(input.seconds === undefined ? {} : { seconds: input.seconds }),
         ...(input.volume === undefined ? {} : { volume: input.volume }),
         ...(input.loop === undefined ? {} : { loop: input.loop }),
@@ -175,6 +203,7 @@ export function recordBgmLicenseTool(
 
 export function registerBgmTools(registry: ToolRegistry, dependencies: BgmToolDependencies): void {
   registry.register(listBgmBedsTool(dependencies));
+  registry.register(searchBgmTool(dependencies));
   registry.register(installBgmTool(dependencies));
   registry.register(importBgmTool(dependencies));
   registry.register(recordBgmLicenseTool(dependencies));

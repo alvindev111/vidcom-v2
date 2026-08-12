@@ -30,6 +30,8 @@ import {
   ListBgmBedsOutputSchema,
   RecordBgmLicenseInputSchema,
   RecordBgmLicenseOutputSchema,
+  SearchBgmInputSchema,
+  SearchBgmOutputSchema,
 } from "./bgm";
 import { NarrationCueInputSchema } from "./delivery-loop-http";
 import { ErrorCode } from "./errors";
@@ -570,6 +572,11 @@ export const TOOL_SCHEMA_CATALOGUE = {
   list_bgm_beds: {
     input: ListBgmBedsInputSchema,
     output: ListBgmBedsOutputSchema,
+    level: "read",
+  },
+  search_bgm: {
+    input: SearchBgmInputSchema,
+    output: SearchBgmOutputSchema,
     level: "read",
   },
   create_project: {

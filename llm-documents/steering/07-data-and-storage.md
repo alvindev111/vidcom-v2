@@ -61,6 +61,7 @@ State vận hành, không thuộc về project.
 <app-data>/
 ├── settings.json    vidcom.sqlite
 ├── credentials      (0600)
+├── bgm/             reusable audio + licence/provenance ledger
 └── logs/  cache/  runtime/
 ```
 
@@ -82,6 +83,7 @@ Hệ quả bắt buộc:
 | `preview-settings.json` | **project** | Là **input của render** (P2/P3). Đưa ra ngoài thì copy project sang máy khác sẽ render khác |
 | `snapshots/` | **project** | Nội dung project, không phải cache |
 | `preview-assets/bgm/` | **project** | Người dùng upload, thuộc về video |
+| BGM library + licence/provenance ledger | app-data | Nguồn dùng lại giữa project; `install_bgm` copy exact bytes vào `preview-assets/bgm/` nên project đã cài vẫn render độc lập |
 | `narration/*.wav` | **project** | Đi vào bản render |
 | Parse cache | app-data | Dựng lại được |
 | Registry cache | app-data | Dựng lại được |

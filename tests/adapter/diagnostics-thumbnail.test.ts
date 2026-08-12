@@ -150,7 +150,7 @@ describe("Phase M diagnostics and thumbnails on real SQLite/filesystem", () => {
       frameRate: 60,
       scenes: [{
         id: "timed",
-        src: null,
+        src: "compositions/timed.html",
         start: 0,
         duration: 4,
         trackIndex: 0,
@@ -236,6 +236,7 @@ describe("Phase M diagnostics and thumbnails on real SQLite/filesystem", () => {
       "empty-scene",
       "platform-mismatch",
       "missing-asset",
+      "story-motion-unverified",
       "lint:sample",
     ]));
   });

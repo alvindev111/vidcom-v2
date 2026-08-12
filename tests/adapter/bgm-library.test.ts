@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
@@ -178,6 +178,154 @@ describe("BgmLibraryStore", () => {
     if (!added.ok) throw new Error("add failed");
     const reopened = new BgmLibraryStore({ appDataRoot });
     expect(await reopened.list()).toEqual([added.value.entry]);
+  });
+
+  it("keeps a version-one imported CC BY entry with incomplete legacy attribution readable", async () => {
+    const appDataRoot = await fixture();
+    const directory = path.join(appDataRoot, "bgm");
+    await mkdir(directory, { recursive: true });
+    const legacy = {
+      id: "bgm_legacy",
+      name: "legacy.mp3",
+      source: "import",
+      bedId: null,
+      durationSeconds: 30,
+      byteSize: 8,
+      contentHash: `sha256:${"a".repeat(64)}`,
+      license: { kind: "cc-by", holder: null, url: null, note: "legacy entry" },
+      addedAt: "2026-01-01T00:00:00.000Z",
+    };
+    await writeFile(path.join(directory, "library.json"), JSON.stringify({ schemaVersion: 1, entries: [legacy] }));
+    expect(await new BgmLibraryStore({ appDataRoot }).list()).toEqual([legacy]);
+  });
+
+  it("persists remote provider provenance beside the frozen bytes", async () => {
+    const appDataRoot = await fixture();
+    const store = new BgmLibraryStore({ appDataRoot, newId: () => "bgm_remote" });
+    const added = await store.add({
+      name: "remote.wav",
+      extension: "wav",
+      bytes: synthesizeBgmBed(findBgmBed("ambient")!, 5),
+      source: "provider",
+      bedId: null,
+      license: { kind: "cc-by", holder: "Artist", url: "https://license.test/by", note: null },
+      provenance: {
+        providerId: "openverse",
+        trackId: "remote-1",
+        sourceUrl: "https://source.test/remote-1",
+        attribution: "Remote track by Artist, CC BY.",
+      },
+    });
+    if (!added.ok) throw new Error("remote add failed");
+    expect(await new BgmLibraryStore({ appDataRoot }).list()).toEqual([added.value.entry]);
+    expect(added.value.entry).toMatchObject({
+      source: "provider",
+      provenance: { providerId: "openverse", trackId: "remote-1" },
+    });
+  });
+
+  it("keeps provider provenance when identical bytes were already imported another way", async () => {
+    const appDataRoot = await fixture();
+    const store = new BgmLibraryStore({ appDataRoot });
+    const bytes = synthesizeBgmBed(findBgmBed("ambient")!, 5);
+    const imported = await store.add({
+      name: "local.wav",
+      extension: "wav",
+      bytes,
+      source: "import",
+      bedId: null,
+      license: { kind: "unknown", holder: null, url: null, note: null },
+    });
+    const remote = await store.add({
+      name: "remote.wav",
+      extension: "wav",
+      bytes,
+      source: "provider",
+      bedId: null,
+      license: { kind: "cc-by", holder: "Artist", url: "https://license.test/by", note: null },
+      provenance: {
+        providerId: "openverse",
+        trackId: "remote-1",
+        sourceUrl: "https://source.test/remote-1",
+        attribution: "Remote track by Artist, CC BY.",
+      },
+    });
+    if (!imported.ok || !remote.ok) throw new Error("fixture add failed");
+    expect(remote.value.alreadyPresent).toBe(false);
+    expect(remote.value.entry.id).not.toBe(imported.value.entry.id);
+    expect(await store.list()).toHaveLength(2);
+
+    const repeated = await store.add({
+      name: "renamed.wav",
+      extension: "wav",
+      bytes,
+      source: "provider",
+      bedId: null,
+      license: remote.value.entry.license,
+      provenance: remote.value.entry.provenance!,
+    });
+    if (!repeated.ok) throw new Error("repeated add failed");
+    expect(repeated.value).toMatchObject({ alreadyPresent: true, entry: { id: remote.value.entry.id } });
+
+    const revisedMetadata = await store.add({
+      name: "remote.wav",
+      extension: "wav",
+      bytes,
+      source: "provider",
+      bedId: null,
+      license: { kind: "cc-by", holder: "Artist", url: "https://license.test/by-4", note: "updated" },
+      provenance: {
+        providerId: "openverse",
+        trackId: "remote-1",
+        sourceUrl: "https://source.test/remote-1-v2",
+        attribution: "Remote track by Artist, updated CC BY.",
+      },
+    });
+    if (!revisedMetadata.ok) throw new Error("revised provider metadata add failed");
+    expect(revisedMetadata.value.alreadyPresent).toBe(false);
+    expect(revisedMetadata.value.entry.id).not.toBe(remote.value.entry.id);
+    expect(await store.list()).toHaveLength(3);
+  });
+
+  it("rejects invalid provider metadata without deleting an existing content-addressed import", async () => {
+    const appDataRoot = await fixture();
+    const store = new BgmLibraryStore({ appDataRoot });
+    const bytes = synthesizeBgmBed(findBgmBed("ambient")!, 5);
+    const imported = await store.add({
+      name: "safe.wav", extension: "wav", bytes, source: "import", bedId: null,
+      license: { kind: "own-work", holder: null, url: null, note: null },
+    });
+    if (!imported.ok) throw new Error("import fixture failed");
+    const rejected = await store.add({
+      name: "invalid.wav", extension: "wav", bytes, source: "provider", bedId: null,
+      license: { kind: "cc-by", holder: null, url: null, note: null },
+    });
+    expect(rejected).toMatchObject({ ok: false, error: { code: "schema_invalid" } });
+    expect(await store.read(imported.value.entry.id)).toEqual(bytes);
+  });
+
+  it("cleans a failed duration probe and returns a retryable domain error", async () => {
+    const appDataRoot = await fixture();
+    const store = new BgmLibraryStore({
+      appDataRoot,
+      probeDurationSeconds: async () => { throw new Error("probe crashed"); },
+    });
+    const input = {
+      name: "broken.mp3",
+      extension: "mp3",
+      bytes: new Uint8Array([73, 68, 51, 4]),
+      source: "import" as const,
+      bedId: null,
+      license: { kind: "own-work" as const, holder: null, url: null, note: null },
+    };
+    await expect(store.add(input)).resolves.toMatchObject({
+      ok: false, error: { code: "unsupported_media" },
+    });
+    await expect(store.add(input)).resolves.toMatchObject({
+      ok: false, error: { code: "unsupported_media" },
+    });
+    const tracks = path.join(appDataRoot, "bgm", "tracks");
+    expect(await readdir(tracks)).toEqual([]);
   });
 
   it("treats an unreadable ledger as an empty library instead of failing", async () => {

@@ -10,6 +10,7 @@ import {
   SHIPPED_BGM_TRACKS,
   type BgmLibraryEntry,
   type BgmLicense,
+  type BgmProviderTrackRef,
   type ContentHash,
   type DomainError,
   type ProjectId,
@@ -18,7 +19,14 @@ import {
 
 import { checkPathPurpose, checkPathSyntax } from "../domain/path-policy";
 import { err, ok, type Result } from "../error/result";
-import type { BgmLibraryPort, BgmSynthPort, CompositionPort, MutationJournalPort, WorkspacePort } from "../port/ports";
+import type {
+  BgmLibraryPort,
+  BgmProviderPort,
+  BgmSynthPort,
+  CompositionPort,
+  MutationJournalPort,
+  WorkspacePort,
+} from "../port/ports";
 import type { WriteInvocation } from "../port/types";
 import type { WriteAuthority } from "../service/write-authority";
 import type { Actor } from "@vidcom/contracts";
@@ -30,6 +38,7 @@ export interface BgmDependencies {
   authority: { uploadBgm?: WriteAuthority["uploadBgm"] };
   bgmSynth: BgmSynthPort;
   bgmLibrary: BgmLibraryPort;
+  bgmProviders?: BgmProviderPort;
   hashContent(content: string | Uint8Array): ContentHash;
 }
 
@@ -61,6 +70,18 @@ export async function listBgmSources(dependencies: Pick<BgmDependencies, "bgmLib
   };
 }
 
+/** Searches remote catalogues while keeping the offline synth/library fallback explicit. */
+export async function searchBgmSources(
+  dependencies: Pick<BgmDependencies, "bgmProviders">,
+  input: { mood: string; limit: number },
+) {
+  if (!dependencies.bgmProviders) {
+    return { tracks: [], providers: [], offlineFallbackAvailable: true };
+  }
+  const remote = await dependencies.bgmProviders.search(input);
+  return { ...remote, offlineFallbackAvailable: true };
+}
+
 /**
  * Reads the project's own length, so a bed can be exactly as long as the video.
  *
@@ -87,6 +108,7 @@ export interface InstallBgmInput {
   bedId?: string;
   trackId?: string;
   libraryEntryId?: string;
+  providerTrack?: BgmProviderTrackRef;
   seconds?: number;
   volume?: number;
   loop?: boolean;
@@ -114,12 +136,12 @@ export async function installBgm(
   actor: Actor,
   invocation: WriteInvocation = { toolAudit: null },
 ): Promise<Result<InstallBgmOutput, DomainError>> {
-  const chosen = [input.bedId, input.trackId, input.libraryEntryId]
+  const chosen = [input.bedId, input.trackId, input.libraryEntryId, input.providerTrack]
     .filter((value) => value !== undefined);
   if (chosen.length !== 1) {
     return err({
       code: ErrorCode.SchemaInvalid,
-      message: "pass exactly one of bedId, trackId or libraryEntryId",
+      message: "pass exactly one BGM source",
       field: "bedId",
     });
   }
@@ -174,7 +196,7 @@ export async function installBgm(
     bytes = shipped;
     durationSeconds = track.durationSeconds;
     name = track.filename;
-  } else {
+  } else if (input.libraryEntryId !== undefined) {
     const entry = (await dependencies.bgmLibrary.list())
       .find((candidate) => candidate.id === input.libraryEntryId);
     if (!entry) {
@@ -195,6 +217,35 @@ export async function installBgm(
     bytes = stored;
     durationSeconds = entry.durationSeconds;
     name = entry.name.includes(".") ? entry.name : `${entry.name}.wav`;
+  } else {
+    if (!input.providerTrack || !dependencies.bgmProviders) {
+      return err({
+        code: ErrorCode.DownloadUnavailable,
+        message: "remote BGM providers are unavailable; use list_bgm_beds for an offline fallback",
+        field: "providerTrack",
+      });
+    }
+    const downloaded = await dependencies.bgmProviders.download(input.providerTrack);
+    if (!downloaded.ok) return downloaded;
+    const { track, bytes: remoteBytes } = downloaded.value;
+    const cached = await dependencies.bgmLibrary.add({
+      name: `${track.title.slice(0, 254 - track.extension.length)}.${track.extension}`,
+      extension: track.extension,
+      bytes: remoteBytes,
+      source: "provider",
+      bedId: null,
+      license: track.license,
+      provenance: {
+        providerId: track.providerId,
+        trackId: track.trackId,
+        sourceUrl: track.sourceUrl,
+        attribution: track.attribution,
+      },
+    });
+    if (!cached.ok) return cached;
+    bytes = remoteBytes;
+    durationSeconds = cached.value.entry.durationSeconds;
+    name = `${cached.value.entry.id}.${track.extension}`;
   }
 
   const volume = input.volume ?? BGM_BED_DEFAULT_VOLUME;

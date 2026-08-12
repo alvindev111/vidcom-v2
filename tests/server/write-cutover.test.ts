@@ -4,6 +4,8 @@ import path from "node:path";
 
 import { hashContent, startVidcomFoundation } from "@vidcom/cli";
 import {
+  findBgmBed,
+  InstallBgmOutputSchema,
   InstallMotionLibraryOutputSchema,
   LegacyGenerateResponseSchema,
   LegacyTtsResponseSchema,
@@ -11,10 +13,13 @@ import {
   PatchSceneScriptResponseSchema,
   PatchSceneTimingResponseSchema,
   PutProjectFileResponseSchema,
+  SearchBgmOutputSchema,
   StudioSnapshotResponseSchema,
   UploadBgmResponseSchema,
+  type BgmProviderTrack,
   type ProjectId,
 } from "@vidcom/contracts";
+import { ok } from "@vidcom/core";
 import { createServerApp, InMemoryNonceStore, InMemorySessionStore } from "@vidcom/server";
 import { afterEach, describe, expect, it } from "vitest";
 
@@ -46,6 +51,36 @@ describe("Phase N write cutover", () => {
     const nonces = new InMemoryNonceStore(clock);
     const sessions = new InMemorySessionStore(clock);
     const port = 43212;
+    const remoteTrack: BgmProviderTrack = {
+      providerId: "route-music",
+      trackId: "calm-1",
+      title: "Calm route score",
+      creator: "Route Composer",
+      durationSeconds: 5,
+      extension: "wav",
+      license: {
+        kind: "cc-by",
+        holder: "Route Composer",
+        url: "https://example.test/licenses/by",
+        note: null,
+      },
+      sourceUrl: "https://example.test/tracks/calm-1",
+      attribution: "Calm route score by Route Composer, CC BY.",
+      tags: ["calm", "instrumental"],
+    };
+    const remoteBytes = foundation.infrastructure.bgmSynth.render(findBgmBed("ambient")!, 5);
+    const bgmProviders = {
+      async search() {
+        return {
+          tracks: [remoteTrack],
+          providers: [{ providerId: "route-music", status: "ok" as const, resultCount: 1, message: null }],
+        };
+      },
+      async download(ref: { providerId: string; trackId: string }) {
+        expect(ref).toEqual({ providerId: "route-music", trackId: "calm-1" });
+        return ok({ track: remoteTrack, bytes: remoteBytes });
+      },
+    };
     const projectReads = {
       ...foundation.application.readDependencies,
       runtimeSource: foundation.infrastructure.runtimeSource,
@@ -58,6 +93,7 @@ describe("Phase N write cutover", () => {
         reads: foundation.application.readDependencies,
         bgmSynth: foundation.infrastructure.bgmSynth,
         bgmLibrary: foundation.infrastructure.bgmLibrary,
+        bgmProviders,
         hashContent,
         mimeFromPath: foundation.infrastructure.mimeFromPath,
       },
@@ -112,9 +148,31 @@ describe("Phase N write cutover", () => {
         body: JSON.stringify({ patch: { bgm: { volume: 0.4 } }, expectedRevision: snapshot.previewSettingsRevision }),
       });
       const patched = PatchPreviewSettingsResponseSchema.parse(await patch.json());
+      const searchedResponse = await request("/api/v1/bgm/search?mood=calm%20focused&limit=4");
+      expect(searchedResponse.status).toBe(200);
+      expect(SearchBgmOutputSchema.parse(await searchedResponse.json())).toMatchObject({
+        tracks: [{ providerId: "route-music", trackId: "calm-1" }],
+        offlineFallbackAvailable: true,
+      });
+      const installResponse = await request(`/api/v1/projects/${id}/bgm`, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          providerTrack: { providerId: "route-music", trackId: "calm-1" },
+          expectedRevision: patched.revision,
+        }),
+      });
+      expect(installResponse.status).toBe(200);
+      const installed = InstallBgmOutputSchema.parse(await installResponse.json());
+      expect(installed.track.path).toMatch(/^preview-assets\/bgm\/bgm_.+\.wav$/u);
+      expect(await foundation.infrastructure.bgmLibrary.list()).toEqual([
+        expect.objectContaining({
+          source: "provider",
+          provenance: expect.objectContaining({ providerId: "route-music", trackId: "calm-1" }),
+        }),
+      ]);
       const form = new FormData();
       form.append("file", new File([new Uint8Array([0x49, 0x44, 0x33, 1])], "phase-n.mp3", { type: "audio/mpeg" }));
-      form.append("expectedRevision", String(patched.revision));
+      form.append("expectedRevision", String(installed.revision));
       const upload = await request(`/api/v1/projects/${id}/assets/bgm`, { method: "POST", body: form });
       const uploaded = UploadBgmResponseSchema.parse(await upload.json());
       expect(uploaded.previewSettings.bgm.track?.path).toBe("preview-assets/bgm/phase-n.mp3");

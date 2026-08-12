@@ -64,7 +64,7 @@ function elapsedMilliseconds(startedAt: Date, endedAt: Date): number {
   return Math.max(0, endedAt.getTime() - startedAt.getTime());
 }
 
-/** Derives host hints from authorization level; callers cannot override safety metadata. */
+/** Derives safety hints from authorization level; tools only choose whether they access the open world. */
 export function annotationsForLevel(level: ToolLevel): ToolAnnotations {
   if (level === "read") {
     return { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false };
@@ -88,7 +88,10 @@ export class ToolRegistry {
     if (this.definitions.has(definition.name)) throw new TypeError(`tool is already registered: ${definition.name}`);
     const canonical: ToolDefinition<I, O> = {
       ...definition,
-      annotations: annotationsForLevel(definition.level),
+      annotations: {
+        ...annotationsForLevel(definition.level),
+        openWorldHint: definition.annotations.openWorldHint,
+      },
     };
     this.definitions.set(definition.name, canonical as ToolDefinition<unknown, unknown>);
   }

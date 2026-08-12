@@ -1,7 +1,7 @@
 ---
 name: vidcom-motion
 description: Choreograph meaningful multi-phase motion for every VidCom story scene with GSAP or another vendored runtime. Use when motion must reveal meaning, transform visual state, demonstrate cause/effect, direct the camera, or hand off between beats. Do not use for scene timing and text, tone and BGM, narration, or rendering; fade-only entrances never satisfy this skill.
-x-vidcom-agent-kit: 4
+x-vidcom-agent-kit: 5
 ---
 
 # VidCom motion
@@ -27,6 +27,7 @@ For every non-trivial story scene:
 - Use distinct phases: establish the visual world, develop or reveal the idea, land one clear payoff, then hold long enough to read. Overlap actions so the scene feels directed rather than sequentially faded.
 - Vary verbs, directions, depth, and eases across scenes. Every element gets a concrete verb such as draws, assembles, counts, tracks, pushes, morphs, or locks; “animates in” is not direction.
 - Treat fades, gentle rises/drops, and `opacity + y` as secondary transition polish only. A lone fade or repeated entrance recipe is shallow motion and must be redesigned before render.
+- Make at least two meaningful phases statically resolvable by VidCom. Dynamic selectors fail closed. The current gate reads parsed GSAP actions; when Lottie, Three.js, Anime.js, CSS, or WAAPI carries the primary effect, also choreograph a real GSAP-controlled container, camera, or state handoff across two phases. It must reinforce the beat rather than act as a dummy validator bypass.
 
 ## Pick the library
 

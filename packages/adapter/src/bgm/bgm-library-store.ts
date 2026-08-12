@@ -1,15 +1,17 @@
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { mkdir, readFile, readdir, rename, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 import {
   BGM_AUDIO_EXTENSIONS,
+  BgmLibraryEntrySchema,
   ErrorCode,
   type BgmLibraryEntry,
   type BgmLicense,
   type BgmLibrarySource,
   type BgmBedId,
+  type BgmProviderProvenance,
   type ContentHash,
   type DomainError,
 } from "@vidcom/contracts";
@@ -49,6 +51,24 @@ interface Ledger {
 
 function hashOf(bytes: Uint8Array): ContentHash {
   return `sha256:${createHash("sha256").update(bytes).digest("hex")}` as ContentHash;
+}
+
+function providerMetadataKey(input: {
+  source: BgmLibrarySource;
+  license: BgmLicense;
+  provenance?: BgmProviderProvenance;
+}): string | null {
+  if (input.source !== "provider" || input.provenance === undefined) return null;
+  return JSON.stringify([
+    input.provenance.providerId,
+    input.provenance.trackId,
+    input.provenance.sourceUrl,
+    input.provenance.attribution,
+    input.license.kind,
+    input.license.holder,
+    input.license.url,
+    input.license.note,
+  ]);
 }
 
 /** WAV duration from the header; the only format this store parses without a prober. */
@@ -191,6 +211,7 @@ export class BgmLibraryStore implements BgmLibraryPort {
     source: BgmLibrarySource;
     bedId: BgmBedId | null;
     license: BgmLicense;
+    provenance?: BgmProviderProvenance;
   }): Promise<Result<{ entry: BgmLibraryEntry; alreadyPresent: boolean }, DomainError>> {
     const extension = input.extension.toLowerCase().replace(/^\./, "");
     if (!BGM_AUDIO_EXTENSIONS.includes(extension)) {
@@ -202,22 +223,66 @@ export class BgmLibraryStore implements BgmLibraryPort {
     }
     const contentHash = hashOf(input.bytes);
     const ledger = await this.readLedger();
-    const existing = ledger.entries.find((entry) => entry.contentHash === contentHash);
-    // Content-addressed on purpose: the same file imported from two projects is
-    // one bed, and re-importing must not multiply the library.
+    const inputProviderMetadata = providerMetadataKey(input);
+    const existing = ledger.entries.find((entry) => entry.contentHash === contentHash && (
+      input.source !== "provider"
+      || (inputProviderMetadata !== null && providerMetadataKey(entry) === inputProviderMetadata)
+    ));
+    // Ordinary imports are content-addressed. Provider entries also include the
+    // remote identity so the same bytes discovered under a different licence or
+    // attribution never erase the exact provenance the caller selected.
     if (existing) return ok({ entry: existing, alreadyPresent: true });
 
-    const id = this.options.newId?.() ?? `bgm_${contentHash.slice(7, 23)}`;
+    const providerDiscriminator = inputProviderMetadata !== null
+      ? hashOf(new TextEncoder().encode(inputProviderMetadata)).slice(7, 15)
+      : null;
+    const id = this.options.newId?.()
+      ?? `bgm_${contentHash.slice(7, 23)}${providerDiscriminator ? `_${providerDiscriminator}` : ""}`;
     const target = this.trackPath(id, extension);
-    await mkdir(path.dirname(target), { recursive: true });
-    await writeFile(target, input.bytes);
+    const addedAt = (this.options.now?.() ?? new Date()).toISOString();
+
+    // Validate every metadata/cross-field rule before touching the filesystem.
+    // The placeholder duration is replaced after probing; it exists only so a
+    // malformed provider record can never collide with or remove valid bytes.
+    const metadata = {
+      id,
+      name: input.name,
+      source: input.source,
+      bedId: input.bedId,
+      durationSeconds: 1,
+      byteSize: input.bytes.byteLength,
+      contentHash,
+      license: input.license,
+      ...(input.provenance === undefined ? {} : { provenance: input.provenance }),
+      addedAt,
+    };
+    if (!BgmLibraryEntrySchema.safeParse(metadata).success) {
+      return err({
+        code: ErrorCode.SchemaInvalid,
+        message: "the BGM library entry has invalid licence or provenance metadata",
+        field: "license",
+      });
+    }
 
     let durationSeconds = wavSeconds(input.bytes);
     if (durationSeconds === null && this.options.probeDurationSeconds) {
-      durationSeconds = await this.options.probeDurationSeconds(target);
+      const probeTarget = `${target}.${process.pid}.${randomUUID()}.probe`;
+      try {
+        await mkdir(path.dirname(probeTarget), { recursive: true });
+        await writeFile(probeTarget, input.bytes, { flag: "wx" });
+        durationSeconds = await this.options.probeDurationSeconds(probeTarget);
+      } catch (error) {
+        return err({
+          code: ErrorCode.UnsupportedMedia,
+          message: "the track's duration probe failed; re-encode it or import a WAV",
+          field: "path",
+          details: { cause: error instanceof Error ? error.message.slice(0, 256) : "probe failed" },
+        });
+      } finally {
+        await rm(probeTarget, { force: true }).catch(() => undefined);
+      }
     }
     if (durationSeconds === null || !(durationSeconds > 0)) {
-      await rm(target, { force: true });
       return err({
         code: ErrorCode.UnsupportedMedia,
         message: "the track's duration could not be read; re-encode it or import a WAV",
@@ -225,18 +290,40 @@ export class BgmLibraryStore implements BgmLibraryPort {
       });
     }
 
-    const entry: BgmLibraryEntry = {
-      id,
-      name: input.name,
-      source: input.source,
-      bedId: input.bedId,
+    const parsedEntry = BgmLibraryEntrySchema.safeParse({
+      ...metadata,
       durationSeconds: Number(durationSeconds.toFixed(3)),
-      byteSize: input.bytes.byteLength,
-      contentHash,
-      license: input.license,
-      addedAt: (this.options.now?.() ?? new Date()).toISOString(),
-    };
-    await this.writeLedger({ ...ledger, entries: [...ledger.entries, entry] });
+    });
+    if (!parsedEntry.success) {
+      return err({
+        code: ErrorCode.SchemaInvalid,
+        message: "the BGM library entry has invalid licence or provenance metadata",
+        field: "license",
+      });
+    }
+    const entry: BgmLibraryEntry = parsedEntry.data;
+    await mkdir(path.dirname(target), { recursive: true });
+    try {
+      await writeFile(target, input.bytes, { flag: "wx" });
+    } catch (error) {
+      return err({
+        code: ErrorCode.StorageUnavailable,
+        message: "the BGM library target already exists or could not be written",
+        field: "path",
+        details: { cause: error instanceof Error ? error.message.slice(0, 256) : "write failed" },
+      });
+    }
+    try {
+      await this.writeLedger({ ...ledger, entries: [...ledger.entries, entry] });
+    } catch (error) {
+      await rm(target, { force: true }).catch(() => undefined);
+      return err({
+        code: ErrorCode.StorageUnavailable,
+        message: "the BGM library ledger could not be written",
+        field: "path",
+        details: { cause: error instanceof Error ? error.message.slice(0, 256) : "ledger write failed" },
+      });
+    }
     return ok({ entry, alreadyPresent: false });
   }
 }

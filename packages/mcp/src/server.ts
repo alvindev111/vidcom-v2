@@ -28,7 +28,7 @@ export const MCP_SERVER_INSTRUCTIONS = [
   "Do not block the task on manual_merge, retry installation in a loop, or overwrite foreign/newer instructions; the VidCom files that were installed take precedence over preinstalled video skills for this task.",
   "Story-driven video is the default: define a value-first story spine and a per-beat motion map before editing, and give every story scene multi-phase choreography whose motion reveals meaning or changes visual state.",
   "Do not treat a lone fade, gentle rise, gentle drop, or repeated opacity-plus-translate entrance as scene motion, and do not render a story-driven video that relies on those shallow patterns.",
-  "For videos, add background music by default after the composition has a duration: call list_bgm_beds, then install_bgm, unless the user explicitly requests no music or silence is editorially required.",
+  "For videos, add background music by default after the composition has a duration: call search_bgm with the intended mood, verify the selected source and attribution, then install that exact provider track; use list_bgm_beds as the offline fallback. Omit music only when the user explicitly requests no music or silence is editorially required.",
 ].join(" ");
 
 export interface ServerFactoryOptions {

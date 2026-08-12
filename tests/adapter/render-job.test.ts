@@ -242,6 +242,38 @@ describe("render job with real SQLite and filesystem", () => {
     }
   });
 
+  it("rejects a mounted fade-only story beat and accepts verified multi-phase motion", async () => {
+    const fixture = await baseFixture();
+    try {
+      const project = await addProject(fixture, "story-motion-gate", `<!doctype html><html><body>
+        <main data-composition-id="main" data-width="320" data-height="180" data-duration="3">
+          <div data-composition-id="scene-1" data-composition-src="compositions/scene-1.html"
+            data-start="0" data-duration="3"></div>
+        </main></body></html>`);
+      await mkdir(path.join(project.projectRoot, "compositions"));
+      const source = (motion: string) => `<!doctype html><html><body>
+        <section data-composition-id="scene-1" data-duration="3"><div id="hero">Story beat</div>
+        <script>const tl = gsap.timeline({ paused: true });${motion}
+        window.__timelines = window.__timelines || {}; window.__timelines["scene-1"] = tl;</script>
+        </section></body></html>`;
+      await writeFile(path.join(project.projectRoot, "compositions/scene-1.html"), source(`
+        tl.fromTo("#hero", { opacity: 0, y: 24 }, { opacity: 1, y: 0, duration: 0.4, ease: "power2.out" }, 0.2);`));
+
+      await expect(enqueue(fixture, project.id)).resolves.toMatchObject({
+        ok: false,
+        error: { code: ErrorCode.ProjectInvalid, details: { reason: "story-motion-shallow", sceneIds: ["scene-1"] } },
+      });
+      expect(dbOne(fixture.database, "SELECT COUNT(*) AS count FROM job")).toEqual({ count: 0 });
+
+      await writeFile(path.join(project.projectRoot, "compositions/scene-1.html"), source(`
+        tl.fromTo("#hero", { scale: 0.7 }, { scale: 1, duration: 0.6, ease: "expo.out" }, 0.2);
+        tl.to("#hero", { rotation: 8, duration: 0.6, ease: "sine.inOut" }, 1.2);`));
+      await expect(enqueue(fixture, project.id)).resolves.toMatchObject({ ok: true });
+    } finally {
+      await fixture.database.destroy();
+    }
+  });
+
   it("rejects remote media in a local stylesheet before creating a queue row", async () => {
     const fixture = await baseFixture();
     try {

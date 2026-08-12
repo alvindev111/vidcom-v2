@@ -1,4 +1,5 @@
 import {
+  type BgmProviderTrack,
   type ContentHash,
   DeleteFileInputSchema,
   ErrorCode,
@@ -42,6 +43,40 @@ export const matrixBgmEntry = {
   byteSize: 24_467,
   contentHash: `sha256:${"3".repeat(64)}`,
   license: { kind: "own-work" as const, holder: "Contract Matrix", url: null, note: null },
+  addedAt: "2026-08-02T00:00:00.000Z",
+};
+export const matrixBgmProviderTrack: BgmProviderTrack = {
+  providerId: "matrix-music",
+  trackId: "matrix-calm",
+  title: "Calm matrix score",
+  creator: "Contract Matrix",
+  durationSeconds: 90,
+  extension: "mp3",
+  license: {
+    kind: "cc-by",
+    holder: "Contract Matrix",
+    url: "https://example.test/licenses/by",
+    note: null,
+  },
+  sourceUrl: "https://example.test/tracks/matrix-calm",
+  attribution: "Calm matrix score by Contract Matrix, CC BY.",
+  tags: ["calm", "instrumental"],
+};
+const matrixBgmProviderEntry = {
+  id: "bgm_matrix_remote",
+  name: "Calm matrix score.mp3",
+  source: "provider" as const,
+  bedId: null,
+  durationSeconds: 90,
+  byteSize: 4,
+  contentHash: `sha256:${"4".repeat(64)}`,
+  license: matrixBgmProviderTrack.license,
+  provenance: {
+    providerId: matrixBgmProviderTrack.providerId,
+    trackId: matrixBgmProviderTrack.trackId,
+    sourceUrl: matrixBgmProviderTrack.sourceUrl,
+    attribution: matrixBgmProviderTrack.attribution,
+  },
   addedAt: "2026-08-02T00:00:00.000Z",
 };
 
@@ -120,7 +155,12 @@ export const CONTRACT_MATRIX_CASES: Record<string, Record<string, unknown>> = {
   cancel_job: { jobId: "job_matrix" },
   get_render_output: { jobId: "job_render" },
   list_bgm_beds: {},
-  install_bgm: { projectId: matrixProjectId, bedId: "ambient", seconds: 12, expectedRevision: 1 },
+  search_bgm: { mood: "calm focused", limit: 4 },
+  install_bgm: {
+    projectId: matrixProjectId,
+    providerTrack: { providerId: "matrix-music", trackId: "matrix-calm" },
+    expectedRevision: 1,
+  },
   import_bgm: {
     projectId: matrixProjectId,
     path: matrixBgmPath,
@@ -216,7 +256,18 @@ export function createContractMatrixRegistry(): ToolRegistry {
         updatedAt: "2026-08-02T00:00:00.000Z",
         staleSince: null,
       },
-      elements: [],
+      elements: [{
+        id: "hero",
+        label: "Hero",
+        kind: "element",
+        start: null,
+        duration: null,
+        src: null,
+        effects: [
+          { id: "build", method: "fromTo", start: 0.2, duration: 0.6, ease: "expo.out", propertyGroup: "scale" },
+          { id: "payoff", method: "to", start: 1.4, duration: 0.8, ease: "sine.inOut", propertyGroup: "rotation" },
+        ],
+      }],
       unresolvedEffects: 0,
     }],
     rootTrack: null,
@@ -403,7 +454,25 @@ export function createContractMatrixRegistry(): ToolRegistry {
       shippedLicenses: async () => ({}),
       recordShippedLicense: async () => undefined,
       read: async () => new Uint8Array([82, 73, 70, 70, 0, 0, 0, 0]),
-      add: async () => ok({ entry: matrixBgmEntry, alreadyPresent: false }),
+      add: async (input: { source: string }) => ok({
+        entry: input.source === "provider" ? matrixBgmProviderEntry : matrixBgmEntry,
+        alreadyPresent: false,
+      }),
+    },
+    bgmProviders: {
+      search: async () => ({
+        tracks: [matrixBgmProviderTrack],
+        providers: [{
+          providerId: "matrix-music",
+          status: "ok" as const,
+          resultCount: 1,
+          message: null,
+        }],
+      }),
+      download: async () => ok({
+        track: matrixBgmProviderTrack,
+        bytes: new Uint8Array([73, 68, 51, 4]),
+      }),
     },
     lifecycle: {
       create: async () => ok({ projectId: "project_matrix" as ProjectId, slug: "matrix-two" }),

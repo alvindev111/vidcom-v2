@@ -68,7 +68,10 @@ describe("agent-kit source and contract synchronization", () => {
     expect(agents.indexOf("install_agent_kit")).toBeLessThan(agents.indexOf("list_projects"));
     expect(router.indexOf("install_agent_kit")).toBeLessThan(router.indexOf("list_projects"));
     expect(agents).toContain("Background music is the default for every video");
-    expect(look).toContain("add a BGM bed by default");
+    expect(agents).toContain("call `search_bgm` with the intended mood");
+    expect(look).toContain("Call `search_bgm` with the intended mood first");
+    expect(look).toContain("`list_bgm_beds` and install an offline bed");
+    expect(MCP_SERVER_INSTRUCTIONS).toContain("call search_bgm with the intended mood");
   });
 
   it("makes value-first storytelling and meaningful multi-phase motion the render contract", async () => {
@@ -89,7 +92,10 @@ describe("agent-kit source and contract synchronization", () => {
     expect(router).toContain("value-first beat table");
     expect(motion).toContain("## Story-motion contract");
     expect(motion).toContain("Compose 2-4 complementary motion patterns");
+    expect(motion).toContain("Dynamic selectors fail closed");
     expect(render).toContain("Reject scenes whose primary choreography is only a fade");
+    expect(render).toContain("`story-motion-shallow`");
+    expect(render).toContain("`story-motion-unverified`");
     expect(prompt).toContain("fade-only");
     expect(descriptions.get("create_scene")).toContain("meaningful visual change");
     expect(descriptions.get("save_file")).toContain("fade, gentle rise/drop");

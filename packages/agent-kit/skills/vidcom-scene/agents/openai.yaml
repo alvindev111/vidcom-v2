@@ -1,4 +1,4 @@
-# x-vidcom-agent-kit: 4
+# x-vidcom-agent-kit: 5
 interface:
   display_name: "VidCom Scene"
   short_description: "Create and edit VidCom scenes"

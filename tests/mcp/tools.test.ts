@@ -177,6 +177,7 @@ describe("all registered tool handlers", () => {
       cancel_job: { jobId: "job-1" },
       get_render_output: { jobId: "job-1" },
       list_bgm_beds: {},
+      search_bgm: { mood: "calm focused", limit: 4 },
       install_bgm: { projectId, bedId: "ambient", seconds: 10, expectedRevision: 0 },
       import_bgm: {
         projectId,
@@ -207,6 +208,12 @@ describe("all registered tool handlers", () => {
       else if (name === "list_bgm_beds") {
         expect(result).toMatchObject({ ok: true, value: { library: [] } });
       }
+      else if (name === "search_bgm") {
+        expect(result).toMatchObject({
+          ok: true,
+          value: { tracks: [], providers: [], offlineFallbackAvailable: true },
+        });
+      }
       else if (name === "get_job_status" || name === "cancel_job" || name === "get_render_output") {
         expect(result).toMatchObject({ ok: false, error: { code: "not_found" } });
       }
@@ -219,7 +226,12 @@ describe("all registered tool handlers", () => {
     // above only exercises bedId, and a handler that forwarded two of the three
     // failed schema validation on a valid call — with the schema itself correct,
     // so nothing but this could catch it.
-    for (const selector of [{ bedId: "ambient" }, { trackId: "lofi-chill" }, { libraryEntryId: "bgm-1" }]) {
+    for (const selector of [
+      { bedId: "ambient" },
+      { trackId: "lofi-chill" },
+      { libraryEntryId: "bgm-1" },
+      { providerTrack: { providerId: "openverse", trackId: "remote-1" } },
+    ]) {
       expect(await tools.invoke(
         "install_bgm",
         { projectId, ...selector, expectedRevision: 0 },

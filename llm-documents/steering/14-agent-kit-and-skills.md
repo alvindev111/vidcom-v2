@@ -56,7 +56,8 @@ MUST sinh `CLAUDE.md` từ `AGENTS.md` lúc build, MUST NOT sửa tay hai file.
               value claim phải xuất hiện chậm nhất ở beat 2
 5. EDIT       create_scene / set_scene_timing / set_text / … rồi qua vidcom-motion
               mỗi call kèm expectedRevision lấy từ bước trước; scene story phải có setup → development → payoff → hold
-6. SCORE      list_bgm_beds → install_bgm sau khi có duration
+6. SCORE      search_bgm theo mood → kiểm tra source/licence/attribution → install_bgm exact track
+              provider lỗi hoặc không phù hợp → list_bgm_beds làm offline fallback
               mặc định có BGM; chỉ bỏ khi người dùng yêu cầu hoặc chủ ý cần im lặng
 7. VALIDATE   validate_project       → đọc diagnostics
 8. PREVIEW    start_snapshot         → nhìn frame thật, không tin tưởng mù
@@ -77,6 +78,8 @@ MUST sinh `CLAUDE.md` từ `AGENTS.md` lúc build, MUST NOT sửa tay hai file.
 | W6 | Bước 11 MUST nói **diagnostic còn lại**, kể cả khi tác vụ chính đã xong |
 | W7 | Gặp `write_conflict` MUST đọc lại rồi merge, MUST NOT ghi đè bằng cách bỏ `expectedRevision` |
 | W8 | Bước 4–5 là gate bắt buộc cho video story-driven. Fade đơn, rise/drop nhẹ, hoặc lặp `opacity + y` chỉ là transition phụ, **không** được tính là motion của scene và MUST NOT đi tới render |
+| W9 | Scene story dạng sub-composition MUST có meaningful motion được parse tĩnh ở ít nhất hai pha; `story-motion-shallow` và `story-motion-unverified` là error chặn cả validate lẫn enqueue render, `bestEffort` MUST NOT bypass |
+| W10 | BGM remote MUST đi theo `search_bgm` → chọn `{providerId, trackId}` → `install_bgm`; install phải revalidate đúng track, freeze bytes + licence + provenance cục bộ, và MUST NOT tự đổi sang track khác |
 
 ### Cấm tuyệt đối trong agent-kit
 
@@ -113,11 +116,12 @@ Rút từ P1–P11 và những gì runtime thực sự yêu cầu:
 2. Timeline GSAP phải `paused: true` và đăng ký lên `window.__timelines[<composition-id>]`.
 3. Scene mới phải là **file sub-composition riêng** với `data-composition-src` — host inline không được runtime quản lý visibility nên nó hiện suốt video (**P11**).
 4. Tween viết sau khi clip của scene kết thúc thì **không bao giờ chạy** — nới `data-duration` hoặc dời tween.
-5. Đổi màu / tone / subtitle / BGM đi qua preview settings, **không** sửa composition source (**P2**). Video mặc định có BGM sau khi composition có duration; chỉ bỏ khi người dùng yêu cầu hoặc chủ ý biên tập cần im lặng.
+5. Đổi màu / tone / subtitle / BGM đi qua preview settings, **không** sửa composition source (**P2**). Video mặc định có BGM sau khi composition có duration. Ưu tiên `search_bgm` theo mood rồi verify source/licence/attribution và install exact track; `list_bgm_beds` là fallback offline. Chỉ bỏ BGM khi người dùng yêu cầu hoặc chủ ý biên tập cần im lặng.
 6. Chỉ logic deterministic — không `Date.now()`, không `Math.random()`, không fetch.
 7. Story-driven là mặc định. Story spine phải value-first: hook nói bằng ngôn ngữ kết quả, value claim ở beat 1–2, evidence/tension phát triển luận điểm, payoff giải quyết nó.
 8. Mỗi scene story là một beat, không phải slide. Motion phải làm thay đổi ý nghĩa hoặc trạng thái nhìn thấy được: reveal/build, transform, cause/effect, camera move sang ý mới, data change, hoặc handoff vật lý.
 9. Mỗi scene story không tầm thường cần choreography `setup → development → payoff → hold`, ghép 2–4 motion pattern. Fade/rise/drop đơn hoặc lặp cùng một `opacity + translate` chỉ là polish phụ và không đủ điều kiện render.
+10. Gate hiện tại xác minh tĩnh action GSAP. Motion động/selector không resolve hoặc runtime khác không có bằng chứng GSAP MUST fail closed; skill phải hướng dẫn thêm một camera/container/state handoff GSAP có ý nghĩa ở hai pha, không phải tween giả để lách validator.
 
 ---
 

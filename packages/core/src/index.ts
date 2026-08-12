@@ -1,6 +1,7 @@
 export * from "./domain/invariants";
 export * from "./domain/models";
 export * from "./domain/motion-libraries";
+export * from "./domain/story-motion";
 export * from "./domain/path-policy";
 export * from "./domain/platform-preset";
 export * from "./domain/preview-settings";

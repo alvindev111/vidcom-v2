@@ -13,6 +13,8 @@ import {
   PatchSceneTimingRequestSchema,
   ProjectParamsSchema,
   PutProjectFileRequestSchema,
+  SearchBgmInputSchema,
+  SearchBgmOutputSchema,
   UploadBgmRequestSchema,
   type ProjectId,
   type RelPath,
@@ -23,12 +25,13 @@ import {
   installBgm,
   installMotionLibrary,
   listBgmSources,
-  recordShippedBgmLicense,
   patchPreviewSettings,
+  recordShippedBgmLicense,
   regenerateNarration,
   readSourceFile,
   resolveProjectIdBySlug,
   saveSourceFile,
+  searchBgmSources,
   setSceneScript,
   setSceneTiming,
   uploadBgm,
@@ -47,6 +50,7 @@ export interface ProjectWriteRouteDependencies extends ProjectWriteDependencies 
   motionLibraries: MotionLibraryInstallDependencies["motionLibraries"];
   bgmSynth: BgmDependencies["bgmSynth"];
   bgmLibrary: BgmDependencies["bgmLibrary"];
+  bgmProviders?: BgmDependencies["bgmProviders"];
   hashContent: BgmDependencies["hashContent"];
   mimeFromPath(path: string): string | null;
 }
@@ -164,6 +168,15 @@ export function createProjectWriteRoutes(dependencies: ProjectWriteRouteDependen
   // The built-in beds and this machine's library, in one read: a picker needs both
   // and a fresh install has only the first.
   routes.get("/v1/bgm", async (c) => c.json(await listBgmSources(dependencies)));
+  routes.get("/v1/bgm/search", async (c) => {
+    const rawLimit = c.req.query("limit");
+    const parsed = SearchBgmInputSchema.safeParse({
+      mood: c.req.query("mood"),
+      ...(rawLimit === undefined ? {} : { limit: Number(rawLimit) }),
+    });
+    if (!parsed.success) fail({ code: ErrorCode.SchemaInvalid, message: "BGM search query is invalid", field: "mood" });
+    return c.json(SearchBgmOutputSchema.parse(await searchBgmSources(dependencies, parsed.data)));
+  });
   // Audition before installing: a picker that cannot play a track is a list of
   // filenames. Bytes, not a path — the shipped audio lives outside the project
   // and the library lives outside the workspace, so neither is reachable through

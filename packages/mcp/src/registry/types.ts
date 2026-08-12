@@ -44,7 +44,7 @@ export interface ToolAnnotations {
   readOnlyHint: boolean;
   destructiveHint: boolean;
   idempotentHint: boolean;
-  openWorldHint: false;
+  openWorldHint: boolean;
 }
 
 /** Single source of truth for schema, metadata, scope and execution of one tool. */
