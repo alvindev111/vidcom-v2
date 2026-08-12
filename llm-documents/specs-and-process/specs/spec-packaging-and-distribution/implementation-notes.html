@@ -1448,6 +1448,16 @@
           <div><dt class="font-semibold text-slate-200">Gate hiện tại</dt><dd class="mt-1 text-slate-300">Focused canonical suite 85 pass + 1 skip, security 16/16 và typecheck xanh. Exact SHA <code>9921c796</code> đang chạy lại bốn workflow; M.7 và acceptance chưa được tick.</dd></div>
         </dl>
       </section>
+      <section class="mt-6 rounded-2xl border border-orange-400/30 bg-orange-950/20 p-6 shadow-xl">
+        <p class="text-xs font-semibold uppercase tracking-[0.24em] text-orange-300">2026-08-13 · C-64 · render 5–10 phút</p>
+        <h2 class="mt-2 text-xl font-bold text-white">Timeout phải theo workload, không theo một default dùng chung</h2>
+        <dl class="mt-5 grid gap-4 md:grid-cols-2">
+          <div><dt class="font-semibold text-slate-200">Evidence thật</dt><dd class="mt-1 text-slate-300">Năm short 60–120 s hoàn tất trong 81,823–154,467 s. Apollo 300 s bị kill ở 308,122 s với termination proof exhaustive, zero survivor; source vẫn ở exact validated revision.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Hai timeout độc lập</dt><dd class="mt-1 text-slate-300">Supervisor mặc định 5 phút đã hết trước outer job 30 phút. Chỉ nâng outer job không giải quyết subprocess; nâng global supervisor lại làm mọi process khác treo lâu hơn khi hỏng.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Budget bounded</dt><dd class="mt-1 text-slate-300">Render dùng <code>120 s + 3 × duration × pixel ratio × fps ratio</code>, floor 10 phút, cap 90 phút. Với 1080p30: 300 s nhận 17 phút, 600 s nhận 32 phút; 4K/60 vẫn bị cap.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Outer cleanup</dt><dd class="mt-1 text-slate-300">Job cap 95 phút lớn hơn process cap để còn verified termination và cleanup. Focused 16/16, typecheck, ESLint và diff-check xanh; các YouTube phải render lại trên daemon mới.</dd></div>
+        </dl>
+      </section>
     </main>
   </body>
 </html>

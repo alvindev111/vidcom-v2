@@ -2800,6 +2800,12 @@ Chi tiết: [Detailed Goals](./spec-packaging-and-distribution-detailed-goal.md)
   - Decisions: Không case-fold string và không canonicalize muộn trong `ensureAll`, vì cả hai có thể để hai lock namespace cùng trỏ một physical root. Local typecheck, focused canonical suite 85/85 + 1 skip và security 16/16 xanh.
   - Blockers: Exact SHA `9921c796` đang chạy lại CI/Browser/Process/Packaged. M.7 chưa chốt trước khi có valid cold/warm cả ba OS; production supply-chain human gate và 10 MP4 final vẫn mở.
 
+2026-08-13 — Phase J/M render dài dùng workload budget C-64
+  - Files: `packages/worker/src/render-job.ts`, `tests/adapter/render-job.test.ts`, Design §16 và implementation notes
+  - Summary: Apollo 300 s bị supervisor kill ở 308,122 s vì render invocation không truyền timeout và nhận default 300 s. Năm short thật chạy 1,287–1,364× realtime, xác nhận đây là deterministic ceiling chứ không phải scene/render failure.
+  - Decisions: Budget explicit theo duration × pixel ratio × fps, cộng 120 s headroom và multiplier 3; floor 10 phút, cap 90 phút. Job outer 95 phút để process cap vẫn có thời gian termination proof/cleanup. Không nới supervisor default cho TTS/diagnostics và không bỏ bounded timeout.
+  - Blockers: Cần restart daemon chứa commit mới rồi rerender Apollo→Grid exact revision. 5/5 shorts final đã pass; 5 YouTube chưa được tính acceptance. Exact cross-platform/baseline M.7 vẫn đang chạy.
+
 Format:
 ```
 YYYY-MM-DD — Phase X, Task X.Y
