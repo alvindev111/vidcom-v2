@@ -2819,6 +2819,12 @@ Chi tiết: [Detailed Goals](./spec-packaging-and-distribution-detailed-goal.md)
   - Decisions: Render enqueue dùng deadline riêng 300 s và không retry; GET job dùng 120 s, retry đúng một lần chỉ cho transport/abort chưa nhận HTTP response. Structured HTTP error và mọi mutation không retry. CLI chỉ in stable redacted code; smoke failure ghi phase/timing, daemon exit/signal/tail đã redact và latest render row read-only.
   - Blockers: Rebuild artifact và rerun exact-head Windows/ba OS bắt buộc trước khi đóng M. CI `8ee68e4` không phải acceptance vì Windows render-cli đỏ; production supply-chain human gate vẫn mở độc lập.
 
+2026-08-13 — Phase M detached render harness budget C-66
+  - Files: `scripts/packaged-smoke/bodies.mjs`, `tests/build/packaged-smoke.test.ts`, Detailed Design §16 và implementation notes
+  - Summary: Exact Windows `a05a0ff` đã vượt preflight 120 s cũ và hoàn tất render wait đầu tiên, nhưng lệnh `render --detach` kế tiếp vẫn bị outer `spawnSync` timeout 120 s; step chết ở 438,221 ms trước khi product deadline 300 s có thể trả kết quả.
+  - Decisions: Detached outer budget 360 s = enqueue 300 s + 60 s SEA startup/Windows AV margin. Mutation vẫn gọi đúng một lần/no-retry; lỗi detached dùng cùng diagnostic redacted phase/timing/daemon/latest-job. Không đổi macOS baseline từ một sample warm vượt 26 ms.
+  - Blockers: Exact-head packaged rerun phải xanh Windows. macOS failed job đang rerun cô lập trên cùng SHA để phân biệt jitter 26 ms với regression; production supply-chain human gate vẫn mở.
+
 Format:
 ```
 YYYY-MM-DD — Phase X, Task X.Y

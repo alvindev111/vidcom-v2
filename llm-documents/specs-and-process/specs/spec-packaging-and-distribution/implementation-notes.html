@@ -1480,6 +1480,18 @@
           <div><dt class="font-semibold text-slate-200">Gate chưa đóng</dt><dd class="mt-1 text-slate-300">Focused daemon/render/smoke, typecheck, lint và diff-check xanh. Artifact phải được rebuild và exact-head matrix phải xanh lại; run <code>8ee68e4</code> không được dùng làm acceptance.</dd></div>
         </dl>
       </section>
+      <section class="mt-6 rounded-2xl border border-violet-400/30 bg-violet-950/20 p-6 shadow-xl">
+        <p class="text-xs font-semibold uppercase tracking-[0.24em] text-violet-300">2026-08-13 · C-66 · detached render smoke</p>
+        <h2 class="mt-2 text-xl font-bold text-white">Outer harness phải sống lâu hơn product deadline mà nó đang kiểm</h2>
+        <dl class="mt-5 grid gap-4 md:grid-cols-2">
+          <div><dt class="font-semibold text-slate-200">C-65 đã có tác dụng</dt><dd class="mt-1 text-slate-300">Windows không còn <code>internal_error</code> ở 120 giây. Render wait đầu tiên hoàn tất; full step chạy 438,221 ms trước khi lệnh thứ hai bị kill.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Seam thật là detach</dt><dd class="mt-1 text-slate-300"><code>render --detach</code> còn outer timeout 120 giây trong harness, thấp hơn product enqueue deadline 300 giây. Vì vậy runner giết client trước khi product có quyền trả kết quả.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Budget hữu hạn</dt><dd class="mt-1 text-slate-300">Detached smoke dùng 360 giây: 300 giây product preflight cộng 60 giây SEA startup/Windows AV. Không dùng timeout vô hạn và không thay process supervisor render.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Không retry mutation</dt><dd class="mt-1 text-slate-300">Detached enqueue vẫn chạy đúng một lần. Failure đi qua diagnostic redacted với phase, elapsed, daemon state/tail và latest render row read-only.</dd></div>
+          <div><dt class="font-semibold text-slate-200">macOS là gate khác</dt><dd class="mt-1 text-slate-300">Warm serve 5,495 ms vượt regression threshold 5,469 ms đúng 26 ms nhưng dưới hard ceiling 6 giây; không nới baseline từ một sample, rerun failed job cô lập trước.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Verification</dt><dd class="mt-1 text-slate-300">Focused packaged smoke 30/30, typecheck, ESLint và diff-check xanh. Exact artifact rerun vẫn là acceptance authority.</dd></div>
+        </dl>
+      </section>
     </main>
   </body>
 </html>
