@@ -1,5 +1,5 @@
-import { existsSync, readFileSync, readdirSync, realpathSync, statSync } from "node:fs";
-import { chmod, lstat, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
+import { chmod, lstat, mkdir, mkdtemp, readFile, realpath, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
@@ -57,7 +57,7 @@ afterEach(async () => {
 });
 
 async function temporaryRoot(): Promise<string> {
-  const root = realpathSync(await mkdtemp(path.join(tmpdir(), "vidcom-bootstrap-")));
+  const root = await realpath(await mkdtemp(path.join(tmpdir(), "vidcom-bootstrap-")));
   roots.push(root);
   return root;
 }

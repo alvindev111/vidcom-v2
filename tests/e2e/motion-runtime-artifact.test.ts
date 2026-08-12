@@ -1,10 +1,11 @@
 import { createRequire } from "node:module";
-import { realpathSync, readFileSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import {
   copyFile,
   mkdir,
   mkdtemp,
   readFile,
+  realpath,
   rename,
   rm,
   writeFile,
@@ -48,7 +49,7 @@ afterEach(async () => {
 });
 
 async function temporaryRoot(): Promise<string> {
-  const root = realpathSync(await mkdtemp(path.join(tmpdir(), "vidcom-motion-runtime-")));
+  const root = await realpath(await mkdtemp(path.join(tmpdir(), "vidcom-motion-runtime-")));
   roots.push(root);
   return root;
 }

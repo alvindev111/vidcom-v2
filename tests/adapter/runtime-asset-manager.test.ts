@@ -1,12 +1,12 @@
 import { randomBytes, randomUUID } from "node:crypto";
 import { spawn, type ChildProcess } from "node:child_process";
-import { realpathSync } from "node:fs";
 import { createRequire } from "node:module";
 import {
   lstat,
   mkdtemp,
   mkdir,
   readFile,
+  realpath,
   readdir,
   rename,
   rm,
@@ -76,7 +76,7 @@ afterEach(async () => {
 });
 
 async function temporaryRoot(prefix = "vidcom-runtime-"): Promise<string> {
-  const root = realpathSync(await mkdtemp(path.join(tmpdir(), prefix)));
+  const root = await realpath(await mkdtemp(path.join(tmpdir(), prefix)));
   roots.push(root);
   return root;
 }

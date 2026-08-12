@@ -5,7 +5,10 @@
  * evaluates the application/runtime graph before the extracted compiler and
  * native dependency roots have been configured.
  */
-export { RuntimeAssetManager } from "./runtime-asset-manager";
+export {
+  prepareRuntimeAppDataRoot,
+  RuntimeAssetManager,
+} from "./runtime-asset-manager";
 export {
   PACKAGED_RUNTIME_MIGRATION_ENTRIES,
   validatePackagedRuntimeManifest,

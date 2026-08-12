@@ -18,6 +18,7 @@ import { fileURLToPath } from "node:url";
 
 import {
   ErrorCode,
+  prepareRuntimeAppDataRoot,
   RuntimeAssetManager,
   RuntimeAssetError,
   SeaRuntimeAssetSource,
@@ -546,7 +547,11 @@ async function prepareVerifiedSeaBootstrap(
   const architecture = options.architecture ?? process.arch;
   const source = new SeaRuntimeAssetSource(options.rawAsset ?? productionRawAsset());
   const manifest = source.readManifest();
-  const appDataRoot = options.appDataRoot ?? await earlyAppDataRoot();
+  const requestedAppDataRoot = options.appDataRoot ?? await earlyAppDataRoot();
+  // Canonicalize before validation derives runtime paths and before the manager
+  // derives its lock. On Windows, sync discovery can retain an 8.3 alias while
+  // async realpath returns the long path for the same directory.
+  const appDataRoot = await prepareRuntimeAppDataRoot(requestedAppDataRoot, platform);
   const validated = validatePackagedRuntimeManifest(
     appDataRoot,
     manifest,

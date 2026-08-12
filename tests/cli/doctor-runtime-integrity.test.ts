@@ -1,8 +1,8 @@
-import { realpathSync } from "node:fs";
 import {
   chmod,
   link,
   mkdtemp,
+  realpath,
   rename,
   rm,
   stat,
@@ -39,7 +39,7 @@ async function installRuntimeFixture(): Promise<{
   runtimeFile: string;
   runtimeFileContent: Buffer;
 }> {
-  const root = realpathSync(await mkdtemp(path.join(tmpdir(), "vidcom-doctor-integrity-")));
+  const root = await realpath(await mkdtemp(path.join(tmpdir(), "vidcom-doctor-integrity-")));
   roots.push(root);
   const appDataRoot = path.join(root, "app-data");
   process.env.VIDCOM_APP_DATA = appDataRoot;

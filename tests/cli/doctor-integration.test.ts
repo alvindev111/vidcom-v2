@@ -1,5 +1,4 @@
-import { realpathSync } from "node:fs";
-import { access, mkdir, mkdtemp, rename, rm, symlink } from "node:fs/promises";
+import { access, mkdir, mkdtemp, realpath, rename, rm, symlink } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
@@ -37,7 +36,7 @@ afterEach(async () => {
 });
 
 async function scratch(): Promise<{ appData: string; workspace: string }> {
-  const root = realpathSync(await mkdtemp(path.join(tmpdir(), "vidcom-doctor-")));
+  const root = await realpath(await mkdtemp(path.join(tmpdir(), "vidcom-doctor-")));
   roots.push(root);
   const workspace = path.join(root, "workspace");
   await mkdir(workspace, { recursive: true });

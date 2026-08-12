@@ -1,5 +1,4 @@
-import { realpathSync } from "node:fs";
-import { mkdir, mkdtemp, rm, stat, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, realpath, rm, stat, writeFile } from "node:fs/promises";
 import { DatabaseSync } from "node:sqlite";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -34,11 +33,11 @@ afterEach(async () => {
 });
 
 async function scratch(): Promise<{ appData: string; workspace: string }> {
-  const root = realpathSync(await mkdtemp(path.join(tmpdir(), "vidcom-serve-")));
+  const root = await realpath(await mkdtemp(path.join(tmpdir(), "vidcom-serve-")));
   roots.push(root);
   const workspace = path.join(root, "workspace");
   await mkdir(workspace, { recursive: true });
-  return { appData: path.join(root, "app-data"), workspace };
+  return { appData: path.join(root, "app-data"), workspace: await realpath(workspace) };
 }
 
 async function serve(): Promise<{ daemon: ServingDaemon; appData: string; workspace: string }> {
@@ -100,7 +99,7 @@ describe("serve arguments", () => {
 
 describe("serve static assets", () => {
   it("serves the pack a build put on disk", async () => {
-    const root = realpathSync(await mkdtemp(path.join(tmpdir(), "vidcom-assets-")));
+    const root = await realpath(await mkdtemp(path.join(tmpdir(), "vidcom-assets-")));
     roots.push(root);
     await writeFile(path.join(root, "frontend.pack"), "hello", "utf8");
     await writeFile(path.join(root, "frontend-manifest.json"), "{}", "utf8");
@@ -114,7 +113,7 @@ describe("serve static assets", () => {
     // Found by reviewing the diff. Constructing the host parses the manifest
     // and bounds-checks every entry; doing that per request repeats the whole
     // thing for every image on a page.
-    const root = realpathSync(await mkdtemp(path.join(tmpdir(), "vidcom-assets-")));
+    const root = await realpath(await mkdtemp(path.join(tmpdir(), "vidcom-assets-")));
     roots.push(root);
     await writeFile(path.join(root, "frontend.pack"), "hello", "utf8");
     await writeFile(path.join(root, "frontend-manifest.json"), "{}", "utf8");
@@ -146,7 +145,7 @@ describe("serve static assets", () => {
   });
 
   it("says what is missing rather than serving an empty page", async () => {
-    const root = realpathSync(await mkdtemp(path.join(tmpdir(), "vidcom-assets-")));
+    const root = await realpath(await mkdtemp(path.join(tmpdir(), "vidcom-assets-")));
     roots.push(root);
     expect(resolveStaticAssets(root)).toBeNull();
 

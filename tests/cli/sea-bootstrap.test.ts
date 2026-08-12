@@ -1,10 +1,10 @@
-import { realpathSync } from "node:fs";
 import {
   link,
   lstat,
   mkdtemp,
   mkdir,
   readFile,
+  realpath,
   rm,
   symlink,
   writeFile,
@@ -65,7 +65,7 @@ afterEach(async () => {
 });
 
 async function temporaryRoot(prefix = "vidcom-sea-bootstrap-"): Promise<string> {
-  const root = realpathSync(await mkdtemp(path.join(tmpdir(), prefix)));
+  const root = await realpath(await mkdtemp(path.join(tmpdir(), prefix)));
   roots.push(root);
   return root;
 }
