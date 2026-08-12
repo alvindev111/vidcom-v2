@@ -25,6 +25,7 @@ import {
   smokeEnvironment,
 } from "../../scripts/packaged-smoke/environment.mjs";
 import {
+  DETACHED_RENDER_SMOKE_TIMEOUT_MS,
   EXPECTED_DOCTOR_ITEM_IDS,
   PRIVATE_PATH_FORBIDDEN_TOOLS,
   assertRuntimeHealthy,
@@ -33,6 +34,7 @@ import {
   mediaSceneSource,
   readLatestRenderJobSince,
   readJsonWithTransportRetry,
+  runDetachedRenderWithDiagnostics,
   runRenderWaitWithDiagnostics,
   verifyArtifactProvenance,
   writeImportProjectFixture,
@@ -195,6 +197,46 @@ describe("packaged smoke steps", () => {
       /phase=render-wait elapsedMs=125; cliExit=exception cli=spawn timed out; daemonExit=7 daemonSignal=SIGABRT; latestRender=none-since-phase/u,
     );
     expect(attempts).toBe(1);
+  });
+
+  it("lets detached enqueue outlive its 300-second client deadline and diagnoses timeout", async () => {
+    let attempts = 0;
+    let processTimeout = 0;
+    const privateRoot = "C:\\Users\\runneradmin\\private-smoke";
+    await expect(runDetachedRenderWithDiagnostics(
+      {
+        root: privateRoot,
+        workspace: `${privateRoot}\\workspace`,
+        cwd: `${privateRoot}\\cwd`,
+        appData: `${privateRoot}\\app-data`,
+        artifact: `${privateRoot}\\vidcom.exe`,
+        environment: {},
+      },
+      { child: { exitCode: null, signalCode: null }, output: () => "enqueue preflight active" },
+      { slug: "smoke-media" },
+      {
+        now: (() => {
+          const times = [5_000, 365_000];
+          return () => times.shift() ?? 365_000;
+        })(),
+        runArtifact: (_context: unknown, _args: unknown, options: { timeoutMs: number }) => {
+          attempts += 1;
+          processTimeout = options.timeoutMs;
+          throw new Error(`spawnSync ${privateRoot}\\vidcom.exe ETIMEDOUT`);
+        },
+        readLatestRenderJobSince: async () => null,
+      },
+    )).rejects.toSatisfy((error: unknown) => {
+      const message = error instanceof Error ? error.message : String(error);
+      expect(message).toContain("render --detach failed; phase=render-detach elapsedMs=360000");
+      expect(message).toContain("cliExit=exception");
+      expect(message).toContain("latestRender=none-since-phase");
+      expect(message).not.toContain(privateRoot);
+      return true;
+    });
+    expect(attempts).toBe(1);
+    expect(processTimeout).toBe(DETACHED_RENDER_SMOKE_TIMEOUT_MS);
+    expect(DETACHED_RENDER_SMOKE_TIMEOUT_MS).toBe(360_000);
   });
 
   it("reads only the latest render job created during the failed phase", async () => {

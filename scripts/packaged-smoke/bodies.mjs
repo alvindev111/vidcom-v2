@@ -479,8 +479,12 @@ function renderJobDiagnostic(job) {
   return `${job.status}/errorCode=${job.errorCode ?? "null"}/cleanupPending=${String(job.cleanupPending)}`;
 }
 
-/** Executes the mutating render exactly once and enriches only its failure path. */
-export async function runRenderWaitWithDiagnostics(context, serving, media, dependencies = {}) {
+async function runRenderInvocationWithDiagnostics(
+  context,
+  serving,
+  invocation,
+  dependencies = {},
+) {
   const now = dependencies.now ?? Date.now;
   const execute = dependencies.runArtifact ?? runArtifact;
   const latestRenderJob = dependencies.readLatestRenderJobSince ?? readLatestRenderJobSince;
@@ -489,9 +493,7 @@ export async function runRenderWaitWithDiagnostics(context, serving, media, depe
   let run;
   let failure;
   try {
-    run = execute(context, [
-      "render", media.slug, "--workspace", context.workspace,
-    ], { timeoutMs: 600_000 });
+    run = execute(context, invocation.args, { timeoutMs: invocation.timeoutMs });
     if (run.status === 0) return run;
     failure = `exit ${String(run.status)}; ${run.stderr}`;
   } catch (error) {
@@ -507,12 +509,38 @@ export async function runRenderWaitWithDiagnostics(context, serving, media, depe
   const elapsedMs = Math.max(0, now() - startedAt);
   const cliExit = run?.status ?? "exception";
   throw new Error(
-    `render wait failed; phase=render-wait elapsedMs=${String(elapsedMs)}`
+    `${invocation.label} failed; phase=${invocation.phase} elapsedMs=${String(elapsedMs)}`
     + `; cliExit=${String(cliExit)} cli=${safeSmokeDiagnosticText(context, failure, 500)}`
     + `; daemonExit=${String(serving.child.exitCode)} daemonSignal=${String(serving.child.signalCode)}`
     + `; latestRender=${renderJobDiagnostic(job)}`
     + `; daemonTail=${safeSmokeDiagnosticText(context, serving.output(), 1_000)}`,
   );
+}
+
+/** Executes the mutating render exactly once and enriches only its failure path. */
+export function runRenderWaitWithDiagnostics(context, serving, media, dependencies = {}) {
+  return runRenderInvocationWithDiagnostics(context, serving, {
+    label: "render wait",
+    phase: "render-wait",
+    args: ["render", media.slug, "--workspace", context.workspace],
+    timeoutMs: 600_000,
+  }, dependencies);
+}
+
+/**
+ * The CLI permits render preflight/enqueue to run for 300 seconds. Its outer
+ * process budget must be longer so SEA startup and Windows AV scanning cannot
+ * kill the client before that bounded product deadline reports its own result.
+ */
+export const DETACHED_RENDER_SMOKE_TIMEOUT_MS = 360_000;
+
+export function runDetachedRenderWithDiagnostics(context, serving, media, dependencies = {}) {
+  return runRenderInvocationWithDiagnostics(context, serving, {
+    label: "render --detach",
+    phase: "render-detach",
+    args: ["render", media.slug, "--workspace", context.workspace, "--detach"],
+    timeoutMs: DETACHED_RENDER_SMOKE_TIMEOUT_MS,
+  }, dependencies);
 }
 
 async function jobUntilTerminal(serving, jobId, timeoutMs = 600_000) {
@@ -1244,12 +1272,7 @@ export const STEP_BODIES = {
       const media = await ensureMediaProject(context, serving);
       await runRenderWaitWithDiagnostics(context, serving, media);
 
-      const detached = runArtifact(context, [
-        "render", media.slug, "--workspace", context.workspace, "--detach",
-      ], { timeoutMs: 120_000 });
-      if (detached.status !== 0) {
-        throw new Error(`render --detach exited ${String(detached.status)}: ${detached.stderr.slice(0, 300)}`);
-      }
+      const detached = await runDetachedRenderWithDiagnostics(context, serving, media);
       const jobId = detached.stdout.trim();
       if (!/^[A-Za-z0-9][A-Za-z0-9._-]+$/u.test(jobId)) {
         throw new Error(`render --detach did not print one job id: ${detached.stdout.slice(0, 200)}`);
