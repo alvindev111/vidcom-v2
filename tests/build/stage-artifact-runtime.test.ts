@@ -33,10 +33,12 @@ import {
   esbuildPlatformBinaryRelative,
   hostPlatformTag,
   materializedTreeSha256,
+  nativeClosureProbeTimeoutMs,
   nativePackageNamesFor,
   parseRuntimeInputsValue,
   privateProbeEnvironment,
   probeStagedNativeClosure,
+  pruneRuntimePackageTree,
   prunePythonBuildTools,
   recoverRuntimeGeneration,
   resolveNativePackageRoots,
@@ -78,6 +80,25 @@ async function executableCopy(destination: string): Promise<void> {
 
 async function sha256Pin(filename: string): Promise<string> {
   return `sha256:${createHash("sha256").update(await readFile(filename)).digest("hex")}`;
+}
+
+function nodePtyFixtureFiles(platform: string): string[] {
+  if (platform === "linux-x64") {
+    return ["lib/index.js", "build/Release/pty.node", "build/Release/spawn-helper"];
+  }
+  const root = `prebuilds/${platform}`;
+  return platform === "win32-x64"
+    ? [
+      "lib/index.js",
+      `${root}/pty.node`,
+      `${root}/conpty.node`,
+      `${root}/conpty_console_list.node`,
+      `${root}/conpty/OpenConsole.exe`,
+      `${root}/conpty/conpty.dll`,
+      `${root}/winpty-agent.exe`,
+      `${root}/winpty.dll`,
+    ]
+    : ["lib/index.js", `${root}/pty.node`, `${root}/spawn-helper`];
 }
 
 async function packageFixture(
@@ -194,10 +215,15 @@ async function fixture(): Promise<Fixture> {
         : "1.0.0";
     const files = packageName.startsWith("@esbuild/")
       ? [esbuildPlatformBinaryRelative(HOST_TAG)]
+      : packageName === "node-pty"
+        ? nodePtyFixtureFiles(HOST_TAG)
       : ["index.js"];
     const packageRoot = await packageFixture(path.join(root, "native-packages"), packageName, version, files);
     if (packageName.startsWith("@esbuild/")) {
       await executableCopy(path.join(packageRoot, esbuildPlatformBinaryRelative(HOST_TAG)));
+    }
+    if (packageName === "node-pty" && HOST_TAG === "linux-x64") {
+      await chmod(path.join(packageRoot, "build", "Release", "spawn-helper"), 0o755);
     }
     nativePackageRoots.set(packageName, packageRoot);
   }
@@ -398,6 +424,12 @@ describe("artifact runtime staging", () => {
       .some((name: string) => name.includes("libvips"))).toBe(false);
   });
 
+  it("bounds the Windows AV allowance without widening POSIX native probes", () => {
+    expect(nativeClosureProbeTimeoutMs("win32")).toBe(120_000);
+    expect(nativeClosureProbeTimeoutMs("darwin")).toBe(30_000);
+    expect(nativeClosureProbeTimeoutMs("linux")).toBe(30_000);
+  });
+
   it("resolves optional packages from the owning HyperFrames package store", async () => {
     const manifest = await realpath(path.resolve("node_modules/hyperframes/package.json"));
     const resolver = createRequire(manifest);
@@ -423,6 +455,55 @@ describe("artifact runtime staging", () => {
       .rejects.toThrow(/node-pty does not match/u);
     expect(existsSync(input.paths.outputRoot)).toBe(false);
   }, 120_000);
+
+  it("normalizes the node-pty Linux source build into the canonical host prebuild", async () => {
+    const root = await temporaryRoot();
+    const packageRoot = await packageFixture(root, "node-pty", "1.1.0", [
+      "lib/index.js",
+      "build/Release/pty.node",
+      "build/Release/spawn-helper",
+      "prebuilds/darwin-arm64/pty.node",
+    ]);
+    await chmod(path.join(packageRoot, "build", "Release", "spawn-helper"), 0o755);
+
+    await pruneRuntimePackageTree(packageRoot, "node-pty", "linux-x64");
+
+    expect(await readFile(path.join(packageRoot, "prebuilds", "linux-x64", "pty.node"), "utf8"))
+      .toBe("node-pty:build/Release/pty.node\n");
+    const helper = path.join(packageRoot, "prebuilds", "linux-x64", "spawn-helper");
+    expect((await lstat(helper)).mode & 0o111).not.toBe(0);
+    expect(existsSync(path.join(packageRoot, "build"))).toBe(false);
+    expect(existsSync(path.join(packageRoot, "prebuilds", "darwin-arm64"))).toBe(false);
+  });
+
+  it("fails closed when the trusted node-pty Linux build output is incomplete", async () => {
+    const root = await temporaryRoot();
+    const packageRoot = await packageFixture(root, "node-pty", "1.1.0", [
+      "lib/index.js",
+      "build/Release/pty.node",
+    ]);
+
+    await expect(pruneRuntimePackageTree(packageRoot, "node-pty", "linux-x64"))
+      .rejects.toThrow(/node-pty Linux spawn-helper must be a real regular file/u);
+  });
+
+  it("repairs the exact Darwin host spawn-helper mode before pruning", async () => {
+    const root = await temporaryRoot();
+    const packageRoot = await packageFixture(root, "node-pty", "1.1.0", [
+      "lib/index.js",
+      "prebuilds/darwin-arm64/pty.node",
+      "prebuilds/darwin-arm64/spawn-helper",
+      "prebuilds/darwin-x64/spawn-helper",
+    ]);
+    const helper = path.join(packageRoot, "prebuilds", "darwin-arm64", "spawn-helper");
+    await chmod(helper, 0o644);
+
+    await pruneRuntimePackageTree(packageRoot, "node-pty", "darwin-arm64");
+
+    expect(existsSync(helper)).toBe(true);
+    expect((await lstat(helper)).mode & 0o111).not.toBe(0);
+    expect(existsSync(path.join(packageRoot, "prebuilds", "darwin-x64"))).toBe(false);
+  });
 
   it("rejects every non-system Darwin dylib and every LC_RPATH", () => {
     expect(() => assertPortableDarwinDependencies([

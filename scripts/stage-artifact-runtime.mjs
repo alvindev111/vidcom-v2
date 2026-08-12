@@ -327,6 +327,11 @@ export function privateProbeEnvironment(home, temporary) {
   return environment;
 }
 
+/** Windows AV scans native addons on first load; keep that allowance bounded and host-specific. */
+export function nativeClosureProbeTimeoutMs(platform = process.platform) {
+  return platform === "win32" ? 120_000 : 30_000;
+}
+
 async function sha256File(filename) {
   const hash = createHash("sha256");
   for await (const chunk of createReadStream(filename)) hash.update(chunk);
@@ -833,6 +838,42 @@ function runtimePackageFile(relative, metadata, packageName) {
   return !basename.includes(".") && (metadata.mode & 0o111) !== 0 && relative.split(path.sep).includes("bin");
 }
 
+/**
+ * node-pty@1.1.0 publishes Darwin/Windows prebuilds, but compiles Linux into
+ * build/Release during its trusted install lifecycle. Normalize that exact
+ * host output into the reviewed prebuild topology before the generic build
+ * directory prune runs, so the archive contract and runtime loader agree.
+ */
+async function normalizeNodePtyHostPayload(packageRoot, platform) {
+  const hostRoot = path.join(packageRoot, "prebuilds", platform);
+  if (platform === "linux-x64") {
+    const releaseRoot = path.join(packageRoot, "build", "Release");
+    await mkdir(hostRoot, { recursive: true });
+    for (const filename of ["pty.node", "spawn-helper"]) {
+      const destination = path.join(hostRoot, filename);
+      if (existsSync(destination)) continue;
+      const source = path.join(releaseRoot, filename);
+      const canonicalSource = await assertContainedRegularFile(
+        packageRoot,
+        source,
+        `node-pty Linux ${filename}`,
+        filename === "spawn-helper",
+      );
+      const sourceDigest = await sha256File(canonicalSource);
+      const metadata = await lstat(canonicalSource);
+      await copyFile(canonicalSource, destination);
+      await chmod(destination, metadata.mode & 0o777);
+      await assertFileDigest(destination, sourceDigest, `staged node-pty Linux ${filename}`);
+    }
+  }
+  if (platform === "linux-x64" || platform === "darwin-arm64") {
+    const helper = path.join(hostRoot, "spawn-helper");
+    await assertContainedRegularFile(packageRoot, helper, `node-pty ${platform} spawn-helper`, false);
+    await chmod(helper, 0o755);
+    await assertContainedRegularFile(packageRoot, helper, `node-pty ${platform} spawn-helper`, true);
+  }
+}
+
 /** Removes install/build/source material while preserving package manifests, licenses, JS and native payloads. */
 export async function pruneRuntimePackageTree(packageRoot, packageName, platform) {
   const [hostPlatform, hostArchitecture] = platform.split("-");
@@ -852,6 +893,7 @@ export async function pruneRuntimePackageTree(packageRoot, packageName, platform
     }
   }
   if (packageName === "node-pty") {
+    await normalizeNodePtyHostPayload(packageRoot, platform);
     const prebuildsRoot = path.join(packageRoot, "prebuilds");
     const hostPrebuild = `${hostPlatform}-${hostArchitecture}`;
     for (const entry of await readdir(prebuildsRoot, { withFileTypes: true }).catch(() => [])) {
@@ -973,7 +1015,7 @@ terminal.onExit(({ exitCode }) => {
     process.execPath,
     ["-e", probe, archiveRoot, "sharp", "esbuild", "onnxruntime-node", "node-pty"],
     "staged native dependency closure probe",
-    { env: environment },
+    { env: environment, timeout: nativeClosureProbeTimeoutMs() },
   );
 }
 
