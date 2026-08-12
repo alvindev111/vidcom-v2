@@ -42,7 +42,14 @@ import {
   type ProcessSupervisorPort,
   type RenderRootPort,
 } from "@vidcom/core";
-import { createRenderJobHandler, enqueueRenderJob } from "@vidcom/worker";
+import {
+  createRenderJobHandler,
+  enqueueRenderJob,
+  MAX_RENDER_PROCESS_TIMEOUT_MS,
+  MIN_RENDER_PROCESS_TIMEOUT_MS,
+  RENDER_JOB_TIMEOUT_MS,
+  renderProcessTimeoutMs,
+} from "@vidcom/worker";
 
 import { createSequentialIdPort } from "../support/deterministic";
 import { dbOne, dbRun } from "../support/database";
@@ -52,6 +59,30 @@ const now = "2026-08-04T00:00:00.000Z";
 const clock = { now: () => new Date(now) };
 const hashContent = (content: string | Uint8Array): ContentHash =>
   `sha256:${createHash("sha256").update(content).digest("hex")}` as ContentHash;
+
+describe("render process timeout budget", () => {
+  it("scales 1080p30 educational renders beyond the old five-minute ceiling", () => {
+    expect(renderProcessTimeoutMs({
+      durationSeconds: 300, width: 1_920, height: 1_080, fps: 30,
+    })).toBe(17 * 60 * 1_000);
+    expect(renderProcessTimeoutMs({
+      durationSeconds: 600, width: 1_920, height: 1_080, fps: 30,
+    })).toBe(32 * 60 * 1_000);
+  });
+
+  it("keeps a floor, scales 4K work, and caps pathological workloads below the job ceiling", () => {
+    expect(renderProcessTimeoutMs({
+      durationSeconds: 1, width: 320, height: 180, fps: 10,
+    })).toBe(MIN_RENDER_PROCESS_TIMEOUT_MS);
+    expect(renderProcessTimeoutMs({
+      durationSeconds: 300, width: 3_840, height: 2_160, fps: 30,
+    })).toBe(62 * 60 * 1_000);
+    expect(renderProcessTimeoutMs({
+      durationSeconds: 600, width: 3_840, height: 2_160, fps: 60,
+    })).toBe(MAX_RENDER_PROCESS_TIMEOUT_MS);
+    expect(RENDER_JOB_TIMEOUT_MS).toBeGreaterThan(MAX_RENDER_PROCESS_TIMEOUT_MS);
+  });
+});
 
 async function findExecutable(name: string): Promise<AbsolutePath | null> {
   const candidates = (process.env.PATH ?? "").split(path.delimiter).flatMap((directory) =>
@@ -737,11 +768,13 @@ describe("render job with real SQLite and filesystem", () => {
       let calls = 0;
       let routerSetting: string | undefined;
       let fastCaptureSetting: string | undefined;
+      let renderTimeoutMs: number | undefined;
       const processPort: ProcessSupervisorPort = {
         async run(input) {
           calls += 1;
           routerSetting = input.environment?.HF_DE_PARALLEL_ROUTER;
           fastCaptureSetting = input.environment?.PRODUCER_EXPERIMENTAL_FAST_CAPTURE;
+          renderTimeoutMs = input.timeoutMs;
           return {
             status: "exited" as const,
             output: {
@@ -762,6 +795,8 @@ describe("render job with real SQLite and filesystem", () => {
       expect(calls).toBe(1);
       expect(routerSetting).toBe("false");
       expect(fastCaptureSetting).toBe("false");
+      expect(renderTimeoutMs).toBe(MIN_RENDER_PROCESS_TIMEOUT_MS);
+      expect(harness.definition(processPort).timeoutMs).toBe(RENDER_JOB_TIMEOUT_MS);
       await expect(fixture.jobs.get(queued.value.id as JobId)).resolves.toMatchObject({
         status: "failed",
         error: {

@@ -75,6 +75,36 @@ interface PreparedRender {
   ref: ProjectRef;
   sourceRevision: number;
   previewSettings: PreviewSettings;
+  renderTiming: RenderTiming;
+}
+
+export interface RenderTiming {
+  durationSeconds: number;
+  width: number;
+  height: number;
+  fps: number;
+}
+
+const HD_PIXELS = 1_920 * 1_080;
+const RENDER_TIMEOUT_HEADROOM_SECONDS = 120;
+const RENDER_TIMEOUT_MULTIPLIER = 3;
+export const MIN_RENDER_PROCESS_TIMEOUT_MS = 10 * 60 * 1_000;
+export const MAX_RENDER_PROCESS_TIMEOUT_MS = 90 * 60 * 1_000;
+export const RENDER_JOB_TIMEOUT_MS = 95 * 60 * 1_000;
+
+/** A bounded render allowance scaled by authored duration, resolution and frame rate. */
+export function renderProcessTimeoutMs(timing: RenderTiming): number {
+  const values = [timing.durationSeconds, timing.width, timing.height, timing.fps];
+  if (values.some((value) => !Number.isFinite(value) || value <= 0)) {
+    throw new RangeError("render timing values must be positive finite numbers");
+  }
+  const workSeconds = timing.durationSeconds
+    * Math.max(1, (timing.width * timing.height) / HD_PIXELS)
+    * Math.max(1, timing.fps / 30);
+  const scaledMs = Math.ceil(
+    (RENDER_TIMEOUT_HEADROOM_SECONDS + RENDER_TIMEOUT_MULTIPLIER * workSeconds) * 1_000,
+  );
+  return Math.min(MAX_RENDER_PROCESS_TIMEOUT_MS, Math.max(MIN_RENDER_PROCESS_TIMEOUT_MS, scaledMs));
 }
 
 export interface RenderJobDependencies {
@@ -293,6 +323,12 @@ export async function prepareRender(
     ref,
     sourceRevision: await dependencies.journal.latestSourceRevision(projectId) ?? 0,
     previewSettings: settings.value.previewSettings,
+    renderTiming: {
+      durationSeconds: model.project.duration,
+      width: model.project.width,
+      height: model.project.height,
+      fps: model.frameRate ?? 30,
+    },
   });
 }
 
@@ -410,7 +446,7 @@ export function createRenderJobHandler(dependencies: RenderJobDependencies): Job
     idempotent: false,
     maxAttempts: 1,
     cleanupPendingOnStale: true,
-    timeoutMs: 30 * 60 * 1_000,
+    timeoutMs: RENDER_JOB_TIMEOUT_MS,
     async run(rawInput: unknown, context: JobExecutionContext) {
       const input = parseInput(rawInput);
       if (input.expectedSourceRevision === undefined) {
@@ -487,6 +523,7 @@ export function createRenderJobHandler(dependencies: RenderJobDependencies): Job
             HYPERFRAMES_FFMPEG_PATH: preflight.value.binaries.ffmpegPath,
             HYPERFRAMES_FFPROBE_PATH: preflight.value.binaries.ffprobePath,
           },
+          timeoutMs: renderProcessTimeoutMs(prepared.value.renderTiming),
           signal: context.signal,
         });
         if (rendered.status === "terminated") {
