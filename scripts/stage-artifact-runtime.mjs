@@ -849,7 +849,7 @@ async function normalizeNodePtyHostPayload(packageRoot, platform) {
   if (platform === "linux-x64") {
     const releaseRoot = path.join(packageRoot, "build", "Release");
     await mkdir(hostRoot, { recursive: true });
-    for (const filename of ["pty.node", "spawn-helper"]) {
+    for (const filename of ["pty.node"]) {
       const destination = path.join(hostRoot, filename);
       if (existsSync(destination)) continue;
       const source = path.join(releaseRoot, filename);
@@ -857,7 +857,7 @@ async function normalizeNodePtyHostPayload(packageRoot, platform) {
         packageRoot,
         source,
         `node-pty Linux ${filename}`,
-        filename === "spawn-helper",
+        false,
       );
       const sourceDigest = await sha256File(canonicalSource);
       const metadata = await lstat(canonicalSource);
@@ -866,7 +866,7 @@ async function normalizeNodePtyHostPayload(packageRoot, platform) {
       await assertFileDigest(destination, sourceDigest, `staged node-pty Linux ${filename}`);
     }
   }
-  if (platform === "linux-x64" || platform === "darwin-arm64") {
+  if (platform === "darwin-arm64") {
     const helper = path.join(hostRoot, "spawn-helper");
     await assertContainedRegularFile(packageRoot, helper, `node-pty ${platform} spawn-helper`, false);
     await chmod(helper, 0o755);

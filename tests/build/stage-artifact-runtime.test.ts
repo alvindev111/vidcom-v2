@@ -84,7 +84,7 @@ async function sha256Pin(filename: string): Promise<string> {
 
 function nodePtyFixtureFiles(platform: string): string[] {
   if (platform === "linux-x64") {
-    return ["lib/index.js", "build/Release/pty.node", "build/Release/spawn-helper"];
+    return ["lib/index.js", "build/Release/pty.node"];
   }
   const root = `prebuilds/${platform}`;
   return platform === "win32-x64"
@@ -221,9 +221,6 @@ async function fixture(): Promise<Fixture> {
     const packageRoot = await packageFixture(path.join(root, "native-packages"), packageName, version, files);
     if (packageName.startsWith("@esbuild/")) {
       await executableCopy(path.join(packageRoot, esbuildPlatformBinaryRelative(HOST_TAG)));
-    }
-    if (packageName === "node-pty" && HOST_TAG === "linux-x64") {
-      await chmod(path.join(packageRoot, "build", "Release", "spawn-helper"), 0o755);
     }
     nativePackageRoots.set(packageName, packageRoot);
   }
@@ -461,30 +458,26 @@ describe("artifact runtime staging", () => {
     const packageRoot = await packageFixture(root, "node-pty", "1.1.0", [
       "lib/index.js",
       "build/Release/pty.node",
-      "build/Release/spawn-helper",
       "prebuilds/darwin-arm64/pty.node",
     ]);
-    await chmod(path.join(packageRoot, "build", "Release", "spawn-helper"), 0o755);
 
     await pruneRuntimePackageTree(packageRoot, "node-pty", "linux-x64");
 
     expect(await readFile(path.join(packageRoot, "prebuilds", "linux-x64", "pty.node"), "utf8"))
       .toBe("node-pty:build/Release/pty.node\n");
-    const helper = path.join(packageRoot, "prebuilds", "linux-x64", "spawn-helper");
-    expect((await lstat(helper)).mode & 0o111).not.toBe(0);
+    expect(existsSync(path.join(packageRoot, "prebuilds", "linux-x64", "spawn-helper"))).toBe(false);
     expect(existsSync(path.join(packageRoot, "build"))).toBe(false);
     expect(existsSync(path.join(packageRoot, "prebuilds", "darwin-arm64"))).toBe(false);
   });
 
-  it("fails closed when the trusted node-pty Linux build output is incomplete", async () => {
+  it("fails closed when the trusted node-pty Linux binding is absent", async () => {
     const root = await temporaryRoot();
     const packageRoot = await packageFixture(root, "node-pty", "1.1.0", [
       "lib/index.js",
-      "build/Release/pty.node",
     ]);
 
     await expect(pruneRuntimePackageTree(packageRoot, "node-pty", "linux-x64"))
-      .rejects.toThrow(/node-pty Linux spawn-helper must be a real regular file/u);
+      .rejects.toThrow(/node-pty Linux pty.node must be a real regular file/u);
   });
 
   it("repairs the exact Darwin host spawn-helper mode before pruning", async () => {
@@ -1019,8 +1012,12 @@ await commitRuntimeGeneration(temporary, destination, {
       ]));
     } else {
       const helper = `${nodePtyPrefix}spawn-helper`;
-      expect(files).toContain(helper);
-      expect((await lstat(path.join(archiveRoot, helper))).mode & 0o111).not.toBe(0);
+      if (process.platform === "darwin") {
+        expect(files).toContain(helper);
+        expect((await lstat(path.join(archiveRoot, helper))).mode & 0o111).not.toBe(0);
+      } else {
+        expect(files).not.toContain(helper);
+      }
     }
     expect(files.some((filename) => /(?:^|\/)esbuild\.exe$/u.test(filename)))
       .toBe(process.platform === "win32");

@@ -140,11 +140,11 @@ export function productRuntimeFixtureEntries(
     ].map((path) => ({ path, content: Buffer.from(`node-pty:${path}\n`, "utf8") }))
     : [
       { path: `${nodePtyRoot}/pty.node`, content: Buffer.from("node-pty binding\n", "utf8") },
-      {
+      ...(platformTag === "darwin-arm64" ? [{
         path: `${nodePtyRoot}/spawn-helper`,
         content: Buffer.from("node-pty helper\n", "utf8"),
         mode: 0o755,
-      },
+      }] : []),
     ];
   const native: FixtureFile[] = [
     ...[...commonNativePackageNames, ...platformPackageNames].map((name) => ({

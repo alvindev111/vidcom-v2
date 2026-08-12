@@ -113,9 +113,9 @@ function hostProductContract(platformTag: string): HostProductContract {
         : new RegExp(`^${onnxRoot}/libonnxruntime\\.so(?:\\.[0-9.]+)?$`, "u"),
   ];
   const nodePtyRoot = `node_modules/node-pty/prebuilds/${platformTag}`;
-  const nativeExecutableEntries = platformTag === "win32-x64"
-    ? []
-    : [`${nodePtyRoot}/spawn-helper`];
+  const nativeExecutableEntries = platformTag === "darwin-arm64"
+    ? [`${nodePtyRoot}/spawn-helper`]
+    : [];
   const nodePtyEntries = platformTag === "win32-x64"
     ? [
       `${nodePtyRoot}/pty.node`,
