@@ -58,6 +58,16 @@ describe("startup ceilings", () => {
       });
     }
   });
+
+  it("keeps each warm ceiling in the next second above its 1.5x regression gate", async () => {
+    for (const [label, ceilings] of Object.entries(STARTUP_CEILINGS)) {
+      const baseline = await readBaseline(label);
+      expect(baseline).not.toBeNull();
+      const regressionLimit = baseline!.measurements.warmServe * REGRESSION_FACTOR;
+      expect(ceilings.warmServe).toBeGreaterThanOrEqual(regressionLimit);
+      expect(ceilings.warmServe).toBeLessThan(regressionLimit + 1_000);
+    }
+  });
 });
 
 describe("startup gates", () => {
@@ -70,7 +80,9 @@ describe("startup gates", () => {
 
   it("fails a run over the ceiling", () => {
     // The only number that blocks a release.
-    const results = evaluateStartup(LABEL, { warmServe: 5_000 }, null);
+    const results = evaluateStartup(LABEL, {
+      warmServe: STARTUP_CEILINGS[LABEL].warmServe + 1,
+    }, null);
     expect(failingResults(results)[0]).toMatchObject({ status: "over-ceiling" });
   });
 

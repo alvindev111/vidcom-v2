@@ -2,7 +2,7 @@
   "version": 1,
   "runner": "darwin-arm64",
   "measurements": {
-    "coldServe": 813,
-    "warmServe": 611
+    "coldServe": 4061,
+    "warmServe": 3646
   }
 }

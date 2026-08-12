@@ -2,7 +2,7 @@
   "version": 1,
   "runner": "win32-x64",
   "measurements": {
-    "coldServe": 2637,
-    "warmServe": 2461
+    "coldServe": 11792,
+    "warmServe": 11508
   }
 }

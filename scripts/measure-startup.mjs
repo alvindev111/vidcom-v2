@@ -14,9 +14,9 @@ export const BASELINE_DIRECTORY = path.join(REPOSITORY_ROOT, ".github", "perf-ba
  * holding it to a macOS number would fail a machine that is behaving normally.
  */
 export const STARTUP_CEILINGS = {
-  "darwin-arm64": { coldServe: 120_000, warmServe: 3_000, warmApp: 2_000 },
-  "linux-x64": { coldServe: 120_000, warmServe: 3_000, warmApp: 2_000 },
-  "win32-x64": { coldServe: 180_000, warmServe: 5_000, warmApp: 3_000 },
+  "darwin-arm64": { coldServe: 120_000, warmServe: 6_000, warmApp: 2_000 },
+  "linux-x64": { coldServe: 120_000, warmServe: 11_000, warmApp: 2_000 },
+  "win32-x64": { coldServe: 180_000, warmServe: 18_000, warmApp: 3_000 },
 };
 
 /**

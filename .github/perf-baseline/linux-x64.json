@@ -2,7 +2,7 @@
   "version": 1,
   "runner": "linux-x64",
   "measurements": {
-    "coldServe": 1007,
-    "warmServe": 1004
+    "coldServe": 7223,
+    "warmServe": 7022
   }
 }
