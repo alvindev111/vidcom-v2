@@ -64,11 +64,16 @@ const previewSettings = {
     softLightIntensity: "medium" as const,
   },
   theme: {
+    paletteId: null,
     variables: {
       "--primary": "#ff0000",
       "--primary-light": "#ffaaaa",
       "--accent": "#00ff00",
       "--accent-light": "#aaffaa",
+      "--background": "#000000",
+      "--surface": "#111111",
+      "--text": "#ffffff",
+      "--text-muted": "#aaaaaa",
       "--success": "#008800",
       "--info": "#0000ff",
     },

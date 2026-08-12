@@ -71,6 +71,7 @@ async function fixture() {
         warnings: [],
       }),
     },
+    fonts: application.fonts,
   };
   const port = 43219;
   const nonces = new InMemoryNonceStore(clock);

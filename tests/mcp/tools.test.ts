@@ -177,6 +177,7 @@ describe("all registered tool handlers", () => {
       cancel_job: { jobId: "job-1" },
       get_render_output: { jobId: "job-1" },
       list_bgm_beds: {},
+      list_color_palettes: { category: "warm" },
       search_bgm: { mood: "calm focused", limit: 4 },
       install_bgm: { projectId, bedId: "ambient", seconds: 10, expectedRevision: 0 },
       import_bgm: {
@@ -207,6 +208,20 @@ describe("all registered tool handlers", () => {
       }
       else if (name === "list_bgm_beds") {
         expect(result).toMatchObject({ ok: true, value: { library: [] } });
+      }
+      else if (name === "list_color_palettes") {
+        expect(result).toMatchObject({
+          ok: true,
+          value: {
+            defaultPaletteId: "clean-slate",
+            palettes: [
+              { id: "terracotta", category: "warm" },
+              { id: "sand", category: "warm" },
+              { id: "rose", category: "warm" },
+              { id: "wheat", category: "warm" },
+            ],
+          },
+        });
       }
       else if (name === "search_bgm") {
         expect(result).toMatchObject({

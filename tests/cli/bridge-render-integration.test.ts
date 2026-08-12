@@ -59,6 +59,7 @@ describe("CLI render bridge against real persistence", () => {
           warnings: [],
         }),
       },
+      fonts: application.fonts,
     };
     const nonces = new InMemoryNonceStore(clock);
     const sessions = new InMemorySessionStore(clock);

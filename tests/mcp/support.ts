@@ -9,6 +9,7 @@ import {
 } from "@vidcom/contracts";
 import {
   DEFAULT_PREVIEW_SETTINGS,
+  mergePreviewSettings,
   ok,
   ToolAuditService,
   type AbsolutePath,
@@ -135,7 +136,10 @@ export const CONTRACT_MATRIX_CASES: Record<string, Record<string, unknown>> = {
   list_project_assets: { projectId: matrixProjectId, directory: "preview-assets/bgm" },
   set_preview_settings: {
     projectId: matrixProjectId,
-    patch: { bgm: { enabled: true, track: { name: "theme.mp3", path: matrixBgmPath } } },
+    patch: {
+      theme: { paletteId: "sunset" },
+      bgm: { enabled: true, track: { name: "theme.mp3", path: matrixBgmPath } },
+    },
     expectedRevision: 1,
   },
   get_narration_cues: { projectId: matrixProjectId, sceneId: "scene-1" },
@@ -155,6 +159,7 @@ export const CONTRACT_MATRIX_CASES: Record<string, Record<string, unknown>> = {
   cancel_job: { jobId: "job_matrix" },
   get_render_output: { jobId: "job_render" },
   list_bgm_beds: {},
+  list_color_palettes: { mood: "futuristic" },
   search_bgm: { mood: "calm focused", limit: 4 },
   install_bgm: {
     projectId: matrixProjectId,
@@ -352,7 +357,9 @@ export function createContractMatrixRegistry(): ToolRegistry {
             contentHash: matrixNewHash,
             revision: 3,
             diagnostics: [],
-            ...(request.kind === "entity" ? { previewSettings: DEFAULT_PREVIEW_SETTINGS } : {}),
+            ...(request.kind === "entity" ? {
+              previewSettings: mergePreviewSettings(DEFAULT_PREVIEW_SETTINGS, request.patch),
+            } : {}),
           });
         }
         const fileHashes = Object.fromEntries(

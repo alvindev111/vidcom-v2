@@ -27,6 +27,7 @@ import {
   type CompositeMutationJournalPort,
   type CompositionPort,
   type DerivedMutationPath,
+  type FontCompatibilityService,
   type JobExecutionContext,
   type Job,
   type JobId,
@@ -45,6 +46,8 @@ import {
   type WorkspacePort,
   type WriteAuthority,
 } from "@vidcom/core";
+
+import { checkFontCompatibility } from "./font-compatibility-gate";
 
 export interface RenderJobInput {
   projectId: ProjectId;
@@ -82,6 +85,7 @@ export interface RenderJobDependencies {
   journal: MutationJournalPort & Pick<CompositeMutationJournalPort, "readProjectRecoveryStatus">;
   guard: RuntimeAssetGuardPort;
   binaries: BinaryProbePort;
+  fonts: FontCompatibilityService;
   runtimeSource(): string;
   injectGuard(document: string, guard: { csp: string; bootstrapScript: string }): string;
   clock: ClockPort;
@@ -177,7 +181,7 @@ function parseInput(raw: unknown): RenderJobInput {
 
 /** Gate shared by enqueue adapters and the worker's defensive re-check. */
 export async function prepareRender(
-  dependencies: Pick<RenderJobDependencies, "workspace" | "composition" | "journal">,
+  dependencies: Pick<RenderJobDependencies, "workspace" | "composition" | "journal" | "fonts">,
   projectId: ProjectId,
 ): Promise<Result<PreparedRender, DomainError>> {
   const ref = await dependencies.workspace.readProjectRef(projectId);
@@ -227,6 +231,8 @@ export async function prepareRender(
       sceneIds: shallowMotion.flatMap(({ sceneId }) => sceneId ? [sceneId] : []),
     },
   });
+  const fontCompatibility = await checkFontCompatibility(dependencies.fonts, ref, model.sources);
+  if (!fontCompatibility.ok) return fontCompatibility;
   const settings = await getPreviewSettings({
     workspace: dependencies.workspace,
     composition: dependencies.composition,
@@ -242,7 +248,7 @@ export async function prepareRender(
 
 /** Performs the state gate before any durable queue row becomes visible. */
 export async function enqueueRenderJob(
-  dependencies: Pick<RenderJobDependencies, "workspace" | "composition" | "journal"> & RenderJobEnqueueDependencies,
+  dependencies: Pick<RenderJobDependencies, "workspace" | "composition" | "journal" | "fonts"> & RenderJobEnqueueDependencies,
   rawInput: RenderJobInput,
 ): Promise<Result<Job, DomainError>> {
   let input: RenderJobInput;

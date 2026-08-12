@@ -24,6 +24,7 @@ import { registerAssetTools, type AssetToolDependencies } from "./asset-tools";
 import { registerLifecycleTools, type LifecycleToolDependencies } from "./lifecycle-tools";
 import { registerNarrationTools, type NarrationToolDependencies } from "./narration-tools";
 import { registerBgmTools, type BgmToolDependencies } from "./bgm-tools";
+import { registerPaletteTools } from "./palette-tools";
 
 export type VidcomToolDependencies =
   ReadToolDependencies & WriteToolDependencies & DestructiveToolDependencies & JobToolDependencies
@@ -45,5 +46,6 @@ export function registerVidcomTools(registry: ToolRegistry, dependencies: Vidcom
   registerAssetTools(registry, dependencies);
   registerNarrationTools(registry, dependencies);
   registerBgmTools(registry, dependencies);
+  registerPaletteTools(registry);
   registry.assertPublicCatalogue();
 }

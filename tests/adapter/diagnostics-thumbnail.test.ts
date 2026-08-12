@@ -118,6 +118,7 @@ function diagnosticsWithMissingCheck(value: Awaited<ReturnType<typeof fixture>>)
         timeoutMs: 2_000,
       },
     ),
+    fonts: value.application.fonts,
   });
 }
 
@@ -225,6 +226,7 @@ describe("Phase M diagnostics and thumbnails on real SQLite/filesystem", () => {
           return { available: true, diagnostics: [{ severity: "warning", code: "lint:sample", message: "sample" }] };
         },
       },
+      fonts: value.application.fonts,
     });
     const report = await service.forProject(id);
     expect(report.ok).toBe(true);
@@ -265,6 +267,7 @@ describe("Phase M diagnostics and thumbnails on real SQLite/filesystem", () => {
       workspace: value.infrastructure.workspace,
       composition: value.infrastructure.composition,
       journal: value.infrastructure.journal,
+      fonts: value.application.fonts,
     };
     await expect(prepareRender(jobDeps, id)).resolves.toMatchObject({ ok: false, error: { code: ErrorCode.ProjectInvalid } });
     await expect(prepareSnapshot(jobDeps, id)).resolves.toMatchObject({ ok: false, error: { code: ErrorCode.ProjectInvalid } });
@@ -361,6 +364,7 @@ describe("Phase M diagnostics and thumbnails on real SQLite/filesystem", () => {
       journal: value.infrastructure.journal,
       authority: value.application.authority,
       lint: { async check() { return { available: true, diagnostics: [] }; } },
+      fonts: value.application.fonts,
     });
 
     const before = await service.forProject(id);

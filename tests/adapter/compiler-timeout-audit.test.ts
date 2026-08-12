@@ -28,6 +28,7 @@ const EXPECTED_HYPERFRAMES_IMPORTS: ImportRecord[] = [
   record("packages/adapter/src/hyperframes/dom.ts", "@hyperframes/core", ["readClipTiming"]),
   record("packages/adapter/src/hyperframes/elements.ts", "@hyperframes/core", ["readClipTiming"]),
   record("packages/adapter/src/hyperframes/elements.ts", "@hyperframes/parsers/gsap-parser", ["parseGsapScript"]),
+  record("packages/adapter/src/hyperframes/font-compatibility.ts", "@hyperframes/core", ["resolveWithinProject"]),
   record("packages/adapter/src/hyperframes/legacy-projects.ts", "@hyperframes/core", [
     "getHyperframeRuntimeScript", "parseNumeric", "readClipTiming", "resolveWithinProject",
   ]),
@@ -288,7 +289,7 @@ describe("compiler boundary audit", () => {
     expect((await inventory()).compilerCalls).toEqual([`${COMPILER_BOUNDARY}:bundleToSingleHtml`]);
   });
 
-  it("keeps the eight reviewed static adapter import sites unchanged", async () => {
+  it("keeps the nine reviewed static adapter import sites unchanged", async () => {
     const staticFiles = new Set((await inventory()).imports
       .filter((entry) => !entry.dynamic)
       .map((entry) => entry.file));
@@ -296,6 +297,7 @@ describe("compiler boundary audit", () => {
       "packages/adapter/src/hyperframes/document.ts",
       "packages/adapter/src/hyperframes/dom.ts",
       "packages/adapter/src/hyperframes/elements.ts",
+      "packages/adapter/src/hyperframes/font-compatibility.ts",
       "packages/adapter/src/hyperframes/legacy-projects.ts",
       "packages/adapter/src/hyperframes/legacy-sdk.ts",
       "packages/adapter/src/hyperframes/parse.ts",

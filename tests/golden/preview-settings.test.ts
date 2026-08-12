@@ -11,6 +11,7 @@ import path from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { buildPreviewCss, injectPreviewSettingsDocument } from "@vidcom/adapter";
+import { DEFAULT_PREVIEW_SETTINGS as CORE_DEFAULT_PREVIEW_SETTINGS } from "@vidcom/core";
 import {
   BACKGROUND_FX,
   DEFAULT_PREVIEW_SETTINGS,
@@ -61,6 +62,10 @@ afterAll(() => {
 });
 
 describe("preview settings matrix", () => {
+  it("keeps the editor and render pipeline on the same default palette", () => {
+    expect(DEFAULT_PREVIEW_SETTINGS).toEqual(CORE_DEFAULT_PREVIEW_SETTINGS);
+  });
+
   it("locks CSS and root-document injection for all 60 combinations", async () => {
     const matrix: Record<string, { css: string; html: string }> = {};
 

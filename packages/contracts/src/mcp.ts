@@ -36,6 +36,12 @@ import {
 import { NarrationCueInputSchema } from "./delivery-loop-http";
 import { ErrorCode } from "./errors";
 import { MotionLibraryIdSchema } from "./motion-libraries";
+import {
+  ColorPaletteCategorySchema,
+  ColorPaletteIdSchema,
+  ColorPaletteMoodSchema,
+  ColorPaletteSchema,
+} from "./color-palettes";
 
 const CanonicalRelativePathSchema = RelativePathSchema.regex(
   /^(?!\/)(?![A-Za-z]:)(?!.*\\)(?!.*\0)(?!.*\/\/)(?!\.{1,2}(?:\/|$))(?!.*\/\.{1,2}(?:\/|$)).+$/,
@@ -454,6 +460,17 @@ export const ListProjectAssetsOutputSchema = z.strictObject({
   truncated: z.boolean(),
 });
 
+/** Input for `list_color_palettes`; omit category to receive the complete small catalog. */
+export const ListColorPalettesInputSchema = z.strictObject({
+  category: ColorPaletteCategorySchema.optional(),
+  mood: ColorPaletteMoodSchema.optional(),
+});
+/** Output for `list_color_palettes`, including the fallback used when no color direction exists. */
+export const ListColorPalettesOutputSchema = z.strictObject({
+  defaultPaletteId: ColorPaletteIdSchema,
+  palettes: z.array(ColorPaletteSchema).max(20),
+});
+
 /** Input for `set_preview_settings`. */
 export const SetPreviewSettingsInputSchema = z.strictObject({
   ...projectIdInput,
@@ -637,6 +654,11 @@ export const TOOL_SCHEMA_CATALOGUE = {
   list_project_assets: {
     input: ListProjectAssetsInputSchema,
     output: ListProjectAssetsOutputSchema,
+    level: "read",
+  },
+  list_color_palettes: {
+    input: ListColorPalettesInputSchema,
+    output: ListColorPalettesOutputSchema,
     level: "read",
   },
   list_projects: {

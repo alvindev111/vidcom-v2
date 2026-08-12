@@ -1,7 +1,7 @@
 ---
 name: vidcom
 description: Route complete video-production requests through VidCom MCP. Use first for any VidCom project, scene, look, narration, validation, preview, or render task. Delegate focused work to a vidcom-* skill; do not use host file tools or HyperFrames CLI for project mutations.
-x-vidcom-agent-kit: 5
+x-vidcom-agent-kit: 8
 ---
 
 # VidCom router
@@ -11,8 +11,9 @@ x-vidcom-agent-kit: 5
 3. Run `list_projects`, then `get_project_context` for the selected project.
 4. Before edits, state `This video tells [audience] that [message]` and propose a value-first beat table. Each row names its narrative role, viewer experience, meaningful visual change, multi-phase motion, and transition. The value claim lands by beat two.
 5. Route project setup to `/vidcom-project`, story beats to `/vidcom-scene`, every story scene's choreography to `/vidcom-motion`, look changes to `/vidcom-look`, speech to `/vidcom-narration`, output to `/vidcom-render`, and failures to `/vidcom-fix`.
-6. Add BGM through `/vidcom-look` after duration is known: search remote catalogues by mood first, verify the selected source and attribution, and use an offline bed when providers are unavailable. Skip music only when the user asks for no music or silence is editorially required.
-7. Always finish with validation, a real snapshot, and a report of remaining diagnostics.
+6. Route styling through `/vidcom-look`: explicit user or brand colors win; otherwise select a standardized palette from `list_color_palettes` and apply its id.
+7. Add BGM through `/vidcom-look` after duration is known: search remote catalogues by mood first, verify the selected source and attribution, and use an offline bed when providers are unavailable. Skip music only when the user asks for no music or silence is editorially required.
+8. Always finish with validation, a real snapshot, and a report of remaining diagnostics.
 
 Do not use this router as a substitute for a focused skill once the intent is known. A complete story-driven video must pass through both `/vidcom-scene` and `/vidcom-motion`; a fade-only or repeated opacity-plus-translate treatment is not a finished scene.
 

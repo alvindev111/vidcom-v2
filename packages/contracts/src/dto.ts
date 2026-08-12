@@ -2,6 +2,7 @@ import { z } from "zod";
 
 import { ErrorCode, WarningCode } from "./errors";
 import { HOST_DOMAIN_EVENT_TYPES, PROJECT_DOMAIN_EVENT_TYPES } from "./domain";
+import { ColorPaletteIdSchema } from "./color-palettes";
 
 const identifierSchema = z.string().min(1).max(255);
 const relativePathSchema = z.string().min(1).max(4096);
@@ -37,6 +38,7 @@ export const DiagnosticSchema = z.strictObject({
   file: relativePathSchema.optional(),
   line: z.number().int().positive().optional(),
   message: z.string().min(1),
+  details: z.record(z.string(), z.unknown()).optional(),
   fix: z
     .strictObject({
       kind: z.literal("set-attribute"),
@@ -224,6 +226,10 @@ const themeVariablesSchema = z.strictObject({
   "--primary-light": z.string(),
   "--accent": z.string(),
   "--accent-light": z.string(),
+  "--background": z.string(),
+  "--surface": z.string(),
+  "--text": z.string(),
+  "--text-muted": z.string(),
   "--success": z.string(),
   "--info": z.string(),
 });
@@ -267,7 +273,10 @@ export const SceneSettingsSchema = z.strictObject({
 
 export const PreviewSettingsSchema = z.strictObject({
   tone: ToneSettingsSchema,
-  theme: z.strictObject({ variables: themeVariablesSchema }),
+  theme: z.strictObject({
+    paletteId: ColorPaletteIdSchema.nullable(),
+    variables: themeVariablesSchema,
+  }),
   bgm: BgmSettingsSchema,
   subtitles: SubtitleSettingsSchema,
   scenes: z.record(z.string(), SceneSettingsSchema),
@@ -277,7 +286,10 @@ export const PreviewSettingsPatchSchema = z
   .strictObject({
     tone: ToneSettingsSchema.partial().optional(),
     theme: z
-      .strictObject({ variables: themeVariablesSchema.partial().optional() })
+      .strictObject({
+        paletteId: ColorPaletteIdSchema.nullable().optional(),
+        variables: themeVariablesSchema.partial().optional(),
+      })
       .optional(),
     bgm: BgmSettingsSchema.partial().optional(),
     subtitles: SubtitleSettingsSchema.partial().optional(),

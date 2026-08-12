@@ -17,7 +17,7 @@ import type {
   RelPath,
 } from "@vidcom/contracts";
 
-import type { AbsolutePath, BinaryContent, CompositionModel, CompositionOp, FileContent, FileNode, FileStat, ProjectRef } from "../domain/models";
+import type { AbsolutePath, BinaryContent, CompositionModel, CompositionOp, CompositionSource, FileContent, FileNode, FileStat, FontCompatibilityIssue, ProjectRef } from "../domain/models";
 import type { MotionLibrary } from "../domain/motion-libraries";
 import type { Result } from "../error/result";
 import type {
@@ -176,6 +176,12 @@ export interface BinaryProbePort {
 /** Adapter-owned HyperFrames check execution; non-zero finding exits remain available results. */
 export interface DiagnosticsLintPort {
   check(ref: ProjectRef): Promise<{ available: boolean; diagnostics: Diagnostic[] }>;
+}
+
+/** Inspects authored UTF-8 text against the exact project-local font bytes selected by CSS. */
+export interface FontCompatibilityPort {
+  /** Returns factual encoding and glyph findings; an empty list means every inspected run is verified. */
+  inspect(ref: ProjectRef, sources: readonly CompositionSource[]): Promise<FontCompatibilityIssue[]>;
 }
 
 /** Reads a pinned motion library's source from wherever the adapter installs it. */

@@ -34,6 +34,7 @@ import {
   DOWNLOAD_CACHE_COMPONENTS,
   DownloadCacheCoordinator,
   NodeHyperframesDiagnosticsLint,
+  FontkitCompatibilityInspector,
   BgmLibraryStore,
   BgmProviderRegistry,
   CcMixterBgmProvider,
@@ -59,6 +60,7 @@ import {
   ProjectIdentityService,
   ProjectLifecycle,
   DiagnosticsService,
+  FontCompatibilityService,
   ThumbnailResolver,
   ProjectStateStore,
   scanWorkspace,
@@ -327,6 +329,7 @@ export function createInfrastructure(config: CompositionRootConfig) {
       ? { cliPath: config.runtimePaths.hyperframesCliPath as AbsolutePath }
       : {}),
   });
+  const fontInspector = new FontkitCompatibilityInspector();
   // App-data, never the workspace or the checkout: these are engine
   // intermediates and model weights, and a project directory is watched, backed
   // up and committed by its owner.
@@ -400,6 +403,7 @@ export function createInfrastructure(config: CompositionRootConfig) {
     settings,
     processes,
     diagnosticLint,
+    fontInspector,
     tts,
     ttsScratchRoot,
     toolAudit,
@@ -485,6 +489,7 @@ export function createMcpRegistry(
       ids: infrastructure.ids,
       hashContent,
       binaries: infrastructure.renderBinaries,
+      fonts: application.fonts,
     }, input),
     enqueueSnapshot: (input) => enqueueSnapshotJob({
       workspace: infrastructure.workspace,
@@ -494,6 +499,7 @@ export function createMcpRegistry(
       ids: infrastructure.ids,
       hashContent,
       binaries: infrastructure.renderBinaries,
+      fonts: application.fonts,
     }, input),
   });
   return registry;
@@ -608,6 +614,7 @@ export function createApplication(
     entries: infrastructure.entries,
     composition: infrastructure.composition,
   }, infrastructure.workspaceRoot);
+  const fonts = new FontCompatibilityService(infrastructure.fontInspector);
   const diagnostics = new DiagnosticsService({
     scan,
     workspace: infrastructure.workspace,
@@ -616,6 +623,7 @@ export function createApplication(
     journal: infrastructure.journal,
     authority,
     lint: infrastructure.diagnosticLint,
+    fonts,
   });
   const thumbnails = new ThumbnailResolver(infrastructure.workspace);
   const agentKit = new AgentKitInstaller({
@@ -634,6 +642,7 @@ export function createApplication(
     state,
     lifecycle,
     diagnostics,
+    fonts,
     thumbnails,
     agentKit,
     readDependencies,
@@ -702,6 +711,7 @@ export function createJobTypes(
       journal: infrastructure.journal,
       guard: infrastructure.renderGuard,
       binaries: infrastructure.renderBinaries,
+      fonts: application.fonts,
       runtimeSource: infrastructure.runtimeSource,
       injectGuard: injectRuntimeAssetGuardDocument,
       clock: infrastructure.clock,
@@ -718,6 +728,7 @@ export function createJobTypes(
       jobs: infrastructure.jobs,
       guard: infrastructure.renderGuard,
       binaries: infrastructure.renderBinaries,
+      fonts: application.fonts,
       runtimeSource: infrastructure.runtimeSource,
       injectGuard: injectRuntimeAssetGuardDocument,
       clock: infrastructure.clock,

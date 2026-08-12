@@ -1,4 +1,4 @@
-# x-vidcom-agent-kit: 5
+# x-vidcom-agent-kit: 8
 interface:
   display_name: "VidCom"
   short_description: "Route video production work through VidCom MCP"

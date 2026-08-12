@@ -22,6 +22,7 @@ import {
   type CompositeMutationJournalPort,
   type CompositionPort,
   type DerivedMutationPath,
+  type FontCompatibilityService,
   type IdPort,
   type Job,
   type JobExecutionContext,
@@ -41,6 +42,7 @@ import {
 } from "@vidcom/core";
 
 import { preflightRenderDocument } from "./render-job";
+import { checkFontCompatibility } from "./font-compatibility-gate";
 
 export interface SnapshotJobInput {
   projectId: ProjectId;
@@ -78,6 +80,7 @@ export interface SnapshotJobDependencies {
   jobs: JobStorePort;
   guard: RuntimeAssetGuardPort;
   binaries: BinaryProbePort;
+  fonts: FontCompatibilityService;
   runtimeSource(): string;
   injectGuard(document: string, guard: { csp: string; bootstrapScript: string }): string;
   clock: ClockPort;
@@ -106,7 +109,7 @@ function parseInput(raw: unknown): SnapshotJobInput {
 }
 
 export async function prepareSnapshot(
-  dependencies: Pick<SnapshotJobDependencies, "workspace" | "composition" | "journal">,
+  dependencies: Pick<SnapshotJobDependencies, "workspace" | "composition" | "journal" | "fonts">,
   projectId: ProjectId,
 ): Promise<Result<PreparedSnapshot, DomainError>> {
   const ref = await dependencies.workspace.readProjectRef(projectId);
@@ -133,6 +136,8 @@ export async function prepareSnapshot(
       details: { reason: ErrorCode.CompositionParseError },
     });
   }
+  const fontCompatibility = await checkFontCompatibility(dependencies.fonts, ref, model.sources);
+  if (!fontCompatibility.ok) return fontCompatibility;
   const settings = await getPreviewSettings({
     workspace: dependencies.workspace,
     composition: dependencies.composition,
@@ -154,7 +159,7 @@ export async function prepareSnapshot(
 }
 
 export async function enqueueSnapshotJob(
-  dependencies: Pick<SnapshotJobDependencies, "workspace" | "composition" | "journal"> & SnapshotEnqueueDependencies,
+  dependencies: Pick<SnapshotJobDependencies, "workspace" | "composition" | "journal" | "fonts"> & SnapshotEnqueueDependencies,
   rawInput: SnapshotJobInput,
 ): Promise<Result<Job, DomainError>> {
   let input: SnapshotJobInput;

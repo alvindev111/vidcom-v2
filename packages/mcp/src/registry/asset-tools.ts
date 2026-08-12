@@ -70,10 +70,10 @@ export function setPreviewSettingsTool(
     title: "Patch preview settings",
     level: "write",
     description: [
-      "Use when changing tone, theme variables, subtitle styling, per-scene transition or reveal sounds, or attaching background music from a file already in the project.",
+      "Use when applying a bundled color palette by theme.paletteId, changing individual tone or theme colors, styling subtitles, setting per-scene sounds, or attaching background music already in the project.",
       "Do not use to edit composition source, to upload bytes, or to change scene timing.",
       "Preconditions: projectId and expectedRevision come from get_project_context; a bgm.track path must name an existing mp3, wav, ogg or m4a asset listed by list_project_assets, and setting bgm.track to null detaches the music.",
-      "Side effects: merges the patch into preview-settings.json as one journaled entity mutation, returning the complete settings and their new revision.",
+      "Side effects: merges the patch into preview-settings.json as one journaled entity mutation, returning the complete settings and their new revision; a palette id applies all semantic colors atomically, while an individual color override clears the preset id.",
       "Errors/recovery: no_file or unsupported_media means the track is missing or not audio, so run list_project_assets; write_conflict means expectedRevision is stale, so re-read get_project_context; never retry a committed_response_error mutation.",
     ].join(" "),
     input: SetPreviewSettingsInputSchema,

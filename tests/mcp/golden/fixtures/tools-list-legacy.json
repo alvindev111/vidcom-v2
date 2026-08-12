@@ -432,6 +432,13 @@
                       "type": "string",
                       "minLength": 1
                     },
+                    "details": {
+                      "type": "object",
+                      "propertyNames": {
+                        "type": "string"
+                      },
+                      "additionalProperties": {}
+                    },
                     "fix": {
                       "type": "object",
                       "properties": {
@@ -648,6 +655,13 @@
                     "message": {
                       "type": "string",
                       "minLength": 1
+                    },
+                    "details": {
+                      "type": "object",
+                      "propertyNames": {
+                        "type": "string"
+                      },
+                      "additionalProperties": {}
                     },
                     "fix": {
                       "type": "object",
@@ -940,6 +954,13 @@
                     "message": {
                       "type": "string",
                       "minLength": 1
+                    },
+                    "details": {
+                      "type": "object",
+                      "propertyNames": {
+                        "type": "string"
+                      },
+                      "additionalProperties": {}
                     },
                     "fix": {
                       "type": "object",
@@ -1854,6 +1875,38 @@
               "theme": {
                 "type": "object",
                 "properties": {
+                  "paletteId": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "enum": [
+                          "clean-slate",
+                          "ocean",
+                          "forest",
+                          "lavender",
+                          "sunset",
+                          "candy",
+                          "electric",
+                          "tropical",
+                          "midnight",
+                          "noir",
+                          "cyber",
+                          "ember",
+                          "newsroom",
+                          "vintage",
+                          "monograph",
+                          "academia",
+                          "terracotta",
+                          "sand",
+                          "rose",
+                          "wheat"
+                        ]
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
                   "variables": {
                     "type": "object",
                     "properties": {
@@ -1869,6 +1922,18 @@
                       "--accent-light": {
                         "type": "string"
                       },
+                      "--background": {
+                        "type": "string"
+                      },
+                      "--surface": {
+                        "type": "string"
+                      },
+                      "--text": {
+                        "type": "string"
+                      },
+                      "--text-muted": {
+                        "type": "string"
+                      },
                       "--success": {
                         "type": "string"
                       },
@@ -1881,6 +1946,10 @@
                       "--primary-light",
                       "--accent",
                       "--accent-light",
+                      "--background",
+                      "--surface",
+                      "--text",
+                      "--text-muted",
                       "--success",
                       "--info"
                     ],
@@ -1888,6 +1957,7 @@
                   }
                 },
                 "required": [
+                  "paletteId",
                   "variables"
                 ],
                 "additionalProperties": false
@@ -2094,6 +2164,13 @@
                 "message": {
                   "type": "string",
                   "minLength": 1
+                },
+                "details": {
+                  "type": "object",
+                  "propertyNames": {
+                    "type": "string"
+                  },
+                  "additionalProperties": {}
                 },
                 "fix": {
                   "type": "object",
@@ -3538,6 +3615,344 @@
       }
     },
     {
+      "name": "list_color_palettes",
+      "title": "List standardized video palettes",
+      "description": "Use when choosing a video's look and the user and brand kit provide no explicit color direction; filter by mood or category when the brief implies one. Do not use a preset to replace colors explicitly supplied by the user or brand; custom direction always wins. Preconditions: none; every entry includes semantic color roles, controlled moods, harmony, choose/avoid guidance, and its source palette URL and swatches. Side effects: read-only; to apply one result atomically, call set_preview_settings with patch.theme.paletteId set to its id. Errors/recovery: an omitted category returns the complete catalog; defaultPaletteId is the deterministic fallback when no palette better matches the brief.",
+      "inputSchema": {
+        "type": "object",
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "category": {
+            "type": "string",
+            "enum": [
+              "minimal",
+              "vibrant",
+              "dark",
+              "editorial",
+              "warm"
+            ]
+          },
+          "mood": {
+            "type": "string",
+            "enum": [
+              "clean",
+              "trustworthy",
+              "calm",
+              "natural",
+              "gentle",
+              "energetic",
+              "playful",
+              "innovative",
+              "fresh",
+              "premium",
+              "dramatic",
+              "futuristic",
+              "urgent",
+              "authoritative",
+              "nostalgic",
+              "intellectual",
+              "handcrafted",
+              "understated",
+              "romantic",
+              "grounded"
+            ]
+          }
+        },
+        "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "outputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "defaultPaletteId": {
+            "type": "string",
+            "enum": [
+              "clean-slate",
+              "ocean",
+              "forest",
+              "lavender",
+              "sunset",
+              "candy",
+              "electric",
+              "tropical",
+              "midnight",
+              "noir",
+              "cyber",
+              "ember",
+              "newsroom",
+              "vintage",
+              "monograph",
+              "academia",
+              "terracotta",
+              "sand",
+              "rose",
+              "wheat"
+            ]
+          },
+          "palettes": {
+            "maxItems": 20,
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "enum": [
+                    "clean-slate",
+                    "ocean",
+                    "forest",
+                    "lavender",
+                    "sunset",
+                    "candy",
+                    "electric",
+                    "tropical",
+                    "midnight",
+                    "noir",
+                    "cyber",
+                    "ember",
+                    "newsroom",
+                    "vintage",
+                    "monograph",
+                    "academia",
+                    "terracotta",
+                    "sand",
+                    "rose",
+                    "wheat"
+                  ]
+                },
+                "name": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 80
+                },
+                "category": {
+                  "type": "string",
+                  "enum": [
+                    "minimal",
+                    "vibrant",
+                    "dark",
+                    "editorial",
+                    "warm"
+                  ]
+                },
+                "appearance": {
+                  "type": "string",
+                  "enum": [
+                    "light",
+                    "dark"
+                  ]
+                },
+                "contrast": {
+                  "type": "string",
+                  "enum": [
+                    "soft",
+                    "balanced",
+                    "high"
+                  ]
+                },
+                "description": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 240
+                },
+                "colorStory": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 320
+                },
+                "recommendedFor": {
+                  "minItems": 1,
+                  "maxItems": 8,
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 80
+                  }
+                },
+                "colors": {
+                  "type": "object",
+                  "properties": {
+                    "primary": {
+                      "type": "string",
+                      "pattern": "^#[0-9a-fA-F]{6}$"
+                    },
+                    "accent": {
+                      "type": "string",
+                      "pattern": "^#[0-9a-fA-F]{6}$"
+                    },
+                    "background": {
+                      "type": "string",
+                      "pattern": "^#[0-9a-fA-F]{6}$"
+                    },
+                    "surface": {
+                      "type": "string",
+                      "pattern": "^#[0-9a-fA-F]{6}$"
+                    },
+                    "text": {
+                      "type": "string",
+                      "pattern": "^#[0-9a-fA-F]{6}$"
+                    }
+                  },
+                  "required": [
+                    "primary",
+                    "accent",
+                    "background",
+                    "surface",
+                    "text"
+                  ],
+                  "additionalProperties": false
+                },
+                "guidance": {
+                  "type": "object",
+                  "properties": {
+                    "moods": {
+                      "minItems": 1,
+                      "maxItems": 6,
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "enum": [
+                          "clean",
+                          "trustworthy",
+                          "calm",
+                          "natural",
+                          "gentle",
+                          "energetic",
+                          "playful",
+                          "innovative",
+                          "fresh",
+                          "premium",
+                          "dramatic",
+                          "futuristic",
+                          "urgent",
+                          "authoritative",
+                          "nostalgic",
+                          "intellectual",
+                          "handcrafted",
+                          "understated",
+                          "romantic",
+                          "grounded"
+                        ]
+                      }
+                    },
+                    "harmony": {
+                      "type": "string",
+                      "enum": [
+                        "monochromatic",
+                        "analogous",
+                        "complementary",
+                        "split-complementary",
+                        "triadic",
+                        "accented-neutral"
+                      ]
+                    },
+                    "temperature": {
+                      "type": "string",
+                      "enum": [
+                        "cool",
+                        "neutral",
+                        "warm",
+                        "mixed"
+                      ]
+                    },
+                    "energy": {
+                      "type": "string",
+                      "enum": [
+                        "calm",
+                        "balanced",
+                        "energetic"
+                      ]
+                    },
+                    "chooseWhen": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 240
+                    },
+                    "avoidWhen": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 240
+                    }
+                  },
+                  "required": [
+                    "moods",
+                    "harmony",
+                    "temperature",
+                    "energy",
+                    "chooseWhen",
+                    "avoidWhen"
+                  ],
+                  "additionalProperties": false
+                },
+                "source": {
+                  "type": "object",
+                  "properties": {
+                    "provider": {
+                      "type": "string",
+                      "const": "color-hunt"
+                    },
+                    "url": {
+                      "type": "string",
+                      "format": "uri"
+                    },
+                    "swatches": {
+                      "type": "array",
+                      "prefixItems": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "string"
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "provider",
+                    "url",
+                    "swatches"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "required": [
+                "id",
+                "name",
+                "category",
+                "appearance",
+                "contrast",
+                "description",
+                "colorStory",
+                "recommendedFor",
+                "colors",
+                "guidance",
+                "source"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "defaultPaletteId",
+          "palettes"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
       "name": "list_project_assets",
       "title": "List project media assets",
       "description": "Use when you need to discover the audio, image, video and font files that exist in the project, including one a person just copied into it by hand. Do not use to read composition source, to list scenes, or to browse anything outside this project. Preconditions: projectId comes from list_projects; pass directory to narrow to one project-relative folder such as preview-assets/bgm or assets. Side effects: read-only; nothing is written and no revision is created. Errors/recovery: path_invalid means the directory is not project-relative; truncated=true means only the first page is listed, so narrow with directory; referencedByPreviewSettings=true marks the track preview settings already point at.",
@@ -3793,6 +4208,13 @@
                   "type": "string",
                   "minLength": 1
                 },
+                "details": {
+                  "type": "object",
+                  "propertyNames": {
+                    "type": "string"
+                  },
+                  "additionalProperties": {}
+                },
                 "fix": {
                   "type": "object",
                   "properties": {
@@ -4041,6 +4463,13 @@
                 "message": {
                   "type": "string",
                   "minLength": 1
+                },
+                "details": {
+                  "type": "object",
+                  "propertyNames": {
+                    "type": "string"
+                  },
+                  "additionalProperties": {}
                 },
                 "fix": {
                   "type": "object",
@@ -5058,6 +5487,13 @@
                       "type": "string",
                       "minLength": 1
                     },
+                    "details": {
+                      "type": "object",
+                      "propertyNames": {
+                        "type": "string"
+                      },
+                      "additionalProperties": {}
+                    },
                     "fix": {
                       "type": "object",
                       "properties": {
@@ -5335,7 +5771,7 @@
     {
       "name": "set_preview_settings",
       "title": "Patch preview settings",
-      "description": "Use when changing tone, theme variables, subtitle styling, per-scene transition or reveal sounds, or attaching background music from a file already in the project. Do not use to edit composition source, to upload bytes, or to change scene timing. Preconditions: projectId and expectedRevision come from get_project_context; a bgm.track path must name an existing mp3, wav, ogg or m4a asset listed by list_project_assets, and setting bgm.track to null detaches the music. Side effects: merges the patch into preview-settings.json as one journaled entity mutation, returning the complete settings and their new revision. Errors/recovery: no_file or unsupported_media means the track is missing or not audio, so run list_project_assets; write_conflict means expectedRevision is stale, so re-read get_project_context; never retry a committed_response_error mutation.",
+      "description": "Use when applying a bundled color palette by theme.paletteId, changing individual tone or theme colors, styling subtitles, setting per-scene sounds, or attaching background music already in the project. Do not use to edit composition source, to upload bytes, or to change scene timing. Preconditions: projectId and expectedRevision come from get_project_context; a bgm.track path must name an existing mp3, wav, ogg or m4a asset listed by list_project_assets, and setting bgm.track to null detaches the music. Side effects: merges the patch into preview-settings.json as one journaled entity mutation, returning the complete settings and their new revision; a palette id applies all semantic colors atomically, while an individual color override clears the preset id. Errors/recovery: no_file or unsupported_media means the track is missing or not audio, so run list_project_assets; write_conflict means expectedRevision is stale, so re-read get_project_context; never retry a committed_response_error mutation.",
       "inputSchema": {
         "type": "object",
         "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -5435,6 +5871,38 @@
               "theme": {
                 "type": "object",
                 "properties": {
+                  "paletteId": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "enum": [
+                          "clean-slate",
+                          "ocean",
+                          "forest",
+                          "lavender",
+                          "sunset",
+                          "candy",
+                          "electric",
+                          "tropical",
+                          "midnight",
+                          "noir",
+                          "cyber",
+                          "ember",
+                          "newsroom",
+                          "vintage",
+                          "monograph",
+                          "academia",
+                          "terracotta",
+                          "sand",
+                          "rose",
+                          "wheat"
+                        ]
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
                   "variables": {
                     "type": "object",
                     "properties": {
@@ -5448,6 +5916,18 @@
                         "type": "string"
                       },
                       "--accent-light": {
+                        "type": "string"
+                      },
+                      "--background": {
+                        "type": "string"
+                      },
+                      "--surface": {
+                        "type": "string"
+                      },
+                      "--text": {
+                        "type": "string"
+                      },
+                      "--text-muted": {
                         "type": "string"
                       },
                       "--success": {
@@ -5722,6 +6202,38 @@
               "theme": {
                 "type": "object",
                 "properties": {
+                  "paletteId": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "enum": [
+                          "clean-slate",
+                          "ocean",
+                          "forest",
+                          "lavender",
+                          "sunset",
+                          "candy",
+                          "electric",
+                          "tropical",
+                          "midnight",
+                          "noir",
+                          "cyber",
+                          "ember",
+                          "newsroom",
+                          "vintage",
+                          "monograph",
+                          "academia",
+                          "terracotta",
+                          "sand",
+                          "rose",
+                          "wheat"
+                        ]
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
                   "variables": {
                     "type": "object",
                     "properties": {
@@ -5737,6 +6249,18 @@
                       "--accent-light": {
                         "type": "string"
                       },
+                      "--background": {
+                        "type": "string"
+                      },
+                      "--surface": {
+                        "type": "string"
+                      },
+                      "--text": {
+                        "type": "string"
+                      },
+                      "--text-muted": {
+                        "type": "string"
+                      },
                       "--success": {
                         "type": "string"
                       },
@@ -5749,6 +6273,10 @@
                       "--primary-light",
                       "--accent",
                       "--accent-light",
+                      "--background",
+                      "--surface",
+                      "--text",
+                      "--text-muted",
                       "--success",
                       "--info"
                     ],
@@ -5756,6 +6284,7 @@
                   }
                 },
                 "required": [
+                  "paletteId",
                   "variables"
                 ],
                 "additionalProperties": false
@@ -5957,6 +6486,13 @@
                 "message": {
                   "type": "string",
                   "minLength": 1
+                },
+                "details": {
+                  "type": "object",
+                  "propertyNames": {
+                    "type": "string"
+                  },
+                  "additionalProperties": {}
                 },
                 "fix": {
                   "type": "object",
@@ -6262,6 +6798,13 @@
                     "message": {
                       "type": "string",
                       "minLength": 1
+                    },
+                    "details": {
+                      "type": "object",
+                      "propertyNames": {
+                        "type": "string"
+                      },
+                      "additionalProperties": {}
                     },
                     "fix": {
                       "type": "object",
@@ -6610,6 +7153,13 @@
                       "type": "string",
                       "minLength": 1
                     },
+                    "details": {
+                      "type": "object",
+                      "propertyNames": {
+                        "type": "string"
+                      },
+                      "additionalProperties": {}
+                    },
                     "fix": {
                       "type": "object",
                       "properties": {
@@ -6671,7 +7221,7 @@
     {
       "name": "start_render",
       "title": "Start a video render",
-      "description": "Use when the validated, visually inspected project is ready for one MP4 render and every story beat has meaningful multi-phase motion. Do not use before validate_project and start_snapshot, to wait synchronously for completion, or when story scenes rely only on fade, gentle rise/drop, or repeated opacity-plus-translate entrances. Preconditions: projectId comes from list_projects, optional idempotencyKey must identify this exact request, and the reviewed storyboard plus scene sources must show a value-first story spine and setup/development/payoff/hold choreography. Side effects: enqueues one render job and returns immediately without publishing an artifact yet. Errors/recovery: poll get_job_status after pollAfterMs; fix stable gate errors before retrying and report warnings, outcome, and cleanupPending honestly.",
+      "description": "Use when the validated, visually inspected project is ready for one MP4 render, every story beat has meaningful multi-phase motion, and authored Unicode text has verified project-local font coverage. Do not use before validate_project and start_snapshot, to wait synchronously for completion, or when story scenes rely only on fade, gentle rise/drop, or repeated opacity-plus-translate entrances. Preconditions: projectId comes from list_projects, optional idempotencyKey must identify this exact request, and the reviewed storyboard plus scene sources must show a value-first story spine and setup/development/payoff/hold choreography. Side effects: re-checks encoding/font coverage, enqueues one render job, and returns immediately without publishing an artifact yet. Errors/recovery: poll get_job_status after pollAfterMs; fix stable gate errors before retrying and report warnings, outcome, and cleanupPending honestly.",
       "inputSchema": {
         "type": "object",
         "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -6725,7 +7275,7 @@
     {
       "name": "start_snapshot",
       "title": "Start project snapshots",
-      "description": "Use when creating midpoint snapshots for visual inspection before final render. Do not use as a substitute for validate_project or to wait synchronously for every image. Preconditions: projectId comes from list_projects and optional idempotencyKey must identify this exact request. Side effects: enqueues one snapshot job and returns immediately without publishing frames yet. Errors/recovery: poll get_job_status after pollAfterMs; report a partial outcome and its missingSceneIds, then retry deliberately after fixing the cause.",
+      "description": "Use when creating midpoint snapshots for visual inspection before final render. Do not use as a substitute for validate_project or to wait synchronously for every image. Preconditions: projectId comes from list_projects, optional idempotencyKey must identify this exact request, and authored Unicode text must pass the same encoding/font gate as render. Side effects: re-checks encoding/font coverage, enqueues one snapshot job, and returns immediately without publishing frames yet. Errors/recovery: poll get_job_status after pollAfterMs; report a partial outcome and its missingSceneIds, then retry deliberately after fixing the cause.",
       "inputSchema": {
         "type": "object",
         "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -6883,7 +7433,7 @@
     {
       "name": "validate_project",
       "title": "Validate a VidCom project",
-      "description": "Use when validating a project after an edit and before snapshot or render. Do not use to mutate source or to inspect rendered pixels. Preconditions: projectId comes from list_projects. Side effects: computes diagnostics and refreshes only the derived diagnostics projection; source revision is unchanged. Errors/recovery: fix every error diagnostic before continuing; no-composition is an informational result for an empty project, not a tool failure.",
+      "description": "Use when validating a project after an edit and before snapshot or render, including UTF-8 decoding and exact project-local font glyph coverage for authored Unicode text. Do not use to mutate source or to inspect rendered pixels. Preconditions: projectId comes from list_projects. Side effects: computes diagnostics and refreshes only the derived diagnostics projection; source revision is unchanged. Errors/recovery: fix every error diagnostic before continuing; text-encoding-invalid, font-file-invalid, and font-glyph-missing block snapshot/render, while font-coverage-unverified means vendor an inspectable font instead of trusting machine fallback. no-composition is informational for an empty project.",
       "inputSchema": {
         "type": "object",
         "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -6954,6 +7504,13 @@
                 "message": {
                   "type": "string",
                   "minLength": 1
+                },
+                "details": {
+                  "type": "object",
+                  "propertyNames": {
+                    "type": "string"
+                  },
+                  "additionalProperties": {}
                 },
                 "fix": {
                   "type": "object",

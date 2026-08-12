@@ -1,6 +1,7 @@
 export * from "./diagnostics";
 export * from "./agent-kit";
 export * from "./bgm";
+export * from "./color-palettes";
 export * from "./agent-terminal";
 export * from "./domain";
 export * from "./dto";

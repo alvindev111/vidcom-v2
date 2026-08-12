@@ -1,7 +1,14 @@
 import { describe, expect, it } from "vitest";
 
-import { ErrorCode, type ContentHash, type ProjectId, type RelPath } from "@vidcom/contracts";
 import {
+  ErrorCode,
+  type ContentHash,
+  type PreviewSettingsDto,
+  type ProjectId,
+  type RelPath,
+} from "@vidcom/contracts";
+import {
+  DEFAULT_PREVIEW_SETTINGS,
   restoreBackup,
   serializePreviewSettings,
   type BackupManifest,
@@ -116,13 +123,10 @@ describe("restoreBackup", () => {
   });
 
   it("reconstructs the full entity patch and removes scenes absent from the backup", async () => {
-    const previousSettings = {
-      tone: { enabled: false, colorMode: "dark", backgroundColor: "#080907", backgroundFx: "none", mainLight: "#ff8a3d", mainLightPosition: "top-center", mainLightIntensity: "medium", softLight: "#54d9ff", softLightPosition: "bottom-right", softLightIntensity: "medium" },
-      theme: { variables: { "--primary": "#ff8a3d", "--primary-light": "#ffd1ad", "--accent": "#54d9ff", "--accent-light": "#c8f2ff", "--success": "#47e6a0", "--info": "#b08cff" } },
-      bgm: { enabled: false, volume: 0.3, loop: true, track: null },
-      subtitles: { enabled: true, override: false, color: "#ffffff", activeColor: "#ff8a3d", fontSize: 72, bottom: 120 },
+    const previousSettings: PreviewSettingsDto = {
+      ...DEFAULT_PREVIEW_SETTINGS,
       scenes: { restored: { transitionSound: "minimal", revealSound: "ping", hidden: false } },
-    } as const;
+    };
     const currentSettings = { ...previousSettings, scenes: { transient: previousSettings.scenes.restored } };
     const previous = new TextEncoder().encode(serializePreviewSettings(previousSettings));
     const entityState: EntityState = {

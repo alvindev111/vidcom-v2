@@ -1,5 +1,6 @@
 export * from "./domain/invariants";
 export * from "./domain/models";
+export * from "./domain/color-palettes";
 export * from "./domain/motion-libraries";
 export * from "./domain/story-motion";
 export * from "./domain/path-policy";
@@ -29,6 +30,7 @@ export * from "./service/mcp-credential-service";
 export * from "./service/project-cache";
 export * from "./service/remote-asset-scan";
 export * from "./service/remote-asset-guard";
+export * from "./service/font-compatibility";
 export * from "./service/tool-audit-service";
 export * from "./usecase/bootstrap-project";
 export * from "./usecase/start-agent-terminal";

@@ -320,6 +320,7 @@ export async function startNextHostedRuntime(
     ids: foundation.infrastructure.ids,
     hashContent,
     binaries: foundation.infrastructure.renderBinaries,
+    fonts: foundation.application.fonts,
   };
   const startProjectImport = createStartProjectImport({
     workspaceRoot,

@@ -8,6 +8,7 @@ export interface Diagnostic {
   file?: string;
   line?: number;
   message: string;
+  details?: Record<string, unknown>;
   fix?: {
     kind: "set-attribute";
     target: string;

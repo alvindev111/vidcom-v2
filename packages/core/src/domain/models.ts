@@ -57,6 +57,16 @@ export interface CompositionReference {
   owner: RelPath;
 }
 
+/** One factual text/font compatibility finding produced by an infrastructure inspector. */
+export interface FontCompatibilityIssue {
+  kind: "invalid-utf8" | "font-file-invalid" | "font-glyph-missing" | "font-coverage-unverified";
+  sourceFile: RelPath;
+  fontFamily?: string;
+  fontFile?: RelPath;
+  missingCodePoints?: number[];
+  sample?: string;
+}
+
 /** Parsed composition model shared by all project snapshot views. */
 export interface CompositionModel {
   project: ProjectSummaryDto;

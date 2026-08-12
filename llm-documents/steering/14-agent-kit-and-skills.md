@@ -56,14 +56,17 @@ MUST sinh `CLAUDE.md` từ `AGENTS.md` lúc build, MUST NOT sửa tay hai file.
               value claim phải xuất hiện chậm nhất ở beat 2
 5. EDIT       create_scene / set_scene_timing / set_text / … rồi qua vidcom-motion
               mỗi call kèm expectedRevision lấy từ bước trước; scene story phải có setup → development → payoff → hold
-6. SCORE      search_bgm theo mood → kiểm tra source/licence/attribution → install_bgm exact track
+6. STYLE      ưu tiên màu user / brand kit; nếu không có thì list_color_palettes theo mood
+              so chooseWhen/avoidWhen, energy, temperature, harmony và source trước khi chọn
+              set_preview_settings với theme.paletteId; fallback clean-slate khi không có match rõ hơn
+7. SCORE      search_bgm theo mood → kiểm tra source/licence/attribution → install_bgm exact track
               provider lỗi hoặc không phù hợp → list_bgm_beds làm offline fallback
               mặc định có BGM; chỉ bỏ khi người dùng yêu cầu hoặc chủ ý cần im lặng
-7. VALIDATE   validate_project       → đọc diagnostics
-8. PREVIEW    start_snapshot         → nhìn frame thật, không tin tưởng mù
-9. NARRATE    start_tts              → chỉ khi scene có thoại
-10. RENDER    start_render → get_job_status (poll, không block)
-11. REPORT    đã đổi gì, revision nào, diagnostic nào còn lại
+8. VALIDATE   validate_project       → đọc diagnostics
+9. PREVIEW    start_snapshot         → nhìn frame thật, không tin tưởng mù
+10. NARRATE   start_tts              → chỉ khi scene có thoại
+11. RENDER    start_render → get_job_status (poll, không block)
+12. REPORT    đã đổi gì, revision nào, diagnostic nào còn lại
 ```
 
 ### Luật của quy trình
@@ -71,11 +74,11 @@ MUST sinh `CLAUDE.md` từ `AGENTS.md` lúc build, MUST NOT sửa tay hai file.
 | # | Luật |
 |---|---|
 | W1 | **MUST NOT bỏ bước 3.** Không đoán `sceneId`, không đoán timing. Đọc trước khi ghi |
-| W2 | **MUST NOT bỏ bước 7.** Sửa xong mà không validate là giao việc chưa xong |
+| W2 | **MUST NOT bỏ bước 8.** Sửa xong mà không validate là giao việc chưa xong |
 | W3 | `expectedRevision` MUST lấy từ output của call ngay trước, không cache qua nhiều lượt |
 | W4 | Thao tác destructive MUST được người dùng xác nhận, không tự quyết |
 | W5 | Job MUST poll có backoff, MUST NOT vòng lặp chặt |
-| W6 | Bước 11 MUST nói **diagnostic còn lại**, kể cả khi tác vụ chính đã xong |
+| W6 | Bước 12 MUST nói **diagnostic còn lại**, kể cả khi tác vụ chính đã xong |
 | W7 | Gặp `write_conflict` MUST đọc lại rồi merge, MUST NOT ghi đè bằng cách bỏ `expectedRevision` |
 | W8 | Bước 4–5 là gate bắt buộc cho video story-driven. Fade đơn, rise/drop nhẹ, hoặc lặp `opacity + y` chỉ là transition phụ, **không** được tính là motion của scene và MUST NOT đi tới render |
 | W9 | Scene story dạng sub-composition MUST có meaningful motion được parse tĩnh ở ít nhất hai pha; `story-motion-shallow` và `story-motion-unverified` là error chặn cả validate lẫn enqueue render, `bestEffort` MUST NOT bypass |
@@ -116,7 +119,7 @@ Rút từ P1–P11 và những gì runtime thực sự yêu cầu:
 2. Timeline GSAP phải `paused: true` và đăng ký lên `window.__timelines[<composition-id>]`.
 3. Scene mới phải là **file sub-composition riêng** với `data-composition-src` — host inline không được runtime quản lý visibility nên nó hiện suốt video (**P11**).
 4. Tween viết sau khi clip của scene kết thúc thì **không bao giờ chạy** — nới `data-duration` hoặc dời tween.
-5. Đổi màu / tone / subtitle / BGM đi qua preview settings, **không** sửa composition source (**P2**). Video mặc định có BGM sau khi composition có duration. Ưu tiên `search_bgm` theo mood rồi verify source/licence/attribution và install exact track; `list_bgm_beds` là fallback offline. Chỉ bỏ BGM khi người dùng yêu cầu hoặc chủ ý biên tập cần im lặng.
+5. Đổi màu / tone / subtitle / BGM đi qua preview settings, **không** sửa composition source (**P2**). Màu user hoặc brand kit luôn ưu tiên; nếu không có chỉ dẫn màu, agent MUST gọi `list_color_palettes`, dùng mood có kiểm soát và so `chooseWhen`, `avoidWhen`, energy, temperature, harmony, recommended uses cùng source swatches trước khi áp dụng `theme.paletteId`; fallback `clean-slate` chỉ khi không có match rõ hơn. Chỉnh riêng một màu làm palette thành custom và xoá preset id. Video mặc định có BGM sau khi composition có duration. Ưu tiên `search_bgm` theo mood rồi verify source/licence/attribution và install exact track; `list_bgm_beds` là fallback offline. Chỉ bỏ BGM khi người dùng yêu cầu hoặc chủ ý biên tập cần im lặng.
 6. Chỉ logic deterministic — không `Date.now()`, không `Math.random()`, không fetch.
 7. Story-driven là mặc định. Story spine phải value-first: hook nói bằng ngôn ngữ kết quả, value claim ở beat 1–2, evidence/tension phát triển luận điểm, payoff giải quyết nó.
 8. Mỗi scene story là một beat, không phải slide. Motion phải làm thay đổi ý nghĩa hoặc trạng thái nhìn thấy được: reveal/build, transform, cause/effect, camera move sang ý mới, data change, hoặc handoff vật lý.

@@ -26,7 +26,7 @@ const sourcePaths = [
 ];
 // Bumping this means every installed copy reports `outdated` and needs an
 // explicit replace, so it moves only when the kit's contract really changes.
-const version = 5;
+const version = 8;
 const hash = (content) => `sha256:${createHash("sha256").update(content).digest("hex")}`;
 const files = {};
 for (const path of sourcePaths) files[path] = await readFile(join(root, path), "utf8");

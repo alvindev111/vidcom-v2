@@ -16,6 +16,7 @@ import { err, ok, type Result } from "../error/result";
 import type { CompositionPort, DiagnosticsLintPort, MutationJournalPort, WorkspacePort } from "../port/ports";
 import { canonicalizeJson } from "../service/canonical-json";
 import type { EntryId } from "../service/entry-registry";
+import type { FontCompatibilityService } from "../service/font-compatibility";
 import type { DerivedMutationPath, WriteAuthority } from "../service/write-authority";
 import type { ProjectIdentityService } from "./project-identity";
 import type { WorkspaceEntry } from "./scan-workspace";
@@ -36,6 +37,7 @@ export interface DiagnosticsServiceDependencies {
   journal: Pick<MutationJournalPort, "latestSourceRevision">;
   authority: Pick<WriteAuthority, "mutateDerived">;
   lint: DiagnosticsLintPort;
+  fonts: FontCompatibilityService;
 }
 
 function invalidDiagnostic(entry: Extract<WorkspaceEntry, { state: "invalid" }>): Diagnostic {
@@ -186,6 +188,7 @@ export class DiagnosticsService {
           message: `Declared ${platform.width}x${platform.height}@${platform.fps}fps differs from composition ${model.project.width}x${model.project.height}@${model.frameRate ?? 30}fps.`,
         });
         diagnostics.push(...await this.remoteMotionLibraryDiagnostics(ref, model.sources));
+        diagnostics.push(...await this.dependencies.fonts.inspect(ref, model.sources));
         const sources = new Set(model.sources.map(({ path }) => path));
         for (const reference of model.references) {
           if (sources.has(reference.path)) continue;

@@ -1,4 +1,4 @@
-# x-vidcom-agent-kit: 5
+# x-vidcom-agent-kit: 8
 interface:
   display_name: "VidCom Project"
   short_description: "Create and orient VidCom projects"

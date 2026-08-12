@@ -96,7 +96,16 @@ const expectedSuccess: Record<string, object> = {
     assets: [{ path: matrixBgmPath, kind: "audio", referencedByPreviewSettings: false }],
     truncated: false,
   },
-  set_preview_settings: { revision: 3, diagnostics: [] },
+  set_preview_settings: {
+    revision: 3,
+    diagnostics: [],
+    previewSettings: {
+      theme: {
+        paletteId: "sunset",
+        variables: { "--background": "#FFE8B4", "--text": "#5E244E" },
+      },
+    },
+  },
   get_narration_cues: {
     cues: [{ cueId: "scene-1", voice: "matrix-voice", offsetSeconds: 0 }],
     contentHash: matrixHash,
@@ -139,6 +148,14 @@ const expectedSuccess: Record<string, object> = {
     ],
     library: [{ id: "bgm_matrix", source: "import" }],
     defaultVolume: 0.12,
+  },
+  list_color_palettes: {
+    defaultPaletteId: "clean-slate",
+    palettes: [
+      { id: "electric", guidance: { moods: ["energetic", "innovative", "futuristic"] } },
+      { id: "midnight", category: "dark", source: { provider: "color-hunt" } },
+      { id: "cyber", category: "dark" },
+    ],
   },
   search_bgm: {
     tracks: [matrixBgmProviderTrack],

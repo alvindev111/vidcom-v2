@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { constants } from "node:fs";
-import { access, mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { access, copyFile, mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
@@ -10,6 +10,7 @@ import {
   AppDataAssetStager,
   AppDataBackupStore,
   CompositionHf,
+  FontkitCompatibilityInspector,
   FsRenderProjectAdapter,
   FsRenderRootAdapter,
   hyperframesRuntimeSource,
@@ -30,6 +31,7 @@ import { ErrorCode, WarningCode, type ContentHash, type ProjectId } from "@vidco
 import {
   canonicalizeJobInput,
   DEFAULT_PREVIEW_SETTINGS,
+  FontCompatibilityService,
   JobScheduler,
   WriteAuthority,
   type AbsolutePath,
@@ -64,6 +66,24 @@ async function findExecutable(name: string): Promise<AbsolutePath | null> {
   return null;
 }
 
+async function latinFontFixture(): Promise<string | null> {
+  const candidates = [
+    "/System/Library/Fonts/Supplemental/Arial.ttf",
+    "/System/Library/Fonts/Supplemental/Verdana.ttf",
+    "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+    "C:\\Windows\\Fonts\\arial.ttf",
+  ];
+  for (const candidate of candidates) {
+    try {
+      await access(candidate);
+      return candidate;
+    } catch {
+      // Continue through the small cross-platform fixture allowlist.
+    }
+  }
+  return null;
+}
+
 afterEach(async () => {
   await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
 });
@@ -79,6 +99,7 @@ async function baseFixture() {
   const journal = new MutationJournal(database, clock, new LargePreviousContentStore(appDataRoot));
   const jobs = new SqliteJobStore(database, clock);
   const ids = createSequentialIdPort();
+  const fonts = new FontCompatibilityService(new FontkitCompatibilityInspector());
   const binaries: BinaryProbePort = {
     async probe() {
       return { ok: true, value: {
@@ -90,7 +111,7 @@ async function baseFixture() {
       } };
     },
   };
-  return { root, workspaceRoot, appDataRoot, database, workspace, journal, jobs, ids, binaries };
+  return { root, workspaceRoot, appDataRoot, database, workspace, journal, jobs, ids, binaries, fonts };
 }
 
 async function addProject(
@@ -166,6 +187,7 @@ async function renderHarness(fixture: Awaited<ReturnType<typeof baseFixture>>) {
         journal: fixture.journal,
         guard: new LoopbackRuntimeAssetGuard(),
         binaries,
+        fonts: fixture.fonts,
         runtimeSource: hyperframesRuntimeSource,
         injectGuard: injectRuntimeAssetGuardDocument,
         clock,
@@ -188,6 +210,7 @@ async function enqueue(
     ids: fixture.ids,
     hashContent,
     binaries: fixture.binaries,
+    fonts: fixture.fonts,
   }, { projectId, ...(bestEffort === undefined ? {} : { bestEffort }) });
 }
 
@@ -225,6 +248,7 @@ describe("render job with real SQLite and filesystem", () => {
         ids: fixture.ids,
         hashContent,
         binaries: fixture.binaries,
+        fonts: fixture.fonts,
       };
 
       await expect(enqueueRenderJob(dependencies, { projectId: empty.id }))
@@ -274,6 +298,31 @@ describe("render job with real SQLite and filesystem", () => {
     }
   });
 
+  it("rejects CJK text whose project-local font has no matching glyph before enqueue", async (context) => {
+    const font = await latinFontFixture();
+    if (!font) return context.skip("no known Latin system font is installed");
+    const fixture = await baseFixture();
+    try {
+      const project = await addProject(fixture, "font-glyph-gate", `<!doctype html><html><head><style>
+        @font-face { font-family: "Verified Latin"; src: url("./assets/verified.ttf"); }
+        body { font-family: "Verified Latin", sans-serif; }
+      </style></head><body>
+        <main data-composition-id="main" data-width="320" data-height="180" data-duration="1">
+          <section data-composition-id="scene-1" data-start="0" data-duration="1">日本語 한국어 中文</section>
+        </main></body></html>`);
+      await mkdir(path.join(project.projectRoot, "assets"));
+      await copyFile(font, path.join(project.projectRoot, "assets/verified.ttf"));
+
+      await expect(enqueue(fixture, project.id)).resolves.toMatchObject({
+        ok: false,
+        error: { code: ErrorCode.ProjectInvalid, details: { reason: "font-glyph-missing" } },
+      });
+      expect(dbOne(fixture.database, "SELECT COUNT(*) AS count FROM job")).toEqual({ count: 0 });
+    } finally {
+      await fixture.database.destroy();
+    }
+  });
+
   it("rejects remote media in a local stylesheet before creating a queue row", async () => {
     const fixture = await baseFixture();
     try {
@@ -316,6 +365,7 @@ describe("render job with real SQLite and filesystem", () => {
         ids: fixture.ids,
         hashContent,
         binaries,
+        fonts: fixture.fonts,
       }, { projectId: project.id });
 
       expect(queued.ok).toBe(true);
@@ -371,6 +421,7 @@ describe("render job with real SQLite and filesystem", () => {
         journal: fixture.journal,
         guard: new LoopbackRuntimeAssetGuard(),
         binaries: new NodeRenderBinaryProbe(binaryPaths, { appDataRoot: fixture.appDataRoot }),
+        fonts: fixture.fonts,
         runtimeSource: hyperframesRuntimeSource,
         injectGuard: injectRuntimeAssetGuardDocument,
         clock,

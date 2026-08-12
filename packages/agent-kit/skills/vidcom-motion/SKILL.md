@@ -1,7 +1,7 @@
 ---
 name: vidcom-motion
 description: Choreograph meaningful multi-phase motion for every VidCom story scene with GSAP or another vendored runtime. Use when motion must reveal meaning, transform visual state, demonstrate cause/effect, direct the camera, or hand off between beats. Do not use for scene timing and text, tone and BGM, narration, or rendering; fade-only entrances never satisfy this skill.
-x-vidcom-agent-kit: 5
+x-vidcom-agent-kit: 8
 ---
 
 # VidCom motion

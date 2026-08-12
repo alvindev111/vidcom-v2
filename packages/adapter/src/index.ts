@@ -68,6 +68,7 @@ export * from "./hyperframes/version-skew";
 export * from "./hyperframes/browser-verification";
 export * from "./hyperframes/chrome-resolver";
 export * from "./hyperframes/check";
+export * from "./hyperframes/font-compatibility";
 export * from "./motion/motion-library-files";
 export * from "./hyperframes/dom";
 export * from "./hyperframes/elements";
