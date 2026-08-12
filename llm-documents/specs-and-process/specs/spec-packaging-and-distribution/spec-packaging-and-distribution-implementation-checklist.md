@@ -2813,6 +2813,12 @@ Chi tiết: [Detailed Goals](./spec-packaging-and-distribution-detailed-goal.md)
   - Decisions: Giữ regression factor 1,5×; hard warm ceiling là quantum 1 giây kế trên giới hạn: `6/11/18 s`. Cold `120/120/180 s` và warm-app `2/2/3 s` không đổi. Invariant test ngăn hard ceiling thấp hơn gate hoặc nới quá một quantum.
   - Blockers: Final exact-head matrix phải chứng minh threshold mới và canonical smoke root trên đủ ba OS. Production source human gate và video cuối 600 s vẫn mở.
 
+2026-08-13 — Phase J/M Windows render bridge deadline C-65
+  - Files: `packages/adapter/src/daemon/daemon-client.ts`, `packages/cli/src/commands/render.ts`, `scripts/packaged-smoke/bodies.mjs`, focused daemon/render/smoke tests, Detailed Design §16 và implementation notes
+  - Summary: Exact Windows packaged run `31637865809` pass render-media/offline nhưng CLI render wait ném `internal_error` sau 141,968 ms. Timing khớp preflight enqueue chạm workload deadline 120 s; CLI boundary trước đây xoá phase/error code nên evidence không phân biệt enqueue với job polling.
+  - Decisions: Render enqueue dùng deadline riêng 300 s và không retry; GET job dùng 120 s, retry đúng một lần chỉ cho transport/abort chưa nhận HTTP response. Structured HTTP error và mọi mutation không retry. CLI chỉ in stable redacted code; smoke failure ghi phase/timing, daemon exit/signal/tail đã redact và latest render row read-only.
+  - Blockers: Rebuild artifact và rerun exact-head Windows/ba OS bắt buộc trước khi đóng M. CI `8ee68e4` không phải acceptance vì Windows render-cli đỏ; production supply-chain human gate vẫn mở độc lập.
+
 Format:
 ```
 YYYY-MM-DD — Phase X, Task X.Y

@@ -13,6 +13,9 @@ export class DaemonClientError extends Error {
   }
 }
 
+/** A request that never produced an HTTP response; safe read routes may retry it. */
+class DaemonTransportError extends DaemonClientError {}
+
 export type AttachmentKind = "bridge" | "ui" | "render";
 
 export interface DaemonHandshake {
@@ -88,19 +91,29 @@ export interface DaemonClient {
 export interface DaemonClientOptions {
   baseUrl: string;
   bearer: string;
-  /** Control-plane deadline; also applies to tools unless `toolDeadlineMs` is supplied. */
+  /** Control-plane deadline; explicit value is the fallback for workload-specific calls too. */
   deadlineMs?: number;
   /** Tool execution may legitimately include validation/diagnostics work. */
   toolDeadlineMs?: number;
+  /** Render enqueue performs diagnostics before the durable job row is returned. */
+  renderEnqueueDeadlineMs?: number;
+  /** Job reads are safe to retry once when no HTTP response was received. */
+  jobReadDeadlineMs?: number;
   fetch?: typeof globalThis.fetch;
 }
 
 const DEFAULT_DEADLINE_MS = 5_000;
 const DEFAULT_TOOL_DEADLINE_MS = 120_000;
+const DEFAULT_RENDER_ENQUEUE_DEADLINE_MS = 300_000;
+const DEFAULT_JOB_READ_DEADLINE_MS = 120_000;
 const BRIDGE_PREFIX = "/api/bridge/v1";
 
 function unavailable(message: string, details?: Record<string, unknown>): DaemonClientError {
   return new DaemonClientError(ErrorCode.DaemonUnavailable, message, details);
+}
+
+function transportUnavailable(message: string, details?: Record<string, unknown>): DaemonTransportError {
+  return new DaemonTransportError(ErrorCode.DaemonUnavailable, message, details);
 }
 
 /**
@@ -163,6 +176,12 @@ export function createDaemonClient(options: DaemonClientOptions): DaemonClient {
   // one global deadline, while making the production default fit real validate
   // and diagnostics work.
   const toolDeadlineMs = options.toolDeadlineMs ?? options.deadlineMs ?? DEFAULT_TOOL_DEADLINE_MS;
+  const renderEnqueueDeadlineMs = options.renderEnqueueDeadlineMs
+    ?? options.deadlineMs
+    ?? DEFAULT_RENDER_ENQUEUE_DEADLINE_MS;
+  const jobReadDeadlineMs = options.jobReadDeadlineMs
+    ?? options.deadlineMs
+    ?? DEFAULT_JOB_READ_DEADLINE_MS;
   const doFetch = options.fetch ?? globalThis.fetch;
 
   function call(
@@ -197,11 +216,11 @@ export function createDaemonClient(options: DaemonClientOptions): DaemonClient {
       return await decode(response, what);
     } catch (error) {
       if (error instanceof DaemonClientError) throw error;
-      // Not retried, deliberately. Every route here except the handshake
-      // mutates daemon state, and a request that timed out may well have been
-      // applied — a blind retry turns one attachment into two, or one tool call
-      // into two side effects.
-      throw unavailable(`daemon did not answer ${what}`, {
+      // Not retried at the generic boundary. Mutations may have been applied
+      // before a timeout; the one retry-safe GET owns its bounded retry in
+      // `getJob` where this transport-only subtype can be distinguished from a
+      // structured HTTP rejection.
+      throw transportUnavailable(`daemon did not answer ${what}`, {
         cause: error instanceof Error ? error.message : String(error),
       });
     } finally {
@@ -254,12 +273,28 @@ export function createDaemonClient(options: DaemonClientOptions): DaemonClient {
         "POST",
         `/projects/${encodeURIComponent(projectId)}/renders`,
         input,
-        toolDeadlineMs,
+        renderEnqueueDeadlineMs,
       ) as Promise<EnqueuedRender>;
     },
 
-    getJob(jobId): Promise<DaemonJob> {
-      return call("job read", "GET", `/jobs/${encodeURIComponent(jobId)}`) as Promise<DaemonJob>;
+    async getJob(jobId): Promise<DaemonJob> {
+      for (let attempt = 0; attempt < 2; attempt += 1) {
+        try {
+          return await call(
+            "job read",
+            "GET",
+            `/jobs/${encodeURIComponent(jobId)}`,
+            undefined,
+            jobReadDeadlineMs,
+          ) as DaemonJob;
+        } catch (error) {
+          // GET is the one retry-safe route on this client. A structured HTTP
+          // rejection already reached the daemon and is authoritative; only a
+          // fetch/abort that produced no response gets one bounded retry.
+          if (!(error instanceof DaemonTransportError) || attempt === 1) throw error;
+        }
+      }
+      throw new TypeError("job read retry did not run");
     },
 
     async cancelJob(jobId): Promise<void> {

@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 
-import type { DaemonClient, DaemonJob } from "@vidcom/adapter";
+import { DaemonClientError, type DaemonClient, type DaemonJob } from "@vidcom/adapter";
 
 import { CliInputError } from "../cli-error";
 
@@ -98,6 +98,11 @@ export function renderIdempotencyKey(): string {
 }
 
 const TERMINAL = new Set(["succeeded", "failed", "cancelled"]);
+const SAFE_ERROR_CODE = /^[a-z][a-z0-9_]*$/u;
+
+function publicErrorCode(value: string | undefined): string {
+  return value && SAFE_ERROR_CODE.test(value) ? value : "unknown_error";
+}
 
 export interface RenderIo {
   stdout: Pick<NodeJS.WriteStream, "write">;
@@ -172,7 +177,12 @@ export async function runRender(input: RenderRunOptions): Promise<number> {
   try {
     for (;;) {
       const job = await input.client.getJob(jobId);
-      if (TERMINAL.has(job.status)) return exitCodeForJob(job);
+      if (TERMINAL.has(job.status)) {
+        if (job.status === "failed") {
+          io.stderr.write(`render_failed ${publicErrorCode(job.error?.code)}\n`);
+        }
+        return exitCodeForJob(job);
+      }
       if (stopWaiting) return RENDER_EXIT.interrupted;
       await sleep(pollMs);
     }
@@ -221,6 +231,13 @@ export async function runRenderCommand(
       ...(dependencies.io === undefined ? {} : { io: dependencies.io }),
       ...(dependencies.interrupts === undefined ? {} : { interrupts: dependencies.interrupts }),
     });
+  } catch (error) {
+    if (!(error instanceof DaemonClientError)) throw error;
+    const io = dependencies.io ?? { stdout: process.stdout, stderr: process.stderr };
+    // Stable code only: messages/details can contain private filesystem or
+    // transport data and belong in daemon diagnostics, not CLI stderr.
+    io.stderr.write(`render_error ${publicErrorCode(error.code)}\n`);
+    return RENDER_EXIT.failed;
   } finally {
     // Detached before returning even on failure: an attachment left behind
     // keeps an auto-started daemon alive for its full TTL after the client that

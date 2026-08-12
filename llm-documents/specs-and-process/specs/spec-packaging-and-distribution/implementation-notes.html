@@ -1468,6 +1468,18 @@
           <div><dt class="font-semibold text-slate-200">Không nới vô hạn</dt><dd class="mt-1 text-slate-300">Test buộc ceiling không thấp hơn 1,5× baseline và không cao hơn limit một quantum. Warm-app giữ nguyên vì chưa có measurement authority hiện tại.</dd></div>
         </dl>
       </section>
+      <section class="mt-6 rounded-2xl border border-rose-400/30 bg-rose-950/20 p-6 shadow-xl">
+        <p class="text-xs font-semibold uppercase tracking-[0.24em] text-rose-300">2026-08-13 · C-65 · Windows render bridge</p>
+        <h2 class="mt-2 text-xl font-bold text-white">Workload dài cần budget riêng; chỉ GET mới được retry</h2>
+        <dl class="mt-5 grid gap-4 md:grid-cols-2">
+          <div><dt class="font-semibold text-slate-200">Raw exact-head evidence</dt><dd class="mt-1 text-slate-300">Run <code>31637865809</code> pass render-media và offline trên Windows nhưng CLI render wait ném <code>internal_error</code> sau 141,968 ms. Daemon tiếp tục phục vụ các bước sau, nên không có bằng chứng crash.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Timing phân giải RCA</dt><dd class="mt-1 text-slate-300">Tổng thời gian gần bằng SEA/deep bootstrap cộng deadline enqueue 120 giây. Failure xảy ra trong render đồng bộ đầu tiên, trước detach/cancel, nên stale polling socket không giải thích được ca này.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Mutation không retry</dt><dd class="mt-1 text-slate-300">Render enqueue nhận trần riêng 300 giây nhưng vẫn gọi đúng một lần. Attach, renew, detach, tool mutation và cancel giữ control semantics hiện hữu; request timeout có thể đã được áp dụng nên không được phát lại mù.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Read retry bounded</dt><dd class="mt-1 text-slate-300"><code>GET /jobs/:id</code> có deadline 120 giây và retry đúng một lần chỉ khi fetch/abort chưa có HTTP response. Structured HTTP/domain error là authoritative và không retry.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Failure evidence dùng được</dt><dd class="mt-1 text-slate-300">CLI in stable error code đã redact. Smoke ghi phase, elapsed, daemon exit/signal/tail đã lọc secret/path và latest render row qua SQLite read-only; không đọc error message riêng tư.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Gate chưa đóng</dt><dd class="mt-1 text-slate-300">Focused daemon/render/smoke, typecheck, lint và diff-check xanh. Artifact phải được rebuild và exact-head matrix phải xanh lại; run <code>8ee68e4</code> không được dùng làm acceptance.</dd></div>
+        </dl>
+      </section>
     </main>
   </body>
 </html>

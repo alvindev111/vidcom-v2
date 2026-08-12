@@ -234,14 +234,14 @@ describe("daemon client", () => {
     }
   });
 
-  it("allows render diagnostics enqueue to outlive the control deadline", async () => {
+  it("allows render diagnostics enqueue to outlive the 120-second tool deadline", async () => {
     vi.useFakeTimers();
     try {
       const client = createDaemonClient({
         baseUrl: "http://127.0.0.1:43127",
         bearer: "clear-token",
         fetch: (_input, init) => new Promise((resolve, reject) => {
-          const timer = setTimeout(() => resolve(json({ jobId: "job_render" }, 202)), 5_100);
+          const timer = setTimeout(() => resolve(json({ jobId: "job_render" }, 202)), 120_100);
           init?.signal?.addEventListener("abort", () => {
             clearTimeout(timer);
             reject(new Error("aborted"));
@@ -252,11 +252,94 @@ describe("daemon client", () => {
         idempotencyKey: "render-long-diagnostics",
       });
 
-      await vi.advanceTimersByTimeAsync(5_100);
+      await vi.advanceTimersByTimeAsync(120_100);
       await expect(pending).resolves.toEqual({ jobId: "job_render" });
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  it("retries one job GET after a transport failure", async () => {
+    let attempts = 0;
+    const { client } = stub(() => {
+      attempts += 1;
+      if (attempts === 1) throw new Error("stale socket reset");
+      return json({ id: "job_render", status: "running" });
+    });
+
+    await expect(client.getJob("job_render")).resolves.toMatchObject({ status: "running" });
+    expect(attempts).toBe(2);
+  });
+
+  it("allows a job read to outlive the control deadline", async () => {
+    vi.useFakeTimers();
+    try {
+      const client = createDaemonClient({
+        baseUrl: "http://127.0.0.1:43127",
+        bearer: "clear-token",
+        fetch: (_input, init) => new Promise((resolve, reject) => {
+          const timer = setTimeout(() => resolve(json({ id: "job_render", status: "running" })), 5_100);
+          init?.signal?.addEventListener("abort", () => {
+            clearTimeout(timer);
+            reject(new Error("aborted"));
+          });
+        }),
+      });
+      const pending = client.getJob("job_render");
+
+      await vi.advanceTimersByTimeAsync(5_100);
+      await expect(pending).resolves.toMatchObject({ status: "running" });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("keeps the dedicated render-enqueue deadline bounded", async () => {
+    vi.useFakeTimers();
+    try {
+      const client = createDaemonClient({
+        baseUrl: "http://127.0.0.1:43127",
+        bearer: "clear-token",
+        fetch: (_input, init) => new Promise((_resolve, reject) => {
+          init?.signal?.addEventListener("abort", () => reject(new Error("aborted")));
+        }),
+      });
+      const pending = client.enqueueRender("project-render", { idempotencyKey: "render-bounded" });
+      const rejection = expect(pending).rejects.toMatchObject({ code: ErrorCode.DaemonUnavailable });
+
+      await vi.advanceTimersByTimeAsync(300_000);
+      await rejection;
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("does not retry a structured job-read rejection", async () => {
+    let attempts = 0;
+    const { client } = stub(() => {
+      attempts += 1;
+      return json({
+        error: { code: ErrorCode.DaemonUnavailable, message: "daemon is draining" },
+      }, 503);
+    });
+
+    await expect(client.getJob("job_render")).rejects.toMatchObject({
+      code: ErrorCode.DaemonUnavailable,
+      message: "daemon is draining",
+    });
+    expect(attempts).toBe(1);
+  });
+
+  it("does not retry render enqueue after a transport failure", async () => {
+    let attempts = 0;
+    const { client } = stub(() => {
+      attempts += 1;
+      throw new Error("socket closed after request write");
+    });
+
+    await expect(client.enqueueRender("project-1", { idempotencyKey: "render-1" }))
+      .rejects.toMatchObject({ code: ErrorCode.DaemonUnavailable });
+    expect(attempts).toBe(1);
   });
 
   it("sends the tool name in the path and the payload in the body", async () => {

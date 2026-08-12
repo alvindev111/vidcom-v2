@@ -1,4 +1,5 @@
-import type { DaemonClient, DaemonJob, EnqueueRenderInput } from "@vidcom/adapter";
+import { DaemonClientError, type DaemonClient, type DaemonJob, type EnqueueRenderInput } from "@vidcom/adapter";
+import { ErrorCode } from "@vidcom/contracts";
 import {
   CliInputError,
   RENDER_EXIT,
@@ -165,6 +166,28 @@ describe("render command", () => {
     await expect(runRenderCommand(["swiss-grid"], connectable(client, detached))).rejects.toThrow();
     expect(detached).toEqual(["attachment-1"]);
   });
+
+  it("prints only a stable code when daemon polling fails", async () => {
+    const output = capture();
+    const detached: string[] = [];
+    const client = {
+      ...daemon({}),
+      getJob: () => Promise.reject(new DaemonClientError(
+        ErrorCode.DaemonUnavailable,
+        "private path C:\\Users\\runner\\workspace timed out",
+        { cause: "ECONNRESET at C:\\private" },
+      )),
+    } as DaemonClient;
+
+    const code = await runRenderCommand([
+      "project_0127e186-5e32-45ac-b66f-1c099ff8a292",
+    ], { ...connectable(client, detached), io: output.io });
+    expect(code).toBe(RENDER_EXIT.failed);
+    expect(output.out).toEqual([]);
+    expect(output.err.join("")).toBe("render_error daemon_unavailable\n");
+    expect(output.err.join("")).not.toContain("Users");
+    expect(detached).toEqual(["attachment-1"]);
+  });
 });
 
 describe("render run", () => {
@@ -196,6 +219,28 @@ describe("render run", () => {
       sleep: () => Promise.resolve(),
     });
     expect(code).toBe(RENDER_EXIT.succeeded);
+  });
+
+  it("prints the terminal failure code without its message", async () => {
+    const output = capture();
+    const client = {
+      ...daemon({}),
+      getJob: () => Promise.resolve({
+        id: "job_1",
+        status: "failed",
+        error: { code: "render_binary_missing", message: "C:\\private\\ffmpeg.exe missing" },
+      } as DaemonJob),
+    } as DaemonClient;
+    const code = await runRender({
+      client,
+      projectId: "project_1",
+      options: { target: "project_1" },
+      io: output.io,
+    });
+    expect(code).toBe(RENDER_EXIT.failed);
+    expect(output.out).toEqual([]);
+    expect(output.err.join("")).toBe("render_failed render_binary_missing\n");
+    expect(output.err.join("")).not.toContain("private");
   });
 
   it.each([
