@@ -133,7 +133,9 @@ export function secureAppDataDirectorySync(
   const { stdout } = run(systemTool("whoami", platform), ["/user", "/fo", "csv", "/nh"]);
   for (const args of windowsExactAclCommands(
     pathname,
-    `${windowsCurrentUserSid(stdout)}:(OI)(CI)(F)`,
+    // OI/CI are inheritance flags and use parentheses; F is a basic right and
+    // must not. `icacls` rejects `(OI)(CI)(F)` before runtime extraction starts.
+    `${windowsCurrentUserSid(stdout)}:(OI)(CI)F`,
   )) {
     run(systemTool("icacls", platform), args);
   }

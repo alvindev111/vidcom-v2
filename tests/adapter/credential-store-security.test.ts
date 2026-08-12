@@ -64,7 +64,7 @@ describe("credential and app-data ACL hardening", () => {
       { executable: systemTool("icacls", "win32"), args: ["C:\\VidCom Data", "/reset"] },
       {
         executable: systemTool("icacls", "win32"),
-        args: ["C:\\VidCom Data", "/inheritance:r", "/grant:r", "*S-1-5-21-42:(OI)(CI)(F)"],
+        args: ["C:\\VidCom Data", "/inheritance:r", "/grant:r", "*S-1-5-21-42:(OI)(CI)F"],
       },
     ]);
   });
