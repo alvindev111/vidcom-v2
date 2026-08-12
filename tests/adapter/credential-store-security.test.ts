@@ -69,32 +69,40 @@ describe("credential and app-data ACL hardening", () => {
     ]);
   });
 
-  it("keeps asynchronous POSIX credential hardening at 0600 without invoking Windows tools", async () => {
-    const root = await temporaryRoot();
-    const credential = path.join(root, "credential");
-    await writeFile(credential, "secret", { mode: 0o666 });
-    await chmod(credential, 0o666);
-    const run = vi.fn();
+  it.skipIf(process.platform === "win32")(
+    "keeps asynchronous POSIX credential hardening at 0600 without invoking Windows tools "
+      + "(Windows filesystems do not expose POSIX mode bits)",
+    async () => {
+      const root = await temporaryRoot();
+      const credential = path.join(root, "credential");
+      await writeFile(credential, "secret", { mode: 0o666 });
+      await chmod(credential, 0o666);
+      const run = vi.fn();
 
-    await secureCredentialFile(credential, "linux", run);
+      await secureCredentialFile(credential, "linux", run);
 
-    expect((await stat(credential)).mode & 0o777).toBe(0o600);
-    expect(run).not.toHaveBeenCalled();
-  });
+      expect((await stat(credential)).mode & 0o777).toBe(0o600);
+      expect(run).not.toHaveBeenCalled();
+    },
+  );
 
-  it("keeps synchronous POSIX file and directory hardening at 0600 and 0700", async () => {
-    const root = await temporaryRoot();
-    const credential = path.join(root, "database.sqlite");
-    await writeFile(credential, "bytes", { mode: 0o666 });
-    await chmod(root, 0o777);
-    await chmod(credential, 0o666);
-    const run = vi.fn();
+  it.skipIf(process.platform === "win32")(
+    "keeps synchronous POSIX file and directory hardening at 0600 and 0700 "
+      + "(Windows filesystems do not expose POSIX mode bits)",
+    async () => {
+      const root = await temporaryRoot();
+      const credential = path.join(root, "database.sqlite");
+      await writeFile(credential, "bytes", { mode: 0o666 });
+      await chmod(root, 0o777);
+      await chmod(credential, 0o666);
+      const run = vi.fn();
 
-    secureCredentialFileSync(credential, "linux", run);
-    secureAppDataDirectorySync(root, "linux", run);
+      secureCredentialFileSync(credential, "linux", run);
+      secureAppDataDirectorySync(root, "linux", run);
 
-    expect((await stat(credential)).mode & 0o777).toBe(0o600);
-    expect((await stat(root)).mode & 0o777).toBe(0o700);
-    expect(run).not.toHaveBeenCalled();
-  });
+      expect((await stat(credential)).mode & 0o777).toBe(0o600);
+      expect((await stat(root)).mode & 0o777).toBe(0o700);
+      expect(run).not.toHaveBeenCalled();
+    },
+  );
 });

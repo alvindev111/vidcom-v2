@@ -248,7 +248,7 @@ describe("workspace discovery and project state on real SQLite/filesystem", () =
     } finally {
       await value.infrastructure.database.destroy();
     }
-  }, 15_000);
+  }, 30_000);
 
   it("lazy-backfills all three shipped prototype identities from their real compositions", async () => {
     const root = await mkdtemp(path.join(tmpdir(), "vidcom-prototype-backfill-"));

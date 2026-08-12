@@ -518,23 +518,27 @@ ${nativePtyProbeLifecycleSource(50)}
       .rejects.toThrow(/node-pty Linux pty.node must be a real regular file/u);
   });
 
-  it("repairs the exact Darwin host spawn-helper mode before pruning", async () => {
-    const root = await temporaryRoot();
-    const packageRoot = await packageFixture(root, "node-pty", "1.1.0", [
-      "lib/index.js",
-      "prebuilds/darwin-arm64/pty.node",
-      "prebuilds/darwin-arm64/spawn-helper",
-      "prebuilds/darwin-x64/spawn-helper",
-    ]);
-    const helper = path.join(packageRoot, "prebuilds", "darwin-arm64", "spawn-helper");
-    await chmod(helper, 0o644);
+  it.skipIf(process.platform === "win32")(
+    "repairs the exact Darwin host spawn-helper mode before pruning "
+      + "(Windows filesystems cannot prove Darwin executable mode bits)",
+    async () => {
+      const root = await temporaryRoot();
+      const packageRoot = await packageFixture(root, "node-pty", "1.1.0", [
+        "lib/index.js",
+        "prebuilds/darwin-arm64/pty.node",
+        "prebuilds/darwin-arm64/spawn-helper",
+        "prebuilds/darwin-x64/spawn-helper",
+      ]);
+      const helper = path.join(packageRoot, "prebuilds", "darwin-arm64", "spawn-helper");
+      await chmod(helper, 0o644);
 
-    await pruneRuntimePackageTree(packageRoot, "node-pty", "darwin-arm64");
+      await pruneRuntimePackageTree(packageRoot, "node-pty", "darwin-arm64");
 
-    expect(existsSync(helper)).toBe(true);
-    expect((await lstat(helper)).mode & 0o111).not.toBe(0);
-    expect(existsSync(path.join(packageRoot, "prebuilds", "darwin-x64"))).toBe(false);
-  });
+      expect(existsSync(helper)).toBe(true);
+      expect((await lstat(helper)).mode & 0o111).not.toBe(0);
+      expect(existsSync(path.join(packageRoot, "prebuilds", "darwin-x64"))).toBe(false);
+    },
+  );
 
   it("rejects every non-system Darwin dylib and every LC_RPATH", () => {
     expect(() => assertPortableDarwinDependencies([
