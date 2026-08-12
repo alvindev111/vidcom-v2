@@ -1,4 +1,4 @@
-# x-vidcom-agent-kit: 2
+# x-vidcom-agent-kit: 4
 interface:
   display_name: "VidCom Look"
   short_description: "Adjust VidCom look and audio bed"

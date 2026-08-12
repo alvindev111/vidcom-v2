@@ -1,2 +1,2 @@
-<!-- x-vidcom-agent-kit: 2 -->
-Create or continue a VidCom video for {{brief}}. Discover and orient first, ask about any material ambiguity, validate every edit, inspect snapshots, then render only after validation succeeds.
+<!-- x-vidcom-agent-kit: 4 -->
+Create or continue a story-driven VidCom video for {{brief}}. Bootstrap the active host's VidCom agent kit and read its router first. Propose a value-first story spine and per-beat motion map before editing. Every story scene must use meaningful multi-phase choreography; fade-only, gentle rise/drop, and repeated opacity-plus-translate entrances are not acceptable primary motion. Add mood-appropriate BGM by default unless silence was requested, validate every edit, inspect every payoff frame, then render only after validation and motion review succeed.

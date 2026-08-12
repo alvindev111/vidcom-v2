@@ -45,30 +45,38 @@ MUST sinh `CLAUDE.md` từ `AGENTS.md` lúc build, MUST NOT sửa tay hai file.
 Đây là nội dung trung tâm của agent-kit. Mọi skill đều tham chiếu về đây.
 
 ```
-1. DISCOVER   server/discover        → protocol version, capabilities, tool set
-2. ORIENT     list_projects
+1. BOOTSTRAP  thử install_agent_kit đúng một lần cho đúng host
+              đọc file main hoặc auxiliary .vidcom.md và router /vidcom trước khi chọn flow
+              host degraded vì main foreign vẫn tiếp tục; không chặn ở manual_merge, không retry vòng lặp
+2. DISCOVER   server/discover        → protocol version, capabilities, tool set
+3. ORIENT     list_projects
               get_project_context    → scene, timing, revision, diagnostics hiện có
-3. PLAN       nói lại ý định bằng lời; mơ hồ thì HỎI, không đoán
-4. EDIT       create_scene / set_scene_timing / set_text / …
-              mỗi call kèm expectedRevision lấy từ bước trước
-5. VALIDATE   validate_project       → đọc diagnostics
-6. PREVIEW    start_snapshot         → nhìn frame thật, không tin tưởng mù
-7. NARRATE    start_tts              → chỉ khi scene có thoại
-8. RENDER     start_render → get_job_status (poll, không block)
-9. REPORT     đã đổi gì, revision nào, diagnostic nào còn lại
+4. STORYBOARD nói “video này kể [audience] rằng [message]” và lập bảng beat
+              mỗi beat có narrative role, trải nghiệm, meaningful change, motion nhiều pha, transition
+              value claim phải xuất hiện chậm nhất ở beat 2
+5. EDIT       create_scene / set_scene_timing / set_text / … rồi qua vidcom-motion
+              mỗi call kèm expectedRevision lấy từ bước trước; scene story phải có setup → development → payoff → hold
+6. SCORE      list_bgm_beds → install_bgm sau khi có duration
+              mặc định có BGM; chỉ bỏ khi người dùng yêu cầu hoặc chủ ý cần im lặng
+7. VALIDATE   validate_project       → đọc diagnostics
+8. PREVIEW    start_snapshot         → nhìn frame thật, không tin tưởng mù
+9. NARRATE    start_tts              → chỉ khi scene có thoại
+10. RENDER    start_render → get_job_status (poll, không block)
+11. REPORT    đã đổi gì, revision nào, diagnostic nào còn lại
 ```
 
 ### Luật của quy trình
 
 | # | Luật |
 |---|---|
-| W1 | **MUST NOT bỏ bước 2.** Không đoán `sceneId`, không đoán timing. Đọc trước khi ghi |
-| W2 | **MUST NOT bỏ bước 5.** Sửa xong mà không validate là giao việc chưa xong |
+| W1 | **MUST NOT bỏ bước 3.** Không đoán `sceneId`, không đoán timing. Đọc trước khi ghi |
+| W2 | **MUST NOT bỏ bước 7.** Sửa xong mà không validate là giao việc chưa xong |
 | W3 | `expectedRevision` MUST lấy từ output của call ngay trước, không cache qua nhiều lượt |
 | W4 | Thao tác destructive MUST được người dùng xác nhận, không tự quyết |
 | W5 | Job MUST poll có backoff, MUST NOT vòng lặp chặt |
-| W6 | Bước 9 MUST nói **diagnostic còn lại**, kể cả khi tác vụ chính đã xong |
+| W6 | Bước 11 MUST nói **diagnostic còn lại**, kể cả khi tác vụ chính đã xong |
 | W7 | Gặp `write_conflict` MUST đọc lại rồi merge, MUST NOT ghi đè bằng cách bỏ `expectedRevision` |
+| W8 | Bước 4–5 là gate bắt buộc cho video story-driven. Fade đơn, rise/drop nhẹ, hoặc lặp `opacity + y` chỉ là transition phụ, **không** được tính là motion của scene và MUST NOT đi tới render |
 
 ### Cấm tuyệt đối trong agent-kit
 
@@ -90,7 +98,7 @@ Theo đúng bộ khung mà HyperFrames dùng, vì agent đã quen đọc dạng 
 | Mục | Nội dung |
 |---|---|
 | **Skills — USE THESE FIRST** | Trỏ `/vidcom` làm router; bảng intent → skill |
-| **Quy trình chuẩn** | 9 bước ở §3, dạng rút gọn |
+| **Quy trình chuẩn** | 11 bước ở §3, dạng rút gọn |
 | **Tool reference** | Bảng tool theo mức read / write / job / destructive |
 | **Project structure** | `index.html`, `compositions/`, `assets/`, `narration/`, `preview-settings.json`, `renders/` |
 | **Key rules** | Invariant của HyperFrames mà agent phải giữ (xem dưới) |
@@ -105,8 +113,11 @@ Rút từ P1–P11 và những gì runtime thực sự yêu cầu:
 2. Timeline GSAP phải `paused: true` và đăng ký lên `window.__timelines[<composition-id>]`.
 3. Scene mới phải là **file sub-composition riêng** với `data-composition-src` — host inline không được runtime quản lý visibility nên nó hiện suốt video (**P11**).
 4. Tween viết sau khi clip của scene kết thúc thì **không bao giờ chạy** — nới `data-duration` hoặc dời tween.
-5. Đổi màu / tone / subtitle / BGM đi qua preview settings, **không** sửa composition source (**P2**).
+5. Đổi màu / tone / subtitle / BGM đi qua preview settings, **không** sửa composition source (**P2**). Video mặc định có BGM sau khi composition có duration; chỉ bỏ khi người dùng yêu cầu hoặc chủ ý biên tập cần im lặng.
 6. Chỉ logic deterministic — không `Date.now()`, không `Math.random()`, không fetch.
+7. Story-driven là mặc định. Story spine phải value-first: hook nói bằng ngôn ngữ kết quả, value claim ở beat 1–2, evidence/tension phát triển luận điểm, payoff giải quyết nó.
+8. Mỗi scene story là một beat, không phải slide. Motion phải làm thay đổi ý nghĩa hoặc trạng thái nhìn thấy được: reveal/build, transform, cause/effect, camera move sang ý mới, data change, hoặc handoff vật lý.
+9. Mỗi scene story không tầm thường cần choreography `setup → development → payoff → hold`, ghép 2–4 motion pattern. Fade/rise/drop đơn hoặc lặp cùng một `opacity + translate` chỉ là polish phụ và không đủ điều kiện render.
 
 ---
 

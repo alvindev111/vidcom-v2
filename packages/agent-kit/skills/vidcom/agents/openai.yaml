@@ -1,5 +1,5 @@
-# x-vidcom-agent-kit: 2
+# x-vidcom-agent-kit: 4
 interface:
   display_name: "VidCom"
   short_description: "Route video production work through VidCom MCP"
-  default_prompt: "Use VidCom MCP to plan, edit, validate, preview, and render this video safely."
+  default_prompt: "Use VidCom MCP to build a value-first story with meaningful multi-phase motion in every story scene, then validate, preview, and render it safely."

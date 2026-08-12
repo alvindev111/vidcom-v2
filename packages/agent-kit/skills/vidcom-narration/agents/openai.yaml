@@ -1,4 +1,4 @@
-# x-vidcom-agent-kit: 2
+# x-vidcom-agent-kit: 4
 interface:
   display_name: "VidCom Narration"
   short_description: "Author and generate VidCom narration"

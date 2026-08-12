@@ -1,5 +1,5 @@
-# x-vidcom-agent-kit: 2
+# x-vidcom-agent-kit: 4
 interface:
   display_name: "VidCom Scene"
   short_description: "Create and edit VidCom scenes"
-  default_prompt: "Edit the requested VidCom scenes safely through MCP."
+  default_prompt: "Build these VidCom scenes as value-first story beats, then route each beat through meaningful motion choreography."

@@ -1,5 +1,5 @@
-# x-vidcom-agent-kit: 2
+# x-vidcom-agent-kit: 4
 interface:
   display_name: "VidCom Motion"
-  short_description: "Animate a VidCom scene with a vendored motion library"
-  default_prompt: "Animate this scene with a vendored motion library through VidCom."
+  short_description: "Choreograph story motion for VidCom scenes"
+  default_prompt: "Choreograph this story beat with setup, development, payoff, and hold; do not use fade-only motion."

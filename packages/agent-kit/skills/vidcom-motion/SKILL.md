@@ -1,12 +1,32 @@
 ---
 name: vidcom-motion
-description: Add animation to a VidCom scene with a vendored motion library — GSAP, Anime.js, Motion One, Lottie, or Three.js. Use when a scene needs movement, 3D, particles, kinetic typography, or an After Effects asset played back. Do not use for scene timing and text, tone and BGM, narration, or rendering.
-x-vidcom-agent-kit: 2
+description: Choreograph meaningful multi-phase motion for every VidCom story scene with GSAP or another vendored runtime. Use when motion must reveal meaning, transform visual state, demonstrate cause/effect, direct the camera, or hand off between beats. Do not use for scene timing and text, tone and BGM, narration, or rendering; fade-only entrances never satisfy this skill.
+x-vidcom-agent-kit: 4
 ---
 
 # VidCom motion
 
 Read `get_project_context` first. Pick one library, vendor it with `install_motion_library`, then write the timeline with `save_file` using the current `expectedContentHash`.
+
+## Story-motion contract
+
+Motion is the storytelling mechanism, not decoration. Before writing source, make a motion map for every beat:
+
+| Field | Required answer |
+| --- | --- |
+| Narrative role | Why this beat exists in the value-first story |
+| Viewer experience | The visual world and feeling, not a layout description |
+| Meaningful change | What information, state, relationship, cause/effect, or viewpoint changes |
+| Choreography | Setup → development → payoff → hold |
+| Motion verbs | A specific verb for every moving element |
+| Handoff | How motion carries attention into the next beat |
+
+For every non-trivial story scene:
+
+- Compose 2-4 complementary motion patterns on one paused timeline. At least one primary action must be spatial, structural, illustrative, data-driven, camera-driven, or a visible state transformation tied to the beat's meaning.
+- Use distinct phases: establish the visual world, develop or reveal the idea, land one clear payoff, then hold long enough to read. Overlap actions so the scene feels directed rather than sequentially faded.
+- Vary verbs, directions, depth, and eases across scenes. Every element gets a concrete verb such as draws, assembles, counts, tracks, pushes, morphs, or locks; “animates in” is not direction.
+- Treat fades, gentle rises/drops, and `opacity + y` as secondary transition polish only. A lone fade or repeated entrance recipe is shallow motion and must be redesigned before render.
 
 ## Pick the library
 
@@ -18,7 +38,7 @@ Read `get_project_context` first. Pick one library, vendor it with `install_moti
 | Playing an After Effects animation delivered as Lottie JSON | Lottie | `lottie` |
 | 3D, shaders, particles | Three.js | `three` |
 
-Plain CSS animation and the Web Animations API need no library; use them for simple, one-shot effects and skip the install.
+Plain CSS animation and the Web Animations API need no library; use them only for secondary one-shot or ambient effects, not as the primary choreography of a story scene.
 
 Default to GSAP and to one library per project. Two libraries animating the same element fight over its transform.
 

@@ -5,6 +5,7 @@ import { describe, expect, it } from "vitest";
 
 import { AGENT_KIT_FILES, AGENT_KIT_VERSION } from "@vidcom/agent-kit";
 import type { Era } from "@vidcom/contracts";
+import { MCP_SERVER_INSTRUCTIONS } from "@vidcom/mcp";
 import { createContractMatrixRegistry } from "../mcp/support";
 
 const packageRoot = path.resolve("packages/agent-kit");
@@ -55,5 +56,44 @@ describe("agent-kit source and contract synchronization", () => {
     const referenced = new Set(skillText.flatMap((content) =>
       [...content.matchAll(/`([a-z][a-z0-9_]+)`/gu)].map((match) => match[1]).filter((name) => name.includes("_"))));
     for (const name of referenced) expect(currentToolCatalog, `${name} referenced by a skill but absent from catalog`).toContain(name);
+  });
+
+  it("bootstraps VidCom instructions before routing and scores videos by default", async () => {
+    const [agents, router, look] = await Promise.all([
+      readFile(path.join(packageRoot, "AGENTS.md"), "utf8"),
+      readFile(path.join(packageRoot, "skills/vidcom/SKILL.md"), "utf8"),
+      readFile(path.join(packageRoot, "skills/vidcom-look/SKILL.md"), "utf8"),
+    ]);
+
+    expect(agents.indexOf("install_agent_kit")).toBeLessThan(agents.indexOf("list_projects"));
+    expect(router.indexOf("install_agent_kit")).toBeLessThan(router.indexOf("list_projects"));
+    expect(agents).toContain("Background music is the default for every video");
+    expect(look).toContain("add a BGM bed by default");
+  });
+
+  it("makes value-first storytelling and meaningful multi-phase motion the render contract", async () => {
+    const [agents, router, motion, render, prompt] = await Promise.all([
+      readFile(path.join(packageRoot, "AGENTS.md"), "utf8"),
+      readFile(path.join(packageRoot, "skills/vidcom/SKILL.md"), "utf8"),
+      readFile(path.join(packageRoot, "skills/vidcom-motion/SKILL.md"), "utf8"),
+      readFile(path.join(packageRoot, "skills/vidcom-render/SKILL.md"), "utf8"),
+      readFile(path.join(packageRoot, "prompts/create-video.md"), "utf8"),
+    ]);
+    const descriptions = new Map(
+      createContractMatrixRegistry().list("modern" as Era).map((tool) => [tool.name, tool.description]),
+    );
+
+    expect(MCP_SERVER_INSTRUCTIONS).toContain("Story-driven video is the default");
+    expect(MCP_SERVER_INSTRUCTIONS).toContain("Do not treat a lone fade");
+    expect(agents).toContain("setup → development → payoff → hold");
+    expect(router).toContain("value-first beat table");
+    expect(motion).toContain("## Story-motion contract");
+    expect(motion).toContain("Compose 2-4 complementary motion patterns");
+    expect(render).toContain("Reject scenes whose primary choreography is only a fade");
+    expect(prompt).toContain("fade-only");
+    expect(descriptions.get("create_scene")).toContain("meaningful visual change");
+    expect(descriptions.get("save_file")).toContain("fade, gentle rise/drop");
+    expect(descriptions.get("install_motion_library")).toContain("multi-phase choreography");
+    expect(descriptions.get("start_render")).toContain("setup/development/payoff/hold");
   });
 });

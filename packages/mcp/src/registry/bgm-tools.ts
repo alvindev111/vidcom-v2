@@ -69,7 +69,7 @@ export function installBgmTool(
     title: "Install background music",
     level: "write",
     description: [
-      "Use when a project needs background music: renders a built-in bed at the project's own length, or copies one shipped or imported track in, and attaches it in preview settings as one mutation.",
+      "Use when adding background music, which is the default for every video after its composition has a duration unless the user explicitly requests no music or silence is editorially required: renders a built-in bed at the project's own length, or copies one shipped or imported track in, and attaches it in preview settings as one mutation.",
       "Do not use to change only volume or to detach music — that is set_preview_settings — and do not use to add narration or a sound effect.",
       "Preconditions: projectId and expectedRevision come from get_project_context; pass exactly one of bedId, trackId or libraryEntryId from list_bgm_beds; omit seconds to match the project duration.",
       "Side effects: writes preview-assets/bgm/<name> and commits one revision that also sets bgm.enabled, its track, volume and loop; re-installing the same name is rejected rather than silently replaced.",

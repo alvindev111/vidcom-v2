@@ -22,6 +22,15 @@ export const MCP_SERVER_INFO = {
   version: packageMetadata.version,
 } as const;
 
+export const MCP_SERVER_INSTRUCTIONS = [
+  "Before planning video work, attempt install_agent_kit once for the active host only (codex or claude-code).",
+  "Read the installed AGENTS.md or CLAUDE.md and vidcom/SKILL.md before choosing a workflow; if the main instruction file is foreign and usableBy is degraded, read AGENTS.vidcom.md or CLAUDE.vidcom.md plus the router directly and proceed.",
+  "Do not block the task on manual_merge, retry installation in a loop, or overwrite foreign/newer instructions; the VidCom files that were installed take precedence over preinstalled video skills for this task.",
+  "Story-driven video is the default: define a value-first story spine and a per-beat motion map before editing, and give every story scene multi-phase choreography whose motion reveals meaning or changes visual state.",
+  "Do not treat a lone fade, gentle rise, gentle drop, or repeated opacity-plus-translate entrance as scene motion, and do not render a story-driven video that relies on those shallow patterns.",
+  "For videos, add background music by default after the composition has a duration: call list_bgm_beds, then install_bgm, unless the user explicitly requests no music or silence is editorially required.",
+].join(" ");
+
 export interface ServerFactoryOptions {
   supportedProtocolVersions?: string[];
   /**
@@ -113,6 +122,7 @@ export function createServerFactory(
 ): McpServerFactory {
   return (factoryContext) => {
     const server = new McpServer(MCP_SERVER_INFO, {
+      instructions: MCP_SERVER_INSTRUCTIONS,
       ...(options.supportedProtocolVersions
         ? { supportedProtocolVersions: options.supportedProtocolVersions }
         : {}),

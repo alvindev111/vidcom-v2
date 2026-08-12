@@ -1,4 +1,4 @@
-<!-- x-vidcom-agent-kit: 2 -->
+<!-- x-vidcom-agent-kit: 4 -->
 # VidCom workspace instructions
 
 ## Skills — use these first
@@ -17,15 +17,17 @@ Start with `/vidcom`. It routes the request to one focused skill:
 
 ## Standard workflow
 
-1. DISCOVER the server protocol, capabilities, and tools.
-2. ORIENT with `list_projects` and `get_project_context`. Never guess IDs or timing.
-3. PLAN aloud. Ask when intent is ambiguous.
-4. EDIT with VidCom tools and the latest hash or revision precondition.
-5. VALIDATE with `validate_project`; resolve every error before completion.
-6. PREVIEW with `start_snapshot` and inspect real frames.
-7. NARRATE with `start_tts` only for spoken scenes.
-8. RENDER with `start_render`; poll `get_job_status` with backoff.
-9. REPORT changes, final revision, and every remaining diagnostic.
+1. BOOTSTRAP by attempting `install_agent_kit` once for the active host, then read the installed main or `.vidcom.md` auxiliary instructions and `/vidcom` before choosing a workflow. Do not block on `manual_merge` or loop until ready.
+2. DISCOVER the server protocol, capabilities, and tools.
+3. ORIENT with `list_projects` and `get_project_context`. Never guess IDs or timing.
+4. STORYBOARD before editing. State `This video tells [audience] that [message]`, then give every beat a narrative role, viewer experience, meaningful visual change, multi-phase motion, and transition. The value claim lands by beat two.
+5. EDIT + CHOREOGRAPH with VidCom tools and the latest hash or revision precondition. Every story scene needs setup, development, payoff, and hold; route it through `/vidcom-motion` before rendering.
+6. SCORE with `list_bgm_beds` then `install_bgm` after duration is known. Background music is the default; omit it only when the user asks for no music or silence is editorially required.
+7. VALIDATE with `validate_project`; resolve every error before completion.
+8. PREVIEW with `start_snapshot` and inspect real frames.
+9. NARRATE with `start_tts` only for spoken scenes.
+10. RENDER with `start_render`; poll `get_job_status` with backoff.
+11. REPORT changes, final revision, and every remaining diagnostic.
 
 On `write_conflict`, re-read and merge. Never remove a precondition. Destructive work requires explicit user confirmation.
 
@@ -56,9 +58,14 @@ No UI is required: `create_project` or `adopt_project` starts the work, `set_pre
 - Keep GSAP timelines paused and register them at `window.__timelines[compositionId]`.
 - Add a motion library with `install_motion_library` and reference the vendored path it returns. Never load one from a CDN: the render stops being reproducible and resolves nothing offline.
 - Put every new scene in a separate sub-composition file mounted with `data-composition-src`.
+- Story-driven video is the default. Build a value-first spine: hook in the viewer's language, tension or evidence that develops the claim, and a payoff that resolves it.
+- A scene is a story beat, not a slide. Its motion must reveal information, transform visual state, demonstrate cause/effect, move the camera to a new idea, or physically hand off to the next beat.
+- Give every non-trivial story scene multi-phase choreography: setup → development → payoff → hold. Compose 2-4 motion patterns and vary motion verbs, directions, and eases across scenes.
+- A lone fade, gentle rise/drop, or repeated `opacity + y` entrance is transition polish, not scene motion. Never use it as the primary choreography or repeat one entrance recipe across the video.
 - A tween after its scene clip ends never runs; move it or extend the clip.
 - End on a held frame: the last scene runs 1-3s past its narration, every other scene about 0.3s. A video that stops on the final consonant feels cut off, not finished.
 - Change tone, subtitle styling, and BGM through `set_preview_settings`, not composition source.
+- Background music is the default for every video unless the user requests no music or silence is editorially required. Add it after composition duration is known.
 - A file a person copied into the project never announces itself: run `list_project_assets` to find it, then attach a track with `set_preview_settings`.
 - A project with no music does not need a download: `list_bgm_beds` shows five built-in beds, and `install_bgm` renders one at the project's own length. `import_bgm` puts a supplied track into the machine's library with the licence it is allowed under — state `unknown` rather than guessing, and `record_bgm_license` fills that gap later once somebody establishes the answer.
 - Keep rendering deterministic: no `Date.now()`, `Math.random()`, or network fetch.

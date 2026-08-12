@@ -7,7 +7,7 @@ import {
 import { StdioClientTransport } from "@modelcontextprotocol/client/stdio";
 import { describe, expect, it } from "vitest";
 
-import { createMcpHttpHandlers, MCP_SERVER_INFO } from "@vidcom/mcp";
+import { createMcpHttpHandlers, MCP_SERVER_INFO, MCP_SERVER_INSTRUCTIONS } from "@vidcom/mcp";
 import { createTransportRegistry } from "./support";
 
 const MODERN_REVISION = "2026-07-28";
@@ -55,6 +55,9 @@ describe("modern MCP transport", () => {
     try {
       await client.connect(transport);
       expect(client.getProtocolEra()).toBe("modern");
+      expect(client.getInstructions()).toBe(MCP_SERVER_INSTRUCTIONS);
+      expect(client.getInstructions()).toContain("attempt install_agent_kit once");
+      expect(client.getInstructions()).toContain("Do not block the task on manual_merge");
       expect(client.getDiscoverResult()).toMatchObject({
         _meta: { "io.modelcontextprotocol/serverInfo": MCP_SERVER_INFO },
         supportedVersions: [MODERN_REVISION],
