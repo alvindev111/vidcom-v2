@@ -1438,6 +1438,16 @@
           <div><dt class="font-semibold text-slate-200">Production video chưa được khai hoàn tất</dt><dd class="mt-1 text-slate-300">Mười project có 216 scene × 12 giây, năm archetype mỗi project, exact validate zero error và lint available. VieNeu TTS, snapshot và render exact revision đang chạy; chưa có MP4 cuối thì không dùng cấu trúc scene làm acceptance evidence.</dd></div>
         </dl>
       </section>
+      <section class="mt-6 rounded-2xl border border-fuchsia-400/30 bg-fuchsia-950/20 p-6 shadow-xl">
+        <p class="text-xs font-semibold uppercase tracking-[0.24em] text-fuchsia-300">2026-08-13 · C-63 · Windows exact runner</p>
+        <h2 class="mt-2 text-xl font-bold text-white">Canonical root phải có trước lock; ACL expectation phải theo command thật</h2>
+        <dl class="mt-5 grid gap-4 md:grid-cols-2">
+          <div><dt class="font-semibold text-slate-200">8.3 alias tạo hai authority lexical</dt><dd class="mt-1 text-slate-300">Windows runner giữ <code>RUNNER~1</code> ở đường sync nhưng async realpath trả long path. Nếu manager derive lock trước khi hội tụ, cùng một physical app-data có thể có hai lock pathname.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Boundary mới vẫn fail-closed</dt><dd class="mt-1 text-slate-300">Outer SEA gọi <code>prepareRuntimeAppDataRoot</code> trước manifest validation và manager construction. Manager không tự sửa path muộn; non-canonical direct caller vẫn bị từ chối.</dd></div>
+          <div><dt class="font-semibold text-slate-200">ACL grammar</dt><dd class="mt-1 text-slate-300"><code>(OI)(CI)</code> là inheritance flags, còn full-access basic right là <code>F</code> không có ngoặc. Exact command là <code>:(OI)(CI)F</code>; test server cũ đã giữ expectation sai và làm Linux/macOS CI đỏ.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Gate hiện tại</dt><dd class="mt-1 text-slate-300">Focused canonical suite 85 pass + 1 skip, security 16/16 và typecheck xanh. Exact SHA <code>9921c796</code> đang chạy lại bốn workflow; M.7 và acceptance chưa được tick.</dd></div>
+        </dl>
+      </section>
     </main>
   </body>
 </html>

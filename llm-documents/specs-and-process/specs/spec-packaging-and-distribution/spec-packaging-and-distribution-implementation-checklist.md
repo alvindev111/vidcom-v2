@@ -2794,6 +2794,12 @@ Chi tiết: [Detailed Goals](./spec-packaging-and-distribution-detailed-goal.md)
   - Decisions: Warm runtime vẫn deep-hash toàn bộ 8067 file nhưng dùng concurrency chung giới hạn 8; artifact identify giảm từ khoảng 2.82 s xuống 2.02 s. Baseline cũ 813/611 ms không được sửa bằng số local: giữ M mở và lấy số exact runner từ CI trước một commit baseline reviewable. Process output giữ mặc định 64 KiB, chỉ HyperFrames diagnostics yêu cầu budget 8 MiB có hard cap. Read-only smoke GET được retry đúng một lần khi pooled socket stale; mutation/HTTP failure không retry.
   - Blockers: Phase M, private-PATH MP4 và production source policy vẫn mở cho exact committed SHA. Local artifact hiện dirty nên chỉ là implementation evidence. Mười project MCP đã có 216 scene × 12 s, 5 archetype/project và validate/lint zero-error; TTS/snapshot/render vẫn đang chạy và chưa được dùng làm acceptance evidence.
 
+2026-08-13 — Phase H/M Windows canonical root và ACL command C-63
+  - Files: `packages/{adapter/src/runtime/runtime-bootstrap,cli/src/sea-bootstrap}.ts`, runtime/doctor/serve/motion fixtures, `tests/server/security.test.ts`, Design §16 và implementation notes
+  - Summary: Exact Windows lộ hai representation cho cùng app-data (`RUNNER~1` và long path). Outer SEA nay canonicalize trước manifest validation và trước khi manager derive lock/native paths; manager vẫn reject non-canonical caller. ACL directory dùng đúng `icacls` grammar `:(OI)(CI)F`; stale cross-platform expectation đã được sửa.
+  - Decisions: Không case-fold string và không canonicalize muộn trong `ensureAll`, vì cả hai có thể để hai lock namespace cùng trỏ một physical root. Local typecheck, focused canonical suite 85/85 + 1 skip và security 16/16 xanh.
+  - Blockers: Exact SHA `9921c796` đang chạy lại CI/Browser/Process/Packaged. M.7 chưa chốt trước khi có valid cold/warm cả ba OS; production supply-chain human gate và 10 MP4 final vẫn mở.
+
 Format:
 ```
 YYYY-MM-DD — Phase X, Task X.Y
