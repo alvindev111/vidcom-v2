@@ -35,6 +35,11 @@ import { createSequentialIdPort } from "../support/deterministic";
 
 const roots: string[] = [];
 const clock = { now: () => new Date("2026-08-04T18:00:00.000Z") };
+// This real SQLite/filesystem integration shares a two-worker Windows runner
+// with process-tree tests that regularly occupy the CPU for 20+ seconds. Keep
+// the budget finite, but large enough that scheduler contention is not reported
+// as a delivery-loop failure.
+const CONTENDED_INTEGRATION_TIMEOUT_MS = 30_000;
 
 function qualifiedSceneSource(sceneId: string, duration: number): string {
   return `<!doctype html><html><body><template>
@@ -53,7 +58,14 @@ function qualifiedSceneSource(sceneId: string, duration: number): string {
 }
 
 afterEach(async () => {
-  await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
+  await Promise.all(roots.splice(0).map((root) => rm(root, {
+    recursive: true,
+    force: true,
+    // Windows can retain the SQLite handle briefly after destroy(). Retrying
+    // waits for the ordered close; a persistent leak still fails cleanup.
+    maxRetries: 10,
+    retryDelay: 100,
+  })));
 });
 
 async function fixture() {
@@ -397,7 +409,7 @@ describe("project delivery HTTP routes on real SQLite and filesystem", () => {
     } finally {
       await value.infrastructure.database.destroy();
     }
-  }, 15_000);
+  }, CONTENDED_INTEGRATION_TIMEOUT_MS);
 
   it("keeps HTTP and MCP set-scene-timing semantics identical on equivalent fixtures", async () => {
     const value = await fixture();
