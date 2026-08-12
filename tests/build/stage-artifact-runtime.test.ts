@@ -34,6 +34,8 @@ import {
   hostPlatformTag,
   materializedTreeSha256,
   nativeClosureProbeTimeoutMs,
+  nativePtyProbeLifecycleSource,
+  nativePtyProbeWatchdogMs,
   nativePackageNamesFor,
   parseRuntimeInputsValue,
   privateProbeEnvironment,
@@ -425,6 +427,42 @@ describe("artifact runtime staging", () => {
     expect(nativeClosureProbeTimeoutMs("win32")).toBe(120_000);
     expect(nativeClosureProbeTimeoutMs("darwin")).toBe(30_000);
     expect(nativeClosureProbeTimeoutMs("linux")).toBe(30_000);
+    expect(nativePtyProbeWatchdogMs("win32")).toBe(90_000);
+    expect(nativePtyProbeWatchdogMs("darwin")).toBe(20_000);
+    expect(nativePtyProbeWatchdogMs("linux")).toBe(20_000);
+  });
+
+  it("force-exits only after the PTY exit and output proof, with a killing watchdog", async () => {
+    const root = await temporaryRoot();
+    const killed = path.join(root, "killed");
+    const success = spawnSync(process.execPath, ["-e", `
+const fs = require("node:fs");
+const archiveRoot = process.cwd();
+const nodePty = { spawn() { return {
+  kill() {},
+  onData(callback) { setTimeout(() => callback("VIDCOM_PTY_PROBE"), 5); },
+  onExit(callback) { setTimeout(() => callback({ exitCode: 0 }), 10); },
+}; } };
+setInterval(() => {}, 1_000);
+${nativePtyProbeLifecycleSource(100)}
+`], { encoding: "utf8", timeout: 2_000 });
+    expect(success.error).toBeUndefined();
+    expect(success.status, success.stderr).toBe(0);
+
+    const timeout = spawnSync(process.execPath, ["-e", `
+const fs = require("node:fs");
+const archiveRoot = process.cwd();
+const nodePty = { spawn() { return {
+  kill() { fs.writeFileSync(process.argv[1], "killed"); },
+  onData() {},
+  onExit() {},
+}; } };
+${nativePtyProbeLifecycleSource(50)}
+`, killed], { encoding: "utf8", timeout: 2_000 });
+    expect(timeout.error).toBeUndefined();
+    expect(timeout.status).toBe(1);
+    expect(timeout.stderr).toContain("probe timed out");
+    expect(await readFile(killed, "utf8")).toBe("killed");
   });
 
   it("resolves optional packages from the owning HyperFrames package store", async () => {

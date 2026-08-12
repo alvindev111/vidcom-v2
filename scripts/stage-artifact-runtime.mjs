@@ -332,6 +332,45 @@ export function nativeClosureProbeTimeoutMs(platform = process.platform) {
   return platform === "win32" ? 120_000 : 30_000;
 }
 
+export function nativePtyProbeWatchdogMs(platform = process.platform) {
+  return platform === "win32" ? 90_000 : 20_000;
+}
+
+/**
+ * Forces the short-lived probe host to terminate after the PTY proof settles.
+ * ConPTY can retain an agent/socket handle after `onExit`, so natural event-loop
+ * drain is not a reliable success condition on Windows.
+ */
+export function nativePtyProbeLifecycleSource(watchdogMs) {
+  if (!Number.isSafeInteger(watchdogMs) || watchdogMs <= 0 || watchdogMs > 90_000) {
+    throw new RangeError("native PTY probe watchdog must be between 1 and 90000 milliseconds");
+  }
+  return String.raw`
+let ptyOutput = "";
+const terminal = nodePty.spawn(process.execPath, ["-e", "process.stdout.write('VIDCOM_PTY_PROBE')"], {
+  name: "xterm-256color",
+  cols: 80,
+  rows: 24,
+  cwd: archiveRoot,
+  env: process.env,
+});
+const watchdog = setTimeout(() => {
+  try { terminal.kill(); } catch { /* the terminal may already be gone */ }
+  fs.writeSync(2, "node-pty staged native process probe timed out\n");
+  process.exit(1);
+}, ${watchdogMs});
+terminal.onData((data) => { ptyOutput += data; });
+terminal.onExit(({ exitCode }) => {
+  clearTimeout(watchdog);
+  if (exitCode !== 0 || !ptyOutput.includes("VIDCOM_PTY_PROBE")) {
+    fs.writeSync(2, "node-pty staged native process probe failed\n");
+    process.exit(1);
+  }
+  process.exit(0);
+});
+`;
+}
+
 async function sha256File(filename) {
   const hash = createHash("sha256");
   for await (const chunk of createReadStream(filename)) hash.update(chunk);
@@ -996,20 +1035,7 @@ Module._resolveFilename = function(request, parent, isMain, options) {
 const requireFromStage = createRequire(path.join(process.argv[1], "native-closure-probe.cjs"));
 for (const packageName of process.argv.slice(2)) requireFromStage(packageName);
 const nodePty = requireFromStage("node-pty");
-const terminal = nodePty.spawn(process.execPath, ["-e", "process.stdout.write('VIDCOM_PTY_PROBE')"], {
-  name: "xterm-256color",
-  cols: 80,
-  rows: 24,
-  cwd: archiveRoot,
-  env: process.env,
-});
-let ptyOutput = "";
-terminal.onData((data) => { ptyOutput += data; });
-terminal.onExit(({ exitCode }) => {
-  if (exitCode !== 0 || !ptyOutput.includes("VIDCOM_PTY_PROBE")) {
-    throw new Error("node-pty staged native process probe failed");
-  }
-});
+${nativePtyProbeLifecycleSource(nativePtyProbeWatchdogMs())}
 `;
   runChecked(
     process.execPath,
