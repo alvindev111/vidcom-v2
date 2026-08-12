@@ -31,7 +31,9 @@ import {
   browsePathSegments,
   browseSegmentMatches,
   mediaSceneSource,
+  readLatestRenderJobSince,
   readJsonWithTransportRetry,
+  runRenderWaitWithDiagnostics,
   verifyArtifactProvenance,
   writeImportProjectFixture,
 } from "../../scripts/packaged-smoke/bodies.mjs";
@@ -113,6 +115,122 @@ describe("packaged smoke steps", () => {
       },
     )).rejects.toThrow(/returned 503/u);
     expect(rejectedAttempts).toBe(1);
+  });
+
+  it("turns a render-wait fault into actionable redacted smoke evidence", async () => {
+    const secretRoot = "C:\\Users\\runneradmin\\AppData\\Local\\Temp\\vidcom-private";
+    const secretNonce = "nonce-do-not-publish";
+    const secretToken = "vcmcp_do_not_publish";
+    const context = {
+      root: secretRoot,
+      workspace: `${secretRoot}\\workspace`,
+      cwd: `${secretRoot}\\cwd`,
+      appData: `${secretRoot}\\app-data`,
+      artifact: `${secretRoot}\\vidcom.exe`,
+      environment: {
+        HOME: `${secretRoot}\\home`,
+        VIDCOM_BOOTSTRAP_NONCE: secretNonce,
+      },
+    };
+    const serving = {
+      child: { exitCode: null, signalCode: null },
+      output: () => `render preflight still active at ${secretRoot}; credential=${secretToken}`,
+    };
+    const times = [1_000, 142_968];
+
+    await expect(runRenderWaitWithDiagnostics(
+      context,
+      serving,
+      { slug: "smoke-media" },
+      {
+        now: () => times.shift() ?? 142_968,
+        runArtifact: () => ({ status: 1, stdout: "", stderr: `internal_error at ${secretRoot}` }),
+        readLatestRenderJobSince: async () => ({
+          status: "running",
+          errorCode: null,
+          cleanupPending: false,
+        }),
+      },
+    )).rejects.toSatisfy((error: unknown) => {
+      const message = error instanceof Error ? error.message : String(error);
+      expect(message).toContain("phase=render-wait elapsedMs=141968");
+      expect(message).toContain("cliExit=1 cli=exit 1; internal_error");
+      expect(message).toContain("daemonExit=null daemonSignal=null");
+      expect(message).toContain("latestRender=running/errorCode=null/cleanupPending=false");
+      expect(message).toContain("daemonTail=render preflight still active");
+      expect(message).toContain("<redacted-path>");
+      expect(message).toContain("<redacted-secret>");
+      expect(message).not.toContain(secretRoot);
+      expect(message).not.toContain(secretNonce);
+      expect(message).not.toContain(secretToken);
+      return true;
+    });
+  });
+
+  it("reports an exceptional render wait and no durable job without retrying it", async () => {
+    let attempts = 0;
+    await expect(runRenderWaitWithDiagnostics(
+      {
+        root: "/private/smoke",
+        workspace: "/private/smoke/workspace",
+        cwd: "/private/smoke/cwd",
+        appData: "/private/smoke/app-data",
+        artifact: "/private/smoke/vidcom",
+        environment: {},
+      },
+      { child: { exitCode: 7, signalCode: "SIGABRT" }, output: () => "daemon stopped" },
+      { slug: "smoke-media" },
+      {
+        now: (() => {
+          const times = [2_000, 2_125];
+          return () => times.shift() ?? 2_125;
+        })(),
+        runArtifact: () => {
+          attempts += 1;
+          throw new Error("spawn timed out");
+        },
+        readLatestRenderJobSince: async () => null,
+      },
+    )).rejects.toThrow(
+      /phase=render-wait elapsedMs=125; cliExit=exception cli=spawn timed out; daemonExit=7 daemonSignal=SIGABRT; latestRender=none-since-phase/u,
+    );
+    expect(attempts).toBe(1);
+  });
+
+  it("reads only the latest render job created during the failed phase", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "vidcom-render-diagnostic-"));
+    const databaseFile = path.join(root, "vidcom.sqlite");
+    const { DatabaseSync } = await import("node:sqlite");
+    const database = new DatabaseSync(databaseFile);
+    try {
+      database.exec(`
+        CREATE TABLE job (
+          id TEXT PRIMARY KEY,
+          type TEXT NOT NULL,
+          status TEXT NOT NULL,
+          error_code TEXT,
+          cleanup_pending INTEGER NOT NULL,
+          created_at TEXT NOT NULL
+        )
+      `);
+      const insert = database.prepare(
+        "INSERT INTO job (id, type, status, error_code, cleanup_pending, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+      );
+      insert.run("old", "render", "succeeded", null, 0, "2026-08-13T00:00:00.000Z");
+      insert.run("new", "render", "failed", "render_timeout", 1, "2026-08-13T00:02:00.000Z");
+      insert.run("other", "import", "running", null, 0, "2026-08-13T00:03:00.000Z");
+    } finally {
+      database.close();
+    }
+
+    try {
+      await expect(readLatestRenderJobSince(root, "2026-08-13T00:01:00.000Z"))
+        .resolves.toEqual({ status: "failed", errorCode: "render_timeout", cleanupPending: true });
+      await expect(readLatestRenderJobSince(root, "2026-08-13T00:04:00.000Z"))
+        .resolves.toBeNull();
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
   });
 
   it("seeds an import source with the complete strict project identity", async () => {

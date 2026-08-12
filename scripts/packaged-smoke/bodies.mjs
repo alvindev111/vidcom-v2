@@ -400,6 +400,121 @@ export async function readJsonWithTransportRetry(label, url, init, request = fet
   throw new Error(`${label} transport retry did not run`);
 }
 
+const SAFE_RENDER_JOB_STATUSES = new Set([
+  "queued",
+  "running",
+  "succeeded",
+  "partial",
+  "failed",
+  "cancelled",
+]);
+
+function escapeDiagnosticPattern(value) {
+  return value.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
+}
+
+/** Keeps smoke failure evidence useful without publishing runner paths or credentials. */
+export function safeSmokeDiagnosticText(context, value, maxLength = 1_000) {
+  let safe = String(value ?? "");
+  const secretValues = Object.entries(context.environment ?? {})
+    .filter(([name, entry]) => /(?:key|nonce|password|secret|token)/iu.test(name)
+      && typeof entry === "string" && entry.length >= 4)
+    .map(([, entry]) => entry);
+  const pathValues = [
+    context.root,
+    context.workspace,
+    context.cwd,
+    context.appData,
+    context.artifact,
+    context.environment?.HOME,
+  ].filter((entry) => typeof entry === "string" && entry.length >= 4);
+
+  for (const entry of [...new Set(secretValues)].sort((left, right) => right.length - left.length)) {
+    safe = safe.replace(new RegExp(escapeDiagnosticPattern(entry), "giu"), "<redacted-secret>");
+  }
+  for (const entry of [...new Set(pathValues)].sort((left, right) => right.length - left.length)) {
+    safe = safe.replace(new RegExp(escapeDiagnosticPattern(entry), "giu"), "<redacted-path>");
+  }
+  safe = safe
+    .replace(/\bBearer\s+\S+/giu, "Bearer <redacted-secret>")
+    .replace(/\bvcmcp_[A-Za-z0-9._-]+/gu, "<redacted-secret>")
+    .replace(/[\r\n\t]+/gu, " ")
+    .replace(/\s{2,}/gu, " ")
+    .trim();
+  if (safe === "") return "<empty>";
+  return safe.length <= maxLength ? safe : `…${safe.slice(-(maxLength - 1))}`;
+}
+
+/** Read-only post-failure evidence; absence means enqueue never became durable in this phase. */
+export async function readLatestRenderJobSince(appData, since) {
+  let database;
+  try {
+    const { DatabaseSync } = await import("node:sqlite");
+    database = new DatabaseSync(path.join(appData, "vidcom.sqlite"), { readOnly: true });
+    const row = database.prepare(`
+      SELECT status, error_code AS errorCode, cleanup_pending AS cleanupPending
+      FROM job
+      WHERE type = 'render' AND created_at >= ?
+      ORDER BY created_at DESC, id DESC
+      LIMIT 1
+    `).get(since);
+    if (!row) return null;
+    return {
+      status: SAFE_RENDER_JOB_STATUSES.has(row.status) ? row.status : "unknown",
+      errorCode: typeof row.errorCode === "string" && /^[A-Za-z0-9._-]{1,80}$/u.test(row.errorCode)
+        ? row.errorCode
+        : null,
+      cleanupPending: row.cleanupPending === 1,
+    };
+  } catch {
+    return undefined;
+  } finally {
+    database?.close();
+  }
+}
+
+function renderJobDiagnostic(job) {
+  if (job === undefined) return "unavailable";
+  if (job === null) return "none-since-phase";
+  return `${job.status}/errorCode=${job.errorCode ?? "null"}/cleanupPending=${String(job.cleanupPending)}`;
+}
+
+/** Executes the mutating render exactly once and enriches only its failure path. */
+export async function runRenderWaitWithDiagnostics(context, serving, media, dependencies = {}) {
+  const now = dependencies.now ?? Date.now;
+  const execute = dependencies.runArtifact ?? runArtifact;
+  const latestRenderJob = dependencies.readLatestRenderJobSince ?? readLatestRenderJobSince;
+  const startedAt = now();
+  const since = new Date(startedAt).toISOString();
+  let run;
+  let failure;
+  try {
+    run = execute(context, [
+      "render", media.slug, "--workspace", context.workspace,
+    ], { timeoutMs: 600_000 });
+    if (run.status === 0) return run;
+    failure = `exit ${String(run.status)}; ${run.stderr}`;
+  } catch (error) {
+    failure = error instanceof Error ? error.message : String(error);
+  }
+
+  let job;
+  try {
+    job = await latestRenderJob(context.appData, since);
+  } catch {
+    job = undefined;
+  }
+  const elapsedMs = Math.max(0, now() - startedAt);
+  const cliExit = run?.status ?? "exception";
+  throw new Error(
+    `render wait failed; phase=render-wait elapsedMs=${String(elapsedMs)}`
+    + `; cliExit=${String(cliExit)} cli=${safeSmokeDiagnosticText(context, failure, 500)}`
+    + `; daemonExit=${String(serving.child.exitCode)} daemonSignal=${String(serving.child.signalCode)}`
+    + `; latestRender=${renderJobDiagnostic(job)}`
+    + `; daemonTail=${safeSmokeDiagnosticText(context, serving.output(), 1_000)}`,
+  );
+}
+
 async function jobUntilTerminal(serving, jobId, timeoutMs = 600_000) {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
@@ -1127,12 +1242,7 @@ export const STEP_BODIES = {
     const serving = await startServingWithSession(context);
     try {
       const media = await ensureMediaProject(context, serving);
-      const wait = runArtifact(context, [
-        "render", media.slug, "--workspace", context.workspace,
-      ], { timeoutMs: 600_000 });
-      if (wait.status !== 0) {
-        throw new Error(`render wait exited ${String(wait.status)}: ${wait.stderr.slice(0, 300)}`);
-      }
+      await runRenderWaitWithDiagnostics(context, serving, media);
 
       const detached = runArtifact(context, [
         "render", media.slug, "--workspace", context.workspace, "--detach",
