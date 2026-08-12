@@ -20,7 +20,7 @@ import {
 } from "@vidcom/adapter";
 import type { AbsolutePath, JobId, McpServerDescriptor } from "@vidcom/core";
 import { canonicalizeJson, JobScheduler, type ProjectIdentity } from "@vidcom/core";
-import { createMcpHttpHandlers } from "@vidcom/mcp";
+import { createMcpHttpHandlers, InputRequiredSignal } from "@vidcom/mcp";
 import { enqueueRenderJob, enqueueSnapshotJob } from "@vidcom/worker";
 
 import { createJobTypes, createMcpRegistry, createSystemClock, hashContent } from "./composition-root";
@@ -102,6 +102,17 @@ export const hostBrowseTokens = new BrowseTokenStore();
 
 /** The single UI session this host serves; the bridge has its own sessions. */
 export const HOST_BROWSE_SESSION = "host";
+
+function browserSessionId(sessions: InMemorySessionStore, request: Request): string | undefined {
+  const cookies = request.headers.get("cookie") ?? "";
+  for (const segment of cookies.split(";")) {
+    const [name, ...rest] = segment.trim().split("=");
+    if (name === "vidcom_session" && rest.length > 0) {
+      return sessions.fingerprint(rest.join("="));
+    }
+  }
+  return undefined;
+}
 
 /**
  * Directory a packaged build unpacked its native sidecars into, or `undefined`
@@ -321,11 +332,19 @@ export async function startNextHostedRuntime(
     hashContent,
     binaries: foundation.infrastructure.renderBinaries,
     fonts: foundation.application.fonts,
+    diagnostics: foundation.application.diagnostics,
   };
+  const browser = new FilesystemBrowserService(new WorkerFilesystemBrowser(), hostBrowseTokens);
   const startProjectImport = createStartProjectImport({
     workspaceRoot,
     takenSlugs: async () => (await foundation.application.scanWorkspace()).map((entry) => entry.slug),
-    resolveSelection: (token) => hostBrowseTokens.peek(token, HOST_BROWSE_SESSION) ?? null,
+    resolveSelection: async (token, sessionId) => {
+      if (!sessionId) return null;
+      const resolved = await browser.resolveSelection({ sessionId, token });
+      if (!resolved.ok) return null;
+      const held = hostBrowseTokens.peek(token, sessionId);
+      return held ?? null;
+    },
     findExisting: async (idempotencyKey) => {
       const find = foundation.infrastructure.jobs.findIdempotent;
       if (!find) throw new TypeError("job store cannot query import idempotency");
@@ -360,9 +379,11 @@ export async function startNextHostedRuntime(
     },
   });
   let runtimeValue: NextHostedRuntime | null = null;
-  const activateSelection = async (requested: string) => {
-    const held = hostBrowseTokens.peek(requested, HOST_BROWSE_SESSION);
-    if (!held) {
+  const activateSelection = async (requested: string, sessionId?: string) => {
+    const selected = sessionId
+      ? await browser.resolveSelection({ sessionId, token: requested })
+      : null;
+    if (!selected?.ok) {
       return { ok: false as const, error: {
         code: ErrorCode.BrowseTokenInvalid,
         message: "workspace selection token is not valid",
@@ -375,7 +396,7 @@ export async function startNextHostedRuntime(
         message: "the daemon has no runtime to replace",
       } };
     }
-    if (path.resolve(held.canonicalPath) === path.resolve(current.workspaceRoot)) {
+    if (path.resolve(selected.value) === path.resolve(current.workspaceRoot)) {
       return { ok: true as const, value: { workspaceRoot: current.workspaceRoot, reauthRequired: true as const } };
     }
     if (hostState.switching) {
@@ -393,42 +414,78 @@ export async function startNextHostedRuntime(
 
     hostState.switching = true;
     let replacement: NextHostedRuntime | null = null;
+    let discoveryAttempted = false;
+    let committed = false;
     try {
-      replacement = await startNextHostedRuntime(port, held.canonicalPath, {
+      replacement = await startNextHostedRuntime(port, selected.value, {
         autoStarted: options.autoStarted,
         hostState,
         ...(hostState.host === undefined ? {} : { host: hostState.host }),
         ...(options.migrate === undefined ? {} : { migrate: options.migrate }),
       });
-      // Before the old foundation goes: every open agent is cd'd into a project
-      // of the workspace being left, so keeping it alive would leave an agent
-      // editing files the daemon no longer serves.
-      hostState.terminals?.closeAll();
-      await current.foundation.stop();
       new AppSettingsStore(replacement.foundation.infrastructure.database).set(
         "active_workspace",
         replacement.workspaceRoot,
       );
+      discoveryAttempted = true;
       await hostState.host?.replaceDiscovery(
         { workspaceRoot: current.workspaceRoot, instanceId },
         { workspaceRoot: replacement.workspaceRoot, instanceId },
       );
       activateHostedRuntime(port, replacement);
+      committed = true;
+      // Only after persistence, discovery and request routing all name the new
+      // foundation. Until this point the old one stays authoritative and can be
+      // restored without rebuilding it if any preparation step fails.
+      try {
+        hostState.terminals?.closeAll();
+      } catch (error) {
+        current.foundation.infrastructure.logger.error("previous workspace terminals cleanup failed", {
+          error: error instanceof Error ? error.message : "unknown error",
+        });
+      }
+      await current.foundation.stop().catch((error) => {
+        current.foundation.infrastructure.logger.error("previous workspace foundation cleanup failed", {
+          error: error instanceof Error ? error.message : "unknown error",
+        });
+      });
       return { ok: true as const, value: {
         workspaceRoot: replacement.workspaceRoot,
         reauthRequired: true as const,
       } };
     } catch (cause) {
-      await replacement?.foundation.stop().catch(() => {});
+      const rollbackErrors: unknown[] = [];
+      if (!committed && replacement) {
+        // `replaceDiscovery` can fail after removing the old record. Reverse it
+        // whenever it was attempted, not only when it reported success.
+        if (discoveryAttempted && hostState.host) {
+          try {
+            await hostState.host.replaceDiscovery(
+              { workspaceRoot: replacement.workspaceRoot, instanceId },
+              { workspaceRoot: current.workspaceRoot, instanceId },
+            );
+          } catch (error) { rollbackErrors.push(error); }
+        }
+        try {
+          new AppSettingsStore(current.foundation.infrastructure.database).set(
+            "active_workspace",
+            current.workspaceRoot,
+          );
+        } catch (error) { rollbackErrors.push(error); }
+        try { await replacement.foundation.stop(); }
+        catch (error) { rollbackErrors.push(error); }
+      }
+      const failure = rollbackErrors.length === 0
+        ? cause
+        : new AggregateError([cause, ...rollbackErrors], "workspace switch and rollback failed");
       return { ok: false as const, error: {
         code: ErrorCode.WorkspaceUnavailable,
-        message: cause instanceof Error ? cause.message : String(cause),
+        message: failure instanceof Error ? failure.message : String(failure),
       } };
     } finally {
       hostState.switching = false;
     }
   };
-  const browser = new FilesystemBrowserService(new WorkerFilesystemBrowser(), hostBrowseTokens);
   const activeApp = createServerApp({
       port,
       uiOrigins: origins,
@@ -447,17 +504,32 @@ export async function startNextHostedRuntime(
         ),
         leaseHeld: () => leaseHeld,
         invokeTool: async (request) => {
-          const result = await registry.invoke(request.name, request.input, {
-            era: request.era,
-            protocolVersion: request.protocolVersion,
-            credentialId: request.credentialId,
-            requestInput: () => Promise.reject(
-              new Error("the bridge cannot elicit input from a person"),
-            ),
-          });
-          return result.ok
-            ? { ok: true as const, value: result.value }
-            : { ok: false as const, error: result.error };
+          try {
+            const result = await registry.invoke(request.name, request.input, {
+              era: request.era,
+              protocolVersion: request.protocolVersion,
+              credentialId: request.credentialId,
+              // HTTP cannot elicit by itself. Carry the request as a stable
+              // approval-required error; the stdio bridge turns it back into the
+              // SDK's InputRequiredSignal and resumes with the returned grant.
+              requestInput: async (input): Promise<never> => {
+                throw new InputRequiredSignal(input);
+              },
+            });
+            return result.ok
+              ? { ok: true as const, value: result.value }
+              : { ok: false as const, error: result.error };
+          } catch (error) {
+            if (!(error instanceof InputRequiredSignal)) throw error;
+            return {
+              ok: false as const,
+              error: {
+                code: ErrorCode.ApprovalRequired,
+                message: error.request.message,
+                details: { inputRequest: error.request },
+              },
+            };
+          }
         },
       },
       projectReads,
@@ -474,9 +546,7 @@ export async function startNextHostedRuntime(
       events: foundation.infrastructure.events,
       system: {
         browser,
-        sessionId: (request) => (/(?:^|;\s*)vidcom_session=/u.test(request.headers.get("cookie") ?? "")
-          ? HOST_BROWSE_SESSION
-          : undefined),
+        sessionId: (request) => browserSessionId(sessions, request),
         workspace: () => Promise.resolve({ workspaceRoot }),
         runtime: () => Promise.resolve({ platform: `${process.platform}-${process.arch}` }),
       },
@@ -484,6 +554,7 @@ export async function startNextHostedRuntime(
         workspaceRoot,
         workspaceOverview,
         activateWorkspace: activateSelection,
+        browseSessionId: (request) => browserSessionId(sessions, request),
         lifecycle: foundation.application.lifecycle,
         diagnostics: foundation.application.diagnostics,
         agentKit: foundation.application.agentKit,
@@ -516,9 +587,7 @@ export async function startNextHostedRuntime(
     sessions,
     system: {
       browser,
-      sessionId: (request) => (/(?:^|;\s*)vidcom_session=/u.test(request.headers.get("cookie") ?? "")
-        ? HOST_BROWSE_SESSION
-        : undefined),
+      sessionId: (request) => browserSessionId(sessions, request),
       workspace: () => Promise.resolve({ workspaceRoot: null }),
       runtime: () => Promise.resolve({ platform: `${process.platform}-${process.arch}` }),
     },
@@ -550,7 +619,7 @@ export async function startNextHostedRuntime(
       reacquire: () => lost.leaseId === null
         ? Promise.resolve(false)
         : lost.infrastructure.lease.renew(lost.leaseId),
-      hasAttachedUi: () => sessions.storedHashes().length > 0,
+      hasAttachedUi: () => sessions.hasActiveSessions(),
       async toNoWorkspace() {
         await foundation.stop();
         if (hostState.activeRuntime === runtimeValue) hostState.activeRuntime = null;
@@ -574,7 +643,7 @@ export async function startNextHostedRuntime(
       await hostState.host?.replaceDiscovery(null, record);
       activateHostedRuntime(port, replacement);
     } catch (cause) {
-      if (sessions.storedHashes().length === 0) {
+      if (!sessions.hasActiveSessions()) {
         await hostState.host?.exitHeadless(new Error(
           `workspace lease recovery failed: ${cause instanceof Error ? cause.message : String(cause)}`,
         ));

@@ -9,6 +9,11 @@ import {
 import { MAX_CREDENTIAL_ROTATION_OVERLAP_MS, McpCredentialService } from "@vidcom/core";
 
 import { CliInputError } from "../cli-error";
+import {
+  assertRevocable,
+  BridgeCredentialError,
+  withBridgeCredentialLock,
+} from "../bridge-credential";
 import { DEFAULT_MCP_RUNTIME_CONFIG } from "../composition-root";
 import { defaultAppDataRoot } from "../next-host";
 import { writeJson, type CliOutput } from "../output";
@@ -78,8 +83,9 @@ export async function runCredentialCommand(
   dependencies: CredentialCommandDependencies = defaultDependencies,
 ): Promise<void> {
   const operation = parseCredentialOperation(argv);
+  const appDataRoot = dependencies.appDataRoot();
   const prepared = dependencies.database ? await dependencies.database() : null;
-  const database = prepared?.database ?? await initializeDatabase(dependencies.appDataRoot());
+  const database = prepared?.database ?? await initializeDatabase(appDataRoot);
   try {
     const service = new McpCredentialService({
       credentials: new SqliteMcpCredentialStore(database),
@@ -97,14 +103,22 @@ export async function runCredentialCommand(
       return;
     }
     if (operation.kind === "rotate") {
-      writeJson(dependencies.stdout, await service.rotate(operation.id, operation.overlapMs));
+      const rotated = await withBridgeCredentialLock(appDataRoot, async () => {
+        await assertRevocable({ appDataRoot, database, clock: dependencies.now }, operation.id, "rotated");
+        return service.rotate(operation.id, operation.overlapMs);
+      });
+      writeJson(dependencies.stdout, rotated);
       return;
     }
-    await service.revoke(operation.id);
+    await withBridgeCredentialLock(appDataRoot, async () => {
+      await assertRevocable({ appDataRoot, database, clock: dependencies.now }, operation.id, "revoked");
+      await service.revoke(operation.id);
+    });
     writeJson(dependencies.stdout, { id: operation.id, status: "revoked" });
   } catch (error) {
-    if (error instanceof Error && error.message === "credential_invalid") {
-      throw new CliInputError("credential_invalid");
+    if (error instanceof BridgeCredentialError
+      || (error instanceof Error && error.message === "credential_invalid")) {
+      throw new CliInputError(error.message);
     }
     throw error;
   } finally {

@@ -48,7 +48,7 @@ export interface ServerAppDependencies {
   deliveryLoop?: DeliveryLoopRouteDependencies;
   agentTerminal?: AgentTerminalRouteDependencies;
   /** Bootstrap-only workspace activation; active runtimes use `deliveryLoop`. */
-  workspaceActivation?(selectionToken: string): Promise<Result<{
+  workspaceActivation?(selectionToken: string, sessionId?: string): Promise<Result<{
     workspaceRoot: string;
     reauthRequired: true;
   }, DomainError>>;
@@ -124,7 +124,10 @@ export function createServerApp(deps: ServerAppDependencies) {
     if (!parsed.success) {
       throw new HttpBoundaryError({ code: ErrorCode.SchemaInvalid, message: "workspace activation payload is invalid" });
     }
-    const activated = await deps.workspaceActivation!(parsed.data.selectionToken);
+    const activated = await deps.workspaceActivation!(
+      parsed.data.selectionToken,
+      deps.system?.sessionId(c.req.raw),
+    );
     if (!activated.ok) throw new HttpBoundaryError(activated.error);
     return c.json(activated.value);
   });

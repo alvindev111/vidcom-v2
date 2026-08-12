@@ -161,13 +161,18 @@ describe.skipIf(!HOST_SUPPORTED)("runtime installed-manifest byte bound", () => 
     expect(result.retained).toEqual(["2.0.0"]);
   });
 
-  it("leaves a foreign version directory untouched", async () => {
+  it("leaves a foreign version with a valid spoofed manifest untouched", async () => {
     const appDataRoot = await temporaryRoot();
     await manager(appDataRoot, fixture("2.0.0").source).ensureAll();
 
     const foreign = path.join(appDataRoot, "native", "0.9.0");
     await mkdir(foreign, { recursive: true, mode: 0o700 });
-    await writeFile(path.join(foreign, RUNTIME_MANIFEST_FILENAME), `{"id":"${randomUUID()}"}\n`, "utf8");
+    await writeFile(
+      path.join(foreign, RUNTIME_MANIFEST_FILENAME),
+      `${JSON.stringify(fixture("0.9.0").manifest, null, 2)}\n`,
+      "utf8",
+    );
+    await writeFile(path.join(foreign, "user-data.txt"), randomUUID(), "utf8");
 
     const result = await manager(appDataRoot, fixture("2.0.0").source).pruneOldVersions({
       gracePeriodMs: 0,
@@ -176,6 +181,7 @@ describe.skipIf(!HOST_SUPPORTED)("runtime installed-manifest byte bound", () => 
     });
     expect(result.pruned).toEqual([]);
     expect((await stat(foreign)).isDirectory()).toBe(true);
+    expect(await readFile(path.join(foreign, "user-data.txt"), "utf8")).not.toBe("");
   });
 });
 
@@ -245,14 +251,16 @@ describe.skipIf(!HOST_SUPPORTED)("runtime repair and recovery", () => {
     expect((await manager(appDataRoot, source).inspect()).state).toBe("ready");
   });
 
-  it("reports broken and re-extracts a tampered payload", async () => {
+  it("rejects a tampered warm payload and re-extracts it only through repair", async () => {
     const appDataRoot = await temporaryRoot();
     const { source } = fixture("1.0.0");
     const installed = await manager(appDataRoot, source).ensureAll();
     const payload = path.join(installed.versionRoot, ARCHIVE_KEY, ENTRY_PATH);
     await writeFile(payload, "tampered\n", "utf8");
 
-    // A tampered payload keeps its marker, so `inspect` alone cannot see it.
+    // The marker alone still looks ready; ensureAll must fail before returning reusable paths.
+    await expect(manager(appDataRoot, source).ensureAll())
+      .rejects.toThrow("does not match its manifest hash");
     const repaired = await manager(appDataRoot, source).repair();
     expect(repaired.extracted).toEqual([ARCHIVE_KEY]);
     expect(await readFile(payload)).toEqual(FIXTURE_BODY);

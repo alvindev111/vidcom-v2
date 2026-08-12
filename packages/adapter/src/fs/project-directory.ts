@@ -16,7 +16,6 @@ import { readStagingMarker } from "./import-staging";
 
 const CREATE_MARKER = ".vidcom-create-";
 const QUARANTINE_MARKER = ".vidcom-quarantine-";
-const IMPORT_MARKER = ".vidcom-import-";
 
 function contained(root: string, target: string): boolean {
   const relative = path.relative(root, target);

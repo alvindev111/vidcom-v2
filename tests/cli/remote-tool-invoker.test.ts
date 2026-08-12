@@ -3,7 +3,7 @@ import { readFile } from "node:fs/promises";
 import { DaemonClientError, type DaemonClient } from "@vidcom/adapter";
 import { createRemoteToolInvoker } from "@vidcom/cli";
 import { ErrorCode } from "@vidcom/contracts";
-import type { ToolRequestContext } from "@vidcom/mcp";
+import { InputRequiredSignal, type ToolRequestContext } from "@vidcom/mcp";
 import { describe, expect, it } from "vitest";
 
 const request: ToolRequestContext = {
@@ -55,6 +55,46 @@ describe("remote tool invoker", () => {
     expect(await invoker.invoke("save_file", {}, request)).toMatchObject({
       ok: false,
       error: { code: ErrorCode.SchemaInvalid },
+    });
+  });
+
+  it("preserves structured error metadata from the daemon", async () => {
+    const invoker = createRemoteToolInvoker(client(() => Promise.reject(
+      new DaemonClientError(
+        ErrorCode.WriteConflict,
+        "the file changed since it was read",
+        { current: { revision: "sha256:current" } },
+        "expectedHash",
+      ),
+    )));
+    expect(await invoker.invoke("save_file", {}, request)).toEqual({
+      ok: false,
+      error: {
+        code: ErrorCode.WriteConflict,
+        message: "the file changed since it was read",
+        field: "expectedHash",
+        details: { current: { revision: "sha256:current" } },
+      },
+    });
+  });
+
+  it("turns a daemon approval request back into stdio elicitation", async () => {
+    const inputRequest = {
+      message: "Approve deleting unused.txt",
+      schema: { type: "object", properties: { grantId: { type: "string" } } },
+      requestState: "approval_request_1",
+    };
+    const invoker = createRemoteToolInvoker(client(() => Promise.reject(
+      new DaemonClientError(ErrorCode.ApprovalRequired, inputRequest.message, { inputRequest }),
+    )));
+    const elicitingRequest: ToolRequestContext = {
+      ...request,
+      requestInput: async (value): Promise<never> => { throw new InputRequiredSignal(value); },
+    };
+
+    await expect(invoker.invoke("delete_file", {}, elicitingRequest)).rejects.toMatchObject({
+      name: "InputRequiredSignal",
+      request: inputRequest,
     });
   });
 

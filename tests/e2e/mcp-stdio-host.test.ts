@@ -1,6 +1,6 @@
-import { execFile } from "node:child_process";
+import { execFile, spawn, type ChildProcess } from "node:child_process";
 import { createHash } from "node:crypto";
-import { access, mkdir, mkdtemp, stat, symlink, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, realpath, stat, symlink, writeFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -12,10 +12,10 @@ import { Client as LegacyClient } from "@modelcontextprotocol/sdk/client/index.j
 import { StdioClientTransport as LegacyStdio } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { describe, expect, it } from "vitest";
 
-import { initializeDatabase } from "@vidcom/adapter";
+import { DaemonDiscoveryStore, initializeDatabase } from "@vidcom/adapter";
 import type { ContentHash, ProjectId } from "@vidcom/contracts";
 
-import { dbAll, dbOne } from "../support/database";
+import { dbOne } from "../support/database";
 import { heavyE2eTimeout, removeTree } from "../support/platform";
 
 const executeFile = promisify(execFile);
@@ -27,6 +27,7 @@ const onWindows = process.platform === "win32";
 interface CliArtifact {
   cwd: string;
   envPath: string;
+  launcher: string;
   /** Removes the staging directory this artifact placed inside the checkout. */
   cleanup(): Promise<void>;
 }
@@ -86,6 +87,7 @@ async function createResolvedCliArtifact(root: string): Promise<CliArtifact> {
   return {
     cwd: hostRoot,
     envPath: `${hostBin}${path.delimiter}${process.env.PATH ?? ""}`,
+    launcher,
     cleanup: () => removeTree(artifactRoot),
   };
 }
@@ -100,66 +102,123 @@ function environment(appData: string): NodeJS.ProcessEnv & Record<string, string
   } as NodeJS.ProcessEnv & Record<string, string>;
 }
 
-async function expectLeaseReleased(appData: string): Promise<void> {
+async function expectLeaseCount(appData: string, count: number): Promise<void> {
   const database = await initializeDatabase(appData);
   try {
     expect(dbOne(database, "SELECT COUNT(*) AS count FROM workspace_lease"))
-      .toEqual({ count: 0 });
+      .toEqual({ count });
   } finally {
     await database.destroy();
   }
 }
 
-async function expectDestructiveAudit(appData: string): Promise<void> {
-  const database = await initializeDatabase(appData);
-  try {
-    expect(dbAll(database, `SELECT action, outcome, error_code AS errorCode,
-      protocol_version AS protocolVersion, revision_id AS revisionId
-      FROM audit_entry WHERE action = 'tool:delete_file' ORDER BY id`))
-      .toEqual([
-        {
-          action: "tool:delete_file",
-          outcome: "error",
-          errorCode: "approval_required",
-          protocolVersion: modernRevision,
-          revisionId: null,
-        },
-        {
-          action: "tool:delete_file",
-          outcome: "ok",
-          errorCode: null,
-          protocolVersion: modernRevision,
-          revisionId: 1,
-        },
-      ]);
-  } finally {
-    await database.destroy();
+async function startServingArtifact(
+  artifact: CliArtifact,
+  workspace: string,
+  appData: string,
+  env: NodeJS.ProcessEnv,
+): Promise<ChildProcess> {
+  const child = spawn(process.execPath, [artifact.launcher, "serve", "--workspace", workspace], {
+    cwd: artifact.cwd,
+    env,
+    stdio: ["ignore", "pipe", "pipe", "ipc"],
+  });
+  let output = "";
+  child.stdout?.on("data", (chunk) => { output += String(chunk); });
+  child.stderr?.on("data", (chunk) => { output += String(chunk); });
+  const discovery = new DaemonDiscoveryStore(appData);
+  const canonicalWorkspace = await realpath(workspace);
+  const deadline = Date.now() + 30_000;
+  while (Date.now() < deadline) {
+    if (child.exitCode !== null) {
+      throw new Error(`manual serve exited ${String(child.exitCode)} before publishing: ${output}`);
+    }
+    const record = await discovery.read(canonicalWorkspace);
+    if (record?.pid === child.pid) return child;
+    await new Promise((resolve) => setTimeout(resolve, 50));
   }
+  child.kill("SIGKILL");
+  throw new Error(`manual serve did not publish discovery: ${output}`);
+}
+
+async function stopServingArtifact(child: ChildProcess): Promise<void> {
+  if (child.exitCode !== null) return;
+  if (child.connected) child.send({ type: "vidcom.shutdown" });
+  else child.kill("SIGTERM");
+  const exited = await new Promise<boolean>((resolve) => {
+    const timer = setTimeout(() => resolve(false), 10_000);
+    child.once("exit", () => {
+      clearTimeout(timer);
+      resolve(true);
+    });
+  });
+  if (!exited && child.exitCode === null) {
+    child.kill("SIGKILL");
+    await new Promise<void>((resolve) => {
+      if (child.exitCode !== null) resolve();
+      else child.once("exit", () => resolve());
+    });
+  }
+}
+
+async function waitForLeaseCount(appData: string, count: number): Promise<void> {
+  const deadline = Date.now() + 10_000;
+  while (Date.now() < deadline) {
+    const database = await initializeDatabase(appData);
+    try {
+      const lease = dbOne<{ count: number }>(database, "SELECT COUNT(*) AS count FROM workspace_lease");
+      if (lease?.count === count) return;
+    } finally {
+      await database.destroy();
+    }
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
+  throw new Error(`workspace lease count did not become ${String(count)}`);
 }
 
 describe("exact MCP SDK CLI smoke", () => {
-  it("spawns legacy then modern, completes approval and shuts down with protocol-only stdout", async () => {
+  it("spawns legacy then modern, writes through one daemon and keeps stdout protocol-only", async () => {
     const root = await mkdtemp(path.join(tmpdir(), "vidcom-sdk-host-smoke-"));
     const workspace = path.join(root, "workspace");
     const projectRoot = path.join(workspace, "project");
     const appData = path.join(root, "app-data");
     const projectId = "project_ai_host_smoke" as ProjectId;
-    const unused = "unused.txt";
-    const unusedContent = "delete me";
-    const unusedHash = `sha256:${createHash("sha256").update(unusedContent).digest("hex")}` as ContentHash;
+    const unusedSource = '<section data-scene-id="unused"></section>';
+    const initialSource = '<main data-composition-id="root" data-duration="1" data-width="1920" data-height="1080"></main>';
+    const updatedSource = '<main data-composition-id="root" data-duration="2" data-width="1920" data-height="1080"></main>';
+    const initialHash = `sha256:${createHash("sha256").update(initialSource).digest("hex")}` as ContentHash;
+    const unusedHash = `sha256:${createHash("sha256").update(unusedSource).digest("hex")}` as ContentHash;
+    const unusedPath = path.join(projectRoot, "compositions", "unused.html");
     const env = environment(appData);
     const artifact = await createResolvedCliArtifact(root);
+    let serving: ChildProcess | null = null;
     env.PATH = artifact.envPath;
-    await mkdir(projectRoot, { recursive: true });
+    await mkdir(path.dirname(unusedPath), { recursive: true });
     await writeFile(path.join(projectRoot, "hyperframes.json"), "{}\n");
     await writeFile(path.join(projectRoot, "vidcom.json"), JSON.stringify({ id: projectId }));
-    await writeFile(
-      path.join(projectRoot, "index.html"),
-      '<main data-composition-id="root" data-duration="1" data-width="1920" data-height="1080"></main>',
-    );
-    await writeFile(path.join(projectRoot, unused), unusedContent);
+    await writeFile(path.join(projectRoot, "index.html"), initialSource);
+    await writeFile(unusedPath, unusedSource);
 
     try {
+      // Start the UI/serve owner first. Both stdio sessions below must attach
+      // to this daemon instead of acquiring a second workspace lease.
+      serving = await startServingArtifact(artifact, workspace, appData, env);
+      await expectLeaseCount(appData, 1);
+      // The already-running daemon owns its prepared runtime. A thin explicit-
+      // workspace stdio bridge must not bootstrap this compiler-readable but
+      // product-incomplete manifest. The early compiler preload can derive its
+      // path; BootstrapCoordinator would reject the missing product entries.
+      const staleAssets = path.join(root, "stale-incompatible-runtime-assets");
+      await mkdir(staleAssets, { recursive: true });
+      await writeFile(path.join(staleAssets, "runtime-manifest.json"), JSON.stringify({
+        artifactVersion: "stale-runtime",
+        archives: [{
+          key: "node",
+          platform: `${process.platform}-${process.arch}`,
+          target: "node-runtime",
+        }],
+      }));
+      env.VIDCOM_RUNTIME_ASSETS = staleAssets;
       const legacyTransport = new LegacyStdio({
         command: "vidcom",
         args: ["mcp", "--workspace", workspace, "--protocol", legacyRevision],
@@ -177,9 +236,10 @@ describe("exact MCP SDK CLI smoke", () => {
       await legacy.close();
       expect(legacyTransport.pid).toBeNull();
       expect(Buffer.concat(legacyStderr).toString("utf8")).toBe("");
-      await expectLeaseReleased(appData);
+      // Closing stdio detaches only the bridge. The daemon stays the sole
+      // writer, so another host and queued jobs can continue using it.
+      await expectLeaseCount(appData, 1);
 
-      let approvalStdout = "";
       const modernTransport = new ModernStdio({
         command: "vidcom",
         args: ["mcp", "--workspace", workspace, "--protocol", modernRevision],
@@ -197,35 +257,47 @@ describe("exact MCP SDK CLI smoke", () => {
         },
       );
       modern.setRequestHandler("elicitation/create", async (request) => {
-        const message = (request as { params?: { message?: unknown } }).params?.message;
-        const requestId = typeof message === "string"
-          ? /Approve request ([^, ]+)/.exec(message)?.[1]
-          : undefined;
-        if (!requestId) throw new Error(`unexpected elicitation request: ${JSON.stringify(request)}`);
+        const requestId = /Approve request ([^, ]+)/u.exec(request.params.message)?.[1];
+        if (!requestId) return { action: "decline" as const };
         const approved = await executeFile("vidcom", ["approve", requestId], {
           cwd: artifact.cwd,
           env,
           encoding: "utf8",
           shell: onWindows,
         });
-        approvalStdout = approved.stdout;
-        return { action: "accept" as const, content: { grantId: requestId } };
+        const { grantId } = JSON.parse(approved.stdout) as { grantId: string };
+        return { action: "accept" as const, content: { grantId } };
       });
       await modern.connect(modernTransport);
       expect((await modern.listTools()).tools.map((tool) => tool.name)).toHaveLength(35);
+      const saved = await modern.callTool({
+        name: "save_file",
+        arguments: {
+          projectId,
+          path: "index.html",
+          content: updatedSource,
+          expectedContentHash: initialHash,
+        },
+      });
+      expect(saved.structuredContent).toMatchObject({ file: { path: "index.html" } });
       const deleted = await modern.callTool({
         name: "delete_file",
-        arguments: { projectId, path: unused, expectedContentHash: unusedHash },
+        arguments: {
+          projectId,
+          path: "compositions/unused.html",
+          expectedContentHash: unusedHash,
+        },
       });
-      expect(deleted.structuredContent).toMatchObject({ deleted: unused });
-      expect(JSON.parse(approvalStdout.trim())).toMatchObject({ grantId: expect.any(String) });
+      expect(deleted.structuredContent).toMatchObject({ deleted: "compositions/unused.html" });
       await modern.close();
       expect(modernTransport.pid).toBeNull();
       expect(Buffer.concat(modernStderr).toString("utf8")).toBe("");
-      await expect(access(path.join(projectRoot, unused))).rejects.toMatchObject({ code: "ENOENT" });
-      await expectLeaseReleased(appData);
-      await expectDestructiveAudit(appData);
+      await expect(readFile(path.join(projectRoot, "index.html"), "utf8")).resolves.toBe(updatedSource);
+      await expect(readFile(unusedPath, "utf8")).rejects.toMatchObject({ code: "ENOENT" });
+      await expectLeaseCount(appData, 1);
     } finally {
+      if (serving) await stopServingArtifact(serving);
+      await waitForLeaseCount(appData, 0);
       await artifact.cleanup();
       await removeTree(root);
     }

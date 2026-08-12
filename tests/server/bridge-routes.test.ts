@@ -267,4 +267,65 @@ describe("bridge routes", () => {
     });
     expect(await response.json()).toMatchObject({ error: { code: ErrorCode.SchemaInvalid } });
   });
+
+  it("preserves structured write-conflict metadata", async () => {
+    const current = { revision: "sha256:current" };
+    const { call } = build({
+      invokeTool: () => Promise.resolve({
+        ok: false as const,
+        error: {
+          code: ErrorCode.WriteConflict,
+          message: "the file changed since it was read",
+          field: "expectedHash",
+          details: { expected: "sha256:stale", current },
+        },
+      }),
+    });
+    const response = await call("/api/bridge/v1/tools/save_file", {
+      method: "POST",
+      body: JSON.stringify({ input: {}, protocolVersion: "2026-07-28", era: "modern" }),
+      token: "system-token",
+    });
+    expect(response.status).toBe(409);
+    expect(await response.json()).toEqual({
+      error: {
+        code: ErrorCode.WriteConflict,
+        message: "the file changed since it was read",
+        field: "expectedHash",
+        details: { expected: "sha256:stale", current },
+      },
+      current,
+    });
+  });
+
+  it("carries an input request across HTTP for stdio elicitation", async () => {
+    const inputRequest = {
+      message: "Approve deleting unused.txt",
+      schema: { type: "object", properties: { grantId: { type: "string" } } },
+      requestState: "approval_request_1",
+    };
+    const { call } = build({
+      invokeTool: () => Promise.resolve({
+        ok: false as const,
+        error: {
+          code: ErrorCode.ApprovalRequired,
+          message: inputRequest.message,
+          details: { inputRequest },
+        },
+      }),
+    });
+    const response = await call("/api/bridge/v1/tools/delete_file", {
+      method: "POST",
+      body: JSON.stringify({ input: {}, protocolVersion: "2026-07-28", era: "modern" }),
+      token: "system-token",
+    });
+    expect(response.status).toBe(403);
+    expect(await response.json()).toEqual({
+      error: {
+        code: ErrorCode.ApprovalRequired,
+        message: inputRequest.message,
+        details: { inputRequest },
+      },
+    });
+  });
 });

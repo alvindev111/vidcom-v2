@@ -27,6 +27,7 @@ import {
   type CompositeMutationJournalPort,
   type CompositionPort,
   type DerivedMutationPath,
+  type DiagnosticsReport,
   type FontCompatibilityService,
   type JobExecutionContext,
   type Job,
@@ -51,6 +52,7 @@ import { checkFontCompatibility } from "./font-compatibility-gate";
 
 export interface RenderJobInput {
   projectId: ProjectId;
+  expectedSourceRevision?: number;
   bestEffort?: boolean;
   renderPresetId?: string;
   idempotencyKey?: string;
@@ -86,6 +88,9 @@ export interface RenderJobDependencies {
   guard: RuntimeAssetGuardPort;
   binaries: BinaryProbePort;
   fonts: FontCompatibilityService;
+  diagnostics: {
+    forProject(projectId: ProjectId): Promise<Result<DiagnosticsReport, DomainError>>;
+  };
   runtimeSource(): string;
   injectGuard(document: string, guard: { csp: string; bootstrapScript: string }): string;
   clock: ClockPort;
@@ -97,6 +102,7 @@ export interface RenderJobEnqueueDependencies {
   ids: IdPort;
   hashContent(content: string | Uint8Array): import("@vidcom/contracts").ContentHash;
   binaries: BinaryProbePort;
+  diagnostics: RenderJobDependencies["diagnostics"];
 }
 
 async function localStylesheets(
@@ -166,6 +172,9 @@ function parseInput(raw: unknown): RenderJobInput {
   if (!raw || typeof raw !== "object") throw new TypeError("render job input does not match its schema");
   const input = raw as Record<string, unknown>;
   if (typeof input.projectId !== "string" || input.projectId.length === 0
+    || (input.expectedSourceRevision !== undefined
+      && (typeof input.expectedSourceRevision !== "number"
+        || !Number.isInteger(input.expectedSourceRevision) || input.expectedSourceRevision < 0))
     || (input.bestEffort !== undefined && typeof input.bestEffort !== "boolean")
     || (input.renderPresetId !== undefined && typeof input.renderPresetId !== "string")
     || (input.idempotencyKey !== undefined && (typeof input.idempotencyKey !== "string" || input.idempotencyKey.length === 0))) {
@@ -173,10 +182,51 @@ function parseInput(raw: unknown): RenderJobInput {
   }
   return {
     projectId: input.projectId as ProjectId,
+    ...(input.expectedSourceRevision === undefined
+      ? {}
+      : { expectedSourceRevision: input.expectedSourceRevision as number }),
     bestEffort: input.bestEffort !== false,
     ...(input.renderPresetId === undefined ? {} : { renderPresetId: input.renderPresetId }),
     ...(input.idempotencyKey === undefined ? {} : { idempotencyKey: input.idempotencyKey }),
   };
+}
+
+function staleRevision(expectedSourceRevision: number, actualSourceRevision: number): Result<never, DomainError> {
+  return err({
+    code: ErrorCode.WriteConflict,
+    message: "project source revision changed after validation or review",
+    field: "expectedSourceRevision",
+    details: { expectedSourceRevision, actualSourceRevision },
+  });
+}
+
+async function enforceDiagnosticsGate(
+  dependencies: Pick<RenderJobDependencies, "diagnostics" | "journal">,
+  input: RenderJobInput & { expectedSourceRevision: number },
+): Promise<Result<undefined, DomainError>> {
+  const report = await dependencies.diagnostics.forProject(input.projectId);
+  if (!report.ok) return report;
+  if (report.value.computedAtSourceRevision !== input.expectedSourceRevision) {
+    return staleRevision(input.expectedSourceRevision, report.value.computedAtSourceRevision ?? 0);
+  }
+  const errors = report.value.diagnostics.filter(({ severity }) => severity === "error");
+  if (errors.length > 0) return err({
+    code: ErrorCode.ProjectInvalid,
+    message: "project diagnostics contain render-blocking errors",
+    details: {
+      reason: errors[0]?.code ?? "diagnostics-error",
+      diagnosticCodes: [...new Set(errors.map(({ code }) => code))],
+    },
+  });
+  if (input.bestEffort === false && !report.value.lintSourceAvailable) return err({
+    code: ErrorCode.ProjectInvalid,
+    message: "strict render requires the HyperFrames diagnostics source",
+    details: { reason: "lint-source-unavailable" },
+  });
+  const latest = await dependencies.journal.latestSourceRevision(input.projectId) ?? 0;
+  return latest === input.expectedSourceRevision
+    ? ok(undefined)
+    : staleRevision(input.expectedSourceRevision, latest);
 }
 
 /** Gate shared by enqueue adapters and the worker's defensive re-check. */
@@ -248,7 +298,8 @@ export async function prepareRender(
 
 /** Performs the state gate before any durable queue row becomes visible. */
 export async function enqueueRenderJob(
-  dependencies: Pick<RenderJobDependencies, "workspace" | "composition" | "journal" | "fonts"> & RenderJobEnqueueDependencies,
+  dependencies: Pick<RenderJobDependencies, "workspace" | "composition" | "journal" | "fonts" | "diagnostics">
+    & RenderJobEnqueueDependencies,
   rawInput: RenderJobInput,
 ): Promise<Result<Job, DomainError>> {
   let input: RenderJobInput;
@@ -259,14 +310,23 @@ export async function enqueueRenderJob(
   }
   const prepared = await prepareRender(dependencies, input.projectId);
   if (!prepared.ok) return prepared;
+  const expectedSourceRevision = input.expectedSourceRevision ?? prepared.value.sourceRevision;
+  if (prepared.value.sourceRevision !== expectedSourceRevision) {
+    return staleRevision(expectedSourceRevision, prepared.value.sourceRevision);
+  }
+  const pinnedInput = { ...input, expectedSourceRevision };
+  const diagnostics = await enforceDiagnosticsGate(dependencies, pinnedInput);
+  if (!diagnostics.ok) return diagnostics;
   const preflight = await preflightRenderDocument(dependencies, prepared.value);
   if (!preflight.ok) return preflight;
-  const canonicalInput = canonicalizeJobInput(input);
+  const latest = await dependencies.journal.latestSourceRevision(input.projectId) ?? 0;
+  if (latest !== expectedSourceRevision) return staleRevision(expectedSourceRevision, latest);
+  const canonicalInput = canonicalizeJobInput(pinnedInput);
   const enqueued = await dependencies.jobs.enqueue({
     id: dependencies.ids.newId("job") as JobId,
     projectId: input.projectId,
     type: "render",
-    input,
+    input: pinnedInput,
     inputHash: dependencies.hashContent(canonicalInput),
     idempotencyKey: input.idempotencyKey ?? null,
   });
@@ -353,6 +413,13 @@ export function createRenderJobHandler(dependencies: RenderJobDependencies): Job
     timeoutMs: 30 * 60 * 1_000,
     async run(rawInput: unknown, context: JobExecutionContext) {
       const input = parseInput(rawInput);
+      if (input.expectedSourceRevision === undefined) {
+        throw new JobFailureError({
+          code: ErrorCode.SchemaInvalid,
+          message: "render job is missing its expected source revision",
+          field: "expectedSourceRevision",
+        });
+      }
       const startedAt = dependencies.clock.now().getTime();
       const warnings: JobWarningDto[] = [];
       let cleanupPending = false;
@@ -363,8 +430,22 @@ export function createRenderJobHandler(dependencies: RenderJobDependencies): Job
       try {
         const prepared = await prepareRender(dependencies, input.projectId);
         if (!prepared.ok) throw new JobFailureError(prepared.error);
+        if (prepared.value.sourceRevision !== input.expectedSourceRevision) {
+          const stale = staleRevision(input.expectedSourceRevision, prepared.value.sourceRevision);
+          if (!stale.ok) throw new JobFailureError(stale.error);
+        }
+        const diagnostics = await enforceDiagnosticsGate(dependencies, {
+          ...input,
+          expectedSourceRevision: input.expectedSourceRevision,
+        });
+        if (!diagnostics.ok) throw new JobFailureError(diagnostics.error);
         const preflight = await preflightRenderDocument(dependencies, prepared.value);
         if (!preflight.ok) throw new JobFailureError(preflight.error);
+        const latest = await dependencies.journal.latestSourceRevision(input.projectId) ?? 0;
+        if (latest !== input.expectedSourceRevision) {
+          const stale = staleRevision(input.expectedSourceRevision, latest);
+          if (!stale.ok) throw new JobFailureError(stale.error);
+        }
         warnings.push(...preflight.value.binaries.warnings);
 
         await context.updateProgress(0.05, "building render document");

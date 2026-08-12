@@ -32,7 +32,7 @@ export const PLATFORM_PRESETS: readonly PlatformConfig[] = [
 /** Canonical empty authored document shared by lifecycle and first-scene insertion. */
 export function rootCompositionSource(platform: PlatformConfig, content = "", duration = 0): string {
   return `<!doctype html>\n<html><head><meta charset="UTF-8"></head><body>\n`
-    + `<main data-composition-id="main" data-width="${platform.width}" data-height="${platform.height}" data-fps="${platform.fps}" data-duration="${duration}">${content}</main>\n`
+    + `<main data-composition-id="main" data-width="${platform.width}" data-height="${platform.height}" data-fps="${platform.fps}" data-start="0" data-duration="${duration}" data-no-timeline>${content}</main>\n`
     + `</body></html>\n`;
 }
 

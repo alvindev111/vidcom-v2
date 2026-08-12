@@ -1,5 +1,5 @@
 import { realpathSync } from "node:fs";
-import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, readdir, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
@@ -28,6 +28,8 @@ async function scratch(): Promise<{ workspace: string; source: string }> {
   await mkdir(workspace, { recursive: true });
   await mkdir(path.join(source, "scenes"), { recursive: true });
   await writeFile(path.join(source, "index.html"), "<!doctype html><title>x</title>\n", "utf8");
+  await writeFile(path.join(source, "hyperframes.json"), "{}\n", "utf8");
+  await writeFile(path.join(source, "vidcom.json"), '{"id":"project_import_fixture"}\n', "utf8");
   await writeFile(path.join(source, "scenes", "one.html"), "<section></section>\n", "utf8");
   return { workspace, source };
 }
@@ -104,6 +106,26 @@ describe("start project import", () => {
     expect(queued).toBe(0);
   });
 
+  it("refuses a physical workspace alias before queuing", async () => {
+    const { workspace } = await scratch();
+    const alias = path.join(path.dirname(workspace), "workspace-link");
+    await symlink(workspace, alias, process.platform === "win32" ? "junction" : "dir");
+    const held = await selection(alias);
+    let queued = false;
+    const start = createStartProjectImport({
+      workspaceRoot: workspace,
+      takenSlugs: () => Promise.resolve([]),
+      resolveSelection: () => held,
+      findExisting: findNoExisting,
+      enqueue: () => {
+        queued = true;
+        return Promise.resolve({ ok: true, value: { id: "job_alias" } });
+      },
+    });
+    expect((await start({ selectionToken: "held" })).ok).toBe(false);
+    expect(queued).toBe(false);
+  });
+
   it("returns the job id the client will poll", async () => {
     const { workspace, source } = await scratch();
     const held = await selection(source);
@@ -164,9 +186,11 @@ describe("project import job dependencies on a real filesystem", () => {
       },
     });
 
-    const planned = await dependencies.plan(await planInput(source, workspace));
-    const copied = await dependencies.copy(source, planned.staging);
+    const input = await planInput(source, workspace);
+    const planned = await dependencies.plan(input);
+    const copied = await dependencies.copy(planned.source, input.sourceIdentity, planned.staging);
     expect(copied.files).toBeGreaterThan(0);
+    await dependencies.validate(planned.staging);
     await dependencies.commit(planned.staging, planned.target);
     await dependencies.backfill(planned.target);
 
@@ -186,8 +210,9 @@ describe("project import job dependencies on a real filesystem", () => {
     const dependencies = filesystemDependencies({
       backfill: () => Promise.resolve(),
     });
-    const planned = await dependencies.plan(await planInput(source, workspace));
-    await dependencies.copy(source, planned.staging);
+    const input = await planInput(source, workspace);
+    const planned = await dependencies.plan(input);
+    await dependencies.copy(planned.source, input.sourceIdentity, planned.staging);
     await dependencies.discard(planned.staging);
     expect(await readdir(workspace)).toEqual([]);
     expect(await readFile(path.join(source, "index.html"), "utf8")).toContain("<title>x</title>");

@@ -1,11 +1,13 @@
 import { createHash } from "node:crypto";
+import { constants, type BigIntStats } from "node:fs";
 import {
-  copyFile,
   lstat,
   mkdir,
+  open,
   readFile,
   readdir,
   readlink,
+  realpath,
   rename,
   rm,
   stat,
@@ -14,7 +16,14 @@ import {
 import path from "node:path";
 
 import { ErrorCode, type DomainError } from "@vidcom/contracts";
-import { importDecision, importRefusal, type ImportEntryKind, type ImportPlan } from "@vidcom/core";
+import {
+  importDecision,
+  importRefusal,
+  type AbsolutePath,
+  type CanonicalImportPaths,
+  type ImportEntryKind,
+  type ImportPlan,
+} from "@vidcom/core";
 
 const MARKER_FILE = ".vidcom-import.json";
 
@@ -38,12 +47,47 @@ export interface ImportStagingMarker {
   startedAt: string;
 }
 
-async function kindOf(target: string): Promise<ImportEntryKind> {
-  const info = await lstat(target);
-  if (info.isSymbolicLink()) return "symlink";
-  if (info.isDirectory()) return "directory";
-  if (info.isFile()) return "file";
-  return "other";
+function toggleCaseCandidate(target: string): string | null {
+  for (let index = target.length - 1; index >= 0; index -= 1) {
+    const value = target[index];
+    if (value && /[a-z]/u.test(value)) {
+      return `${target.slice(0, index)}${value.toUpperCase()}${target.slice(index + 1)}`;
+    }
+    if (value && /[A-Z]/u.test(value)) {
+      return `${target.slice(0, index)}${value.toLowerCase()}${target.slice(index + 1)}`;
+    }
+  }
+  return null;
+}
+
+async function isCaseInsensitivePath(canonicalPath: string): Promise<boolean> {
+  const alternate = toggleCaseCandidate(canonicalPath);
+  if (alternate === null || alternate === canonicalPath) return process.platform === "win32";
+  try {
+    return await realpath(alternate) === canonicalPath;
+  } catch {
+    return false;
+  }
+}
+
+/** Resolves physical roots and the case semantics of their existing volumes. */
+export async function canonicalImportPaths(
+  source: string,
+  workspaceRoot: string,
+): Promise<CanonicalImportPaths> {
+  const [canonicalSource, canonicalWorkspace] = await Promise.all([
+    realpath(source),
+    realpath(workspaceRoot),
+  ]);
+  const [sourceInsensitive, workspaceInsensitive] = await Promise.all([
+    isCaseInsensitivePath(canonicalSource),
+    isCaseInsensitivePath(canonicalWorkspace),
+  ]);
+  return {
+    source: canonicalSource as AbsolutePath,
+    workspaceRoot: canonicalWorkspace as AbsolutePath,
+    caseInsensitive: sourceInsensitive || workspaceInsensitive,
+  };
 }
 
 /**
@@ -67,6 +111,67 @@ export interface CopyReport {
   skipped: number;
 }
 
+export interface CopyIntoStagingOptions {
+  /** Root identity captured when the job was queued. */
+  expectedSourceIdentity?: string;
+  /** Real-filesystem race seam: called after lstat and before opening an entry. */
+  afterEntryStat?: (relativePath: string) => Promise<void> | void;
+}
+
+function changed(relativePath: string): DomainError {
+  return {
+    code: ErrorCode.WriteConflict,
+    message: "the import source changed while it was being copied",
+    details: { path: relativePath },
+  };
+}
+
+function sameIdentity(
+  left: { dev: bigint; ino: bigint; ctimeNs: bigint },
+  right: { dev: bigint; ino: bigint; ctimeNs: bigint },
+): boolean {
+  return left.dev === right.dev && left.ino === right.ino && left.ctimeNs === right.ctimeNs;
+}
+
+async function copyRegularFileBound(
+  source: string,
+  target: string,
+  relativePath: string,
+  expected: BigIntStats,
+): Promise<DomainError | null> {
+  let sourceHandle;
+  let targetHandle;
+  try {
+    sourceHandle = await open(source, constants.O_RDONLY | constants.O_NOFOLLOW);
+    const opened = await sourceHandle.stat({ bigint: true });
+    if (!opened.isFile() || !sameIdentity(expected, opened)) return changed(relativePath);
+    targetHandle = await open(
+      target,
+      constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | constants.O_NOFOLLOW,
+      Number(opened.mode) & 0o777,
+    );
+    const buffer = Buffer.allocUnsafe(64 * 1_024);
+    let position = 0;
+    for (;;) {
+      const { bytesRead } = await sourceHandle.read(buffer, 0, buffer.length, position);
+      if (bytesRead === 0) break;
+      await targetHandle.write(buffer, 0, bytesRead, position);
+      position += bytesRead;
+    }
+    const after = await sourceHandle.stat({ bigint: true });
+    if (!sameIdentity(opened, after)) return changed(relativePath);
+    await targetHandle.sync();
+    return null;
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException).code;
+    if (["ELOOP", "ENOENT", "ENOTDIR"].includes(code ?? "")) return changed(relativePath);
+    throw error;
+  } finally {
+    await targetHandle?.close().catch(() => undefined);
+    await sourceHandle?.close().catch(() => undefined);
+  }
+}
+
 /**
  * Copies the source tree into staging, reading only.
  *
@@ -76,40 +181,116 @@ export interface CopyReport {
 export async function copyIntoStaging(
   source: string,
   staging: string,
-  report: CopyReport = { files: 0, directories: 0, skipped: 0 },
-  relative = "",
+  options: CopyIntoStagingOptions = {},
 ): Promise<CopyReport | DomainError> {
-  await mkdir(path.join(staging, relative), { recursive: true });
-  for (const entry of await readdir(path.join(source, relative), { withFileTypes: true })) {
-    const childRelative = relative === "" ? entry.name : `${relative}/${entry.name}`;
-    const from = path.join(source, childRelative);
-    const kind = await kindOf(from);
-    const refusal = importRefusal(childRelative, kind);
-    if (refusal) return refusal;
-    if (kind === "symlink" || kind === "other") {
-      // Unreachable while `importRefusal` refuses both, and kept so a future
-      // change to that rule cannot silently start copying them.
-      report.skipped += 1;
-      continue;
+  if (options.expectedSourceIdentity !== undefined
+    && await sourceIdentityOf(source) !== options.expectedSourceIdentity) {
+    return changed("");
+  }
+  const report: CopyReport = { files: 0, directories: 0, skipped: 0 };
+  const walk = async (relative: string): Promise<DomainError | null> => {
+    const directory = path.join(source, relative);
+    const directoryBefore = await lstat(directory, { bigint: true });
+    if (!directoryBefore.isDirectory() || directoryBefore.isSymbolicLink()) return changed(relative);
+    await mkdir(path.join(staging, relative), { recursive: true });
+    const entries = await readdir(directory, { withFileTypes: true });
+    const directoryAfter = await lstat(directory, { bigint: true });
+    if (!sameIdentity(directoryBefore, directoryAfter)) return changed(relative);
+    for (const entry of entries) {
+      const childRelative = relative === "" ? entry.name : `${relative}/${entry.name}`;
+      const from = path.join(source, childRelative);
+      const observed = await lstat(from, { bigint: true });
+      const kind: ImportEntryKind = observed.isSymbolicLink()
+        ? "symlink"
+        : observed.isDirectory()
+          ? "directory"
+          : observed.isFile() ? "file" : "other";
+      const refusal = importRefusal(childRelative, kind);
+      if (refusal) return refusal;
+      if (!importDecision(childRelative, kind).copy) {
+        report.skipped += 1;
+        continue;
+      }
+      await options.afterEntryStat?.(childRelative);
+      if (kind === "directory") {
+        report.directories += 1;
+        const nested = await walk(childRelative);
+        if (nested) return nested;
+        continue;
+      }
+      const failure = await copyRegularFileBound(
+        from,
+        path.join(staging, childRelative),
+        childRelative,
+        observed,
+      );
+      if (failure) return failure;
+      report.files += 1;
     }
-    if (!importDecision(childRelative, kind).copy) {
-      report.skipped += 1;
-      continue;
-    }
-    if (kind === "directory") {
-      report.directories += 1;
-      const nested = await copyIntoStaging(source, staging, report, childRelative);
-      if (!isReport(nested)) return nested;
-      continue;
-    }
-    await copyFile(from, path.join(staging, childRelative));
-    report.files += 1;
+    return null;
+  };
+  const failure = await walk("");
+  if (failure) return failure;
+  if (options.expectedSourceIdentity !== undefined
+    && await sourceIdentityOf(source) !== options.expectedSourceIdentity) {
+    return changed("");
   }
   return report;
 }
 
-function isReport(value: CopyReport | DomainError): value is CopyReport {
-  return "files" in value;
+const MAX_IMPORT_MARKER_BYTES = 1 * 1_024 * 1_024;
+
+async function readRequiredRegularFile(
+  root: string,
+  name: string,
+  readContent = true,
+): Promise<string | DomainError> {
+  try {
+    const handle = await open(path.join(root, name), constants.O_RDONLY | constants.O_NOFOLLOW);
+    try {
+      const info = await handle.stat();
+      if (!info.isFile()) {
+        return { code: ErrorCode.PathInvalid, message: `${name} must be a regular file` };
+      }
+      if (readContent && info.size > MAX_IMPORT_MARKER_BYTES) {
+        return { code: ErrorCode.TooLarge, message: `${name} is too large to validate safely` };
+      }
+      return readContent ? await handle.readFile("utf8") : "";
+    } finally {
+      await handle.close();
+    }
+  } catch (error) {
+    return {
+      code: ErrorCode.PathInvalid,
+      message: `${name} is required and must not be a symlink`,
+      details: { code: (error as NodeJS.ErrnoException).code ?? "unknown" },
+    };
+  }
+}
+
+/** Validates the minimum project contract while the tree is still disposable staging. */
+export async function validateStagedProject(staging: string): Promise<DomainError | null> {
+  const [configContent, identityContent, entryContent] = await Promise.all([
+    readRequiredRegularFile(staging, "hyperframes.json"),
+    readRequiredRegularFile(staging, "vidcom.json"),
+    readRequiredRegularFile(staging, "index.html", false),
+  ]);
+  if (typeof configContent !== "string") return configContent;
+  if (typeof identityContent !== "string") return identityContent;
+  if (typeof entryContent !== "string") return entryContent;
+  try {
+    const config = JSON.parse(configContent) as unknown;
+    if (config === null || typeof config !== "object" || Array.isArray(config)) throw new TypeError();
+  } catch {
+    return { code: ErrorCode.PathInvalid, message: "hyperframes.json must contain a JSON object" };
+  }
+  try {
+    const identity = JSON.parse(identityContent) as { id?: unknown };
+    if (typeof identity.id !== "string" || identity.id.trim().length === 0) throw new TypeError();
+  } catch {
+    return { code: ErrorCode.PathInvalid, message: "vidcom.json must contain a non-empty ProjectId" };
+  }
+  return null;
 }
 
 /**

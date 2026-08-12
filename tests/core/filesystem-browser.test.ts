@@ -118,6 +118,7 @@ describe("filesystem browser policy", () => {
     ["not-found", ErrorCode.NotFound],
     ["not-a-directory", ErrorCode.PathInvalid],
     ["permission-denied", ErrorCode.PathPermissionDenied],
+    ["changed", ErrorCode.BrowseTokenInvalid],
     ["timeout", ErrorCode.PathTimeout],
   ] as const)("maps a %s read to its own code, never a fault", async (reason, code) => {
     const value = service(
@@ -157,6 +158,25 @@ describe("filesystem browser policy", () => {
     // Identity is compared at use time, so a swapped directory fails rather
     // than quietly redirecting the browse somewhere else.
     expect(page.error.code).toBe(ErrorCode.BrowseTokenInvalid);
+  });
+
+  it("invalidates a token when the directory changes during the read", async () => {
+    const value = service(
+      { "/": directory([]) },
+      { read: async () => ({
+        ok: true,
+        entries: [{ name: "secret.txt", isDirectory: false, isSymbolicLink: false }],
+        identity: { device: "1", inode: "replacement" },
+      }) },
+    );
+    const roots = await value.instance.roots(SESSION);
+    if (!roots.ok) return;
+
+    const page = await value.instance.list({ sessionId: SESSION, token: roots.value[0]!.token });
+    expect(page.ok).toBe(false);
+    if (page.ok) return;
+    expect(page.error.code).toBe(ErrorCode.BrowseTokenInvalid);
+    expect(value.tokens.size()).toBe(0);
   });
 
   it.each(["", "..", ".", "a/b", "a\\b"])("refuses %s as a new directory name", async (name) => {

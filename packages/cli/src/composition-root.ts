@@ -490,6 +490,7 @@ export function createMcpRegistry(
       hashContent,
       binaries: infrastructure.renderBinaries,
       fonts: application.fonts,
+      diagnostics: application.diagnostics,
     }, input),
     enqueueSnapshot: (input) => enqueueSnapshotJob({
       workspace: infrastructure.workspace,
@@ -712,6 +713,7 @@ export function createJobTypes(
       guard: infrastructure.renderGuard,
       binaries: infrastructure.renderBinaries,
       fonts: application.fonts,
+      diagnostics: application.diagnostics,
       runtimeSource: infrastructure.runtimeSource,
       injectGuard: injectRuntimeAssetGuardDocument,
       clock: infrastructure.clock,

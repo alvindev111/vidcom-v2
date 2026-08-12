@@ -61,10 +61,12 @@ export interface DeliveryLoopRouteDependencies {
    * a client can type is a path any page can send, and the whole point of
    * browse is that the server only acts on directories it handed out itself.
    */
-  startProjectImport?(input: { selectionToken: string; targetName?: string }):
+  startProjectImport?(input: { selectionToken: string; targetName?: string; sessionId?: string }):
     Promise<Result<{ jobId: string }, DomainError>>;
   /** Takes a browse selection token; no route accepts an absolute path from a client. */
-  activateWorkspace(selectionToken: string): Promise<Result<{ workspaceRoot: AbsolutePath; reauthRequired: true }, DomainError>>;
+  activateWorkspace(selectionToken: string, sessionId?: string): Promise<Result<{ workspaceRoot: AbsolutePath; reauthRequired: true }, DomainError>>;
+  /** Resolves the already-authenticated browser session for browse-token binding. */
+  browseSessionId?(request: Request): string | undefined;
   lifecycle: ProjectLifecycle;
   diagnostics: DiagnosticsService;
   agentKit: AgentKitInstaller;
@@ -162,7 +164,10 @@ export function createDeliveryLoopRoutes(dependencies: DeliveryLoopRouteDependen
   routes.get("/v1/workspace", async (c) => c.json(await dependencies.workspaceOverview()));
   routes.put("/v1/workspace/active", async (c) => {
     const input = parse(ActivateWorkspaceRequestSchema, await json(c), "workspace activation payload is invalid");
-    return c.json(valueOf(await dependencies.activateWorkspace(input.selectionToken)));
+    return c.json(valueOf(await dependencies.activateWorkspace(
+      input.selectionToken,
+      dependencies.browseSessionId?.(c.req.raw),
+    )));
   });
   routes.post("/v1/projects/imports", async (c) => {
     if (!dependencies.startProjectImport) {
@@ -186,8 +191,10 @@ export function createDeliveryLoopRoutes(dependencies: DeliveryLoopRouteDependen
         field: "targetName",
       });
     }
+    const sessionId = dependencies.browseSessionId?.(c.req.raw);
     const started = valueOf(await dependencies.startProjectImport({
       selectionToken: body.sourceToken,
+      ...(sessionId === undefined ? {} : { sessionId }),
       ...(body.targetName === undefined ? {} : { targetName: body.targetName }),
     }));
     // 202, not 201: copying a project tree is not something to hold a request

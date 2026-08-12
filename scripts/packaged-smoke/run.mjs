@@ -1,4 +1,5 @@
 import { existsSync } from "node:fs";
+import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -6,6 +7,7 @@ import { artifactPath } from "../build-sea.mjs";
 import { hostPlatformTag } from "../stage-artifact-runtime.mjs";
 import { STEP_BODIES } from "./bodies.mjs";
 import { createSmokeRoot } from "./environment.mjs";
+import { completeSmokeEvidence } from "./evidence.mjs";
 import {
   failedStepIds,
   parseSmokeArgs,
@@ -111,6 +113,25 @@ async function main(argv) {
 
   await smoke?.dispose();
 
+  const failed = failedStepIds(results, options);
+  const isCompleteRun = options.step === undefined && options.from === undefined;
+  const allPassed = results.every((result) => result.status === "passed");
+  if (isCompleteRun && allPassed && failed.length === 0) {
+    const evidence = completeSmokeEvidence(tag, context);
+    const evidenceDirectory = process.env.VIDCOM_SMOKE_EVIDENCE_DIR;
+    if (process.env.VIDCOM_SMOKE_RELEASE === "1" && !evidenceDirectory) {
+      throw new Error("a successful release smoke requires VIDCOM_SMOKE_EVIDENCE_DIR");
+    }
+    if (evidenceDirectory) {
+      await mkdir(evidenceDirectory, { recursive: true });
+      await Promise.all([
+        writeFile(path.join(evidenceDirectory, "doctor-report.json"), `${JSON.stringify(evidence.doctor, null, 2)}\n`),
+        writeFile(path.join(evidenceDirectory, "ffprobe.json"), `${JSON.stringify(evidence.ffprobe, null, 2)}\n`),
+        writeFile(path.join(evidenceDirectory, "platform.json"), `${JSON.stringify(evidence.platform, null, 2)}\n`),
+      ]);
+    }
+  }
+
   process.stdout.write(`${JSON.stringify({
     version: 1,
     platform: tag,
@@ -119,7 +140,6 @@ async function main(argv) {
     steps: results,
   }, null, 2)}\n`);
 
-  const failed = failedStepIds(results, options);
   if (failed.length > 0) {
     // Named, never just "smoke failed": thirteen steps and one message is a
     // report somebody has to reproduce locally to understand.

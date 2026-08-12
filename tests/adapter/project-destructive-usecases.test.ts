@@ -3,6 +3,7 @@ import { access, mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promise
 import { tmpdir } from "node:os";
 import path from "node:path";
 
+import { parseHTML } from "linkedom";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import {
@@ -293,7 +294,18 @@ describe("Phase J use cases with real SQLite and filesystem", () => {
     expect(dbOne(database, "SELECT COUNT(*) AS count FROM revision")).toEqual({ count: 1 });
   });
 
-  it("authors an empty identity-backed project with the first scene in one revision", async () => {
+  it.each([
+    ["horizontal-youtube", 1920, 1080, "horizontal", "16:9", ["youtube"], null],
+    ["vertical-shorts", 1080, 1920, "vertical", "9:16", ["tiktok", "instagram-reels", "youtube-shorts"], 180],
+  ] as const)("authors and mounts an empty %s project with platform dimensions", async (
+    presetId,
+    width,
+    height,
+    orientation,
+    aspectRatio,
+    targets,
+    recommendedMaxDurationSeconds,
+  ) => {
     await Promise.all([
       rm(path.join(projectRoot, "index.html"), { force: true }),
       rm(path.join(projectRoot, "compositions/scene-1.html"), { force: true }),
@@ -304,10 +316,9 @@ describe("Phase J use cases with real SQLite and filesystem", () => {
       schemaVersion: 1,
       id: projectId,
       platform: {
-        presetId: "horizontal-youtube", orientation: "horizontal", aspectRatio: "16:9",
-        width: 1920, height: 1080, fps: 30, targets: ["youtube"], recommendedMaxDurationSeconds: null,
+        presetId, orientation, aspectRatio, width, height, fps: 30, targets, recommendedMaxDurationSeconds,
       },
-      render: { defaultPresetId: "horizontal-youtube", outputDirectory: "renders" },
+      render: { defaultPresetId: presetId, outputDirectory: "renders" },
       narration: { defaultProviderId: null, defaultVoiceId: null },
       createdAt: now,
       updatedAt: now,
@@ -322,7 +333,30 @@ describe("Phase J use cases with real SQLite and filesystem", () => {
     }, "user");
 
     expect(result).toMatchObject({ ok: true, value: { envelope: { projectRevision: 1 }, scene: { id: "scene-1" } } });
-    expect(await readFile(path.join(projectRoot, "index.html"), "utf8")).toContain('data-fps="30"');
+    const entry = await readFile(path.join(projectRoot, "index.html"), "utf8");
+    const scene = await readFile(path.join(projectRoot, "compositions/scene-1.html"), "utf8");
+    const parsed = await composition.parseProject(ref);
+    expect(parsed.project).toMatchObject({ width, height, duration: 4, sceneCount: 1 });
+    expect(parsed.scenes).toMatchObject([{
+      id: "scene-1", src: "compositions/scene-1.html", start: 0, duration: 4, trackIndex: 0,
+    }]);
+
+    const { document: entryDocument } = parseHTML(entry);
+    const host = entryDocument.querySelector('[data-composition-src="compositions/scene-1.html"]');
+    expect(host?.getAttribute("data-width")).toBe(String(width));
+    expect(host?.getAttribute("data-height")).toBe(String(height));
+    expect(entryDocument.querySelector("main")?.getAttribute("data-fps")).toBe("30");
+
+    const { document: sceneDocument } = parseHTML(scene);
+    const template = sceneDocument.querySelector("template") as HTMLTemplateElement | null;
+    expect(template).not.toBeNull();
+    const mounted = entryDocument.createElement("div");
+    mounted.append(template!.content.cloneNode(true));
+    expect(mounted.querySelector("style")?.textContent).toContain(`width:${width}px;height:${height}px`);
+    expect(mounted.querySelector('[data-composition-id="scene-1"]')).toMatchObject({
+      dataset: expect.objectContaining({ width: String(width), height: String(height) }),
+    });
+    expect(mounted.querySelector("h2")?.textContent).toBe("First scene");
     expect(dbOne(database, "SELECT COUNT(*) AS count FROM revision")).toEqual({ count: 1 });
     expect(dbOne(database, "SELECT COUNT(*) AS count FROM revision_step WHERE revision_id = 1")).toEqual({ count: 3 });
   });

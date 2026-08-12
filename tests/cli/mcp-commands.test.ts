@@ -1,22 +1,26 @@
 import { EventEmitter } from "node:events";
 import { createHash } from "node:crypto";
 import { existsSync, readFileSync, readdirSync } from "node:fs";
-import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, realpath, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
 import { describe, expect, it } from "vitest";
 
 import {
+  AppSettingsStore,
   AppDataBackupStore,
   initializeDatabase,
   migrateDatabase,
   MutationJournal,
+  openVidcomDatabase,
   readPublishedRuntimeInstallation,
   RUNTIME_PATH_NAMES,
   SqliteApprovalGrantStore,
+  SqliteJobStore,
   WorkspaceFs,
   WorkspaceLease,
+  type DaemonClient,
   type RuntimePaths,
 } from "@vidcom/adapter";
 import {
@@ -32,7 +36,9 @@ import {
   type ApprovalGrantRecord,
   type ProjectRef,
 } from "@vidcom/core";
+import type { ToolInvoker } from "@vidcom/mcp";
 import {
+  BRIDGE_CREDENTIAL_SETTING,
   CliInputError,
   createInfrastructure,
   defaultAppDataRoot,
@@ -47,12 +53,14 @@ import {
   runCredentialCommand,
   runMcpLifecycle,
   runRecoveryCommand,
+  renderWorkspaceRoot,
   runtimePathsFor,
   selectWorkspace,
   startVidcomMcp,
+  type McpBridgeConnection,
   waitForMcpShutdown,
 } from "@vidcom/cli";
-import type { AbsolutePath, ResolvedPath } from "@vidcom/core";
+import type { AbsolutePath, JobId, ResolvedPath } from "@vidcom/core";
 import { earlyAppDataRoot } from "../../packages/cli/src/app-data-root";
 import { configureCompilerBeforeRuntime } from "../../packages/cli/src/compiler-preload";
 import { dbOne, dbRun } from "../support/database";
@@ -74,6 +82,25 @@ const SHIPPED_MIGRATIONS = readdirSync(MIGRATIONS_SOURCE, { withFileTypes: true 
     path: path.posix.join("drizzle", entry.name, "migration.sql"),
     content: readFileSync(new URL(`${entry.name}/migration.sql`, MIGRATIONS_SOURCE)),
   }));
+
+function mcpBridgeConnection(overrides: Partial<DaemonClient> = {}): McpBridgeConnection {
+  const client: DaemonClient = {
+    handshake: () => Promise.reject(new Error("unused")),
+    attach: () => Promise.reject(new Error("unused")),
+    renew: () => Promise.resolve({
+      attachmentId: "attachment-mcp",
+      heartbeatEveryMs: 5_000,
+      expiresAt: "2026-08-12T00:00:20.000Z",
+    }),
+    detach: () => Promise.resolve(),
+    invokeTool: () => Promise.resolve({ projects: [] }),
+    enqueueRender: () => Promise.reject(new Error("unused")),
+    getJob: () => Promise.reject(new Error("unused")),
+    cancelJob: () => Promise.reject(new Error("unused")),
+    ...overrides,
+  };
+  return { client, attachmentId: "attachment-mcp", heartbeatEveryMs: 5_000 };
+}
 
 describe("VidCom CLI dispatch", () => {
   it("preserves bare/app invocation and recognizes every reviewed subcommand", () => {
@@ -137,9 +164,38 @@ describe("VidCom CLI dispatch", () => {
         appDataRoot: path.join(root, "app-data"),
         cwd,
         database,
-      })).resolves.toBe(cwd);
+      })).resolves.toBe(await realpath(cwd));
       await expect(readFile(path.join(cwd, "hyperframes.json"))).rejects.toMatchObject({ code: "ENOENT" });
       await expect(readFile(path.join(cwd, "index.html"))).rejects.toMatchObject({ code: "ENOENT" });
+    } finally {
+      await database.destroy();
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("uses one physical workspace identity for real and aliased paths", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "vidcom-workspace-alias-"));
+    const workspace = path.join(root, "workspace");
+    const alias = path.join(root, "workspace-alias");
+    const appData = path.join(root, "app-data");
+    await mkdir(workspace);
+    await symlink(workspace, alias, process.platform === "win32" ? "junction" : "dir");
+    const physicalRoot = await realpath(workspace);
+    const database = await initializeDatabase(appData);
+    try {
+      const selectedReal = await selectWorkspace({ explicit: workspace, appDataRoot: appData, database });
+      const selectedAlias = await selectWorkspace({ explicit: alias, appDataRoot: appData, database });
+      expect(selectedReal).toBe(physicalRoot);
+      expect(selectedAlias).toBe(physicalRoot);
+      await expect(renderWorkspaceRoot(["project", "--workspace", alias])).resolves.toBe(physicalRoot);
+
+      const lease = new WorkspaceLease(database, { now: () => new Date("2026-08-12T00:00:00.000Z") }, {
+        newId: () => "lease_workspace_alias",
+      });
+      const acquired = await lease.acquire(selectedReal, "holder-real");
+      expect(acquired.ok).toBe(true);
+      const viaAlias = await lease.acquire(selectedAlias, "holder-alias");
+      expect(viaAlias.ok).toBe(false);
     } finally {
       await database.destroy();
       await rm(root, { recursive: true, force: true });
@@ -174,7 +230,8 @@ describe("VidCom CLI dispatch", () => {
     await mkdir(cwd);
     const database = await initializeDatabase(appData);
     try {
-      await expect(selectWorkspace({ appDataRoot: appData, cwd, database })).resolves.toBe(cwd);
+      await expect(selectWorkspace({ appDataRoot: appData, cwd, database }))
+        .resolves.toBe(await realpath(cwd));
       await expect(readFile(path.join(cwd, "hyperframes.json"), "utf8")).rejects.toThrow();
       await expect(readFile(path.join(cwd, "index.html"), "utf8")).rejects.toThrow();
     } finally {
@@ -195,11 +252,15 @@ describe("VidCom CLI dispatch", () => {
     await writeFile(path.join(project, "index.html"), '<main data-composition-id="root"></main>');
     const database = await initializeDatabase(appData);
     try {
-      await expect(selectWorkspace({ explicit: active, appDataRoot: appData, database })).resolves.toBe(active);
+      await expect(selectWorkspace({ explicit: active, appDataRoot: appData, database }))
+        .resolves.toBe(await realpath(active));
       await expect(startVidcomMcp({ workspace: invalid }, {
         appDataRoot: () => appData,
         readSettings: async () => DEFAULT_VIDCOM_SETTINGS,
-        selectWorkspace,
+        selectWorkspace: async () => { throw new Error("explicit workspace must not open SQLite"); },
+        canonicalizeWorkspace: realpath,
+        openWorkspaceDatabase: () => { throw new Error("explicit workspace must not open SQLite"); },
+        connectBridge: async () => { throw new Error("bridge must not connect"); },
         startStdio: async () => { throw new Error("listener must not open"); },
         writeError: () => { throw new Error("stderr must not be used"); },
       })).rejects.toBeInstanceOf(CliInputError);
@@ -221,7 +282,7 @@ describe("VidCom CLI dispatch", () => {
     expect(() => parseMcpCommandArgs(["--unknown", "value"])).toThrow(CliInputError);
   });
 
-  it("starts the full lease/startup graph and injects a credential-free stdio registry", async () => {
+  it("publishes the full catalogue through a remote invoker without acquiring a lease", async () => {
     const root = await mkdtemp(path.join(tmpdir(), "vidcom-mcp-command-"));
     const workspace = path.join(root, "workspace");
     const project = path.join(workspace, "project");
@@ -231,14 +292,27 @@ describe("VidCom CLI dispatch", () => {
     await writeFile(path.join(project, "vidcom.json"), '{"id":"project_mcp_command"}\n');
     await writeFile(path.join(project, "index.html"), '<main data-composition-id="root"></main>');
     let stdioClosed = false;
+    let detached = false;
     try {
       const runtime = await startVidcomMcp({ workspace, protocol: "2025-11-25" }, {
         appDataRoot: () => appData,
         readSettings: async () => DEFAULT_VIDCOM_SETTINGS,
-        selectWorkspace: async () => workspace as AbsolutePath,
+        selectWorkspace: async () => { throw new Error("explicit workspace must not open SQLite"); },
+        canonicalizeWorkspace: async (root) => root,
+        openWorkspaceDatabase: () => { throw new Error("explicit workspace must not read app-data SQLite"); },
+        connectBridge: async () => mcpBridgeConnection({
+          detach: async () => { detached = true; },
+        }),
         startStdio: async (registry, _dependencies, options) => {
-          expect(options).toEqual({ pinnedRevision: "2025-11-25" });
+          expect(options?.pinnedRevision).toBe("2025-11-25");
+          expect(options?.invoker).toBeDefined();
           expect(registry.list("legacy").map((tool) => tool.name)).toHaveLength(35);
+          await expect(options?.invoker?.invoke("list_projects", {}, {
+            era: "legacy",
+            protocolVersion: "2025-11-25",
+            credentialId: null,
+            requestInput: () => Promise.reject(new Error("unused")),
+          })).resolves.toMatchObject({ ok: true, value: { projects: [] } });
           return {
             close: async () => { stdioClosed = true; },
             closed: new Promise<void>(() => undefined),
@@ -246,14 +320,106 @@ describe("VidCom CLI dispatch", () => {
         },
         writeError: () => { throw new Error("unexpected stdio error"); },
       });
+      const runningDatabase = await initializeDatabase(appData);
+      expect(dbOne(runningDatabase, "SELECT COUNT(*) AS count FROM workspace_lease"))
+        .toEqual({ count: 0 });
+      await runningDatabase.destroy();
       await runtime.stop();
       expect(stdioClosed).toBe(true);
+      expect(detached).toBe(true);
       const stoppedDatabase = await initializeDatabase(appData);
       expect(dbOne(stoppedDatabase, "SELECT COUNT(*) AS count FROM workspace_lease"))
         .toEqual({ count: 0 });
       await stoppedDatabase.destroy();
     } finally {
       await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("reads active_workspace from existing SQLite without runtime bootstrap", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "vidcom-mcp-active-workspace-"));
+    const workspace = path.join(root, "workspace");
+    const appData = path.join(root, "app-data");
+    await mkdir(workspace, { recursive: true });
+    const setup = await initializeDatabase(appData);
+    new AppSettingsStore(setup).set("active_workspace", await realpath(workspace));
+    await setup.destroy();
+    let connectedWorkspace: string | undefined;
+    try {
+      const runtime = await startVidcomMcp({}, {
+        appDataRoot: () => appData,
+        readSettings: async () => DEFAULT_VIDCOM_SETTINGS,
+        selectWorkspace,
+        canonicalizeWorkspace: realpath,
+        openWorkspaceDatabase: openVidcomDatabase,
+        connectBridge: async ({ workspaceRoot }) => {
+          connectedWorkspace = workspaceRoot;
+          return mcpBridgeConnection();
+        },
+        startStdio: async () => ({
+          close: () => Promise.resolve(),
+          closed: new Promise<void>(() => undefined),
+        }),
+        writeError: () => { throw new Error("unexpected stdio error"); },
+      });
+      expect(connectedWorkspace).toBe(await realpath(workspace));
+      await runtime.stop();
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("reattaches after heartbeat failure and routes later tools to the replacement daemon", async () => {
+    const workspace = await mkdtemp(path.join(tmpdir(), "vidcom-mcp-reconnect-"));
+    let connections = 0;
+    let replacementReady!: () => void;
+    const reconnected = new Promise<void>((resolve) => { replacementReady = resolve; });
+    let invoker: ToolInvoker | undefined;
+    try {
+      const runtime = await startVidcomMcp({ workspace }, {
+        appDataRoot: () => path.join(workspace, "app-data"),
+        readSettings: async () => DEFAULT_VIDCOM_SETTINGS,
+        selectWorkspace: async () => workspace as AbsolutePath,
+        canonicalizeWorkspace: async (root) => root,
+        openWorkspaceDatabase: () => { throw new Error("explicit workspace must not open SQLite"); },
+        connectBridge: async () => {
+          connections += 1;
+          if (connections === 1) {
+            return {
+              ...mcpBridgeConnection({ renew: () => Promise.reject(new Error("daemon restarted")) }),
+              heartbeatEveryMs: 1,
+            };
+          }
+          replacementReady();
+          return {
+            ...mcpBridgeConnection({ invokeTool: () => Promise.resolve({ daemon: "replacement" }) }),
+            heartbeatEveryMs: 60_000,
+          };
+        },
+        startStdio: async (_registry, _dependencies, options) => {
+          invoker = options?.invoker;
+          return {
+            close: () => Promise.resolve(),
+            closed: new Promise<void>(() => undefined),
+          };
+        },
+        writeError: () => { throw new Error("successful reconnect must stay quiet"); },
+      });
+      // Use the shortest policy only for the first attachment so the production
+      // maintenance loop is exercised without sleeping for five seconds here.
+      await reconnected;
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      if (!invoker) throw new Error("stdio did not receive its remote invoker");
+      await expect(invoker.invoke("list_projects", {}, {
+        era: "modern",
+        protocolVersion: "2026-07-28",
+        credentialId: null,
+        requestInput: () => Promise.reject(new Error("unused")),
+      })).resolves.toMatchObject({ ok: true, value: { daemon: "replacement" } });
+      await runtime.stop();
+      expect(connections).toBe(2);
+    } finally {
+      await rm(workspace, { recursive: true, force: true });
     }
   });
 
@@ -347,7 +513,7 @@ describe("VidCom CLI dispatch", () => {
     expect(signals.listenerCount("SIGTERM")).toBe(0);
   });
 
-  it("releases the real workspace lease after a stdio host disconnect", async () => {
+  it("leaves the daemon-owned lease and queued work intact after stdio disconnect", async () => {
     const root = await mkdtemp(path.join(tmpdir(), "vidcom-mcp-disconnect-"));
     const workspace = path.join(root, "workspace");
     const project = path.join(workspace, "project");
@@ -360,10 +526,31 @@ describe("VidCom CLI dispatch", () => {
     await writeFile(path.join(project, "vidcom.json"), '{"id":"project_mcp_disconnect"}\n');
     await writeFile(path.join(project, "index.html"), '<main data-composition-id="root"></main>');
     try {
+      const daemonDatabase = await initializeDatabase(appData);
+      const clock = { now: () => new Date("2026-08-12T00:00:00.000Z") };
+      const daemonLease = new WorkspaceLease(daemonDatabase, clock, {
+        newId: () => "lease_daemon_ui",
+      });
+      await expect(daemonLease.acquire(workspace as AbsolutePath, "ui:daemon"))
+        .resolves.toMatchObject({ ok: true });
+      const jobs = new SqliteJobStore(daemonDatabase, clock);
+      await jobs.enqueue({
+        id: "job_survives_stdio_disconnect" as JobId,
+        projectId: null,
+        type: "snapshot",
+        input: { projectId: "project_mcp_disconnect" },
+        inputHash: `sha256:${"a".repeat(64)}` as ContentHash,
+        idempotencyKey: null,
+      });
+      await daemonDatabase.destroy();
+
       const runtime = await startVidcomMcp({ workspace }, {
         appDataRoot: () => appData,
         readSettings: async () => DEFAULT_VIDCOM_SETTINGS,
         selectWorkspace: async () => workspace as AbsolutePath,
+        canonicalizeWorkspace: async (root) => root,
+        openWorkspaceDatabase: () => { throw new Error("explicit workspace must not open SQLite"); },
+        connectBridge: async () => mcpBridgeConnection(),
         startStdio: async () => ({
           closed: new Promise<void>((resolve) => { disconnect = resolve; }),
           close: async () => { listenerClosed = true; },
@@ -376,7 +563,9 @@ describe("VidCom CLI dispatch", () => {
       expect(listenerClosed).toBe(true);
       const database = await initializeDatabase(appData);
       expect(dbOne(database, "SELECT COUNT(*) AS count FROM workspace_lease"))
-        .toEqual({ count: 0 });
+        .toEqual({ count: 1 });
+      expect(dbOne(database, "SELECT status FROM job WHERE id = ?", "job_survives_stdio_disconnect"))
+        .toEqual({ status: "queued" });
       await database.destroy();
     } finally {
       await rm(root, { recursive: true, force: true });
@@ -506,6 +695,43 @@ describe("VidCom CLI dispatch", () => {
     }
   });
 
+  it("refuses generic rotate and revoke for the system bridge credential", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "vidcom-credential-bridge-guard-"));
+    const appData = path.join(root, "app-data");
+    let stdout = "";
+    let id = 0;
+    const dependencies = {
+      appDataRoot: () => appData,
+      stdout: { write: (chunk: string) => { stdout += chunk; } },
+      now: () => new Date("2026-08-02T00:00:00.000Z"),
+      newId: () => `credential_bridge_guard_${++id}`,
+    };
+    try {
+      await runCredentialCommand(["issue", "system:bridge"], dependencies);
+      const issued = JSON.parse(stdout.trim()) as { id: string };
+      const setup = await initializeDatabase(appData);
+      new AppSettingsStore(setup, dependencies.now).set(BRIDGE_CREDENTIAL_SETTING, issued.id);
+      await setup.destroy();
+
+      await expect(runCredentialCommand(["rotate", issued.id], dependencies)).rejects.toMatchObject({
+        name: "CliInputError",
+        message: "the system bridge credential cannot be rotated by the generic credential command",
+      });
+      await expect(runCredentialCommand(["revoke", issued.id], dependencies)).rejects.toMatchObject({
+        name: "CliInputError",
+        message: "the system bridge credential cannot be revoked by the generic credential command",
+      });
+
+      stdout = "";
+      await runCredentialCommand(["list"], dependencies);
+      expect(JSON.parse(stdout.trim())).toMatchObject({
+        credentials: [{ id: issued.id, status: "active" }],
+      });
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
   it("lists and verifies real app-data backups with strict JSON output", async () => {
     const root = await mkdtemp(path.join(tmpdir(), "vidcom-backup-command-"));
     const appData = path.join(root, "app-data");
@@ -609,9 +835,20 @@ describe("VidCom CLI dispatch", () => {
       HOST_TAG,
       "hyperframes-runtime",
     );
+    const bgmArchive = archiveFor(
+      "bgm",
+      [
+        "alex-morgan-corporate-business-background.mp3",
+        "corporate-marimba-business-background.mp3",
+        "meta.mp3",
+        "promo-promo-business-background.mp3",
+      ].map((filename) => ({ path: filename, content: Buffer.from(`bgm:${filename}\n`) })),
+      HOST_TAG,
+      "bgm-runtime",
+    );
     const runtimeAssets = assetSource(
-      runtimeManifest("1.0.0", [nodeArchive.archive, hyperframesArchive.archive]),
-      { node: nodeArchive.bytes, hyperframes: hyperframesArchive.bytes },
+      runtimeManifest("1.0.0", [bgmArchive.archive, nodeArchive.archive, hyperframesArchive.archive]),
+      { bgm: bgmArchive.bytes, node: nodeArchive.bytes, hyperframes: hyperframesArchive.bytes },
     );
     let migrationCalls = 0;
     let infrastructureCalls = 0;
@@ -727,14 +964,15 @@ describe("VidCom CLI dispatch", () => {
       for (const name of RUNTIME_PATH_NAMES) {
         expect(path.isAbsolute(observedRuntimePaths?.[name] ?? ""), name).toBe(true);
       }
+      const canonicalAppData = await realpath(appData);
       expect(observedRuntimePaths?.nativeDependenciesRoot).toBe(path.join(
-        appData,
+        canonicalAppData,
         "native",
         "1.0.0",
         "node-runtime",
       ));
       expect(observedRuntimePaths?.hyperframesPackagePath).toBe(path.join(
-        appData,
+        canonicalAppData,
         "native",
         "1.0.0",
         "hyperframes-runtime",

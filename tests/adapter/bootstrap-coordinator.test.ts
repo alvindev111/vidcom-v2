@@ -1,5 +1,5 @@
-import { existsSync, readFileSync, readdirSync, realpathSync } from "node:fs";
-import { lstat, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { existsSync, readFileSync, readdirSync, realpathSync, statSync } from "node:fs";
+import { chmod, lstat, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
@@ -34,6 +34,12 @@ const PACKAGED_BOOT = {
   path: "cli/boot.cjs",
   content: Buffer.from("module.exports = {};\n"),
 };
+const PACKAGED_BGM = [
+  "alex-morgan-corporate-business-background.mp3",
+  "corporate-marimba-business-background.mp3",
+  "meta.mp3",
+  "promo-promo-business-background.mp3",
+].map((entry) => ({ path: entry, content: Buffer.from(`fixture ${entry}\n`) }));
 const MIGRATIONS_SOURCE = new URL("../../packages/adapter/drizzle/", import.meta.url);
 const SHIPPED_MIGRATIONS = readdirSync(MIGRATIONS_SOURCE, { withFileTypes: true })
   .filter((entry) => entry.isDirectory()
@@ -75,7 +81,9 @@ function source(): RuntimeAssetSource {
     ...product.native,
   ], HOST_TAG, "node-runtime");
   const hyperframes = hyperframesArchive();
-  return assetSource(runtimeManifest("1.0.0", [node.archive, hyperframes.archive]), {
+  const bgm = archiveFor("bgm", PACKAGED_BGM, HOST_TAG, "bgm-runtime");
+  return assetSource(runtimeManifest("1.0.0", [bgm.archive, node.archive, hyperframes.archive]), {
+    bgm: bgm.bytes,
     [ARCHIVE_KEY]: node.bytes,
     hyperframes: hyperframes.bytes,
   });
@@ -119,6 +127,42 @@ describe.skipIf(!HOST_SUPPORTED)("bootstrap coordinator", () => {
       await prepared.release();
     }
   });
+
+  it.skipIf(process.platform === "win32")(
+    "secures a permissive warm app-data root before reading runtime metadata or taking a lock",
+    async () => {
+      const appDataRoot = await temporaryRoot();
+      const first = await new BootstrapCoordinator().prepare({
+        appDataRoot,
+        assetSource: source(),
+      });
+      await first.release();
+      await chmod(appDataRoot, 0o777);
+
+      const delegate = source();
+      const observedModes: number[] = [];
+      const guardedSource: RuntimeAssetSource = {
+        readManifest() {
+          observedModes.push(statSync(appDataRoot).mode & 0o777);
+          return delegate.readManifest();
+        },
+        readArchive(key) {
+          return delegate.readArchive(key);
+        },
+      };
+      const prepared = await new BootstrapCoordinator().prepare({
+        appDataRoot,
+        assetSource: guardedSource,
+      });
+      try {
+        expect(observedModes.length).toBeGreaterThan(0);
+        expect(observedModes.every((value) => value === 0o700)).toBe(true);
+        expect(statSync(appDataRoot).mode & 0o777).toBe(0o700);
+      } finally {
+        await prepared.release();
+      }
+    },
+  );
 
   it("runs the real migration exactly once across bootstrap, selection and foundation", async () => {
     const root = await temporaryRoot();
@@ -204,9 +248,11 @@ describe.skipIf(!HOST_SUPPORTED)("bootstrap coordinator", () => {
       await migrateDatabase(database, migrationsFolder);
     };
     const hyperframes = hyperframesArchive();
+    const bgm = archiveFor("bgm", PACKAGED_BGM, HOST_TAG, "bgm-runtime");
     const prepared = await new BootstrapCoordinator({ migrate: artifactMigration }).prepare({
       appDataRoot,
-      assetSource: assetSource(runtimeManifest("1.0.1", [archive, hyperframes.archive]), {
+      assetSource: assetSource(runtimeManifest("1.0.1", [bgm.archive, archive, hyperframes.archive]), {
+        bgm: bgm.bytes,
         [ARCHIVE_KEY]: bytes,
         hyperframes: hyperframes.bytes,
       }),

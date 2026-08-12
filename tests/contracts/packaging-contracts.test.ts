@@ -10,6 +10,7 @@ import {
   BridgeHandshakeRequestSchema,
   BridgeHandshakeResponseSchema,
   BridgeToolInvokeRequestSchema,
+  BridgeToolInvokeErrorResponseSchema,
   BridgeToolInvokeResponseSchema,
   BrowseEntrySchema,
   BrowsePageSchema,
@@ -168,7 +169,7 @@ describe("packaging and distribution contracts", () => {
       .toBeNull();
   });
 
-  it("publishes strict bridge handshake, attachment, and invocation envelopes", () => {
+  it("publishes strict bridge handshake, attachment, and invocation requests", () => {
     const attachmentId = "a".repeat(64);
     const timestamp = "2026-08-07T12:00:00.000Z";
     const error = { code: ErrorCode.DaemonUnavailable, message: "daemon stopped" };
@@ -193,10 +194,9 @@ describe("packaging and distribution contracts", () => {
       [BridgeToolInvokeRequestSchema, {
         input: { projectId: "project-1" },
         protocolVersion: "2025-11-25",
-        requestState: "approval-1",
+        era: "modern",
+        requestState: { approvalId: "approval-1" },
       }],
-      [BridgeToolInvokeResponseSchema, { ok: true, value: { projectRevision: 2 } }],
-      [BridgeToolInvokeResponseSchema, { ok: false, error }],
     ] as const;
 
     for (const [schema, valid] of cases) {
@@ -204,6 +204,27 @@ describe("packaging and distribution contracts", () => {
       expect(schema.safeParse({ ...valid, unexpected: true }).success).toBe(false);
     }
     expect(BridgeClientKindSchema.options).toEqual(["bridge", "ui", "render"]);
+    expect(BridgeToolInvokeRequestSchema.safeParse({
+      protocolVersion: "2025-11-25",
+      era: "legacy",
+    }).success).toBe(true);
+    expect(BridgeToolInvokeRequestSchema.safeParse({
+      protocolVersion: "2025-11-25",
+    }).success).toBe(false);
+
+    // Success is the tool's raw catalogue-owned payload; HTTP failures keep the
+    // shared error envelope instead of inventing an `{ ok, value }` protocol.
+    const success = { projects: [], revision: 2 };
+    expect(BridgeToolInvokeResponseSchema.parse(success)).toEqual(success);
+    expect(BridgeToolInvokeErrorResponseSchema.parse({ error })).toEqual({ error });
+    expect(BridgeToolInvokeErrorResponseSchema.parse({
+      error,
+      current: { revision: "sha256:current" },
+    })).toEqual({ error, current: { revision: "sha256:current" } });
+    expect(BridgeToolInvokeErrorResponseSchema.safeParse({
+      error,
+      ok: false,
+    }).success).toBe(false);
   });
 
   it("round-trips every packaging error through the shared strict error DTO", () => {

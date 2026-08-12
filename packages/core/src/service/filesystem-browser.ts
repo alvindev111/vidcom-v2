@@ -37,6 +37,7 @@ export type DirectoryReadFailure =
   | "not-found"
   | "not-a-directory"
   | "permission-denied"
+  | "changed"
   | "timeout";
 
 export type DirectoryRead =
@@ -57,6 +58,7 @@ const FAILURE_CODES: Readonly<Record<DirectoryReadFailure, ErrorCode>> = {
   "not-a-directory": ErrorCode.PathInvalid,
   // Not a 500: being refused by the operating system is an answer, not a fault.
   "permission-denied": ErrorCode.PathPermissionDenied,
+  "changed": ErrorCode.BrowseTokenInvalid,
   "timeout": ErrorCode.PathTimeout,
 };
 
@@ -117,6 +119,12 @@ export class FilesystemBrowserService {
         message: `the directory could not be listed: ${read.reason}`,
       });
     }
+    const verified = this.tokens.resolve({
+      token: input.token,
+      sessionId: input.sessionId,
+      currentIdentity: read.identity,
+    });
+    if (!verified.ok) return verified;
 
     const size = Math.min(Math.max(1, input.pageSize ?? BROWSE_PAGE_SIZE), MAX_BROWSE_PAGE_SIZE);
     const offset = decodeCursor(input.cursor);
@@ -131,7 +139,7 @@ export class FilesystemBrowserService {
         entries.push({ name: entry.name, isDirectory: false });
         continue;
       }
-      const canonicalPath = await this.port.join(held.value.canonicalPath, entry.name);
+      const canonicalPath = await this.port.join(verified.value.canonicalPath, entry.name);
       const identity = await this.port.identity(canonicalPath);
       if (!identity) continue;
       entries.push({
@@ -143,7 +151,7 @@ export class FilesystemBrowserService {
 
     const next = offset + slice.length;
     return ok({
-      displayPath: held.value.canonicalPath,
+      displayPath: verified.value.canonicalPath,
       entries,
       ...next < sorted.length ? { cursor: String(next) } : {},
     });

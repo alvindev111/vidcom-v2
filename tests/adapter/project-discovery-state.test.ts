@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process";
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, realpath, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
@@ -96,12 +96,17 @@ describe("workspace discovery and project state on real SQLite/filesystem", () =
     const appData = path.join(root, "app-data");
     await Promise.all([mkdir(empty), mkdir(active), mkdir(invalidProject, { recursive: true })]);
     await writeFile(path.join(invalidProject, "vidcom.json"), "{broken\n");
+    const [canonicalEmpty, canonicalActive, canonicalWorkspace] = await Promise.all([
+      realpath(empty),
+      realpath(active),
+      realpath(workspace),
+    ]);
     const database = await initializeDatabase(appData);
     try {
-      await expect(selectWorkspace({ appDataRoot: appData, cwd: empty, database })).resolves.toBe(empty);
-      await expect(selectWorkspace({ explicit: active, appDataRoot: appData, database })).resolves.toBe(active);
+      await expect(selectWorkspace({ appDataRoot: appData, cwd: empty, database })).resolves.toBe(canonicalEmpty);
+      await expect(selectWorkspace({ explicit: active, appDataRoot: appData, database })).resolves.toBe(canonicalActive);
       await expect(selectWorkspace({ appDataRoot: appData, cwd: invalidProject, database }))
-        .resolves.toBe(workspace);
+        .resolves.toBe(canonicalWorkspace);
     } finally {
       await database.destroy();
     }
@@ -121,9 +126,10 @@ describe("workspace discovery and project state on real SQLite/filesystem", () =
     try {
       await migrateDatabase(database);
       new AppSettingsStore(database).set("active_workspace", active);
+      const canonicalCwd = await realpath(cwd);
       await rm(active, { recursive: true });
       const warning = vi.spyOn(process, "emitWarning").mockImplementation(() => {});
-      await expect(selectWorkspace({ appDataRoot: appData, cwd, database })).resolves.toBe(cwd);
+      await expect(selectWorkspace({ appDataRoot: appData, cwd, database })).resolves.toBe(canonicalCwd);
       expect(warning).toHaveBeenCalledWith(expect.stringContaining(active), {
         code: "active_workspace_unreadable",
       });

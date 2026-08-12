@@ -62,8 +62,16 @@ jobs:
           # would be proving a build nobody ships.
           node-version: 24.9.0
 
+      - name: Verify exact source revision
+        env:
+          VIDCOM_EXPECTED_GIT_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: >-
+          node -e "const { execFileSync } = require('node:child_process'); const actual = execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim(); if (actual !== process.env.VIDCOM_EXPECTED_GIT_SHA) { console.error('expected ' + process.env.VIDCOM_EXPECTED_GIT_SHA + ', got ' + actual); process.exit(1); }"
+
       - name: Set up Bun
         uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.14
 
       - name: Install dependencies
         run: bun install --frozen-lockfile
@@ -91,7 +99,7 @@ jobs:
         # No cross-building (DR-1): the artifact embeds this machine's Node
         # binary and native runtime, so a "Linux build" made anywhere else is a
         # file that runs nowhere.
-        run: bun run build:artifact
+        run: bun run build:artifact --release
 
       - name: Run the packaged smoke
         env:
@@ -100,7 +108,15 @@ jobs:
           VIDCOM_DOCTOR_STRICT: "1"
           VIDCOM_SMOKE_CACHE_ROOT: ${{ github.workspace }}/.vidcom-smoke-cache
           VIDCOM_SMOKE_NETWORK_CUT: "1"
+          VIDCOM_SMOKE_RELEASE: "1"
+          VIDCOM_SMOKE_EXPECTED_COMMIT: ${{ github.event.pull_request.head.sha || github.sha }}
+          VIDCOM_SMOKE_EVIDENCE_DIR: ${{ github.workspace }}/packaged-smoke-evidence/${{ matrix.tag }}
         run: node scripts/packaged-smoke/run.mjs > packaged-smoke-${{ matrix.tag }}.json
+
+      - name: Validate complete release evidence
+        env:
+          VIDCOM_SMOKE_EXPECTED_COMMIT: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: node scripts/packaged-smoke/verify-evidence-bundle.mjs --tag "${{ matrix.tag }}"
 
       - name: Upload the evidence
         # Uploaded even when the smoke fails: a failing run is exactly when
@@ -111,6 +127,9 @@ jobs:
           name: packaged-smoke-${{ matrix.tag }}
           path: |
             packaged-smoke-${{ matrix.tag }}.json
+            packaged-smoke-evidence/${{ matrix.tag }}/doctor-report.json
+            packaged-smoke-evidence/${{ matrix.tag }}/ffprobe.json
+            packaged-smoke-evidence/${{ matrix.tag }}/platform.json
             dist/artifact/${{ matrix.tag }}/artifact-manifest.json
             dist/artifact/${{ matrix.tag }}/SHA256SUMS
-          if-no-files-found: warn
+          if-no-files-found: error

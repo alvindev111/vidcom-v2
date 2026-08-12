@@ -17,6 +17,7 @@ import {
   assertEmbeddedNodeVersion,
   assertInputsPresent,
   assertRuntimeArchiveHashes,
+  cleanupFailedArtifactGeneration,
   copyBoundRegularFile,
   hostRuntimeArchives,
   injectSeaBlob,
@@ -56,6 +57,12 @@ const HOST_TAG = { darwin: "darwin-arm64", win32: "win32-x64", linux: "linux-x64
 const HOST_MANIFEST = {
   versions: { node: process.version.slice(1) },
   archives: [
+    {
+      key: "bgm",
+      platform: HOST_TAG,
+      sha256: `sha256:${createHash("sha256").update("bbb").digest("hex")}`,
+      bytes: 3,
+    },
     {
       key: "node",
       platform: HOST_TAG,
@@ -275,6 +282,7 @@ async function inputFixture(root: string) {
     "frontend-manifest.json": path.join(root, "source", "frontend-manifest.json"),
     "frontend.pack": path.join(root, "source", "frontend.pack"),
     "runtime-manifest.json": path.join(root, "source", "runtime-manifest.json"),
+    "runtime-archives/bgm.tar.gz": path.join(root, "source", "bgm.tar.gz"),
     "runtime-archives/hyperframes.tar.gz": path.join(root, "source", "hyperframes.tar.gz"),
     "runtime-archives/node.tar.gz": path.join(root, "source", "node.tar.gz"),
   };
@@ -285,6 +293,7 @@ async function inputFixture(root: string) {
     writeFile(assets["frontend-manifest.json"], '{"entries":[]}\n'),
     writeFile(assets["frontend.pack"], "frontend"),
     writeFile(assets["runtime-manifest.json"], JSON.stringify(HOST_MANIFEST)),
+    writeFile(assets["runtime-archives/bgm.tar.gz"], "bbb"),
     writeFile(assets["runtime-archives/hyperframes.tar.gz"], "h"),
     writeFile(assets["runtime-archives/node.tar.gz"], "nn"),
   ]);
@@ -525,6 +534,7 @@ describe("sea build", () => {
       SEA_PRIMARY_BUNDLE_ASSET,
       "frontend-manifest.json",
       "frontend.pack",
+      "runtime-archives/bgm.tar.gz",
       "runtime-archives/hyperframes.tar.gz",
       "runtime-archives/node.tar.gz",
       "runtime-manifest.json",
@@ -534,6 +544,7 @@ describe("sea build", () => {
   it("embeds only blobs declared for the exact build host", () => {
     expect(Object.keys(runtimeAssets(HOST_TAG, HOST_MANIFEST))).toEqual([
       "runtime-manifest.json",
+      "runtime-archives/bgm.tar.gz",
       "runtime-archives/hyperframes.tar.gz",
       "runtime-archives/node.tar.gz",
     ]);
@@ -605,7 +616,24 @@ describe("sea build", () => {
     // place to find out.
     expect(() => assertInputsPresent([path.join("dist", "sea", "never-built.pack")]))
       .toThrow(/has not run/u);
-    expect(requiredInputs(HOST_TAG, HOST_MANIFEST)).toHaveLength(7);
+    expect(requiredInputs(HOST_TAG, HOST_MANIFEST)).toHaveLength(8);
+  });
+
+  it("removes a failed SEA generation only while its authority is still current", async () => {
+    const root = await realpath(await mkdtemp(path.join(tmpdir(), "vidcom-sea-failed-generation-")));
+    try {
+      const artifactRoot = path.join(root, "artifacts");
+      const { generation, authority } = await prepareArtifactBuildAuthority(
+        HOST_TAG,
+        artifactRoot,
+        { generationId: "failed-generation" },
+      );
+      await writeFile(path.join(generation, "partial.bin"), "partial");
+      await cleanupFailedArtifactGeneration(generation, authority);
+      await expect(readFile(path.join(generation, "partial.bin"))).rejects.toMatchObject({ code: "ENOENT" });
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
   });
 
   it("binds the blob step to a private immutable generation across source swaps", async () => {

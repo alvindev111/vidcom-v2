@@ -58,7 +58,8 @@ export function identitySchemesAgree(left: string, right: string): boolean {
 }
 
 const DEFAULT_TIMEOUT_MS = 5 * 60 * 1_000;
-const MAX_CAPTURE_BYTES = 64 * 1024;
+export const DEFAULT_PROCESS_CAPTURE_MAX_BYTES = 64 * 1024;
+export const MAX_PROCESS_CAPTURE_MAX_BYTES = 8 * 1024 * 1024;
 const execFileAsync = promisify(execFile);
 const POSIX_PS = process.platform === "darwin" ? "/bin/ps" : "/usr/bin/ps";
 
@@ -74,6 +75,7 @@ function posixProbeEnvironment(): NodeJS.ProcessEnv {
 
 interface ProcessRow { pid: number; ppid: number | null; pgid: number | null; startedAt: string }
 interface CaptureState { pids: Map<number, string>; groups: Map<number, string>; exhaustive: boolean }
+interface StreamCapture { chunks: Buffer[]; byteLength: number }
 
 export interface NodeProcessSupervisorOptions {
   /** Trusted values required by every child; per-invocation duplicates cannot replace them. */
@@ -158,6 +160,7 @@ export class NodeProcessSupervisor implements ProcessSupervisorPort {
   async run(input: ProcessRunInput): Promise<SupervisedProcessResult> {
     const [executable, ...args] = input.command;
     if (!executable) throw new TypeError("process command must name an executable");
+    const captureMaxBytes = resolveCaptureMaxBytes(input.captureMaxBytes);
     input.signal?.throwIfAborted();
     const configuredEnvironment = {
       ...this.options.defaultEnvironment,
@@ -182,10 +185,10 @@ export class NodeProcessSupervisor implements ProcessSupervisorPort {
       return await new Promise<never>((_resolve, reject) => child.once("error", reject));
     }
     const rootPid = child.pid;
-    let stdout = "";
-    let stderr = "";
-    captureStream(child.stdout, (chunk) => { stdout = truncate(stdout + chunk); });
-    captureStream(child.stderr, (chunk) => { stderr = truncate(stderr + chunk); });
+    const stdout = createStreamCapture();
+    const stderr = createStreamCapture();
+    captureStream(child.stdout, stdout, captureMaxBytes);
+    captureStream(child.stderr, stderr, captureMaxBytes);
 
     const state: CaptureState = { pids: new Map(), groups: new Map(), exhaustive: true };
     const exit = new Promise<{ kind: "exit"; code: number | null }>((resolve, reject) => {
@@ -213,7 +216,15 @@ export class NodeProcessSupervisor implements ProcessSupervisorPort {
     try {
       const first = await Promise.race([exit, abort, timeout]);
       if (first.kind === "exit") {
-        return { status: "exited", output: { exitCode: first.code, stdout, stderr, timedOut: false } };
+        return {
+          status: "exited",
+          output: {
+            exitCode: first.code,
+            stdout: capturedText(stdout),
+            stderr: capturedText(stderr),
+            timedOut: false,
+          },
+        };
       }
       const proof = await this.terminateAndVerify(rootPid, state, first.reason, async () => {
         if (process.platform === "win32") await killPid(rootPid, true);
@@ -692,13 +703,37 @@ async function killPid(pid: number, tree = false): Promise<void> {
   } catch { /* taskkill reports non-zero when the pid already exited */ }
 }
 
-function captureStream(stream: NodeJS.ReadableStream | null, append: (chunk: string) => void): void {
-  stream?.setEncoding("utf8");
-  stream?.on("data", (chunk: string) => append(chunk));
+function resolveCaptureMaxBytes(value: number | undefined): number {
+  const resolved = value ?? DEFAULT_PROCESS_CAPTURE_MAX_BYTES;
+  if (!Number.isSafeInteger(resolved) || resolved <= 0 || resolved > MAX_PROCESS_CAPTURE_MAX_BYTES) {
+    throw new RangeError(
+      `process captureMaxBytes must be a positive integer no greater than ${MAX_PROCESS_CAPTURE_MAX_BYTES}`,
+    );
+  }
+  return resolved;
 }
 
-function truncate(value: string): string {
-  return value.length > MAX_CAPTURE_BYTES ? value.slice(0, MAX_CAPTURE_BYTES) : value;
+function createStreamCapture(): StreamCapture {
+  return { chunks: [], byteLength: 0 };
+}
+
+function captureStream(
+  stream: NodeJS.ReadableStream | null,
+  capture: StreamCapture,
+  maxBytes: number,
+): void {
+  stream?.on("data", (chunk: Buffer | string) => {
+    const remaining = maxBytes - capture.byteLength;
+    if (remaining <= 0) return;
+    const bytes = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+    const retained = bytes.length > remaining ? bytes.subarray(0, remaining) : bytes;
+    capture.chunks.push(retained);
+    capture.byteLength += retained.length;
+  });
+}
+
+function capturedText(capture: StreamCapture): string {
+  return Buffer.concat(capture.chunks, capture.byteLength).toString("utf8");
 }
 
 function sleep(ms: number): Promise<void> {

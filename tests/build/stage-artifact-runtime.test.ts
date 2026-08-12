@@ -153,13 +153,20 @@ async function fixture(): Promise<Fixture> {
 
   const hyperframesRoot = path.join(root, "packages", "hyperframes");
   await mkdir(path.join(hyperframesRoot, "bin"), { recursive: true });
-  await mkdir(path.join(hyperframesRoot, "dist"), { recursive: true });
+  await mkdir(path.join(hyperframesRoot, "dist", "commands"), { recursive: true });
   await writeFile(
     path.join(hyperframesRoot, "package.json"),
     `${JSON.stringify({ name: "hyperframes", version: "0.7.86" })}\n`,
     "utf8",
   );
   await writeFile(path.join(hyperframesRoot, "bin", "hyperframes.mjs"), "export {};\n", "utf8");
+  for (const name of ["layout-audit", "motion-sample", "contrast-audit"]) {
+    await writeFile(
+      path.join(hyperframesRoot, "dist", "commands", `${name}.browser.js`),
+      `globalThis.__${name.replaceAll("-", "_")} = true;\n`,
+      "utf8",
+    );
+  }
   const runtime = Buffer.from("globalThis.__hyperframesFixture = true;\n");
   await writeFile(path.join(hyperframesRoot, "dist", "hyperframe.runtime.iife.js"), runtime);
   await writeFile(
@@ -182,7 +189,9 @@ async function fixture(): Promise<Fixture> {
   for (const packageName of nativePackageNamesFor(HOST_TAG)) {
     const version = packageName === "esbuild" || packageName.startsWith("@esbuild/")
       ? "0.25.12"
-      : "1.0.0";
+      : packageName === "node-pty"
+        ? "1.1.0"
+        : "1.0.0";
     const files = packageName.startsWith("@esbuild/")
       ? [esbuildPlatformBinaryRelative(HOST_TAG)]
       : ["index.js"];
@@ -319,6 +328,9 @@ function stageOptions(input: Fixture, packages = ["demo==1.0", "vieneu==3.2.4"])
     bundleHyperframes: async (_entry: string, outfile: string) => {
       await writeFile(outfile, "export const staged = true;\n", "utf8");
     },
+    // Package fixtures below use inert JavaScript. The real native cold-load and
+    // PTY process probe has its own test through stageNativeClosure.
+    probeNativeClosure: () => {},
     probeRuntime: async (paths: Record<string, string>) => {
       for (const executable of Object.values(paths)) {
         const child = spawnSync(executable, ["--version"], { encoding: "utf8", shell: false });
@@ -373,12 +385,15 @@ describe("artifact runtime staging", () => {
       "sharp",
       "onnxruntime-node",
       "onnxruntime-common",
+      "node-pty",
       "@img/sharp-darwin-arm64",
       "@img/sharp-libvips-darwin-arm64",
       "@esbuild/darwin-arm64",
     ]));
     expect(nativePackageNamesFor("linux-x64")).toContain("@img/sharp-libvips-linux-x64");
+    expect(nativePackageNamesFor("linux-x64")).toContain("node-pty");
     expect(nativePackageNamesFor("win32-x64")).toContain("@img/sharp-win32-x64");
+    expect(nativePackageNamesFor("win32-x64")).toContain("node-pty");
     expect((nativePackageNamesFor("win32-x64") as string[])
       .some((name: string) => name.includes("libvips"))).toBe(false);
   });
@@ -394,6 +409,20 @@ describe("artifact runtime staging", () => {
       expect(parsed.name).toBe(packageName);
     }
   });
+
+  it("rejects node-pty package drift before publishing a runtime generation", async () => {
+    const input = await fixture();
+    const nodePtyRoot = input.nativePackageRoots.get("node-pty");
+    await writeFile(
+      path.join(nodePtyRoot!, "package.json"),
+      `${JSON.stringify({ name: "node-pty", version: "1.1.1" })}\n`,
+      "utf8",
+    );
+
+    await expect(stageArtifactRuntime(input.paths, stageOptions(input)))
+      .rejects.toThrow(/node-pty does not match/u);
+    expect(existsSync(input.paths.outputRoot)).toBe(false);
+  }, 120_000);
 
   it("rejects every non-system Darwin dylib and every LC_RPATH", () => {
     expect(() => assertPortableDarwinDependencies([
@@ -508,6 +537,17 @@ describe("artifact runtime staging", () => {
     const stagedHyperframesRuntime = path.join(input.paths.outputRoot, "hyperframes", "bin", "hyperframe.runtime.iife.js");
     expect((await lstat(stagedHyperframesManifest)).nlink).toBe(1);
     expect((await lstat(stagedHyperframesRuntime)).nlink).toBe(1);
+    for (const name of ["layout-audit", "motion-sample", "contrast-audit"]) {
+      const browserScript = path.join(
+        input.paths.outputRoot,
+        "hyperframes",
+        "bin",
+        "commands",
+        `${name}.browser.js`,
+      );
+      expect(existsSync(browserScript), name).toBe(true);
+      expect((await lstat(browserScript)).nlink).toBe(1);
+    }
     for (const library of MOTION_LIBRARIES) {
       for (const file of library.files) {
         const stagedMotionAsset = path.join(
@@ -536,6 +576,52 @@ describe("artifact runtime staging", () => {
     expect((await readdir(path.join(input.paths.outputRoot, ".build"))).sort())
       .toEqual(["python-packages.txt", "runtime-config.json"]);
   }, 120_000);
+
+  it("runs HyperFrames check from the staged closure with its browser scripts", async () => {
+    const input = await fixture();
+    const resolveFromTest = createRequire(import.meta.url);
+    const hyperframesRoot = path.dirname(resolveFromTest.resolve("hyperframes/package.json"));
+    await stageArtifactRuntime(input.paths, {
+      ...stageOptions(input),
+      hyperframesRoot,
+      nativePackageRoots: undefined,
+      bundleHyperframes: undefined,
+    });
+
+    const project = path.join(input.root, "check-project");
+    await mkdir(project, { recursive: true });
+    await Promise.all([
+      writeFile(path.join(project, "hyperframes.json"), "{}\n", "utf8"),
+      writeFile(
+        path.join(project, "index.html"),
+        `<!doctype html><html><body><main id="main" data-composition-id="main"
+          data-width="320" data-height="180" data-fps="30" data-start="0"
+          data-duration="1" data-no-timeline><div id="card">Runtime closure</div></main></body></html>\n`,
+        "utf8",
+      ),
+    ]);
+    const stagedCli = path.join(input.paths.outputRoot, "hyperframes", "bin", "hyperframes.mjs");
+    const checked = spawnSync(process.execPath, [stagedCli, "check", "--json", project], {
+      cwd: input.root,
+      env: { ...process.env, CI: "1", NO_UPDATE_NOTIFIER: "1" },
+      encoding: "utf8",
+      shell: false,
+      timeout: 120_000,
+    });
+    expect(checked.error).toBeUndefined();
+    expect(checked.status, checked.stderr).toBe(0);
+    const report = JSON.parse(checked.stdout) as {
+      runtime?: { findings?: Array<{ code?: string; message?: string }> };
+      layout?: { findings?: Array<{ code?: string; message?: string }> };
+    };
+    const findings = [
+      ...(report.runtime?.findings ?? []),
+      ...(report.layout?.findings ?? []),
+    ];
+    expect(findings).not.toContainEqual(expect.objectContaining({ code: "check_runtime_failure" }));
+    expect(findings.map((finding) => finding.message ?? "").join("\n"))
+      .not.toMatch(/Missing (?:browser script|contrast audit browser script)/u);
+  }, 180_000);
 
   it("does not replace a prior stage or config when the staged Python pins drift", async () => {
     const input = await fixture();
@@ -837,6 +923,24 @@ await commitRuntimeGeneration(temporary, destination, {
     const archiveRoot = path.join(root, "native-archive");
     await stageNativeClosure(packageRoots, HOST_TAG, archiveRoot);
     const files = await regularFiles(archiveRoot);
+    const nodePtyPrefix = `node_modules/node-pty/prebuilds/${HOST_TAG}/`;
+    expect(files).toContain(`${nodePtyPrefix}pty.node`);
+    expect(files.some((filename) => filename.startsWith("node_modules/node-pty/prebuilds/")
+      && !filename.startsWith(nodePtyPrefix))).toBe(false);
+    if (process.platform === "win32") {
+      expect(files).toEqual(expect.arrayContaining([
+        `${nodePtyPrefix}conpty.node`,
+        `${nodePtyPrefix}conpty_console_list.node`,
+        `${nodePtyPrefix}conpty/OpenConsole.exe`,
+        `${nodePtyPrefix}conpty/conpty.dll`,
+        `${nodePtyPrefix}winpty-agent.exe`,
+        `${nodePtyPrefix}winpty.dll`,
+      ]));
+    } else {
+      const helper = `${nodePtyPrefix}spawn-helper`;
+      expect(files).toContain(helper);
+      expect((await lstat(path.join(archiveRoot, helper))).mode & 0o111).not.toBe(0);
+    }
     expect(files.some((filename) => /(?:^|\/)esbuild\.exe$/u.test(filename)))
       .toBe(process.platform === "win32");
     expect(files.some((filename) => /\.(?:map|ts|tsx)$/u.test(filename))).toBe(false);

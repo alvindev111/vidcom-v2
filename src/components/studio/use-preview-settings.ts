@@ -2,6 +2,7 @@
 
 import * as React from "react";
 
+import { fetchApi } from "@/lib/api/services";
 import {
   mergePreviewSettings,
   sceneSettings,
@@ -103,7 +104,7 @@ export function usePreviewSettings(
     (value: PreviewSettingsPatch) => {
       apply(mergePreviewSettings(latest.current, value));
       void save(() =>
-        fetch(`/api/v1/projects/${projectId}/preview-settings`, {
+        fetchApi(`/api/v1/projects/${encodeURIComponent(projectId)}/preview-settings`, {
           method: "PATCH",
           headers: { "content-type": "application/json" },
           body: JSON.stringify({ patch: value, expectedRevision: revision.current }),
@@ -122,7 +123,7 @@ export function usePreviewSettings(
       };
       apply(mergePreviewSettings(latest.current, merged));
       void save(() =>
-        fetch(`/api/v1/projects/${projectId}/preview-settings`, {
+        fetchApi(`/api/v1/projects/${encodeURIComponent(projectId)}/preview-settings`, {
           method: "PATCH",
           headers: { "content-type": "application/json" },
           body: JSON.stringify({ patch: merged, expectedRevision: revision.current }),
@@ -138,7 +139,10 @@ export function usePreviewSettings(
       body.append("file", file);
       body.append("expectedRevision", String(revision.current));
       void save(() =>
-        fetch(`/api/v1/projects/${projectId}/assets/bgm`, { method: "POST", body }),
+        fetchApi(`/api/v1/projects/${encodeURIComponent(projectId)}/assets/bgm`, {
+          method: "POST",
+          body,
+        }),
       );
     },
     [projectId, save],

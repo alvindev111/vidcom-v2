@@ -12,6 +12,11 @@ function sha256(value: string): string {
   return createHash("sha256").update(value).digest("hex");
 }
 
+/** Opaque stable key used to bind secondary capabilities to one browser session. */
+export function sessionFingerprint(token: string): string {
+  return `browser:${sha256(token)}`;
+}
+
 /** SessionPort implementation whose raw bearer values never enter storage. */
 export class InMemorySessionStore implements SessionPort {
   private readonly sessions = new Map<string, StoredSession>();
@@ -47,6 +52,25 @@ export class InMemorySessionStore implements SessionPort {
     return { valid: true, renewed: true };
   }
 
+  /** Stable opaque identity for a currently valid browser session. */
+  fingerprint(token: string): string | undefined {
+    const key = sha256(token);
+    const session = this.sessions.get(key);
+    if (!session || this.expired(session)) {
+      this.sessions.delete(key);
+      return undefined;
+    }
+    return sessionFingerprint(token);
+  }
+
+  /** Prunes expired sessions before answering daemon lifecycle decisions. */
+  hasActiveSessions(): boolean {
+    for (const [key, session] of this.sessions) {
+      if (this.expired(session)) this.sessions.delete(key);
+    }
+    return this.sessions.size > 0;
+  }
+
   revokeAll(): void {
     this.sessions.clear();
   }
@@ -54,6 +78,11 @@ export class InMemorySessionStore implements SessionPort {
   /** Test-only observability without exposing raw tokens. */
   storedHashes(): readonly string[] {
     return [...this.sessions.keys()];
+  }
+
+  private expired(session: StoredSession): boolean {
+    const now = this.clock.now().getTime();
+    return now >= session.expiresAt || now - session.lastSeenAt >= session.idleTtlMs;
   }
 }
 

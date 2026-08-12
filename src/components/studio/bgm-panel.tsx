@@ -23,6 +23,7 @@ import {
 } from "@vidcom/contracts";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { apiUrl, fetchApi } from "@/lib/api/services";
 import type { FileNode } from "@/lib/studio/types";
 
 interface ShippedTrack {
@@ -344,7 +345,7 @@ export function BgmPanel({
 
   const load = React.useCallback(async () => {
     try {
-      const response = await fetch("/api/v1/bgm");
+      const response = await fetchApi("/api/v1/bgm");
       const payload = await response.json().catch(() => null);
       if (!response.ok) {
         setError(errorMessage(payload, response.status));
@@ -362,7 +363,7 @@ export function BgmPanel({
     let mounted = true;
     void (async () => {
       try {
-        const response = await fetch("/api/v1/bgm");
+        const response = await fetchApi("/api/v1/bgm");
         const payload = await response.json().catch(() => null);
         if (!mounted) return;
         if (!response.ok) setError(errorMessage(payload, response.status));
@@ -420,7 +421,7 @@ export function BgmPanel({
       choice.kind === "track"
         ? `/api/v1/bgm/tracks/${choice.id}/audio`
         : `/api/v1/bgm/library/${choice.id}/audio`;
-    const element = new Audio(url);
+    const element = new Audio(apiUrl(url as `/api/${string}`));
     element.volume = 0.9;
     element.addEventListener("ended", () =>
       setPlaying((current) => (current === key ? null : current)),
@@ -444,7 +445,7 @@ export function BgmPanel({
       if (choice.kind === "bed") body.bedId = choice.id;
       if (choice.kind === "track") body.trackId = choice.id;
       if (choice.kind === "library") body.libraryEntryId = choice.id;
-      const response = await fetch(`/api/v1/projects/${projectId}/bgm`, {
+      const response = await fetchApi(`/api/v1/projects/${projectId}/bgm`, {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify(body),
@@ -466,7 +467,7 @@ export function BgmPanel({
     setPending(`license:${trackId}`);
     setError(null);
     try {
-      const response = await fetch(`/api/v1/bgm/tracks/${trackId}/license`, {
+      const response = await fetchApi(`/api/v1/bgm/tracks/${trackId}/license`, {
         method: "PUT",
         headers: { "content-type": "application/json" },
         body: JSON.stringify(draft),
@@ -489,7 +490,7 @@ export function BgmPanel({
     setPending("import");
     setError(null);
     try {
-      const response = await fetch(`/api/v1/projects/${projectId}/bgm/library`, {
+      const response = await fetchApi(`/api/v1/projects/${projectId}/bgm/library`, {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ path: importPath, license: draft }),

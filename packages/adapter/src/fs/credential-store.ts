@@ -30,6 +30,15 @@ function windowsCredentialAcl(stdout: string): string {
   return `${windowsCurrentUserSid(stdout)}:(R,W)`;
 }
 
+function windowsExactAclCommands(pathname: string, acl: string): readonly (readonly string[])[] {
+  return [
+    // `/inheritance:r` alone preserves every pre-existing explicit ACE. Reset
+    // first so an old Everyone/Users/foreign-user grant cannot survive.
+    [pathname, "/reset"],
+    [pathname, "/inheritance:r", "/grant:r", acl],
+  ];
+}
+
 let cachedWhoamiOutput: string | undefined;
 
 /**
@@ -90,10 +99,9 @@ export async function secureCredentialFile(
   }
 
   const { stdout } = await run(systemTool("whoami", platform), ["/user", "/fo", "csv", "/nh"]);
-  await run(
-    systemTool("icacls", platform),
-    [pathname, "/inheritance:r", "/grant:r", windowsCredentialAcl(stdout)],
-  );
+  for (const args of windowsExactAclCommands(pathname, windowsCredentialAcl(stdout))) {
+    await run(systemTool("icacls", platform), args);
+  }
 }
 
 /** Synchronous variant for resources, such as SQLite, opened by synchronous Node APIs. */
@@ -107,10 +115,9 @@ export function secureCredentialFileSync(
     return;
   }
   const { stdout } = run(systemTool("whoami", platform), ["/user", "/fo", "csv", "/nh"]);
-  run(
-    systemTool("icacls", platform),
-    [pathname, "/inheritance:r", "/grant:r", windowsCredentialAcl(stdout)],
-  );
+  for (const args of windowsExactAclCommands(pathname, windowsCredentialAcl(stdout))) {
+    run(systemTool("icacls", platform), args);
+  }
 }
 
 /** Restricts an app-data directory before any credential, database or audit bytes are created. */
@@ -124,12 +131,12 @@ export function secureAppDataDirectorySync(
     return;
   }
   const { stdout } = run(systemTool("whoami", platform), ["/user", "/fo", "csv", "/nh"]);
-  run(systemTool("icacls", platform), [
+  for (const args of windowsExactAclCommands(
     pathname,
-    "/inheritance:r",
-    "/grant:r",
     `${windowsCurrentUserSid(stdout)}:(OI)(CI)(F)`,
-  ]);
+  )) {
+    run(systemTool("icacls", platform), args);
+  }
 }
 
 /** Stores the future MCP bridge credential under app-data, never in a workspace. */

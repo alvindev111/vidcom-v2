@@ -4,6 +4,7 @@ import {
   AtomicDirectoryLock,
   migrateDatabase,
   openVidcomDatabase,
+  prepareRuntimeAppDataRoot,
   RuntimeAssetManager,
   type DirectoryLockLease,
   type EmbeddedRuntimeManifest,
@@ -96,14 +97,18 @@ export class BootstrapCoordinator {
 
   /** Extracts, migrates once, reconciles the bearer, then hands over ownership. */
   async prepare(input: BootstrapPrepareInput): Promise<PreparedRuntime> {
-    const appDataRoot = path.resolve(input.appDataRoot);
-    if (appDataRoot !== input.appDataRoot || path.dirname(appDataRoot) === appDataRoot) {
+    const normalizedAppDataRoot = path.resolve(input.appDataRoot);
+    if (
+      normalizedAppDataRoot !== input.appDataRoot
+      || path.dirname(normalizedAppDataRoot) === normalizedAppDataRoot
+    ) {
       throw new BootstrapError(
         ErrorCode.BootstrapLockTimeout,
         "bootstrap app-data root must be a normalized absolute path",
         { appDataRoot: input.appDataRoot },
       );
     }
+    const appDataRoot = await prepareRuntimeAppDataRoot(normalizedAppDataRoot);
 
     if (input.assetSource) {
       validatePackagedRuntimeManifest(appDataRoot, input.assetSource.readManifest());

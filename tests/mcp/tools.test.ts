@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import type { Actor, ContentHash, ProjectId, RelPath } from "@vidcom/contracts";
+import { StartRenderInputSchema, type Actor, type ContentHash, type ProjectId, type RelPath } from "@vidcom/contracts";
 import {
   ok,
   ToolAuditService,
@@ -160,7 +160,7 @@ describe("all registered tool handlers", () => {
       get_job_status: { jobId: "job-1" },
       validate_project: { projectId },
       start_snapshot: { projectId },
-      start_render: { projectId },
+      start_render: { projectId, expectedSourceRevision: 0 },
       install_agent_kit: { operation: "install", hosts: ["codex"] },
       install_motion_library: { projectId, libraryId: "gsap" },
       create_project: { name: "Project Tools Two", presetId: "vertical-shorts" },
@@ -391,6 +391,11 @@ describe("write tool invocation forwarding", () => {
 });
 
 describe("delivery-loop MCP schemas", () => {
+  it("requires a source revision for start_render", () => {
+    expect(StartRenderInputSchema.safeParse({ projectId }).success).toBe(false);
+    expect(StartRenderInputSchema.safeParse({ projectId, expectedSourceRevision: 0 }).success).toBe(true);
+  });
+
   it("forwards idempotency only when the caller explicitly supplies it", async () => {
     const renderInputs: unknown[] = [];
     const snapshotInputs: unknown[] = [];
@@ -404,13 +409,17 @@ describe("delivery-loop MCP schemas", () => {
         return ok({ id: "job-snapshot" });
       },
     } as unknown as DeliveryLoopToolDependencies;
-    await startRenderTool(dependencies).handler({} as never, { projectId });
-    await startRenderTool(dependencies).handler({} as never, { projectId, idempotencyKey: "render-request-2" });
+    await startRenderTool(dependencies).handler({} as never, { projectId, expectedSourceRevision: 2 });
+    await startRenderTool(dependencies).handler({} as never, {
+      projectId,
+      expectedSourceRevision: 2,
+      idempotencyKey: "render-request-2",
+    });
     await startSnapshotTool(dependencies).handler({} as never, { projectId });
     await startSnapshotTool(dependencies).handler({} as never, { projectId, idempotencyKey: "snapshot-request-2" });
     expect(renderInputs).toEqual([
-      { projectId },
-      { projectId, idempotencyKey: "render-request-2" },
+      { projectId, expectedSourceRevision: 2 },
+      { projectId, expectedSourceRevision: 2, idempotencyKey: "render-request-2" },
     ]);
     expect(snapshotInputs).toEqual([
       { projectId },

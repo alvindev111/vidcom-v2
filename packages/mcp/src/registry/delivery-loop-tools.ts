@@ -32,6 +32,7 @@ export interface DeliveryLoopToolDependencies {
   hashContent(content: string | Uint8Array): ContentHash;
   enqueueRender(input: {
     projectId: ProjectId;
+    expectedSourceRevision: number;
     bestEffort?: boolean;
     renderPresetId?: string;
     idempotencyKey?: string;
@@ -66,7 +67,7 @@ export function startRenderTool(
     name: "start_render",
     title: "Start a video render",
     level: "job",
-    description: "Use when the validated, visually inspected project is ready for one MP4 render, every story beat has meaningful multi-phase motion, and authored Unicode text has verified project-local font coverage. Do not use before validate_project and start_snapshot, to wait synchronously for completion, or when story scenes rely only on fade, gentle rise/drop, or repeated opacity-plus-translate entrances. Preconditions: projectId comes from list_projects, optional idempotencyKey must identify this exact request, and the reviewed storyboard plus scene sources must show a value-first story spine and setup/development/payoff/hold choreography. Side effects: re-checks encoding/font coverage, enqueues one render job, and returns immediately without publishing an artifact yet. Errors/recovery: poll get_job_status after pollAfterMs; fix stable gate errors before retrying and report warnings, outcome, and cleanupPending honestly.",
+    description: "Use when the validated, visually inspected project is ready for one MP4 render, every story beat has meaningful multi-phase motion, and authored Unicode text has verified project-local font coverage. Do not use before validate_project and start_snapshot, to wait synchronously for completion, or when story scenes rely only on fade, gentle rise/drop, or repeated opacity-plus-translate entrances. Preconditions: projectId comes from list_projects and expectedSourceRevision must equal the computedAtSourceRevision returned by validate_project for the exact inspected generation; optional idempotencyKey must identify this exact revision, and the reviewed storyboard plus scene sources must show a value-first story spine and setup/development/payoff/hold choreography. Side effects: re-checks the exact source revision, diagnostics, encoding, font coverage and render lint before enqueueing one render job; it returns immediately without publishing an artifact yet. Errors/recovery: write_conflict means the project changed after review, so re-read, revalidate and inspect the new revision; poll get_job_status after pollAfterMs; fix stable gate errors before retrying and report warnings, outcome, and cleanupPending honestly.",
     input: StartRenderInputSchema,
     output: StartDeliveryJobOutputSchema,
     annotations: annotationsForLevel("job"),
@@ -75,6 +76,7 @@ export function startRenderTool(
     handler: async (_context, raw) => {
       const input = {
         projectId: raw.projectId as ProjectId,
+        expectedSourceRevision: raw.expectedSourceRevision,
         ...(raw.bestEffort === undefined ? {} : { bestEffort: raw.bestEffort }),
         ...(raw.renderPresetId === undefined ? {} : { renderPresetId: raw.renderPresetId }),
       };

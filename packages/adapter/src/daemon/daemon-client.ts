@@ -7,6 +7,7 @@ export class DaemonClientError extends Error {
     readonly code: ErrorCode,
     message: string,
     readonly details?: Record<string, unknown>,
+    readonly field?: string,
   ) {
     super(message);
   }
@@ -87,12 +88,15 @@ export interface DaemonClient {
 export interface DaemonClientOptions {
   baseUrl: string;
   bearer: string;
-  /** Every call gets one. A daemon that accepts a socket and then stalls is the failure this bounds. */
+  /** Control-plane deadline; also applies to tools unless `toolDeadlineMs` is supplied. */
   deadlineMs?: number;
+  /** Tool execution may legitimately include validation/diagnostics work. */
+  toolDeadlineMs?: number;
   fetch?: typeof globalThis.fetch;
 }
 
 const DEFAULT_DEADLINE_MS = 5_000;
+const DEFAULT_TOOL_DEADLINE_MS = 120_000;
 const BRIDGE_PREFIX = "/api/bridge/v1";
 
 function unavailable(message: string, details?: Record<string, unknown>): DaemonClientError {
@@ -120,29 +124,64 @@ async function decode(response: Response, what: string): Promise<unknown> {
     }
   }
 
-  let code: string | undefined;
+  let detail: {
+    code?: string;
+    message?: string;
+    field?: string;
+    details?: Record<string, unknown>;
+  } | undefined;
+  let current: unknown;
   try {
-    const body = await response.json() as { error?: { code?: string } };
-    code = body.error?.code;
+    const body = await response.json() as { error?: typeof detail; current?: unknown };
+    detail = body.error;
+    current = body.current;
   } catch {
-    code = undefined;
+    detail = undefined;
+  }
+  if (detail?.code && detail.message) {
+    const details = {
+      ...detail.details,
+      ...(current === undefined || detail.details?.current !== undefined ? {} : { current }),
+    };
+    throw new DaemonClientError(
+      detail.code as ErrorCode,
+      detail.message,
+      Object.keys(details).length === 0 ? undefined : details,
+      detail.field,
+    );
   }
   throw new DaemonClientError(
-    (code as ErrorCode | undefined) ?? ErrorCode.DaemonUnavailable,
+    (detail?.code as ErrorCode | undefined) ?? ErrorCode.DaemonUnavailable,
     `daemon rejected ${what}`,
     { status: response.status },
   );
 }
 
 export function createDaemonClient(options: DaemonClientOptions): DaemonClient {
-  const deadlineMs = options.deadlineMs ?? DEFAULT_DEADLINE_MS;
+  const controlDeadlineMs = options.deadlineMs ?? DEFAULT_DEADLINE_MS;
+  // Preserve the old explicit-override behaviour for tests and callers that set
+  // one global deadline, while making the production default fit real validate
+  // and diagnostics work.
+  const toolDeadlineMs = options.toolDeadlineMs ?? options.deadlineMs ?? DEFAULT_TOOL_DEADLINE_MS;
   const doFetch = options.fetch ?? globalThis.fetch;
 
-  function call(what: string, method: string, route: string, body?: unknown): Promise<unknown> {
-    return callAt(`${options.baseUrl}${BRIDGE_PREFIX}${route}`, what, method, body);
+  function call(
+    what: string,
+    method: string,
+    route: string,
+    body?: unknown,
+    deadlineMs = controlDeadlineMs,
+  ): Promise<unknown> {
+    return callAt(`${options.baseUrl}${BRIDGE_PREFIX}${route}`, what, method, body, deadlineMs);
   }
 
-  async function callAt(url: string, what: string, method: string, body?: unknown): Promise<unknown> {
+  async function callAt(
+    url: string,
+    what: string,
+    method: string,
+    body: unknown,
+    deadlineMs: number,
+  ): Promise<unknown> {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), deadlineMs);
     try {
@@ -215,6 +254,7 @@ export function createDaemonClient(options: DaemonClientOptions): DaemonClient {
         "POST",
         `/projects/${encodeURIComponent(projectId)}/renders`,
         input,
+        toolDeadlineMs,
       ) as Promise<EnqueuedRender>;
     },
 
@@ -235,7 +275,7 @@ export function createDaemonClient(options: DaemonClientOptions): DaemonClient {
         protocolVersion: context.protocolVersion,
         era: context.era,
         ...(context.requestState === undefined ? {} : { requestState: context.requestState }),
-      });
+      }, toolDeadlineMs);
     },
   };
 }

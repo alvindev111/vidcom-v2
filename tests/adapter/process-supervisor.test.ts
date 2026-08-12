@@ -6,6 +6,8 @@ import { promisify } from "node:util";
 
 import {
   NodeProcessSupervisor,
+  DEFAULT_PROCESS_CAPTURE_MAX_BYTES,
+  MAX_PROCESS_CAPTURE_MAX_BYTES,
   PROCESS_CAPTURE_INTERVAL_MS,
   PROCESS_VERIFY_MAX_SWEEPS,
   PROCESS_VERIFY_TIMEOUT_MS,
@@ -69,6 +71,22 @@ describe("NodeProcessSupervisor", () => {
       { pid: 42, startedAt: "2026-08-05T00:00:00Z" },
       { pid: 42, startedAt: "2026-08-05T00:00:01Z" },
     )).toBe(false);
+  });
+
+  it("retains the conservative default output capture budget", async () => {
+    const result = await new NodeProcessSupervisor(5_000).run({
+      command: [process.execPath, "-e", "process.stdout.write('x'.repeat(80 * 1024))"],
+    });
+    expect(result.status).toBe("exited");
+    if (result.status !== "exited") return;
+    expect(result.output.stdout).toHaveLength(DEFAULT_PROCESS_CAPTURE_MAX_BYTES);
+  });
+
+  it("rejects an invocation that exceeds the hard output capture ceiling", async () => {
+    await expect(new NodeProcessSupervisor().run({
+      command: [process.execPath, "-e", "process.stdout.write('should not run')"],
+      captureMaxBytes: MAX_PROCESS_CAPTURE_MAX_BYTES + 1,
+    })).rejects.toThrow(/captureMaxBytes.*no greater than/u);
   });
 
   it("rejects an exhausted direct-PID sweep instead of allowing cancelled", () => {

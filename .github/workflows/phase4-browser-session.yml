@@ -18,13 +18,15 @@ permissions:
   contents: read
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  # Kept distinct from the CI wrapper that calls this workflow. In a reusable
+  # workflow github.workflow is the caller name, so using it here can cancel the
+  # caller instead of merely superseding an older browser run.
+  group: browser-session-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
   browser-session:
     name: ${{ matrix.name }}
-    if: github.event_name != 'pull_request' || github.head_ref == 'feat-packaging-and-distribution'
     runs-on: ${{ matrix.os }}
     timeout-minutes: 30
 

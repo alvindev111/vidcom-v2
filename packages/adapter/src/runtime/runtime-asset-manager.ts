@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomBytes, randomUUID } from "node:crypto";
 import {
   chmod,
   lstat,
@@ -49,6 +49,9 @@ const HASH_PATTERN = /^sha256:[0-9a-f]{64}$/u;
 const UUID_V4_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u;
 const MAX_STATE_BYTES = 1024 * 1024;
 const MAX_INSTALLED_MANIFEST_BYTES = 64 * 1024 * 1024;
+const RUNTIME_OWNER_FILENAME = ".vidcom-runtime-owner.json";
+const RUNTIME_OWNER_AUTHORITY_DIRECTORY = ".runtime-owners";
+const OWNER_NONCE_PATTERN = /^[0-9a-f]{64}$/u;
 
 export type RuntimeArchiveInstallationState = "missing" | "ready" | "incomplete";
 export type RuntimeInstallationState = "missing" | "ready" | "broken";
@@ -66,6 +69,13 @@ export interface RuntimeCurrentPointer {
   artifactVersion: string;
   platform: RuntimePlatformTag;
   manifest: string;
+}
+
+interface RuntimeVersionOwner {
+  schemaVersion: typeof RUNTIME_STATE_SCHEMA_VERSION;
+  artifactVersion: string;
+  manifestSha256: string;
+  nonce: string;
 }
 
 export interface RuntimeArchiveInspection {
@@ -151,6 +161,13 @@ function incomplete(message: string, details?: Record<string, unknown>): Runtime
   return new RuntimeAssetError(ErrorCode.RuntimeExtractionIncomplete, message, details);
 }
 
+function integrityFailureMessage(reason: string): string {
+  if (reason === "checksum_mismatch") return "extracted runtime file does not match its manifest hash";
+  if (reason === "symlink") return "extracted runtime contains a symbolic link";
+  if (reason === "hard_link") return "extracted runtime entry is not a singly-linked regular file";
+  return "extracted runtime failed deep integrity verification";
+}
+
 function hasCode(error: unknown, code: string): boolean {
   return error !== null
     && typeof error === "object"
@@ -184,6 +201,33 @@ async function pathKind(pathname: string): Promise<"absent" | "directory" | "fil
     if (hasCode(error, "ENOTDIR") || hasCode(error, "ELOOP")) return "invalid";
     throw error;
   }
+}
+
+/** Creates, canonicalizes and secures app-data before any lock or runtime bytes are touched. */
+export async function prepareRuntimeAppDataRoot(
+  directory: string,
+  platform: NodeJS.Platform = process.platform,
+  aclRunner?: SyncCredentialCommandRunner,
+): Promise<string> {
+  if (
+    !path.isAbsolute(directory)
+    || path.resolve(directory) !== directory
+    || path.dirname(directory) === directory
+  ) {
+    throw new TypeError("runtime app-data root must be a normalized absolute non-root path");
+  }
+  await mkdir(directory, { recursive: true, mode: 0o700 });
+  if (await pathKind(directory) !== "directory") {
+    throw incomplete("runtime app-data path is not a real directory");
+  }
+  const canonical = await realpath(directory);
+  if (await pathKind(canonical) !== "directory") {
+    throw incomplete("runtime app-data canonical path is not a real directory");
+  }
+  secureAppDataDirectorySync(canonical, platform, aclRunner);
+  if (platform !== "win32") await chmod(canonical, 0o700);
+  await syncDirectory(path.dirname(canonical), platform);
+  return canonical;
 }
 
 async function prepareTargetParent(
@@ -455,6 +499,31 @@ function stableJson(value: unknown): string {
   return `${JSON.stringify(value, null, 2)}\n`;
 }
 
+function sha256(value: string): string {
+  return `sha256:${createHash("sha256").update(value, "utf8").digest("hex")}`;
+}
+
+function parseRuntimeVersionOwner(value: unknown): RuntimeVersionOwner | undefined {
+  const owner = exactObject(
+    value,
+    ["schemaVersion", "artifactVersion", "manifestSha256", "nonce"],
+  );
+  if (
+    owner?.schemaVersion !== RUNTIME_STATE_SCHEMA_VERSION
+    || !isPortableRuntimeArtifactVersion(owner.artifactVersion)
+    || typeof owner.manifestSha256 !== "string"
+    || !HASH_PATTERN.test(owner.manifestSha256)
+    || typeof owner.nonce !== "string"
+    || !OWNER_NONCE_PATTERN.test(owner.nonce)
+  ) return undefined;
+  return Object.freeze({
+    schemaVersion: RUNTIME_STATE_SCHEMA_VERSION,
+    artifactVersion: owner.artifactVersion,
+    manifestSha256: owner.manifestSha256,
+    nonce: owner.nonce,
+  });
+}
+
 function markerName(archive: EmbeddedArchive): string {
   return `${READY_MARKER_PREFIX}${archive.sha256.slice("sha256:".length)}`;
 }
@@ -532,6 +601,7 @@ export class RuntimeAssetManager {
 
   /** Reads installed markers and pointers without reading any embedded archive bytes. */
   async inspect(): Promise<RuntimeAssetInspection> {
+    await this.prepareAppDataRoot();
     const { manifest, archives, versionRoot } = this.resolve();
     return this.inspectResolved(manifest, archives, versionRoot);
   }
@@ -543,6 +613,7 @@ export class RuntimeAssetManager {
 
   /** Re-extracts selected archives through a temp/swap publication; never writes in place. */
   async repair(options: RuntimeRepairOptions = {}): Promise<RuntimeAssetInstallation> {
+    await this.prepareAppDataRoot();
     const { archives } = this.resolve();
     const required = new Set(archives.map((archive) => archive.key));
     const force = new Set(options.keys ?? required);
@@ -568,8 +639,8 @@ export class RuntimeAssetManager {
     if (!Number.isFinite(options.startupSucceededAt.getTime())) {
       throw new TypeError("runtime prune startupSucceededAt must be valid");
     }
+    await this.prepareAppDataRoot();
     const { manifest } = this.resolve();
-    await this.prepareRoot(this.appDataRoot);
     await this.prepareRoot(this.nativeRoot);
     return this.withLease(options.lease, async () => {
       if (this.clock().getTime() < options.startupSucceededAt.getTime() + options.gracePeriodMs) {
@@ -590,7 +661,8 @@ export class RuntimeAssetManager {
           continue;
         }
         const versionRoot = path.join(this.nativeRoot, entry.name);
-        if (!await this.isOwnedVersion(versionRoot, entry.name)) continue;
+        const owner = await this.ownedVersion(versionRoot, entry.name);
+        if (!owner) continue;
         if (await options.isVersionInUse(entry.name)) {
           retained.push(entry.name);
           continue;
@@ -603,6 +675,11 @@ export class RuntimeAssetManager {
         await syncDirectory(this.nativeRoot, this.platform);
         await rm(quarantine, { recursive: true, force: true, maxRetries: 3, retryDelay: 50 });
         await syncDirectory(this.nativeRoot, this.platform);
+        const authority = this.ownerAuthorityPath(owner);
+        if (await exactRegularFileMatches(authority, stableJson(owner))) {
+          await rm(authority, { force: true });
+          await syncDirectory(path.dirname(authority), this.platform);
+        }
         pruned.push(entry.name);
       }
       return { pruned, retained, deferred: false };
@@ -626,10 +703,23 @@ export class RuntimeAssetManager {
       );
     }
     const archives = resolveRuntimeArchives(manifest, this.platform, this.architecture);
+    if (archives.some((archive) => {
+      const namespace = archive.target.split("/", 1)[0]?.toLowerCase();
+      return namespace === RUNTIME_OWNER_FILENAME
+        || namespace === RUNTIME_OWNER_AUTHORITY_DIRECTORY;
+    })) {
+      throw new RuntimeAssetError(
+        ErrorCode.RuntimeManifestInvalid,
+        "runtime archive target collides with the version ownership record",
+      );
+    }
+    const versionRoot = path.join(this.nativeRoot, manifest.artifactVersion);
+    // Validate target overlap before creating any runtime namespace beneath app-data.
+    resolveRuntimeArchiveRoots(archives, versionRoot);
     return {
       manifest,
       archives,
-      versionRoot: path.join(this.nativeRoot, manifest.artifactVersion),
+      versionRoot,
     };
   }
 
@@ -641,6 +731,17 @@ export class RuntimeAssetManager {
     secureAppDataDirectorySync(directory, this.platform, this.aclRunner);
     if (this.platform !== "win32") await chmod(directory, 0o700);
     await syncDirectory(path.dirname(directory), this.platform);
+  }
+
+  private async prepareAppDataRoot(): Promise<void> {
+    const canonical = await prepareRuntimeAppDataRoot(
+      this.appDataRoot,
+      this.platform,
+      this.aclRunner,
+    );
+    if (canonical !== this.appDataRoot) {
+      throw incomplete("runtime app-data root must use its canonical path");
+    }
   }
 
   private async withLease<T>(
@@ -711,16 +812,33 @@ export class RuntimeAssetManager {
     );
   }
 
-  private async isOwnedVersion(versionRoot: string, version: string): Promise<boolean> {
-    const value = await readJson(
-      path.join(versionRoot, RUNTIME_MANIFEST_FILENAME),
-      MAX_INSTALLED_MANIFEST_BYTES,
-    );
-    if (value === undefined) return false;
+  private ownerAuthorityPath(owner: RuntimeVersionOwner): string {
+    return path.join(this.nativeRoot, RUNTIME_OWNER_AUTHORITY_DIRECTORY, `${owner.nonce}.json`);
+  }
+
+  private async ownedVersion(
+    versionRoot: string,
+    version: string,
+  ): Promise<RuntimeVersionOwner | undefined> {
+    const owner = parseRuntimeVersionOwner(await readJson(
+      path.join(versionRoot, RUNTIME_OWNER_FILENAME),
+    ));
+    if (!owner || owner.artifactVersion !== version) return undefined;
+    const manifestPath = path.join(versionRoot, RUNTIME_MANIFEST_FILENAME);
+    const value = await readJson(manifestPath, MAX_INSTALLED_MANIFEST_BYTES);
+    if (value === undefined) return undefined;
     try {
-      return parseEmbeddedRuntimeManifest(value).artifactVersion === version;
+      const manifest = parseEmbeddedRuntimeManifest(value);
+      const expected = stableJson(manifest);
+      if (
+        manifest.artifactVersion !== version
+        || owner.manifestSha256 !== sha256(expected)
+        || !await exactRegularFileMatches(manifestPath, expected)
+        || !await exactRegularFileMatches(this.ownerAuthorityPath(owner), stableJson(owner))
+      ) return undefined;
+      return owner;
     } catch {
-      return false;
+      return undefined;
     }
   }
 
@@ -728,27 +846,51 @@ export class RuntimeAssetManager {
     force: ReadonlySet<string>,
     lease: DirectoryLockLease | undefined,
   ): Promise<RuntimeAssetInstallation> {
-    const { manifest, archives, versionRoot } = this.resolve();
     try {
-      if (force.size === 0 && lease === undefined) {
-        const warm = await this.inspectResolved(manifest, archives, versionRoot);
-        if (warm.state === "ready" && !await this.hasOwnedSiblings(versionRoot, archives)) {
-          return {
-            artifactVersion: manifest.artifactVersion,
-            versionRoot,
-            archiveRoots: resolveRuntimeArchiveRoots(archives, versionRoot),
-            extracted: [],
-            reused: archives.map((archive) => archive.key),
-          };
-        }
-      }
-      await this.prepareRoot(this.appDataRoot);
+      await this.prepareAppDataRoot();
+      const { manifest, archives, versionRoot } = this.resolve();
       await this.prepareRoot(this.nativeRoot);
       return await this.withLease(lease, async () => {
         await this.prepareRoot(versionRoot);
         const extracted: string[] = [];
         const reused: string[] = [];
         const roots = resolveRuntimeArchiveRoots(archives, versionRoot);
+        const effectiveForce = new Set(force);
+        const before = await this.inspectResolved(manifest, archives, versionRoot);
+        const readyCount = before.archives.filter((archive) => archive.state === "ready").length;
+        const hasSiblings = await this.hasOwnedSiblings(versionRoot, archives);
+        if (readyCount > 0) {
+          if (readyCount !== archives.length) {
+            for (const archive of archives) effectiveForce.add(archive.key);
+          } else {
+            if (hasSiblings) {
+              for (const archive of archives) {
+                await this.cleanupOwnedSiblings(versionRoot, archive.key);
+              }
+            }
+            const integrity = await this.inspectIntegrity(manifest, archives, versionRoot, roots);
+            if (!integrity.ok) {
+              if (force.size === 0) {
+                throw new RuntimeAssetError(ErrorCode.RuntimeManifestInvalid, integrityFailureMessage(
+                  integrity.issue.reason,
+                ), {
+                  archive: integrity.issue.archiveKey,
+                  path: integrity.issue.path,
+                  reason: integrity.issue.reason,
+                });
+              }
+            } else if (effectiveForce.size === 0 && before.state === "ready") {
+              await this.publishVersionOwnership(manifest, archives, versionRoot);
+              return {
+                artifactVersion: manifest.artifactVersion,
+                versionRoot,
+                archiveRoots: roots,
+                extracted: [],
+                reused: archives.map((archive) => archive.key),
+              };
+            }
+          }
+        }
         for (const archive of archives) {
           const root = roots[archive.key]!;
           const state = await this.inspectArchive(
@@ -757,7 +899,7 @@ export class RuntimeAssetManager {
             versionRoot,
             root,
           );
-          if (!force.has(archive.key) && state.state === "ready") {
+          if (!effectiveForce.has(archive.key) && state.state === "ready") {
             await this.cleanupOwnedSiblings(versionRoot, archive.key);
             reused.push(archive.key);
             continue;
@@ -796,6 +938,20 @@ export class RuntimeAssetManager {
         cause: error instanceof Error ? error.message : String(error),
       });
     }
+  }
+
+  private async inspectIntegrity(
+    manifest: EmbeddedRuntimeManifest,
+    archives: readonly EmbeddedArchive[],
+    versionRoot: string,
+    archiveRoots: Readonly<Record<string, string>>,
+  ) {
+    const { inspectPublishedRuntimeIntegrity } = await import("./runtime-integrity");
+    return inspectPublishedRuntimeIntegrity({
+      manifest: manifestProjection(manifest, archives),
+      versionRoot,
+      archiveRoots,
+    }, this.platform, this.architecture);
   }
 
   private async installArchive(
@@ -939,6 +1095,7 @@ export class RuntimeAssetManager {
         stableJson(projection),
       );
     }
+    await this.publishVersionOwnership(manifest, archives, versionRoot);
     const pointer: RuntimeCurrentPointer = {
       schemaVersion: RUNTIME_STATE_SCHEMA_VERSION,
       artifactVersion: manifest.artifactVersion,
@@ -951,5 +1108,33 @@ export class RuntimeAssetManager {
         stableJson(pointer),
       );
     }
+  }
+
+  private async publishVersionOwnership(
+    manifest: EmbeddedRuntimeManifest,
+    archives: readonly EmbeddedArchive[],
+    versionRoot: string,
+  ): Promise<void> {
+    const projection = manifestProjection(manifest, archives);
+    const manifestSha256 = sha256(stableJson(projection));
+    const existing = await this.ownedVersion(versionRoot, manifest.artifactVersion);
+    if (existing?.manifestSha256 === manifestSha256) return;
+
+    const owner: RuntimeVersionOwner = {
+      schemaVersion: RUNTIME_STATE_SCHEMA_VERSION,
+      artifactVersion: manifest.artifactVersion,
+      manifestSha256,
+      nonce: randomBytes(32).toString("hex"),
+    };
+    const authorityDirectory = path.join(this.nativeRoot, RUNTIME_OWNER_AUTHORITY_DIRECTORY);
+    await this.prepareRoot(authorityDirectory);
+    await writeAtomic(
+      this.ownerAuthorityPath(owner) as ResolvedPath,
+      stableJson(owner),
+    );
+    await writeAtomic(
+      path.join(versionRoot, RUNTIME_OWNER_FILENAME) as ResolvedPath,
+      stableJson(owner),
+    );
   }
 }

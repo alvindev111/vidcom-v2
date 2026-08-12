@@ -1,4 +1,6 @@
 import { createHash } from "node:crypto";
+import { readFileSync } from "node:fs";
+import { createRequire } from "node:module";
 import { gzipSync } from "node:zlib";
 
 import {
@@ -14,6 +16,12 @@ export const HOST_TAG = `${process.platform}-${process.arch}` as RuntimePlatform
 export const HOST_SUPPORTED = RUNTIME_PLATFORM_TAGS.includes(HOST_TAG);
 
 export type TarEntryType = "file" | "directory" | "symlink" | "hardlink" | "character-device";
+
+const requireFromAdapter = createRequire(new URL("../../packages/adapter/package.json", import.meta.url));
+const nodePtyPackageRoot = requireFromAdapter.resolve("node-pty");
+const NODE_PTY_PACKAGE_BYTES = readFileSync(
+  requireFromAdapter.resolve("node-pty/package.json", { paths: [nodePtyPackageRoot] }),
+);
 
 export interface TarEntry {
   path: string;
@@ -99,6 +107,7 @@ export function productRuntimeFixtureEntries(
   const windows = platformTag === "win32-x64";
   const suffix = windows ? ".exe" : "";
   const commonNativePackageNames = [
+    "node-pty",
     "sharp",
     "@img/colour",
     "detect-libc",
@@ -118,10 +127,31 @@ export function productRuntimeFixtureEntries(
   const platformEsbuild = windows
     ? "node_modules/@esbuild/win32-x64/esbuild.exe"
     : `node_modules/@esbuild/${platformTag}/bin/esbuild`;
+  const nodePtyRoot = `node_modules/node-pty/prebuilds/${platformTag}`;
+  const nodePtyEntries: FixtureFile[] = windows
+    ? [
+      `${nodePtyRoot}/pty.node`,
+      `${nodePtyRoot}/conpty.node`,
+      `${nodePtyRoot}/conpty_console_list.node`,
+      `${nodePtyRoot}/conpty/OpenConsole.exe`,
+      `${nodePtyRoot}/conpty/conpty.dll`,
+      `${nodePtyRoot}/winpty-agent.exe`,
+      `${nodePtyRoot}/winpty.dll`,
+    ].map((path) => ({ path, content: Buffer.from(`node-pty:${path}\n`, "utf8") }))
+    : [
+      { path: `${nodePtyRoot}/pty.node`, content: Buffer.from("node-pty binding\n", "utf8") },
+      {
+        path: `${nodePtyRoot}/spawn-helper`,
+        content: Buffer.from("node-pty helper\n", "utf8"),
+        mode: 0o755,
+      },
+    ];
   const native: FixtureFile[] = [
     ...[...commonNativePackageNames, ...platformPackageNames].map((name) => ({
       path: `node_modules/${name}/package.json`,
-      content: Buffer.from(`{"name":${JSON.stringify(name)}}\n`, "utf8"),
+      content: name === "node-pty"
+        ? NODE_PTY_PACKAGE_BYTES
+        : Buffer.from(`{"name":${JSON.stringify(name)}}\n`, "utf8"),
     })),
     {
       path: "node_modules/onnxruntime-node/dist/index.js",
@@ -137,6 +167,7 @@ export function productRuntimeFixtureEntries(
       content: Buffer.from("runtime\n", "utf8"),
     },
     { path: platformEsbuild, content: Buffer.from("esbuild\n", "utf8"), mode: 0o755 },
+    ...nodePtyEntries,
     {
       path: `node_modules/@img/sharp-${platformTag}/lib/sharp-${platformTag}.node`,
       content: Buffer.from("sharp\n", "utf8"),
@@ -166,6 +197,10 @@ export function productRuntimeFixtureEntries(
       { path: "package.json", content: Buffer.from('{"name":"hyperframes","version":"0.7.86"}\n', "utf8") },
       { path: "bin/hyperframe.manifest.json", content: Buffer.from("{}\n", "utf8") },
       { path: "bin/hyperframe.runtime.iife.js", content: Buffer.from("void 0;\n", "utf8") },
+      ...["layout-audit", "motion-sample", "contrast-audit"].map((name) => ({
+        path: `bin/commands/${name}.browser.js`,
+        content: Buffer.from(`globalThis.__${name.replaceAll("-", "_")} = true;\n`, "utf8"),
+      })),
       ...MOTION_LIBRARIES.flatMap((library) => [{
         path: `motion-libraries/${library.packageName}/package.json`,
         content: Buffer.from(

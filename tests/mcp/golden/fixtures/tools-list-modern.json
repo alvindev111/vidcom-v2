@@ -7221,7 +7221,7 @@
     {
       "name": "start_render",
       "title": "Start a video render",
-      "description": "Use when the validated, visually inspected project is ready for one MP4 render, every story beat has meaningful multi-phase motion, and authored Unicode text has verified project-local font coverage. Do not use before validate_project and start_snapshot, to wait synchronously for completion, or when story scenes rely only on fade, gentle rise/drop, or repeated opacity-plus-translate entrances. Preconditions: projectId comes from list_projects, optional idempotencyKey must identify this exact request, and the reviewed storyboard plus scene sources must show a value-first story spine and setup/development/payoff/hold choreography. Side effects: re-checks encoding/font coverage, enqueues one render job, and returns immediately without publishing an artifact yet. Errors/recovery: poll get_job_status after pollAfterMs; fix stable gate errors before retrying and report warnings, outcome, and cleanupPending honestly.",
+      "description": "Use when the validated, visually inspected project is ready for one MP4 render, every story beat has meaningful multi-phase motion, and authored Unicode text has verified project-local font coverage. Do not use before validate_project and start_snapshot, to wait synchronously for completion, or when story scenes rely only on fade, gentle rise/drop, or repeated opacity-plus-translate entrances. Preconditions: projectId comes from list_projects and expectedSourceRevision must equal the computedAtSourceRevision returned by validate_project for the exact inspected generation; optional idempotencyKey must identify this exact revision, and the reviewed storyboard plus scene sources must show a value-first story spine and setup/development/payoff/hold choreography. Side effects: re-checks the exact source revision, diagnostics, encoding, font coverage and render lint before enqueueing one render job; it returns immediately without publishing an artifact yet. Errors/recovery: write_conflict means the project changed after review, so re-read, revalidate and inspect the new revision; poll get_job_status after pollAfterMs; fix stable gate errors before retrying and report warnings, outcome, and cleanupPending honestly.",
       "inputSchema": {
         "type": "object",
         "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -7230,6 +7230,11 @@
             "type": "string",
             "minLength": 1,
             "maxLength": 255
+          },
+          "expectedSourceRevision": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
           },
           "bestEffort": {
             "type": "boolean"
@@ -7246,7 +7251,8 @@
           }
         },
         "required": [
-          "projectId"
+          "projectId",
+          "expectedSourceRevision"
         ],
         "additionalProperties": false
       },

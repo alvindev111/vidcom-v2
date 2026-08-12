@@ -1,5 +1,5 @@
 import { realpathSync } from "node:fs";
-import { mkdir, mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
@@ -24,6 +24,22 @@ import {
 import { createSequentialIdPort } from "../support/deterministic";
 
 const clock = { now: () => new Date("2026-08-09T00:00:00.000Z") };
+
+function qualifiedSceneSource(sceneId: string, duration: number): string {
+  return `<!doctype html><html><body><template>
+    <style>#${sceneId}{width:1920px;height:1080px}</style>
+    <section id="${sceneId}" data-composition-id="${sceneId}" data-width="1920" data-height="1080" data-duration="${duration}">
+      <div id="hero">Opening</div>
+      <script>
+        const tl = gsap.timeline({ paused: true });
+        tl.fromTo("#hero", { scale: 0.72 }, { scale: 1, duration: 0.6, ease: "expo.out" }, 0.2);
+        tl.to("#hero", { rotation: 8, duration: 0.6, ease: "sine.inOut" }, 1.2);
+        window.__timelines = window.__timelines || {};
+        window.__timelines["${sceneId}"] = tl;
+      </script>
+    </section>
+  </template></body></html>`;
+}
 
 describe("CLI render bridge against real persistence", () => {
   it("lets only the system bridge bearer enqueue, read and cancel a render", async () => {
@@ -60,6 +76,13 @@ describe("CLI render bridge against real persistence", () => {
         }),
       },
       fonts: application.fonts,
+      diagnostics: {
+        forProject: async (projectId: ProjectId) => ok({
+          diagnostics: [],
+          computedAtSourceRevision: await infrastructure.journal.latestSourceRevision(projectId) ?? 0,
+          lintSourceAvailable: true,
+        }),
+      },
     };
     const nonces = new InMemoryNonceStore(clock);
     const sessions = new InMemorySessionStore(clock);
@@ -156,6 +179,11 @@ describe("CLI render bridge against real persistence", () => {
         }),
       });
       expect(scene.status).toBe(201);
+      await writeFile(
+        path.join(ref.root, "compositions", "scene-1.html"),
+        qualifiedSceneSource("scene-1", 2),
+        "utf8",
+      );
       expect(await readFile(path.join(ref.root, "vidcom.json"), "utf8")).toContain(projectId);
 
       const client = createDaemonClient({ baseUrl, bearer: "system-token", deadlineMs: 2_000 });

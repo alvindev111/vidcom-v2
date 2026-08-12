@@ -1,4 +1,4 @@
-import { readdir, stat } from "node:fs/promises";
+import { readdir, realpath, stat } from "node:fs/promises";
 import path from "node:path";
 
 import {
@@ -9,10 +9,16 @@ import { resolveWorkspace, type AbsolutePath, type WorkspaceCandidate } from "@v
 
 import { CliInputError } from "./cli-error";
 
+/** Resolves aliases before a workspace path is used as lease or discovery identity. */
+export async function canonicalWorkspaceRoot(raw: string): Promise<AbsolutePath> {
+  return path.normalize(await realpath(path.resolve(raw))) as AbsolutePath;
+}
+
 async function candidate(raw: string | null | undefined): Promise<WorkspaceCandidate | null> {
   if (!raw) return null;
-  const root = path.resolve(raw) as AbsolutePath;
+  const resolved = path.resolve(raw) as AbsolutePath;
   try {
+    const root = await canonicalWorkspaceRoot(resolved);
     await readdir(root);
     const identity = await stat(path.join(root, "vidcom.json")).catch(() => null);
     const parent = path.dirname(root);
@@ -20,7 +26,7 @@ async function candidate(raw: string | null | undefined): Promise<WorkspaceCandi
       && await readdir(parent).then(() => true).catch(() => false);
     return { root, readable: true, hasIdentityFile: identity?.isFile() === true, parentReadable };
   } catch { /* invalid candidates are handled by the resolver */ }
-  return { root, readable: false, hasIdentityFile: false, parentReadable: false };
+  return { root: resolved, readable: false, hasIdentityFile: false, parentReadable: false };
 }
 
 /**

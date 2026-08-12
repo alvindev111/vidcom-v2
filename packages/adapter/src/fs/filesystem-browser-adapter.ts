@@ -10,13 +10,14 @@ import type {
 
 import { BrowseWorkerPool } from "./browse-worker";
 
-type ReadFailure = "not-found" | "not-a-directory" | "permission-denied" | "timeout";
+type ReadFailure = "not-found" | "not-a-directory" | "permission-denied" | "changed" | "timeout";
 
 const ERROR_REASONS: Readonly<Record<string, ReadFailure>> = {
   ENOENT: "not-found",
   ENOTDIR: "not-a-directory",
   EACCES: "permission-denied",
   EPERM: "permission-denied",
+  identity_changed: "changed",
   timeout: "timeout",
 };
 
@@ -71,9 +72,12 @@ export class WorkerFilesystemBrowser implements FilesystemBrowserPort {
   async read(canonicalPath: string): Promise<DirectoryRead> {
     const response = await this.pool.run({ kind: "read", path: canonicalPath });
     if (!response.ok) return { ok: false, reason: reasonFor(response.code) };
-    const identity = await this.identity(canonicalPath);
-    if (!identity) return { ok: false, reason: "not-found" };
-    return { ok: true, entries: response.entries as readonly RawDirectoryEntry[], identity };
+    if (!response.identity) return { ok: false, reason: "changed" };
+    return {
+      ok: true,
+      entries: response.entries as readonly RawDirectoryEntry[],
+      identity: response.identity as DirectoryIdentity,
+    };
   }
 
   async identity(canonicalPath: string): Promise<DirectoryIdentity | undefined> {

@@ -211,17 +211,18 @@ export function withBridgeCredentialLock<T>(
   }).runExclusive(operation);
 }
 
-/** Refuses to revoke the bridge bearer, which would leave the daemon unreachable. */
+/** Refuses generic administration of the bridge bearer, which would desynchronise the daemon. */
 export async function assertRevocable(
   dependencies: BridgeCredentialDependencies,
   credentialId: string,
+  operation: "rotated" | "revoked" = "revoked",
 ): Promise<void> {
   const recorded = new AppSettingsStore(dependencies.database, dependencies.clock)
     .get(BRIDGE_CREDENTIAL_SETTING);
   if (recorded === credentialId) {
     throw new BridgeCredentialError(
       ErrorCode.CredentialInvalid,
-      "the bridge credential cannot be revoked; rotate it instead",
+      `the system bridge credential cannot be ${operation} by the generic credential command`,
     );
   }
 }

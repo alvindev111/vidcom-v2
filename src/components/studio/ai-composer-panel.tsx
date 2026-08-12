@@ -7,6 +7,7 @@ import "@xterm/xterm/css/xterm.css";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
+import { fetchApi } from "@/lib/api/services";
 import { AGENT_COMMAND, AGENT_LABEL } from "@/lib/studio/agent-session";
 import {
   resizeAgentTerminal,
@@ -182,7 +183,7 @@ export function AiComposerPanel({
 
     setPending(true);
     try {
-      const response = await fetch(`/api/hf/${projectSlug}/scene`, {
+      const response = await fetchApi(`/api/hf/${projectSlug}/scene`, {
         method: "PATCH",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ action: "generate", prompt: text }),

@@ -23,11 +23,14 @@ export interface ProjectImportJobOutput {
 export interface ProjectImportJobDependencies {
   plan(input: { source: string; sourceIdentity: string; workspaceRoot: string; targetName?: string }): Promise<{
     operationId: string;
+    source: string;
     slug: string;
     target: string;
     staging: string;
   }>;
-  copy(source: string, staging: string): Promise<{ files: number }>;
+  copy(source: string, sourceIdentity: string, staging: string): Promise<{ files: number }>;
+  /** Rejects missing/invalid project markers while staging is still disposable. */
+  validate(staging: string): Promise<void>;
   commit(staging: string, target: string): Promise<void>;
   discard(staging: string): Promise<void>;
   /** Registers the copied directory as a project, the same way a fresh one is. */
@@ -77,8 +80,10 @@ export function createProjectImportJobType(
       let published = false;
       try {
         await context.throwIfCancelled();
-        copied = await dependencies.copy(input.source, planned.staging);
+        copied = await dependencies.copy(planned.source, input.sourceIdentity, planned.staging);
         await context.updateProgress(0.8, `copied ${String(copied.files)} files`);
+        await context.throwIfCancelled();
+        await dependencies.validate(planned.staging);
         await context.throwIfCancelled();
         await dependencies.commit(planned.staging, planned.target);
         published = true;

@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 
 import {
+  canonicalImportPaths,
   commitStaging,
   copyIntoStaging,
   digestTree,
@@ -11,6 +12,7 @@ import {
   recoverImportStaging,
   sourceIdentityOf,
   stagingPathFor,
+  validateStagedProject,
   writeStagingMarker,
 } from "@vidcom/adapter";
 import { assertSourceUnchanged, planProjectImport, type AbsolutePath } from "@vidcom/core";
@@ -98,6 +100,27 @@ describe("import staging on a real filesystem", () => {
     expect(result).toMatchObject({ code: "path_invalid" });
   });
 
+  it("refuses a file swapped to a symlink after lstat instead of copying its target", async () => {
+    const { workspace, source } = await scratch();
+    const outside = path.join(path.dirname(source), "outside-secret.txt");
+    const sourceFile = path.join(source, "index.html");
+    await writeFile(sourceFile, "safe", "utf8");
+    await writeFile(outside, "secret", "utf8");
+    const plan = planFor(source, workspace, await sourceIdentityOf(source));
+    let swapped = false;
+    const result = await copyIntoStaging(source, stagingPathFor(plan, "op-race"), {
+      expectedSourceIdentity: plan.sourceIdentity,
+      async afterEntryStat(relativePath) {
+        if (relativePath !== "index.html") return;
+        await rm(sourceFile);
+        await symlink(outside, sourceFile);
+        swapped = true;
+      },
+    });
+    expect(swapped).toBe(true);
+    expect(result).toMatchObject({ code: "write_conflict" });
+  });
+
   it("skips the rebuildable directories without failing", async () => {
     const { workspace, source } = await scratch();
     await mkdir(path.join(source, "node_modules", "left-pad"), { recursive: true });
@@ -127,6 +150,63 @@ describe("import staging on a real filesystem", () => {
     // alone repeats after a delete-and-recreate — this test caught that on CI.
     const now = await sourceIdentityOf(source);
     expect(assertSourceUnchanged(plan, now).ok).toBe(false);
+  });
+});
+
+describe("staged project validation", () => {
+  it.each([
+    ["hyperframes.json", ["vidcom.json", "index.html"]],
+    ["vidcom.json", ["hyperframes.json", "index.html"]],
+    ["index.html", ["hyperframes.json", "vidcom.json"]],
+  ] as const)("refuses a project missing %s before publication", async (missing, present) => {
+    const { workspace } = await scratch();
+    const staging = path.join(workspace, ".validate.tmp");
+    await mkdir(staging);
+    for (const name of present) {
+      const content = name === "vidcom.json" ? '{"id":"project_valid"}' : "{}";
+      await writeFile(path.join(staging, name), content, "utf8");
+    }
+    expect(await validateStagedProject(staging)).toMatchObject({
+      code: "path_invalid",
+      message: expect.stringContaining(missing),
+    });
+  });
+
+  it("refuses malformed config and an empty ProjectId", async () => {
+    const { workspace } = await scratch();
+    const staging = path.join(workspace, ".validate-invalid.tmp");
+    await mkdir(staging);
+    await writeFile(path.join(staging, "index.html"), "<!doctype html>", "utf8");
+    await writeFile(path.join(staging, "hyperframes.json"), "[]", "utf8");
+    await writeFile(path.join(staging, "vidcom.json"), '{"id":""}', "utf8");
+    expect(await validateStagedProject(staging)).toMatchObject({ message: expect.stringContaining("hyperframes.json") });
+    await writeFile(path.join(staging, "hyperframes.json"), "{}", "utf8");
+    expect(await validateStagedProject(staging)).toMatchObject({ message: expect.stringContaining("ProjectId") });
+  });
+
+  it("bounds marker reads instead of materializing an arbitrarily large config", async () => {
+    const { workspace } = await scratch();
+    const staging = path.join(workspace, ".validate-large.tmp");
+    await mkdir(staging);
+    await writeFile(path.join(staging, "index.html"), "<!doctype html>", "utf8");
+    await writeFile(path.join(staging, "vidcom.json"), '{"id":"project_large"}', "utf8");
+    await writeFile(path.join(staging, "hyperframes.json"), "x".repeat(1_024 * 1_024 + 1), "utf8");
+    expect(await validateStagedProject(staging)).toMatchObject({ code: "too_large" });
+  });
+});
+
+describe("canonical import paths", () => {
+  it("collapses a physical directory alias before overlap planning", async () => {
+    const { workspace } = await scratch();
+    const alias = path.join(path.dirname(workspace), "workspace-alias");
+    await symlink(workspace, alias, process.platform === "win32" ? "junction" : "dir");
+    const canonical = await canonicalImportPaths(alias, workspace);
+    expect(canonical.source).toBe(canonical.workspaceRoot);
+    expect(planProjectImport({
+      ...canonical,
+      sourceIdentity: await sourceIdentityOf(canonical.source),
+      taken: [],
+    }).ok).toBe(false);
   });
 });
 

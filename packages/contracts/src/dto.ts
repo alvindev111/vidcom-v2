@@ -443,16 +443,28 @@ export const BridgeAttachmentRenewResponseSchema = z.strictObject({
 
 /** Protocol-neutral tool input carried from the MCP bridge to its daemon. */
 export const BridgeToolInvokeRequestSchema = z.strictObject({
-  input: z.unknown(),
+  // A no-input tool is sent without this property because JSON.stringify drops
+  // `undefined`; the daemon route deliberately accepts that shape.
+  input: z.unknown().optional(),
   protocolVersion: bridgeProtocolVersionSchema,
-  requestState: z.string().min(1).max(255).optional(),
+  era: z.enum(["legacy", "modern"]),
+  requestState: z.unknown().optional(),
 });
 
-/** Stable domain result returned before an MCP transport applies its era stamp. */
-export const BridgeToolInvokeResponseSchema = z.discriminatedUnion("ok", [
-  z.strictObject({ ok: z.literal(true), value: z.unknown() }),
-  z.strictObject({ ok: z.literal(false), error: ErrorDetailSchema }),
-]);
+/**
+ * Raw successful tool payload returned by the daemon.
+ *
+ * Its concrete schema belongs to the named tool in `TOOL_SCHEMA_CATALOGUE`;
+ * wrapping it in `{ ok, value }` here would describe a wire envelope that the
+ * bridge never sends.
+ */
+export const BridgeToolInvokeResponseSchema = z.unknown();
+
+/** Standard HTTP error envelope used when a bridge tool invocation fails. */
+export const BridgeToolInvokeErrorResponseSchema = ErrorResponseSchema.extend({
+  // Write conflicts also expose the authoritative state at the HTTP boundary.
+  current: z.unknown().optional(),
+});
 
 export const ListProjectsResponseSchema = z.strictObject({
   projects: z.array(ProjectSummarySchema),
@@ -633,6 +645,7 @@ export type BridgeHandshakeRequest = z.infer<typeof BridgeHandshakeRequestSchema
 export type BridgeHandshakeResponse = z.infer<typeof BridgeHandshakeResponseSchema>;
 export type BridgeToolInvokeRequest = z.infer<typeof BridgeToolInvokeRequestSchema>;
 export type BridgeToolInvokeResponse = z.infer<typeof BridgeToolInvokeResponseSchema>;
+export type BridgeToolInvokeErrorResponse = z.infer<typeof BridgeToolInvokeErrorResponseSchema>;
 
 /**
  * Entry listing is a POST, not a GET.

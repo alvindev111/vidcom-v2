@@ -33,6 +33,7 @@ import {
   DEFAULT_PREVIEW_SETTINGS,
   FontCompatibilityService,
   JobScheduler,
+  ok,
   WriteAuthority,
   type AbsolutePath,
   type BinaryProbePort,
@@ -100,6 +101,15 @@ async function baseFixture() {
   const jobs = new SqliteJobStore(database, clock);
   const ids = createSequentialIdPort();
   const fonts = new FontCompatibilityService(new FontkitCompatibilityInspector());
+  const diagnostics = {
+    async forProject(projectId: ProjectId) {
+      return ok({
+        diagnostics: [],
+        computedAtSourceRevision: await journal.latestSourceRevision(projectId) ?? 0,
+        lintSourceAvailable: true,
+      });
+    },
+  };
   const binaries: BinaryProbePort = {
     async probe() {
       return { ok: true, value: {
@@ -111,7 +121,7 @@ async function baseFixture() {
       } };
     },
   };
-  return { root, workspaceRoot, appDataRoot, database, workspace, journal, jobs, ids, binaries, fonts };
+  return { root, workspaceRoot, appDataRoot, database, workspace, journal, jobs, ids, binaries, fonts, diagnostics };
 }
 
 async function addProject(
@@ -188,6 +198,7 @@ async function renderHarness(fixture: Awaited<ReturnType<typeof baseFixture>>) {
         guard: new LoopbackRuntimeAssetGuard(),
         binaries,
         fonts: fixture.fonts,
+        diagnostics: fixture.diagnostics,
         runtimeSource: hyperframesRuntimeSource,
         injectGuard: injectRuntimeAssetGuardDocument,
         clock,
@@ -211,6 +222,7 @@ async function enqueue(
     hashContent,
     binaries: fixture.binaries,
     fonts: fixture.fonts,
+    diagnostics: fixture.diagnostics,
   }, { projectId, ...(bestEffort === undefined ? {} : { bestEffort }) });
 }
 
@@ -232,6 +244,157 @@ async function execute(
 }
 
 describe("render job with real SQLite and filesystem", () => {
+  it("pins the current source revision into the durable input and rejects a stale caller revision", async () => {
+    const fixture = await baseFixture();
+    try {
+      const project = await addProject(fixture, "revision-gate", `<!doctype html><html><body>
+        <main data-composition-id="main" data-width="320" data-height="180" data-duration="1">
+          <section data-composition-id="scene-1" data-start="0" data-duration="1"></section>
+        </main></body></html>`);
+      const dependencies = {
+        workspace: fixture.workspace,
+        composition: new CompositionHf(),
+        journal: fixture.journal,
+        jobs: fixture.jobs,
+        ids: fixture.ids,
+        hashContent,
+        binaries: fixture.binaries,
+        fonts: fixture.fonts,
+        diagnostics: fixture.diagnostics,
+      };
+
+      await expect(enqueueRenderJob(dependencies, {
+        projectId: project.id,
+        expectedSourceRevision: 1,
+        idempotencyKey: "stale-revision",
+      })).resolves.toMatchObject({
+        ok: false,
+        error: {
+          code: ErrorCode.WriteConflict,
+          field: "expectedSourceRevision",
+          details: { expectedSourceRevision: 1, actualSourceRevision: 0 },
+        },
+      });
+      expect(dbOne(fixture.database, "SELECT COUNT(*) AS count FROM job")).toEqual({ count: 0 });
+
+      const queued = await enqueueRenderJob(dependencies, {
+        projectId: project.id,
+        idempotencyKey: "pinned-revision",
+      });
+      expect(queued).toMatchObject({
+        ok: true,
+        value: { input: { projectId: project.id, expectedSourceRevision: 0, bestEffort: true } },
+      });
+      if (!queued.ok) throw new Error("render did not enqueue");
+      const expectedInput = {
+        projectId: project.id,
+        expectedSourceRevision: 0,
+        bestEffort: true,
+        idempotencyKey: "pinned-revision",
+      };
+      expect(queued.value.inputHash).toBe(hashContent(canonicalizeJobInput(expectedInput)));
+      expect(queued.value.inputHash).not.toBe(hashContent(canonicalizeJobInput({
+        ...expectedInput,
+        expectedSourceRevision: 1,
+      })));
+    } finally {
+      await fixture.database.destroy();
+    }
+  });
+
+  it("requires zero diagnostic errors and requires available lint for strict render", async () => {
+    const fixture = await baseFixture();
+    try {
+      const project = await addProject(fixture, "diagnostics-gate", `<!doctype html><html><body>
+        <main data-composition-id="main" data-width="320" data-height="180" data-duration="1">
+          <section data-composition-id="scene-1" data-start="0" data-duration="1"></section>
+        </main></body></html>`);
+      const dependencies = {
+        workspace: fixture.workspace,
+        composition: new CompositionHf(),
+        journal: fixture.journal,
+        jobs: fixture.jobs,
+        ids: fixture.ids,
+        hashContent,
+        binaries: fixture.binaries,
+        fonts: fixture.fonts,
+      };
+
+      await expect(enqueueRenderJob({
+        ...dependencies,
+        diagnostics: { forProject: async () => ok({
+          diagnostics: [{ severity: "error" as const, code: "lint:layout", message: "layout failed" }],
+          computedAtSourceRevision: 0,
+          lintSourceAvailable: true,
+        }) },
+      }, {
+        projectId: project.id,
+        expectedSourceRevision: 0,
+        bestEffort: true,
+      })).resolves.toMatchObject({
+        ok: false,
+        error: { code: ErrorCode.ProjectInvalid, details: { reason: "lint:layout" } },
+      });
+
+      const lintUnavailable = { forProject: async () => ok({
+        diagnostics: [],
+        computedAtSourceRevision: 0,
+        lintSourceAvailable: false,
+      }) };
+      await expect(enqueueRenderJob({ ...dependencies, diagnostics: lintUnavailable }, {
+        projectId: project.id,
+        expectedSourceRevision: 0,
+        bestEffort: false,
+      })).resolves.toMatchObject({
+        ok: false,
+        error: { code: ErrorCode.ProjectInvalid, details: { reason: "lint-source-unavailable" } },
+      });
+      await expect(enqueueRenderJob({ ...dependencies, diagnostics: lintUnavailable }, {
+        projectId: project.id,
+        expectedSourceRevision: 0,
+        bestEffort: true,
+      })).resolves.toMatchObject({ ok: true });
+    } finally {
+      await fixture.database.destroy();
+    }
+  });
+
+  it("fails a queued render when its pinned revision is stale at worker start", async () => {
+    const fixture = await baseFixture();
+    try {
+      const project = await addProject(fixture, "worker-revision-gate", `<!doctype html><html><body>
+        <main data-composition-id="main" data-width="320" data-height="180" data-duration="1">
+          <section data-composition-id="scene-1" data-start="0" data-duration="1"></section>
+        </main></body></html>`);
+      const jobId = "job_stale_worker" as JobId;
+      const input = { projectId: project.id, expectedSourceRevision: 1, bestEffort: true };
+      await fixture.jobs.enqueue({
+        id: jobId,
+        projectId: project.id,
+        type: "render",
+        input,
+        inputHash: hashContent(canonicalizeJobInput(input)),
+        idempotencyKey: null,
+      });
+      let processStarted = false;
+      const harness = await renderHarness(fixture);
+      await execute(fixture, harness.definition({
+        async run() {
+          processStarted = true;
+          throw new Error("stale render must not start a process");
+        },
+      }));
+
+      expect(processStarted).toBe(false);
+      expect(await fixture.jobs.get(jobId)).toMatchObject({
+        status: "failed",
+        error: { code: ErrorCode.WriteConflict },
+      });
+    } finally {
+      await fixture.database.destroy();
+    }
+  });
+
   it("rejects empty, zero-scene, and invalid projects before enqueue", async () => {
     const fixture = await baseFixture();
     try {
@@ -249,6 +412,7 @@ describe("render job with real SQLite and filesystem", () => {
         hashContent,
         binaries: fixture.binaries,
         fonts: fixture.fonts,
+        diagnostics: fixture.diagnostics,
       };
 
       await expect(enqueueRenderJob(dependencies, { projectId: empty.id }))
@@ -366,6 +530,7 @@ describe("render job with real SQLite and filesystem", () => {
         hashContent,
         binaries,
         fonts: fixture.fonts,
+        diagnostics: fixture.diagnostics,
       }, { projectId: project.id });
 
       expect(queued.ok).toBe(true);
@@ -422,6 +587,7 @@ describe("render job with real SQLite and filesystem", () => {
         guard: new LoopbackRuntimeAssetGuard(),
         binaries: new NodeRenderBinaryProbe(binaryPaths, { appDataRoot: fixture.appDataRoot }),
         fonts: fixture.fonts,
+        diagnostics: fixture.diagnostics,
         runtimeSource: hyperframesRuntimeSource,
         injectGuard: injectRuntimeAssetGuardDocument,
         clock,
@@ -429,7 +595,7 @@ describe("render job with real SQLite and filesystem", () => {
       });
       expect(definition).toMatchObject({ type: "render", concurrency: 2, idempotent: false, maxAttempts: 1 });
       const jobId = "job_real_render" as JobId;
-      const input = { projectId: project.id, bestEffort: true };
+      const input = { projectId: project.id, expectedSourceRevision: 0, bestEffort: true };
       await fixture.jobs.enqueue({
         id: jobId,
         projectId: project.id,

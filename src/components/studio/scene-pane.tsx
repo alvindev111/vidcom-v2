@@ -10,6 +10,7 @@ import {
 } from "@/components/ui/resizable";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { fetchApi } from "@/lib/api/services";
 import { sceneSettings } from "@/lib/studio/preview-settings";
 import type { FileNode, Scene, SceneScriptLine, SourceFile } from "@/lib/studio/types";
 import { MotionLibraryPanel } from "./motion-library-panel";
@@ -78,7 +79,7 @@ export function ScenePane({
       const file = edit.action === "script" ? edit.file : "index.html";
       let expectedContentHash = hashes.current.get(file);
       if (isV1 && !expectedContentHash) {
-        const current = await fetch(`/api/v1/projects/${projectId}/files?path=${encodeURIComponent(file)}`);
+        const current = await fetchApi(`/api/v1/projects/${projectId}/files?path=${encodeURIComponent(file)}`);
         const currentBody = await current.json() as { file?: { contentHash?: string } };
         expectedContentHash = currentBody.file?.contentHash;
         if (expectedContentHash) hashes.current.set(file, expectedContentHash);

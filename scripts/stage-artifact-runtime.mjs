@@ -50,6 +50,12 @@ const INPUT_KEYS = [
 const PLATFORM_TAGS = new Set(["darwin-arm64", "linux-x64", "win32-x64"]);
 const ARTIFACT_VERSION_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._+-]*$/u;
 const EXPECTED_NODE_VERSION = "24.9.0";
+const EXPECTED_NODE_PTY_VERSION = "1.1.0";
+const HYPERFRAMES_BROWSER_SCRIPTS = Object.freeze([
+  "layout-audit.browser.js",
+  "motion-sample.browser.js",
+  "contrast-audit.browser.js",
+]);
 const EXPECTED_HYPERFRAMES_VERSION = "0.7.86";
 const EXPECTED_VIENEU_VERSION = "3.2.4";
 const EXPECTED_CPYTHON_VERSION = "3.12.13+20260805";
@@ -57,6 +63,7 @@ const PROCESS_START_ID = `${process.pid}:${Math.floor(Date.now() - process.uptim
 const ACTIVE_PUBLICATIONS = new Set();
 const MOTION_PACKAGE_NAMES = ["animejs", "gsap", "lottie-web", "motion", "three"];
 const COMMON_NATIVE_PACKAGES = [
+  "node-pty",
   "sharp",
   "@img/colour",
   "detect-libc",
@@ -576,9 +583,16 @@ async function defaultHyperframesRoot() {
 
 export async function resolveNativePackageRoots(hyperframesRoot, platform) {
   const hyperframesResolver = createRequire(path.join(hyperframesRoot, "package.json"));
-  const direct = new Map(await Promise.all(["sharp", "esbuild", "onnxruntime-node"].map(async (packageName) => [
+  const direct = new Map(await Promise.all([
+    ["sharp", hyperframesResolver],
+    ["esbuild", hyperframesResolver],
+    ["onnxruntime-node", hyperframesResolver],
+    // node-pty is owned by the adapter rather than HyperFrames. Resolving it
+    // through HyperFrames can select no package at all in Bun's isolated store.
+    ["node-pty", requireFromAdapter],
+  ].map(async ([packageName, resolver]) => [
     packageName,
-    await resolvePackageDirectory(packageName, hyperframesResolver),
+    await resolvePackageDirectory(packageName, resolver),
   ])));
   const sharpResolver = createRequire(path.join(direct.get("sharp"), "package.json"));
   const esbuildResolver = createRequire(path.join(direct.get("esbuild"), "package.json"));
@@ -587,6 +601,7 @@ export async function resolveNativePackageRoots(hyperframesRoot, platform) {
     ["sharp", hyperframesResolver],
     ["esbuild", hyperframesResolver],
     ["onnxruntime-node", hyperframesResolver],
+    ["node-pty", requireFromAdapter],
     ["onnxruntime-common", onnxResolver],
     ["@img/colour", sharpResolver],
     ["detect-libc", sharpResolver],
@@ -807,13 +822,14 @@ async function sanitizeJavaScriptFile(filename) {
   if (sanitized !== source) await writeFile(filename, sanitized, "utf8");
 }
 
-function runtimePackageFile(relative, metadata) {
+function runtimePackageFile(relative, metadata, packageName) {
   const basename = path.basename(relative);
   if (basename === "package.json") return true;
   if (/^(?:licen[cs]e|notice|copying|third[-_]party)(?:[._-].*)?$/iu.test(basename)) return true;
   if (/^readme(?:[._-].*)?$/iu.test(basename)) return true;
   if (/\.(?:cjs|mjs|js|json|node|wasm|dylib|dll|exe)$/iu.test(basename)) return true;
   if (/\.so(?:\.\d+)*$/iu.test(basename)) return true;
+  if (packageName === "node-pty" && basename === "spawn-helper" && (metadata.mode & 0o111) !== 0) return true;
   return !basename.includes(".") && (metadata.mode & 0o111) !== 0 && relative.split(path.sep).includes("bin");
 }
 
@@ -832,6 +848,15 @@ export async function pruneRuntimePackageTree(packageRoot, packageName, platform
         if (architectureEntry.name !== hostArchitecture) {
           await rm(path.join(platformPath, architectureEntry.name), { recursive: true, force: true });
         }
+      }
+    }
+  }
+  if (packageName === "node-pty") {
+    const prebuildsRoot = path.join(packageRoot, "prebuilds");
+    const hostPrebuild = `${hostPlatform}-${hostArchitecture}`;
+    for (const entry of await readdir(prebuildsRoot, { withFileTypes: true }).catch(() => [])) {
+      if (entry.name !== hostPrebuild) {
+        await rm(path.join(prebuildsRoot, entry.name), { recursive: true, force: true });
       }
     }
   }
@@ -854,7 +879,7 @@ export async function pruneRuntimePackageTree(packageRoot, packageName, platform
       if (!metadata.isFile() || metadata.nlink !== 1) {
         fail("staged native package contains a special or hard-linked file", { path: absolute });
       }
-      if (!runtimePackageFile(relative, metadata)) {
+      if (!runtimePackageFile(relative, metadata, packageName)) {
         await rm(absolute);
       } else {
         if (/\.(?:cjs|mjs|js)$/iu.test(entry.name)) await sanitizeJavaScriptFile(absolute);
@@ -928,10 +953,25 @@ Module._resolveFilename = function(request, parent, isMain, options) {
 };
 const requireFromStage = createRequire(path.join(process.argv[1], "native-closure-probe.cjs"));
 for (const packageName of process.argv.slice(2)) requireFromStage(packageName);
+const nodePty = requireFromStage("node-pty");
+const terminal = nodePty.spawn(process.execPath, ["-e", "process.stdout.write('VIDCOM_PTY_PROBE')"], {
+  name: "xterm-256color",
+  cols: 80,
+  rows: 24,
+  cwd: archiveRoot,
+  env: process.env,
+});
+let ptyOutput = "";
+terminal.onData((data) => { ptyOutput += data; });
+terminal.onExit(({ exitCode }) => {
+  if (exitCode !== 0 || !ptyOutput.includes("VIDCOM_PTY_PROBE")) {
+    throw new Error("node-pty staged native process probe failed");
+  }
+});
 `;
   runChecked(
     process.execPath,
-    ["-e", probe, archiveRoot, "sharp", "esbuild", "onnxruntime-node"],
+    ["-e", probe, archiveRoot, "sharp", "esbuild", "onnxruntime-node", "node-pty"],
     "staged native dependency closure probe",
     { env: environment },
   );
@@ -1073,6 +1113,21 @@ async function stageHyperframes({ root, sourceRoot, libraries, motionPackageRoot
     path.join(root, "bin", "hyperframes.mjs"),
   );
   await sanitizeJavaScriptFile(path.join(root, "bin", "hyperframes.mjs"));
+
+  const browserScriptRoot = path.join(root, "bin", "commands");
+  await mkdir(browserScriptRoot, { recursive: true });
+  for (const name of HYPERFRAMES_BROWSER_SCRIPTS) {
+    const source = await assertContainedRegularFile(
+      sourceRoot,
+      path.join(sourceRoot, "dist", "commands", name),
+      `HyperFrames ${name}`,
+      false,
+      true,
+    );
+    const destination = path.join(browserScriptRoot, name);
+    await copyFile(source, destination);
+    await sanitizeJavaScriptFile(destination);
+  }
 
   const runtimeManifestSource = path.join(sourceRoot, "dist", "hyperframe.manifest.json");
   const runtimeSource = path.join(sourceRoot, "dist", "hyperframe.runtime.iife.js");
@@ -1679,6 +1734,13 @@ export async function stageArtifactRuntime(paths, options = {}) {
       fail("esbuild binary does not match its JavaScript package", {
         binary: probes.esbuild,
         package: esbuildManifest.version,
+      });
+    }
+    const nodePtyManifest = await readPackageManifest(canonicalNativePackageRoots.get("node-pty"), "node-pty");
+    if (nodePtyManifest.version !== EXPECTED_NODE_PTY_VERSION) {
+      fail("node-pty does not match the approved runtime", {
+        expected: EXPECTED_NODE_PTY_VERSION,
+        actual: nodePtyManifest.version,
       });
     }
     // The shipped BGM audio, staged as its own generation: an artifact has no

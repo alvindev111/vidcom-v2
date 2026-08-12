@@ -1,5 +1,14 @@
 import { spawnSync } from "node:child_process";
-import { readFileSync } from "node:fs";
+import { randomUUID } from "node:crypto";
+import {
+  mkdirSync,
+  lstatSync,
+  readFileSync,
+  realpathSync,
+  renameSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -77,18 +86,22 @@ export function verifierArgumentsWithSeaBuildSeal(args, record, tag, generationI
 }
 
 export function parseBuildArtifactArguments(argv) {
-  const options = { json: false, target: undefined, runtimeInputs: undefined };
+  const options = { json: false, release: false, target: undefined, runtimeInputs: undefined };
   for (let index = 0; index < argv.length; index += 1) {
     const flag = argv[index];
     if (flag === "--json") {
       options.json = true;
       continue;
     }
+    if (flag === "--release") {
+      options.release = true;
+      continue;
+    }
     if (flag === "--target") {
       const value = argv[index + 1];
       if (!value || value.startsWith("--")) {
         fail("--target requires a platform tag", {
-          usage: "build-artifact [--target <tag>] [--runtime-inputs <file>] [--json]",
+          usage: "build-artifact [--target <tag>] [--runtime-inputs <file>] [--release] [--json]",
         });
       }
       options.target = value;
@@ -99,7 +112,7 @@ export function parseBuildArtifactArguments(argv) {
       const value = argv[index + 1];
       if (!value || value.startsWith("--")) {
         fail("--runtime-inputs requires a file", {
-          usage: "build-artifact [--target <tag>] [--runtime-inputs <file>] [--json]",
+          usage: "build-artifact [--target <tag>] [--runtime-inputs <file>] [--release] [--json]",
         });
       }
       options.runtimeInputs = value;
@@ -107,7 +120,7 @@ export function parseBuildArtifactArguments(argv) {
       continue;
     }
     fail(`unknown argument ${flag}`, {
-      usage: "build-artifact [--target <tag>] [--runtime-inputs <file>] [--json]",
+      usage: "build-artifact [--target <tag>] [--runtime-inputs <file>] [--release] [--json]",
     });
   }
   return options;
@@ -117,6 +130,7 @@ export function planSteps({
   tag = hostPlatformTag(),
   runtimeInputs = runtimeInputPath(tag),
   generationId = "plan",
+  release = false,
 } = {}) {
   const stageRoot = runtimeStageRoot(tag);
   const configPath = runtimeConfigPath(tag);
@@ -164,10 +178,97 @@ export function planSteps({
     {
       name: "verify artifact (L.1)",
       command: process.execPath,
-      args: ["scripts/verify-artifact.mjs", tag, "--generation", generationId],
+      args: [
+        "scripts/verify-artifact.mjs",
+        tag,
+        "--generation",
+        generationId,
+        ...(release ? ["--release"] : []),
+      ],
       requiresSeaBuildSeal: true,
     },
   ];
+}
+
+function processIsAlive(pid) {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    return error?.code === "EPERM";
+  }
+}
+
+export function acquireArtifactBuildLock(
+  tag,
+  root = path.join(REPOSITORY_ROOT, "dist", "artifact"),
+) {
+  if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/u.test(tag)) {
+    throw new Error(`invalid artifact build-lock tag ${tag}`);
+  }
+  mkdirSync(root, { recursive: true, mode: 0o700 });
+  const rootMetadata = lstatSync(root);
+  if (!rootMetadata.isDirectory() || rootMetadata.isSymbolicLink()
+    || path.resolve(realpathSync(root)) !== path.resolve(root)) {
+    throw new Error("artifact build-lock root must be one canonical real directory");
+  }
+  const lockPath = path.join(root, `.build-${tag}.lock`);
+
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const token = randomUUID();
+    try {
+      mkdirSync(lockPath, { mode: 0o700 });
+      try {
+        writeFileSync(
+          path.join(lockPath, "owner.json"),
+          `${JSON.stringify({ version: 1, pid: process.pid, token })}\n`,
+          { encoding: "utf8", flag: "wx", mode: 0o600 },
+        );
+      } catch (error) {
+        rmSync(lockPath, { recursive: true, force: true });
+        throw error;
+      }
+
+      let released = false;
+      return {
+        path: lockPath,
+        release() {
+          if (released) return;
+          const owner = JSON.parse(readFileSync(path.join(lockPath, "owner.json"), "utf8"));
+          if (owner.token !== token || owner.pid !== process.pid) {
+            throw new Error(`artifact build lock ownership changed for ${tag}`);
+          }
+          rmSync(lockPath, { recursive: true, force: true });
+          released = true;
+        },
+      };
+    } catch (error) {
+      if (error?.code !== "EEXIST") throw error;
+    }
+
+    let owner;
+    try {
+      owner = JSON.parse(readFileSync(path.join(lockPath, "owner.json"), "utf8"));
+    } catch {
+      throw new Error(`artifact build lock is incomplete for ${tag}; refuse unsafe reclaim`);
+    }
+    if (!Number.isSafeInteger(owner.pid) || owner.pid <= 0 || typeof owner.token !== "string") {
+      throw new Error(`artifact build lock is invalid for ${tag}; refuse unsafe reclaim`);
+    }
+    if (processIsAlive(owner.pid)) {
+      throw new Error(`artifact build already active for ${tag} (pid ${owner.pid})`);
+    }
+
+    const stalePath = `${lockPath}.stale-${randomUUID()}`;
+    try {
+      renameSync(lockPath, stalePath);
+    } catch (error) {
+      if (error?.code === "ENOENT") continue;
+      throw error;
+    }
+    rmSync(stalePath, { recursive: true, force: true });
+  }
+  throw new Error(`could not acquire artifact build lock for ${tag}`);
 }
 
 export function assertBuildableTarget(
@@ -198,9 +299,16 @@ function main(argv) {
     ? runtimeInputPath(tag)
     : path.resolve(options.runtimeInputs);
   const generationId = createArtifactGenerationId();
+  const buildLock = acquireArtifactBuildLock(tag);
 
+  try {
   let seaBuildSeal;
-  for (const entry of planSteps({ tag, runtimeInputs, generationId })) {
+  for (const entry of planSteps({
+    tag,
+    runtimeInputs,
+    generationId,
+    release: options.release,
+  })) {
     const args = entry.requiresSeaBuildSeal
       ? verifierArgumentsWithSeaBuildSeal(entry.args, seaBuildSeal, tag, generationId)
       : entry.args;
@@ -226,6 +334,9 @@ function main(argv) {
   process.stderr.write(`build-artifact: ${artifact} (${tag})\n`);
   if (options.json) {
     process.stdout.write(formatBuildArtifactJson(artifact));
+  }
+  } finally {
+    buildLock.release();
   }
 }
 

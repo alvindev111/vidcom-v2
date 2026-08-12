@@ -17,22 +17,22 @@ import { describe, expect, it } from "vitest";
  * manages a secret and is explicitly non-composing.
  */
 type RuntimeAwareMode = Exclude<VidcomCommandName, "version" | "approve" | "credential">;
+type RuntimePathOwnerMode = Exclude<RuntimeAwareMode, "mcp">;
 
 const RUNTIME_ENTRYPOINT_SOURCES = {
   app: "packages/cli/src/next-host.ts",
   serve: "packages/cli/src/next-host.ts",
-  mcp: "packages/cli/src/commands/mcp.ts",
   render: "packages/cli/src/next-host.ts",
   doctor: "packages/cli/src/next-host.ts",
   backup: "packages/cli/src/commands/backup.ts",
   recovery: "packages/cli/src/commands/recovery.ts",
-} as const satisfies Record<RuntimeAwareMode, string>;
+} as const satisfies Record<RuntimePathOwnerMode, string>;
 
-const COMPOSING_MODES = Object.keys(RUNTIME_ENTRYPOINT_SOURCES) as RuntimeAwareMode[];
+const COMPOSING_MODES = Object.keys(RUNTIME_ENTRYPOINT_SOURCES) as RuntimePathOwnerMode[];
 
 describe("runtime paths reach every entrypoint", () => {
   it("names modes that the CLI actually publishes", () => {
-    for (const mode of COMPOSING_MODES) {
+    for (const mode of [...COMPOSING_MODES, "mcp"] as RuntimeAwareMode[]) {
       expect(VIDCOM_COMMAND_NAMES, mode).toContain(mode);
     }
   });
@@ -66,6 +66,17 @@ describe("runtime paths reach every entrypoint", () => {
     for (const source of sources) {
       expect(source).toContain("runtimePathsFor");
     }
+  });
+
+  it("keeps MCP as a thin daemon bridge without local runtime paths", async () => {
+    const source = await readFile("packages/cli/src/commands/mcp.ts", "utf8");
+    // The no-workspace fallback may open existing SQLite state to read
+    // active_workspace, but even it must not extract/migrate runtime assets.
+    expect(source).toContain("openVidcomDatabase");
+    expect(source).not.toContain("prepareRuntimeForCli");
+    expect(source).not.toContain("runtimePathsFor");
+    expect(source).not.toContain("startVidcomFoundation");
+    expect(source).not.toContain("createInfrastructure");
   });
 
   it("keeps the paths off the artifact's require.resolve fallback", () => {

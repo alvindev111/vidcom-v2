@@ -1402,6 +1402,42 @@
           <div><dt class="font-semibold text-slate-200">Ambient Chrome không phải test authority</dt><dd class="mt-1 text-slate-300">Linux process matrix launch Chrome hệ thống rồi chạm hook 30 giây; Windows generic CI sau đó đứng hơn 30 phút ở full Test. Test remote-asset browser nay thuộc <code>test:browser-session</code> với exact Chrome + <code>VIDCOM_REQUIRE_BROWSER=1</code>; process contract và generic CI không chạy lại nó, còn path trigger review vẫn được giữ.</dd></div>
         </dl>
       </section>
+      <section class="rounded-2xl border border-amber-400/30 bg-amber-950/20 p-6 shadow-xl">
+        <p class="text-xs font-semibold uppercase tracking-[0.24em] text-amber-300">2026-08-12 · Reopen exact HEAD</p>
+        <h2 class="mt-2 text-xl font-bold text-white">C-53–C-57: evidence cũ không còn đại diện cho runtime hiện tại</h2>
+        <dl class="mt-5 grid gap-4 md:grid-cols-2">
+          <div><dt class="font-semibold text-slate-200">Raw multi-agent audit</dt><dd class="mt-1 text-slate-300">Bảy review độc lập kiểm checklist, runtime security, CI ba OS, artifact supply-chain, MCP bridge, video quality và filesystem/import/UI. Exact HEAD <code>e72c897</code> có cả bốn workflow đỏ; local full suite ban đầu có hai regression render.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Topology thay đổi vật chất</dt><dd class="mt-1 text-slate-300">BGM đã thành archive product thứ ba nhưng SEA còn hard-code hai archive. <code>node-pty</code> là native capability bắt buộc nhưng chưa external/stage/probe trong artifact và eager barrel import làm Linux sập trước test.</dd></div>
+          <div><dt class="font-semibold text-slate-200">MCP phải là bridge thật</dt><dd class="mt-1 text-slate-300"><code>vidcom mcp</code> hiện dựng foundation/lease riêng. Quyết định sửa: stdio chỉ ensure/discover daemon, handshake, attach/renew và gọi remote invoker; không sở hữu scheduler, watcher, database hay writer lease.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Scene seed và motion gate</dt><dd class="mt-1 text-slate-300">Scene mặc định đã được sửa sang HyperFrames <code>&lt;template&gt;</code> và đúng dimensions horizontal/vertical. Hai integration fixture render có choreography scale → rotation thật; không hạ motion gate và không chèn dummy tween vào generator.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Filesystem fail-closed</dt><dd class="mt-1 text-slate-300">Workspace được canonicalize bằng physical realpath trước selection/lease/discovery; lease-loss hook chạy trước teardown; browse readdir bind device/inode trước-sau và revoke token khi identity drift.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Gate đang mở</dt><dd class="mt-1 text-slate-300">B/H/I/M được reopen. Chưa được dùng run <code>31339333590</code> hay commit <code>26f0271</code> làm current acceptance; phải qua local full gate, exact-head CI/Browser/Process/Packaged cùng SHA và production private-PATH MP4 proof.</dd></div>
+        </dl>
+      </section>
+      <section class="mt-6 rounded-2xl border border-emerald-400/30 bg-emerald-950/20 p-6 shadow-xl">
+        <p class="text-xs font-semibold uppercase tracking-[0.24em] text-emerald-300">2026-08-12 · Remediation C-53–C-57</p>
+        <h2 class="mt-2 text-xl font-bold text-white">Raw review đã được chuyển thành gate thực thi</h2>
+        <dl class="mt-5 grid gap-4 md:grid-cols-2">
+          <div><dt class="font-semibold text-slate-200">Artifact fail-closed</dt><dd class="mt-1 text-slate-300">Canonical product có đúng ba archive <code>bgm|hyperframes|node</code>; release flag đi xuyên orchestrator; build có lock theo tag; provenance rehash SHA256SUMS/manifest/executable, bind commit/platform/tool pins; strict doctor chỉ cho phép exact allowlist skip.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Native PTY là closure thật</dt><dd class="mt-1 text-slate-300"><code>node-pty@1.1.0</code> được pin/trust, external khỏi bundle, lazy-load tại terminal boundary, stage đúng host prebuild/spawn-helper và probe một PTY child thật. Import adapter không còn eager crash.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Runtime security và import</dt><dd class="mt-1 text-slate-300">App-data được secure/canonicalize trước lock và warm reuse deep-hash payload. Prune cần ownership capability riêng. Windows ACL reset explicit ACE rồi tắt inheritance. Import dùng no-follow handle + dev/ino/ctime, validate identity/config trước publish và fail-closed khi duplicate lookup bị từ chối.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Một writer, một bridge</dt><dd class="mt-1 text-slate-300">Stdio MCP chỉ attach daemon và giữ một lease. Destructive elicitation đi trọn daemon HTTP → stdio approval; conflict metadata không bị mất; credential admin không được rotate/revoke system bridge bằng generic command.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Revision-bound render</dt><dd class="mt-1 text-slate-300"><code>start_render</code> bắt buộc source revision đã inspect; enqueue và worker đều recheck revision + diagnostics, strict render đòi HyperFrames lint available. Generated scene dùng template/dimensions đúng preset và không dùng dummy motion.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Local evidence hiện tại</dt><dd class="mt-1 text-slate-300">Frozen install, typecheck, boundaries, spec paths, lint không error, production Next build, MCP contract/goldens, browser-session, runtime smoke và các focused security/artifact suites đã xanh. Full suite/exact-head Actions/private-PATH artifact và 10 video MCP vẫn là gate mở cho tới khi có evidence cuối.</dd></div>
+        </dl>
+      </section>
+      <section class="mt-6 rounded-2xl border border-cyan-400/30 bg-cyan-950/20 p-6 shadow-xl">
+        <p class="text-xs font-semibold uppercase tracking-[0.24em] text-cyan-300">2026-08-13 · Local council sau remediation</p>
+        <h2 class="mt-2 text-xl font-bold text-white">Code gate B/H/I đã đóng; M vẫn chờ exact runner</h2>
+        <dl class="mt-5 grid gap-4 md:grid-cols-2">
+          <div><dt class="font-semibold text-slate-200">Closure thật thay vì filename proof</dt><dd class="mt-1 text-slate-300">Artifact mang exact ba archive, native PTY đúng host và ba HyperFrames browser script. Regression bundle CLI thật rồi chạy <code>hyperframes check --json</code> từ staged runtime, nên diagnostics packaged không còn dựa vào source checkout.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Bridge workload có budget riêng</dt><dd class="mt-1 text-slate-300">Control-plane vẫn timeout 5 giây; validate/tool/render enqueue dùng 120 giây. Thin MCP explicit-workspace không extract runtime hay migrate DB trước khi attach daemon, nên stale runtime manifest không làm hỏng một daemon đang khỏe.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Output lớn vẫn bounded</dt><dd class="mt-1 text-slate-300">Process capture mặc định giữ 64 KiB. Chỉ HyperFrames diagnostics yêu cầu 8 MiB có hard cap; ca JSON 70 KiB qua child process thật chứng minh video 35–50 scene không còn bị truncate rồi báo lint unavailable giả.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Integrity nhanh hơn nhưng không yếu đi</dt><dd class="mt-1 text-slate-300">Warm ensure vẫn hash toàn bộ 8067 file, concurrency chia sẻ bị chặn ở 8 và lỗi đầu tiên vẫn theo thứ tự manifest/path. Exact local artifact giảm serve khoảng 2.82 xuống 2.02 giây; baseline cũ không được đổi trước số exact CI ba OS.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Local test authority</dt><dd class="mt-1 text-slate-300">Full suite: 219 test file pass + 1 intentional skip, 2022 test pass + 5 intentional skip. Runtime smoke, MCP contract 72/72, golden 45/45, typecheck, boundaries, spec paths, source lint và diff-check đều xanh. Packaged render CLI pass 126.9 giây và cancellation proof zero survivor.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Production video chưa được khai hoàn tất</dt><dd class="mt-1 text-slate-300">Mười project có 216 scene × 12 giây, năm archetype mỗi project, exact validate zero error và lint available. VieNeu TTS, snapshot và render exact revision đang chạy; chưa có MP4 cuối thì không dùng cấu trúc scene làm acceptance evidence.</dd></div>
+        </dl>
+      </section>
     </main>
   </body>
 </html>

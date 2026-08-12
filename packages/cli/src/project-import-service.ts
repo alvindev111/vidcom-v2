@@ -2,10 +2,12 @@ import { createHash } from "node:crypto";
 import { rm } from "node:fs/promises";
 
 import {
+  canonicalImportPaths,
   commitStaging,
   copyIntoStaging,
   sourceIdentityOf,
   stagingPathFor,
+  validateStagedProject,
   writeStagingMarker,
 } from "@vidcom/adapter";
 import { ErrorCode, type DomainError } from "@vidcom/contracts";
@@ -13,7 +15,6 @@ import {
   assertSourceUnchanged,
   importIdempotencyKey,
   planProjectImport,
-  type AbsolutePath,
   type Result,
   type WorkspaceOperationId,
   type WorkspaceOperationJournalPort,
@@ -30,7 +31,7 @@ export interface ProjectImportServiceDependencies {
   /** Slugs already taken, so the plan picks a free one rather than colliding. */
   takenSlugs(): Promise<readonly string[]>;
   /** Resolves a browse selection token; null when the token is not this session's. */
-  resolveSelection(token: string): ImportSelection | null;
+  resolveSelection(token: string, sessionId?: string): Promise<ImportSelection | null> | ImportSelection | null;
   findExisting(idempotencyKey: string): Promise<{
     id: string;
     status: "queued" | "running" | "succeeded" | "partial" | "failed" | "cancelled";
@@ -64,16 +65,21 @@ function invalidToken(): DomainError {
  */
 export function createStartProjectImport(dependencies: ProjectImportServiceDependencies) {
   let tail = Promise.resolve();
-  return async (input: { selectionToken: string; targetName?: string }):
+  return async (input: { selectionToken: string; targetName?: string; sessionId?: string }):
   Promise<Result<{ jobId: string }, DomainError>> => {
-    const selection = dependencies.resolveSelection(input.selectionToken);
+    const selection = await dependencies.resolveSelection(input.selectionToken, input.sessionId);
     if (!selection) return { ok: false, error: invalidToken() };
     const previous = tail;
     let release = () => {};
     tail = new Promise<void>((resolve) => { release = resolve; });
     await previous;
     try {
-      const sourceIdentity = await sourceIdentityOf(selection.canonicalPath);
+      const canonical = await canonicalImportPaths(
+        selection.canonicalPath,
+        dependencies.workspaceRoot,
+      ).catch(() => null);
+      if (!canonical) return { ok: false, error: invalidToken() };
+      const sourceIdentity = await sourceIdentityOf(canonical.source);
       const [device, inode] = sourceIdentity.split(":", 2);
       if (selection.identity.device !== device || selection.identity.inode !== inode) {
         return { ok: false, error: invalidToken() };
@@ -81,7 +87,7 @@ export function createStartProjectImport(dependencies: ProjectImportServiceDepen
       // NUL separates fields because it is the one byte a native path cannot
       // contain; ordinary punctuation can make two different tuples collide.
       const idempotencyKey = importIdempotencyKey({
-        workspaceRoot: dependencies.workspaceRoot,
+        workspaceRoot: canonical.workspaceRoot,
         sourceCanonicalIdentity: sourceIdentity,
         ...(input.targetName === undefined ? {} : { targetName: input.targetName }),
       }, (content) => `sha256:${createHash("sha256").update(content).digest("hex")}`);
@@ -100,18 +106,19 @@ export function createStartProjectImport(dependencies: ProjectImportServiceDepen
       // that cannot become a slug is refused while the caller is still listening
       // rather than inside a job they have to go and read.
       const planned = planProjectImport({
-        source: selection.canonicalPath as AbsolutePath,
-        workspaceRoot: dependencies.workspaceRoot as AbsolutePath,
+        source: canonical.source,
+        workspaceRoot: canonical.workspaceRoot,
         taken: await dependencies.takenSlugs(),
+        caseInsensitive: canonical.caseInsensitive,
         ...(input.targetName === undefined ? {} : { targetName: input.targetName }),
         sourceIdentity,
       });
       if (!planned.ok) return planned;
 
       const enqueued = await dependencies.enqueue({
-        source: selection.canonicalPath,
+        source: canonical.source,
         sourceIdentity,
-        workspaceRoot: dependencies.workspaceRoot,
+        workspaceRoot: canonical.workspaceRoot,
         idempotencyKey,
         ...(input.targetName === undefined ? {} : { targetName: input.targetName }),
       });
@@ -138,22 +145,24 @@ export function createProjectImportJobDependencies(input: {
 }): ProjectImportJobDependencies {
   return {
     async plan({ source, sourceIdentity, workspaceRoot, targetName }) {
+      const canonical = await canonicalImportPaths(source, workspaceRoot);
       const planned = planProjectImport({
-        source: source as AbsolutePath,
-        workspaceRoot: workspaceRoot as AbsolutePath,
+        source: canonical.source,
+        workspaceRoot: canonical.workspaceRoot,
         taken: await input.takenSlugs(),
+        caseInsensitive: canonical.caseInsensitive,
         ...(targetName === undefined ? {} : { targetName }),
         sourceIdentity,
       });
       if (!planned.ok) throw new Error(planned.error.message);
-      const unchanged = assertSourceUnchanged(planned.value, await sourceIdentityOf(source));
+      const unchanged = assertSourceUnchanged(planned.value, await sourceIdentityOf(canonical.source));
       if (!unchanged.ok) throw new Error(unchanged.error.message);
 
       const operationId = await input.journal.begin({
-        workspaceRoot: workspaceRoot as AbsolutePath,
+        workspaceRoot: canonical.workspaceRoot,
         kind: "project_import",
         projectId: null,
-        fromPath: source,
+        fromPath: canonical.source,
         toPath: planned.value.slug,
         stagingPath: null,
         actor: "user",
@@ -168,7 +177,7 @@ export function createProjectImportJobDependencies(input: {
         await writeStagingMarker(staging, {
           operationId: markerId,
           slug: planned.value.slug,
-          source,
+          source: canonical.source,
           target: planned.value.target,
           startedAt: input.now(),
         });
@@ -176,13 +185,24 @@ export function createProjectImportJobDependencies(input: {
         await input.journal.abort(operationId, ErrorCode.StorageUnavailable).catch(() => undefined);
         throw error;
       }
-      return { operationId: markerId, slug: planned.value.slug, target: planned.value.target, staging };
+      return {
+        operationId: markerId,
+        source: canonical.source,
+        slug: planned.value.slug,
+        target: planned.value.target,
+        staging,
+      };
     },
 
-    async copy(source, staging) {
-      const report = await copyIntoStaging(source, staging);
+    async copy(source, sourceIdentity, staging) {
+      const report = await copyIntoStaging(source, staging, { expectedSourceIdentity: sourceIdentity });
       if ("code" in report) throw new Error(report.message);
       return { files: report.files };
+    },
+
+    async validate(staging) {
+      const failure = await validateStagedProject(staging);
+      if (failure) throw new Error(failure.message);
     },
 
     async commit(staging, target) {

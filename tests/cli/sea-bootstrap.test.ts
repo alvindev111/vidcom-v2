@@ -40,9 +40,18 @@ const NODE_ARCHIVE_KEY = "node";
 const NODE_ARCHIVE_TARGET = "node";
 const HYPERFRAMES_ARCHIVE_KEY = "hyperframes";
 const HYPERFRAMES_ARCHIVE_TARGET = "hyperframes";
+const BGM_ARCHIVE_KEY = "bgm";
+const BGM_ARCHIVE_TARGET = "bgm";
 const MANIFEST_ASSET = "runtime-manifest.json";
 const NODE_ARCHIVE_ASSET = `runtime-archives/${NODE_ARCHIVE_KEY}.tar.gz`;
 const HYPERFRAMES_ARCHIVE_ASSET = `runtime-archives/${HYPERFRAMES_ARCHIVE_KEY}.tar.gz`;
+const BGM_ARCHIVE_ASSET = `runtime-archives/${BGM_ARCHIVE_KEY}.tar.gz`;
+const BGM_FILES = [
+  "alex-morgan-corporate-business-background.mp3",
+  "corporate-marimba-business-background.mp3",
+  "meta.mp3",
+  "promo-promo-business-background.mp3",
+].map((entry) => ({ path: entry, content: Buffer.from(`fixture ${entry}\n`) }));
 const MIGRATION_PATHS = PACKAGED_RUNTIME_MIGRATION_ENTRIES;
 const BOOT_BODY = Buffer.from(
   `"use strict";\nmodule.exports = { runBootstrappedCli: async (argv) => 40 + argv.length };\n`,
@@ -117,10 +126,16 @@ function fixture(options: {
     undefined,
     HYPERFRAMES_ARCHIVE_TARGET,
   );
+  const bgm = archiveFor(
+    BGM_ARCHIVE_KEY,
+    BGM_FILES,
+    undefined,
+    BGM_ARCHIVE_TARGET,
+  );
   const includeHyperframes = options.includeHyperframes !== false;
   const baseManifest = runtimeManifest(
     artifactVersion,
-    [node.archive, ...(includeHyperframes ? [hyperframes.archive] : [])],
+    [bgm.archive, node.archive, ...(includeHyperframes ? [hyperframes.archive] : [])],
   );
   const manifest = options.versionOverrides
     ? {
@@ -138,6 +153,7 @@ function fixture(options: {
   return {
     artifactVersion,
     archives: {
+      [BGM_ARCHIVE_KEY]: bgm.bytes,
       [NODE_ARCHIVE_KEY]: node.bytes,
       ...(includeHyperframes ? { [HYPERFRAMES_ARCHIVE_KEY]: hyperframes.bytes } : {}),
     },
@@ -187,7 +203,12 @@ describe.skipIf(!HOST_SUPPORTED)("primary SEA bootstrap", () => {
       rawAsset: rawAssets(runtime, calls),
     })).resolves.toBe(42);
 
-    expect(calls).toEqual([MANIFEST_ASSET, NODE_ARCHIVE_ASSET, HYPERFRAMES_ARCHIVE_ASSET]);
+    expect(calls).toEqual([
+      MANIFEST_ASSET,
+      BGM_ARCHIVE_ASSET,
+      NODE_ARCHIVE_ASSET,
+      HYPERFRAMES_ARCHIVE_ASSET,
+    ]);
     expect(await readFile(installedBootPath(appDataRoot))).toEqual(BOOT_BODY);
     const metadata = await lstat(installedBootPath(appDataRoot));
     expect(metadata.isFile()).toBe(true);

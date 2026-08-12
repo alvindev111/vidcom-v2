@@ -39,6 +39,10 @@ describe("browse worker", () => {
     const entries = response.entries as { name: string; isDirectory: boolean }[];
     expect(entries.map((entry) => entry.name).sort()).toEqual(["notes.txt", "projects"]);
     expect(entries.find((entry) => entry.name === "projects")?.isDirectory).toBe(true);
+    expect(response.identity).toMatchObject({
+      device: expect.any(String),
+      inode: expect.any(String),
+    });
   });
 
   it("reports a directory identity a caller can compare later", async () => {

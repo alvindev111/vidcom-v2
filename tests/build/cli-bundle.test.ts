@@ -51,6 +51,18 @@ async function scratchRepositoryDirectory(): Promise<string> {
 }
 
 describe("cjs bundle", () => {
+  it("pins and trusts the native PTY lifecycle dependency", async () => {
+    const adapterPackage = JSON.parse(await readFile(path.resolve("packages/adapter/package.json"), "utf8")) as {
+      dependencies?: Record<string, string>;
+    };
+    const rootPackage = JSON.parse(await readFile(path.resolve("package.json"), "utf8")) as {
+      trustedDependencies?: string[];
+    };
+
+    expect(adapterPackage.dependencies?.["node-pty"]).toBe("1.1.0");
+    expect(rootPackage.trustedDependencies).toContain("node-pty");
+  });
+
   it("bundles with the toolchain the repository already runs on", () => {
     // No bundler is declared as a dependency of any package here, and the only
     // copies of esbuild on disk are transitive ones at two different versions.
@@ -64,6 +76,8 @@ describe("cjs bundle", () => {
     // Sourcemaps carry the build machine's absolute paths and the full original
     // source, both of which L.1 forbids in the artifact.
     expect(args).toContain("--sourcemap=none");
+    expect(EXTERNAL_PACKAGES).toContain("node-pty");
+    expect(args).toEqual(expect.arrayContaining(["--external", "node-pty"]));
   });
 
   it.each([

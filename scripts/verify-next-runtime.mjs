@@ -1,6 +1,6 @@
 import { execFile as execFileCallback, spawn } from "node:child_process";
 import { randomBytes } from "node:crypto";
-import { cp, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 import net from "node:net";
 import { tmpdir } from "node:os";
@@ -14,13 +14,13 @@ import { Client as LegacyClient } from "@modelcontextprotocol/sdk/client/index.j
 import { StreamableHTTPClientTransport as LegacyHttp } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 
 import { stopRuntimeChild } from "./runtime-smoke-process.mjs";
+import { writeRuntimeSmokeProject } from "./runtime-smoke-project.mjs";
 
 const execFile = promisify(execFileCallback);
 
 const root = process.cwd();
 const temporaryRoot = await mkdtemp(path.join(tmpdir(), "vidcom-next-smoke-"));
 const workspace = path.join(temporaryRoot, "workspace");
-const projectRoot = path.join(workspace, "swiss-grid");
 const appData = path.join(temporaryRoot, "app-data");
 const nonce = randomBytes(32).toString("base64url");
 const modernRevision = "2026-07-28";
@@ -166,7 +166,7 @@ function verifyCredentialAudit(appData, credentialId) {
   }
 }
 
-await cp(path.join(root, "projects", "swiss-grid"), projectRoot, { recursive: true });
+const { project: projectRoot } = await writeRuntimeSmokeProject(workspace);
 const port = await freePort();
 const baseUrl = `http://127.0.0.1:${port}`;
 // `next start` used to host this. The frontend is a static export now, so Next

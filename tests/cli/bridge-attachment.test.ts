@@ -170,9 +170,29 @@ describe("ensure daemon", () => {
       readRecord: () => Promise.resolve(record("daemon_dead")),
       connect: (target) => client({ handshakeFails: target.instanceId === "daemon_dead" }),
       spawnDaemon: () => { spawned += 1; return Promise.resolve(); },
+      waitForRecord: (_workspaceRoot, rejectedInstanceId) => {
+        expect(rejectedInstanceId).toBe("daemon_dead");
+        return Promise.resolve(record("daemon_started"));
+      },
     }));
     expect(spawned).toBe(1);
     expect(ensured.record.instanceId).toBe("daemon_started");
+  });
+
+  it("waits past a rejected stale record until its replacement publishes", async () => {
+    let reads = 0;
+    const stale = record("daemon_stale");
+    const replacement = record("daemon_replacement");
+    const found = await waitForDaemonRecord(
+      () => Promise.resolve(reads++ < 2 ? stale : replacement),
+      {
+        pollMs: 0,
+        sleep: () => Promise.resolve(),
+        accept: (candidate) => candidate.instanceId !== stale.instanceId,
+      },
+    );
+    expect(found?.instanceId).toBe("daemon_replacement");
+    expect(reads).toBe(3);
   });
 
   it("turns the loser of the start race into a client", async () => {

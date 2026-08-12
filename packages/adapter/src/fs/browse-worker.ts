@@ -17,23 +17,33 @@ export const BROWSE_WORKER_SOURCE = `
 const { parentPort } = require("node:worker_threads");
 const { readdirSync, statSync } = require("node:fs");
 
+const identity = (target) => {
+  const stat = statSync(target, { bigint: true });
+  return { device: stat.dev.toString(), inode: stat.ino.toString() };
+};
+
 parentPort.on("message", (request) => {
   try {
     if (request.kind === "read") {
+      const before = identity(request.path);
       const entries = readdirSync(request.path, { withFileTypes: true }).map((entry) => ({
         name: entry.name,
         isDirectory: entry.isDirectory(),
         isSymbolicLink: entry.isSymbolicLink(),
       }));
-      parentPort.postMessage({ id: request.id, ok: true, entries });
+      const after = identity(request.path);
+      if (before.device !== after.device || before.inode !== after.inode) {
+        parentPort.postMessage({ id: request.id, ok: false, code: "identity_changed" });
+        return;
+      }
+      parentPort.postMessage({ id: request.id, ok: true, entries, identity: after });
       return;
     }
     if (request.kind === "identity") {
-      const stat = statSync(request.path, { bigint: true });
       parentPort.postMessage({
         id: request.id,
         ok: true,
-        identity: { device: stat.dev.toString(), inode: stat.ino.toString() },
+        identity: identity(request.path),
       });
       return;
     }

@@ -78,7 +78,12 @@ export function spawnEnsuredDaemon(options: SpawnDaemonOptions): void {
 /** Waits for the daemon to publish, then hands back what it published. */
 export async function waitForDaemonRecord(
   read: () => Promise<DaemonRecord | null>,
-  options: { timeoutMs?: number; pollMs?: number; sleep?: (ms: number) => Promise<void> } = {},
+  options: {
+    timeoutMs?: number;
+    pollMs?: number;
+    sleep?: (ms: number) => Promise<void>;
+    accept?: (record: DaemonRecord) => boolean;
+  } = {},
 ): Promise<DaemonRecord | null> {
   const timeoutMs = options.timeoutMs ?? 30_000;
   const pollMs = options.pollMs ?? 100;
@@ -91,7 +96,7 @@ export async function waitForDaemonRecord(
   const deadline = Date.now() + timeoutMs;
   for (;;) {
     const record = await read();
-    if (record) return record;
+    if (record && (options.accept?.(record) ?? true)) return record;
     if (Date.now() >= deadline) return null;
     await sleep(pollMs);
   }

@@ -34,7 +34,10 @@ permissions:
 # both. Grouping by workflow and ref means the newest push on a branch is the only
 # one still spending.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  # A literal prefix, not github.workflow: reusable workflows see the caller's
+  # workflow name, so sharing that expression with a called workflow lets the
+  # child cancel the CI run that invoked it.
+  group: ci-wrapper-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -106,7 +109,16 @@ jobs:
 
       - name: Install FFmpeg (Windows)
         if: runner.os == 'Windows'
-        run: choco install ffmpeg --no-progress --yes
+        shell: pwsh
+        run: |
+          choco install ffmpeg --no-progress --yes
+          if ($LASTEXITCODE -ne 0) {
+            throw "Chocolatey failed to install FFmpeg (exit $LASTEXITCODE)"
+          }
+          Get-Command ffmpeg -ErrorAction Stop
+          Get-Command ffprobe -ErrorAction Stop
+          ffmpeg -version
+          ffprobe -version
 
       - name: Report media toolchain
         run: ffmpeg -version && ffprobe -version && python --version

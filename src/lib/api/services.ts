@@ -1,19 +1,57 @@
 import { resolveApiBaseUrl, type ApiBaseUrlSource } from "./base-url";
 
 export type ServiceMethod = "GET" | "POST" | "PUT" | "DELETE";
+export type ApiPath = `/api/${string}`;
+
+export type ApiRequestInit = Omit<RequestInit, "credentials"> & {
+  source?: ApiBaseUrlSource;
+};
+
+/** Resolves one API path against the daemon selected at runtime. */
+export function apiUrl(path: ApiPath, source?: ApiBaseUrlSource): string {
+  return `${resolveApiBaseUrl(source)}${path}`;
+}
+
+/** Builds a credentialed request for a dynamic API path. */
+export function apiRequest(
+  path: ApiPath,
+  init: ApiRequestInit = {},
+): { url: string; init: RequestInit } {
+  const { source, ...requestInit } = init;
+  return {
+    url: apiUrl(path, source),
+    init: { ...requestInit, credentials: "include" },
+  };
+}
+
+/** Executes a dynamic API request without letting callers omit the session. */
+export function fetchApi(path: ApiPath, init: ApiRequestInit = {}): Promise<Response> {
+  const request = apiRequest(path, init);
+  return fetch(request.url, request.init);
+}
+
+/** Opens a reconnecting, cross-origin credentialed server-sent event stream. */
+export function openApiEventSource(
+  path: ApiPath,
+  source?: ApiBaseUrlSource,
+  EventSourceConstructor: typeof EventSource = EventSource,
+): EventSource {
+  return new EventSourceConstructor(apiUrl(path, source), { withCredentials: true });
+}
 
 export interface ServiceDefinition {
   method: ServiceMethod;
   /** Path under the API root, already including `v1`. */
-  path: string;
+  path: ApiPath;
 }
 
 /**
- * Every HTTP call the UI makes, named `v1.<domain>.<action>`.
+ * Every fixed HTTP call the UI makes, named `v1.<domain>.<action>`.
  *
  * One catalog rather than URLs scattered through components: a route that moves
  * is then one edit, and a route that no longer exists fails to resolve here
- * instead of at the moment a user clicks something.
+ * instead of at the moment a user clicks something. Parameterized routes use
+ * `fetchApi`, which still owns runtime-base resolution and credentials.
  *
  * The paths already contain `v1`, so nothing may prepend a version. Automatic
  * version injection on top of these produces `/api/v1/v1/...`, which 404s in a
@@ -36,7 +74,7 @@ export const SERVICE_CATALOG = {
 export type ServiceId = keyof typeof SERVICE_CATALOG;
 
 export function serviceUrl(id: ServiceId, source?: ApiBaseUrlSource): string {
-  return `${resolveApiBaseUrl(source)}${SERVICE_CATALOG[id].path}`;
+  return apiUrl(SERVICE_CATALOG[id].path, source);
 }
 
 export interface ServiceRequestInit {
@@ -63,28 +101,23 @@ export function serviceRequest(
   init: ServiceRequestInit = {},
 ): { url: string; init: RequestInit } {
   const definition = SERVICE_CATALOG[id];
-  return {
-    url: serviceUrl(id, init.source),
-    init: {
-      method: definition.method,
-      credentials: "include",
-      ...init.body === undefined ? {} : {
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(init.body),
-      },
-      ...init.signal ? { signal: init.signal } : {},
+  return apiRequest(definition.path, {
+    source: init.source,
+    method: definition.method,
+    ...init.body === undefined ? {} : {
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(init.body),
     },
-  };
+    ...init.signal ? { signal: init.signal } : {},
+  });
 }
 
 /**
  * Opens a server-sent event stream for one catalog entry.
  *
- * `fetch` rather than `EventSource`: `EventSource` cannot send credentials
- * cross-origin and cannot be aborted, and both matter here — the session is a
- * cookie, and a stream that outlives the component holding it keeps the
- * connection and the server-side subscription alive after the user has moved
- * on.
+ * This request builder is for fetch-based consumers that need an abort signal
+ * or Last-Event-ID header. Reconnecting browser consumers use
+ * `openApiEventSource`, which explicitly opts into cross-origin credentials.
  */
 export function serviceStream(
   id: ServiceId,
@@ -112,13 +145,21 @@ export class ServiceError extends Error {
   }
 }
 
+/** Executes one catalog request and leaves response parsing to the caller. */
+export function fetchService(
+  id: ServiceId,
+  init: ServiceRequestInit = {},
+): Promise<Response> {
+  const request = serviceRequest(id, init);
+  return fetch(request.url, request.init);
+}
+
 /** Executes one catalog entry and parses its JSON response. */
 export async function callService<Value>(
   id: ServiceId,
   init: ServiceRequestInit = {},
 ): Promise<Value> {
-  const request = serviceRequest(id, init);
-  const response = await fetch(request.url, request.init);
+  const response = await fetchService(id, init);
   const payload = await response.json().catch(() => null) as {
     error?: { code?: string; message?: string };
   } | null;

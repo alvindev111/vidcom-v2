@@ -89,6 +89,7 @@
     "unrs-resolver"
   ],
   "trustedDependencies": [
+    "node-pty",
     "sharp",
     "unrs-resolver"
   ]

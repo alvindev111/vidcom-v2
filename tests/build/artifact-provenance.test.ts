@@ -81,11 +81,9 @@ describe("build tool provenance", () => {
     expect(() => buildToolProvenance({ postject: "postject@1.0.0-alpha.6" })).not.toThrow();
   });
 
-  it("records Bun rather than comparing it, and says so", () => {
-    // Bun is the toolchain, not a dependency, so there is no lockfile entry to
-    // check against — but naming the one that built the artifact still beats
-    // saying nothing.
+  it("refuses Bun drift from the release toolchain pin", () => {
     expect(buildToolProvenance({ bun: "1.3.14" }).bun).toBe("1.3.14");
+    expect(() => buildToolProvenance({ bun: "1.3.13" })).toThrow(/toolchain pin/u);
   });
 });
 
@@ -273,6 +271,7 @@ describe("artifact directory", () => {
       artifactVersion: "fixture-v1",
       versions,
       archives: [
+        { key: "bgm", platform: HOST_TAG, sha256: `sha256:${"c".repeat(64)}`, bytes: 5 },
         { key: "hyperframes", platform: HOST_TAG, sha256: `sha256:${"a".repeat(64)}`, bytes: 10 },
         { key: "node", platform: HOST_TAG, sha256: `sha256:${"b".repeat(64)}`, bytes: 20 },
       ],
@@ -282,8 +281,9 @@ describe("artifact directory", () => {
       artifactVersion: "fixture-v1",
       versions,
       archives: {
-        hyperframes: { sha256: runtimeManifest.archives[0]!.sha256, bytes: 10 },
-        node: { sha256: runtimeManifest.archives[1]!.sha256, bytes: 20 },
+        bgm: { sha256: runtimeManifest.archives[0]!.sha256, bytes: 5 },
+        hyperframes: { sha256: runtimeManifest.archives[1]!.sha256, bytes: 10 },
+        node: { sha256: runtimeManifest.archives[2]!.sha256, bytes: 20 },
       },
     });
     expect(provenance.files.vidcom).toMatch(/^[0-9a-f]{64}$/u);
@@ -322,7 +322,14 @@ describe("runtime payload provenance", () => {
       },
     ];
     const hyperframesFiles: FixtureFile[] = [...fixture.hyperframes, ...fixture.native];
+    const bgmFiles: FixtureFile[] = [
+      "alex-morgan-corporate-business-background.mp3",
+      "corporate-marimba-business-background.mp3",
+      "meta.mp3",
+      "promo-promo-business-background.mp3",
+    ].map((entry) => ({ path: entry, content: Buffer.from(`fixture ${entry}\n`) }));
     await Promise.all([
+      writeFixtureFiles(path.join(stageRoot, "bgm"), bgmFiles),
       writeFixtureFiles(path.join(stageRoot, "node"), baseNodeFiles),
       writeFixtureFiles(path.join(stageRoot, "hyperframes"), hyperframesFiles),
     ]);
@@ -333,27 +340,37 @@ describe("runtime payload provenance", () => {
     ]);
     const nodeArchive = path.join(archiveRoot, "node.tar.gz");
     const hyperframesArchive = path.join(archiveRoot, "hyperframes.tar.gz");
+    const bgmArchive = path.join(archiveRoot, "bgm.tar.gz");
     const builtNode = archiveFor("node", baseNodeFiles, HOST_TAG, "native");
     const builtHyperframes = archiveFor("hyperframes", hyperframesFiles, HOST_TAG, "hyperframes");
+    const builtBgm = archiveFor("bgm", bgmFiles, HOST_TAG, "bgm");
     await Promise.all([
+      writeFile(bgmArchive, builtBgm.bytes),
       writeFile(nodeArchive, builtNode.bytes),
       writeFile(hyperframesArchive, builtHyperframes.bytes),
     ]);
-    const baseManifest = runtimeManifest("fixture-v1", [builtHyperframes.archive, builtNode.archive]);
+    const baseManifest = runtimeManifest("fixture-v1", [
+      builtBgm.archive,
+      builtHyperframes.archive,
+      builtNode.archive,
+    ]);
     const manifest = {
       ...baseManifest,
       archives: [
+        { ...builtBgm.archive, entries: [...builtBgm.archive.entries] },
         { ...builtHyperframes.archive, entries: [...builtHyperframes.archive.entries] },
         { ...builtNode.archive, entries: [...builtNode.archive.entries] },
       ],
     };
     const publishArchive = async (
-      key: "hyperframes" | "node",
+      key: "bgm" | "hyperframes" | "node",
       files: readonly FixtureFile[],
     ) => {
-      const index = key === "hyperframes" ? 0 : 1;
-      const target = key === "hyperframes" ? "hyperframes" : "native";
-      const archiveFile = key === "hyperframes" ? hyperframesArchive : nodeArchive;
+      const index = manifest.archives.findIndex((archive) => archive.key === key);
+      const target = key === "node" ? "native" : key;
+      const archiveFile = key === "bgm"
+        ? bgmArchive
+        : key === "hyperframes" ? hyperframesArchive : nodeArchive;
       const built = archiveFor(key, files, HOST_TAG, target);
       await writeFile(archiveFile, built.bytes);
       manifest.archives[index] = { ...built.archive, entries: [...built.archive.entries] };
@@ -372,9 +389,12 @@ describe("runtime payload provenance", () => {
       { key: "node" as const, path: "node_modules/sharp/package.json" },
       { key: "hyperframes" as const, path: "bin/hyperframes.mjs" },
       { key: "hyperframes" as const, path: "motion-libraries/gsap/package.json" },
+      { key: "bgm" as const, path: "meta.mp3" },
     ];
     for (const candidate of completenessCases) {
-      const baseFiles = candidate.key === "node" ? baseNodeFiles : hyperframesFiles;
+      const baseFiles = candidate.key === "node"
+        ? baseNodeFiles
+        : candidate.key === "hyperframes" ? hyperframesFiles : bgmFiles;
       const omitted = baseFiles.find((file) => file.path === candidate.path)!;
       await rm(path.join(stageRoot, candidate.key, ...candidate.path.split("/")), { force: true });
       await publishArchive(candidate.key, baseFiles.filter((file) => file.path !== candidate.path));
@@ -432,8 +452,9 @@ describe("runtime payload provenance", () => {
 
     const malformedBytes = Buffer.from("this is not a tar archive", "utf8");
     await writeFile(nodeArchive, malformedBytes);
-    manifest.archives[1]!.sha256 = manifestHash(malformedBytes);
-    manifest.archives[1]!.bytes = malformedBytes.byteLength;
+    const nodeManifest = manifest.archives.find((archive) => archive.key === "node")!;
+    nodeManifest.sha256 = manifestHash(malformedBytes);
+    nodeManifest.bytes = malformedBytes.byteLength;
     await writeFile(path.join(assetRoot, "runtime-manifest.json"), JSON.stringify(manifest));
     await expect(verifyRuntimePayload(HOST_TAG, { assetRoot, stageRoot, secondaryBundle }))
       .rejects.toThrow();

@@ -50,6 +50,7 @@ const COMMON_NATIVE_PACKAGES = [
   "@img/colour",
   "detect-libc",
   "esbuild",
+  "node-pty",
   "onnxruntime-common",
   "onnxruntime-node",
   "semver",
@@ -304,9 +305,10 @@ export function buildToolProvenance(options = {}) {
     const result = spawnSync("bun", ["--version"], { encoding: "utf8" });
     return result.status === 0 ? result.stdout.trim() : null;
   })();
-  // Bun has no entry in the lockfile to check against — it is the toolchain
-  // itself, not a dependency — so it is recorded rather than compared. Saying
-  // which one built the artifact is still worth more than saying nothing.
+  const approvedBun = options.approvedBun ?? "1.3.14";
+  if (bun !== approvedBun) {
+    fail("Bun does not match the release toolchain pin", { expected: approvedBun, actual: bun });
+  }
   return {
     tar: installedTar,
     postject: postject.slice("postject@".length),
@@ -457,6 +459,16 @@ export function assertAllowedRuntimeEntry(archiveKey, platform, pathname, allowe
     if (allowedMotionPaths.has(pathname)) return;
     fail("motion runtime path is outside the pinned product catalogue", { path: pathname });
   }
+  if (archiveKey === "bgm") {
+    const productBgm = new Set([
+      "alex-morgan-corporate-business-background.mp3",
+      "corporate-marimba-business-background.mp3",
+      "meta.mp3",
+      "promo-promo-business-background.mp3",
+    ]);
+    if (productBgm.has(pathname)) return;
+    fail("BGM runtime path is outside the pinned product catalogue", { path: pathname });
+  }
   const outsideFrozenPython = archiveKey !== "node" || parts[0] !== "python";
   if (outsideFrozenPython && parts.some((part) => FORBIDDEN_RUNTIME_DIRECTORY.has(part.toLowerCase()))) {
     fail("runtime archive contains a source, build, or test directory", {
@@ -485,6 +497,9 @@ export function assertAllowedRuntimeEntry(archiveKey, platform, pathname, allowe
       "bin/hyperframe.manifest.json",
       "bin/hyperframe.runtime.iife.js",
       "bin/hyperframes.mjs",
+      "bin/commands/layout-audit.browser.js",
+      "bin/commands/motion-sample.browser.js",
+      "bin/commands/contrast-audit.browser.js",
       "package.json",
     ].includes(pathname)) return;
     if (parts[0] === "node_modules" && nativePackages.has(packageNameFromRuntimePath(parts, 1))) return;
@@ -877,6 +892,7 @@ export async function verifyArtifact(target, options = {}) {
   if (manifest.files[path.basename(artifact)] !== seal.artifact.sha256.slice("sha256:".length)) {
     fail("artifact provenance differs from the parent-held SEA build seal");
   }
+  if (options.release === true) assertReleasable(manifest);
   await assertAuthority();
   // Re-hash immediately before cleanup consumes the retained authority. This
   // also prevents a passive-verification child swap from being published.
@@ -946,7 +962,8 @@ async function main(argv) {
   const flags = argv.filter((value) => value === "--release");
   const positional = argv.filter((value) => value !== "--release");
   if (
-    positional.length !== 5
+    flags.length > 1
+    || positional.length !== 5
     || positional[1] !== "--generation" || !positional[2]
     || positional[3] !== "--seal" || !positional[4]
   ) {
@@ -955,8 +972,8 @@ async function main(argv) {
   const manifest = await verifyArtifact(positional[0], {
     generation: artifactBuildDirectory(positional[0], undefined, positional[2]),
     seal: positional[4],
+    release: flags.length === 1,
   });
-  if (flags.length > 0) assertReleasable(manifest);
   process.stderr.write(
     `verify-artifact: ${manifest.platform} ${manifest.commit}${manifest.dirty ? " (dirty)" : ""}\n`,
   );

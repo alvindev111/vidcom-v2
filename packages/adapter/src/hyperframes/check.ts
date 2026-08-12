@@ -5,6 +5,7 @@ import type { Diagnostic } from "@vidcom/contracts";
 import type { AbsolutePath, DiagnosticsLintPort, ProcessPort, ProjectRef } from "@vidcom/core";
 
 import { VIDCOM_NODE_SENTINEL } from "./binary-probe";
+import { MAX_PROCESS_CAPTURE_MAX_BYTES } from "../runtime/process-supervisor";
 
 const requireFromAdapter = createRequire(import.meta.url);
 const resolveFromAdapter = Reflect.get(requireFromAdapter, "resolve") as (specifier: string) => string;
@@ -85,6 +86,7 @@ export class NodeHyperframesDiagnosticsLint implements DiagnosticsLintPort {
         ],
         cwd: ref.root,
         timeoutMs: this.timeoutMs,
+        captureMaxBytes: MAX_PROCESS_CAPTURE_MAX_BYTES,
       });
       if (output.timedOut || !output.stdout.trim()) return { available: false, diagnostics: [] };
       const parsed = JSON.parse(output.stdout) as Record<string, { findings?: unknown }>;

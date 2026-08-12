@@ -147,6 +147,23 @@ describe("NodePtyAgentTerminals", () => {
     };
   }
 
+  it("loads the required native binding only when a terminal is opened", async () => {
+    let loads = 0;
+    const terminals = new NodePtyAgentTerminals(path.join(root, "config"), {
+      invocationFor: () => ({ ...harmlessCommand(), configFile: null, environment: {} }),
+      loadRuntime: async () => {
+        loads += 1;
+        throw new Error("fixture binding is absent");
+      },
+    });
+
+    expect(terminals.liveCount()).toBe(0);
+    expect(loads).toBe(0);
+    await expect(terminals.open(spec("project_native_missing")))
+      .rejects.toThrow(/required node-pty native runtime is unavailable/u);
+    expect(loads).toBe(1);
+  });
+
   /**
    * A real pty running a real command: the point of this adapter is that a pty
    * behaves differently from a pipe, so the native binding, the output and the

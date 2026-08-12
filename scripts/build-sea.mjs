@@ -44,7 +44,7 @@ import {
 
 const ARCHIVE_KEY = /^[a-z0-9][a-z0-9._-]*$/u;
 const SHA256 = /^sha256:([0-9a-f]{64})$/u;
-export const PRODUCT_RUNTIME_ARCHIVES = ["hyperframes", "node"];
+export const PRODUCT_RUNTIME_ARCHIVES = ["bgm", "hyperframes", "node"];
 export { ELF_SEA_INJECTOR };
 
 /**
@@ -650,6 +650,14 @@ export async function assertRuntimeArchiveHashes(tag, manifest, assets = runtime
   }
 }
 
+export async function cleanupFailedArtifactGeneration(buildDirectory, authority) {
+  // Never remove a path after another builder has replaced the generation or
+  // its authority. A failed build may clean up only the directory it still
+  // proves it owns.
+  await revalidateArtifactBuildAuthority(authority);
+  await rm(buildDirectory, { recursive: true, force: true });
+}
+
 export async function buildSea(target, options = {}) {
   const tag = assertBuildableTarget(target);
   const runtimeManifest = await loadHostRuntimeManifest(tag);
@@ -662,6 +670,8 @@ export async function buildSea(target, options = {}) {
     generationId: options.generationId,
   });
   const buildDirectory = prepared.generation;
+  let completed = false;
+  try {
   const generationPrefix = `${tag}.build-`;
   const generationName = path.basename(buildDirectory);
   const generationId = generationName.startsWith(generationPrefix)
@@ -761,7 +771,27 @@ export async function buildSea(target, options = {}) {
   const seal = await createSeaBuildSeal(tag, generationId, output, blob, snapshot.projection);
   await assertBuildAuthority();
 
+  completed = true;
   return { output, seal };
+  } finally {
+    if (!completed) {
+      try {
+        await cleanupFailedArtifactGeneration(buildDirectory, prepared.authority);
+      } catch (cleanupError) {
+        let authorityLost = false;
+        try {
+          await revalidateArtifactBuildAuthority(prepared.authority);
+        } catch {
+          // Losing authority means the path is no longer ours to remove. Keep
+          // it for the current owner or bounded stale-generation cleanup.
+          authorityLost = true;
+        }
+        // Authority is still ours, so a cleanup failure must not be hidden as
+        // if the failed generation had been removed.
+        if (!authorityLost) throw cleanupError;
+      }
+    }
+  }
 }
 
 async function main(argv) {

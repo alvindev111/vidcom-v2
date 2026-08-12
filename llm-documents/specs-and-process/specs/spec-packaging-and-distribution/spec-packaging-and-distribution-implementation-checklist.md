@@ -53,6 +53,7 @@ Checklist chuyển Design bản 2 thành task 1–4 giờ, giữ đúng ranh gi�
 - **Status**: **Approved**
 - **Confirmed by**: alvin0
 - **Confirmation date**: 2026-08-07
+- **Reopen audit 2026-08-12**: exact HEAD `e72c897` có CI, Browser, Process và Packaged đều đỏ sau thay đổi topology BGM/native PTY/stdio bridge. B/H/I/M và D artifact AC chỉ được đóng lại sau local full gate, bốn workflow xanh trên cùng exact SHA và production private-PATH render proof.
 - **Notes**: Design gate §15 đã mở (alvin0, 2026-08-07) nên checklist này được phép tồn tại. Gate thứ hai này — Code Execution — **đã duyệt cùng ngày**, sau vòng review cuối vá bốn chỗ (B.3 nguồn danh sách package Python + normalize tên, A.4 `ToolSchemaEntry` dùng lại `ToolLevel` sẵn có, H.5 nêu tên route upload `uploadBgm`, và `test:mcp-catalogue` lệch giữa Matrix và Files Changed Summary), cộng N-C vào bảng Nợ tài liệu.
 - **Trạng thái thực thi**: **Phase A, B, C hoàn tất; Phase D có 14/14 task nhưng artifact Acceptance Criterion đang mở lại, nên chỉ 2/3 Acceptance Criteria còn giữ proof hiện hành và Phase D chưa được gọi hoàn tất**. Sáu vòng audit đã thêm final-SEA raw-asset proof, active-resource extent, generation capability/publisher recovery, executable exit/preload normalization, passive Node 24.9 prep-blob parser không chạy candidate và parent-memory seal bind cả executable/blob lẫn original input projection. Review mới nhất bắt lexical `.sea-inputs` cùng manifest có thể bị thay tự nhất quán sau snapshot; closure nay đã land: `seal.inputs` giữ `codePath`, main và assets byte/SHA từ in-memory copy records, `build-sea` giữ original root capability, còn verifier hash blob spans trực tiếp theo parent-held projection trước khi xác minh snapshot hiện tại và capture capability mới cho các scan path-based. Regression root replacement, same-root child/manifest replacement và coherent artifact/blob replacement đều fail-closed, không chạy bad main. Checkpoint sau patch xanh combined SEA/build-artifact/provenance/publisher **84/84**, SEA riêng **22/22**, typecheck, lint 0 error/3 warning không liên quan, boundaries và full diff-check; không còn generated `.compiler-bundle` directory. Đây mới là focused closure, chưa phải artifact proof: binary cũ SHA-256 `5b111f…e2bc0` không còn là exact HEAD; artifact AC tiếp tục `[ ]`, toàn bộ Phase D local matrix và production rebuild/render-smoke trên binary mới vẫn phải chạy lại trước commit/push và GitHub Actions exact HEAD ba OS. Evidence cũ vẫn được bảo toàn ở `/private/tmp/vidcom-phase-d-production-smoke.6mvwdf/EVIDENCE.md` nhưng không được dùng thay proof mới. Phase C đã qua CI ba OS ở [`31295074545`](https://github.com/alvindev111/vidcom-v2/actions/runs/31295074545) trên exact commit `23b6dcf`: Linux 4m23s, macOS 4m58s, Windows 8m40s. Các phần E–L đã có code từ lượt thực thi trước nhưng **không được coi là phase kế tiếp trong lượt này**; thứ tự tiếp tục vẫn là D → E → F → G → H → I → J → K → L → M. Main spec đang là [`-inprocess.md`](./spec-packaging-and-distribution-inprocess.md).
 
@@ -261,11 +262,11 @@ Mỗi phase chạy focused command dưới đây trên SQLite/filesystem thật,
   - `@hono/node-server` **không phải việc phải làm**: [`packages/server/package.json`](../../../../packages/server/package.json) đã khai `2.0.12`. Design bản 2 viết "thêm hai" là C-3 ở §16. Đừng thêm lần nữa, và nhất là đừng để `bun add` nới pin `hono@4.12.33` — spike S9 đã ghi lại đúng cái bẫy đó
   - Pin **chính xác** `7.5.22`, không `^`: nó chạy trong binary đã compile
   - _Requirements: R5.1_ — _Design: §5.0, §4.5, §16 C-3_
-- [x] B.2 `EmbeddedRuntimeManifest` + `RuntimeAssetSource`
+- [x] B.2 `EmbeddedRuntimeManifest` + `RuntimeAssetSource` — **RECLOSED 2026-08-13: canonical exact archive set `bgm|hyperframes|node`, browser-script closure và native PTY đều nằm trong manifest/verifier**
   - Đọc qua `node:sea.getRawAsset`; manifest pin Node, HyperFrames, esbuild, FFmpeg, CPython, VieNeu, motion
   - Dev/test dùng nguồn filesystem để chạy được ngoài SEA
   - _Requirements: R5.1, R5.5_ — _Design: §5.13_
-- [x] B.3 Script build archive theo `<os>-<arch>`
+- [x] B.3 Script build archive theo `<os>-<arch>` — **RECLOSED 2026-08-13: `node-pty@1.1.0` pin/trust, stage exact host prebuild/spawn-helper và probe PTY child thật**
   - `.tar.gz` deterministic; **fail** nếu tập package Python lệch *(core 55 + phần phụ platform)*; `pip` **có mặt là fail**
   - Số đã đo: darwin 481 MB/145 MB · Windows 499/152 (+`colorama`,`tzdata`) · Linux 595/179
   - **Danh sách kỳ vọng là file có sẵn, đừng gõ lại**: [`evidence/linux-package-set-pruned.txt`](../../../../spikes/phase-4/s9-windows-runtime/evidence/linux-package-set-pruned.txt) (55) · [`darwin-…`](../../../../spikes/phase-4/s9-windows-runtime/evidence/darwin-package-set-pruned.txt) (55) · [`win-…`](../../../../spikes/phase-4/s9-windows-runtime/evidence/win-package-set-pruned.txt) (58). Cách đối chiếu đã chạy thật ở [`phase4-python-stack.yml:130-136`](../../../../.github/workflows/phase4-python-stack.yml#L130) — dùng lại hình dạng đó
@@ -808,7 +809,7 @@ Mỗi phase chạy focused command dưới đây trên SQLite/filesystem thật,
 **Estimate**: 13 SP
 
 **Tasks**:
-- [x] H.0 Script `build:artifact`
+- [x] H.0 Script `build:artifact` — **RECLOSED 2026-08-13: local native artifact build/verify pass; release flag, build lock và provenance fail-closed đã có regression**
   - Thêm `"build:artifact": "node scripts/build-artifact.mjs"` vào [`package.json`](../../../../package.json) — cùng dạng với các script `node scripts/*.mjs` đang có (`test:boundaries`, `test:schema-drift`, `test:spec-paths`, …). Nó SHALL gọi lần lượt: `scripts/build-runtime-archives.mjs` (B.3) → `next build` với `output: "export"` (G.6) → frontend pack (H.2) → bundle CJS (H.1) → SEA native (H.4) → `scripts/verify-artifact.mjs` (L.1/L.2)
   - **Fail-fast từng bước**, MUST NOT tiếp tục sang bước sau khi bước trước lỗi: một `frontend.pack` cũ đi cùng bundle mới là loại lỗi chỉ lộ ra ở packaged smoke
   - In ra đường dẫn artifact + platform tag ở `stderr`; `stdout` chỉ để `artifact-manifest.json` (L.2) nếu có `--json`
@@ -820,7 +821,7 @@ Mỗi phase chạy focused command dưới đây trên SQLite/filesystem thật,
   - **Chuỗi chạy hết, đo được**: `bun run build:artifact` trên darwin-arm64 đi qua runtime archives → static export → frontend pack → CJS bundle → runtime staging → SEA native → `verify-artifact`, ra `dist/artifact/darwin-arm64/vidcom` **322 MB** cùng `SHA256SUMS` và `artifact-manifest.json`. Test ghim đúng thứ tự và tên chủ sở hữu từng bước, nên một bước thiếu hiện ra ở đây thay vì lúc chạy build
   - **Mọi bước dùng binary cả ba nền tảng spawn được**: `npm` trên Windows là `.cmd` và Node từ chối spawn nó khi không có shell, nên một bước viết theo kiểu đó sẽ chết ở đó vì lý do chẳng liên quan tới việc nó làm. Test cấm `npm` ở mọi bước
   - _Requirements: R4.1, R4.14_ — _Design: DR-1, §5.10_
-- [x] H.1 Bundle CJS **không top-level await**
+- [x] H.1 Bundle CJS **không top-level await** — **RECLOSED 2026-08-13: `node-pty` external, lazy-load, stage và cold native probe pass**
   - Node SEA nhận main CJS và format `cjs` không diễn đạt được TLA; mọi khởi tạo bất đồng bộ nằm trong `main()`. Vi phạm ⇒ build fail, không degrade
   - **Bundler là `bun build --target=node --format=cjs`** ([`build-cli-bundle.mjs`](../../../../scripts/build-cli-bundle.mjs)), ghi vào Design §16 C-7. Bun đã là toolchain bắt buộc của repo — mọi script và mọi test chạy qua nó — nên **không thêm dòng nào vào `package.json` hay lockfile**, luật 6 giữ nguyên. Phase 0 loại Bun ở vai trò **runtime** (`--compile` không load được `onnxruntime-node`/`sharp`); đây là vai trò **build-time**, output vẫn là CJS chạy dưới Node binary nhúng
   - **Đường `esbuild` từ runtime archive bị bỏ**: nó chặn H.1 sau một tài sản phát hành chưa tồn tại (config pin version + hash ba OS cho `build-runtime-archives.mjs`), và không có tài sản đó thì không kiểm chứng được gì. `esbuild` vẫn không phải dependency khai báo ở bất kỳ package nào — hai bản transitive trong bun store (`0.25.12`, `0.28.1`) vừa không khai vừa nhập nhằng, nên hoisted copy vẫn bị loại. `ESBUILD_BINARY_PATH`/`ESBUILD_WORKER_THREADS` **lúc chạy** vẫn thuộc `CompilerGuard` của D.4, không đổi
@@ -852,7 +853,7 @@ Mỗi phase chạy focused command dưới đây trên SQLite/filesystem thật,
   - Chốt cấu trúc "không ghi ra đĩa" bằng test đọc chính source module và đòi **không có import `node:fs`**: module không với tới filesystem được thì không trôi vào đó được
   - GET/HEAD phục vụ, method khác trả `405` kèm `allow` — asset host không có đường ghi nào
   - _Requirements: R4.2, R4.5_ — _Design: §5.10_
-- [x] H.4 Build SEA native theo runner
+- [x] H.4 Build SEA native theo runner — **RECLOSED 2026-08-13: SEA/manifest/verifier dùng exact ba archive và artifact darwin-arm64 mới chạy/verify thành công**
   - `useCodeCache=false`, `useSnapshot=false`, postject pinned, không cross-build
   - [`build-sea.mjs`](../../../../scripts/build-sea.mjs) chạy thật trên darwin-arm64: blob → copy Node đang chạy → `codesign --remove-signature` → postject → ad-hoc sign. Ra **`dist/artifact/darwin-arm64/vidcom`, 127 MB**, chạy được trong thư mục tạm rỗng và **không sinh file nào cạnh nó**
   - **Cả hai cờ V8 tắt là nội dung**: code cache và snapshot đều nướng byte gắn với một bản V8. Cache do Node này ghi mà Node khác đọc thì **fail lúc khởi động chứ không fallback**, và Node ghi blob là Node của máy build, chỉ trùng bản Node nhúng theo quy ước
@@ -991,15 +992,15 @@ Mỗi phase chạy focused command dưới đây trên SQLite/filesystem thật,
   - `waitForDaemonRecord` poll **file**, không theo dõi child của chính mình: thua race lease nghĩa là daemon của người khác publish, và một watcher trên tiến trình con của ta sẽ không bao giờ thấy điều đó
   - [`bridge-attachment.test.ts`](../../../../tests/cli/bridge-attachment.test.ts) 7 test
   - _Requirements: R2.4, R2.10, R2.15_ — _Design: §5.6_
-- [x] I.9 `stdout` của bridge chỉ JSON-RPC
+- [x] I.9 `stdout` của bridge chỉ JSON-RPC — **RECLOSED 2026-08-13: stdio MCP là thin daemon bridge, protocol-clean và không bootstrap runtime/foundation**
   - Mọi log/cảnh báo/tiến trình qua `stderr` hoặc log store; test bắt được một dòng lạc
   - Hai lớp, bắt hai thứ khác nhau: [`mcp-stdio-host.test.ts`](../../../../tests/e2e/mcp-stdio-host.test.ts) đã chốt stdout sạch **lúc chạy** trên child thật; test mới quét source `packages/cli/src/bridge/**` và cấm `console.log/info/debug` cùng `process.stdout` — bắt dòng lạc **trước khi nó được viết ra**, chỗ rẻ nhất
   - Một dòng lạc không làm phiên tệ đi, nó làm agent host **hết parse được stream**: phiên chết chứ không phải phiên kém
   - _Requirements: R2.6_ — _Design: §5.8_
-- [x] I.10 Contract parity test local ↔ remote
+- [x] I.10 Contract parity test local ↔ remote — **RECLOSED 2026-08-13: remote invoker giữ elicitation/error metadata và workload deadline riêng**
   - Cùng input ⇒ cùng schema, cùng revision, cùng mã lỗi
   - _Requirements: R2.3_
-- [x] I.11 Integration test
+- [x] I.11 Integration test — **RECLOSED 2026-08-13: packed daemon + legacy/modern stdio + destructive approval cùng đúng một lease, kể cả stale runtime manifest**
   - Port bị chiếm bởi app khác ⇒ handshake từ chối · record stale ⇒ rediscovery có giới hạn · daemon biến mất giữa phiên ⇒ lỗi có mã, **không treo**, không trả kết quả giả
   - Hai bridge auto-start đồng thời ⇒ kẻ thua nối vào kẻ thắng · bridge cuối detach chỉ tắt daemon auto
   - [`bridge-integration.test.ts`](../../../../tests/cli/bridge-integration.test.ts) 6 test trên **listener loopback thật** + `createServerApp` thật + discovery store trên **filesystem thật** trong temp directory
@@ -1241,7 +1242,7 @@ Mỗi phase chạy focused command dưới đây trên SQLite/filesystem thật,
 **Estimate**: 21 SP
 
 **Tasks**:
-- [x] M.0 Script `test:packaged-smoke` + runner cục bộ — **đủ 13 thân bước đã chạy xanh trên artifact native ba OS**
+- [ ] M.0 Script `test:packaged-smoke` + runner cục bộ — **REOPEN 2026-08-12: strict skip/provenance/release false-green và current artifact không build**
   - Thêm `"test:packaged-smoke": "node scripts/packaged-smoke/run.mjs"` vào [`package.json`](../../../../package.json). Chạy được **trên máy dev** chứ không chỉ trong Actions — nếu chỉ chạy được trong CI thì mỗi lần sửa một bước phải push, và không ai sửa nữa
   - Nhận `--step <id>` để chạy một bước, `--from <id>` để chạy tiếp từ giữa; mặc định chạy đủ 13 bước theo thứ tự §11.4
   - Mỗi bước in `id`, thời gian, kết quả ở `stderr`; `stdout` chỉ để bằng chứng JSON (M.6). Bước fail ⇒ exit ≠ 0 **kèm id của bước**, MUST NOT chỉ báo "smoke failed"
@@ -1251,12 +1252,12 @@ Mỗi phase chạy focused command dưới đây trên SQLite/filesystem thật,
   - Chạy được trên máy dev, đã kiểm: `--step build` trả đúng một dòng, `--strict` exit `1` với lý do "chưa có artifact" thay vì im lặng
   - **Evidence**: run `31337022177` chạy đủ 13/13 trên ba artifact native; không có step bắt buộc `skipped`
   - _Requirements: R8.3, R8.7_ — _Design: §11.4_
-- [x] M.1 Job native theo OS — **exact head `0fdbd35` xanh macOS/Linux/Windows**
+- [ ] M.1 Job native theo OS — **REOPEN 2026-08-12: evidence `0fdbd35` stale; cần cùng exact HEAD mới**
   - macOS arm64, Windows x64, Linux x64; **không job nào dùng artifact build từ OS khác**. Mỗi lần chạy ghi lại nền tảng đã kiểm
   - [`packaged-smoke.yml`](../../../../.github/workflows/packaged-smoke.yml) dựng artifact **trên chính runner** rồi mới chạy smoke, `fail-fast: false` để một nền tảng hỏng không che mất kết quả hai nền tảng kia — biết nền tảng nào đã được chứng minh là toàn bộ mục đích của job này
   - Workflow hỗ trợ `workflow_dispatch` và exact-head PR closeout; checkout ghim `pull_request.head.sha`, không dùng synthetic merge SHA
   - _Requirements: R8.1, R8.5_ — _Design: §4.8, DR-11_
-- [x] M.2 Môi trường sạch
+- [ ] M.2 Môi trường sạch — **REOPEN 2026-08-12: private PATH chưa probe exact `python`**
   - `node` **không** trên PATH; **không** `node_modules` ở `cwd` hay thư mục cha; `HOME` sạch. Cache tải-về (`$HOME/.cache/hyperframes`, `HF_HOME`) **được** mồi; app-data/runtime **không** được mồi
   - [`environment.mjs`](../../../../scripts/packaged-smoke/environment.mjs) đưa **PATH rỗng hoàn toàn** — một thư mục trống là mục duy nhất trên đó. Lọc PATH theo tên thư mục là cách làm đầu tiên và nó **sai**: `/opt/homebrew/bin` chứa `node` mà không chứa chữ nào bộ lọc tìm. Lời hứa đang kiểm là executable tự mang runtime, và cách duy nhất phát biểu điều đó là không để gì trên PATH
   - Bước `clean-environment` **hỏi runner** bằng `which`/`where` chứ không tin cấu hình: nếu `node` còn với tới được thì cả smoke đang đo toolchain của runner
@@ -1264,48 +1265,48 @@ Mỗi phase chạy focused command dưới đây trên SQLite/filesystem thật,
   - Cache tải-về mồi sẵn, app-data để rỗng — R8.2 nói về máy sạch, không phải máy không có mạng
   - **Bằng chứng**: bước xanh trên artifact thật — `no node, python or bun on PATH; working directory empty`
   - _Requirements: R8.2, R8.8_ — _Design: §11.4_
-- [x] M.3a Bước 1–3: nhận dạng + cold/warm doctor
+- [ ] M.3a Bước 1–3: nhận dạng + cold/warm doctor — **REOPEN 2026-08-12: strict doctor nhận mọi skipped item**
   - `version` → cold `doctor --repair` → warm `doctor --deep`. Đây là ba bước duy nhất không cần listener, nên chúng cũng là chỗ đo cold start thật cho M.7
   - **Số runner exact head `0fdbd35`**: serve cold/warm darwin `813/611 ms`, Linux `1007/1004 ms`, Windows `2637/2461 ms`; doctor cold/warm lần lượt `15673/3294`, `23974/6201`, `133284/11883 ms`
   - `version` phải biết runtime manifest: bản đóng gói trả `null` là bug thật, chính bước này bắt được (đã sửa — đọc manifest nhúng)
   - **Ba mục được phép thiếu ở bước 3, có lý do**: `db.migration`, `chrome.cache`, `tts.model-cache`. Strict biến skip thành missing — đúng cho cả job (R8.4) và **sai ở đây**: chưa tải browser nào, chưa dùng model nào, và chưa có database vì chưa chọn workspace. Các bước sau mới là chỗ chúng phải `ok`; cho phép ở bước lạnh không phải khẳng định yếu hơn mà là **chuyển khẳng định tới chỗ nó có nghĩa**
   - _Requirements: R8.3, R4.9_ — _Design: §11.4, §9.1_
-- [x] M.3b Bước 4–6: vòng đời UI + import + bridge song song
+- [ ] M.3b Bước 4–6: vòng đời UI + import + bridge song song — **REOPEN 2026-08-12: smoke chưa spawn stdio MCP thật**
   - start + nonce/session + picker + create project → import project → bridge nối vào **trong lúc UI còn sống**
   - Bước 6 là chỗ duy nhất chứng minh lời hứa "mở app rồi chạy Codex, cả hai dùng được, vẫn đúng một writer" trên artifact thật
   - _Requirements: R8.3, R2.15_ — _Design: §11.4, §4.4_
-- [x] M.3c Bước 7–9: giá trị lõi — ra được MP4 có tiếng
+- [ ] M.3c Bước 7–9: giá trị lõi — ra được MP4 có tiếng — **REOPEN 2026-08-12: scene seed/render motion contract regression**
   - TTS → snapshot → render + `ffprobe` xác minh (có audio stream, đúng thời lượng) → upload 20 MB + SSE → `render` wait/detach/cancel
   - Đây là nhóm bước mà **cả Phase D tồn tại để phục vụ**. Nếu chỉ chạy được một nhóm bước, chạy nhóm này
   - _Requirements: R8.3, R6.1, R4.6_ — _Design: §11.4_
-- [x] M.3d Bước 10–12: chế độ hỏng
+- [ ] M.3d Bước 10–12: chế độ hỏng — **REOPEN 2026-08-12: current smoke NOT_EXECUTED sau build failure**
   - **Cắt mạng ở tầng runner** rồi warm offline (M.4) → lease loss **hai nhánh** (UI hạ về `NoWorkspace`; headless đóng listener + exit ≠ 0) → scan checksum/provenance
   - _Requirements: R8.3, R8.8, R2.14, R9.4_ — _Design: §11.4, §4.3_
-- [x] M.4 Bước offline chặn ở **tầng mạng runner**
+- [ ] M.4 Bước offline chặn ở **tầng mạng runner** — **REOPEN: rerun exact HEAD**
   - Đo ở S9: `HTTPS_PROXY`/`HTTP_PROXY` **bị lờ** — downloader vẫn tải 202 MB qua proxy chết. Viết bằng env thì bước này xanh vì lý do sai
   - _Requirements: R8.8, R6.5_ — _Design: §5.18_
-- [x] M.5 Cache theo version + fail khi thiếu thành phần bắt buộc
+- [ ] M.5 Cache theo version + fail khi thiếu thành phần bắt buộc — **REOPEN: strict doctor skipped loophole**
   - `VIDCOM_DOCTOR_STRICT=1`; thành phần bắt buộc vắng mặt ⇒ **fail**, MUST NOT skip
   - _Requirements: R8.4, R8.8_ — _Design: §5.9_
-- [x] M.6 Upload bằng chứng
+- [ ] M.6 Upload bằng chứng — **REOPEN: thiếu DoctorReport/raw ffprobe/platform metadata và success evidence fail-closed**
   - DoctorReport, artifact manifest, `SHA256SUMS`, kết quả ffprobe, platform metadata
   - _Requirements: R8.3_ — _Design: §9.4_
-- [x] M.7 Chốt lại hai trần còn tạm
+- [ ] M.7 Chốt lại hai trần còn tạm — **REOPEN: topology/runtime size đã đổi**
   - Cold thật trên phần cứng runner đã trả lời câu hỏi trần tạm: Linux nặng hơn darwin ~24 % (595 so với 481 MB) nhưng serve/doctor cold vẫn dư địa lớn dưới 120 s
   - Evidence Linux `1007/1004 ms`, doctor cold `23974 ms`, toàn job `10m12s`; giữ 120 s vì còn dư địa lớn. Windows `2637/2461 ms`, doctor cold `133284 ms`; giữ 180 s. Ba baseline v1 commit theo runner và bắt hồi quy 1,5×
   - _Requirements: R4.9, R8.3_ — _Design: §9.1, §5.13_
-- [x] M.8 Ghi lại bằng chứng TTS Windows
+- [ ] M.8 Ghi lại bằng chứng TTS Windows — **REOPEN: cần exact HEAD mới**
   - Máy phát triển bị N-1 (TLS inspection) chặn; runner CI không có ⇒ đây là **bằng chứng đầu tiên**, MUST NOT suy từ darwin
   - Windows exact artifact tạo WAV online + offline với `providerId=vieneu`, `voiceId=vieneu-v3-minh-duc`, rồi mux H.264/AAC MP4 8 giây ở cả hai nhánh
   - _Requirements: R6.1, R8.3_ — _Design: §5.13_
-- [x] M.9 Thời gian job trong giới hạn CI
+- [ ] M.9 Thời gian job trong giới hạn CI — **REOPEN: cần exact HEAD mới**
   - Hoặc tách job riêng có điều kiện rõ ràng; MUST NOT làm CI thường xuyên đỏ vì timeout
   - Run `31337022177`: macOS `7m10s`, Linux `10m12s`, Windows `21m30s`, đều thấp hơn `timeout-minutes: 90`
   - _Requirements: R8.7_
 
 **Acceptance Criteria**:
-- [x] Không step bắt buộc nào bị skip
-- [x] Job Linux hiện diện và xanh; không dùng CI thiếu Linux để suy ra release claim (R8.5)
+- [ ] Không step bắt buộc nào bị skip — **REOPEN: current 13 steps đều NOT_EXECUTED do build fail**
+- [ ] Job Linux hiện diện và xanh; không dùng CI thiếu Linux để suy ra release claim (R8.5) — **REOPEN: current Linux fail**
 
 **Deliverables**: `.github/workflows/packaged-smoke.yml` · `scripts/packaged-smoke/**`
 
@@ -2786,6 +2787,12 @@ Chi tiết: [Detailed Goals](./spec-packaging-and-distribution-detailed-goal.md)
   - Summary: Exact-head process run `31340373970` đỏ ở `remote-asset-browser.test.ts` vì Linux runner tình cờ có Chrome nhưng launch trong process matrix chạm hook timeout 30 s; CI run `31340592625` sau đó đứng hơn 30 phút ở Windows full Test cùng ambient-browser gap.
   - Decisions: Giữ file trong process path trigger nhưng bỏ khỏi process adapter contract; generic CI exclude rõ ràng. Thêm test này vào `test:browser-session`, nên workflow chuyên biệt có exact Chrome và `VIDCOM_REQUIRE_BROWSER=1` là authority thật; regression khóa đủ ba wiring.
   - Blockers: Cần local gate và exact-head Process supervision rerun; production supply-chain human gate vẫn mở độc lập.
+
+2026-08-13 — Raw multi-agent remediation, local council gate
+  - Files: runtime manifest/stager/verifier/SEA, runtime integrity/ACL/import/browser, daemon bridge/MCP contracts, render diagnostics, packaged-smoke/evidence workflows, focused tests, Design và implementation notes.
+  - Summary: B.2/B.3, H.0/H.1/H.4 và I.9–I.11 được đóng lại bằng code + regression: exact ba archive, `node-pty` native closure, HyperFrames browser-script closure, release provenance/lock, thin stdio bridge, revision-bound diagnostics/render và single-writer approval E2E. Full suite hiện xanh **219 test file pass + 1 intentional skip; 2022 test pass + 5 intentional skip**; runtime smoke, MCP contract 72/72, golden 45/45, typecheck, boundaries, spec paths, source lint và diff-check xanh.
+  - Decisions: Warm runtime vẫn deep-hash toàn bộ 8067 file nhưng dùng concurrency chung giới hạn 8; artifact identify giảm từ khoảng 2.82 s xuống 2.02 s. Baseline cũ 813/611 ms không được sửa bằng số local: giữ M mở và lấy số exact runner từ CI trước một commit baseline reviewable. Process output giữ mặc định 64 KiB, chỉ HyperFrames diagnostics yêu cầu budget 8 MiB có hard cap. Read-only smoke GET được retry đúng một lần khi pooled socket stale; mutation/HTTP failure không retry.
+  - Blockers: Phase M, private-PATH MP4 và production source policy vẫn mở cho exact committed SHA. Local artifact hiện dirty nên chỉ là implementation evidence. Mười project MCP đã có 216 scene × 12 s, 5 archetype/project và validate/lint zero-error; TTS/snapshot/render vẫn đang chạy và chưa được dùng làm acceptance evidence.
 
 Format:
 ```

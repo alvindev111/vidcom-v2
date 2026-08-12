@@ -126,7 +126,7 @@ export const CONTRACT_MATRIX_CASES: Record<string, Record<string, unknown>> = {
   get_job_status: { jobId: "job_matrix" },
   validate_project: { projectId: matrixProjectId },
   start_snapshot: { projectId: matrixProjectId },
-  start_render: { projectId: matrixProjectId, bestEffort: true },
+  start_render: { projectId: matrixProjectId, expectedSourceRevision: 2, bestEffort: true },
   install_agent_kit: { operation: "install", hosts: ["codex"] },
   install_motion_library: { projectId: matrixProjectId, libraryId: "gsap" },
   create_project: { name: "Matrix Two", presetId: "vertical-shorts" },

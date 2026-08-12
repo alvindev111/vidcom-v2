@@ -5,6 +5,7 @@ import { ErrorCode } from "@vidcom/contracts";
 export interface EnsuredDaemon {
   record: DaemonRecord;
   attachmentId: string;
+  heartbeatEveryMs: number;
   /** True when this call is the one that started the daemon. */
   started: boolean;
 }
@@ -18,13 +19,13 @@ export interface EnsureDaemonDependencies {
   /** Starts `serve --ensure` and resolves once it has published its record. */
   spawnDaemon(workspaceRoot: string): Promise<void>;
   /** Waits for a record to appear, or gives up. */
-  waitForRecord(workspaceRoot: string): Promise<DaemonRecord | null>;
+  waitForRecord(workspaceRoot: string, rejectedInstanceId?: string): Promise<DaemonRecord | null>;
 }
 
 async function attachTo(
   record: DaemonRecord,
   dependencies: EnsureDaemonDependencies,
-): Promise<string | null> {
+): Promise<{ attachmentId: string; heartbeatEveryMs: number } | null> {
   const client = dependencies.connect(record);
   try {
     await client.handshake({
@@ -33,7 +34,11 @@ async function attachTo(
       clientKind: dependencies.kind,
       clientVersion: dependencies.clientVersion,
     });
-    return (await client.attach(dependencies.kind)).attachmentId;
+    const attachment = await client.attach(dependencies.kind);
+    return {
+      attachmentId: attachment.attachmentId,
+      heartbeatEveryMs: attachment.heartbeatEveryMs,
+    };
   } catch (error) {
     // A record can outlive the process it describes, and a daemon can restart
     // between the read and the call. Either way the answer is the same: this
@@ -57,8 +62,8 @@ export async function ensureDaemon(
 ): Promise<EnsuredDaemon> {
   const existing = await dependencies.readRecord(dependencies.workspaceRoot);
   if (existing) {
-    const attachmentId = await attachTo(existing, dependencies);
-    if (attachmentId !== null) return { record: existing, attachmentId, started: false };
+    const attachment = await attachTo(existing, dependencies);
+    if (attachment !== null) return { record: existing, ...attachment, started: false };
   }
 
   let startFailure: unknown;
@@ -71,7 +76,10 @@ export async function ensureDaemon(
     startFailure = error;
   }
 
-  const published = await dependencies.waitForRecord(dependencies.workspaceRoot);
+  const published = await dependencies.waitForRecord(
+    dependencies.workspaceRoot,
+    existing?.instanceId,
+  );
   if (published === null) {
     throw new DaemonClientError(
       ErrorCode.DaemonUnavailable,
@@ -80,8 +88,8 @@ export async function ensureDaemon(
     );
   }
 
-  const attachmentId = await attachTo(published, dependencies);
-  if (attachmentId === null) {
+  const attachment = await attachTo(published, dependencies);
+  if (attachment === null) {
     throw new DaemonClientError(
       ErrorCode.DaemonUnavailable,
       "the daemon serving this workspace refused the handshake",
@@ -90,5 +98,5 @@ export async function ensureDaemon(
   }
   // `started` is false when the winner was someone else's daemon, which is what
   // makes the loser a client rather than a failure.
-  return { record: published, attachmentId, started: startFailure === undefined };
+  return { record: published, ...attachment, started: startFailure === undefined };
 }

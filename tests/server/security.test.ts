@@ -217,6 +217,22 @@ describe("Hono security perimeter", () => {
     })).status).toBe(401);
   });
 
+  it("binds capabilities to one session fingerprint and prunes expiry before lifecycle checks", () => {
+    const fixture = appFixture();
+    let seed = 0;
+    const sessions = new InMemorySessionStore(fixture.clock, (size) => Buffer.alloc(size, ++seed));
+    const first = sessions.mint(sessionPolicy).token;
+    const second = sessions.mint(sessionPolicy).token;
+    expect(sessions.fingerprint(first)).toMatch(/^browser:[0-9a-f]{64}$/u);
+    expect(sessions.fingerprint(second)).not.toBe(sessions.fingerprint(first));
+    expect(sessions.hasActiveSessions()).toBe(true);
+
+    fixture.clock.advance(sessionPolicy.absoluteTtlMs);
+    expect(sessions.fingerprint(first)).toBeUndefined();
+    expect(sessions.hasActiveSessions()).toBe(false);
+    expect(sessions.storedHashes()).toEqual([]);
+  });
+
   it("invalidates an old cookie when the daemon session store restarts", async () => {
     const first = appFixture();
     const cookie = cookieFrom(await exchange(first, first.nonces.issue()));
@@ -339,6 +355,10 @@ describe("bridge credential file", () => {
     expect(calls).toEqual([
       { executable: systemTool("whoami", "win32"), args: ["/user", "/fo", "csv", "/nh"] },
       {
+        executable: systemTool("icacls", "win32"),
+        args: ["C:\\VidCom Data\\credentials", "/reset"],
+      },
+      {
         // Absolute, so PATH cannot decide which program sets an ACL — and so a
         // process handed a trimmed PATH can still find it. The packaged smoke
         // gives the artifact an empty PATH on purpose, and extraction died
@@ -357,6 +377,10 @@ describe("bridge credential file", () => {
     });
     expect(directoryCalls).toEqual([
       { executable: systemTool("whoami", "win32"), args: ["/user", "/fo", "csv", "/nh"] },
+      {
+        executable: systemTool("icacls", "win32"),
+        args: ["C:\\VidCom Data", "/reset"],
+      },
       {
         executable: systemTool("icacls", "win32"),
         args: ["C:\\VidCom Data", "/inheritance:r", "/grant:r", "*S-1-5-21-42:(OI)(CI)(F)"],

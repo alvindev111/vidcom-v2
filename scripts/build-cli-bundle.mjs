@@ -63,6 +63,7 @@ export const EXTERNAL_PACKAGES = [
   "sharp",
   "onnxruntime-node",
   "esbuild",
+  "node-pty",
 ];
 
 /**

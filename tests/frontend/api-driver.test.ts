@@ -1,6 +1,9 @@
 import { resolveApiBaseUrl } from "../../src/lib/api/base-url";
 import {
   SERVICE_CATALOG,
+  apiRequest,
+  apiUrl,
+  openApiEventSource,
   serviceRequest,
   serviceStream,
   serviceUrl,
@@ -48,6 +51,40 @@ describe("api base url", () => {
 });
 
 describe("service catalog", () => {
+  it("resolves dynamic API paths against the runtime daemon", () => {
+    expect(apiUrl("/api/v1/projects/project-1/files", {
+      __VIDCOM_API_BASE_URL__: "http://127.0.0.1:7788",
+    })).toBe("http://127.0.0.1:7788/api/v1/projects/project-1/files");
+  });
+
+  it("includes credentials on dynamic requests", () => {
+    const request = apiRequest("/api/v1/projects/project-1/files", { method: "PUT" });
+
+    expect(request.init.method).toBe("PUT");
+    expect(request.init.credentials).toBe("include");
+  });
+
+  it("opens EventSource with the runtime daemon and cross-origin credentials", () => {
+    let captured: { url: string; init?: EventSourceInit } | null = null;
+    class FakeEventSource {
+      constructor(url: string, init?: EventSourceInit) {
+        captured = { url, init };
+      }
+    }
+
+    const stream = openApiEventSource(
+      "/api/v1/events",
+      { __VIDCOM_API_BASE_URL__: "http://127.0.0.1:7788" },
+      FakeEventSource as unknown as typeof EventSource,
+    );
+
+    expect(stream).toBeInstanceOf(FakeEventSource);
+    expect(captured).toEqual({
+      url: "http://127.0.0.1:7788/api/v1/events",
+      init: { withCredentials: true },
+    });
+  });
+
   it("never doubles the version prefix", () => {
     for (const id of Object.keys(SERVICE_CATALOG) as ServiceId[]) {
       const url = serviceUrl(id, { __VIDCOM_API_BASE_URL__: "http://127.0.0.1:7788" });
@@ -94,9 +131,8 @@ describe("service catalog", () => {
       lastEventId: "42",
     });
 
-    // EventSource cannot do either of these: no cross-origin credentials, and
-    // no way to abort. A stream that outlives its component holds the
-    // connection and the server-side subscription open.
+    // A fetch stream can carry an explicit resume header and abort signal. The
+    // reconnecting EventSource helper owns credentials, but cannot do either.
     expect(stream.init.credentials).toBe("include");
     expect(stream.init.signal).toBe(controller.signal);
     const headers = stream.init.headers as Record<string, string>;

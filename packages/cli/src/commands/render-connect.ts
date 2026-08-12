@@ -1,4 +1,4 @@
-import { statSync } from "node:fs";
+import { stat } from "node:fs/promises";
 import path from "node:path";
 
 import {
@@ -13,32 +13,40 @@ import { ensureDaemon } from "../bridge/ensure-daemon";
 import { spawnEnsuredDaemon, waitForDaemonRecord } from "../bridge/spawn-daemon";
 import { defaultAppDataRoot } from "../next-host";
 import { CliInputError } from "../cli-error";
+import { canonicalWorkspaceRoot } from "../workspace-selection";
 import { parseRenderCommandArgs } from "./render";
 import { VIDCOM_VERSION } from "./version";
 
 const IDENTITY_FILE = "vidcom.json";
 
-function candidate(root: string): WorkspaceCandidate {
-  const readable = (target: string) => {
+async function candidate(raw: string): Promise<WorkspaceCandidate> {
+  const resolved = path.resolve(raw) as AbsolutePath;
+  const readable = async (target: string) => {
     try {
-      return statSync(target).isDirectory();
+      return (await stat(target)).isDirectory();
     } catch {
       return false;
     }
   };
-  const hasIdentityFile = (() => {
-    try {
-      return statSync(path.join(root, IDENTITY_FILE)).isFile();
-    } catch {
-      return false;
-    }
-  })();
-  return {
-    root: root as AbsolutePath,
-    readable: readable(root),
-    hasIdentityFile,
-    parentReadable: readable(path.dirname(root)),
-  };
+  try {
+    const root = await canonicalWorkspaceRoot(resolved);
+    const hasIdentityFile = await stat(path.join(root, IDENTITY_FILE))
+      .then((value) => value.isFile())
+      .catch(() => false);
+    return {
+      root,
+      readable: await readable(root),
+      hasIdentityFile,
+      parentReadable: await readable(path.dirname(root)),
+    };
+  } catch {
+    return {
+      root: resolved,
+      readable: false,
+      hasIdentityFile: false,
+      parentReadable: false,
+    };
+  }
 }
 
 /**
@@ -54,8 +62,8 @@ export async function renderWorkspaceSource(argv: readonly string[]): Promise<st
   const options = parseRenderCommandArgs(argv);
   const explicit = options.workspace ?? process.env.VIDCOM_WORKSPACE;
   const resolution = resolveWorkspace({
-    explicit: explicit === undefined ? null : candidate(path.resolve(explicit)),
-    cwd: candidate(process.cwd()),
+    explicit: explicit === undefined ? null : await candidate(explicit),
+    cwd: await candidate(process.cwd()),
   });
   if (resolution.status === "error") throw new CliInputError(resolution.reason);
   return Promise.resolve(resolution.source);
@@ -65,8 +73,8 @@ export async function renderWorkspaceRoot(argv: readonly string[]): Promise<stri
   const options = parseRenderCommandArgs(argv);
   const explicit = options.workspace ?? process.env.VIDCOM_WORKSPACE;
   const resolution = resolveWorkspace({
-    explicit: explicit === undefined ? null : candidate(path.resolve(explicit)),
-    cwd: candidate(process.cwd()),
+    explicit: explicit === undefined ? null : await candidate(explicit),
+    cwd: await candidate(process.cwd()),
   });
   if (resolution.status === "error") throw new CliInputError(resolution.reason);
   return Promise.resolve(resolution.root);

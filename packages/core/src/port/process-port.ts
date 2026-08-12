@@ -12,6 +12,11 @@ export interface ProcessRunInput {
   environment?: Record<string, string>;
   /** Defaults to the adapter's own ceiling; expiry kills the process tree and returns a non-zero exit. */
   timeoutMs?: number;
+  /**
+   * Maximum bytes retained from each output stream. Defaults to the adapter's
+   * conservative capture budget and may not exceed its hard safety ceiling.
+   */
+  captureMaxBytes?: number;
   signal?: AbortSignal;
 }
 
@@ -19,7 +24,7 @@ export interface ProcessRunInput {
 export interface ProcessRunOutput {
   /** `null` when the process was terminated by a signal instead of exiting on its own. */
   exitCode: number | null;
-  /** Truncated at the adapter's capture ceiling; never assume the full stream is present. */
+  /** Truncated at the invocation's capture budget; never assume the full stream is present. */
   stdout: string;
   stderr: string;
   /** Whether the adapter, not the child, ended the process because `timeoutMs` elapsed. */

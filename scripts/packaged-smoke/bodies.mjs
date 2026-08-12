@@ -1,5 +1,6 @@
 import { spawn, spawnSync } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
+import { createReadStream } from "node:fs";
 import { mkdir, readdir, readFile, realpath, writeFile } from "node:fs/promises";
 import path from "node:path";
 
@@ -47,6 +48,7 @@ function expectSuccess(label, run) {
  */
 export const USER_SUPPLIED_DOCTOR_ITEMS = Object.freeze([
   "workspace.active",
+  "settings.file",
   "tts.elevenlabs",
 ]);
 
@@ -66,18 +68,166 @@ export const NOT_YET_EXERCISED_DOCTOR_ITEMS = Object.freeze([
   "tts.model-cache",
 ]);
 
-function assertRuntimeHealthy(label, run) {
+export const EXPECTED_DOCTOR_ITEM_IDS = Object.freeze([
+  "app-data.writable",
+  "db.migration",
+  "runtime.manifest",
+  "runtime.integrity",
+  "runtime.ffmpeg",
+  "runtime.esbuild-binary",
+  "compiler.probe",
+  "runtime.hyperframes",
+  "runtime.motion",
+  "runtime.bgm",
+  "runtime.python",
+  "runtime.python-utf8",
+  "chrome.cache",
+  "tts.model-cache",
+  "workspace.active",
+  "port.available",
+  "settings.file",
+  "tts.elevenlabs",
+]);
+
+export function assertRuntimeHealthy(label, run) {
   const report = parseJson(label, run.stdout);
-  const allowed = [...USER_SUPPLIED_DOCTOR_ITEMS, ...NOT_YET_EXERCISED_DOCTOR_ITEMS];
-  const broken = (report.items ?? []).filter((item) => item.status !== "ok"
-    && item.status !== "skipped"
-    && !allowed.includes(item.id));
+  if (!Array.isArray(report.items)) throw new Error(`${label} did not report doctor items`);
+  const actualIds = report.items.map((item) => item?.id);
+  const duplicates = actualIds.filter((id, index) => actualIds.indexOf(id) !== index);
+  const missing = EXPECTED_DOCTOR_ITEM_IDS.filter((id) => !actualIds.includes(id));
+  const unexpected = actualIds.filter((id) => !EXPECTED_DOCTOR_ITEM_IDS.includes(id));
+  if (duplicates.length > 0 || missing.length > 0 || unexpected.length > 0) {
+    throw new Error(`${label} returned an unexpected doctor schema: ${JSON.stringify({
+      duplicates: [...new Set(duplicates)],
+      missing,
+      unexpected,
+    })}`);
+  }
+  const deferred = new Set([...USER_SUPPLIED_DOCTOR_ITEMS, ...NOT_YET_EXERCISED_DOCTOR_ITEMS]);
+  const broken = report.items.filter((item) => item.status !== "ok"
+    && !(deferred.has(item.id) && ["missing", "skipped"].includes(item.status)));
   if (broken.length > 0) {
     throw new Error(`${label} found the artifact unhealthy: ${
       broken.map((item) => `${item.id}=${item.status}`).join(", ")}`);
   }
   return report;
 }
+
+async function sha256File(filename) {
+  const hash = createHash("sha256");
+  for await (const chunk of createReadStream(filename)) hash.update(chunk);
+  return hash.digest("hex");
+}
+
+function assertExactObjectKeys(label, value, expected) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new Error(`${label} must be an object`);
+  }
+  const actual = Object.keys(value).sort();
+  const wanted = [...expected].sort();
+  if (JSON.stringify(actual) !== JSON.stringify(wanted)) {
+    throw new Error(`${label} has an unexpected schema: ${JSON.stringify({ expected: wanted, actual })}`);
+  }
+}
+
+export async function verifyArtifactProvenance(context) {
+  const directory = path.dirname(context.artifact);
+  const artifactName = path.basename(context.artifact);
+  const checksumText = await readFile(path.join(directory, "SHA256SUMS"), "utf8");
+  const checksum = /^([0-9a-f]{64})  ([^\r\n]+)\n$/u.exec(checksumText);
+  if (!checksum || checksum[2] !== artifactName) {
+    throw new Error("SHA256SUMS must contain exactly the packaged artifact");
+  }
+
+  const manifest = parseJson(
+    "artifact-manifest",
+    await readFile(path.join(directory, "artifact-manifest.json"), "utf8"),
+  );
+  assertExactObjectKeys("artifact-manifest", manifest, [
+    "version", "platform", "commit", "dirty", "node", "tools", "runtime", "createdAt", "files",
+  ]);
+  assertExactObjectKeys("artifact-manifest.tools", manifest.tools, [
+    "tar", "postject", "elfSeaInjector", "bun",
+  ]);
+  assertExactObjectKeys("artifact-manifest.runtime", manifest.runtime, [
+    "artifactVersion", "versions", "archives",
+  ]);
+  assertExactObjectKeys("artifact-manifest.runtime.versions", manifest.runtime.versions, [
+    "node", "hyperframes", "esbuild", "ffmpeg", "cpython", "vieneu", "motion",
+  ]);
+  assertExactObjectKeys("artifact-manifest.runtime.versions.motion", manifest.runtime.versions.motion, [
+    "animejs", "gsap", "lottie-web", "motion", "three",
+  ]);
+  assertExactObjectKeys("artifact-manifest.runtime.archives", manifest.runtime.archives, [
+    "bgm", "hyperframes", "node",
+  ]);
+  for (const [archive, record] of Object.entries(manifest.runtime.archives)) {
+    assertExactObjectKeys(`artifact-manifest.runtime.archives.${archive}`, record, ["sha256", "bytes"]);
+    if (typeof record.sha256 !== "string" || !/^sha256:[0-9a-f]{64}$/u.test(record.sha256)
+      || !Number.isSafeInteger(record.bytes) || record.bytes <= 0) {
+      throw new Error(`artifact runtime archive provenance is invalid for ${archive}`);
+    }
+  }
+  assertExactObjectKeys("artifact-manifest.files", manifest.files, [artifactName]);
+  if (manifest.version !== 1) throw new Error(`unsupported artifact manifest version ${String(manifest.version)}`);
+  const expectedPlatform = `${process.platform}-${process.arch}`;
+  if (manifest.platform !== expectedPlatform) {
+    throw new Error(`artifact platform ${String(manifest.platform)} does not match host ${expectedPlatform}`);
+  }
+  if (typeof manifest.commit !== "string" || !/^(?:[0-9a-f]{40}|unknown)$/u.test(manifest.commit)) {
+    throw new Error("artifact manifest commit is invalid");
+  }
+  if (typeof manifest.dirty !== "boolean") throw new Error("artifact manifest dirty flag is invalid");
+  if (typeof manifest.node !== "string" || !/^v\d+\.\d+\.\d+/u.test(manifest.node)) {
+    throw new Error("artifact manifest Node version is invalid");
+  }
+  if (manifest.runtime.versions.node !== manifest.node.slice(1)) {
+    throw new Error("artifact Node version differs from its runtime manifest");
+  }
+  if (manifest.tools.bun !== "1.3.14") throw new Error("artifact Bun provenance differs from the release pin");
+  if (!Number.isFinite(Date.parse(manifest.createdAt))) throw new Error("artifact manifest createdAt is invalid");
+  if (typeof manifest.runtime.artifactVersion !== "string" || manifest.runtime.artifactVersion === "") {
+    throw new Error("artifact runtime version is invalid");
+  }
+  if (!manifest.runtime.versions || typeof manifest.runtime.versions !== "object"
+    || !manifest.runtime.archives || typeof manifest.runtime.archives !== "object") {
+    throw new Error("artifact runtime provenance is invalid");
+  }
+
+  const expectedCommit = context.environment.VIDCOM_SMOKE_EXPECTED_COMMIT;
+  if (expectedCommit !== undefined) {
+    if (!/^[0-9a-f]{40}$/u.test(expectedCommit)) throw new Error("expected smoke commit is invalid");
+    if (manifest.commit !== expectedCommit) {
+      throw new Error(`artifact commit ${manifest.commit} does not match workflow commit ${expectedCommit}`);
+    }
+  }
+  if (context.environment.VIDCOM_SMOKE_RELEASE === "1") {
+    if (manifest.dirty !== false) throw new Error("a release smoke cannot use an artifact from a modified tree");
+    if (expectedCommit === undefined) throw new Error("a release smoke requires VIDCOM_SMOKE_EXPECTED_COMMIT");
+  }
+  if (context.identity?.runtimeManifest
+    && manifest.runtime.artifactVersion !== context.identity.runtimeManifest) {
+    throw new Error("artifact runtime version differs from the executable identity");
+  }
+  if (context.identity?.platform && manifest.platform !== context.identity.platform) {
+    throw new Error("artifact platform differs from the executable identity");
+  }
+  if (context.identity?.buildCommit && manifest.commit !== context.identity.buildCommit) {
+    throw new Error("artifact commit differs from the executable identity");
+  }
+
+  const actualDigest = await sha256File(context.artifact);
+  if (checksum[1] !== actualDigest || manifest.files[artifactName] !== actualDigest) {
+    throw new Error(`artifact digest mismatch: ${JSON.stringify({
+      checksum: checksum[1],
+      manifest: manifest.files[artifactName],
+      actual: actualDigest,
+    })}`);
+  }
+  return manifest;
+}
+
+export const PRIVATE_PATH_FORBIDDEN_TOOLS = Object.freeze(["node", "python", "python3", "bun"]);
 
 function parseJson(label, text) {
   try {
@@ -218,6 +368,38 @@ async function jsonResponse(label, response) {
   return payload;
 }
 
+/**
+ * Retries one read-only request when a stale keep-alive socket is reset.
+ *
+ * The render CLI is intentionally driven with spawnSync, which blocks this
+ * harness's event loop while a separate daemon renders. The server can retire
+ * the harness's idle pooled socket during that wait; the first GET then sees
+ * ECONNRESET even though the listener and daemon are still healthy. Only the
+ * transport is retried, never an HTTP response and never a mutating request.
+ */
+export async function readJsonWithTransportRetry(label, url, init, request = fetch) {
+  let firstError = null;
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    let response;
+    try {
+      response = await request(url, init);
+    } catch (error) {
+      if (attempt === 0) {
+        firstError = error;
+        await new Promise((resolve) => setTimeout(resolve, 25));
+        continue;
+      }
+      throw new Error(
+        `${label} transport failed twice: first=${firstError instanceof Error ? firstError.message : String(firstError)}`
+        + `; second=${error instanceof Error ? error.message : String(error)}`,
+        { cause: error },
+      );
+    }
+    return jsonResponse(label, response);
+  }
+  throw new Error(`${label} transport retry did not run`);
+}
+
 async function jobUntilTerminal(serving, jobId, timeoutMs = 600_000) {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
@@ -243,10 +425,96 @@ function contentHash(content) {
   return `sha256:${createHash("sha256").update(content).digest("hex")}`;
 }
 
+const IMPORT_FIXTURE_ID = "project_0127e186-5e32-45ac-b66f-1c099ff8a292";
+
+/** Writes the same complete project shape that the lifecycle service creates. */
+export async function writeImportProjectFixture(root) {
+  const occurredAt = "2026-08-13T00:00:00.000Z";
+  const platform = {
+    presetId: "horizontal-youtube",
+    orientation: "horizontal",
+    aspectRatio: "16:9",
+    width: 1920,
+    height: 1080,
+    fps: 30,
+    targets: ["youtube"],
+    recommendedMaxDurationSeconds: null,
+  };
+  const identity = {
+    schemaVersion: 1,
+    id: IMPORT_FIXTURE_ID,
+    platform,
+    render: { defaultPresetId: platform.presetId, outputDirectory: "renders" },
+    narration: { defaultProviderId: null, defaultVoiceId: null },
+    createdAt: occurredAt,
+    updatedAt: occurredAt,
+  };
+  await mkdir(root, { recursive: true });
+  await Promise.all([
+    writeFile(path.join(root, "vidcom.json"), `${JSON.stringify(identity, null, 2)}\n`, "utf8"),
+    writeFile(path.join(root, "hyperframes.json"), "{}\n", "utf8"),
+    writeFile(path.join(root, "preview-settings.json"), "{}\n", "utf8"),
+    writeFile(
+      path.join(root, "index.html"),
+      "<!doctype html>\n<html><head><meta charset=\"UTF-8\"></head><body>\n"
+        + "<main data-composition-id=\"main\" data-width=\"1920\" data-height=\"1080\" data-fps=\"30\" data-start=\"0\" data-duration=\"0\" data-no-timeline></main>\n"
+        + "</body></html>\n",
+      "utf8",
+    ),
+  ]);
+  return identity;
+}
+
+/**
+ * An authored eight-second story beat with setup, development, payoff and hold.
+ * Every selector and start time is literal so the render gate can verify the
+ * choreography statically instead of trusting runtime-only animation.
+ */
+export function mediaSceneSource(gsapEntry) {
+  return `<!doctype html>
+<html><head><meta charset="UTF-8" /><script src="../${gsapEntry}"></script>
+<style>
+html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#07111f;color:#f8fafc;font-family:Arial,sans-serif}
+#scene-1{position:relative;width:1920px;height:1080px;overflow:hidden;background:radial-gradient(circle at 70% 30%,#17345f 0,#07111f 58%)}
+#grid{position:absolute;inset:0;background-image:linear-gradient(#38bdf81f 1px,transparent 1px),linear-gradient(90deg,#38bdf81f 1px,transparent 1px);background-size:72px 72px;transform:perspective(700px) rotateX(58deg) scale(1.5);transform-origin:center 80%;opacity:.6}
+#hero{position:absolute;left:190px;top:238px;width:1040px;padding:72px 76px;border:2px solid #67e8f9;border-radius:36px;background:linear-gradient(135deg,#0f2848eb,#112846b8);box-shadow:0 40px 120px #020617b3,0 0 55px #22d3ee4d;transform-origin:30% 50%}
+#eyebrow{font-size:30px;letter-spacing:.28em;text-transform:uppercase;color:#67e8f9}
+#headline{margin:24px 0 0;font-size:112px;line-height:.9;letter-spacing:-.045em}
+#headline span{color:#facc15}
+#proof{position:absolute;right:170px;top:285px;width:270px;height:270px;border:20px solid #facc15;border-radius:50%;display:grid;place-items:center;background:#07111f;box-shadow:0 0 70px #facc1566;transform-origin:center}
+#proof strong{font-size:72px;line-height:1}#proof small{display:block;margin-top:10px;text-align:center;font-size:24px;letter-spacing:.12em;color:#67e8f9}
+#hold{position:absolute;left:270px;bottom:115px;font-size:27px;letter-spacing:.2em;text-transform:uppercase;color:#bae6fd}
+</style></head><body><template>
+<section id="scene-1" data-composition-id="scene-1" data-width="1920" data-height="1080" data-start="0" data-duration="8">
+  <div id="grid"></div>
+  <article id="hero"><div id="eyebrow">Packaged runtime proof</div><h1 id="headline">Create. Move.<br><span>Deliver.</span></h1></article>
+  <aside id="proof"><div><strong>100%</strong><small>OFFLINE</small></div></aside>
+  <div id="hold">One binary. Complete motion pipeline.</div>
+</section>
+<script>
+const tl = gsap.timeline({ paused: true });
+tl.fromTo("#hero", { scale: 0.42 }, { scale: 1, duration: 1.15, ease: "expo.out" }, 0.15);
+tl.fromTo("#hero", { rotation: -9 }, { rotation: 0, duration: 1.05, ease: "power3.out" }, 0.25);
+tl.fromTo("#proof", { scale: 0.18 }, { scale: 1, duration: 1.25, ease: "back.out(1.7)" }, 1.55);
+tl.fromTo("#proof", { rotation: -175 }, { rotation: 0, duration: 1.2, ease: "expo.out" }, 1.65);
+tl.to("#hero", { scale: 1.07, duration: 0.75, ease: "sine.inOut" }, 3.35);
+tl.to("#hero", { rotation: 2.2, duration: 0.75, ease: "sine.inOut" }, 3.45);
+tl.to("#proof", { scale: 1.16, duration: 0.85, ease: "power3.inOut" }, 4.35);
+tl.to("#proof", { rotation: 14, duration: 0.85, ease: "power3.inOut" }, 4.45);
+tl.to("#hero", { scale: 1, duration: 0.9, ease: "power2.out" }, 5.45);
+tl.to("#hero", { rotation: 0, duration: 0.9, ease: "power2.out" }, 5.55);
+tl.to("#proof", { scale: 1, duration: 0.9, ease: "elastic.out(1,0.45)" }, 5.65);
+tl.to("#proof", { rotation: 0, duration: 0.9, ease: "elastic.out(1,0.45)" }, 5.75);
+window.__timelines = window.__timelines || {};
+window.__timelines["scene-1"] = tl;
+</script></template></body></html>\n`;
+}
+
 async function ensureMediaProject(context, serving) {
   if (context.media) return context.media;
   const projectRoot = path.join(context.workspace, "smoke-media");
   let projectId;
+  let sceneContentHash = null;
   try {
     projectId = JSON.parse(await readFile(path.join(projectRoot, "vidcom.json"), "utf8")).id;
   } catch {
@@ -256,6 +524,11 @@ async function ensureMediaProject(context, serving) {
       body: JSON.stringify({ name: "Smoke Media", presetId: "horizontal-youtube" }),
     }));
     projectId = created.projectId;
+  }
+  try {
+    const existingScene = await readFile(path.join(projectRoot, "compositions", "scene-1.html"), "utf8");
+    sceneContentHash = contentHash(existingScene);
+  } catch {
     const index = await readFile(path.join(projectRoot, "index.html"), "utf8");
     const scene = await jsonResponse("create media scene", await fetch(
       `${serving.baseUrl}/api/v1/projects/${projectId}/scenes`,
@@ -263,15 +536,45 @@ async function ensureMediaProject(context, serving) {
         method: "POST",
         headers: { Cookie: serving.cookie, "content-type": "application/json" },
         body: JSON.stringify({
-          title: "Xin chào từ VidCom",
+          title: "VidCom motion proof",
           duration: 8,
           expectedContentHash: contentHash(index),
         }),
       },
     ));
     if (scene.scene?.id !== "scene-1") throw new Error("media project did not create scene-1");
+    sceneContentHash = scene.scene.fileContentHash;
   }
   if (typeof projectId !== "string") throw new Error("media project identity has no project id");
+  if (typeof sceneContentHash !== "string") throw new Error("media scene has no content hash");
+
+  const installed = await jsonResponse("install GSAP", await fetch(
+    `${serving.baseUrl}/api/v1/projects/${projectId}/motion-libraries`,
+    {
+      method: "POST",
+      headers: { Cookie: serving.cookie, "content-type": "application/json" },
+      body: JSON.stringify({ libraryId: "gsap" }),
+    },
+  ));
+  if (installed.library?.id !== "gsap" || typeof installed.library.entry !== "string") {
+    throw new Error("GSAP install did not return its project-local entry");
+  }
+  const authored = await jsonResponse("author media motion", await fetch(
+    `${serving.baseUrl}/api/v1/projects/${projectId}/files`,
+    {
+      method: "PUT",
+      headers: { Cookie: serving.cookie, "content-type": "application/json" },
+      body: JSON.stringify({
+        path: "compositions/scene-1.html",
+        content: mediaSceneSource(installed.library.entry),
+        expectedContentHash: sceneContentHash,
+      }),
+    },
+  ));
+  const blocking = authored.diagnostics?.filter((diagnostic) => diagnostic.severity === "error") ?? [];
+  if (blocking.length > 0) {
+    throw new Error(`media motion authored with blocking diagnostics: ${JSON.stringify(blocking)}`);
+  }
   context.media = { projectId, slug: "smoke-media", sceneId: "scene-1" };
   return context.media;
 }
@@ -405,15 +708,14 @@ async function runMediaPipeline(context, options = {}) {
  */
 export const STEP_BODIES = {
   async build(context) {
-    const checksums = path.join(path.dirname(context.artifact), "SHA256SUMS");
-    await readFile(checksums, "utf8");
-    return `artifact and checksums present at ${path.basename(path.dirname(context.artifact))}`;
+    context.provenance = await verifyArtifactProvenance(context);
+    return `artifact provenance verified at ${path.basename(path.dirname(context.artifact))}`;
   },
 
   "clean-environment"(context) {
     // Proved by asking the runner, not by trusting the setup: if `node` is still
     // reachable the whole smoke would be measuring the runner's toolchain.
-    for (const tool of ["node", "python3", "bun"]) {
+    for (const tool of PRIVATE_PATH_FORBIDDEN_TOOLS) {
       const found = spawnSync(process.platform === "win32" ? "where" : "which", [tool], {
         env: context.environment,
         encoding: "utf8",
@@ -443,6 +745,7 @@ export const STEP_BODIES = {
   async identify(context) {
     const version = parseJson("version", expectSuccess("version", runArtifact(context, ["version", "--json"])).stdout);
     if (!version.runtimeManifest) throw new Error("a packaged build must know its runtime manifest version");
+    context.identity = version;
 
     // Doctor gets its own app-data root so it can prove both cold and warm
     // diagnostics without warming the serve flow §9.1 actually puts ceilings on.
@@ -454,9 +757,13 @@ export const STEP_BODIES = {
       },
     };
     const doctorColdStartedAt = Date.now();
-    const cold = runArtifact(diagnosticContext, ["doctor", "--repair", "--json"], { timeoutMs: 600_000 });
+    const cold = runArtifact(
+      diagnosticContext,
+      ["doctor", "--repair", "--deep", "--json"],
+      { timeoutMs: 600_000 },
+    );
     const doctorColdMs = Date.now() - doctorColdStartedAt;
-    assertRuntimeHealthy("cold doctor --repair", cold);
+    assertRuntimeHealthy("cold doctor --repair --deep", cold);
 
     const doctorWarmStartedAt = Date.now();
     const warm = runArtifact(diagnosticContext, ["doctor", "--deep", "--json"]);
@@ -534,8 +841,7 @@ export const STEP_BODIES = {
     // in one descent, so the walk does not depend on where a paged listing of
     // the system temp directory happens to put it.
     const fixtureInput = path.join(context.environment.HOME, "imported-project");
-    await mkdir(fixtureInput, { recursive: true });
-    await writeFile(path.join(fixtureInput, "index.html"), "<!doctype html><title>imported</title>\n", "utf8");
+    await writeImportProjectFixture(fixtureInput);
     // Windows TEMP/HOME can use an 8.3 alias such as RUNNER~1 while directory
     // enumeration returns the long name. Follow the canonical identity the
     // server will expose rather than asking it to reproduce a display alias.
@@ -601,13 +907,17 @@ export const STEP_BODIES = {
       // Asynchronous by contract, so the smoke waits the way a client does.
       const deadline = Date.now() + 120_000;
       let status = "queued";
+      let terminal = null;
       while (Date.now() < deadline && status !== "succeeded" && status !== "failed" && status !== "cancelled") {
         const job = await fetch(`${serving.baseUrl}/api/v1/jobs/${jobId}`, { headers });
         if (!job.ok) throw new Error(`job status returned ${String(job.status)}`);
-        status = (await job.json()).status;
+        terminal = await job.json();
+        status = terminal.status;
         if (status === "queued" || status === "running") await new Promise((r) => setTimeout(r, 250));
       }
-      if (status !== "succeeded") throw new Error(`the import job ended ${status}`);
+      if (status !== "succeeded") {
+        throw new Error(`the import job ended ${status}: ${JSON.stringify(terminal?.error ?? null)}`);
+      }
 
       // The original must be untouched: import copies, it does not move.
       await readFile(path.join(fixture, "index.html"), "utf8");
@@ -838,10 +1148,23 @@ export const STEP_BODIES = {
       const runningDeadline = Date.now() + 120_000;
       let running = null;
       while (Date.now() < runningDeadline) {
-        running = await jsonResponse(`detached job ${jobId}`, await fetch(
-          `${serving.baseUrl}/api/v1/jobs/${jobId}`,
-          { headers: { Cookie: serving.cookie } },
-        ));
+        try {
+          running = await readJsonWithTransportRetry(
+            `detached job ${jobId}`,
+            `${serving.baseUrl}/api/v1/jobs/${jobId}`,
+            { headers: { Cookie: serving.cookie } },
+          );
+        } catch (error) {
+          // Give an orderly daemon shutdown enough time to publish its failure
+          // and exit status before the step's finally block sends our own stop.
+          await new Promise((resolve) => setTimeout(resolve, 500));
+          throw new Error(
+            `detached job ${jobId} poll failed: ${error instanceof Error ? error.message : String(error)}`
+            + `${error instanceof Error && error.cause ? ` (${String(error.cause)})` : ""}`
+            + `; daemon exit=${String(serving.child.exitCode)} signal=${String(serving.child.signalCode)}`
+            + `; daemon tail: ${serving.output().slice(-2_000)}`,
+          );
+        }
         if (running.status === "running" && running.stage === "rendering video") break;
         if (TERMINAL_JOBS.has(running.status)) {
           throw new Error(`detached render became ${running.status} before mid-render cancellation`);
@@ -1020,10 +1343,8 @@ export const STEP_BODIES = {
     const unexpected = entries.filter((entry) => !expected.includes(entry));
     if (unexpected.length > 0) throw new Error(`unexpected files beside the artifact: ${unexpected.join(", ")}`);
 
-    const manifest = JSON.parse(await readFile(path.join(directory, "artifact-manifest.json"), "utf8"));
-    if (manifest.dirty !== false && context.environment.VIDCOM_SMOKE_RELEASE === "1") {
-      throw new Error("a release smoke cannot run on an artifact built from a modified tree");
-    }
+    const manifest = await verifyArtifactProvenance(context);
+    context.provenance = manifest;
     const beside = await readdir(context.cwd);
     if (beside.length > 0) throw new Error(`the artifact wrote beside itself: ${beside.join(", ")}`);
     return `only ${expected.join(", ")} beside the artifact; commit ${String(manifest.commit).slice(0, 7)}`;

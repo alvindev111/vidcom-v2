@@ -10,7 +10,6 @@ import {
   connectRenderClient,
   createSeaStaticAssetHost,
   defaultAppDataRoot,
-  HOST_BROWSE_SESSION,
   hostBrowseTokens,
   parseServeCommandArgs,
   resolveStaticAssets,
@@ -19,6 +18,7 @@ import {
   waitForShutdown,
   type ServingDaemon,
 } from "@vidcom/cli";
+import { sessionFingerprint } from "@vidcom/server";
 import { configureCompilerBeforeRuntime } from "../../packages/cli/src/compiler-preload";
 import { afterEach, describe, expect, it } from "vitest";
 
@@ -57,6 +57,12 @@ async function exchange(daemon: ServingDaemon, nonce: string): Promise<string> {
   });
   expect(response.status).toBe(204);
   return response.headers.get("set-cookie")?.split(";", 1)[0] ?? "";
+}
+
+function browseSession(cookie: string): string {
+  const token = cookie.split("=", 2)[1];
+  if (!token) throw new Error("browser session cookie is missing its token");
+  return sessionFingerprint(token);
 }
 
 function stealLease(appData: string): void {
@@ -264,7 +270,7 @@ describe("serve", () => {
     const cookie = await exchange(daemon, nonce);
     const identity = await stat(nextWorkspace, { bigint: true });
     const selectionToken = hostBrowseTokens.mint({
-      sessionId: HOST_BROWSE_SESSION,
+      sessionId: browseSession(cookie),
       canonicalPath: nextWorkspace,
       identity: { device: String(identity.dev), inode: String(identity.ino) },
     }).token;

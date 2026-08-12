@@ -7,7 +7,7 @@ import type {
   AgentTerminalSession,
   AgentTerminalSpec,
 } from "@vidcom/core";
-import { spawn, type IPty } from "node-pty";
+import type { IPty } from "node-pty";
 
 import { agentInvocation } from "./agent-cli-invocation";
 import { consoleLaunchPlan, resolveExecutable } from "./executable-lookup";
@@ -34,6 +34,13 @@ const ORPHAN_GRACE_MS = 5 * 60 * 1000;
 
 /** 60 seconds to collect the exit frame before an ended session is forgotten. */
 const EXITED_RETENTION_MS = 60 * 1000;
+
+type NodePtyRuntime = Pick<typeof import("node-pty"), "spawn">;
+
+/** Loads the native PTY binding only when the terminal capability is invoked. */
+async function loadNodePtyRuntime(): Promise<NodePtyRuntime> {
+  return import("node-pty");
+}
 
 /**
  * The environment an agent CLI is handed.
@@ -144,6 +151,8 @@ export class NodePtyAgentTerminals implements AgentTerminalPort {
 
   private readonly environment: NodeJS.ProcessEnv;
   private readonly invocationFor: typeof agentInvocation;
+  private readonly loadRuntime: () => Promise<NodePtyRuntime>;
+  private runtime: Promise<NodePtyRuntime> | undefined;
 
   constructor(
     /** Owns generated MCP config files; MUST be inside app-data, never the workspace. */
@@ -157,10 +166,27 @@ export class NodePtyAgentTerminals implements AgentTerminalPort {
        * would leave the one thing this class exists for untested.
        */
       invocationFor?: typeof agentInvocation;
+      /** Loads the native binding at the capability boundary; tests may replace it without loading an addon. */
+      loadRuntime?: () => Promise<NodePtyRuntime>;
     } = {},
   ) {
     this.environment = options.environment ?? process.env;
     this.invocationFor = options.invocationFor ?? agentInvocation;
+    this.loadRuntime = options.loadRuntime ?? loadNodePtyRuntime;
+  }
+
+  private async nodePty(): Promise<NodePtyRuntime> {
+    // Dynamic, not a top-level import: the adapter barrel is used by unrelated
+    // jobs, and one unavailable host addon must not make those imports crash.
+    this.runtime ??= this.loadRuntime();
+    try {
+      return await this.runtime;
+    } catch (cause) {
+      throw new Error(
+        "the required node-pty native runtime is unavailable — reinstall VidCom for this platform",
+        { cause },
+      );
+    }
   }
 
   /**
@@ -189,6 +215,8 @@ export class NodePtyAgentTerminals implements AgentTerminalPort {
     if (executable === null) {
       throw new Error(`${invocation.command} is not installed or not on PATH`);
     }
+
+    const { spawn } = await this.nodePty();
 
     if (invocation.configFile) {
       await mkdir(this.configDirectory, { recursive: true });

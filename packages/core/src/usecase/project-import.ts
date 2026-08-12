@@ -29,6 +29,13 @@ export interface ImportPlanInput extends PathComparison {
   taken: readonly string[];
 }
 
+/** Filesystem facts resolved by the adapter before Core compares import paths. */
+export interface CanonicalImportPaths {
+  source: AbsolutePath;
+  workspaceRoot: AbsolutePath;
+  caseInsensitive: boolean;
+}
+
 function invalid(message: string, details?: Record<string, unknown>): DomainError {
   return { code: ErrorCode.PathInvalid, message, ...(details === undefined ? {} : { details }) };
 }

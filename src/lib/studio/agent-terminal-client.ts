@@ -1,4 +1,8 @@
-import { resolveApiBaseUrl } from "@/lib/api/base-url";
+import {
+  fetchApi,
+  openApiEventSource,
+  type ApiPath,
+} from "@/lib/api/services";
 import type { AgentId } from "./types";
 
 /** What the daemon reports after opening — or re-attaching to — a session. */
@@ -14,13 +18,12 @@ export type AgentTerminalFrame =
   | { type: "data"; data: string }
   | { type: "exit"; exitCode: number | null };
 
-function sessionRoot(projectId: string, sessionId: string): string {
-  return `${resolveApiBaseUrl()}/api/v1/projects/${encodeURIComponent(projectId)}`
-    + `/agent-terminal/${encodeURIComponent(sessionId)}`;
+function sessionRoot(projectId: string, sessionId: string): ApiPath {
+  return `/api/v1/projects/${encodeURIComponent(projectId)}/agent-terminal/${encodeURIComponent(sessionId)}`;
 }
 
-async function send(url: string, method: "POST" | "DELETE", body?: unknown): Promise<Response> {
-  return fetch(url, {
+async function send(url: ApiPath, method: "POST" | "DELETE", body?: unknown): Promise<Response> {
+  return fetchApi(url, {
     method,
     ...(body === undefined ? {} : {
       headers: { "content-type": "application/json" },
@@ -43,7 +46,7 @@ export async function startAgentTerminal(input: {
   rows: number;
 }): Promise<StartedAgentTerminal> {
   const response = await send(
-    `${resolveApiBaseUrl()}/api/v1/projects/${encodeURIComponent(input.projectId)}/agent-terminal`,
+    `/api/v1/projects/${encodeURIComponent(input.projectId)}/agent-terminal`,
     "POST",
     { agent: input.agent, cols: input.cols, rows: input.rows },
   );
@@ -61,16 +64,16 @@ export async function startAgentTerminal(input: {
 /**
  * Streams the session's output, replaying everything printed before this call.
  *
- * `EventSource` rather than `fetch` streaming: it reconnects on its own and
- * sends the session cookie, and the replay on the server side makes a
- * reconnection harmless. Returns the close function.
+ * `EventSource` rather than `fetch` streaming: it reconnects on its own, while
+ * the shared API helper opts into cross-origin cookies. The replay on the
+ * server side makes a reconnection harmless. Returns the close function.
  */
 export function streamAgentTerminal(
   projectId: string,
   sessionId: string,
   onFrame: (frame: AgentTerminalFrame) => void,
 ): () => void {
-  const source = new EventSource(`${sessionRoot(projectId, sessionId)}/stream`);
+  const source = openApiEventSource(`${sessionRoot(projectId, sessionId)}/stream`);
   const handle = (event: MessageEvent<string>) => {
     // A frame that will not parse is dropped rather than thrown: the stream is
     // the terminal, and killing it over one malformed line loses the session.

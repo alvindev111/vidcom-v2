@@ -392,6 +392,7 @@ export const ValidateProjectOutputSchema = z.strictObject({
 });
 export const StartRenderInputSchema = z.strictObject({
   ...projectIdInput,
+  expectedSourceRevision: z.number().int().nonnegative(),
   bestEffort: z.boolean().optional(),
   renderPresetId: IdentifierSchema.optional(),
   idempotencyKey: z.string().min(1).max(255).optional(),

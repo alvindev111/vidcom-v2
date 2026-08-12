@@ -420,4 +420,24 @@ describe("Phase M diagnostics and thumbnails on real SQLite/filesystem", () => {
       "lint:static", "lint:runtime", "lint:layout", "lint:motion", "lint:contrast",
     ]);
   });
+
+  it("parses HyperFrames diagnostic JSON larger than the default process capture budget", async () => {
+    const value = await fixture();
+    const cli = path.join(value.root, "large-fake-check.mjs");
+    await writeFile(cli, `process.stdout.write(JSON.stringify({
+      lint:{findings:[{code:"large",severity:"warning",message:"x".repeat(70 * 1024)}]}
+    }));\n`);
+    const root = value.workspaceRoot as AbsolutePath;
+    const lint = new NodeHyperframesDiagnosticsLint(new NodeProcessRunner(5_000), {
+      cliPath: cli as AbsolutePath,
+      timeoutMs: 5_000,
+    });
+    const result = await lint.check({
+      id: "project_large_lint" as ProjectId, slug: "large-lint", root, entry: "index.html" as RelPath,
+    });
+    expect(result.available).toBe(true);
+    expect(result.diagnostics).toHaveLength(1);
+    expect(result.diagnostics[0]).toMatchObject({ code: "lint:large", severity: "warning" });
+    expect(result.diagnostics[0]?.message).toHaveLength(70 * 1024);
+  });
 });

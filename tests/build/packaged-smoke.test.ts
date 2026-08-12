@@ -1,6 +1,11 @@
+import { createHash } from "node:crypto";
 import { mkdir, mkdtemp, readFile, readlink, rm, stat, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
+
+import { CompositionHf, validateStagedProject } from "@vidcom/adapter";
+import type { ProjectId, RelPath } from "@vidcom/contracts";
+import { storyMotionDiagnostic, type AbsolutePath } from "@vidcom/core";
 
 import {
   SMOKE_STEPS,
@@ -14,9 +19,20 @@ import {
   macNetworkCutRoutes,
   networkCutPlan,
 } from "../../scripts/packaged-smoke/network-cut.mjs";
-import { copyCacheContents } from "../../scripts/packaged-smoke/environment.mjs";
-import { browsePathSegments, browseSegmentMatches } from "../../scripts/packaged-smoke/bodies.mjs";
+import { copyCacheContents, smokeEnvironment } from "../../scripts/packaged-smoke/environment.mjs";
+import {
+  EXPECTED_DOCTOR_ITEM_IDS,
+  PRIVATE_PATH_FORBIDDEN_TOOLS,
+  assertRuntimeHealthy,
+  browsePathSegments,
+  browseSegmentMatches,
+  mediaSceneSource,
+  readJsonWithTransportRetry,
+  verifyArtifactProvenance,
+  writeImportProjectFixture,
+} from "../../scripts/packaged-smoke/bodies.mjs";
 import { PACKAGED_RUNTIME_SOURCES } from "../../scripts/prepare-packaged-runtime.mjs";
+import { completeSmokeEvidence } from "../../scripts/packaged-smoke/evidence.mjs";
 import { describe, expect, it } from "vitest";
 
 interface StepResult {
@@ -38,6 +54,99 @@ describe("packaged smoke steps", () => {
     )).toEqual(["Users", "runneradmin", "AppData", "Local", "Temp", "imported-project"]);
     expect(browseSegmentMatches("RunnerAdmin", "runneradmin", "win32")).toBe(true);
     expect(browsePathSegments("D:\\workspace", "C:\\outside", "win32")).toBeNull();
+  });
+
+  it("retries one stale transport read without retrying HTTP failures", async () => {
+    let attempts = 0;
+    const staleThenHealthy = async () => {
+      attempts += 1;
+      if (attempts === 1) throw new TypeError("fetch failed", { cause: new Error("read ECONNRESET") });
+      return new Response(JSON.stringify({ status: "queued" }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
+    };
+    await expect(readJsonWithTransportRetry(
+      "job read",
+      "http://127.0.0.1/jobs/job_fixture",
+      {},
+      staleThenHealthy,
+    )).resolves.toEqual({ status: "queued" });
+    expect(attempts).toBe(2);
+
+    let rejectedAttempts = 0;
+    await expect(readJsonWithTransportRetry(
+      "job read",
+      "http://127.0.0.1/jobs/job_fixture",
+      {},
+      async () => {
+        rejectedAttempts += 1;
+        return new Response(JSON.stringify({ error: "no" }), { status: 503 });
+      },
+    )).rejects.toThrow(/returned 503/u);
+    expect(rejectedAttempts).toBe(1);
+  });
+
+  it("seeds an import source with the complete strict project identity", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "vidcom-import-smoke-fixture-"));
+    try {
+      const identity = await writeImportProjectFixture(root);
+      await expect(validateStagedProject(root)).resolves.toBeNull();
+      expect(JSON.parse(await readFile(path.join(root, "vidcom.json"), "utf8"))).toEqual(identity);
+      expect(identity).toMatchObject({
+        schemaVersion: 1,
+        platform: {
+          presetId: "horizontal-youtube",
+          width: 1920,
+          height: 1080,
+          fps: 30,
+        },
+        render: { defaultPresetId: "horizontal-youtube", outputDirectory: "renders" },
+        narration: { defaultProviderId: null, defaultVoiceId: null },
+      });
+      await expect(readFile(path.join(root, "preview-settings.json"), "utf8")).resolves.toBe("{}\n");
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("authors statically verifiable multi-phase packaged-smoke motion", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "vidcom-media-smoke-fixture-"));
+    try {
+      const entry = "assets/vendor/gsap-3.15.0/gsap.min.js";
+      await mkdir(path.join(root, "compositions"), { recursive: true });
+      await mkdir(path.join(root, path.dirname(entry)), { recursive: true });
+      await Promise.all([
+        writeFile(path.join(root, "hyperframes.json"), "{}\n", "utf8"),
+        writeFile(path.join(root, entry), "/* pinned GSAP fixture */\n", "utf8"),
+        writeFile(path.join(root, "compositions", "scene-1.html"), mediaSceneSource(entry), "utf8"),
+        writeFile(path.join(root, "index.html"), `<!doctype html><html><body>
+          <main data-composition-id="main" data-width="1920" data-height="1080" data-fps="30" data-duration="8">
+            <div id="scene-1-layer" class="comp-layer clip" data-composition-id="scene-1"
+              data-composition-src="compositions/scene-1.html" data-start="0" data-duration="8"
+              data-track-index="0" data-width="1920" data-height="1080"></div>
+          </main></body></html>`, "utf8"),
+      ]);
+      const model = await new CompositionHf().parseProject({
+        id: "project_smoke_motion" as ProjectId,
+        slug: "smoke-motion",
+        root: root as AbsolutePath,
+        entry: "index.html" as RelPath,
+      });
+      expect(model.scenes).toHaveLength(1);
+      expect(model.scenes[0]?.duration).toBe(8);
+      expect(model.scenes[0]?.unresolvedEffects).toBe(0);
+      expect(
+        storyMotionDiagnostic(model.scenes[0]!),
+        JSON.stringify(model.scenes[0]?.elements, null, 2),
+      ).toBeNull();
+      const meaningfulStarts = model.scenes[0]!.elements.flatMap((element) => element.effects)
+        .filter((effect) => ["scale", "rotation", "other"].includes(effect.propertyGroup ?? ""))
+        .map((effect) => effect.start);
+      expect(new Set(meaningfulStarts).size).toBeGreaterThanOrEqual(4);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
   });
 
   it("runs the matrix from Design §11.4 in order", () => {
@@ -106,6 +215,131 @@ describe("packaged smoke steps", () => {
       await rm(root, { recursive: true, force: true });
     }
   });
+
+  it("allows only named cold-machine doctor skips and rejects hidden runtime skips", () => {
+    const items = EXPECTED_DOCTOR_ITEM_IDS.map((id) => ({ id, status: "ok" }));
+    const workspace = items.find((item) => item.id === "workspace.active");
+    if (!workspace) throw new Error("doctor fixture is incomplete");
+    workspace.status = "skipped";
+    expect(assertRuntimeHealthy("doctor", { stdout: JSON.stringify({ items }) })).toMatchObject({ items });
+
+    const runtime = items.find((item) => item.id === "runtime.python");
+    if (!runtime) throw new Error("doctor fixture is incomplete");
+    runtime.status = "skipped";
+    expect(() => assertRuntimeHealthy("doctor", { stdout: JSON.stringify({ items }) }))
+      .toThrow(/runtime\.python=skipped/u);
+  });
+
+  it("rehashes artifact provenance and binds release evidence to host and commit", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "vidcom-smoke-provenance-"));
+    try {
+      const directory = path.join(root, "artifact");
+      const artifact = path.join(directory, process.platform === "win32" ? "vidcom.exe" : "vidcom");
+      await mkdir(directory, { recursive: true });
+      const bytes = Buffer.from("artifact-bytes");
+      const digest = createHash("sha256").update(bytes).digest("hex");
+      const commit = "a".repeat(40);
+      const manifest = {
+        version: 1,
+        platform: `${process.platform}-${process.arch}`,
+        commit,
+        dirty: false,
+        node: process.version,
+        tools: { tar: "7.5.22", postject: "1.0.0-alpha.6", elfSeaInjector: "1", bun: "1.3.14" },
+        runtime: {
+          artifactVersion: "fixture-1",
+          versions: {
+            node: process.version.slice(1),
+            hyperframes: "0.7.86",
+            esbuild: "0.25.12",
+            ffmpeg: "6.0",
+            cpython: "3.12.13+20260805",
+            vieneu: "3.2.4",
+            motion: { animejs: "4", gsap: "3", "lottie-web": "5", motion: "12", three: "0.18" },
+          },
+          archives: Object.fromEntries(["bgm", "hyperframes", "node"].map((key) => [
+            key,
+            { sha256: `sha256:${"c".repeat(64)}`, bytes: 1 },
+          ])),
+        },
+        createdAt: new Date().toISOString(),
+        files: { [path.basename(artifact)]: digest },
+      };
+      await Promise.all([
+        writeFile(artifact, bytes),
+        writeFile(path.join(directory, "SHA256SUMS"), `${digest}  ${path.basename(artifact)}\n`),
+        writeFile(path.join(directory, "artifact-manifest.json"), `${JSON.stringify(manifest)}\n`),
+      ]);
+      const context = {
+        artifact,
+        environment: {
+          VIDCOM_SMOKE_RELEASE: "1",
+          VIDCOM_SMOKE_EXPECTED_COMMIT: commit,
+        },
+        identity: { runtimeManifest: "fixture-1" },
+      };
+      await expect(verifyArtifactProvenance(context)).resolves.toMatchObject({ commit });
+      await writeFile(artifact, "tampered");
+      await expect(verifyArtifactProvenance(context)).rejects.toThrow(/digest mismatch/u);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("keeps release provenance controls while removing all private-PATH runtimes", () => {
+    expect(PRIVATE_PATH_FORBIDDEN_TOOLS).toEqual(["node", "python", "python3", "bun"]);
+    const environment = smokeEnvironment("/tmp/vidcom-smoke", {
+      PATH: "/usr/bin",
+      NODE_ENV: "test",
+      VIDCOM_SMOKE_RELEASE: "1",
+      VIDCOM_SMOKE_EXPECTED_COMMIT: "b".repeat(40),
+    });
+    expect(environment).toMatchObject({
+      VIDCOM_SMOKE_RELEASE: "1",
+      VIDCOM_SMOKE_EXPECTED_COMMIT: "b".repeat(40),
+    });
+    expect(environment.PATH).toContain("empty-bin");
+  });
+
+  it("fails closed when M.6 DoctorReport, raw ffprobe, or platform metadata is absent", () => {
+    const tag = `${process.platform}-${process.arch}`;
+    const report = {
+      streams: [{ codec_type: "video" }, { codec_type: "audio" }],
+      format: { duration: "8.0" },
+    };
+    const context = {
+      identity: { platform: tag, runtimeManifest: "fixture-v1", buildCommit: null },
+      provenance: {
+        platform: tag,
+        commit: "a".repeat(40),
+        runtime: { artifactVersion: "fixture-v1" },
+      },
+      measurements: {
+        postMediaDoctor: {
+          version: 1,
+          platform: tag,
+          items: EXPECTED_DOCTOR_ITEM_IDS.map((id) => ({ id, status: "ok" })),
+        },
+        ffprobe: { online: report, offline: report },
+      },
+    };
+    expect(completeSmokeEvidence(tag, context, {
+      NODE_ENV: "test",
+      VIDCOM_SMOKE_EXPECTED_COMMIT: "a".repeat(40),
+    })).toMatchObject({
+      doctor: { platform: tag },
+      ffprobe: { online: report, offline: report },
+      platform: { tag, os: process.platform, architecture: process.arch },
+    });
+    expect(() => completeSmokeEvidence(tag, {
+      ...context,
+      measurements: { ...context.measurements, ffprobe: { online: report } },
+    })).toThrow(/offline ffprobe evidence/u);
+    expect(() => completeSmokeEvidence(tag, {
+      ...context,
+      measurements: { ...context.measurements, postMediaDoctor: undefined },
+    })).toThrow(/DoctorReport evidence/u);
+  });
 });
 
 describe("native packaged-smoke inputs", () => {
@@ -128,6 +362,14 @@ describe("native packaged-smoke inputs", () => {
     const workflow = await readFile(".github/workflows/packaged-smoke.yml", "utf8");
     expect(workflow).toContain('VIDCOM_ALLOW_UNRELEASED_SMOKE_RUNTIME: "1"');
     expect(workflow).toContain("Production FFmpeg acquisition remains behind the human supply-chain gate");
+    expect(workflow).toContain("bun-version: 1.3.14");
+    expect(workflow).toContain("bun run build:artifact --release");
+    expect(workflow).toContain("VIDCOM_SMOKE_EXPECTED_COMMIT:");
+    expect(workflow).toContain("VIDCOM_SMOKE_EVIDENCE_DIR:");
+    expect(workflow).toContain("doctor-report.json");
+    expect(workflow).toContain("ffprobe.json");
+    expect(workflow).toContain("platform.json");
+    expect(workflow).toContain("if-no-files-found: error");
   });
 
   it("does not duplicate pull-request heavy workflows through the CI wrapper", async () => {

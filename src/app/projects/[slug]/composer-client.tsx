@@ -6,6 +6,7 @@ import type { StudioSnapshotResponse } from "@vidcom/contracts";
 
 import { StudioShell } from "@/components/studio/studio-shell";
 import { apiError, ensureBrowserSession } from "@/lib/api/browser-session";
+import { apiUrl, fetchApi, openApiEventSource } from "@/lib/api/services";
 import type { PreviewSettings } from "@/lib/studio/preview-settings";
 import type { RootTrack, Scene, SourceFile } from "@/lib/studio/types";
 
@@ -60,7 +61,10 @@ export default function ComposerClient() {
     // there is genuinely nothing to fetch. Returning is not a failure state.
     if (!projectId) return;
     await ensureBrowserSession();
-    const response = await fetch(`/api/v1/projects/${encodeURIComponent(projectId)}/studio-snapshot`, { cache: "no-store" });
+    const response = await fetchApi(
+      `/api/v1/projects/${encodeURIComponent(projectId)}/studio-snapshot`,
+      { cache: "no-store" },
+    );
     if (!response.ok) throw new Error(await apiError(response));
     setSnapshot(await response.json() as StudioSnapshotResponse);
     setError(null);
@@ -79,7 +83,7 @@ export default function ComposerClient() {
   const activeProjectId = snapshot?.project.id;
   React.useEffect(() => {
     if (!activeProjectId) return;
-    const events = new EventSource("/api/v1/events");
+    const events = openApiEventSource("/api/v1/events");
     let queued: ReturnType<typeof setTimeout> | null = null;
     const refresh = (event: MessageEvent) => {
       try {
@@ -104,7 +108,7 @@ export default function ComposerClient() {
       <StudioShell
         projectId={snapshot.project.id}
         projectSlug={snapshot.project.slug}
-        previewUrl={`/api/v1/projects/${snapshot.project.id}/preview`}
+        previewUrl={apiUrl(`/api/v1/projects/${encodeURIComponent(snapshot.project.id)}/preview`)}
         aspectRatio={snapshot.project.width / snapshot.project.height}
         authoredDuration={snapshot.project.duration}
         tree={snapshot.tree}

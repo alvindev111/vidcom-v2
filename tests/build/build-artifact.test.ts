@@ -1,9 +1,12 @@
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { spawnSync } from "node:child_process";
+import { mkdir, mkdtemp, readFile, realpath, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import { pathToFileURL } from "node:url";
 
 import {
   assertBuildableTarget,
+  acquireArtifactBuildLock,
   buildArtifactReport,
   formatBuildArtifactJson,
   hostPlatformTag,
@@ -76,6 +79,33 @@ describe("build:artifact", () => {
     expect(plan.find((entry) => entry.name.startsWith("verify artifact"))?.args).toEqual([
       "scripts/verify-artifact.mjs", HOST_TAG, "--generation", "plan",
     ]);
+  });
+
+  it("forwards release mode to the verifier", () => {
+    expect(parseBuildArtifactArguments(["--release", "--json"])).toMatchObject({
+      release: true,
+      json: true,
+    });
+    const verifier = planSteps({ release: true }).find((entry) => entry.requiresSeaBuildSeal);
+    expect(verifier?.args).toContain("--release");
+  });
+
+  it("excludes a concurrent build for the same platform tag", async () => {
+    const root = await realpath(await mkdtemp(path.join(tmpdir(), "vidcom-build-lock-")));
+    const held = acquireArtifactBuildLock(HOST_TAG, root);
+    try {
+      const moduleUrl = pathToFileURL(path.resolve("scripts/build-artifact.mjs")).href;
+      const contender = spawnSync(process.execPath, [
+        "--input-type=module",
+        "--eval",
+        `import { acquireArtifactBuildLock } from ${JSON.stringify(moduleUrl)}; acquireArtifactBuildLock(${JSON.stringify(HOST_TAG)}, ${JSON.stringify(root)});`,
+      ], { encoding: "utf8", shell: false });
+      expect(contender.status).not.toBe(0);
+      expect(contender.stderr).toMatch(/build already active/u);
+    } finally {
+      held.release();
+      await rm(root, { recursive: true, force: true });
+    }
   });
 
   it("passes the in-memory SEA byte seal to the verifier without persisting it in the generation", () => {

@@ -401,7 +401,8 @@ export async function projectRegistrationLocationExists(
       stat(path.join(root, "index.html")),
     ]);
     return config.isFile() && index.isFile();
-  } catch {
-    return false;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return false;
+    throw error;
   }
 }

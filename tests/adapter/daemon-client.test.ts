@@ -1,6 +1,6 @@
 import { ErrorCode } from "@vidcom/contracts";
 import { DaemonClientError, createDaemonClient, type DaemonClient } from "@vidcom/adapter";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 interface Call {
   url: string;
@@ -151,6 +151,29 @@ describe("daemon client", () => {
     });
   });
 
+  it("preserves a domain error's message, field, details and current revision", async () => {
+    const current = { revision: "sha256:current" };
+    const { client } = stub(() => json({
+      error: {
+        code: ErrorCode.WriteConflict,
+        message: "the file changed since it was read",
+        field: "expectedHash",
+        details: { expected: "sha256:stale" },
+      },
+      current,
+    }, 409));
+
+    await expect(client.invokeTool("save_file", {}, {
+      protocolVersion: "2026-07-28",
+      era: "modern",
+    })).rejects.toMatchObject({
+      code: ErrorCode.WriteConflict,
+      message: "the file changed since it was read",
+      field: "expectedHash",
+      details: { expected: "sha256:stale", current },
+    });
+  });
+
   it("falls back to daemon_unavailable when the daemon says nothing useful", async () => {
     const { client } = stub(() => new Response("gateway", { status: 502 }));
     await expect(client.attach("bridge")).rejects.toMatchObject({
@@ -183,6 +206,57 @@ describe("daemon client", () => {
     await expect(client.attach("bridge")).rejects.toMatchObject({
       code: ErrorCode.DaemonUnavailable,
     });
+  });
+
+  it("allows a tool to run longer than the five-second control deadline", async () => {
+    vi.useFakeTimers();
+    try {
+      const client = createDaemonClient({
+        baseUrl: "http://127.0.0.1:43127",
+        bearer: "clear-token",
+        fetch: (_input, init) => new Promise((resolve, reject) => {
+          const timer = setTimeout(() => resolve(json({ valid: true })), 5_100);
+          init?.signal?.addEventListener("abort", () => {
+            clearTimeout(timer);
+            reject(new Error("aborted"));
+          });
+        }),
+      });
+      const pending = client.invokeTool("validate_project", {}, {
+        protocolVersion: "2026-07-28",
+        era: "modern",
+      });
+
+      await vi.advanceTimersByTimeAsync(5_100);
+      await expect(pending).resolves.toEqual({ valid: true });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("allows render diagnostics enqueue to outlive the control deadline", async () => {
+    vi.useFakeTimers();
+    try {
+      const client = createDaemonClient({
+        baseUrl: "http://127.0.0.1:43127",
+        bearer: "clear-token",
+        fetch: (_input, init) => new Promise((resolve, reject) => {
+          const timer = setTimeout(() => resolve(json({ jobId: "job_render" }, 202)), 5_100);
+          init?.signal?.addEventListener("abort", () => {
+            clearTimeout(timer);
+            reject(new Error("aborted"));
+          });
+        }),
+      });
+      const pending = client.enqueueRender("project-long-diagnostics", {
+        idempotencyKey: "render-long-diagnostics",
+      });
+
+      await vi.advanceTimersByTimeAsync(5_100);
+      await expect(pending).resolves.toEqual({ jobId: "job_render" });
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("sends the tool name in the path and the payload in the body", async () => {

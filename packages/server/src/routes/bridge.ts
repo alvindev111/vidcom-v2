@@ -1,6 +1,6 @@
 import { Hono } from "hono";
 
-import { ErrorCode, TOOL_SCHEMA_CATALOGUE } from "@vidcom/contracts";
+import { ErrorCode, TOOL_SCHEMA_CATALOGUE, type ErrorDetail } from "@vidcom/contracts";
 import type { JobStorePort } from "@vidcom/core";
 
 import type { AttachmentKind, AttachmentRegistry } from "../bridge/attachments";
@@ -30,7 +30,7 @@ export interface BridgeRouteDependencies {
   /** The daemon's local invoker. It owns the audit entry, not the bridge. */
   invokeTool(request: BridgeToolRequest): Promise<{ ok: true; value: unknown } | {
     ok: false;
-    error: { code: ErrorCode; message: string; field?: string };
+    error: ErrorDetail;
   }>;
 }
 
@@ -174,7 +174,10 @@ export function createBridgeRoutes(
       // bridge that dies mid-call cannot take the record of the call with it.
       credentialId: c.get("credentialId"),
     });
-    if (!result.ok) reject(result.error.code, result.error.message);
+    // Preserve the domain payload verbatim. In particular, write conflicts
+    // carry `details.current`, and an approval-required result carries the
+    // InputRequest the stdio side must turn into MCP elicitation.
+    if (!result.ok) throw new HttpBoundaryError(result.error);
     return c.json(result.value ?? null);
   });
 

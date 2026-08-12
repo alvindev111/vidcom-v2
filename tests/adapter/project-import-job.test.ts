@@ -22,6 +22,7 @@ function dependencies(overrides: Partial<ProjectImportJobDependencies> = {}) {
       calls.push("plan");
       return Promise.resolve({
         operationId: "17",
+        source: "/outside/fixture",
         slug: "imported",
         target: "/w/imported",
         staging: "/w/.tmp",
@@ -30,6 +31,10 @@ function dependencies(overrides: Partial<ProjectImportJobDependencies> = {}) {
     copy: () => {
       calls.push("copy");
       return Promise.resolve({ files: 3 });
+    },
+    validate: () => {
+      calls.push("validate");
+      return Promise.resolve();
     },
     commit: () => {
       calls.push("commit");
@@ -63,7 +68,7 @@ describe("project import job", () => {
     const job = createProjectImportJobType(base);
     const io = context();
     const output = await job.run(input, io.job as never);
-    expect(calls).toEqual(["plan", "copy", "commit", "backfill", "settle:commit"]);
+    expect(calls).toEqual(["plan", "copy", "validate", "commit", "backfill", "settle:commit"]);
     expect(output).toMatchObject({ slug: "imported", files: 3 });
     expect(io.progress.at(-1)).toBe(1);
   });
@@ -91,8 +96,22 @@ describe("project import job", () => {
 
     await expect(createProjectImportJobType(base).run(input, context().job as never))
       .rejects.toThrow(/target exists/u);
-    expect(calls).toEqual(["plan", "copy", "discard", "settle:abort"]);
+    expect(calls).toEqual(["plan", "copy", "validate", "discard", "settle:abort"]);
     expect(calls).not.toContain("backfill");
+  });
+
+  it("validates staging before publication and discards an invalid project", async () => {
+    const { calls, base } = dependencies({
+      validate: () => {
+        calls.push("validate");
+        return Promise.reject(new Error("vidcom.json is invalid"));
+      },
+    });
+
+    await expect(createProjectImportJobType(base).run(input, context().job as never))
+      .rejects.toThrow(/vidcom\.json is invalid/u);
+    expect(calls).toEqual(["plan", "copy", "validate", "discard", "settle:abort"]);
+    expect(calls).not.toContain("commit");
   });
 
   it("orphan-marks a published directory when registration fails", async () => {
@@ -105,7 +124,7 @@ describe("project import job", () => {
 
     await expect(createProjectImportJobType(base).run(input, context().job as never))
       .rejects.toThrow(/registration failed/u);
-    expect(calls).toEqual(["plan", "copy", "commit", "backfill", "settle:orphan"]);
+    expect(calls).toEqual(["plan", "copy", "validate", "commit", "backfill", "settle:orphan"]);
     expect(calls).not.toContain("discard");
   });
 

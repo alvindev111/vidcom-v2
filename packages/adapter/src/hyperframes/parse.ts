@@ -73,7 +73,9 @@ function collectProjectReferences(
     const owner = source && availableSources.has(source) ? source : entry;
     for (const media of scene.media) add(owner, media.src);
     for (const element of scene.elements) add(owner, element.src);
-    if (scene.narration) add(owner, scene.narration.audioPath);
+    // Narration sidecars store project-relative paths. Unlike media authored in
+    // a scene HTML file, their audio path is not relative to the scene source.
+    if (scene.narration?.status === "generated") add(entry, scene.narration.audioPath);
   }
   for (const media of entryMedia) add(entry, media.src);
   for (const element of rootTrack?.elements ?? []) add(entry, element.src);
