@@ -46,6 +46,11 @@ const MANIFEST_ASSET = "runtime-manifest.json";
 const NODE_ARCHIVE_ASSET = `runtime-archives/${NODE_ARCHIVE_KEY}.tar.gz`;
 const HYPERFRAMES_ARCHIVE_ASSET = `runtime-archives/${HYPERFRAMES_ARCHIVE_KEY}.tar.gz`;
 const BGM_ARCHIVE_ASSET = `runtime-archives/${BGM_ARCHIVE_KEY}.tar.gz`;
+// This single case builds and validates the full missing-entry/version-skew
+// matrix. Hosted Linux can spend just over the global 5 s budget on it while
+// the full suite is contending for CPU and temporary-filesystem bandwidth.
+// Keep a finite per-case ceiling without lowering Windows' existing budget.
+const PRODUCT_CONTRACT_MATRIX_TIMEOUT_MS = process.platform === "win32" ? 30_000 : 15_000;
 const BGM_FILES = [
   "alex-morgan-corporate-business-background.mp3",
   "corporate-marimba-business-background.mp3",
@@ -599,7 +604,7 @@ describe.skipIf(!HOST_SUPPORTED)("primary SEA bootstrap", () => {
       ).toBe(false);
       expect(await readFile(currentPath), label).toEqual(priorCurrent);
     }
-  });
+  }, PRODUCT_CONTRACT_MATRIX_TIMEOUT_MS);
 
   it("rejects a transitive package that resolves only above the verified node archive", async () => {
     const appDataRoot = await temporaryRoot();

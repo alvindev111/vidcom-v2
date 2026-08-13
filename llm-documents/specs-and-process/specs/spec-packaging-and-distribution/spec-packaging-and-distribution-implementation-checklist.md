@@ -1272,7 +1272,7 @@ Mỗi phase chạy focused command dưới đây trên SQLite/filesystem thật,
   - `version` phải biết runtime manifest: bản đóng gói trả `null` là bug thật, chính bước này bắt được (đã sửa — đọc manifest nhúng)
   - **Ba mục được phép thiếu ở bước 3, có lý do**: `db.migration`, `chrome.cache`, `tts.model-cache`. Strict biến skip thành missing — đúng cho cả job (R8.4) và **sai ở đây**: chưa tải browser nào, chưa dùng model nào, và chưa có database vì chưa chọn workspace. Các bước sau mới là chỗ chúng phải `ok`; cho phép ở bước lạnh không phải khẳng định yếu hơn mà là **chuyển khẳng định tới chỗ nó có nghĩa**
   - _Requirements: R8.3, R4.9_ — _Design: §11.4, §9.1_
-- [ ] M.3b Bước 4–6: vòng đời UI + import + bridge song song — **IMPLEMENTED, AWAITING EXACT-HEAD 2026-08-13: smoke nay giữ UI daemon sống, spawn artifact `mcp` thật qua legacy + modern stdio, kiểm read/write, same instance và đúng một lease; focused 37/37 xanh nhưng artifact ba OS chưa rerun**
+- [x] M.3b Bước 4–6: vòng đời UI + import + bridge song song — **RECLOSED 2026-08-13: exact packaged run `31710887527` giữ UI daemon sống, spawn artifact `mcp` legacy + modern stdio, kiểm 35/35 tools/read-write, same instance và đúng một lease trên cả ba OS**
   - start + nonce/session + picker + create project → import project → bridge nối vào **trong lúc UI còn sống**
   - Bước 6 là chỗ duy nhất chứng minh lời hứa "mở app rồi chạy Codex, cả hai dùng được, vẫn đúng một writer" trên artifact thật
   - _Requirements: R8.3, R2.15_ — _Design: §11.4, §4.4_
@@ -2850,6 +2850,12 @@ Chi tiết: [Detailed Goals](./spec-packaging-and-distribution-detailed-goal.md)
   - Summary: Exact run `31707994606` thực thi legacy + modern packaged MCP stdio trên ba OS và chỉ fail sau các proof vì harness yêu cầu stderr rỗng. MCP chỉ reserve stdout cho JSON-RPC; stderr là diagnostic channel hợp lệ.
   - Decisions: Drain stderr không buffer/copy vào evidence, bỏ zero-byte false gate. Initialize/catalogue/tool/close error thật vẫn fail theo phase, redact path/token và cleanup mọi connected session. Focused smoke + real stdio E2E 37/37, typecheck, lint, import sanity và diff-check xanh.
   - Blockers: Exact-head Packaged phải rerun; M.3b chưa tick trước artifact evidence. Production supply-chain human gate vẫn mở độc lập.
+
+2026-08-13 — Phase M CI Linux matrix budget C-70
+  - Files: `tests/cli/sea-bootstrap.test.ts`, exact runs `31710887806` và `31710887527`, Detailed Design §16 và implementation notes.
+  - Summary: Exact packaged M.3b đã xanh cả ba OS, gồm complete evidence validator; CI Windows xanh nhưng Linux full suite có đúng một product-contract matrix test vượt global 5 giây 117 ms, trong khi 2048 test khác pass. Case cô lập mất 261–281 ms; full-file contention 22,9 giây.
+  - Decisions: Giữ nguyên toàn bộ missing-entry/version-skew matrix và production code; đặt finite per-case ceiling POSIX 15 giây, Windows giữ 30 giây. Đây là test orchestration budget, không phải runtime acceptance timeout.
+  - Blockers: Cần exact-head bốn workflow xanh sau test-only commit. Production source/human review gate vẫn mở độc lập.
 
 Format:
 ```
