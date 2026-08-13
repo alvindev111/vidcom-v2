@@ -33,6 +33,7 @@ import {
   browsePathSegments,
   browseSegmentMatches,
   cleanupDetachedRenderFailure,
+  exercisePackagedMcpStdioPair,
   mediaSceneSource,
   readLatestRenderJobSince,
   readJsonWithTransportRetry,
@@ -57,6 +58,88 @@ function results(entries: Array<Partial<StepResult> & { id: string }>): StepResu
 }
 
 describe("packaged smoke steps", () => {
+  it("keeps legacy and modern packaged MCP stdio connected for the coexistence check", async () => {
+    const events: string[] = [];
+    const closed: string[] = [];
+    const session = (era: "legacy" | "modern") => ({
+      connect: async () => { events.push(`${era}:connect`); },
+      listTools: async () => ({
+        tools: [{ name: era === "legacy" ? "list_projects" : "create_scene" }],
+      }),
+      callTool: async (name: string) => {
+        events.push(`${era}:${name}`);
+        return name === "list_projects"
+          ? { structuredContent: { projects: [{ projectId: "project_smoke" }] } }
+          : { structuredContent: { scene: { id: "scene_smoke" } } };
+      },
+      close: async () => { closed.push(era); },
+      stderrBytes: () => 0,
+    });
+
+    await expect(exercisePackagedMcpStdioPair({
+      artifact: "/private/vidcom",
+      workspace: "/private/workspace",
+      cwd: "/private/cwd",
+      environment: { VIDCOM_TOKEN: "secret-token" },
+    }, {
+      projectId: "project_smoke",
+      createScene: { projectId: "project_smoke" },
+    }, {
+      createSession: session,
+      verifyCoexistence: async () => {
+        events.push("coexistence");
+        expect(closed).toEqual([]);
+      },
+    })).resolves.toEqual({ legacyTools: 1, modernTools: 1 });
+
+    expect(events).toEqual([
+      "legacy:connect",
+      "legacy:list_projects",
+      "modern:connect",
+      "modern:create_scene",
+      "coexistence",
+    ]);
+    expect(closed).toEqual(["modern", "legacy"]);
+  });
+
+  it("redacts packaged MCP stdio failures and closes every connected era", async () => {
+    const privateRoot = "C:\\Users\\runner\\private-smoke";
+    const secret = "vcmcp_private_token";
+    const closed: string[] = [];
+    const session = (era: "legacy" | "modern") => ({
+      connect: async () => undefined,
+      listTools: async () => {
+        if (era === "modern") throw new Error(`failed at ${privateRoot} with ${secret}`);
+        return { tools: [{ name: "list_projects" }] };
+      },
+      callTool: async () => ({
+        structuredContent: { projects: [{ projectId: "project_smoke" }] },
+      }),
+      close: async () => { closed.push(era); },
+      stderrBytes: () => 0,
+    });
+
+    await expect(exercisePackagedMcpStdioPair({
+      root: privateRoot,
+      artifact: `${privateRoot}\\vidcom.exe`,
+      workspace: `${privateRoot}\\workspace`,
+      cwd: `${privateRoot}\\cwd`,
+      environment: { VIDCOM_TOKEN: secret },
+    }, {
+      projectId: "project_smoke",
+      createScene: { projectId: "project_smoke" },
+    }, { createSession: session })).rejects.toSatisfy((error: unknown) => {
+      const message = error instanceof Error ? error.message : String(error);
+      expect(message).toContain("modern tools/list");
+      expect(message).toContain("<redacted-path>");
+      expect(message).toContain("<redacted-secret>");
+      expect(message).not.toContain(privateRoot);
+      expect(message).not.toContain(secret);
+      return true;
+    });
+    expect(closed.sort()).toEqual(["legacy", "modern"]);
+  });
+
   it("collapses a Windows short alias before deriving daemon discovery identity", async () => {
     const shortRoot = "C:\\Users\\RUNNER~1\\AppData\\Local\\Temp\\vidcom-smoke-fixture";
     const longRoot = "C:\\Users\\runneradmin\\AppData\\Local\\Temp\\vidcom-smoke-fixture";

@@ -524,7 +524,7 @@ Mỗi phase chạy focused command dưới đây trên SQLite/filesystem thật,
   - _Requirements: R6.8_ — _Design: §4.6, §11.4_
 
 **Acceptance Criteria**:
-- [ ] Render MP4 **từ artifact** trên máy không có Node và không có Python trên PATH — proof lịch sử đã publish binary SHA-256 `5b111f…e2bc0`, nhưng closeout SEA/publisher/seal sau đó đã đổi exact HEAD nên AC được mở lại cho tới khi production `build:artifact --json` tạo binary mới và clean app-data cold-extract/render dưới private PATH nơi `command -v node|python|python3` đều absent
+- [ ] Render MP4 **từ production release artifact** trên clean app-data/private PATH — **STILL OPEN 2026-08-13**: exact-head Packaged run `31703639717` dùng digest-pinned non-release fixture với `VIDCOM_ALLOW_UNRELEASED_SMOKE_RUNTIME=1`; manifest 10 dự án là unattended local evidence, `humanReviewed=false`, không thay production `build:artifact --json` + approved runtime source proof
   - Prototype exact HEAD xác nhận SEA main trực tiếp không thể load native/external package từ filesystem; cần bootstrap builtins-only extract verified runtime rồi load secondary CJS từ archive. Ngoài ra migration path từng bake source `import.meta.url`, diagnostics từng fallback checkout (đã sửa), và CLI render bearer đang gọi nhầm browser-session route 401. Không blocker nào được phép temp-rewrite để tick AC
   - Migration source-path blocker đã đóng: `BootstrapCoordinator` chỉ sau extraction mới lấy `<archiveRoots.node>/drizzle`; source mode vẫn dùng default checkout. Integration xoá source migrations trước prepare, migrate SQL từ archive target không trùng key trên SQLite thật và chốt đúng một lần
   - Production proof: `/private/tmp/vidcom-phase-d-production-smoke.6mvwdf/EVIDENCE.md`; MP4 SHA-256 `744c8c…bdc0`, H.264 320×180 30 fps + AAC 48 kHz stereo, 5,000 s. Extracted ffmpeg báo mean −20,3 dB/max −6,3 dB; only authored audio là `narration/intro.wav`, BGM tắt/HTML không audio-video và decoded source→render correlation `0,991181` ở AAC priming 21,375 ms
@@ -1242,7 +1242,8 @@ Mỗi phase chạy focused command dưới đây trên SQLite/filesystem thật,
 **Estimate**: 21 SP
 
 **Tasks**:
-- [ ] M.0 Script `test:packaged-smoke` + runner cục bộ — **REOPEN 2026-08-12: strict skip/provenance/release false-green và current artifact không build**
+- **Exact-head authority 2026-08-13**: commit `a737de6cd0c3a349f90e7ea4d046eabafa7b0a1c`; CI `31703639943`, Browser `31703639860`, Process `31703639779` và Packaged `31703639717` đều terminal success. Packaged macOS arm64/Linux x64/Windows x64 đều chạy smoke, validate complete evidence và upload thành công; không dùng `GH_KEY` ngoài masked `GH_TOKEN`.
+- [x] M.0 Script `test:packaged-smoke` + runner cục bộ — **RECLOSED 2026-08-13: strict runner, release/provenance gate và full exact-head smoke đều xanh**
   - Thêm `"test:packaged-smoke": "node scripts/packaged-smoke/run.mjs"` vào [`package.json`](../../../../package.json). Chạy được **trên máy dev** chứ không chỉ trong Actions — nếu chỉ chạy được trong CI thì mỗi lần sửa một bước phải push, và không ai sửa nữa
   - Nhận `--step <id>` để chạy một bước, `--from <id>` để chạy tiếp từ giữa; mặc định chạy đủ 13 bước theo thứ tự §11.4
   - Mỗi bước in `id`, thời gian, kết quả ở `stderr`; `stdout` chỉ để bằng chứng JSON (M.6). Bước fail ⇒ exit ≠ 0 **kèm id của bước**, MUST NOT chỉ báo "smoke failed"
@@ -1252,12 +1253,12 @@ Mỗi phase chạy focused command dưới đây trên SQLite/filesystem thật,
   - Chạy được trên máy dev, đã kiểm: `--step build` trả đúng một dòng, `--strict` exit `1` với lý do "chưa có artifact" thay vì im lặng
   - **Evidence**: run `31337022177` chạy đủ 13/13 trên ba artifact native; không có step bắt buộc `skipped`
   - _Requirements: R8.3, R8.7_ — _Design: §11.4_
-- [ ] M.1 Job native theo OS — **REOPEN 2026-08-12: evidence `0fdbd35` stale; cần cùng exact HEAD mới**
+- [x] M.1 Job native theo OS — **RECLOSED 2026-08-13: ba native artifact cùng exact HEAD `a737de6`, fail-fast false**
   - macOS arm64, Windows x64, Linux x64; **không job nào dùng artifact build từ OS khác**. Mỗi lần chạy ghi lại nền tảng đã kiểm
   - [`packaged-smoke.yml`](../../../../.github/workflows/packaged-smoke.yml) dựng artifact **trên chính runner** rồi mới chạy smoke, `fail-fast: false` để một nền tảng hỏng không che mất kết quả hai nền tảng kia — biết nền tảng nào đã được chứng minh là toàn bộ mục đích của job này
   - Workflow hỗ trợ `workflow_dispatch` và exact-head PR closeout; checkout ghim `pull_request.head.sha`, không dùng synthetic merge SHA
   - _Requirements: R8.1, R8.5_ — _Design: §4.8, DR-11_
-- [ ] M.2 Môi trường sạch — **REOPEN 2026-08-12: private PATH chưa probe exact `python`**
+- [x] M.2 Môi trường sạch — **RECLOSED 2026-08-13: private PATH probe đủ `node|python|python3|bun`, clean cwd/HOME/app-data trên ba OS**
   - `node` **không** trên PATH; **không** `node_modules` ở `cwd` hay thư mục cha; `HOME` sạch. Cache tải-về (`$HOME/.cache/hyperframes`, `HF_HOME`) **được** mồi; app-data/runtime **không** được mồi
   - [`environment.mjs`](../../../../scripts/packaged-smoke/environment.mjs) đưa **PATH rỗng hoàn toàn** — một thư mục trống là mục duy nhất trên đó. Lọc PATH theo tên thư mục là cách làm đầu tiên và nó **sai**: `/opt/homebrew/bin` chứa `node` mà không chứa chữ nào bộ lọc tìm. Lời hứa đang kiểm là executable tự mang runtime, và cách duy nhất phát biểu điều đó là không để gì trên PATH
   - Bước `clean-environment` **hỏi runner** bằng `which`/`where` chứ không tin cấu hình: nếu `node` còn với tới được thì cả smoke đang đo toolchain của runner
@@ -1265,30 +1266,30 @@ Mỗi phase chạy focused command dưới đây trên SQLite/filesystem thật,
   - Cache tải-về mồi sẵn, app-data để rỗng — R8.2 nói về máy sạch, không phải máy không có mạng
   - **Bằng chứng**: bước xanh trên artifact thật — `no node, python or bun on PATH; working directory empty`
   - _Requirements: R8.2, R8.8_ — _Design: §11.4_
-- [ ] M.3a Bước 1–3: nhận dạng + cold/warm doctor — **REOPEN 2026-08-12: strict doctor nhận mọi skipped item**
+- [x] M.3a Bước 1–3: nhận dạng + cold/warm doctor — **RECLOSED 2026-08-13: exact 18-item schema/status allowlist và C67 statistical gate xanh ba OS**
   - `version` → cold `doctor --repair` → warm `doctor --deep`. Đây là ba bước duy nhất không cần listener, nên chúng cũng là chỗ đo cold start thật cho M.7
   - **Số runner exact head `0fdbd35`**: serve cold/warm darwin `813/611 ms`, Linux `1007/1004 ms`, Windows `2637/2461 ms`; doctor cold/warm lần lượt `15673/3294`, `23974/6201`, `133284/11883 ms`
   - `version` phải biết runtime manifest: bản đóng gói trả `null` là bug thật, chính bước này bắt được (đã sửa — đọc manifest nhúng)
   - **Ba mục được phép thiếu ở bước 3, có lý do**: `db.migration`, `chrome.cache`, `tts.model-cache`. Strict biến skip thành missing — đúng cho cả job (R8.4) và **sai ở đây**: chưa tải browser nào, chưa dùng model nào, và chưa có database vì chưa chọn workspace. Các bước sau mới là chỗ chúng phải `ok`; cho phép ở bước lạnh không phải khẳng định yếu hơn mà là **chuyển khẳng định tới chỗ nó có nghĩa**
   - _Requirements: R8.3, R4.9_ — _Design: §11.4, §9.1_
-- [ ] M.3b Bước 4–6: vòng đời UI + import + bridge song song — **REOPEN 2026-08-12: smoke chưa spawn stdio MCP thật**
+- [ ] M.3b Bước 4–6: vòng đời UI + import + bridge song song — **IMPLEMENTED, AWAITING EXACT-HEAD 2026-08-13: smoke nay giữ UI daemon sống, spawn artifact `mcp` thật qua legacy + modern stdio, kiểm read/write, same instance và đúng một lease; focused 37/37 xanh nhưng artifact ba OS chưa rerun**
   - start + nonce/session + picker + create project → import project → bridge nối vào **trong lúc UI còn sống**
   - Bước 6 là chỗ duy nhất chứng minh lời hứa "mở app rồi chạy Codex, cả hai dùng được, vẫn đúng một writer" trên artifact thật
   - _Requirements: R8.3, R2.15_ — _Design: §11.4, §4.4_
-- [ ] M.3c Bước 7–9: giá trị lõi — ra được MP4 có tiếng — **REOPEN 2026-08-12: scene seed/render motion contract regression**
+- [x] M.3c Bước 7–9: giá trị lõi — ra được MP4 có tiếng — **RECLOSED 2026-08-13: VieNeu, snapshot, H.264/AAC ffprobe, upload/SSE và C68 detach/cancel đều xanh**
   - TTS → snapshot → render + `ffprobe` xác minh (có audio stream, đúng thời lượng) → upload 20 MB + SSE → `render` wait/detach/cancel
   - Đây là nhóm bước mà **cả Phase D tồn tại để phục vụ**. Nếu chỉ chạy được một nhóm bước, chạy nhóm này
   - _Requirements: R8.3, R6.1, R4.6_ — _Design: §11.4_
-- [ ] M.3d Bước 10–12: chế độ hỏng — **REOPEN 2026-08-12: current smoke NOT_EXECUTED sau build failure**
+- [x] M.3d Bước 10–12: chế độ hỏng — **RECLOSED 2026-08-13: offline, lease-loss và cryptographic provenance chạy thật trên ba OS**
   - **Cắt mạng ở tầng runner** rồi warm offline (M.4) → lease loss **hai nhánh** (UI hạ về `NoWorkspace`; headless đóng listener + exit ≠ 0) → scan checksum/provenance
   - _Requirements: R8.3, R8.8, R2.14, R9.4_ — _Design: §11.4, §4.3_
-- [ ] M.4 Bước offline chặn ở **tầng mạng runner** — **REOPEN: rerun exact HEAD**
+- [x] M.4 Bước offline chặn ở **tầng mạng runner** — **RECLOSED 2026-08-13: runner-level cut + warm offline render xanh exact HEAD**
   - Đo ở S9: `HTTPS_PROXY`/`HTTP_PROXY` **bị lờ** — downloader vẫn tải 202 MB qua proxy chết. Viết bằng env thì bước này xanh vì lý do sai
   - _Requirements: R8.8, R6.5_ — _Design: §5.18_
-- [ ] M.5 Cache theo version + fail khi thiếu thành phần bắt buộc — **REOPEN: strict doctor skipped loophole**
+- [x] M.5 Cache theo version + fail khi thiếu thành phần bắt buộc — **RECLOSED 2026-08-13: exact required-id registry, cold allowlist và warm deep integrity fail closed**
   - `VIDCOM_DOCTOR_STRICT=1`; thành phần bắt buộc vắng mặt ⇒ **fail**, MUST NOT skip
   - _Requirements: R8.4, R8.8_ — _Design: §5.9_
-- [ ] M.6 Upload bằng chứng — **REOPEN: thiếu DoctorReport/raw ffprobe/platform metadata và success evidence fail-closed**
+- [x] M.6 Upload bằng chứng — **RECLOSED 2026-08-13: DoctorReport/raw ffprobe/platform/runner/artifact/SHA256SUMS được validate trước upload**
   - DoctorReport, artifact manifest, `SHA256SUMS`, kết quả ffprobe, platform metadata
   - _Requirements: R8.3_ — _Design: §9.4_
 - [x] M.7 Chốt lại hai trần còn tạm
@@ -1297,18 +1298,18 @@ Mỗi phase chạy focused command dưới đây trên SQLite/filesystem thật,
   - Schema thiếu/trùng evidence, non-safe integer, sai cohort hoặc key dư fail closed; evaluator fail `NaN/-1`; baseline file hỏng không được `recordBaseline` ghi đè; invariant kiểm cả cold/warm
   - Warm-app giữ `2/2/3 s` vì M.3a chưa có current measurement tương đương
   - _Requirements: R4.9, R8.3_ — _Design: §9.1, §5.13_
-- [ ] M.8 Ghi lại bằng chứng TTS Windows — **REOPEN: cần exact HEAD mới**
+- [x] M.8 Ghi lại bằng chứng TTS Windows — **RECLOSED 2026-08-13: Windows online và firewall-offline đều tạo VieNeu WAV + H.264/AAC MP4**
   - Máy phát triển bị N-1 (TLS inspection) chặn; runner CI không có ⇒ đây là **bằng chứng đầu tiên**, MUST NOT suy từ darwin
   - Windows exact artifact tạo WAV online + offline với `providerId=vieneu`, `voiceId=vieneu-v3-minh-duc`, rồi mux H.264/AAC MP4 8 giây ở cả hai nhánh
   - _Requirements: R6.1, R8.3_ — _Design: §5.13_
-- [ ] M.9 Thời gian job trong giới hạn CI — **REOPEN: cần exact HEAD mới**
+- [x] M.9 Thời gian job trong giới hạn CI — **RECLOSED 2026-08-13: macOS/Linux/Windows đều terminal success dưới hard timeout 90 phút**
   - Hoặc tách job riêng có điều kiện rõ ràng; MUST NOT làm CI thường xuyên đỏ vì timeout
   - Run `31337022177`: macOS `7m10s`, Linux `10m12s`, Windows `21m30s`, đều thấp hơn `timeout-minutes: 90`
   - _Requirements: R8.7_
 
 **Acceptance Criteria**:
-- [ ] Không step bắt buộc nào bị skip — **REOPEN: current 13 steps đều NOT_EXECUTED do build fail**
-- [ ] Job Linux hiện diện và xanh; không dùng CI thiếu Linux để suy ra release claim (R8.5) — **REOPEN: current Linux fail**
+- [x] Không step bắt buộc nào bị skip — evidence validator của run `31703639717` xanh trên cả ba OS
+- [x] Job Linux hiện diện và xanh; không dùng CI thiếu Linux để suy ra release claim (R8.5) — Linux job `94458620189` xanh cùng exact commit
 
 **Deliverables**: `.github/workflows/packaged-smoke.yml` · `scripts/packaged-smoke/**`
 
@@ -2837,6 +2838,12 @@ Chi tiết: [Detailed Goals](./spec-packaging-and-distribution-detailed-goal.md)
   - Summary: Exact Windows attempt 2 đã pass identify `15152/13487 ms`, real media, offline, lease-loss và provenance; detach đã trả job ID nhưng 120 s observation hết trước stage `rendering video`. Cùng runner media pipelines mất 344–404 s.
   - Decisions: Tách observation budget 360 s khỏi outer enqueue 360 s và product render timeout. Mutation vẫn một lần/no retry; timeout path best-effort cancel đúng một lần, bounded terminal/proof cleanup và giữ original timeout làm primary failure. Không nới terminal/cancel/zero-survivor assertion.
   - Blockers: Rebuild exact artifact và rerun đủ bốn workflow. Current run `31645765337` không phải acceptance vì macOS v1 startup gate và Windows C-68 đều đỏ.
+
+2026-08-13 — Phase M exact-head closeout và 10-project production evidence
+  - Files: workflow runs `31703639943`, `31703639860`, `31703639779`, `31703639717`; `/Users/dinh-ai/Documents/vidcom-test/production-evidence.json`; checklist, Detailed Design §16 và implementation notes.
+  - Summary: Exact commit `a737de6cd0c3a349f90e7ea4d046eabafa7b0a1c` xanh CI Linux/Windows, Browser Linux/Windows, Process macOS/Linux/Windows + Windows real-render, và Packaged macOS/Linux/Windows gồm full smoke, complete-evidence validation, upload. C67 cold/warm serve là macOS `4872/3850`, Linux `6218/6216`, Windows `12888/12850 ms`; C68 render-cli ba OS pass với exhaustive zero-survivor cancellation proof.
+  - Decisions: Reclose mọi mục M trừ M.3b bằng exact-head authority. Mười project thật có 216 scene × 12 giây, tổng 2592 giây, đúng dải 60–120/300–600 giây; TTS, 216/216 snapshot, validate zero error/lint available, 10 H.264/AAC render và hash recheck đều hoàn tất. Evidence vẫn ghi `humanReviewed=false`, không đổi unattended visual QA thành human approval.
+  - Blockers: M.3b implementation đã bổ sung packaged `mcp` stdio legacy + modern trong lúc UI daemon sống, nhưng exact-head artifact ba OS phải rerun trước khi tick. D artifact AC và spec completion cũng mở: workflow dùng digest-pinned non-release runtime fixture; C-21 yêu cầu human phê duyệt production FFmpeg/ffprobe source hoặc source-build policy trước release artifact gate.
 
 Format:
 ```

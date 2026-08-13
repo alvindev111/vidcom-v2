@@ -4,6 +4,11 @@ import { createReadStream } from "node:fs";
 import { mkdir, readdir, readFile, realpath, writeFile } from "node:fs/promises";
 import path from "node:path";
 
+import { Client as ModernMcpClient } from "@modelcontextprotocol/client";
+import { StdioClientTransport as ModernMcpStdio } from "@modelcontextprotocol/client/stdio";
+import { Client as LegacyMcpClient } from "@modelcontextprotocol/sdk/client/index.js";
+import { StdioClientTransport as LegacyMcpStdio } from "@modelcontextprotocol/sdk/client/stdio.js";
+
 import {
   evaluateStartup,
   failingResults,
@@ -29,6 +34,105 @@ export function runArtifact(context, args, options = {}) {
   });
   if (result.error) throw new Error(`${args[0] ?? "artifact"} could not start: ${result.error.message}`);
   return { status: result.status, stdout: result.stdout ?? "", stderr: result.stderr ?? "" };
+}
+
+const PACKAGED_MCP_REVISIONS = Object.freeze({
+  legacy: "2025-11-25",
+  modern: "2026-07-28",
+});
+
+function packagedMcpSession(context, era) {
+  const revision = PACKAGED_MCP_REVISIONS[era];
+  const Transport = era === "legacy" ? LegacyMcpStdio : ModernMcpStdio;
+  const transport = new Transport({
+    command: context.artifact,
+    args: ["mcp", "--workspace", context.workspace, "--protocol", revision],
+    cwd: context.cwd,
+    env: context.environment,
+    stderr: "pipe",
+  });
+  const stderr = [];
+  transport.stderr?.on("data", (chunk) => stderr.push(Buffer.from(chunk)));
+  const client = era === "legacy"
+    ? new LegacyMcpClient({ name: "vidcom-packaged-smoke-legacy", version: "1.0.0" })
+    : new ModernMcpClient(
+      { name: "vidcom-packaged-smoke-modern", version: "1.0.0" },
+      { versionNegotiation: { mode: { pin: revision } } },
+    );
+  return {
+    connect: () => client.connect(transport),
+    listTools: () => client.listTools(),
+    callTool: (name, args) => client.callTool({ name, arguments: args }),
+    close: () => client.close(),
+    stderrBytes: () => Buffer.concat(stderr).byteLength,
+  };
+}
+
+/** Runs both supported MCP SDK generations against the packaged stdio entry. */
+export async function exercisePackagedMcpStdioPair(context, input, dependencies = {}) {
+  const createSession = dependencies.createSession ?? ((era) => packagedMcpSession(context, era));
+  const legacy = createSession("legacy");
+  const modern = createSession("modern");
+  let phase = "legacy initialize";
+  let legacyConnected = false;
+  let modernConnected = false;
+  try {
+    legacyConnected = true;
+    await legacy.connect();
+    phase = "legacy tools/list";
+    const legacyTools = await legacy.listTools();
+    if (!legacyTools.tools?.some((tool) => tool.name === "list_projects")) {
+      throw new Error("legacy catalogue omitted list_projects");
+    }
+    phase = "legacy list_projects";
+    const projects = await legacy.callTool("list_projects", {});
+    if (projects.isError === true
+      || !projects.structuredContent?.projects?.some((project) => project.projectId === input.projectId)) {
+      throw new Error("legacy list_projects omitted the bridge project");
+    }
+
+    // Keep legacy connected while modern starts. Together with the callback
+    // below this proves UI + both stdio eras coexist beside one lease owner.
+    phase = "modern initialize";
+    modernConnected = true;
+    await modern.connect();
+    phase = "modern tools/list";
+    const modernTools = await modern.listTools();
+    if (!modernTools.tools?.some((tool) => tool.name === "create_scene")) {
+      throw new Error("modern catalogue omitted create_scene");
+    }
+    phase = "modern create_scene";
+    const written = await modern.callTool("create_scene", input.createScene);
+    if (written.isError === true) throw new Error("modern create_scene returned a tool error");
+
+    phase = "coexistence check";
+    await dependencies.verifyCoexistence?.();
+
+    phase = "modern close";
+    await modern.close();
+    modernConnected = false;
+    phase = "legacy close";
+    await legacy.close();
+    legacyConnected = false;
+    if (legacy.stderrBytes() !== 0 || modern.stderrBytes() !== 0) {
+      throw new Error("packaged MCP stdio emitted unexpected stderr");
+    }
+    return {
+      legacyTools: legacyTools.tools.length,
+      modernTools: modernTools.tools.length,
+    };
+  } catch (error) {
+    throw new Error(
+      `packaged MCP stdio failed during ${phase}: ${safeSmokeDiagnosticText(context, error, 400)}`,
+    );
+  } finally {
+    // A failed handshake may still have spawned a child. Both SDK transports
+    // make close idempotent, so close every session that reached connect.
+    await Promise.allSettled([
+      ...(modernConnected ? [modern.close()] : []),
+      ...(legacyConnected ? [legacy.close()] : []),
+    ]);
+  }
 }
 
 function expectSuccess(label, run) {
@@ -1195,6 +1299,41 @@ export const STEP_BODIES = {
         },
       ));
 
+      const entryAfterBridgeWrite = await readFile(
+        path.join(context.workspace, "bridge-state", "index.html"),
+        "utf8",
+      );
+      const stdio = await exercisePackagedMcpStdioPair(context, {
+        projectId: created.projectId,
+        createScene: {
+          projectId: created.projectId,
+          title: "Written through packaged stdio",
+          duration: 2,
+          expectedContentHash: contentHash(entryAfterBridgeWrite),
+        },
+      }, {
+        verifyCoexistence: async () => {
+          const currentRecord = parseJson("stdio discovery record", await readFile(recordFile, "utf8"));
+          if (currentRecord.instanceId !== firstRecord.instanceId) {
+            throw new Error("packaged MCP stdio connected after the UI daemon changed identity");
+          }
+          const { DatabaseSync } = await import("node:sqlite");
+          const database = new DatabaseSync(path.join(context.appData, "vidcom.sqlite"), { readOnly: true });
+          try {
+            const lease = database.prepare("SELECT COUNT(*) AS count FROM workspace_lease").get();
+            if (lease?.count !== 1) {
+              throw new Error(`packaged MCP stdio observed ${String(lease?.count)} workspace leases`);
+            }
+          } finally {
+            database.close();
+          }
+          const ui = await fetch(`${serving.baseUrl}/api/v1/projects`, {
+            headers: { Cookie: serving.cookie },
+          });
+          if (!ui.ok) throw new Error(`the UI session failed beside packaged MCP stdio: ${String(ui.status)}`);
+        },
+      });
+
       // The agent reaches the same daemon the UI is using, over the same
       // loopback port, and gets the tool roster from it.
       const listed = await fetch(`${serving.baseUrl}/api/mcp`, {
@@ -1250,8 +1389,8 @@ export const STEP_BODIES = {
           input: { projectId: created.projectId },
         },
       ));
-      if (projectContext.project?.sceneCount !== 1) {
-        throw new Error("the bridge scene did not survive the daemon restart");
+      if (projectContext.project?.sceneCount !== 2) {
+        throw new Error("the bridge and packaged-stdio scenes did not survive the daemon restart");
       }
       const credentialStillWorks = await fetch(`${serving.baseUrl}/api/mcp`, {
         method: "POST",
@@ -1263,7 +1402,8 @@ export const STEP_BODIES = {
         body: JSON.stringify({ jsonrpc: "2.0", id: 2, method: "tools/list", params: {} }),
       });
       if (!credentialStillWorks.ok) throw new Error("the agent credential did not survive restart");
-      return "bridge read/write ran beside UI; state and credential survived restart; stale handshake rejected";
+      return `bridge read/write and packaged MCP stdio ${String(stdio.legacyTools)}/${
+        String(stdio.modernTools)} tools ran beside one UI lease; state and credential survived restart; stale handshake rejected`;
     } finally {
       if (serving) await stopServing(serving);
     }
