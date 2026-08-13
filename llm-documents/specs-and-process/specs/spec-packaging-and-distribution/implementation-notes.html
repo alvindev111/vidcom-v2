@@ -1438,6 +1438,16 @@
           <div><dt class="font-semibold text-slate-200">Production video chưa được khai hoàn tất</dt><dd class="mt-1 text-slate-300">Mười project có 216 scene × 12 giây, năm archetype mỗi project, exact validate zero error và lint available. VieNeu TTS, snapshot và render exact revision đang chạy; chưa có MP4 cuối thì không dùng cấu trúc scene làm acceptance evidence.</dd></div>
         </dl>
       </section>
+      <section class="mt-6 rounded-2xl border border-amber-400/30 bg-amber-950/20 p-6 shadow-xl">
+        <p class="text-xs font-semibold uppercase tracking-[0.24em] text-amber-300">2026-08-13 · C-68 · detached stage observation</p>
+        <h2 class="mt-2 text-xl font-bold text-white">Enqueue thành công không có nghĩa worker phải spawn trong 120 giây</h2>
+        <dl class="mt-5 grid gap-4 md:grid-cols-2">
+          <div><dt class="font-semibold text-slate-200">Raw Windows evidence</dt><dd class="mt-1 text-slate-300">Attempt 2 pass identify 15,152/13,487 ms, render-media 403,864 ms và offline 344,566 ms. Detach trả job ID; failure chuyển từ ETIMEDOUT sang never reached rendering-video.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Budget sai seam</dt><dd class="mt-1 text-slate-300">Sau enqueue, harness chỉ poll 120 giây. Trên runner này scheduler/preflight/AV có thể vượt mốc đó dù product vẫn trong bounded job/process budget.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Observation riêng</dt><dd class="mt-1 text-slate-300">Stage observation tăng có giới hạn lên 360 giây; outer detach enqueue vẫn 360 giây và product render timeout không đổi.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Acceptance không giảm</dt><dd class="mt-1 text-slate-300">Vẫn bắt buộc đúng stage rendering video, cancel 202, terminal cancelled, termination proof exhaustive, zero survivor và zero cleanupPending; mutation không retry. Timeout path cũng best-effort cancel đúng một lần và ghi terminal/proof cleanup trước khi dừng daemon.</dd></div>
+        </dl>
+      </section>
       <section class="mt-6 rounded-2xl border border-fuchsia-400/30 bg-fuchsia-950/20 p-6 shadow-xl">
         <p class="text-xs font-semibold uppercase tracking-[0.24em] text-fuchsia-300">2026-08-13 · C-63 · Windows exact runner</p>
         <h2 class="mt-2 text-xl font-bold text-white">Canonical root phải có trước lock; ACL expectation phải theo command thật</h2>
@@ -1490,6 +1500,18 @@
           <div><dt class="font-semibold text-slate-200">Không retry mutation</dt><dd class="mt-1 text-slate-300">Detached enqueue vẫn chạy đúng một lần. Failure đi qua diagnostic redacted với phase, elapsed, daemon state/tail và latest render row read-only.</dd></div>
           <div><dt class="font-semibold text-slate-200">macOS là gate khác</dt><dd class="mt-1 text-slate-300">Warm serve 5,495 ms vượt regression threshold 5,469 ms đúng 26 ms nhưng dưới hard ceiling 6 giây; không nới baseline từ một sample, rerun failed job cô lập trước.</dd></div>
           <div><dt class="font-semibold text-slate-200">Verification</dt><dd class="mt-1 text-slate-300">Focused packaged smoke 30/30, typecheck, ESLint và diff-check xanh. Exact artifact rerun vẫn là acceptance authority.</dd></div>
+        </dl>
+      </section>
+      <section class="mt-6 rounded-2xl border border-cyan-400/30 bg-cyan-950/20 p-6 shadow-xl">
+        <p class="text-xs font-semibold uppercase tracking-[0.24em] text-cyan-300">2026-08-13 · C-67 · statistical startup baseline</p>
+        <h2 class="mt-2 text-xl font-bold text-white">Một hosted-runner sample không phải là phân phối</h2>
+        <dl class="mt-5 grid gap-4 md:grid-cols-2">
+          <div><dt class="font-semibold text-slate-200">False precision đã lộ</dt><dd class="mt-1 text-slate-300">Hai macOS run đầu vượt warm limit 5,469 ms chỉ 26 ms và 2 ms, nhỏ hơn polling quantum 200 ms; attempt kế tiếp đo 7,091 s. Distribution runner rộng hơn một sample, không phải một threshold cần nudge vài ms.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Hai gate từng dính nhau</dt><dd class="mt-1 text-slate-300">v1 lấy một số nhân 1,5 rồi buộc hard ceiling nằm trong quantum 1 giây kế tiếp. Hard và relative gate vì thế gần như cùng một threshold, trái với mô tả independent.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Schema v2 fail closed</dt><dd class="mt-1 text-slate-300">Mỗi OS phải có tối thiểu 5 raw sample, exact commit, evidence ID duy nhất và cùng cohort double-deep-integrity-v1. Thiếu mẫu, trùng evidence, non-safe integer, sai cohort hoặc key dư đều làm baseline invalid.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Phép tính reviewable</dt><dd class="mt-1 text-slate-300">Center là median, upper là nearest-rank p95; regression limit bằng max của 1,5×median và p95 cộng quantum 200 ms. Không commit derived limit để tránh tay sửa kết quả.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Hard ceiling độc lập</dt><dd class="mt-1 text-slate-300">Test mới yêu cầu hard ceiling của cả cold và warm cao hơn statistical limit ít nhất 200 ms; không còn invariant ép hai gate sát nhau dưới 1 giây.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Đang thu authority</dt><dd class="mt-1 text-slate-300">Run 31645765337 attempt 2 đang lấy sample thứ năm cho macOS/Windows trên exact SHA 16b43bd. JSON và ceiling chưa được chốt trước khi job terminal.</dd></div>
         </dl>
       </section>
     </main>

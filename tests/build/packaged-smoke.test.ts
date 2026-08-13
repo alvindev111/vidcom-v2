@@ -26,16 +26,19 @@ import {
 } from "../../scripts/packaged-smoke/environment.mjs";
 import {
   DETACHED_RENDER_SMOKE_TIMEOUT_MS,
+  DETACHED_RENDER_STAGE_TIMEOUT_MS,
   EXPECTED_DOCTOR_ITEM_IDS,
   PRIVATE_PATH_FORBIDDEN_TOOLS,
   assertRuntimeHealthy,
   browsePathSegments,
   browseSegmentMatches,
+  cleanupDetachedRenderFailure,
   mediaSceneSource,
   readLatestRenderJobSince,
   readJsonWithTransportRetry,
   runDetachedRenderWithDiagnostics,
   runRenderWaitWithDiagnostics,
+  waitForDetachedRenderStage,
   verifyArtifactProvenance,
   writeImportProjectFixture,
 } from "../../scripts/packaged-smoke/bodies.mjs";
@@ -237,6 +240,77 @@ describe("packaged smoke steps", () => {
     expect(attempts).toBe(1);
     expect(processTimeout).toBe(DETACHED_RENDER_SMOKE_TIMEOUT_MS);
     expect(DETACHED_RENDER_SMOKE_TIMEOUT_MS).toBe(360_000);
+    expect(DETACHED_RENDER_STAGE_TIMEOUT_MS).toBe(360_000);
+  });
+
+  it("observes a detached job past 120 seconds but before the bounded stage deadline", async () => {
+    let current = 0;
+    let reads = 0;
+    const result = await waitForDetachedRenderStage(
+      { baseUrl: "http://127.0.0.1:1" },
+      "job_stage",
+      "session=redacted",
+      {
+        now: () => current,
+        sleep: async () => { current += 130_000; },
+        readJob: async () => {
+          reads += 1;
+          return reads < 3
+            ? { status: "running", stage: "preparing render" }
+            : { status: "running", stage: "rendering video" };
+        },
+      },
+    );
+    expect(result).toEqual({
+      job: { status: "running", stage: "rendering video" },
+      elapsedMs: 260_000,
+    });
+    expect(reads).toBe(3);
+  });
+
+  it("reports bounded elapsed and allowlisted last state when stage observation expires", async () => {
+    let current = 0;
+    await expect(waitForDetachedRenderStage(
+      { baseUrl: "http://127.0.0.1:1" },
+      "job_timeout",
+      "session=redacted",
+      {
+        timeoutMs: DETACHED_RENDER_STAGE_TIMEOUT_MS,
+        now: () => current,
+        sleep: async () => { current += 180_000; },
+        readJob: async () => ({ status: "running", stage: "preparing render" }),
+      },
+    )).rejects.toThrow(
+      "elapsedMs=360000; lastStatus=running; lastStage=preparing render",
+    );
+  });
+
+  it("cancels a timed-out detached job exactly once and records bounded cleanup proof", async () => {
+    const requests: Array<{ url: string; method?: string }> = [];
+    const cleanup = await cleanupDetachedRenderFailure(
+      { baseUrl: "http://127.0.0.1:1" },
+      "job_cleanup",
+      "session=redacted",
+      {
+        fetch: async (url: string, init?: { method?: string }) => {
+          requests.push({ url, method: init?.method });
+          return init?.method === "POST"
+            ? { status: 202 }
+            : { ok: true, json: async () => ({ exhaustive: true, survivors: [] }) };
+        },
+        jobUntilTerminal: async (_serving: unknown, _jobId: string, timeoutMs: number) => {
+          expect(timeoutMs).toBe(120_000);
+          return { status: "cancelled", cleanupPending: false };
+        },
+      },
+    );
+    expect(requests).toEqual([
+      { url: "http://127.0.0.1:1/api/v1/jobs/job_cleanup/cancel", method: "POST" },
+      { url: "http://127.0.0.1:1/api/v1/jobs/job_cleanup/termination-proof", method: undefined },
+    ]);
+    expect(cleanup).toBe(
+      "terminal-cancelled,cleanupPending-false,proofExhaustive-true,survivors-0",
+    );
   });
 
   it("reads only the latest render job created during the failed phase", async () => {

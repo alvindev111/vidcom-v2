@@ -1292,9 +1292,10 @@ Mỗi phase chạy focused command dưới đây trên SQLite/filesystem thật,
   - DoctorReport, artifact manifest, `SHA256SUMS`, kết quả ffprobe, platform metadata
   - _Requirements: R8.3_ — _Design: §9.4_
 - [x] M.7 Chốt lại hai trần còn tạm
-  - Exact isolated hosted-runner artifact `b4ba4ce`: cold/warm macOS `4061/3646 ms`, Linux `7223/7022 ms`, Windows `11792/11508 ms`. Các run contention `9921c796` bị loại khỏi baseline
-  - Commit exact measurement làm baseline v1 và giữ gate hồi quy `1,5×`; hard warm ceiling là quantum 1 giây kế trên gate: macOS `6000`, Linux `11000`, Windows `18000 ms`. Cold giữ `120/120/180 s`; warm-app giữ `2/2/3 s` vì M.3a chưa có current measurement tương đương
-  - Regression test buộc mỗi hard warm ceiling `>= 1,5× baseline` và `< limit + 1000 ms`, nên threshold không thể âm thầm nới vô hạn
+  - Baseline v2 lưu 5 raw independent hosted-runner sample/OS, exact commit/job evidence và bind cohort `double-deep-integrity-v1`; các run contention `9921c796` bị loại
+  - Gate derive median, empirical nearest-rank p95 và limit `max(1,5×median, p95 + 200 ms)`; hard warm ceiling độc lập macOS/Linux/Windows `8/11/20 s`, cold giữ `120/120/180 s`
+  - Schema thiếu/trùng evidence, non-safe integer, sai cohort hoặc key dư fail closed; evaluator fail `NaN/-1`; baseline file hỏng không được `recordBaseline` ghi đè; invariant kiểm cả cold/warm
+  - Warm-app giữ `2/2/3 s` vì M.3a chưa có current measurement tương đương
   - _Requirements: R4.9, R8.3_ — _Design: §9.1, §5.13_
 - [ ] M.8 Ghi lại bằng chứng TTS Windows — **REOPEN: cần exact HEAD mới**
   - Máy phát triển bị N-1 (TLS inspection) chặn; runner CI không có ⇒ đây là **bằng chứng đầu tiên**, MUST NOT suy từ darwin
@@ -2824,6 +2825,18 @@ Chi tiết: [Detailed Goals](./spec-packaging-and-distribution-detailed-goal.md)
   - Summary: Exact Windows `a05a0ff` đã vượt preflight 120 s cũ và hoàn tất render wait đầu tiên, nhưng lệnh `render --detach` kế tiếp vẫn bị outer `spawnSync` timeout 120 s; step chết ở 438,221 ms trước khi product deadline 300 s có thể trả kết quả.
   - Decisions: Detached outer budget 360 s = enqueue 300 s + 60 s SEA startup/Windows AV margin. Mutation vẫn gọi đúng một lần/no-retry; lỗi detached dùng cùng diagnostic redacted phase/timing/daemon/latest-job. Không đổi macOS baseline từ một sample warm vượt 26 ms.
   - Blockers: Exact-head packaged rerun phải xanh Windows. macOS failed job đang rerun cô lập trên cùng SHA để phân biệt jitter 26 ms với regression; production supply-chain human gate vẫn mở.
+
+2026-08-13 — Phase M.7 statistical startup baseline C-67
+  - Files: `.github/perf-baseline/*.json`, `scripts/measure-startup.mjs`, `tests/build/startup-baseline.test.ts`, Detailed Design §16, checklist và implementation notes.
+  - Summary: Hai exact macOS run đầu vượt v1 warm limit lần lượt `26 ms` và `2 ms`, đều thấp hơn readiness poll quantum `200 ms`; attempt độc lập thứ ba đo cold/warm `6892/7091 ms`. Raw review xác nhận baseline một sample cộng invariant hard ceiling sát `1,5×` khiến hai gate gần như cùng một gate và không đại diện distribution runner.
+  - Decisions: Baseline v2 lưu tối thiểu 5 raw hosted-runner sample có exact commit/evidence và bind cohort `double-deep-integrity-v1`; derive median, empirical nearest-rank p95 và limit `max(1,5×median, p95 + 200 ms)`. Duplicate evidence, thiếu mẫu, non-safe integer, sai cohort và schema dư đều fail closed; hard ceiling phải cao hơn statistical limit ít nhất một quantum cho cả cold/warm.
+  - Blockers: Đã thu đủ sample và local 44/44 startup/smoke tests xanh. Exact-head rerun mới vẫn bắt buộc vì commit C-67 thay evaluator/baseline; Windows attempt 2 lộ thêm C-68.
+
+2026-08-13 — Phase M detached render stage observation C-68
+  - Files: `scripts/packaged-smoke/bodies.mjs`, `tests/build/packaged-smoke.test.ts`, Detailed Design §16, checklist và implementation notes.
+  - Summary: Exact Windows attempt 2 đã pass identify `15152/13487 ms`, real media, offline, lease-loss và provenance; detach đã trả job ID nhưng 120 s observation hết trước stage `rendering video`. Cùng runner media pipelines mất 344–404 s.
+  - Decisions: Tách observation budget 360 s khỏi outer enqueue 360 s và product render timeout. Mutation vẫn một lần/no retry; timeout path best-effort cancel đúng một lần, bounded terminal/proof cleanup và giữ original timeout làm primary failure. Không nới terminal/cancel/zero-survivor assertion.
+  - Blockers: Rebuild exact artifact và rerun đủ bốn workflow. Current run `31645765337` không phải acceptance vì macOS v1 startup gate và Windows C-68 đều đỏ.
 
 Format:
 ```

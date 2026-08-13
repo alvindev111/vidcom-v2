@@ -533,6 +533,74 @@ export function runRenderWaitWithDiagnostics(context, serving, media, dependenci
  * kill the client before that bounded product deadline reports its own result.
  */
 export const DETACHED_RENDER_SMOKE_TIMEOUT_MS = 360_000;
+export const DETACHED_RENDER_STAGE_TIMEOUT_MS = 360_000;
+
+const SAFE_JOB_STATE = /^[a-z][a-z0-9 _-]*$/u;
+
+function safeJobState(value) {
+  return typeof value === "string" && SAFE_JOB_STATE.test(value) ? value : "unknown";
+}
+
+export async function waitForDetachedRenderStage(serving, jobId, cookie, dependencies = {}) {
+  const now = dependencies.now ?? Date.now;
+  const sleep = dependencies.sleep ?? ((ms) => new Promise((resolve) => setTimeout(resolve, ms)));
+  const readJob = dependencies.readJob ?? (() => readJsonWithTransportRetry(
+    `detached job ${jobId}`,
+    `${serving.baseUrl}/api/v1/jobs/${jobId}`,
+    { headers: { Cookie: cookie } },
+  ));
+  const startedAt = now();
+  const deadline = startedAt + (dependencies.timeoutMs ?? DETACHED_RENDER_STAGE_TIMEOUT_MS);
+  let observed = null;
+  while (now() < deadline) {
+    observed = await readJob();
+    if (observed.status === "running" && observed.stage === "rendering video") {
+      return { job: observed, elapsedMs: Math.max(0, now() - startedAt) };
+    }
+    if (TERMINAL_JOBS.has(observed.status)) {
+      throw new Error(
+        `detached render became ${safeJobState(observed.status)} before mid-render cancellation`,
+      );
+    }
+    await sleep(100);
+  }
+  throw new Error(
+    "detached render never reached the rendering-video stage"
+    + `; elapsedMs=${String(Math.max(0, now() - startedAt))}`
+    + `; lastStatus=${safeJobState(observed?.status)}`
+    + `; lastStage=${safeJobState(observed?.stage)}`,
+  );
+}
+
+export async function cleanupDetachedRenderFailure(serving, jobId, cookie, dependencies = {}) {
+  const request = dependencies.fetch ?? fetch;
+  const waitForTerminal = dependencies.jobUntilTerminal ?? jobUntilTerminal;
+  try {
+    const cancel = await request(`${serving.baseUrl}/api/v1/jobs/${jobId}/cancel`, {
+      method: "POST",
+      headers: { Cookie: cookie },
+    });
+    if (cancel.status !== 202) return `cancel-http-${String(cancel.status)}`;
+    const terminal = await waitForTerminal(serving, jobId, 120_000);
+    let proof = null;
+    try {
+      const response = await request(`${serving.baseUrl}/api/v1/jobs/${jobId}/termination-proof`, {
+        headers: { Cookie: cookie },
+      });
+      if (response.ok) proof = await response.json();
+    } catch {
+      proof = null;
+    }
+    return [
+      `terminal-${safeJobState(terminal.status)}`,
+      `cleanupPending-${String(terminal.cleanupPending === true)}`,
+      `proofExhaustive-${String(proof?.exhaustive === true)}`,
+      `survivors-${String(Array.isArray(proof?.survivors) ? proof.survivors.length : "unknown")}`,
+    ].join(",");
+  } catch {
+    return "cleanup-unavailable";
+  }
+}
 
 export function runDetachedRenderWithDiagnostics(context, serving, media, dependencies = {}) {
   return runRenderInvocationWithDiagnostics(context, serving, {
@@ -1278,34 +1346,15 @@ export const STEP_BODIES = {
         throw new Error(`render --detach did not print one job id: ${detached.stdout.slice(0, 200)}`);
       }
 
-      const runningDeadline = Date.now() + 120_000;
-      let running = null;
-      while (Date.now() < runningDeadline) {
-        try {
-          running = await readJsonWithTransportRetry(
-            `detached job ${jobId}`,
-            `${serving.baseUrl}/api/v1/jobs/${jobId}`,
-            { headers: { Cookie: serving.cookie } },
-          );
-        } catch (error) {
-          // Give an orderly daemon shutdown enough time to publish its failure
-          // and exit status before the step's finally block sends our own stop.
-          await new Promise((resolve) => setTimeout(resolve, 500));
-          throw new Error(
-            `detached job ${jobId} poll failed: ${error instanceof Error ? error.message : String(error)}`
-            + `${error instanceof Error && error.cause ? ` (${String(error.cause)})` : ""}`
-            + `; daemon exit=${String(serving.child.exitCode)} signal=${String(serving.child.signalCode)}`
-            + `; daemon tail: ${serving.output().slice(-2_000)}`,
-          );
-        }
-        if (running.status === "running" && running.stage === "rendering video") break;
-        if (TERMINAL_JOBS.has(running.status)) {
-          throw new Error(`detached render became ${running.status} before mid-render cancellation`);
-        }
-        await new Promise((resolve) => setTimeout(resolve, 100));
-      }
-      if (running?.status !== "running" || running.stage !== "rendering video") {
-        throw new Error("detached render never reached the rendering-video stage");
+      try {
+        await waitForDetachedRenderStage(serving, jobId, serving.cookie);
+      } catch (error) {
+        const cleanup = await cleanupDetachedRenderFailure(serving, jobId, serving.cookie);
+        throw new Error(
+          `${error instanceof Error ? error.message : String(error)}; cleanup=${cleanup}`
+          + `; daemonExit=${String(serving.child.exitCode)} daemonSignal=${String(serving.child.signalCode)}`
+          + `; daemonTail=${safeSmokeDiagnosticText(context, serving.output(), 1_000)}`,
+        );
       }
       // The stage is persisted immediately before the supervised spawn. Give
       // that spawn one capture interval so this is a real mid-process cancel,
