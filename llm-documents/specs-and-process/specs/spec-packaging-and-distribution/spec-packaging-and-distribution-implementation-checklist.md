@@ -2845,6 +2845,12 @@ Chi tiết: [Detailed Goals](./spec-packaging-and-distribution-detailed-goal.md)
   - Decisions: Reclose mọi mục M trừ M.3b bằng exact-head authority. Mười project thật có 216 scene × 12 giây, tổng 2592 giây, đúng dải 60–120/300–600 giây; TTS, 216/216 snapshot, validate zero error/lint available, 10 H.264/AAC render và hash recheck đều hoàn tất. Evidence vẫn ghi `humanReviewed=false`, không đổi unattended visual QA thành human approval.
   - Blockers: M.3b implementation đã bổ sung packaged `mcp` stdio legacy + modern trong lúc UI daemon sống, nhưng exact-head artifact ba OS phải rerun trước khi tick. D artifact AC và spec completion cũng mở: workflow dùng digest-pinned non-release runtime fixture; C-21 yêu cầu human phê duyệt production FFmpeg/ffprobe source hoặc source-build policy trước release artifact gate.
 
+2026-08-13 — Phase M.3b stdio diagnostic channel C-69
+  - Files: `scripts/packaged-smoke/bodies.mjs`, `tests/build/packaged-smoke.test.ts`, Detailed Design §16 và implementation notes.
+  - Summary: Exact run `31707994606` thực thi legacy + modern packaged MCP stdio trên ba OS và chỉ fail sau các proof vì harness yêu cầu stderr rỗng. MCP chỉ reserve stdout cho JSON-RPC; stderr là diagnostic channel hợp lệ.
+  - Decisions: Drain stderr không buffer/copy vào evidence, bỏ zero-byte false gate. Initialize/catalogue/tool/close error thật vẫn fail theo phase, redact path/token và cleanup mọi connected session. Focused smoke + real stdio E2E 37/37, typecheck, lint, import sanity và diff-check xanh.
+  - Blockers: Exact-head Packaged phải rerun; M.3b chưa tick trước artifact evidence. Production supply-chain human gate vẫn mở độc lập.
+
 Format:
 ```
 YYYY-MM-DD — Phase X, Task X.Y

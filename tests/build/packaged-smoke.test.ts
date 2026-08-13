@@ -58,7 +58,7 @@ function results(entries: Array<Partial<StepResult> & { id: string }>): StepResu
 }
 
 describe("packaged smoke steps", () => {
-  it("keeps legacy and modern packaged MCP stdio connected for the coexistence check", async () => {
+  it("keeps both packaged MCP eras connected and permits diagnostic stderr", async () => {
     const events: string[] = [];
     const closed: string[] = [];
     const session = (era: "legacy" | "modern") => ({
@@ -73,7 +73,10 @@ describe("packaged smoke steps", () => {
           : { structuredContent: { scene: { id: "scene_smoke" } } };
       },
       close: async () => { closed.push(era); },
-      stderrBytes: () => 0,
+      // stderr is the supported diagnostic channel for an stdio server. The
+      // smoke must neither reject it nor copy its potentially private contents
+      // into the successful evidence summary.
+      stderrBytes: () => era === "legacy" ? 17 : 29,
     });
 
     await expect(exercisePackagedMcpStdioPair({
@@ -102,20 +105,25 @@ describe("packaged smoke steps", () => {
     expect(closed).toEqual(["modern", "legacy"]);
   });
 
-  it("redacts packaged MCP stdio failures and closes every connected era", async () => {
+  it("redacts packaged MCP stdio close failures and closes every connected era", async () => {
     const privateRoot = "C:\\Users\\runner\\private-smoke";
     const secret = "vcmcp_private_token";
     const closed: string[] = [];
+    let modernCloseAttempts = 0;
     const session = (era: "legacy" | "modern") => ({
       connect: async () => undefined,
-      listTools: async () => {
-        if (era === "modern") throw new Error(`failed at ${privateRoot} with ${secret}`);
-        return { tools: [{ name: "list_projects" }] };
-      },
-      callTool: async () => ({
-        structuredContent: { projects: [{ projectId: "project_smoke" }] },
+      listTools: async () => ({
+        tools: [{ name: era === "legacy" ? "list_projects" : "create_scene" }],
       }),
-      close: async () => { closed.push(era); },
+      callTool: async (name: string) => name === "list_projects"
+        ? { structuredContent: { projects: [{ projectId: "project_smoke" }] } }
+        : { structuredContent: { scene: { id: "scene_smoke" } } },
+      close: async () => {
+        closed.push(era);
+        if (era === "modern" && modernCloseAttempts++ === 0) {
+          throw new Error(`failed at ${privateRoot} with ${secret}`);
+        }
+      },
       stderrBytes: () => 0,
     });
 
@@ -130,14 +138,14 @@ describe("packaged smoke steps", () => {
       createScene: { projectId: "project_smoke" },
     }, { createSession: session })).rejects.toSatisfy((error: unknown) => {
       const message = error instanceof Error ? error.message : String(error);
-      expect(message).toContain("modern tools/list");
+      expect(message).toContain("modern close");
       expect(message).toContain("<redacted-path>");
       expect(message).toContain("<redacted-secret>");
       expect(message).not.toContain(privateRoot);
       expect(message).not.toContain(secret);
       return true;
     });
-    expect(closed.sort()).toEqual(["legacy", "modern"]);
+    expect(closed.sort()).toEqual(["legacy", "modern", "modern"]);
   });
 
   it("collapses a Windows short alias before deriving daemon discovery identity", async () => {

@@ -51,8 +51,10 @@ function packagedMcpSession(context, era) {
     env: context.environment,
     stderr: "pipe",
   });
-  const stderr = [];
-  transport.stderr?.on("data", (chunk) => stderr.push(Buffer.from(chunk)));
+  // MCP reserves stdout for JSON-RPC, but explicitly permits diagnostics on
+  // stderr. Drain that channel without copying private diagnostics into the
+  // release evidence document or allowing a noisy child to backpressure.
+  transport.stderr?.resume();
   const client = era === "legacy"
     ? new LegacyMcpClient({ name: "vidcom-packaged-smoke-legacy", version: "1.0.0" })
     : new ModernMcpClient(
@@ -64,7 +66,6 @@ function packagedMcpSession(context, era) {
     listTools: () => client.listTools(),
     callTool: (name, args) => client.callTool({ name, arguments: args }),
     close: () => client.close(),
-    stderrBytes: () => Buffer.concat(stderr).byteLength,
   };
 }
 
@@ -114,9 +115,6 @@ export async function exercisePackagedMcpStdioPair(context, input, dependencies 
     phase = "legacy close";
     await legacy.close();
     legacyConnected = false;
-    if (legacy.stderrBytes() !== 0 || modern.stderrBytes() !== 0) {
-      throw new Error("packaged MCP stdio emitted unexpected stderr");
-    }
     return {
       legacyTools: legacyTools.tools.length,
       modernTools: modernTools.tools.length,
