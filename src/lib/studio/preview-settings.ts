@@ -90,6 +90,8 @@ export interface ToneSettings {
 }
 
 export interface ThemeSettings {
+  /** Bundled palette selection, or null after an individual color override. */
+  paletteId: string | null;
   /** CSS custom properties published on `:root` of every preview document. */
   variables: Record<string, string>;
 }
@@ -136,6 +138,10 @@ export const THEME_VARIABLES = [
   "--primary-light",
   "--accent",
   "--accent-light",
+  "--background",
+  "--surface",
+  "--text",
+  "--text-muted",
   "--success",
   "--info",
 ] as const;
@@ -143,24 +149,29 @@ export const THEME_VARIABLES = [
 export const DEFAULT_PREVIEW_SETTINGS: PreviewSettings = {
   tone: {
     enabled: false,
-    colorMode: "dark",
-    backgroundColor: "#080907",
+    colorMode: "cream",
+    backgroundColor: "#F9F7F7",
     backgroundFx: "none",
-    mainLight: "#ff8a3d",
+    mainLight: "#3F72AF",
     mainLightPosition: "top-center",
     mainLightIntensity: "medium",
-    softLight: "#54d9ff",
+    softLight: "#112D4E",
     softLightPosition: "bottom-right",
     softLightIntensity: "medium",
   },
   theme: {
+    paletteId: "clean-slate",
     variables: {
-      "--primary": "#ff8a3d",
-      "--primary-light": "#ffd1ad",
-      "--accent": "#54d9ff",
-      "--accent-light": "#c8f2ff",
-      "--success": "#47e6a0",
-      "--info": "#b08cff",
+      "--primary": "#3F72AF",
+      "--primary-light": "#B2C4DC",
+      "--accent": "#112D4E",
+      "--accent-light": "#AFB6C1",
+      "--background": "#F9F7F7",
+      "--surface": "#DBE2EF",
+      "--text": "#112D4E",
+      "--text-muted": "#7C8A9C",
+      "--success": "#44CD76",
+      "--info": "#112D4E",
     },
   },
   bgm: { enabled: false, volume: 0.3, loop: true, track: null },
@@ -169,8 +180,8 @@ export const DEFAULT_PREVIEW_SETTINGS: PreviewSettings = {
     override: false,
     // Sized for the 1920×1080 canvas these compositions author against, not for
     // a web page — a caption at 18px is invisible in a 1080p frame.
-    color: "#ffffff",
-    activeColor: "#ff8a3d",
+    color: "#112D4E",
+    activeColor: "#112D4E",
     fontSize: 72,
     bottom: 120,
   },
@@ -255,6 +266,7 @@ export function normalizePreviewSettings(raw: unknown): PreviewSettings {
       ),
     },
     theme: {
+      paletteId: typeof theme.paletteId === "string" ? theme.paletteId : null,
       variables: Object.fromEntries(
         THEME_VARIABLES.map((name) => [
           name,
@@ -318,12 +330,22 @@ export function mergePreviewSettings(
   current: PreviewSettings,
   patch: PreviewSettingsPatch,
 ): PreviewSettings {
+  const themePatch = patch.theme as Partial<ThemeSettings> | undefined;
+  const customColors = themePatch?.variables !== undefined
+    || patch.tone?.backgroundColor !== undefined
+    || patch.tone?.mainLight !== undefined
+    || patch.tone?.softLight !== undefined
+    || patch.subtitles?.color !== undefined
+    || patch.subtitles?.activeColor !== undefined;
   return normalizePreviewSettings({
     tone: { ...current.tone, ...patch.tone },
     theme: {
+      paletteId: !customColors
+        ? themePatch?.paletteId ?? current.theme.paletteId
+        : null,
       variables: {
         ...current.theme.variables,
-        ...(patch.theme as ThemeSettings | undefined)?.variables,
+        ...themePatch?.variables,
       },
     },
     bgm: { ...current.bgm, ...patch.bgm },
@@ -425,7 +447,7 @@ export function buildPreviewCss(settings: PreviewSettings): string {
   const mainAlpha = LIGHT_INTENSITIES[tone.mainLightIntensity].alpha;
   const softAlpha = LIGHT_INTENSITIES[tone.softLightIntensity].alpha;
   const cream = tone.colorMode === "cream";
-  const background = cream ? "#fff3df" : tone.backgroundColor;
+  const background = tone.backgroundColor;
 
   const variables = Object.entries(theme.variables)
     .map(([name, value]) => `  ${name}: ${value};`)

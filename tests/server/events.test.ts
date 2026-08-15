@@ -12,7 +12,7 @@ import { Hono } from "hono";
 import { afterEach, describe, expect, it } from "vitest";
 
 import { createSequentialIdPort } from "../support/deterministic";
-import { dbRun } from "../support/database";
+import { dbAll, dbRun } from "../support/database";
 
 const roots: string[] = [];
 const projectId = "project_events" as ProjectId;
@@ -53,6 +53,37 @@ describe("durable SSE", () => {
     await reader.cancel();
     expect(text).toContain("event: resync");
     expect(text).toContain('"latestSeq":42');
+  });
+
+  it("persists every host lifecycle event with no project identity in real SQLite", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "vidcom-host-events-"));
+    roots.push(root);
+    const clock = mutableClock("2026-08-07T00:00:00.000Z");
+    const database = openVidcomDatabase(root);
+    await migrateDatabase(database);
+    try {
+      const outbox = new SqliteEventOutbox(database, clock);
+      for (const type of [
+        "workspace.lease_lost",
+        "workspace.reattached",
+        "runtime.preparing",
+        "runtime.ready",
+      ] as const) {
+        await outbox.append({ type, projectId: null, payload: { source: "integration" } });
+      }
+
+      expect((await outbox.readFrom(0, 10)).events.map(({ type, projectId }) => ({ type, projectId })))
+        .toEqual([
+          { type: "workspace.lease_lost", projectId: null },
+          { type: "workspace.reattached", projectId: null },
+          { type: "runtime.preparing", projectId: null },
+          { type: "runtime.ready", projectId: null },
+        ]);
+      expect(dbAll(database, "SELECT project_id AS projectId FROM event_outbox"))
+        .toEqual([{ projectId: null }, { projectId: null }, { projectId: null }, { projectId: null }]);
+    } finally {
+      await database.destroy();
+    }
   });
 
   it("streams the same persisted job state exposed by polling and emits heartbeat comments", async () => {

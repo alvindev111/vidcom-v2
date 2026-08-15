@@ -1,0 +1,135 @@
+name: Packaged smoke
+
+# Deliberately outside the main CI matrix, the same way the browser and Python
+# jobs are. Each job builds a ~130 MB executable and drives it end to end; the
+# main workflow already runs 13-16 minutes on Windows, and paying this on every
+# push would buy nothing that a release gate does not buy better.
+#
+# Dispatch-only: this is a release evidence gate, not a fast presubmit. Each
+# dispatch reconstructs the exact-host native inputs, packages them, and then
+# drives the resulting executable end to end.
+on:
+  workflow_call:
+  workflow_dispatch:
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  packaged-smoke:
+    name: ${{ matrix.name }}
+    # New workflow files cannot be manually dispatched before reaching the
+    # default branch. This one closeout PR is the exact-ref bootstrap path;
+    # later PRs retain the original dispatch-only cost model.
+    if: github.event_name != 'pull_request' || github.head_ref == 'feat-packaging-and-distribution'
+    runs-on: ${{ matrix.os }}
+    # Long enough for a cold start on Windows under antivirus (§9.1 allows
+    # 180 s for that alone) plus a real render, and short enough that a hung
+    # job is cut rather than left holding a runner.
+    timeout-minutes: 90
+
+    strategy:
+      # Every platform reports. One failing does not hide what the others found,
+      # and the whole point of this job is knowing which platforms were proven.
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-14
+            name: macOS arm64
+            tag: darwin-arm64
+          - os: windows-latest
+            name: Windows x64
+            tag: win32-x64
+          - os: ubuntu-latest
+            name: Linux x64
+            tag: linux-x64
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          # The same pin the main workflow uses; a smoke on a different Node
+          # would be proving a build nobody ships.
+          node-version: 24.9.0
+
+      - name: Verify exact source revision
+        env:
+          VIDCOM_EXPECTED_GIT_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: >-
+          node -e "const { execFileSync } = require('node:child_process'); const actual = execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim(); if (actual !== process.env.VIDCOM_EXPECTED_GIT_SHA) { console.error('expected ' + process.env.VIDCOM_EXPECTED_GIT_SHA + ', got ' + actual); process.exit(1); }"
+
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.14
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      # The key binds both the pinned native source inputs and the measured
+      # browser/model set. A cache miss is allowed for the online warm-up; the
+      # later runner-level network cut proves those bytes are sufficient.
+      - name: Restore downloaded runtime caches
+        uses: actions/cache@v4
+        with:
+          path: |
+            ${{ github.workspace }}/.vidcom-runtime-source-cache
+            ${{ github.workspace }}/.vidcom-smoke-cache
+          key: vidcom-smoke-${{ matrix.tag }}-${{ hashFiles('scripts/prepare-packaged-runtime.mjs', 'scripts/build-runtime-archives.mjs', 'spikes/phase-4/s9-windows-runtime/evidence/*') }}
+
+      - name: Prepare digest-pinned non-release smoke runtime
+        env:
+          VIDCOM_RUNTIME_SOURCE_CACHE: ${{ github.workspace }}/.vidcom-runtime-source-cache
+          # Explicitly authorizes a CI fixture, not a publishable release input.
+          # Production FFmpeg acquisition remains behind the human supply-chain gate.
+          VIDCOM_ALLOW_UNRELEASED_SMOKE_RUNTIME: "1"
+        run: node scripts/prepare-packaged-runtime.mjs --artifact-version "0.1.0-${{ github.event.pull_request.head.sha || github.sha }}"
+
+      - name: Build the artifact for this runner
+        # No cross-building (DR-1): the artifact embeds this machine's Node
+        # binary and native runtime, so a "Linux build" made anywhere else is a
+        # file that runs nowhere.
+        run: bun run build:artifact --release
+
+      - name: Run the packaged smoke
+        env:
+          # A skipped required step is a failure here. R8.4: a missing required
+          # component fails the job rather than being reported as "not reached".
+          VIDCOM_DOCTOR_STRICT: "1"
+          VIDCOM_SMOKE_CACHE_ROOT: ${{ github.workspace }}/.vidcom-smoke-cache
+          VIDCOM_SMOKE_NETWORK_CUT: "1"
+          VIDCOM_SMOKE_RELEASE: "1"
+          VIDCOM_SMOKE_EXPECTED_COMMIT: ${{ github.event.pull_request.head.sha || github.sha }}
+          VIDCOM_SMOKE_EVIDENCE_DIR: ${{ github.workspace }}/packaged-smoke-evidence/${{ matrix.tag }}
+        run: node scripts/packaged-smoke/run.mjs > packaged-smoke-${{ matrix.tag }}.json
+
+      - name: Validate complete release evidence
+        env:
+          VIDCOM_SMOKE_EXPECTED_COMMIT: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: node scripts/packaged-smoke/verify-evidence-bundle.mjs --tag "${{ matrix.tag }}"
+
+      - name: Upload the evidence
+        # Uploaded even when the smoke fails: a failing run is exactly when
+        # somebody needs the step timings and the reason each step gave.
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: packaged-smoke-${{ matrix.tag }}
+          path: |
+            packaged-smoke-${{ matrix.tag }}.json
+            packaged-smoke-evidence/${{ matrix.tag }}/doctor-report.json
+            packaged-smoke-evidence/${{ matrix.tag }}/ffprobe.json
+            packaged-smoke-evidence/${{ matrix.tag }}/platform.json
+            dist/artifact/${{ matrix.tag }}/artifact-manifest.json
+            dist/artifact/${{ matrix.tag }}/SHA256SUMS
+          if-no-files-found: error

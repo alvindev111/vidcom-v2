@@ -34,10 +34,24 @@ permissions:
 # both. Grouping by workflow and ref means the newest push on a branch is the only
 # one still spending.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  # A literal prefix, not github.workflow: reusable workflows see the caller's
+  # workflow name, so sharing that expression with a called workflow lets the
+  # child cancel the CI run that invoked it.
+  group: ci-wrapper-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
+  # These heavy release-evidence workflows are branch-local until merged into
+  # the default branch, so a manual CI dispatch calls their exact-ref versions.
+  # Push/PR CI remains unchanged.
+  packaged-smoke:
+    if: github.event_name == 'workflow_dispatch'
+    uses: ./.github/workflows/packaged-smoke.yml
+
+  browser-session:
+    if: github.event_name == 'workflow_dispatch'
+    uses: ./.github/workflows/phase4-browser-session.yml
+
   static-checks:
     name: ${{ matrix.name }}
     runs-on: ${{ matrix.os }}
@@ -58,6 +72,10 @@ jobs:
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
+        with:
+          # PR workflows normally test a synthetic merge commit. Release
+          # evidence must name the exact reviewed branch commit instead.
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
 
       - name: Set up Node
         uses: actions/setup-node@v4
@@ -91,7 +109,16 @@ jobs:
 
       - name: Install FFmpeg (Windows)
         if: runner.os == 'Windows'
-        run: choco install ffmpeg --no-progress --yes
+        shell: pwsh
+        run: |
+          choco install ffmpeg --no-progress --yes
+          if ($LASTEXITCODE -ne 0) {
+            throw "Chocolatey failed to install FFmpeg (exit $LASTEXITCODE)"
+          }
+          Get-Command ffmpeg -ErrorAction Stop
+          Get-Command ffprobe -ErrorAction Stop
+          ffmpeg -version
+          ffprobe -version
 
       - name: Report media toolchain
         run: ffmpeg -version && ffprobe -version && python --version
@@ -119,8 +146,11 @@ jobs:
 
       # The flag turns a missing FFmpeg into a failure instead of a skip, so this
       # job cannot report green while the narration audio pipeline goes unrun.
+      # Real-browser coverage belongs to the required browser-session job above;
+      # the generic runner may happen to contain Chrome, but must not run that
+      # heavyweight suite a second time merely because of ambient software.
       - name: Test
-        run: npm run test
+        run: npm run test -- --exclude tests/adapter/remote-asset-browser.test.ts
         env:
           VIDCOM_REQUIRE_FFMPEG: "1"
 
@@ -142,5 +172,5 @@ jobs:
       - name: Production build
         run: npm run build
 
-      - name: Real Next runtime and SSE smoke
+      - name: Real daemon runtime and SSE smoke
         run: npm run test:runtime-smoke

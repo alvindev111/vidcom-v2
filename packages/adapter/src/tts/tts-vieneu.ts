@@ -4,6 +4,8 @@ import { isAbsolute, join } from "node:path";
 import { ErrorCode, type TtsComputeDeviceDto, type TtsProviderDto, type TtsVoiceDto } from "@vidcom/contracts";
 import type { ProcessPort, TtsSynthesisRequest } from "@vidcom/core";
 
+import { DOWNLOAD_CACHE_COMPONENTS, DownloadCacheCoordinator } from "../runtime/download-cache";
+import { RuntimeAssetError } from "../runtime/runtime-asset-source";
 import {
   TtsProviderError,
   type RawCueAudio,
@@ -13,6 +15,7 @@ import {
 
 const PROVIDER_ID = "vieneu";
 const MODEL_ID = "vieneu-v3-turbo";
+const MODEL_CACHE_COMPONENT = DOWNLOAD_CACHE_COMPONENTS.models;
 
 /** 20 minutes: the first run may still be fetching weights before it speaks a word. */
 const SYNTHESIS_TIMEOUT_MS = 20 * 60 * 1_000;
@@ -28,6 +31,17 @@ const PROBE_TIMEOUT_MS = 10 * 60 * 1_000;
 
 /** Two attempts, because the failure this covers is a truncated model download, not a bad request. */
 const MAX_ATTEMPTS = 2;
+
+/**
+ * Below the engine's own 0.8 default.
+ *
+ * v3 Turbo samples its prosody autoregressively, so temperature governs how much
+ * pitch, pace and energy wander between one `infer` call and the next — and VidCom
+ * makes one call per scene. At 0.8 consecutive scenes came back sounding like
+ * different takes of the same script. Lower trades a little expressive variety for
+ * a narrator who stays recognisably one person across a scene change.
+ */
+const SYNTHESIS_TEMPERATURE = 0.65;
 
 /** Raw sidecar output must at least carry a WAV header and a sample or two. */
 const MINIMUM_RAW_BYTES = 256;
@@ -85,6 +99,26 @@ export interface VieNeuTtsProviderOptions {
    * project, inside whatever the next backup picks up.
    */
   modelCacheRoot: string;
+  /** Coordinates the cold model fetch and proves when warm-offline is safe. */
+  downloadCache?: DownloadCacheCoordinator;
+  /** Bounded probe budget; production defaults to ten minutes, doctor uses its shorter budget. */
+  probeTimeoutMs?: number;
+  /**
+   * Absolute path to the certificate bundle the runtime shipped.
+   *
+   * A frozen interpreter carries no trust store of its own. Passing the bundle
+   * is the supported way to make TLS work; disabling verification or harvesting
+   * the OS store instead would trade a download failure for a silent one.
+   */
+  caBundlePath?: string;
+  /**
+   * Refuses every network read when the cache is already warm.
+   *
+   * Without it a warm run still reaches out to check for a newer revision, so a
+   * machine that is merely offline turns into a hang or a long timeout rather
+   * than a clean answer from the cache it already has.
+   */
+  offline?: boolean;
   /**
    * Hugging Face revision to pin the weights to, from `~/.vidcom/setting.json`.
    *
@@ -102,6 +136,13 @@ interface WorkerResponse {
   /** Commit the weights were resolved to, so a WAV is traceable to what produced it. */
   modelRevision: string;
   effectiveDevice: TtsComputeDeviceDto;
+  /**
+   * What the sidecar actually applied, echoed back rather than assumed.
+   *
+   * Absent from a sidecar older than the sampling controls, which is the honest
+   * answer for one that ignored them.
+   */
+  sampling?: { seed: number | null; temperature: number };
   assets: { cueId: string; path: string }[];
 }
 
@@ -114,6 +155,48 @@ interface ProbeResponse {
   /** Preset speaker names straight from the engine; VidCom keeps no copy of its own. */
   voices: string[];
   engineVersion: string;
+}
+
+interface ProbeAttempt {
+  response: ProbeResponse | null;
+  stderr: string;
+  timedOut?: boolean;
+  error?: unknown;
+}
+
+const TLS_DOWNLOAD_FAILURE = /CERTIFICATE_VERIFY_FAILED|unable to get local issuer certificate|UNABLE_TO_VERIFY_LEAF_SIGNATURE|SELF_SIGNED_CERT_IN_CHAIN/iu;
+const UNAVAILABLE_DOWNLOAD_FAILURE = /download|snapshot|hugging\s*face|offline|network|connection|connect|timed?\s*out|name or service not known|temporary failure in name resolution/iu;
+
+function modelDownloadError(attempt: ProbeAttempt): RuntimeAssetError | null {
+  if (attempt.timedOut === true) {
+    return new RuntimeAssetError(
+      ErrorCode.DownloadUnavailable,
+      "VieNeu model preparation timed out",
+      { component: MODEL_CACHE_COMPONENT },
+    );
+  }
+  // The ProcessPort contract throws only when the child cannot be started (or
+  // is aborted). A missing interpreter/script path can itself contain words
+  // such as "Downloads", so only sidecar stderr is evidence about the model
+  // fetch. Abort is rethrown by probe() before an attempt reaches this mapper.
+  const diagnostic = attempt.stderr;
+  if (TLS_DOWNLOAD_FAILURE.test(diagnostic)) {
+    return new RuntimeAssetError(
+      ErrorCode.DownloadTlsUntrusted,
+      "VieNeu model download could not trust the remote TLS certificate",
+      { component: MODEL_CACHE_COMPONENT },
+    );
+  }
+  if (!UNAVAILABLE_DOWNLOAD_FAILURE.test(diagnostic)) return null;
+  return new RuntimeAssetError(
+    ErrorCode.DownloadUnavailable,
+    "VieNeu model weights are unavailable from the configured download source",
+    { component: MODEL_CACHE_COMPONENT },
+  );
+}
+
+function ttsDownloadError(error: RuntimeAssetError): TtsProviderError {
+  return new TtsProviderError(error.message, error.code, { cause: error });
 }
 
 /**
@@ -131,6 +214,7 @@ interface ProbeResponse {
  */
 export class VieNeuTtsProvider implements TtsProviderAdapter {
   readonly id = PROVIDER_ID;
+  #modelOffline = false;
 
   /**
    * VidCom voice id to the engine's own speaker name, filled by `describe()`.
@@ -145,6 +229,23 @@ export class VieNeuTtsProvider implements TtsProviderAdapter {
     if (!isAbsolute(options.modelCacheRoot)) {
       throw new TypeError("VieNeu model cache root must be an absolute app-data path");
     }
+    if (
+      options.downloadCache !== undefined
+      && options.downloadCache.componentRoot(MODEL_CACHE_COMPONENT) !== options.modelCacheRoot
+    ) {
+      throw new TypeError("VieNeu model cache root must match the coordinated models component");
+    }
+    if (
+      options.probeTimeoutMs !== undefined
+      && (!Number.isSafeInteger(options.probeTimeoutMs) || options.probeTimeoutMs <= 0)
+    ) {
+      throw new TypeError("VieNeu probe timeout must be a positive safe integer");
+    }
+    this.#modelOffline = options.offline === true;
+  }
+
+  private probeTimeoutMs(): number {
+    return this.options.probeTimeoutMs ?? PROBE_TIMEOUT_MS;
   }
 
   /** The configured invocation, rejected here rather than spawned as an empty command. */
@@ -160,7 +261,15 @@ export class VieNeuTtsProvider implements TtsProviderAdapter {
   }
 
   async describe(): Promise<TtsProviderDto> {
-    const probe = await this.probe();
+    let probe: ProbeResponse | null;
+    try {
+      probe = await this.probeModel();
+    } catch (error) {
+      if (error instanceof RuntimeAssetError) throw ttsDownloadError(error);
+      if (error instanceof TtsProviderError && error.code === ErrorCode.TtsProviderUnavailable) {
+        probe = null;
+      } else throw error;
+    }
     this.#engineVoices = new Map((probe?.voices ?? []).map((name) => [voiceIdFor(name), name]));
     const computeDevices: TtsComputeDeviceDto[] = probe?.gpu ? ["cpu", "gpu"] : ["cpu"];
     return {
@@ -210,6 +319,12 @@ export class VieNeuTtsProvider implements TtsProviderAdapter {
       device: request.computeDevice,
       voice: engineVoice,
       outputDir: context.scratchDir,
+      // Additive within schema 1, not a version bump: `tts.vieneu.command` points
+      // at a worker.py the user configured, which can be an older copy than this
+      // build. An old sidecar ignores these and reports no `sampling`, so the
+      // narration sidecar shows the cue was left to chance rather than silently
+      // claiming it was pinned.
+      sampling: { seed: request.seed, temperature: SYNTHESIS_TEMPERATURE },
       cues: request.cues.map((cue) => ({ id: cue.id, text: cue.text })),
     }), "utf8");
 
@@ -237,6 +352,12 @@ export class VieNeuTtsProvider implements TtsProviderAdapter {
           modelRevision: response.modelRevision,
           effectiveDevice: response.effectiveDevice,
           engineVoice,
+          ...(response.sampling
+            ? {
+              temperature: response.sampling.temperature,
+              ...(response.sampling.seed === null ? {} : { seed: response.sampling.seed }),
+            }
+            : {}),
         },
       });
       context.onCueDone?.(index + 1, request.cues.length);
@@ -251,32 +372,99 @@ export class VieNeuTtsProvider implements TtsProviderAdapter {
    * installed the sidecar should not be the answer forever within one process,
    * but re-probing on every catalog read would spawn Python per keystroke.
    */
-  private async probe(): Promise<ProbeResponse | null> {
+  private async probeModel(): Promise<ProbeResponse | null> {
+    const cache = this.options.downloadCache;
+    if (cache === undefined) return (await this.probe(this.options.offline === true)).response;
+
+    const status = await cache.status(MODEL_CACHE_COMPONENT);
+    if (this.options.offline === true && status.state !== "ready") {
+      throw new RuntimeAssetError(
+        ErrorCode.DownloadUnavailable,
+        "VieNeu model weights are not cached for the requested offline run",
+        { component: MODEL_CACHE_COMPONENT, state: status.state },
+      );
+    }
+    if (status.state === "ready") {
+      const attempt = await this.probe(true);
+      if (attempt.response?.ready === true) {
+        this.#modelOffline = true;
+        return attempt.response;
+      }
+      const failure = modelDownloadError(attempt);
+      if (failure) {
+        const mappedFailureCode = failure.code === ErrorCode.DownloadTlsUntrusted
+          ? ErrorCode.DownloadTlsUntrusted
+          : ErrorCode.DownloadUnavailable;
+        await cache.markPartial(MODEL_CACHE_COMPONENT, mappedFailureCode);
+        if (this.options.offline === true) throw failure;
+        // A markerless directory is only a claim of readiness. If its offline
+        // probe proves the snapshot incomplete, repair it online under the same
+        // coordinator instead of making the user repeat the request.
+      } else {
+        return attempt.response;
+      }
+    }
+
+    const probe = await cache.download(
+      MODEL_CACHE_COMPONENT,
+      async (root, signal) => {
+        if (root !== this.options.modelCacheRoot) {
+          throw new TypeError("VieNeu download cache authority changed during model preparation");
+        }
+        const attempt = await this.probe(false, signal);
+        if (attempt.response?.ready !== true) {
+          const failure = modelDownloadError(attempt);
+          if (failure) throw failure;
+          throw new TtsProviderError(
+            "the VieNeu sidecar could not prepare the model cache",
+            ErrorCode.TtsProviderUnavailable,
+            { cause: attempt.error instanceof Error ? attempt.error : undefined },
+          );
+        }
+        return attempt.response;
+      },
+      this.probeTimeoutMs(),
+    );
+    this.#modelOffline = true;
+    return probe;
+  }
+
+  private async probe(offline: boolean, signal?: AbortSignal): Promise<ProbeAttempt> {
     try {
       const output = await this.options.processes.run({
         command: [...this.command(), "--probe"],
-        environment: this.environment(),
-        timeoutMs: PROBE_TIMEOUT_MS,
+        environment: this.environment(offline),
+        timeoutMs: this.probeTimeoutMs(),
+        ...(signal ? { signal } : {}),
       });
-      if (output.exitCode !== 0) return null;
+      if (output.timedOut) {
+        return { response: null, stderr: output.stderr, timedOut: true };
+      }
+      if (output.exitCode !== 0) {
+        return { response: null, stderr: output.stderr };
+      }
       const parsed = JSON.parse(output.stdout) as Partial<ProbeResponse>;
-      if (parsed.schemaVersion !== 1) return null;
+      if (parsed.schemaVersion !== 1) return { response: null, stderr: output.stderr };
       const voices = Array.isArray(parsed.voices)
         ? parsed.voices.filter((name): name is string => typeof name === "string" && name.trim().length > 0)
         : [];
       return {
-        schemaVersion: 1,
-        // A sidecar that imports but offers no voice cannot synthesize anything,
-        // so it is not "ready" however cleanly the import went.
-        ready: parsed.ready === true && voices.length > 0,
-        gpu: parsed.gpu === true,
-        voices,
-        engineVersion: typeof parsed.engineVersion === "string" ? parsed.engineVersion : "",
+        response: {
+          schemaVersion: 1,
+          // A sidecar that imports but offers no voice cannot synthesize anything,
+          // so it is not "ready" however cleanly the import went.
+          ready: parsed.ready === true && voices.length > 0,
+          gpu: parsed.gpu === true,
+          voices,
+          engineVersion: typeof parsed.engineVersion === "string" ? parsed.engineVersion : "",
+        },
+        stderr: output.stderr,
       };
-    } catch {
+    } catch (error) {
+      signal?.throwIfAborted();
       // A missing interpreter, a missing script or unparseable output all mean
       // the same thing to a user: the sidecar is not installed yet.
-      return null;
+      return { response: null, stderr: "", error };
     }
   }
 
@@ -292,7 +480,7 @@ export class VieNeuTtsProvider implements TtsProviderAdapter {
       signal?.throwIfAborted();
       const output = await this.options.processes.run({
         command: [...command, "--request", requestPath, "--response", responsePath],
-        environment: this.environment(),
+        environment: this.environment(this.#modelOffline),
         timeoutMs: SYNTHESIS_TIMEOUT_MS,
         ...(signal ? { signal } : {}),
       }).catch((error: unknown) => {
@@ -317,13 +505,17 @@ export class VieNeuTtsProvider implements TtsProviderAdapter {
     throw new TtsProviderError(`VieNeu narration failed: ${lastMessage}`);
   }
 
-  private environment(): Record<string, string> {
+  private environment(offline: boolean): Record<string, string> {
     return {
       HF_HOME: this.options.modelCacheRoot,
       HF_HUB_CACHE: join(this.options.modelCacheRoot, "hub"),
       TORCH_HOME: join(this.options.modelCacheRoot, "torch"),
       HF_HUB_DISABLE_TELEMETRY: "1",
       TOKENIZERS_PARALLELISM: "false",
+      ...(offline ? { HF_HUB_OFFLINE: "1", TRANSFORMERS_OFFLINE: "1" } : {}),
+      ...(this.options.caBundlePath
+        ? { SSL_CERT_FILE: this.options.caBundlePath, REQUESTS_CA_BUNDLE: this.options.caBundlePath }
+        : {}),
       ...(this.options.modelRevision ? { VIDCOM_VIENEU_REVISION: this.options.modelRevision } : {}),
     };
   }
@@ -352,5 +544,19 @@ function parseWorkerResponse(raw: string, requestedDevice: TtsComputeDeviceDto):
       ErrorCode.TtsProviderUnavailable,
     );
   }
-  return value as WorkerResponse;
+  // Dropped rather than rejected when it is not the expected shape: the echo is
+  // provenance, and a sidecar that reports it badly is the same situation as one
+  // too old to report it at all. It reaches the narration sidecar, which accepts
+  // only scalars, so it cannot be forwarded unchecked.
+  const sampling = parseSampling(value.sampling);
+  return { ...(value as WorkerResponse), ...(sampling ? { sampling } : { sampling: undefined }) };
+}
+
+function parseSampling(value: unknown): WorkerResponse["sampling"] {
+  if (typeof value !== "object" || value === null) return undefined;
+  const record = value as { seed?: unknown; temperature?: unknown };
+  if (typeof record.temperature !== "number" || !Number.isFinite(record.temperature)) return undefined;
+  const seed = record.seed;
+  if (seed !== null && (typeof seed !== "number" || !Number.isFinite(seed))) return undefined;
+  return { seed, temperature: record.temperature };
 }

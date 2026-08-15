@@ -13,7 +13,10 @@ import {
   uniqueIndex,
 } from "drizzle-orm/sqlite-core";
 
+import { HOST_DOMAIN_EVENT_TYPES, PROJECT_DOMAIN_EVENT_TYPES } from "@vidcom/contracts";
+
 const actors = ["user", "agent", "cli-external", "system"] as const;
+const eventTypes = [...PROJECT_DOMAIN_EVENT_TYPES, ...HOST_DOMAIN_EVENT_TYPES] as const;
 const actorCheck = (column: { getSQL(): unknown }) =>
   sql`${column} IN ('user', 'agent', 'cli-external', 'system')`;
 
@@ -88,7 +91,7 @@ export const entityState = sqliteTable("entity_state", {
 
 export const eventOutbox = sqliteTable("event_outbox", {
   seq: integer().primaryKey({ autoIncrement: true }),
-  type: text({ enum: ["file.changed", "project.changed", "job.progress", "job.done", "workspace.changed"] }).notNull(),
+  type: text({ enum: eventTypes }).notNull(),
   projectId: text("project_id").references(() => projectRegistry.id),
   payload: text().notNull(),
   createdAt: text("created_at").notNull(),
@@ -96,8 +99,8 @@ export const eventOutbox = sqliteTable("event_outbox", {
   index("idx_event_type").on(table.type),
   index("idx_event_project").on(table.projectId),
   index("idx_event_created").on(table.createdAt),
-  check("ck_event_type", sql`${table.type} IN ('file.changed', 'project.changed', 'job.progress', 'job.done', 'workspace.changed')`),
-  check("ck_event_project_shape", sql`(${table.type} = 'workspace.changed' AND ${table.projectId} IS NULL) OR (${table.type} != 'workspace.changed' AND ${table.projectId} IS NOT NULL)`),
+  check("ck_event_type", sql`${table.type} IN ('file.changed', 'project.changed', 'job.progress', 'job.done', 'workspace.changed', 'workspace.lease_lost', 'workspace.reattached', 'runtime.preparing', 'runtime.ready')`),
+  check("ck_event_project_shape", sql`(${table.type} IN ('workspace.changed', 'workspace.lease_lost', 'workspace.reattached', 'runtime.preparing', 'runtime.ready') AND ${table.projectId} IS NULL) OR (${table.type} IN ('file.changed', 'project.changed', 'job.progress', 'job.done') AND ${table.projectId} IS NOT NULL)`),
 ]);
 
 export const revision = sqliteTable("revision", {
@@ -286,7 +289,7 @@ export const job = sqliteTable("job", {
 export const workspaceOperation = sqliteTable("workspace_operation", {
   id: integer().primaryKey({ autoIncrement: true }),
   workspaceRoot: text("workspace_root").notNull(),
-  kind: text({ enum: ["agent_kit_files", "project_create", "project_rename", "project_delete"] }).notNull(),
+  kind: text({ enum: ["agent_kit_files", "project_create", "project_rename", "project_delete", "project_import"] }).notNull(),
   projectId: text("project_id"),
   fromPath: text("from_path"),
   toPath: text("to_path"),
@@ -303,7 +306,7 @@ export const workspaceOperation = sqliteTable("workspace_operation", {
   index("idx_workspace_operation_pending").on(table.status, table.createdAt),
   index("idx_workspace_operation_project").on(table.projectId, table.status),
   uniqueIndex("uq_workspace_operation_grant").on(table.grantId).where(sql`${table.grantId} IS NOT NULL`),
-  check("ck_workspace_operation_kind", sql`${table.kind} IN ('agent_kit_files', 'project_create', 'project_rename', 'project_delete')`),
+  check("ck_workspace_operation_kind", sql`${table.kind} IN ('agent_kit_files', 'project_create', 'project_rename', 'project_delete', 'project_import')`),
   check("ck_workspace_operation_status", sql`${table.status} IN ('pending', 'committed', 'aborted', 'recovered', 'orphaned')`),
   check("ck_workspace_operation_actor", actorCheck(table.actor)),
   check("ck_workspace_operation_tool_audit_json", sql`${table.toolAuditJson} IS NULL OR json_valid(${table.toolAuditJson})`),

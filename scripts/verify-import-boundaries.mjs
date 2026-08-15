@@ -65,6 +65,15 @@ const packageBoundaryFixtures = [
   ["packages/mcp/src/example.ts", "@vidcom/server", "MCP-to-server import"],
   ["packages/server/src/example.ts", "@vidcom/mcp", "server-to-MCP import"],
   ["packages/mcp/src/example.ts", "@vidcom/adapter", "MCP-to-adapter import"],
+  // The two spellings someone reaches for once the bare specifier is refused.
+  // `adapter/daemon` is a directory inside `@vidcom/adapter`, not a package of
+  // its own, so a relative path to it is the same import wearing a hat — and
+  // the scanner reads dynamic `import()` too, which is the other way round.
+  [
+    "packages/mcp/src/registry/example.ts",
+    "../../../adapter/src/daemon/daemon-client",
+    "MCP-to-adapter/daemon relative import",
+  ],
 ];
 for (const [relative, specifier, label] of packageBoundaryFixtures) {
   let rejected = false;

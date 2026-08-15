@@ -5,7 +5,7 @@ import { DEFAULT_PREVIEW_SETTINGS, serializePreviewSettings } from "../domain/pr
 import type { AbsolutePath, ProjectRef } from "../domain/models";
 import { err, ok, type Result } from "../error/result";
 import type { BackupPort, ClockPort, CompositionPort, IdPort, JobStorePort, MutationJournalPort, WorkspacePort } from "../port/ports";
-import type { BackupSource, GrantBinding } from "../port/types";
+import type { BackupSource, GrantBinding, WriteInvocation } from "../port/types";
 import { canonicalizeJson } from "../service/canonical-json";
 import type { EntryId, EntryRegistry } from "../service/entry-registry";
 import type { WriteAuthority } from "../service/write-authority";
@@ -74,7 +74,10 @@ export class ProjectLifecycle {
   constructor(private readonly dependencies: ProjectLifecycleDependencies) {}
 
   /** Validates a new project, journals its initial files, and commits one registry revision plus project event. */
-  async create(input: { name: string; preset: PlatformConfig; actor?: Actor }): Promise<Result<{ projectId: ProjectId; slug: string }, DomainError>> {
+  async create(
+    input: { name: string; preset: PlatformConfig; actor?: Actor },
+    invocation: WriteInvocation = { toolAudit: null },
+  ): Promise<Result<{ projectId: ProjectId; slug: string }, DomainError>> {
     const slug = slugify(input.name);
     if (!slug) return err({ code: ErrorCode.SchemaInvalid, message: "project name cannot produce a valid slug", field: "name" });
     const projectId = this.dependencies.ids.newId("project") as ProjectId;
@@ -90,6 +93,7 @@ export class ProjectLifecycle {
       projectId,
       slug,
       actor: input.actor ?? "user",
+      ...invocation,
       files: [
         { path: "vidcom.json" as RelPath, content: identity },
         { path: "hyperframes.json" as RelPath, content: "{}\n" },
@@ -101,7 +105,10 @@ export class ProjectLifecycle {
   }
 
   /** Adopts an unowned marker-backed folder by writing identity and committing its registry/event atomically. */
-  async adopt(input: { slug: string; actor?: Actor }): Promise<Result<{ projectId: ProjectId }, DomainError>> {
+  async adopt(
+    input: { slug: string; actor?: Actor },
+    invocation: WriteInvocation = { toolAudit: null },
+  ): Promise<Result<{ projectId: ProjectId }, DomainError>> {
     const directories = await this.dependencies.workspace.listWorkspaceDirectories?.(this.dependencies.workspaceRoot) ?? [];
     const candidate = directories.find((entry) => entry.slug === input.slug);
     if (!candidate) return err({ code: ErrorCode.ProjectNotFound, message: "project candidate was not found" });
@@ -134,6 +141,7 @@ export class ProjectLifecycle {
       content: this.dependencies.identity.serialize(identityFor(projectId, platform, now)),
       occurredAt: now,
       actor: input.actor ?? "user",
+      ...invocation,
     });
     return adopted.ok ? ok({ projectId }) : adopted;
   }
@@ -235,7 +243,12 @@ export class ProjectLifecycle {
   }
 
   /** Renames an idle project through the lifecycle journal and emits one project/workspace change event. */
-  async rename(locator: ProjectLocator, nextName: string, actor: Actor = "user"): Promise<Result<{ slug: string }, DomainError>> {
+  async rename(
+    locator: ProjectLocator,
+    nextName: string,
+    actor: Actor = "user",
+    invocation: WriteInvocation = { toolAudit: null },
+  ): Promise<Result<{ slug: string }, DomainError>> {
     const ref = await this.project(locator);
     if (!ref.ok) return ref;
     const slug = slugify(nextName);
@@ -249,6 +262,7 @@ export class ProjectLifecycle {
       fromSlug: ref.value.slug,
       toSlug: slug,
       actor,
+      ...invocation,
     });
     if (renamed.ok && locator.kind === "entry") {
       this.dependencies.entries.relocate(locator.entryId, slug, renamed.value.root);
@@ -257,7 +271,11 @@ export class ProjectLifecycle {
   }
 
   /** Requires confirmation/grant, verifies a backup, then journals quarantine and the delete revision/event. */
-  async remove(locator: ProjectLocator, authority: ProjectRemovalAuthority): Promise<Result<{ backupId: string }, DomainError>> {
+  async remove(
+    locator: ProjectLocator,
+    authority: ProjectRemovalAuthority,
+    invocation: WriteInvocation = { toolAudit: null },
+  ): Promise<Result<{ backupId: string }, DomainError>> {
     if (!authority.confirmed) return err({
       code: ErrorCode.ConfirmationRequired,
       message: "project deletion requires explicit confirmation",
@@ -307,6 +325,7 @@ export class ProjectLifecycle {
       verifiedBackupId: backup.id,
       expectedTargetHashes: binding.value.targetHashes,
       actor: authority.actor,
+      ...invocation,
       ...(grantId ? { grantId } : {}),
     });
     if (removed.ok && locator.kind === "entry") this.dependencies.entries.revoke(locator.entryId);

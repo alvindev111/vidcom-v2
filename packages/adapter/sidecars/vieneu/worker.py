@@ -4,8 +4,9 @@ Two modes, both driven entirely by argv and files:
 
     worker.py --probe
         Prints one JSON object on stdout: whether the engine imports, which
-        preset voices it offers, and whether a GPU can actually be used. Does
-        not load the model. VidCom calls this to build its voice catalog.
+        preset voices it offers, and whether a GPU can actually be used. It
+        resolves the requested model snapshot first, making a ready response
+        proof that synthesis can enter warm-offline mode.
 
     worker.py --request <path> --response <path>
         Builds the engine once, speaks every cue in the request, writes one WAV
@@ -36,6 +37,10 @@ MODEL_REPO = "pnnbao-ump/VieNeu-TTS-v3-Turbo"
 # auto-detects — so the sidecar's job is to refuse the GPU request outright when
 # CUDA is unusable rather than let auto-detection fall back to CPU in silence.
 CPU_BACKEND = "onnx"
+
+# Used only when a request carries no sampling block, which means it came from a
+# VidCom older than the sampling controls. Matches what the adapter sends.
+DEFAULT_TEMPERATURE = 0.65
 
 
 def log(message: str) -> None:
@@ -126,9 +131,10 @@ def probe() -> int:
     """Report engine readiness, the preset voice list, and whether a GPU is usable.
 
     Upstream exposes `list_preset_voices()` only as an instance method, so this
-    has to construct the engine. Construction can therefore pull the weights on
-    a cold machine — which is exactly why `model_cache_root()` runs first: an
-    unset HF_HOME here would drop the download in the working directory. VidCom
+    has to construct the engine. The requested snapshot is resolved explicitly
+    first: engine construction alone does not prove that the revision synthesis
+    will request is complete. `model_cache_root()` runs before either operation,
+    so an unset HF_HOME cannot drop weights in the working directory. VidCom
     caches this result for the life of the process, so the cost is paid at most
     once per run.
     """
@@ -140,6 +146,11 @@ def probe() -> int:
         import vieneu
 
         version = engine_version()
+        # A successful probe is the cache-completeness boundary used by the
+        # TypeScript download coordinator. Constructing the engine alone is not
+        # sufficient proof: synthesis resolves an explicit revision snapshot,
+        # which can still be absent even when voices are available.
+        download_model(pinned_revision())
         engine = vieneu.Vieneu(backend=CPU_BACKEND)
         # The catalog is the engine's own list, never a copy maintained in
         # TypeScript: a hard-coded list drifts the moment upstream adds a voice,
@@ -185,6 +196,37 @@ def download_model(revision: str | None) -> str:
     return resolved
 
 
+def apply_seed(seed: int | None) -> None:
+    """Pin the sampler's starting state for one `infer` call.
+
+    v3 Turbo draws its prosody, not just its words: the ONNX backend samples with
+    `np.random.choice` and the torch backend with `torch.multinomial`, both from
+    the process-global RNG. Left alone, the stream advances across cues, so every
+    scene starts the sampler from wherever the previous scene left it and comes
+    back with its own pitch and pace — which a listener hears as a different
+    narrator at each scene change.
+
+    Reseeding before every cue rather than once per batch is the point: the cues
+    then share a starting state instead of inheriting each other's, and a rerun of
+    the same batch reproduces the same audio. Upstream exposes no seed argument, so
+    the global RNGs are the whole mechanism available.
+    """
+    if seed is None:
+        return
+    bounded = seed % (2 ** 32)
+    import numpy as np
+
+    np.random.seed(bounded)
+    try:
+        import torch
+    except ImportError:
+        # The CPU install is torch-free by design; numpy is the RNG that matters there.
+        return
+    torch.manual_seed(bounded)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed_all(bounded)
+
+
 def build_engine(device: str):
     """Construct the engine for the requested device, or fail rather than downgrade.
 
@@ -225,6 +267,16 @@ def synthesize(request_path: Path, response_path: Path) -> int:
     revision = download_model(pinned_revision())
     engine = build_engine(device)
 
+    # Defaulted, not required: a request written by an older VidCom carries no
+    # sampling block, and the engine's own defaults are the right fallback.
+    sampling = request.get("sampling") or {}
+    seed = sampling.get("seed")
+    if seed is not None and not isinstance(seed, int):
+        raise ValueError("sampling.seed must be an integer or null")
+    temperature = sampling.get("temperature", DEFAULT_TEMPERATURE)
+    if not isinstance(temperature, (int, float)) or not 0 < temperature <= 2:
+        raise ValueError("sampling.temperature must be a number in (0, 2]")
+
     assets = []
     for cue in request["cues"]:
         cue_id = cue["id"]
@@ -235,7 +287,8 @@ def synthesize(request_path: Path, response_path: Path) -> int:
             raise ValueError(f"unsafe cue id {cue_id!r}")
         target = output_dir / f"{cue_id}.vieneu.wav"
         log(f"synthesizing {cue_id}")
-        audio = engine.infer(cue["text"], voice=request["voice"])
+        apply_seed(seed)
+        audio = engine.infer(cue["text"], voice=request["voice"], temperature=temperature)
         engine.save(audio, str(target))
         if not target.is_file() or target.stat().st_size < 256:
             raise RuntimeError(f"no audio was produced for {cue_id}")
@@ -248,6 +301,9 @@ def synthesize(request_path: Path, response_path: Path) -> int:
             "modelId": MODEL_ID,
             "modelRevision": revision,
             "effectiveDevice": device,
+            # Echoed so VidCom records what was applied instead of what it asked
+            # for; a sidecar too old to read the block reports none of this.
+            "sampling": {"seed": seed, "temperature": temperature},
             "assets": assets,
         }, ensure_ascii=False),
         encoding="utf-8",

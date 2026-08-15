@@ -35,6 +35,11 @@ const TtsSettingsSchema = z.strictObject({
   vieneu: VieNeuSettingsSchema.nullish(),
 });
 
+/** User-selected trust bundle for runtime downloads and child processes. */
+export const RuntimeSettingsSchema = z.strictObject({
+  caBundlePath: optionalPath,
+});
+
 /**
  * Everything `~/.vidcom/setting.json` may declare.
  *
@@ -52,6 +57,7 @@ export const VidcomSettingsSchema = z.strictObject({
   appDataRoot: optionalPath,
   /** Workspace opened when none is passed and none was last used. */
   workspaceRoot: optionalPath,
+  runtime: RuntimeSettingsSchema.nullish(),
   tts: TtsSettingsSchema.nullish(),
 });
 
@@ -61,6 +67,9 @@ export type VidcomSettingsDto = z.infer<typeof VidcomSettingsSchema>;
 export interface ResolvedVidcomSettings {
   appDataRoot: string | null;
   workspaceRoot: string | null;
+  runtime: {
+    caBundlePath: string | null;
+  };
   tts: {
     defaultProviderId: string | null;
     defaultVoiceId: string | null;
@@ -75,6 +84,7 @@ export interface ResolvedVidcomSettings {
 export const DEFAULT_VIDCOM_SETTINGS: ResolvedVidcomSettings = {
   appDataRoot: null,
   workspaceRoot: null,
+  runtime: { caBundlePath: null },
   tts: {
     defaultProviderId: null,
     defaultVoiceId: null,
@@ -85,12 +95,24 @@ export const DEFAULT_VIDCOM_SETTINGS: ResolvedVidcomSettings = {
   },
 };
 
+/** Environment-owned settings that take precedence over the user settings file. */
+export interface VidcomSettingsOverrides {
+  caBundlePath?: string | null;
+}
+
 /** Fills every gap in a parsed settings document from `DEFAULT_VIDCOM_SETTINGS`. */
-export function resolveVidcomSettings(document: VidcomSettingsDto): ResolvedVidcomSettings {
+export function resolveVidcomSettings(
+  document: VidcomSettingsDto,
+  overrides: VidcomSettingsOverrides = {},
+): ResolvedVidcomSettings {
   const tts = document.tts ?? {};
+  const caBundleOverride = overrides.caBundlePath?.trim();
   return {
     appDataRoot: document.appDataRoot ?? null,
     workspaceRoot: document.workspaceRoot ?? null,
+    runtime: {
+      caBundlePath: caBundleOverride || (document.runtime?.caBundlePath ?? null),
+    },
     tts: {
       defaultProviderId: tts.defaultProviderId ?? null,
       defaultVoiceId: tts.defaultVoiceId ?? null,

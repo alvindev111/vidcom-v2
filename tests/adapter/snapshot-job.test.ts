@@ -9,6 +9,7 @@ import {
   AppDataAssetStager,
   AppDataBackupStore,
   CompositionHf,
+  FontkitCompatibilityInspector,
   FsRenderProjectAdapter,
   FsRenderRootAdapter,
   hyperframesRuntimeSource,
@@ -25,6 +26,7 @@ import {
 } from "@vidcom/adapter";
 import { ErrorCode, type ContentHash, type ProjectId, type RelPath } from "@vidcom/contracts";
 import {
+  FontCompatibilityService,
   JobScheduler,
   WriteAuthority,
   type AbsolutePath,
@@ -79,6 +81,7 @@ async function fixture(source: string) {
   const journal = new MutationJournal(database, clock, new LargePreviousContentStore(appDataRoot));
   const jobs = new SqliteJobStore(database, clock);
   const ids = createSequentialIdPort();
+  const fonts = new FontCompatibilityService(new FontkitCompatibilityInspector());
   const lease = new WorkspaceLease(database, clock, ids);
   const acquired = await lease.acquire(workspaceRoot as AbsolutePath, "test:snapshot");
   if (!acquired.ok) throw new Error("test lease was denied");
@@ -113,7 +116,7 @@ async function fixture(source: string) {
   });
   return {
     root, workspaceRoot, appDataRoot, projectRoot, projectId, source,
-    database, workspace, journal, jobs, ids, authority, binaries, rootsPort,
+    database, workspace, journal, jobs, ids, authority, binaries, rootsPort, fonts,
   };
 }
 
@@ -132,6 +135,7 @@ function definition(
     jobs: value.jobs,
     guard: new LoopbackRuntimeAssetGuard(),
     binaries: value.binaries,
+    fonts: value.fonts,
     runtimeSource: hyperframesRuntimeSource,
     injectGuard: injectRuntimeAssetGuardDocument,
     clock,
@@ -151,6 +155,7 @@ async function enqueueAndRun(
     ids: value.ids,
     hashContent,
     binaries: value.binaries,
+    fonts: value.fonts,
   }, { projectId: value.projectId });
   if (!queued.ok) throw new Error(queued.error.message);
   const scheduler = new JobScheduler(
@@ -188,6 +193,22 @@ describe("snapshot job with real SQLite and filesystem", () => {
     ]);
     expect([...mapped.images]).toEqual([["scene-1", one], ["scene-3", three]]);
     expect(mapped.missingSceneIds).toEqual(["scene-2"]);
+  });
+
+  it("matches a midpoint with a fourth decimal against the filename HyperFrames writes", async () => {
+    // `start + duration / 2` over three-decimal durations lands on four decimals,
+    // and HyperFrames rounds the filename to three. Before these agreed, a nine
+    // scene project reported six of them missing from a snapshot that had them.
+    const captured = new Uint8Array([7]);
+    const mapped = mapSnapshotArtifacts(
+      [{ id: "scene-1", midpoint: 3.6055 }, { id: "scene-2", midpoint: 48.7775 }],
+      [
+        { name: "frame-00-at-3.606s.png", content: captured },
+        { name: "frame-01-at-48.778s.png", content: captured },
+      ],
+    );
+    expect(mapped.missingSceneIds).toEqual([]);
+    expect([...mapped.images.keys()]).toEqual(["scene-1", "scene-2"]);
   });
 
   it("succeeds empty without spawning and rejects out-of-range midpoint before spawning", async () => {

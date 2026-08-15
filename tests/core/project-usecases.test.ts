@@ -620,9 +620,14 @@ describe("project write and legacy use cases without HTTP", () => {
     });
     const scene = (runtime.mutations[0] as CompositeRequest).steps[0];
     if (scene?.kind !== "write" || typeof scene.content !== "string") throw new Error("scene write was not captured");
-    expect(scene.content).toContain("<style>");
+    expect(scene.content).toContain("<template><style>");
     expect(scene.content).toContain("width:1920px;height:1080px");
+    expect(scene.content).toContain('data-width="1920" data-height="1080"');
     expect(scene.content).toContain("<h2>Next</h2>");
+    expect(runtime.appliedOps[0]).toMatchObject([{
+      kind: "addElement",
+      value: { html: expect.stringContaining('data-width="1920" data-height="1080"') },
+    }]);
   });
   it("rejects an empty scene timing patch before source read, SDK ops or mutation", async () => {
     const runtime = setup();

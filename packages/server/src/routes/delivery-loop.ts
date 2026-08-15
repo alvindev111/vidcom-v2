@@ -54,7 +54,19 @@ type BoundaryError = { code: ErrorCode; message: string; field?: string; details
 export interface DeliveryLoopRouteDependencies {
   workspaceRoot: AbsolutePath;
   workspaceOverview(): Promise<unknown>;
-  activateWorkspace(path: string): Promise<Result<{ workspaceRoot: AbsolutePath; reauthRequired: true }, DomainError>>;
+  /**
+   * Starts a project import and returns the job that owns it.
+   *
+   * Takes a browse selection token for the same reason activation does: a path
+   * a client can type is a path any page can send, and the whole point of
+   * browse is that the server only acts on directories it handed out itself.
+   */
+  startProjectImport?(input: { selectionToken: string; targetName?: string; sessionId?: string }):
+    Promise<Result<{ jobId: string }, DomainError>>;
+  /** Takes a browse selection token; no route accepts an absolute path from a client. */
+  activateWorkspace(selectionToken: string, sessionId?: string): Promise<Result<{ workspaceRoot: AbsolutePath; reauthRequired: true }, DomainError>>;
+  /** Resolves the already-authenticated browser session for browse-token binding. */
+  browseSessionId?(request: Request): string | undefined;
   lifecycle: ProjectLifecycle;
   diagnostics: DiagnosticsService;
   agentKit: AgentKitInstaller;
@@ -117,6 +129,16 @@ function range(header: string | undefined, size: number): ByteRange {
     ? { kind: "valid", start: Number(start), end: Number(end >= BigInt(size) ? size - 1 : end) }
     : { kind: "unsatisfiable" };
 }
+
+/** Shared strict render-enqueue boundary used by browser and bridge routes. */
+export async function enqueueRenderResponse(
+  dependencies: Pick<DeliveryLoopRouteDependencies, "enqueueRender">,
+  c: Context,
+): Promise<Response> {
+  const input = parse(EnqueueRenderRequestSchema, await json(c), "render enqueue payload is invalid");
+  const job = valueOf(await dependencies.enqueueRender({ projectId: projectId(c), ...input }));
+  return c.json({ jobId: job.id }, 202);
+}
 function bytesResponse(c: Context, bytes: Uint8Array, hash: string, mime: string): Response {
   const etag = `"${hash}"`;
   const common = { "Accept-Ranges": "bytes", "Cache-Control": "must-revalidate", "Content-Type": mime, ETag: etag };
@@ -142,7 +164,42 @@ export function createDeliveryLoopRoutes(dependencies: DeliveryLoopRouteDependen
   routes.get("/v1/workspace", async (c) => c.json(await dependencies.workspaceOverview()));
   routes.put("/v1/workspace/active", async (c) => {
     const input = parse(ActivateWorkspaceRequestSchema, await json(c), "workspace activation payload is invalid");
-    return c.json(valueOf(await dependencies.activateWorkspace(input.path)));
+    return c.json(valueOf(await dependencies.activateWorkspace(
+      input.selectionToken,
+      dependencies.browseSessionId?.(c.req.raw),
+    )));
+  });
+  routes.post("/v1/projects/imports", async (c) => {
+    if (!dependencies.startProjectImport) {
+      throw new HttpBoundaryError({
+        code: ErrorCode.NotFound,
+        message: "this daemon does not accept project imports",
+      });
+    }
+    const body = await json(c) as { sourceToken?: unknown; targetName?: unknown };
+    if (typeof body.sourceToken !== "string" || body.sourceToken.length === 0) {
+      throw new HttpBoundaryError({
+        code: ErrorCode.SchemaInvalid,
+        message: "sourceToken is required",
+        field: "sourceToken",
+      });
+    }
+    if (body.targetName !== undefined && typeof body.targetName !== "string") {
+      throw new HttpBoundaryError({
+        code: ErrorCode.SchemaInvalid,
+        message: "targetName must be a string",
+        field: "targetName",
+      });
+    }
+    const sessionId = dependencies.browseSessionId?.(c.req.raw);
+    const started = valueOf(await dependencies.startProjectImport({
+      selectionToken: body.sourceToken,
+      ...(sessionId === undefined ? {} : { sessionId }),
+      ...(body.targetName === undefined ? {} : { targetName: body.targetName }),
+    }));
+    // 202, not 201: copying a project tree is not something to hold a request
+    // open for, and the job id is what the client polls.
+    return c.json(started, 202);
   });
   routes.post("/v1/projects", async (c) => {
     const input = parse(CreateProjectRequestSchema, await json(c), "project create payload is invalid");
@@ -166,11 +223,7 @@ export function createDeliveryLoopRoutes(dependencies: DeliveryLoopRouteDependen
       { kind: "project", projectId: projectId(c) }, { actor: "user", confirmed: true },
     )));
   });
-  routes.post("/v1/projects/:id/renders", async (c) => {
-    const input = parse(EnqueueRenderRequestSchema, await json(c), "render enqueue payload is invalid");
-    const job = valueOf(await dependencies.enqueueRender({ projectId: projectId(c), ...input }));
-    return c.json({ jobId: job.id }, 202);
-  });
+  routes.post("/v1/projects/:id/renders", (c) => enqueueRenderResponse(dependencies, c));
   routes.post("/v1/projects/:id/snapshots", async (c) => {
     const input = parse(EnqueueSnapshotRequestSchema, await json(c), "snapshot enqueue payload is invalid");
     const job = valueOf(await dependencies.enqueueSnapshot({ projectId: projectId(c), ...input }));
@@ -266,7 +319,8 @@ export function createDeliveryLoopRoutes(dependencies: DeliveryLoopRouteDependen
   });
   routes.get("/v1/renders/:jobId/download", async (c) => {
     const job = await requireJob(dependencies.jobs, jobId(c));
-    if (job.type !== "render" || (job.status !== "succeeded" && job.status !== "partial")) {
+    if (job.projectId === null || job.type !== "render"
+      || (job.status !== "succeeded" && job.status !== "partial")) {
       fail({ code: ErrorCode.NotFound, message: "render artifact is not available" });
     }
     const path = (job.result as { artifactPath?: unknown } | null)?.artifactPath;

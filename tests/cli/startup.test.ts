@@ -5,7 +5,14 @@ import path from "node:path";
 
 import { describe, expect, it } from "vitest";
 
-import { createBootstrapNonce, runStartupSequence, startVidcomFoundation, StartupError, type StartupStepName } from "@vidcom/cli";
+import {
+  createBootstrapNonce,
+  runLeaseLossShutdown,
+  runStartupSequence,
+  startVidcomFoundation,
+  StartupError,
+  type StartupStepName,
+} from "@vidcom/cli";
 import { AppDataBackupStore, initializeDatabase, RENDER_OWNER_MARKER, SqliteJobStore } from "@vidcom/adapter";
 import type { ContentHash, ProjectId, RelPath } from "@vidcom/contracts";
 import type { AbsolutePath, JobId, ResolvedPath } from "@vidcom/core";
@@ -41,6 +48,21 @@ function steps(log: string[], fail?: StartupStepName) {
 }
 
 describe("startup order", () => {
+  it("runs the lease-loss hook before background shutdown and preserves teardown errors", async () => {
+    const lifecycle: string[] = [];
+    await expect(runLeaseLossShutdown(
+      async () => {
+        lifecycle.push("background.stop");
+        throw new Error("background failed");
+      },
+      () => { lifecycle.push("lease-lost"); },
+    )).rejects.toMatchObject({
+      name: "AggregateError",
+      errors: [expect.objectContaining({ message: "background failed" })],
+    });
+    expect(lifecycle).toEqual(["lease-lost", "background.stop"]);
+  });
+
   it("creates a nonce accepted by the 32-byte bootstrap contract", () => {
     expect(Buffer.from(createBootstrapNonce(), "base64url")).toHaveLength(32);
   });

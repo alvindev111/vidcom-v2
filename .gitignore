@@ -1,5 +1,7 @@
 node_modules/
 dist/
+.vidcom-runtime-source-cache/
+.vidcom-smoke-cache/
 out/
 coverage/
 test-results/

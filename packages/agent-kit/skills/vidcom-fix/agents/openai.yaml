@@ -1,4 +1,4 @@
-# x-vidcom-agent-kit: 2
+# x-vidcom-agent-kit: 8
 interface:
   display_name: "VidCom Fix"
   short_description: "Diagnose and fix VidCom projects"

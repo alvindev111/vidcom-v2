@@ -6,7 +6,7 @@ import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/
 import { LATEST_PROTOCOL_VERSION } from "@modelcontextprotocol/sdk/types.js";
 import { describe, expect, it } from "vitest";
 
-import { createMcpHttpHandlers, MCP_SERVER_INFO } from "@vidcom/mcp";
+import { createMcpHttpHandlers, MCP_SERVER_INFO, MCP_SERVER_INSTRUCTIONS } from "@vidcom/mcp";
 import { createTransportRegistry } from "./support";
 
 const fixture = fileURLToPath(new URL("./fixtures/stdio-server.ts", import.meta.url));
@@ -27,6 +27,7 @@ describe("legacy stdio transport", () => {
       await client.connect(transport);
       expect(LATEST_PROTOCOL_VERSION).toBe("2025-11-25");
       expect(client.getServerVersion()).toEqual(MCP_SERVER_INFO);
+      expect(client.getInstructions()).toBe(MCP_SERVER_INSTRUCTIONS);
 
       const listed = await client.listTools();
       expect(listed.tools.map((tool) => tool.name)).toEqual(["echo_project", "resource_error_probe"]);

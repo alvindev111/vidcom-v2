@@ -9,7 +9,7 @@ describe("resolveWordTimings", () => {
       { text: "chào", startSeconds: 0.4, endSeconds: 0.9 },
     ];
 
-    const resolved = resolveWordTimings({ engineWords, text: "Xin chào", durationSeconds: 1 });
+    const resolved = resolveWordTimings({ engineWords, text: "Xin chào", speechStartSeconds: 0, speechEndSeconds: 1 });
 
     expect(resolved).toEqual({ words: engineWords, source: "engine" });
   });
@@ -20,7 +20,7 @@ describe("resolveWordTimings", () => {
     const resolved = resolveWordTimings({
       engineWords: [],
       text: "Xin chào các bạn",
-      durationSeconds: 2,
+      speechStartSeconds: 0, speechEndSeconds: 2,
     });
 
     expect(resolved.source).toBe("estimated");
@@ -29,8 +29,24 @@ describe("resolveWordTimings", () => {
     expect(resolved.words.at(-1)?.endSeconds).toBe(2);
   });
 
+  it("keeps an estimate inside the speech, not in the pad around it", () => {
+    // Published narration carries silence at both ends so consecutive cues do not
+    // run into each other. Apportioning across the whole file put the first word
+    // inside that silence — and because only the engines that report no timings of
+    // their own take this path, it goes wrong on VieNeu and never on ElevenLabs.
+    const resolved = resolveWordTimings({
+      engineWords: [],
+      text: "Xin chào các bạn",
+      speechStartSeconds: 0.12,
+      speechEndSeconds: 2.12,
+    });
+
+    expect(resolved.words[0]?.startSeconds).toBe(0.12);
+    expect(resolved.words.at(-1)?.endSeconds).toBe(2.12);
+  });
+
   it("weights an estimate by word length rather than splitting evenly", () => {
-    const resolved = resolveWordTimings({ engineWords: [], text: "và chuyển", durationSeconds: 1 });
+    const resolved = resolveWordTimings({ engineWords: [], text: "và chuyển", speechStartSeconds: 0, speechEndSeconds: 1 });
 
     const [first, second] = resolved.words;
     // "chuyển" takes visibly longer to say than "và"; an even split puts the
@@ -43,7 +59,7 @@ describe("resolveWordTimings", () => {
     const resolved = resolveWordTimings({
       engineWords: [],
       text: "một hai ba bốn năm sáu bảy",
-      durationSeconds: 3.333,
+      speechStartSeconds: 0, speechEndSeconds: 3.333,
     });
 
     expect(resolved.words.at(-1)?.endSeconds).toBe(3.333);
@@ -57,7 +73,7 @@ describe("resolveWordTimings", () => {
     const resolved = resolveWordTimings({
       engineWords: [{ text: "xin chào", startSeconds: 1, endSeconds: 2 }],
       text: "xin chào",
-      durationSeconds: 2,
+      speechStartSeconds: 0, speechEndSeconds: 2,
     });
 
     // One contract for consumers, whether the engine reports words or phrases.
@@ -70,18 +86,18 @@ describe("resolveWordTimings", () => {
     const resolved = resolveWordTimings({
       engineWords: [],
       text: "Xin chào [ngắt ngắn] các bạn",
-      durationSeconds: 2,
+      speechStartSeconds: 0, speechEndSeconds: 2,
     });
 
     expect(resolved.words.map((word) => word.text)).toEqual(["Xin", "chào", "các", "bạn"]);
   });
 
   it("returns nothing for a cue with no words to speak", () => {
-    expect(resolveWordTimings({ engineWords: [], text: "[cười]", durationSeconds: 1 }).words).toEqual([]);
+    expect(resolveWordTimings({ engineWords: [], text: "[cười]", speechStartSeconds: 0, speechEndSeconds: 1 }).words).toEqual([]);
   });
 
   it("returns nothing rather than dividing by a duration it does not have", () => {
-    expect(resolveWordTimings({ engineWords: [], text: "xin chào", durationSeconds: 0 }).words).toEqual([]);
+    expect(resolveWordTimings({ engineWords: [], text: "xin chào", speechStartSeconds: 0, speechEndSeconds: 0 }).words).toEqual([]);
   });
 });
 

@@ -1,4 +1,9 @@
-import { ErrorCode, type DomainError, type Era } from "@vidcom/contracts";
+import {
+  ErrorCode,
+  MCP_PUBLIC_ERROR_CODES,
+  type DomainError,
+  type Era,
+} from "@vidcom/contracts";
 
 export const MCP_INVALID_PARAMS = -32602;
 export const MCP_INTERNAL_ERROR = -32603;
@@ -12,6 +17,17 @@ export interface MappedMcpError {
     error: DomainError;
     retryable: false;
     guidance?: string;
+  };
+}
+
+const publicErrorCodes = new Set<ErrorCode>(MCP_PUBLIC_ERROR_CODES);
+
+/** Prevents packaging-only boundary details from expanding the published MCP error vocabulary. */
+function publicMcpError(error: DomainError): DomainError {
+  if (publicErrorCodes.has(error.code)) return error;
+  return {
+    code: ErrorCode.Internal,
+    message: "tool failed outside the published MCP error contract",
   };
 }
 
@@ -36,6 +52,26 @@ function protocolCode(error: DomainError, era: Era): number {
     case ErrorCode.TtsProviderUnavailable:
     case ErrorCode.TtsQuotaExceeded:
     case ErrorCode.TtsSynthesisFailed:
+    case ErrorCode.BridgeCredentialUnavailable:
+    case ErrorCode.BridgeCredentialInvalid:
+    case ErrorCode.BridgeRotationInProgress:
+    case ErrorCode.PathPermissionDenied:
+    case ErrorCode.WorkspaceBusy:
+    case ErrorCode.WorkspaceSwitching:
+    case ErrorCode.WorkspaceUnavailable:
+    case ErrorCode.DownloadTlsUntrusted:
+    case ErrorCode.DownloadUnavailable:
+    case ErrorCode.DaemonIdentityMismatch:
+    case ErrorCode.DaemonUnavailable:
+    case ErrorCode.CompilerUnavailable:
+    case ErrorCode.RuntimeManifestInvalid:
+    case ErrorCode.RuntimeExtractionIncomplete:
+    case ErrorCode.BootstrapLockTimeout:
+    case ErrorCode.PathTimeout:
+    // The agent terminal is a UI capability, so an MCP caller can neither cause
+    // nor fix either of these; both are machine state to it.
+    case ErrorCode.AgentUnavailable:
+    case ErrorCode.AgentSessionLimit:
       return MCP_INTERNAL_ERROR;
     case ErrorCode.SchemaInvalid:
     case ErrorCode.PathRequired:
@@ -74,21 +110,25 @@ function protocolCode(error: DomainError, era: Era): number {
     case ErrorCode.RollbackPayloadPruned:
     case ErrorCode.TtsCredentialMissing:
     case ErrorCode.TtsVoiceNotSupported:
+    case ErrorCode.PayloadTooLarge:
+    case ErrorCode.BrowseTokenInvalid:
+    case ErrorCode.ProjectImportConflict:
       return MCP_INVALID_PARAMS;
   }
 }
 
 /** Sole era-aware DomainError mapping used by every MCP transport. */
 export function mapMcpError(error: DomainError, era: Era): MappedMcpError {
+  const publishedError = publicMcpError(error);
   return {
-    code: protocolCode(error, era),
-    message: error.message,
+    code: protocolCode(publishedError, era),
+    message: publishedError.message,
     data: {
-      error,
+      error: publishedError,
       retryable: false,
-      ...(error.code === ErrorCode.RecoveryRequired
+      ...(publishedError.code === ErrorCode.RecoveryRequired
         ? { guidance: "Inspect and resolve the reported journal before retrying this write." }
-        : error.code === ErrorCode.CommittedResponseError
+        : publishedError.code === ErrorCode.CommittedResponseError
           ? { guidance: "The mutation is already committed. Do not retry; inspect the reported revision identity." }
           : {}),
     },

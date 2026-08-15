@@ -6,6 +6,7 @@ import {
   IdentifierSchema,
   JobSchema,
   MAX_SOURCE_BYTES,
+  PreviewSettingsPatchSchema,
   PreviewSettingsSchema,
   ProjectSummarySchema,
   ProjectRecoveryStatusSchema,
@@ -20,7 +21,27 @@ import {
   TtsProviderSchema,
 } from "./tts";
 import { InstallAgentKitInputSchema, InstallAgentKitOutputSchema } from "./agent-kit";
+import {
+  ImportBgmInputSchema,
+  ImportBgmOutputSchema,
+  InstallBgmInputSchema,
+  InstallBgmOutputSchema,
+  ListBgmBedsInputSchema,
+  ListBgmBedsOutputSchema,
+  RecordBgmLicenseInputSchema,
+  RecordBgmLicenseOutputSchema,
+  SearchBgmInputSchema,
+  SearchBgmOutputSchema,
+} from "./bgm";
+import { NarrationCueInputSchema } from "./delivery-loop-http";
+import { ErrorCode } from "./errors";
 import { MotionLibraryIdSchema } from "./motion-libraries";
+import {
+  ColorPaletteCategorySchema,
+  ColorPaletteIdSchema,
+  ColorPaletteMoodSchema,
+  ColorPaletteSchema,
+} from "./color-palettes";
 
 const CanonicalRelativePathSchema = RelativePathSchema.regex(
   /^(?!\/)(?![A-Za-z]:)(?!.*\\)(?!.*\0)(?!.*\/\/)(?!\.{1,2}(?:\/|$))(?!.*\/\.{1,2}(?:\/|$)).+$/,
@@ -287,8 +308,78 @@ export const StartTtsOutputSchema = z.strictObject({
 
 /** Input for `get_job_status`. */
 export const GetJobStatusInputSchema = z.strictObject({ jobId: IdentifierSchema });
+/**
+ * Error codes already published by the MCP job contract before packaging support.
+ *
+ * Packaging-only failures remain available to HTTP, bridge, and internal callers,
+ * but adding them here would be a breaking `tools/list` schema change.
+ */
+export const MCP_PUBLIC_ERROR_CODES = [
+  ErrorCode.SchemaInvalid,
+  ErrorCode.PathRequired,
+  ErrorCode.PathInvalid,
+  ErrorCode.VersionFormatLegacy,
+  ErrorCode.PreconditionRequired,
+  ErrorCode.AuthRequired,
+  ErrorCode.AuthNonceInvalid,
+  ErrorCode.HostNotAllowed,
+  ErrorCode.OriginNotAllowed,
+  ErrorCode.AssetNotAllowed,
+  ErrorCode.PathOutsideProject,
+  ErrorCode.ProjectNotFound,
+  ErrorCode.ProjectInvalid,
+  ErrorCode.IdentityParseError,
+  ErrorCode.CompositionParseError,
+  ErrorCode.NoComposition,
+  ErrorCode.NoScenes,
+  ErrorCode.NotFound,
+  ErrorCode.WriteConflict,
+  ErrorCode.IdempotencyKeyReused,
+  ErrorCode.WorkspaceLeaseLost,
+  ErrorCode.TimingInvalid,
+  ErrorCode.DurationOverflow,
+  ErrorCode.SceneNotFound,
+  ErrorCode.SdkRejected,
+  ErrorCode.NoFile,
+  ErrorCode.TooLarge,
+  ErrorCode.UnsupportedMedia,
+  ErrorCode.Internal,
+  ErrorCode.StorageUnavailable,
+  ErrorCode.WorkspaceLeaseDenied,
+  ErrorCode.ApprovalRequired,
+  ErrorCode.ApprovalExpired,
+  ErrorCode.ApprovalInvalid,
+  ErrorCode.CredentialInvalid,
+  ErrorCode.ToolNotAvailableInEra,
+  ErrorCode.ReferencedByComposition,
+  ErrorCode.BackupFailed,
+  ErrorCode.BackupExpired,
+  ErrorCode.DuplicateMutationTarget,
+  ErrorCode.RecoveryRequired,
+  ErrorCode.RemoteAssetNotLocal,
+  ErrorCode.RenderBinaryMissing,
+  ErrorCode.SubTimelineReadinessTimeout,
+  ErrorCode.ProcessTerminationUnverified,
+  ErrorCode.ConfirmationRequired,
+  ErrorCode.RollbackPayloadPruned,
+  ErrorCode.CommittedResponseError,
+  ErrorCode.TtsProviderUnavailable,
+  ErrorCode.TtsCredentialMissing,
+  ErrorCode.TtsVoiceNotSupported,
+  ErrorCode.TtsQuotaExceeded,
+  ErrorCode.TtsSynthesisFailed,
+] as const;
+
+const McpPublicErrorDetailSchema = z.strictObject({
+  code: z.enum(MCP_PUBLIC_ERROR_CODES),
+  message: z.string().min(1),
+  field: z.string().min(1).optional(),
+  details: z.record(z.string(), z.unknown()).optional(),
+});
+
 /** Output for `get_job_status`. */
 export const GetJobStatusOutputSchema = JobSchema.extend({
+  error: McpPublicErrorDetailSchema.nullable(),
   outcome: z.enum(["succeeded", "partial", "failed", "cancelled"]).nullable(),
   pollAfterMs: z.union([z.literal(250), z.literal(1000)]).nullable(),
 });
@@ -301,6 +392,7 @@ export const ValidateProjectOutputSchema = z.strictObject({
 });
 export const StartRenderInputSchema = z.strictObject({
   ...projectIdInput,
+  expectedSourceRevision: z.number().int().nonnegative(),
   bestEffort: z.boolean().optional(),
   renderPresetId: IdentifierSchema.optional(),
   idempotencyKey: z.string().min(1).max(255).optional(),
@@ -311,5 +403,345 @@ export const StartSnapshotInputSchema = z.strictObject({
 });
 export const StartDeliveryJobOutputSchema = z.strictObject({ jobId: IdentifierSchema });
 export { InstallAgentKitInputSchema, InstallAgentKitOutputSchema };
+
+/** Input for `create_project`; custom presets carry their own dimensions. */
+export const CreateProjectInputSchema = z.strictObject({
+  name: z.string().min(1).max(255),
+  presetId: z.enum(["vertical-shorts", "horizontal-youtube", "custom"]),
+  width: z.number().int().optional(),
+  height: z.number().int().optional(),
+  fps: z.number().int().optional(),
+});
+/** Output for `create_project`. */
+export const CreateProjectOutputSchema = z.strictObject({
+  projectId: IdentifierSchema,
+  slug: IdentifierSchema,
+});
+
+/** Input for `adopt_project`; the slug is a workspace folder, never a path. */
+export const AdoptProjectInputSchema = z.strictObject({ slug: IdentifierSchema });
+/** Output for `adopt_project`. */
+export const AdoptProjectOutputSchema = z.strictObject({ projectId: IdentifierSchema });
+
+/** Input for `rename_project`. */
+export const RenameProjectInputSchema = z.strictObject({
+  ...projectIdInput,
+  name: z.string().min(1).max(255),
+});
+/** Output for `rename_project`. */
+export const RenameProjectOutputSchema = z.strictObject({ slug: IdentifierSchema });
+
+/** Input for `delete_project`; confirmation and an approval grant are both required. */
+export const DeleteProjectInputSchema = z.strictObject({
+  ...projectIdInput,
+  confirmed: z.literal(true),
+  grantId,
+});
+/** Output for `delete_project`. */
+export const DeleteProjectOutputSchema = z.strictObject({ backupId: IdentifierSchema });
+
+/** Largest asset page one `list_project_assets` call returns. */
+export const MAX_LISTED_PROJECT_ASSETS = 500;
+/** Asset classes an agent can act on without opening the bytes. */
+export const ProjectAssetKindSchema = z.enum(["audio", "image", "video", "font", "other"]);
+/** Input for `list_project_assets`. */
+export const ListProjectAssetsInputSchema = z.strictObject({
+  ...projectIdInput,
+  directory: RelativePathSchema.optional(),
+});
+/** Output for `list_project_assets`. */
+export const ListProjectAssetsOutputSchema = z.strictObject({
+  assets: z.array(z.strictObject({
+    path: CanonicalRelativePathSchema,
+    kind: ProjectAssetKindSchema,
+    byteSize: z.number().int().nonnegative(),
+    modifiedAt: z.string().min(1),
+    referencedByPreviewSettings: z.boolean(),
+  })).max(MAX_LISTED_PROJECT_ASSETS),
+  truncated: z.boolean(),
+});
+
+/** Input for `list_color_palettes`; omit category to receive the complete small catalog. */
+export const ListColorPalettesInputSchema = z.strictObject({
+  category: ColorPaletteCategorySchema.optional(),
+  mood: ColorPaletteMoodSchema.optional(),
+});
+/** Output for `list_color_palettes`, including the fallback used when no color direction exists. */
+export const ListColorPalettesOutputSchema = z.strictObject({
+  defaultPaletteId: ColorPaletteIdSchema,
+  palettes: z.array(ColorPaletteSchema).max(20),
+});
+
+/** Input for `set_preview_settings`. */
+export const SetPreviewSettingsInputSchema = z.strictObject({
+  ...projectIdInput,
+  patch: PreviewSettingsPatchSchema,
+  expectedRevision: z.number().int().nonnegative(),
+});
+/** Output for `set_preview_settings`. */
+export const SetPreviewSettingsOutputSchema = z.strictObject({
+  previewSettings: PreviewSettingsSchema,
+  revision: z.number().int().nonnegative(),
+  diagnostics: z.array(DiagnosticSchema),
+});
+
+/** Authored and synthesis state of one narration cue, without engine word timings. */
+export const NarrationCueStateSchema = z.strictObject({
+  cueId: IdentifierSchema,
+  text: z.string(),
+  voice: z.string(),
+  offsetSeconds: z.number().nonnegative(),
+  durationSeconds: z.number().nonnegative().nullable(),
+  staleSince: z.string().nullable(),
+  status: z.enum(["mock", "generated"]).nullable(),
+  audioPath: RelativePathSchema.nullable(),
+});
+
+/** Input for `get_narration_cues`. */
+export const GetNarrationCuesInputSchema = z.strictObject({
+  ...projectIdInput,
+  sceneId: IdentifierSchema,
+});
+/** Output for `get_narration_cues`; a scene with no sidecar returns an empty list. */
+export const GetNarrationCuesOutputSchema = z.strictObject({
+  cues: z.array(NarrationCueStateSchema),
+  contentHash: ContentHashSchema.nullable(),
+});
+
+/** Input for `replace_narration_cues`. */
+export const ReplaceNarrationCuesInputSchema = z.strictObject({
+  ...projectIdInput,
+  sceneId: IdentifierSchema,
+  cues: z.array(NarrationCueInputSchema).max(MAX_TTS_BATCH_CUES),
+  expectedContentHash: ContentHashSchema.nullable(),
+});
+/** Input for `patch_narration_cue`. */
+export const PatchNarrationCueInputSchema = z.strictObject({
+  ...projectIdInput,
+  sceneId: IdentifierSchema,
+  cueId: IdentifierSchema,
+  text: z.string().optional(),
+  voice: z.string().min(1).optional(),
+  offsetSeconds: z.number().nonnegative().optional(),
+  expectedContentHash: ContentHashSchema,
+}).refine(
+  (input) => input.text !== undefined || input.voice !== undefined || input.offsetSeconds !== undefined,
+  { message: "at least one cue field is required", path: ["text"] },
+);
+/** Output shared by both narration cue writes. */
+export const NarrationCuesWriteOutputSchema = z.strictObject({
+  cues: z.array(NarrationCueStateSchema),
+  contentHash: ContentHashSchema,
+  revision: z.number().int().nonnegative(),
+});
+
+/** Input for `cancel_job`. */
+export const CancelJobInputSchema = z.strictObject({ jobId: IdentifierSchema });
+/** Output for `cancel_job`; a terminal job reports requested=false without changing. */
+export const CancelJobOutputSchema = z.strictObject({
+  jobId: IdentifierSchema,
+  status: JobSchema.shape.status,
+  requested: z.boolean(),
+});
+
+/** Input for `get_render_output`. */
+export const GetRenderOutputInputSchema = z.strictObject({ jobId: IdentifierSchema });
+/** Output for `get_render_output`; the artifact stays on disk instead of crossing the wire. */
+export const GetRenderOutputOutputSchema = z.strictObject({
+  jobId: IdentifierSchema,
+  projectId: IdentifierSchema,
+  path: CanonicalRelativePathSchema,
+  absolutePath: z.string().min(1),
+  byteSize: z.number().int().nonnegative(),
+  contentHash: ContentHashSchema,
+  mediaType: z.string().min(1),
+  outcome: z.enum(["succeeded", "partial"]),
+});
+
+/** Runtime-resolvable contract for one public MCP tool. */
+export interface ToolSchemaEntry {
+  input: z.ZodType;
+  output: z.ZodType;
+  level: ToolLevel;
+}
+
+/** Canonical schema and authorization-level catalogue for every public MCP tool. */
+export const TOOL_SCHEMA_CATALOGUE = {
+  adopt_project: {
+    input: AdoptProjectInputSchema,
+    output: AdoptProjectOutputSchema,
+    level: "write",
+  },
+  cancel_job: {
+    input: CancelJobInputSchema,
+    output: CancelJobOutputSchema,
+    level: "job",
+  },
+  import_bgm: {
+    input: ImportBgmInputSchema,
+    output: ImportBgmOutputSchema,
+    level: "write",
+  },
+  install_bgm: {
+    input: InstallBgmInputSchema,
+    output: InstallBgmOutputSchema,
+    level: "write",
+  },
+  list_bgm_beds: {
+    input: ListBgmBedsInputSchema,
+    output: ListBgmBedsOutputSchema,
+    level: "read",
+  },
+  search_bgm: {
+    input: SearchBgmInputSchema,
+    output: SearchBgmOutputSchema,
+    level: "read",
+  },
+  create_project: {
+    input: CreateProjectInputSchema,
+    output: CreateProjectOutputSchema,
+    level: "write",
+  },
+  create_scene: {
+    input: CreateSceneInputSchema,
+    output: CreateSceneOutputSchema,
+    level: "write",
+  },
+  delete_file: {
+    input: DeleteFileInputSchema,
+    output: DeleteFileOutputSchema,
+    level: "destructive",
+  },
+  delete_project: {
+    input: DeleteProjectInputSchema,
+    output: DeleteProjectOutputSchema,
+    level: "destructive",
+  },
+  delete_scene: {
+    input: DeleteSceneInputSchema,
+    output: DeleteSceneOutputSchema,
+    level: "destructive",
+  },
+  get_job_status: {
+    input: GetJobStatusInputSchema,
+    output: GetJobStatusOutputSchema,
+    level: "read",
+  },
+  get_narration_cues: {
+    input: GetNarrationCuesInputSchema,
+    output: GetNarrationCuesOutputSchema,
+    level: "read",
+  },
+  get_project_context: {
+    input: GetProjectContextInputSchema,
+    output: GetProjectContextOutputSchema,
+    level: "read",
+  },
+  get_render_output: {
+    input: GetRenderOutputInputSchema,
+    output: GetRenderOutputOutputSchema,
+    level: "read",
+  },
+  install_agent_kit: {
+    input: InstallAgentKitInputSchema,
+    output: InstallAgentKitOutputSchema,
+    level: "write",
+  },
+  install_motion_library: {
+    input: InstallMotionLibraryInputSchema,
+    output: InstallMotionLibraryOutputSchema,
+    level: "write",
+  },
+  list_project_assets: {
+    input: ListProjectAssetsInputSchema,
+    output: ListProjectAssetsOutputSchema,
+    level: "read",
+  },
+  list_color_palettes: {
+    input: ListColorPalettesInputSchema,
+    output: ListColorPalettesOutputSchema,
+    level: "read",
+  },
+  list_projects: {
+    input: ListProjectsInputSchema,
+    output: ListProjectsOutputSchema,
+    level: "read",
+  },
+  list_scenes: {
+    input: ListScenesInputSchema,
+    output: ListScenesOutputSchema,
+    level: "read",
+  },
+  list_tts_voices: {
+    input: ListTtsVoicesInputSchema,
+    output: ListTtsVoicesOutputSchema,
+    level: "read",
+  },
+  patch_narration_cue: {
+    input: PatchNarrationCueInputSchema,
+    output: NarrationCuesWriteOutputSchema,
+    level: "write",
+  },
+  record_bgm_license: {
+    input: RecordBgmLicenseInputSchema,
+    output: RecordBgmLicenseOutputSchema,
+    level: "write",
+  },
+  read_composition: {
+    input: ReadCompositionInputSchema,
+    output: ReadCompositionOutputSchema,
+    level: "read",
+  },
+  rename_project: {
+    input: RenameProjectInputSchema,
+    output: RenameProjectOutputSchema,
+    level: "write",
+  },
+  replace_narration_cues: {
+    input: ReplaceNarrationCuesInputSchema,
+    output: NarrationCuesWriteOutputSchema,
+    level: "write",
+  },
+  save_file: {
+    input: SaveFileInputSchema,
+    output: SaveFileOutputSchema,
+    level: "write",
+  },
+  set_preview_settings: {
+    input: SetPreviewSettingsInputSchema,
+    output: SetPreviewSettingsOutputSchema,
+    level: "write",
+  },
+  set_scene_timing: {
+    input: SetSceneTimingInputSchema,
+    output: SetSceneTimingOutputSchema,
+    level: "write",
+  },
+  set_text: {
+    input: SetTextInputSchema,
+    output: SetTextOutputSchema,
+    level: "write",
+  },
+  start_render: {
+    input: StartRenderInputSchema,
+    output: StartDeliveryJobOutputSchema,
+    level: "job",
+  },
+  start_snapshot: {
+    input: StartSnapshotInputSchema,
+    output: StartDeliveryJobOutputSchema,
+    level: "job",
+  },
+  start_tts: {
+    input: StartTtsInputSchema,
+    output: StartTtsOutputSchema,
+    level: "job",
+  },
+  validate_project: {
+    input: ValidateProjectInputSchema,
+    output: ValidateProjectOutputSchema,
+    level: "read",
+  },
+} as const satisfies Record<string, ToolSchemaEntry>;
 
 export type SceneContext = z.infer<typeof SceneContextSchema>;

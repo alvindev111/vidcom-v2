@@ -1,4 +1,12 @@
 import type {
+  BgmBed,
+  BgmBedId,
+  BgmLibraryEntry,
+  BgmLibrarySource,
+  BgmLicense,
+  BgmProviderProvenance,
+  BgmProviderTrack,
+  BgmProviderTrackRef,
   ContentHash,
   Diagnostic,
   DomainError,
@@ -9,7 +17,7 @@ import type {
   RelPath,
 } from "@vidcom/contracts";
 
-import type { AbsolutePath, BinaryContent, CompositionModel, CompositionOp, FileContent, FileNode, FileStat, ProjectRef } from "../domain/models";
+import type { AbsolutePath, BinaryContent, CompositionModel, CompositionOp, CompositionSource, FileContent, FileNode, FileStat, FontCompatibilityIssue, ProjectRef } from "../domain/models";
 import type { MotionLibrary } from "../domain/motion-libraries";
 import type { Result } from "../error/result";
 import type {
@@ -26,6 +34,7 @@ import type {
   PathPurpose,
   PathRejection,
   PendingMutation,
+  PendingToolAudit,
   ProjectRegistration,
   PreviewSettings,
   ResolvedPath,
@@ -139,7 +148,14 @@ export interface RenderProjectPort {
 }
 
 export interface RenderBinaryProbeResult {
-  hyperframesCommand: readonly [string, string];
+  /**
+   * Executable plus its arguments, already in the right shape to spawn.
+   *
+   * Not a fixed pair: a packaged artifact has to pass an internal sentinel
+   * before the script path, because its execPath is the vidcom binary rather
+   * than node.
+   */
+  hyperframesCommand: readonly [string, ...string[]];
   browserPath: AbsolutePath;
   ffmpegPath: AbsolutePath;
   ffprobePath: AbsolutePath;
@@ -147,7 +163,14 @@ export interface RenderBinaryProbeResult {
 }
 
 export interface BinaryProbePort {
-  probe(): Promise<Result<RenderBinaryProbeResult, DomainError>>;
+  /**
+   * Resolves the shipped render toolchain for one project.
+   *
+   * The project root is required even though binary paths themselves are
+   * process-wide: the adapter also compares the project's declared
+   * HyperFrames version with the version that this toolchain actually ships.
+   */
+  probe(projectRoot: AbsolutePath): Promise<Result<RenderBinaryProbeResult, DomainError>>;
 }
 
 /** Adapter-owned HyperFrames check execution; non-zero finding exits remain available results. */
@@ -155,9 +178,67 @@ export interface DiagnosticsLintPort {
   check(ref: ProjectRef): Promise<{ available: boolean; diagnostics: Diagnostic[] }>;
 }
 
+/** Inspects authored UTF-8 text against the exact project-local font bytes selected by CSS. */
+export interface FontCompatibilityPort {
+  /** Returns factual encoding and glyph findings; an empty list means every inspected run is verified. */
+  inspect(ref: ProjectRef, sources: readonly CompositionSource[]): Promise<FontCompatibilityIssue[]>;
+}
+
 /** Reads a pinned motion library's source from wherever the adapter installs it. */
 export interface MotionLibraryFilesPort {
   read(library: MotionLibrary): Promise<Result<Array<{ projectPath: RelPath; content: string }>, DomainError>>;
+}
+
+/** Renders a background bed from its recipe; deterministic for one bed and length. */
+export interface BgmSynthPort {
+  render(bed: BgmBed, seconds: number): Uint8Array;
+}
+
+export interface BgmProviderSearchResult {
+  tracks: BgmProviderTrack[];
+  providers: Array<{
+    providerId: string;
+    status: "ok" | "empty" | "unavailable";
+    resultCount: number;
+    message: string | null;
+  }>;
+}
+
+/** Aggregate remote BGM catalogue; provider failures remain isolated and visible. */
+export interface BgmProviderPort {
+  /** Searches every configured provider and merges openly licensed candidates. */
+  search(input: { mood: string; limit: number }): Promise<BgmProviderSearchResult>;
+  /** Downloads the exact chosen track; it never substitutes a different work. */
+  download(ref: BgmProviderTrackRef): Promise<Result<{ track: BgmProviderTrack; bytes: Uint8Array }, DomainError>>;
+}
+
+/**
+ * The machine's reusable BGM library, with the licence each imported track was
+ * declared under. Machine-level rather than per project: a bed is worth having
+ * everywhere on this install, and the ledger is the only record of what a track
+ * may legally be used for.
+ */
+export interface BgmLibraryPort {
+  list(): Promise<BgmLibraryEntry[]>;
+  /** Whether a shipped track's audio is present in this build. */
+  hasShipped(filename: string): Promise<boolean>;
+  /** Licences this install recorded for shipped tracks, keyed by track id. */
+  shippedLicenses(): Promise<Record<string, BgmLicense>>;
+  /** Records what a shipped track may be used for; the catalogue ships `unknown`. */
+  recordShippedLicense(trackId: string, license: BgmLicense): Promise<void>;
+  /** Bytes of a shipped track; `null` when the build omitted the audio. */
+  readShipped(filename: string): Promise<Uint8Array | null>;
+  /** Track bytes, or `null` when the entry is gone from disk. */
+  read(id: string): Promise<Uint8Array | null>;
+  add(input: {
+    name: string;
+    extension: string;
+    bytes: Uint8Array;
+    source: BgmLibrarySource;
+    bedId: BgmBedId | null;
+    license: BgmLicense;
+    provenance?: BgmProviderProvenance;
+  }): Promise<Result<{ entry: BgmLibraryEntry; alreadyPresent: boolean }, DomainError>>;
 }
 
 /** Filesystem access for the selected workspace; every method performs I/O. */
@@ -261,8 +342,14 @@ export interface CompositionPort {
 
 /** Durable unit of work joining mutation, revision, audit, entity and event records. */
 export interface MutationJournalPort {
-  /** Persists a pending intent before filesystem I/O and returns its durable ID. */
-  begin(intent: MutationIntent): Promise<JournalId>;
+  /**
+   * Persists a pending intent before filesystem I/O and returns its durable ID.
+   *
+   * `toolAudit` is present only for an MCP-invoked mutation; the journal then owns
+   * that invocation's audit, which is what the tool registry checks before it
+   * reports the write as durable.
+   */
+  begin(intent: MutationIntent, toolAudit?: PendingToolAudit | null): Promise<JournalId>;
   /** Atomically commits all mutation-owned database rows and returns the assigned revision. */
   commit(id: JournalId, result: MutationResult): Promise<number>;
   /** Marks an intent aborted with its stable reason; this performs database I/O. */
@@ -294,6 +381,8 @@ export interface MutationJournalPort {
     seed: EntitySeed,
     intent: MutationIntent,
     duplicateFrom: ProjectId | null,
+    /** Durable MCP context; when present the bootstrap journal owns this invocation's audit. */
+    toolAudit?: PendingToolAudit | null,
   ): Promise<JournalId>;
   /** Recovers a completed filesystem write and marks the journal `recovered` atomically. */
   recover(id: JournalId, result: MutationResult): Promise<number>;
@@ -496,6 +585,8 @@ export interface EventOutboxPort {
 export interface JobStorePort {
   /** Enqueues or returns an identical prior job; a reused key with different input is a conflict. */
   enqueue(job: NewJob): Promise<{ job: Job; reused: boolean } | { conflict: "idempotency_key_reused" }>;
+  /** Reads the newest job for an application-owned idempotency key. */
+  findIdempotent?(projectId: ProjectId | null, type: string, idempotencyKey: string): Promise<Job | null>;
   /** Reads one job; `null` means the ID does not exist. */
   get(id: JobId): Promise<Job | null>;
   /** Reads durable process termination evidence without exposing internal job input. */
@@ -506,12 +597,14 @@ export interface JobStorePort {
   listProjectJobs?(projectId: ProjectId): Promise<Job[]>;
   /** True only while a queued/running job currently blocks project rename or deletion. */
   hasRunningProjectJob?(projectId: ProjectId): Promise<boolean>;
+  /** True while any job in this workspace is still queued or running. */
+  hasNonTerminalJob?(): Promise<boolean>;
   /** Claims a queued job atomically; `false` means another worker won or it is not queued. */
   claim(id: JobId, workerId: string): Promise<boolean>;
   /** Reads the oldest eligible queued job; `null` means none is ready. */
   nextQueued(
     types: string[],
-    excluded: readonly { projectId: ProjectId; type: string }[],
+    excluded: readonly { projectId: ProjectId | null; type: string }[],
   ): Promise<Job | null>;
   /** Persists bounded progress and an optional stage; `null` clears the stage. */
   updateProgress(id: JobId, progress: number, stage: string | null): Promise<void>;

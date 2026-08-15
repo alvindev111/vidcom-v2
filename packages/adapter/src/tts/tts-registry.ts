@@ -16,7 +16,12 @@ import {
   type TtsWordTiming,
 } from "@vidcom/core";
 
-import { audioToolchainAvailable, normalizeCueAudio, NARRATION_SAMPLE_RATE } from "./tts-audio-normalize";
+import {
+  audioToolchainAvailable,
+  normalizeCueAudio,
+  NARRATION_SAMPLE_RATE,
+  type NormalizedCueAudio,
+} from "./tts-audio-normalize";
 import { assertSafeCueId, TtsProviderError, type TtsProviderAdapter } from "./tts-provider";
 import { withTtsScratch } from "./tts-scratch";
 
@@ -216,6 +221,8 @@ export class TtsRegistry implements TtsPort {
           cueId: cue.id,
           audio: await readFile(normalized.path),
           durationSeconds: normalized.durationSeconds,
+          speechStartSeconds: normalized.leadPadSeconds,
+          speechDurationSeconds: normalized.speechDurationSeconds,
           words: rebaseWordTimings(audio.words, normalized),
           metadata: {
             ...audio.metadata,
@@ -226,6 +233,8 @@ export class TtsRegistry implements TtsPort {
             effectiveRatePercent: audio.rateApplied ? request.ratePercent : ratePercent,
             sampleRate: NARRATION_SAMPLE_RATE,
             trimStartSeconds: normalized.trimStartSeconds,
+            leadPadSeconds: normalized.leadPadSeconds,
+            speechDurationSeconds: normalized.speechDurationSeconds,
           },
         });
       }
@@ -238,32 +247,42 @@ export class TtsRegistry implements TtsPort {
  * Engine word timings moved onto the audio VidCom actually publishes.
  *
  * The engine reports timings against its own untrimmed output. Normalization
- * removes the leading silence and may change the tempo, so every timestamp is
- * late by `trimStartSeconds` and then stretched by the tempo ratio. Copying them
- * through unchanged put the first word half a second after the audio it labels.
+ * removes the leading silence, may change the tempo, and then puts a pad in
+ * front of the speech — so every timestamp is late by `trimStartSeconds`,
+ * stretched by the tempo ratio, and finally early by `leadPadSeconds`. Copying
+ * them through unchanged put the first word half a second after the audio it
+ * labels; applying only the trim moved every word into the pad, ahead of the
+ * speech it names.
  *
- * Timings that fall outside the normalized duration are dropped rather than
- * clamped — a caption pinned to the last frame is more obviously wrong than a
- * missing one, and the whole set is discarded if nothing survives.
+ * Scaled against `speechDurationSeconds` rather than the published duration:
+ * the padded length is longer than the audio these timings describe, and using
+ * it stretched every timestamp by the pad.
+ *
+ * Timings that fall outside the speech are dropped rather than clamped — a
+ * caption pinned to the last frame is more obviously wrong than a missing one,
+ * and the whole set is discarded if nothing survives.
  */
 function rebaseWordTimings(
   words: readonly TtsWordTiming[],
-  normalized: { durationSeconds: number; trimStartSeconds: number },
+  normalized: Pick<NormalizedCueAudio, "speechDurationSeconds" | "trimStartSeconds" | "leadPadSeconds">,
 ): readonly TtsWordTiming[] {
   if (words.length === 0) return words;
   const sourceSpan = Math.max(...words.map((word) => word.endSeconds)) - normalized.trimStartSeconds;
   // Tempo changes scale the whole track; deriving the ratio from the measured
   // durations covers both atempo and any resampling the filter chain did.
-  const scale = sourceSpan > 0 ? Math.min(1, normalized.durationSeconds / sourceSpan) : 1;
+  const scale = sourceSpan > 0 ? Math.min(1, normalized.speechDurationSeconds / sourceSpan) : 1;
+  const speechEndSeconds = normalized.leadPadSeconds + normalized.speechDurationSeconds;
+  const onPublishedAudio = (seconds: number) =>
+    rounded((seconds - normalized.trimStartSeconds) * scale + normalized.leadPadSeconds);
   const rebased: TtsWordTiming[] = [];
   for (const word of words) {
-    const startSeconds = rounded((word.startSeconds - normalized.trimStartSeconds) * scale);
-    const endSeconds = rounded((word.endSeconds - normalized.trimStartSeconds) * scale);
-    if (endSeconds <= 0 || startSeconds >= normalized.durationSeconds) continue;
+    const startSeconds = onPublishedAudio(word.startSeconds);
+    const endSeconds = onPublishedAudio(word.endSeconds);
+    if (endSeconds <= normalized.leadPadSeconds || startSeconds >= speechEndSeconds) continue;
     rebased.push({
       text: word.text,
-      startSeconds: Math.max(0, startSeconds),
-      endSeconds: Math.min(normalized.durationSeconds, endSeconds),
+      startSeconds: Math.max(normalized.leadPadSeconds, startSeconds),
+      endSeconds: Math.min(speechEndSeconds, endSeconds),
     });
   }
   return rebased;

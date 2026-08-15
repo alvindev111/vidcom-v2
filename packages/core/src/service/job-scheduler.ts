@@ -225,13 +225,13 @@ export class JobScheduler {
         const bounded = Math.min(1, Math.max(0, progress));
         if (bounded < lastProgress || (bounded === lastProgress && stage === lastStage)) return;
         const now = this.clock.now().getTime();
-        if (bounded > lastProgress && bounded < 1 && now - lastProgressAt < 250) return;
+        if (bounded > lastProgress && bounded < 1 && stage === lastStage && now - lastProgressAt < 250) return;
         lastProgress = bounded;
         lastStage = stage;
         lastProgressAt = now;
         await this.store.updateProgress(job.id as JobId, bounded, stage);
         const persisted = await this.store.get(job.id as JobId);
-        await this.emit({
+        if (job.projectId !== null) await this.emit({
           type: "job.progress",
           projectId: job.projectId,
           payload: {
@@ -303,7 +303,7 @@ export class JobScheduler {
         ? result.outcome
         : { status: "succeeded" as const, result };
       const applied = await this.store.finish(job.id as JobId, outcome);
-      if (applied) await this.emit({
+      if (applied && job.projectId !== null) await this.emit({
         type: "job.done", projectId: job.projectId,
         payload: { jobId: job.id, status: outcome.status, partial: outcome.status === "partial" },
       });
@@ -319,7 +319,7 @@ export class JobScheduler {
           cleanupPending: cancelled.cleanupPending,
           terminationProof: cancelled.terminationProof,
         });
-        if (applied) await this.emit({
+        if (applied && job.projectId !== null) await this.emit({
           type: "job.done", projectId: job.projectId,
           payload: { jobId: job.id, status: "cancelled", partial: false },
         });
@@ -334,7 +334,7 @@ export class JobScheduler {
           await new Promise<void>((resolve) => this.timers.setTimeout(resolve, delayMs));
           await this.store.requeue(job.id as JobId);
           const persisted = await this.store.get(job.id as JobId);
-          await this.emit({
+          if (job.projectId !== null) await this.emit({
             type: "job.progress",
             projectId: job.projectId,
             payload: {
@@ -358,7 +358,7 @@ export class JobScheduler {
           cleanupPending: error instanceof JobFailureError ? error.cleanupPending : false,
           terminationProof: error instanceof JobFailureError ? error.terminationProof : undefined,
         });
-        await this.emit({
+        if (job.projectId !== null) await this.emit({
           type: "job.done", projectId: job.projectId,
           payload: { jobId: job.id, status: "failed", partial: false },
         });

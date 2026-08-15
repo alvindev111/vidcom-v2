@@ -250,7 +250,7 @@ export async function deleteScene(
   const written = await dependencies.authority.mutateSource({
     ref,
     steps,
-    toolAudit: invocation.toolAudit,
+    ...invocation,
     diagnostics: prepared.value.plan.diagnostics,
     backup: true,
     grant: { id: input.grantId, binding: prepared.value.binding },

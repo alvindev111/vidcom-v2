@@ -13,6 +13,7 @@ import { SUPPORTED_REVISIONS } from "@vidcom/contracts";
 
 import type { ToolRegistry } from "./registry/registry";
 import { createServerFactory } from "./server";
+import type { ToolInvoker } from "./registry/types";
 import type { McpTransportDependencies } from "./stdio";
 
 export type McpFetchHandler = (
@@ -91,8 +92,12 @@ class RevisionHandlerMap extends Map<string, McpFetchHandler> {
 export function createMcpHttpHandlers(
   registry: ToolRegistry,
   dependencies: McpTransportDependencies = {},
+  // The bridge supplies one; the daemon and the stdio host leave it out and get
+  // the registry. Threaded through rather than swapped in at the registry, so
+  // the list and the schemas keep coming from the same place either way.
+  invoker: ToolInvoker = registry,
 ): McpHttpHandlers {
-  const entry = createMcpHandler(createServerFactory(registry), {
+  const entry = createMcpHandler(createServerFactory(registry, { invoker }), {
     ...(dependencies.onerror ? { onerror: dependencies.onerror } : {}),
   });
   const closers = [entry];
@@ -100,7 +105,7 @@ export function createMcpHttpHandlers(
     pinnedHandler("__unsupported__", entry.fetch, revision));
   for (const revision of SUPPORTED_REVISIONS) {
     const pinned = createMcpHandler(
-      createServerFactory(registry, { supportedProtocolVersions: [revision] }),
+      createServerFactory(registry, { supportedProtocolVersions: [revision], invoker }),
       {
         ...(revision === SUPPORTED_REVISIONS[0] ? { legacy: "reject" as const } : {}),
         ...(dependencies.onerror ? { onerror: dependencies.onerror } : {}),

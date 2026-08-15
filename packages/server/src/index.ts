@@ -1,12 +1,22 @@
 export * from "./app";
-export * from "./routes/delivery-loop";
+export {
+  createDeliveryLoopRoutes,
+  type DeliveryLoopRouteDependencies,
+} from "./routes/delivery-loop";
+export * from "./routes/system";
 export * from "./auth/nonce";
 export * from "./auth/session";
+export * from "./bridge/attachments";
 export * from "./listener";
 export * from "./middleware/error-mapper";
 export * from "./middleware/perimeter";
 export * from "./routes/project-reads";
-export * from "./routes/jobs";
+export { createJobRoutes } from "./routes/jobs";
+export {
+  createBridgeRoutes,
+  type BridgeRouteDependencies,
+  type BridgeToolRequest,
+} from "./routes/bridge";
 export * from "./routes/mcp";
 export * from "./routes/events";
 export * from "./routes/project-writes";

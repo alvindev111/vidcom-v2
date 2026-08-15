@@ -87,11 +87,25 @@ export class ElevenLabsTtsProvider implements TtsProviderAdapter {
     const produced: RawCueAudio[] = [];
     for (const [index, cue] of request.cues.entries()) {
       context.signal?.throwIfAborted();
+      // What the model hears either side of this cue. The API takes these for
+      // exactly the case VidCom is in — separate generations that will be played
+      // back to back — and without them the model ends every cue as though it were
+      // the end of the piece and starts the next one cold.
+      //
+      // Batch order, which is the order the caller asked for the scenes in. It is
+      // the only ordering available here and normally the timeline's; a caller that
+      // passes scenes out of order gets continuity context for the wrong
+      // neighbours, which reads as slightly odd emphasis rather than as an error.
+      const previous = request.cues[index - 1];
+      const next = request.cues[index + 1];
       const generated = await convert(client, {
         voiceId: request.voiceId,
         text: toAudioTags(cue.text),
         languageCode: request.languageCode,
         speed,
+        ...(request.seed === null ? {} : { seed: seedFor(request.seed) }),
+        ...(previous ? { previousText: toAudioTags(previous.text) } : {}),
+        ...(next ? { nextText: toAudioTags(next.text) } : {}),
         ...(context.signal ? { signal: context.signal } : {}),
       });
       const audio = Buffer.from(generated.audioBase64, "base64");
@@ -106,7 +120,15 @@ export class ElevenLabsTtsProvider implements TtsProviderAdapter {
         words: toWordTimings(generated.alignment ?? generated.normalizedAlignment),
         // v3 applies `speed` server-side, so re-applying atempo would square it.
         rateApplied: true,
-        metadata: { modelId: MODEL_ID, outputFormat: OUTPUT_FORMAT, effectiveRatePercent: request.ratePercent },
+        metadata: {
+          modelId: MODEL_ID,
+          outputFormat: OUTPUT_FORMAT,
+          effectiveRatePercent: request.ratePercent,
+          // Recorded so a cue that was left to chance is visible in the sidecar
+          // instead of assumed to have been pinned.
+          ...(request.seed === null ? {} : { seed: seedFor(request.seed) }),
+          continuityContext: Boolean(previous) || Boolean(next),
+        },
       });
       context.onCueDone?.(index + 1, request.cues.length);
     }
@@ -142,11 +164,19 @@ export class ElevenLabsTtsProvider implements TtsProviderAdapter {
 type ElevenLabsSdk = Awaited<typeof import("@elevenlabs/elevenlabs-js")>;
 type ElevenLabsClient = InstanceType<ElevenLabsSdk["ElevenLabsClient"]>;
 
+/** The API accepts a seed in `0..2^32-1`; VidCom's is an arbitrary integer. */
+function seedFor(seed: number): number {
+  return Math.abs(Math.trunc(seed)) % 4_294_967_296;
+}
+
 interface ConvertInput {
   voiceId: string;
   text: string;
   languageCode: string;
   speed: number;
+  seed?: number;
+  previousText?: string;
+  nextText?: string;
   signal?: AbortSignal;
 }
 
@@ -158,6 +188,9 @@ async function convert(client: ElevenLabsClient, input: ConvertInput) {
       languageCode: input.languageCode,
       outputFormat: OUTPUT_FORMAT,
       voiceSettings: { speed: input.speed },
+      ...(input.seed === undefined ? {} : { seed: input.seed }),
+      ...(input.previousText === undefined ? {} : { previousText: input.previousText }),
+      ...(input.nextText === undefined ? {} : { nextText: input.nextText }),
     }, { abortSignal: input.signal, timeoutInSeconds: REQUEST_TIMEOUT_SECONDS, maxRetries: 0 });
   } catch (error) {
     if (input.signal?.aborted) throw error;

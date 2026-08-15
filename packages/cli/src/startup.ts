@@ -11,6 +11,8 @@ import {
 } from "@vidcom/core";
 
 import { createApplication, createInfrastructure, hashContent, type CompositionRootConfig } from "./composition-root";
+import { createLifecycleHandle } from "./foundation-lifecycle";
+import { canonicalWorkspaceRoot } from "./workspace-selection";
 
 /**
  * 1 hour. Long enough that a legitimately slow batch in another daemon is never
@@ -79,6 +81,8 @@ export async function runStartupSequence<Listener>(
 export interface DaemonRuntime {
   infrastructure: ReturnType<typeof createInfrastructure>;
   application: ReturnType<typeof createApplication> | null;
+  /** Current foundation lease, exposed only for bounded lease-loss recovery. */
+  leaseId: string | null;
 }
 
 export interface DaemonHooks<Listener> {
@@ -121,6 +125,11 @@ async function recoverJobsAndRenderRoots(
   recoverJobs: DaemonHooks<unknown>["recoverJobs"],
 ): Promise<void> {
   const errors: unknown[] = [];
+  if (runtime.application) {
+    try {
+      await runtime.application.workspaceCoordinator.recoverPending(runtime.infrastructure.workspaceRoot);
+    } catch (error) { errors.push(error); }
+  }
   try { await recoverJobs(runtime); }
   catch (error) { errors.push(error); }
   try { await recoverRenderRoots(runtime.infrastructure); }
@@ -146,12 +155,33 @@ async function runCleanupActions(
   if (errors.length > 0) throw new AggregateError(errors, message);
 }
 
+/** Refuses writes through the lease-loss hook before attempting background teardown. */
+export async function runLeaseLossShutdown(
+  stopBackground: () => Promise<void>,
+  onLeaseLost: () => Promise<void> | void,
+): Promise<void> {
+  await runCleanupActions(
+    [async () => onLeaseLost(), stopBackground],
+    "VidCom lease-loss shutdown failed",
+  );
+}
+
 export async function startVidcomFoundation<Listener>(
   config: CompositionRootConfig & { holderId: string },
   hooks: DaemonHooks<Listener>,
-  options: { signal?: AbortSignal } = {},
+  options: {
+    signal?: AbortSignal;
+    /** BootstrapCoordinator already migrated this app-data during this boot. */
+    migrationPrepared?: boolean;
+    /** Test seam used to count the real migration call across the whole boot. */
+    migrate?: typeof migrateDatabase;
+  } = {},
 ) {
-  const infrastructure = createInfrastructure(config);
+  const effectiveConfig = {
+    ...config,
+    workspaceRoot: await canonicalWorkspaceRoot(config.workspaceRoot),
+  };
+  const infrastructure = createInfrastructure(effectiveConfig);
   let leaseId: string | null = null;
   let leaseRenewal: ReturnType<typeof setInterval> | null = null;
   let application: ReturnType<typeof createApplication> | null = null;
@@ -186,41 +216,58 @@ export async function startVidcomFoundation<Listener>(
     [stopSchedulerOnce, closeWatcherOnce],
     "VidCom background shutdown failed",
   );
+  const handleDetectedLeaseLoss = async () => {
+    if (leaseLost) return;
+    leaseLost = true;
+    if (leaseRenewal) {
+      clearInterval(leaseRenewal);
+      leaseRenewal = null;
+    }
+    try {
+      await runLeaseLossShutdown(
+        stopBackground,
+        () => hooks.onLeaseLost?.({ infrastructure, application, leaseId }),
+      );
+    } catch (error) {
+      infrastructure.logger.error("workspace lease-loss shutdown failed", {
+        error: error instanceof Error ? error.message : "unknown error",
+      });
+    }
+  };
+  // One handle rather than five hand-rolled once-only wrappers. The ordering is
+  // unchanged; what the handle adds is that "each step at most once, and a
+  // failing step does not cancel the rest" is stated in one tested place
+  // instead of re-derived at each call site.
+  const lifecycle = createLifecycleHandle([
+    { name: "listener", run: closeListenerOnce },
+    { name: "scheduler", run: stopSchedulerOnce },
+    { name: "watcher", run: closeWatcherOnce },
+    { name: "lease", run: releaseLeaseOnce },
+    // Recovery entry ids are session-scoped capabilities. Once this foundation
+    // stops, keeping them resolvable would let a stale UI address the workspace
+    // that has just been replaced.
+    { name: "entry-registry", run: () => infrastructure.entries.clear() },
+    { name: "database", run: destroyDatabaseOnce },
+  ]);
   const cleanup = () => cleanupPromise ??= (async () => {
     if (leaseRenewal) {
       clearInterval(leaseRenewal);
       leaseRenewal = null;
     }
-    await runCleanupActions([
-      closeListenerOnce,
-      stopSchedulerOnce,
-      closeWatcherOnce,
-      releaseLeaseOnce,
-      destroyDatabaseOnce,
-    ], "VidCom shutdown failed");
+    await lifecycle.stop();
   })();
   try {
     const listener = await runStartupSequence({
-      migration: () => migrateDatabase(infrastructure.database),
+      migration: options.migrationPrepared === true
+        ? () => Promise.resolve()
+        : () => (options.migrate ?? migrateDatabase)(infrastructure.database),
       lease: async () => {
-        const acquired = await infrastructure.lease.acquire(config.workspaceRoot, config.holderId);
+        const acquired = await infrastructure.lease.acquire(effectiveConfig.workspaceRoot, config.holderId);
         if (!acquired.ok) throw new Error(`workspace is held by ${acquired.heldBy.holderId}`);
         leaseId = acquired.leaseId;
         leaseRenewal = setInterval(() => void infrastructure.lease.renew(acquired.leaseId)
-          .then(async (held) => {
-            if (held || leaseLost) return;
-            leaseLost = true;
-            if (leaseRenewal) clearInterval(leaseRenewal);
-            await stopBackground();
-            await hooks.onLeaseLost?.({ infrastructure, application });
-          })
-          .catch(async () => {
-            if (leaseLost) return;
-            leaseLost = true;
-            if (leaseRenewal) clearInterval(leaseRenewal);
-            await stopBackground();
-            await hooks.onLeaseLost?.({ infrastructure, application });
-          }), WORKSPACE_LEASE_RENEW_MS);
+          .then((held) => held ? undefined : handleDetectedLeaseLoss())
+          .catch(() => handleDetectedLeaseLoss()), WORKSPACE_LEASE_RENEW_MS);
         leaseRenewal.unref?.();
         application = createApplication(infrastructure, leaseId);
       },
@@ -229,7 +276,7 @@ export async function startVidcomFoundation<Listener>(
         await reconcileCompositeMutations({
           workspace: infrastructure.workspace,
           journal: infrastructure.journal,
-          workspaceRoot: config.workspaceRoot,
+          workspaceRoot: effectiveConfig.workspaceRoot,
           resolveProjectRef: infrastructure.resolveProjectRef,
           recordFailure: (audit, reason) => infrastructure.toolAudit.recordPendingFailure(audit, reason),
         });
@@ -258,7 +305,7 @@ export async function startVidcomFoundation<Listener>(
         );
       },
       jobRecovery: () => recoverJobsAndRenderRoots(
-        { infrastructure, application },
+        { infrastructure, application, leaseId },
         hooks.recoverJobs,
       ),
       identityBackfill: async () => {
@@ -278,13 +325,14 @@ export async function startVidcomFoundation<Listener>(
           if (!result.ok) throw new Error(result.error.message);
         }
       },
-      scheduler: async () => { schedulerHandle = await hooks.startScheduler({ infrastructure, application }) ?? null; },
-      watcher: async () => { watcherHandle = await hooks.startWatcher({ infrastructure, application }) ?? null; },
-      listener: async () => { listenerHandle = await hooks.openListener({ infrastructure, application }); return listenerHandle; },
+      scheduler: async () => { schedulerHandle = await hooks.startScheduler({ infrastructure, application, leaseId }) ?? null; },
+      watcher: async () => { watcherHandle = await hooks.startWatcher({ infrastructure, application, leaseId }) ?? null; },
+      listener: async () => { listenerHandle = await hooks.openListener({ infrastructure, application, leaseId }); return listenerHandle; },
     }, options.signal);
     return {
       infrastructure,
       application: application!,
+      leaseId,
       listener,
       stop: cleanup,
     };

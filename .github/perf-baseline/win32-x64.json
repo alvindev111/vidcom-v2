@@ -1,0 +1,47 @@
+{
+  "version": 2,
+  "runner": "win32-x64",
+  "cohort": "double-deep-integrity-v1",
+  "samples": [
+    {
+      "evidence": "github-actions:31631904239/94240743162",
+      "commit": "b4ba4ce33ddbf245c68de0790f3a6e088e84f6f5",
+      "measurements": {
+        "coldServe": 11792,
+        "warmServe": 11508
+      }
+    },
+    {
+      "evidence": "github-actions:31635483599/94244604323",
+      "commit": "2e5f2c5d36e4ebc846314770f0083e355f3b2811",
+      "measurements": {
+        "coldServe": 12142,
+        "warmServe": 12426
+      }
+    },
+    {
+      "evidence": "github-actions:31637865809/94252654057",
+      "commit": "8ee68e472ac5fe18b10c8ce02c4131c355eebde0",
+      "measurements": {
+        "coldServe": 12295,
+        "warmServe": 12257
+      }
+    },
+    {
+      "evidence": "github-actions:31642531190/94277866262",
+      "commit": "a05a0ffae4f0355f9c2ed9193d6205e9b1530ad8",
+      "measurements": {
+        "coldServe": 13481,
+        "warmServe": 12694
+      }
+    },
+    {
+      "evidence": "github-actions:31645765337/94443872875",
+      "commit": "16b43bd832eb11122e6e8de2ecdf27c0a22b62bf",
+      "measurements": {
+        "coldServe": 15152,
+        "warmServe": 13487
+      }
+    }
+  ]
+}

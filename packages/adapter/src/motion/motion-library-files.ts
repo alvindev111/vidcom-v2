@@ -61,7 +61,12 @@ function installedVersion(root: string): string | null {
  * `libraryRoot` exists for the packaged runtime, which has no `node_modules` to
  * resolve against: point it at the directory the distribution extracts, laid out
  * as `<packageName>/<packagePath>` and keeping each `package.json` so the version
- * pin is still checked. Omitted, the checkout's installed packages are used.
+ * pin is still checked.
+ *
+ * Naming a root is fail-closed on purpose: an artifact that shipped without the
+ * library must say so rather than vendor whatever happens to be installed on the
+ * machine. A source checkout therefore names no root — see `composition-root` —
+ * and resolves its own installed packages instead.
  */
 export class NodeModulesMotionLibraryFiles implements MotionLibraryFilesPort {
   constructor(private readonly libraryRoot?: AbsolutePath) {}

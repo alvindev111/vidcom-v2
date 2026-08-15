@@ -30,56 +30,115 @@ function windowsCredentialAcl(stdout: string): string {
   return `${windowsCurrentUserSid(stdout)}:(R,W)`;
 }
 
+function windowsExactAclCommands(pathname: string, acl: string): readonly (readonly string[])[] {
+  return [
+    // `/inheritance:r` alone preserves every pre-existing explicit ACE. Reset
+    // first so an old Everyone/Users/foreign-user grant cannot survive.
+    [pathname, "/reset"],
+    [pathname, "/inheritance:r", "/grant:r", acl],
+  ];
+}
+
+let cachedWhoamiOutput: string | undefined;
+
+/**
+ * Default runners answer `whoami` from a per-process cache.
+ *
+ * The current user's SID cannot change while the process lives, yet every
+ * protected file and directory used to pay a fresh subprocess for it — the
+ * dominant cost of securing a tree on Windows. Injected runners are left
+ * untouched so callers that assert the exact command sequence still see it.
+ */
+function isWhoami(executable: string): boolean {
+  return executable === "whoami" || executable.toLowerCase().endsWith("\\whoami.exe");
+}
+
+/**
+ * Windows system tools, addressed absolutely.
+ *
+ * Two reasons, and the second is why this changed. Resolving `icacls` through
+ * PATH means whatever PATH happens to hold decides which program sets an ACL —
+ * the shape of a PATH-injection substitution. And a process given a trimmed
+ * PATH cannot find it at all: the packaged smoke hands the artifact an empty
+ * one on purpose, and extraction failed there with `spawnSync icacls ENOENT`
+ * while every developer machine kept working.
+ */
+export function systemTool(name: string, platform: NodeJS.Platform = process.platform): string {
+  if (platform !== "win32") return name;
+  const root = process.env["SystemRoot"] ?? process.env["windir"] ?? "C:\\Windows";
+  return `${root}\\System32\\${name}.exe`;
+}
+
+const defaultSyncRunner: SyncCredentialCommandRunner = (executable, args) => {
+  if (isWhoami(executable) && cachedWhoamiOutput !== undefined) {
+    return { stdout: cachedWhoamiOutput };
+  }
+  const stdout = execFileSync(executable, [...args], { encoding: "utf8" });
+  if (isWhoami(executable)) cachedWhoamiOutput = stdout;
+  return { stdout };
+};
+
+const defaultAsyncRunner: CredentialCommandRunner = async (executable, args) => {
+  if (isWhoami(executable) && cachedWhoamiOutput !== undefined) {
+    return { stdout: cachedWhoamiOutput };
+  }
+  const { stdout } = await execFileAsync(executable, [...args]);
+  if (isWhoami(executable)) cachedWhoamiOutput = stdout;
+  return { stdout };
+};
+
 /** Applies POSIX 0600 or a Windows ACL containing only the current user. */
 export async function secureCredentialFile(
   pathname: string,
   platform: NodeJS.Platform = process.platform,
-  run: CredentialCommandRunner = (executable, args) => execFileAsync(executable, [...args]),
+  run: CredentialCommandRunner = defaultAsyncRunner,
 ): Promise<void> {
   if (platform !== "win32") {
     await chmod(pathname, 0o600);
     return;
   }
 
-  const { stdout } = await run("whoami", ["/user", "/fo", "csv", "/nh"]);
-  await run("icacls", [pathname, "/inheritance:r", "/grant:r", windowsCredentialAcl(stdout)]);
+  const { stdout } = await run(systemTool("whoami", platform), ["/user", "/fo", "csv", "/nh"]);
+  for (const args of windowsExactAclCommands(pathname, windowsCredentialAcl(stdout))) {
+    await run(systemTool("icacls", platform), args);
+  }
 }
 
 /** Synchronous variant for resources, such as SQLite, opened by synchronous Node APIs. */
 export function secureCredentialFileSync(
   pathname: string,
   platform: NodeJS.Platform = process.platform,
-  run: SyncCredentialCommandRunner = (executable, args) => ({
-    stdout: execFileSync(executable, [...args], { encoding: "utf8" }),
-  }),
+  run: SyncCredentialCommandRunner = defaultSyncRunner,
 ): void {
   if (platform !== "win32") {
     chmodSync(pathname, 0o600);
     return;
   }
-  const { stdout } = run("whoami", ["/user", "/fo", "csv", "/nh"]);
-  run("icacls", [pathname, "/inheritance:r", "/grant:r", windowsCredentialAcl(stdout)]);
+  const { stdout } = run(systemTool("whoami", platform), ["/user", "/fo", "csv", "/nh"]);
+  for (const args of windowsExactAclCommands(pathname, windowsCredentialAcl(stdout))) {
+    run(systemTool("icacls", platform), args);
+  }
 }
 
 /** Restricts an app-data directory before any credential, database or audit bytes are created. */
 export function secureAppDataDirectorySync(
   pathname: string,
   platform: NodeJS.Platform = process.platform,
-  run: SyncCredentialCommandRunner = (executable, args) => ({
-    stdout: execFileSync(executable, [...args], { encoding: "utf8" }),
-  }),
+  run: SyncCredentialCommandRunner = defaultSyncRunner,
 ): void {
   if (platform !== "win32") {
     chmodSync(pathname, 0o700);
     return;
   }
-  const { stdout } = run("whoami", ["/user", "/fo", "csv", "/nh"]);
-  run("icacls", [
+  const { stdout } = run(systemTool("whoami", platform), ["/user", "/fo", "csv", "/nh"]);
+  for (const args of windowsExactAclCommands(
     pathname,
-    "/inheritance:r",
-    "/grant:r",
-    `${windowsCurrentUserSid(stdout)}:(OI)(CI)(F)`,
-  ]);
+    // OI/CI are inheritance flags and use parentheses; F is a basic right and
+    // must not. `icacls` rejects `(OI)(CI)(F)` before runtime extraction starts.
+    `${windowsCurrentUserSid(stdout)}:(OI)(CI)F`,
+  )) {
+    run(systemTool("icacls", platform), args);
+  }
 }
 
 /** Stores the future MCP bridge credential under app-data, never in a workspace. */

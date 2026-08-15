@@ -13,6 +13,13 @@ name: Process supervision gate
 on:
   pull_request:
     paths:
+      - "package.json"
+      - "bun.lock"
+      - "tsconfig.json"
+      - "tsconfig.base.json"
+      - "vitest.config.ts"
+      - "packages/*/package.json"
+      - "packages/*/tsconfig.json"
       - "spikes/phase-3-checklist-gate/**"
       - "packages/adapter/src/runtime/**"
       - "packages/adapter/src/hyperframes/document.ts"
@@ -98,7 +105,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  group: process-supervision-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -123,11 +130,19 @@ jobs:
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
 
       - name: Set up Node
         uses: actions/setup-node@v4
         with:
           node-version: 24.9.0
+
+      - name: Verify exact source revision
+        env:
+          VIDCOM_EXPECTED_GIT_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: >-
+          node -e "const { execFileSync } = require('node:child_process'); const actual = execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim(); if (actual !== process.env.VIDCOM_EXPECTED_GIT_SHA) { console.error('expected ' + process.env.VIDCOM_EXPECTED_GIT_SHA + ', got ' + actual); process.exit(1); }"
 
       - name: Set up Bun
         uses: oven-sh/setup-bun@v2
@@ -141,7 +156,7 @@ jobs:
         run: bun --version && node --version
 
       - name: Production supervisor adapter contract
-        run: bunx vitest run --maxWorkers=2 tests/adapter/process-supervisor.test.ts tests/adapter/node-process-runner.test.ts tests/adapter/render-binary-probe.test.ts tests/adapter/render-job.test.ts tests/adapter/render-project.test.ts tests/adapter/render-root.test.ts tests/adapter/snapshot-job.test.ts tests/adapter/remote-asset-guard.test.ts tests/adapter/remote-asset-browser.test.ts tests/adapter/project-discovery-state.test.ts tests/adapter/project-state-store.test.ts tests/adapter/workspace-scan-identity.test.ts tests/adapter/project-lifecycle.test.ts tests/adapter/diagnostics-thumbnail.test.ts tests/adapter/narration-clips.test.ts tests/adapter/scene-ripple-narration.test.ts tests/adapter/agent-kit-installer.test.ts tests/agent-kit/sync.test.ts tests/core/delivery-loop-domain.test.ts tests/core/diagnostics-rules.test.ts tests/mcp/contract-matrix.test.ts tests/mcp/golden/tools-list.test.ts tests/mcp/tools.test.ts tests/server/delivery-loop-routes.test.ts tests/server/events.test.ts tests/server/job-routes.test.ts tests/cli/startup.test.ts tests/golden/project-context.test.ts tests/golden/runtime-asset-guard.test.ts tests/golden/snapshot-timestamp-mapping.test.ts
+        run: bunx vitest run --maxWorkers=2 tests/adapter/process-supervisor.test.ts tests/adapter/node-process-runner.test.ts tests/adapter/render-binary-probe.test.ts tests/adapter/render-job.test.ts tests/adapter/render-project.test.ts tests/adapter/render-root.test.ts tests/adapter/snapshot-job.test.ts tests/adapter/remote-asset-guard.test.ts tests/adapter/project-discovery-state.test.ts tests/adapter/project-state-store.test.ts tests/adapter/workspace-scan-identity.test.ts tests/adapter/project-lifecycle.test.ts tests/adapter/diagnostics-thumbnail.test.ts tests/adapter/narration-clips.test.ts tests/adapter/scene-ripple-narration.test.ts tests/adapter/agent-kit-installer.test.ts tests/agent-kit/sync.test.ts tests/core/delivery-loop-domain.test.ts tests/core/diagnostics-rules.test.ts tests/mcp/contract-matrix.test.ts tests/mcp/golden/tools-list.test.ts tests/mcp/tools.test.ts tests/server/delivery-loop-routes.test.ts tests/server/events.test.ts tests/server/job-routes.test.ts tests/cli/startup.test.ts tests/golden/project-context.test.ts tests/golden/runtime-asset-guard.test.ts tests/golden/snapshot-timestamp-mapping.test.ts
 
       # Non-zero exit means either the fixture failed to escape its process group
       # on this platform (inconclusive — read the JSON) or the algorithm leaked.
@@ -182,18 +197,26 @@ jobs:
   # rather than seconds, and the answer changes only when HyperFrames or the OS does.
   real-render-windows:
     name: Real render — Windows x64
-    if: github.event_name != 'pull_request'
+    if: github.event_name != 'pull_request' || github.head_ref == 'feat-packaging-and-distribution'
     runs-on: windows-latest
     timeout-minutes: 30
 
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
 
       - name: Set up Node
         uses: actions/setup-node@v4
         with:
           node-version: 24.9.0
+
+      - name: Verify exact source revision
+        env:
+          VIDCOM_EXPECTED_GIT_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: >-
+          node -e "const { execFileSync } = require('node:child_process'); const actual = execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim(); if (actual !== process.env.VIDCOM_EXPECTED_GIT_SHA) { console.error('expected ' + process.env.VIDCOM_EXPECTED_GIT_SHA + ', got ' + actual); process.exit(1); }"
 
       - name: Set up Bun
         uses: oven-sh/setup-bun@v2
@@ -201,10 +224,22 @@ jobs:
           bun-version: 1.3.14
 
       - name: Install FFmpeg
-        run: choco install ffmpeg --no-progress --yes
+        shell: pwsh
+        run: |
+          choco install ffmpeg --no-progress --yes
+          if ($LASTEXITCODE -ne 0) {
+            throw "Chocolatey failed to install FFmpeg (exit $LASTEXITCODE)"
+          }
+          Get-Command ffmpeg -ErrorAction Stop
+          Get-Command ffprobe -ErrorAction Stop
+          ffmpeg -version
+          ffprobe -version
 
       - name: Install dependencies
         run: bun install --frozen-lockfile
+
+      - name: Install the pinned HyperFrames browser
+        run: bunx hyperframes browser ensure
 
       # Does chrome-headless-shell leave the root's process group on Windows the
       # way it does on macOS? This is the one question the synthetic fixture

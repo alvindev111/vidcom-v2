@@ -26,7 +26,8 @@ import type { RegistryApprovalDependencies, ToolContext, ToolDefinition } from "
 
 export type DestructiveToolDependencies = DeleteSceneDependencies & DeleteFileDependencies & RegistryApprovalDependencies;
 
-async function requestDestructiveApproval(
+/** Creates one approval request and maps the negotiated era to modern input-required or legacy error. */
+export async function requestDestructiveApproval(
   approvals: RegistryApprovalDependencies["approvals"],
   context: ToolContext,
   binding: GrantBinding,
@@ -54,7 +55,6 @@ async function requestDestructiveApproval(
   });
 }
 
-/** Creates one approval request and maps the negotiated era to modern input-required or legacy error. */
 export async function requestSceneDeletionApproval(
   approvals: RegistryApprovalDependencies["approvals"],
   context: ToolContext,

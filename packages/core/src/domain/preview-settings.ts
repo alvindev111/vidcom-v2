@@ -1,4 +1,11 @@
-import type { PreviewSettingsDto, PreviewSettingsPatchDto } from "@vidcom/contracts";
+import {
+  COLOR_PALETTE_IDS,
+  type ColorPaletteId,
+  type PreviewSettingsDto,
+  type PreviewSettingsPatchDto,
+} from "@vidcom/contracts";
+
+import { colorPaletteSelection, DEFAULT_COLOR_PALETTE_ID } from "./color-palettes";
 
 const LIGHT_POSITIONS = [
   "top-left",
@@ -20,39 +27,33 @@ const REVEAL_SOUNDS = [
   "ping", "pop", "chime", "click", "bubble", "woosh", "sparkle", "drop", "tick", "bell", "blip", "snap",
 ] as const;
 const THEME_VARIABLES = [
-  "--primary", "--primary-light", "--accent", "--accent-light", "--success", "--info",
+  "--primary", "--primary-light", "--accent", "--accent-light", "--background", "--surface",
+  "--text", "--text-muted", "--success", "--info",
 ] as const;
+
+const DEFAULT_PALETTE = colorPaletteSelection(DEFAULT_COLOR_PALETTE_ID);
 
 /** Canonical preview settings used when a project has no backing file. */
 export const DEFAULT_PREVIEW_SETTINGS: PreviewSettingsDto = {
   tone: {
     enabled: false,
-    colorMode: "dark",
-    backgroundColor: "#080907",
+    colorMode: DEFAULT_PALETTE.tone.colorMode,
+    backgroundColor: DEFAULT_PALETTE.tone.backgroundColor,
     backgroundFx: "none",
-    mainLight: "#ff8a3d",
+    mainLight: DEFAULT_PALETTE.tone.mainLight,
     mainLightPosition: "top-center",
     mainLightIntensity: "medium",
-    softLight: "#54d9ff",
+    softLight: DEFAULT_PALETTE.tone.softLight,
     softLightPosition: "bottom-right",
     softLightIntensity: "medium",
   },
-  theme: {
-    variables: {
-      "--primary": "#ff8a3d",
-      "--primary-light": "#ffd1ad",
-      "--accent": "#54d9ff",
-      "--accent-light": "#c8f2ff",
-      "--success": "#47e6a0",
-      "--info": "#b08cff",
-    },
-  },
+  theme: DEFAULT_PALETTE.theme,
   bgm: { enabled: false, volume: 0.3, loop: true, track: null },
   subtitles: {
     enabled: true,
     override: false,
-    color: "#ffffff",
-    activeColor: "#ff8a3d",
+    color: DEFAULT_PALETTE.subtitles.color,
+    activeColor: DEFAULT_PALETTE.subtitles.activeColor,
     fontSize: 72,
     bottom: 120,
   },
@@ -74,6 +75,19 @@ function hex(value: unknown, fallback: string): string {
 
 function bool(value: unknown, fallback: boolean): boolean {
   return typeof value === "boolean" ? value : fallback;
+}
+
+function paletteId(value: unknown): ColorPaletteId | null {
+  return COLOR_PALETTE_IDS.includes(value as ColorPaletteId) ? value as ColorPaletteId : null;
+}
+
+function hasCustomColorPatch(patch: PreviewSettingsPatchDto): boolean {
+  return patch.theme?.variables !== undefined
+    || patch.tone?.backgroundColor !== undefined
+    || patch.tone?.mainLight !== undefined
+    || patch.tone?.softLight !== undefined
+    || patch.subtitles?.color !== undefined
+    || patch.subtitles?.activeColor !== undefined;
 }
 
 /** Normalizes arbitrary disk data into a complete preview settings value without throwing. */
@@ -101,6 +115,7 @@ export function normalizePreviewSettings(raw: unknown): PreviewSettingsDto {
       softLightIntensity: oneOf(tone.softLightIntensity, LIGHT_INTENSITIES, base.tone.softLightIntensity),
     },
     theme: {
+      paletteId: paletteId(theme.paletteId),
       variables: Object.fromEntries(
         THEME_VARIABLES.map((name) => [name, hex(variables[name], base.theme.variables[name])]),
       ) as PreviewSettingsDto["theme"]["variables"],
@@ -141,11 +156,26 @@ export function mergePreviewSettings(
   patch: PreviewSettingsPatchDto,
 ): PreviewSettingsDto {
   const removedScenes = new Set(patch.scenesRemove ?? []);
+  const selectedPalette = patch.theme?.paletteId
+    ? colorPaletteSelection(patch.theme.paletteId)
+    : undefined;
+  const selectedPaletteId = selectedPalette?.theme.paletteId;
+  const customColors = hasCustomColorPatch(patch);
+  const nextPaletteId = customColors || patch.theme?.paletteId === null
+    ? null
+    : selectedPaletteId ?? current.theme.paletteId;
   return normalizePreviewSettings({
-    tone: { ...current.tone, ...patch.tone },
-    theme: { variables: { ...current.theme.variables, ...patch.theme?.variables } },
+    tone: { ...current.tone, ...selectedPalette?.tone, ...patch.tone },
+    theme: {
+      paletteId: nextPaletteId,
+      variables: {
+        ...current.theme.variables,
+        ...selectedPalette?.theme.variables,
+        ...patch.theme?.variables,
+      },
+    },
     bgm: { ...current.bgm, ...patch.bgm },
-    subtitles: { ...current.subtitles, ...patch.subtitles },
+    subtitles: { ...current.subtitles, ...selectedPalette?.subtitles, ...patch.subtitles },
     scenes: Object.fromEntries(
       Object.entries({ ...current.scenes, ...patch.scenes })
         .filter(([sceneId]) => !removedScenes.has(sceneId)),

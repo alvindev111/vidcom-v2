@@ -24,6 +24,7 @@ import type {
   MutationCapture,
   PathPurpose,
   PathRejection,
+  PendingToolAudit,
   ResolvedPath,
   StepIntent,
   WriteEnvelope,
@@ -123,6 +124,8 @@ export interface AdoptProjectIdentityRequest {
   actor?: Actor;
   /** Omitted for candidate adoption; required when replacing an invalid recovery marker. */
   expectedContentHash?: ContentHash;
+  /** Present only for an MCP-invoked adoption, which the bootstrap journal then owns. */
+  toolAudit?: PendingToolAudit | null;
 }
 
 class ProjectMutex {
@@ -430,6 +433,10 @@ export class WriteAuthority {
     advancesSource: boolean,
   ): Promise<Result<WriteEnvelope, DomainError>> {
     if (steps.every((item) => item.intent.kind !== "delete" && item.intent.fromHash === item.intent.toHash)) {
+      // Nothing to write: the project already holds exactly this content. No
+      // journal opens, so the caller has to be told — an MCP tool cannot own its
+      // audit through a journal that never existed.
+      request.noteUnchanged?.();
       const projectRevision = (await this.dependencies.journal.latestRevision(request.ref.id)) ?? 0;
       const fileHashes: Record<RelPath, ContentHash> = {};
       let entityRevision: number | null = null;
@@ -801,7 +808,10 @@ export class WriteAuthority {
     path: RelPath;
     bytes: Uint8Array;
     expectedRevision: number;
-  }, actor: Actor): Promise<Result<WriteResult, DomainError>> {
+    /** Merged into the same mutation; omitted leaves whatever the project had. */
+    volume?: number;
+    loop?: boolean;
+  }, actor: Actor, invocation: WriteInvocation = { toolAudit: null }): Promise<Result<WriteResult, DomainError>> {
     if (!(await this.dependencies.lease.assertHeld(this.dependencies.leaseId))) {
       return err({ code: ErrorCode.WorkspaceLeaseLost, message: "the workspace write lease was lost" });
     }
@@ -826,7 +836,12 @@ export class WriteAuthority {
       let raw: unknown = DEFAULT_PREVIEW_SETTINGS;
       if (current) try { raw = JSON.parse(current.content); } catch { raw = DEFAULT_PREVIEW_SETTINGS; }
       const previewSettings = mergePreviewSettings(normalizePreviewSettings(raw), {
-        bgm: { enabled: true, track: { name: request.name, path: request.path } },
+        bgm: {
+          enabled: true,
+          track: { name: request.name, path: request.path },
+          ...(request.volume === undefined ? {} : { volume: request.volume }),
+          ...(request.loop === undefined ? {} : { loop: request.loop }),
+        },
       });
       const content = serializePreviewSettings(previewSettings);
       const nextHash = this.dependencies.hashContent(content);
@@ -850,7 +865,7 @@ export class WriteAuthority {
           contentHash: staged.contentHash,
         },
       };
-      const journalId = await this.dependencies.journal.begin(intent);
+      const journalId = await this.dependencies.journal.begin(intent, invocation.toolAudit);
       let settingsWritten = false;
       try {
         const [liveAssetPath, liveSettingsPath] = await Promise.all([
@@ -917,7 +932,7 @@ export class WriteAuthority {
             patch: request.patch,
             expectedRevision: request.expectedRevision,
           }],
-      toolAudit: invocation.toolAudit,
+      ...invocation,
       backup: false,
     }, actor, true);
     if (!composite.ok) {
@@ -1071,7 +1086,7 @@ export class WriteAuthority {
       previousContent: current?.content ?? null,
       toHash,
       actor: request.actor ?? "system",
-    }, null);
+    }, null, request.toolAudit ?? null);
     return this.completeBootstrapIdentity({
       ref: request.ref,
       journalId,

@@ -2,7 +2,7 @@ import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os";
 import path from "node:path";
 
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import {
   defaultSettingsPath,
@@ -15,7 +15,11 @@ import {
 import { DEFAULT_VIDCOM_SETTINGS } from "@vidcom/contracts";
 
 const roots: string[] = [];
-const savedEnvironment = { home: process.env.VIDCOM_HOME, file: process.env.VIDCOM_SETTINGS };
+const savedEnvironment = {
+  home: process.env.VIDCOM_HOME,
+  file: process.env.VIDCOM_SETTINGS,
+  caBundle: process.env.VIDCOM_CA_BUNDLE,
+};
 
 async function home(): Promise<string> {
   const root = await mkdtemp(path.join(tmpdir(), "vidcom-settings-"));
@@ -30,11 +34,17 @@ async function settingsFile(document: unknown): Promise<string> {
   return pathname;
 }
 
+beforeEach(() => {
+  delete process.env.VIDCOM_CA_BUNDLE;
+});
+
 afterEach(async () => {
   process.env.VIDCOM_HOME = savedEnvironment.home;
   process.env.VIDCOM_SETTINGS = savedEnvironment.file;
+  process.env.VIDCOM_CA_BUNDLE = savedEnvironment.caBundle;
   if (savedEnvironment.home === undefined) delete process.env.VIDCOM_HOME;
   if (savedEnvironment.file === undefined) delete process.env.VIDCOM_SETTINGS;
+  if (savedEnvironment.caBundle === undefined) delete process.env.VIDCOM_CA_BUNDLE;
   await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
 });
 
@@ -98,6 +108,38 @@ describe("readVidcomSettings", () => {
     const settings = await readVidcomSettings(pathname);
 
     expect(settings).toMatchObject({ appDataRoot: "/data/vidcom", workspaceRoot: "/work" });
+  });
+
+  it("uses runtime.caBundlePath from the settings file when the environment is unset", async () => {
+    const pathname = await settingsFile({ runtime: { caBundlePath: "/file/company-ca.pem" } });
+
+    await expect(readVidcomSettings(pathname)).resolves.toMatchObject({
+      runtime: { caBundlePath: "/file/company-ca.pem" },
+    });
+  });
+
+  it("lets VIDCOM_CA_BUNDLE override runtime.caBundlePath", async () => {
+    const pathname = await settingsFile({ runtime: { caBundlePath: "/file/company-ca.pem" } });
+    process.env.VIDCOM_CA_BUNDLE = "/env/company-ca.pem";
+
+    await expect(readVidcomSettings(pathname)).resolves.toMatchObject({
+      runtime: { caBundlePath: "/env/company-ca.pem" },
+    });
+  });
+
+  it("applies VIDCOM_CA_BUNDLE even when the settings file is absent", async () => {
+    const root = await home();
+    process.env.VIDCOM_CA_BUNDLE = "/env/company-ca.pem";
+
+    await expect(readVidcomSettings(path.join(root, "missing.json"))).resolves.toMatchObject({
+      runtime: { caBundlePath: "/env/company-ca.pem" },
+    });
+  });
+
+  it("rejects unknown runtime settings instead of silently disabling TLS configuration", async () => {
+    const pathname = await settingsFile({ runtime: { caBundelPath: "/company-ca.pem" } });
+
+    await expect(readVidcomSettings(pathname)).rejects.toBeInstanceOf(VidcomSettingsError);
   });
 
   it("rejects a mistyped key instead of ignoring it", async () => {

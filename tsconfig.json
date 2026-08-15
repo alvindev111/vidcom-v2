@@ -22,6 +22,9 @@
     "paths": {
       "@/*": ["./src/*"],
       "@vidcom/agent-kit": ["./packages/agent-kit/src/index.ts"],
+      "@vidcom/adapter/compiler-guard": ["./packages/adapter/src/hyperframes/compiler-guard.ts"],
+      "@vidcom/adapter/compiler-probe-child": ["./packages/adapter/src/hyperframes/compiler-probe-child.ts"],
+      "@vidcom/adapter/runtime-bootstrap": ["./packages/adapter/src/runtime/runtime-bootstrap.ts"],
       "@vidcom/adapter": ["./packages/adapter/src/index.ts"],
       "@vidcom/cli": ["./packages/cli/src/index.ts"],
       "@vidcom/contracts": ["./packages/contracts/src/index.ts"],

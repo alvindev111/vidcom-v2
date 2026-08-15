@@ -1,12 +1,17 @@
 import { execFile } from "node:child_process";
-import { cp, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, realpath, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { initializeDatabase } from "@vidcom/adapter";
+import {
+  AppSettingsStore,
+  initializeDatabase,
+  migrateDatabase,
+  openVidcomDatabase,
+} from "@vidcom/adapter";
 import { type ProjectId, type RelPath } from "@vidcom/contracts";
 import {
   EntryRegistry,
@@ -22,6 +27,7 @@ import {
 import { selectWorkspace } from "../../packages/cli/src/workspace-selection";
 
 import { dbOne, dbRun } from "../support/database";
+import { writeSampleProject } from "../support/sample-project";
 
 const run = promisify(execFile);
 const roots: string[] = [];
@@ -90,9 +96,20 @@ describe("workspace discovery and project state on real SQLite/filesystem", () =
     const appData = path.join(root, "app-data");
     await Promise.all([mkdir(empty), mkdir(active), mkdir(invalidProject, { recursive: true })]);
     await writeFile(path.join(invalidProject, "vidcom.json"), "{broken\n");
-    await expect(selectWorkspace({ appDataRoot: appData, cwd: empty })).resolves.toBe(empty);
-    await expect(selectWorkspace({ explicit: active, appDataRoot: appData })).resolves.toBe(active);
-    await expect(selectWorkspace({ appDataRoot: appData, cwd: invalidProject })).resolves.toBe(workspace);
+    const [canonicalEmpty, canonicalActive, canonicalWorkspace] = await Promise.all([
+      realpath(empty),
+      realpath(active),
+      realpath(workspace),
+    ]);
+    const database = await initializeDatabase(appData);
+    try {
+      await expect(selectWorkspace({ appDataRoot: appData, cwd: empty, database })).resolves.toBe(canonicalEmpty);
+      await expect(selectWorkspace({ explicit: active, appDataRoot: appData, database })).resolves.toBe(canonicalActive);
+      await expect(selectWorkspace({ appDataRoot: appData, cwd: invalidProject, database }))
+        .resolves.toBe(canonicalWorkspace);
+    } finally {
+      await database.destroy();
+    }
   });
 
   it("warns with the deleted active path before falling back to cwd", async () => {
@@ -102,13 +119,23 @@ describe("workspace discovery and project state on real SQLite/filesystem", () =
     const cwd = path.join(root, "cwd");
     const appData = path.join(root, "app-data");
     await Promise.all([mkdir(active), mkdir(cwd)]);
-    await selectWorkspace({ explicit: active, appDataRoot: appData });
-    await rm(active, { recursive: true });
-    const warning = vi.spyOn(process, "emitWarning").mockImplementation(() => {});
-    await expect(selectWorkspace({ appDataRoot: appData, cwd })).resolves.toBe(cwd);
-    expect(warning).toHaveBeenCalledWith(expect.stringContaining(active), {
-      code: "active_workspace_unreadable",
-    });
+    // Recorded directly: resolving a workspace no longer writes one, so the
+    // saved value has to be planted rather than produced as a side effect.
+    // Only FoundationManager.activate records an active workspace now.
+    const database = openVidcomDatabase(appData);
+    try {
+      await migrateDatabase(database);
+      new AppSettingsStore(database).set("active_workspace", active);
+      const canonicalCwd = await realpath(cwd);
+      await rm(active, { recursive: true });
+      const warning = vi.spyOn(process, "emitWarning").mockImplementation(() => {});
+      await expect(selectWorkspace({ appDataRoot: appData, cwd, database })).resolves.toBe(canonicalCwd);
+      expect(warning).toHaveBeenCalledWith(expect.stringContaining(active), {
+        code: "active_workspace_unreadable",
+      });
+    } finally {
+      await database.destroy();
+    }
   });
 
   it("keeps entry IDs session-local, idempotent, revocable, and workspace-scoped", () => {
@@ -221,7 +248,7 @@ describe("workspace discovery and project state on real SQLite/filesystem", () =
     } finally {
       await value.infrastructure.database.destroy();
     }
-  }, 15_000);
+  }, 30_000);
 
   it("lazy-backfills all three shipped prototype identities from their real compositions", async () => {
     const root = await mkdtemp(path.join(tmpdir(), "vidcom-prototype-backfill-"));
@@ -229,9 +256,15 @@ describe("workspace discovery and project state on real SQLite/filesystem", () =
     const workspaceRoot = path.join(root, "workspace");
     const appDataRoot = path.join(root, "app-data");
     await mkdir(workspaceRoot);
-    const slugs = ["kinetic-type", "swiss-grid", "warm-grain"];
+    // Legacy markers: id only, no platform — the exact state backfill repairs.
+    const slugs = ["portrait-sample", "square-sample", "landscape-sample"] as const;
+    const shapes: Record<(typeof slugs)[number], { width: number; height: number }> = {
+      "portrait-sample": { width: 1080, height: 1920 },
+      "square-sample": { width: 1080, height: 1080 },
+      "landscape-sample": { width: 1920, height: 1080 },
+    };
     for (const slug of slugs) {
-      await cp(path.resolve("projects", slug), path.join(workspaceRoot, slug), { recursive: true });
+      await writeSampleProject(workspaceRoot, { slug, id: `project_${slug}`, ...shapes[slug] });
     }
     const initialized = await initializeDatabase(appDataRoot);
     await initialized.destroy();

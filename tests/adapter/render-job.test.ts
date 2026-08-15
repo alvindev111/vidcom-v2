@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { constants } from "node:fs";
-import { access, mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { access, copyFile, mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
@@ -10,6 +10,7 @@ import {
   AppDataAssetStager,
   AppDataBackupStore,
   CompositionHf,
+  FontkitCompatibilityInspector,
   FsRenderProjectAdapter,
   FsRenderRootAdapter,
   hyperframesRuntimeSource,
@@ -30,7 +31,9 @@ import { ErrorCode, WarningCode, type ContentHash, type ProjectId } from "@vidco
 import {
   canonicalizeJobInput,
   DEFAULT_PREVIEW_SETTINGS,
+  FontCompatibilityService,
   JobScheduler,
+  ok,
   WriteAuthority,
   type AbsolutePath,
   type BinaryProbePort,
@@ -39,7 +42,14 @@ import {
   type ProcessSupervisorPort,
   type RenderRootPort,
 } from "@vidcom/core";
-import { createRenderJobHandler, enqueueRenderJob } from "@vidcom/worker";
+import {
+  createRenderJobHandler,
+  enqueueRenderJob,
+  MAX_RENDER_PROCESS_TIMEOUT_MS,
+  MIN_RENDER_PROCESS_TIMEOUT_MS,
+  RENDER_JOB_TIMEOUT_MS,
+  renderProcessTimeoutMs,
+} from "@vidcom/worker";
 
 import { createSequentialIdPort } from "../support/deterministic";
 import { dbOne, dbRun } from "../support/database";
@@ -50,6 +60,30 @@ const clock = { now: () => new Date(now) };
 const hashContent = (content: string | Uint8Array): ContentHash =>
   `sha256:${createHash("sha256").update(content).digest("hex")}` as ContentHash;
 
+describe("render process timeout budget", () => {
+  it("scales 1080p30 educational renders beyond the old five-minute ceiling", () => {
+    expect(renderProcessTimeoutMs({
+      durationSeconds: 300, width: 1_920, height: 1_080, fps: 30,
+    })).toBe(17 * 60 * 1_000);
+    expect(renderProcessTimeoutMs({
+      durationSeconds: 600, width: 1_920, height: 1_080, fps: 30,
+    })).toBe(32 * 60 * 1_000);
+  });
+
+  it("keeps a floor, scales 4K work, and caps pathological workloads below the job ceiling", () => {
+    expect(renderProcessTimeoutMs({
+      durationSeconds: 1, width: 320, height: 180, fps: 10,
+    })).toBe(MIN_RENDER_PROCESS_TIMEOUT_MS);
+    expect(renderProcessTimeoutMs({
+      durationSeconds: 300, width: 3_840, height: 2_160, fps: 30,
+    })).toBe(62 * 60 * 1_000);
+    expect(renderProcessTimeoutMs({
+      durationSeconds: 600, width: 3_840, height: 2_160, fps: 60,
+    })).toBe(MAX_RENDER_PROCESS_TIMEOUT_MS);
+    expect(RENDER_JOB_TIMEOUT_MS).toBeGreaterThan(MAX_RENDER_PROCESS_TIMEOUT_MS);
+  });
+});
+
 async function findExecutable(name: string): Promise<AbsolutePath | null> {
   const candidates = (process.env.PATH ?? "").split(path.delimiter).flatMap((directory) =>
     process.platform === "win32" ? [`${name}.exe`, name].map((file) => path.join(directory, file)) : [path.join(directory, name)]);
@@ -59,6 +93,24 @@ async function findExecutable(name: string): Promise<AbsolutePath | null> {
       return candidate as AbsolutePath;
     } catch {
       // Keep looking through PATH.
+    }
+  }
+  return null;
+}
+
+async function latinFontFixture(): Promise<string | null> {
+  const candidates = [
+    "/System/Library/Fonts/Supplemental/Arial.ttf",
+    "/System/Library/Fonts/Supplemental/Verdana.ttf",
+    "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+    "C:\\Windows\\Fonts\\arial.ttf",
+  ];
+  for (const candidate of candidates) {
+    try {
+      await access(candidate);
+      return candidate;
+    } catch {
+      // Continue through the small cross-platform fixture allowlist.
     }
   }
   return null;
@@ -79,6 +131,16 @@ async function baseFixture() {
   const journal = new MutationJournal(database, clock, new LargePreviousContentStore(appDataRoot));
   const jobs = new SqliteJobStore(database, clock);
   const ids = createSequentialIdPort();
+  const fonts = new FontCompatibilityService(new FontkitCompatibilityInspector());
+  const diagnostics = {
+    async forProject(projectId: ProjectId) {
+      return ok({
+        diagnostics: [],
+        computedAtSourceRevision: await journal.latestSourceRevision(projectId) ?? 0,
+        lintSourceAvailable: true,
+      });
+    },
+  };
   const binaries: BinaryProbePort = {
     async probe() {
       return { ok: true, value: {
@@ -90,7 +152,7 @@ async function baseFixture() {
       } };
     },
   };
-  return { root, workspaceRoot, appDataRoot, database, workspace, journal, jobs, ids, binaries };
+  return { root, workspaceRoot, appDataRoot, database, workspace, journal, jobs, ids, binaries, fonts, diagnostics };
 }
 
 async function addProject(
@@ -166,6 +228,8 @@ async function renderHarness(fixture: Awaited<ReturnType<typeof baseFixture>>) {
         journal: fixture.journal,
         guard: new LoopbackRuntimeAssetGuard(),
         binaries,
+        fonts: fixture.fonts,
+        diagnostics: fixture.diagnostics,
         runtimeSource: hyperframesRuntimeSource,
         injectGuard: injectRuntimeAssetGuardDocument,
         clock,
@@ -188,6 +252,8 @@ async function enqueue(
     ids: fixture.ids,
     hashContent,
     binaries: fixture.binaries,
+    fonts: fixture.fonts,
+    diagnostics: fixture.diagnostics,
   }, { projectId, ...(bestEffort === undefined ? {} : { bestEffort }) });
 }
 
@@ -209,6 +275,157 @@ async function execute(
 }
 
 describe("render job with real SQLite and filesystem", () => {
+  it("pins the current source revision into the durable input and rejects a stale caller revision", async () => {
+    const fixture = await baseFixture();
+    try {
+      const project = await addProject(fixture, "revision-gate", `<!doctype html><html><body>
+        <main data-composition-id="main" data-width="320" data-height="180" data-duration="1">
+          <section data-composition-id="scene-1" data-start="0" data-duration="1"></section>
+        </main></body></html>`);
+      const dependencies = {
+        workspace: fixture.workspace,
+        composition: new CompositionHf(),
+        journal: fixture.journal,
+        jobs: fixture.jobs,
+        ids: fixture.ids,
+        hashContent,
+        binaries: fixture.binaries,
+        fonts: fixture.fonts,
+        diagnostics: fixture.diagnostics,
+      };
+
+      await expect(enqueueRenderJob(dependencies, {
+        projectId: project.id,
+        expectedSourceRevision: 1,
+        idempotencyKey: "stale-revision",
+      })).resolves.toMatchObject({
+        ok: false,
+        error: {
+          code: ErrorCode.WriteConflict,
+          field: "expectedSourceRevision",
+          details: { expectedSourceRevision: 1, actualSourceRevision: 0 },
+        },
+      });
+      expect(dbOne(fixture.database, "SELECT COUNT(*) AS count FROM job")).toEqual({ count: 0 });
+
+      const queued = await enqueueRenderJob(dependencies, {
+        projectId: project.id,
+        idempotencyKey: "pinned-revision",
+      });
+      expect(queued).toMatchObject({
+        ok: true,
+        value: { input: { projectId: project.id, expectedSourceRevision: 0, bestEffort: true } },
+      });
+      if (!queued.ok) throw new Error("render did not enqueue");
+      const expectedInput = {
+        projectId: project.id,
+        expectedSourceRevision: 0,
+        bestEffort: true,
+        idempotencyKey: "pinned-revision",
+      };
+      expect(queued.value.inputHash).toBe(hashContent(canonicalizeJobInput(expectedInput)));
+      expect(queued.value.inputHash).not.toBe(hashContent(canonicalizeJobInput({
+        ...expectedInput,
+        expectedSourceRevision: 1,
+      })));
+    } finally {
+      await fixture.database.destroy();
+    }
+  });
+
+  it("requires zero diagnostic errors and requires available lint for strict render", async () => {
+    const fixture = await baseFixture();
+    try {
+      const project = await addProject(fixture, "diagnostics-gate", `<!doctype html><html><body>
+        <main data-composition-id="main" data-width="320" data-height="180" data-duration="1">
+          <section data-composition-id="scene-1" data-start="0" data-duration="1"></section>
+        </main></body></html>`);
+      const dependencies = {
+        workspace: fixture.workspace,
+        composition: new CompositionHf(),
+        journal: fixture.journal,
+        jobs: fixture.jobs,
+        ids: fixture.ids,
+        hashContent,
+        binaries: fixture.binaries,
+        fonts: fixture.fonts,
+      };
+
+      await expect(enqueueRenderJob({
+        ...dependencies,
+        diagnostics: { forProject: async () => ok({
+          diagnostics: [{ severity: "error" as const, code: "lint:layout", message: "layout failed" }],
+          computedAtSourceRevision: 0,
+          lintSourceAvailable: true,
+        }) },
+      }, {
+        projectId: project.id,
+        expectedSourceRevision: 0,
+        bestEffort: true,
+      })).resolves.toMatchObject({
+        ok: false,
+        error: { code: ErrorCode.ProjectInvalid, details: { reason: "lint:layout" } },
+      });
+
+      const lintUnavailable = { forProject: async () => ok({
+        diagnostics: [],
+        computedAtSourceRevision: 0,
+        lintSourceAvailable: false,
+      }) };
+      await expect(enqueueRenderJob({ ...dependencies, diagnostics: lintUnavailable }, {
+        projectId: project.id,
+        expectedSourceRevision: 0,
+        bestEffort: false,
+      })).resolves.toMatchObject({
+        ok: false,
+        error: { code: ErrorCode.ProjectInvalid, details: { reason: "lint-source-unavailable" } },
+      });
+      await expect(enqueueRenderJob({ ...dependencies, diagnostics: lintUnavailable }, {
+        projectId: project.id,
+        expectedSourceRevision: 0,
+        bestEffort: true,
+      })).resolves.toMatchObject({ ok: true });
+    } finally {
+      await fixture.database.destroy();
+    }
+  });
+
+  it("fails a queued render when its pinned revision is stale at worker start", async () => {
+    const fixture = await baseFixture();
+    try {
+      const project = await addProject(fixture, "worker-revision-gate", `<!doctype html><html><body>
+        <main data-composition-id="main" data-width="320" data-height="180" data-duration="1">
+          <section data-composition-id="scene-1" data-start="0" data-duration="1"></section>
+        </main></body></html>`);
+      const jobId = "job_stale_worker" as JobId;
+      const input = { projectId: project.id, expectedSourceRevision: 1, bestEffort: true };
+      await fixture.jobs.enqueue({
+        id: jobId,
+        projectId: project.id,
+        type: "render",
+        input,
+        inputHash: hashContent(canonicalizeJobInput(input)),
+        idempotencyKey: null,
+      });
+      let processStarted = false;
+      const harness = await renderHarness(fixture);
+      await execute(fixture, harness.definition({
+        async run() {
+          processStarted = true;
+          throw new Error("stale render must not start a process");
+        },
+      }));
+
+      expect(processStarted).toBe(false);
+      expect(await fixture.jobs.get(jobId)).toMatchObject({
+        status: "failed",
+        error: { code: ErrorCode.WriteConflict },
+      });
+    } finally {
+      await fixture.database.destroy();
+    }
+  });
+
   it("rejects empty, zero-scene, and invalid projects before enqueue", async () => {
     const fixture = await baseFixture();
     try {
@@ -225,6 +442,8 @@ describe("render job with real SQLite and filesystem", () => {
         ids: fixture.ids,
         hashContent,
         binaries: fixture.binaries,
+        fonts: fixture.fonts,
+        diagnostics: fixture.diagnostics,
       };
 
       await expect(enqueueRenderJob(dependencies, { projectId: empty.id }))
@@ -236,6 +455,63 @@ describe("render job with real SQLite and filesystem", () => {
           ok: false,
           error: { code: ErrorCode.ProjectInvalid, details: { reason: ErrorCode.CompositionParseError } },
         });
+      expect(dbOne(fixture.database, "SELECT COUNT(*) AS count FROM job")).toEqual({ count: 0 });
+    } finally {
+      await fixture.database.destroy();
+    }
+  });
+
+  it("rejects a mounted fade-only story beat and accepts verified multi-phase motion", async () => {
+    const fixture = await baseFixture();
+    try {
+      const project = await addProject(fixture, "story-motion-gate", `<!doctype html><html><body>
+        <main data-composition-id="main" data-width="320" data-height="180" data-duration="3">
+          <div data-composition-id="scene-1" data-composition-src="compositions/scene-1.html"
+            data-start="0" data-duration="3"></div>
+        </main></body></html>`);
+      await mkdir(path.join(project.projectRoot, "compositions"));
+      const source = (motion: string) => `<!doctype html><html><body>
+        <section data-composition-id="scene-1" data-duration="3"><div id="hero">Story beat</div>
+        <script>const tl = gsap.timeline({ paused: true });${motion}
+        window.__timelines = window.__timelines || {}; window.__timelines["scene-1"] = tl;</script>
+        </section></body></html>`;
+      await writeFile(path.join(project.projectRoot, "compositions/scene-1.html"), source(`
+        tl.fromTo("#hero", { opacity: 0, y: 24 }, { opacity: 1, y: 0, duration: 0.4, ease: "power2.out" }, 0.2);`));
+
+      await expect(enqueue(fixture, project.id)).resolves.toMatchObject({
+        ok: false,
+        error: { code: ErrorCode.ProjectInvalid, details: { reason: "story-motion-shallow", sceneIds: ["scene-1"] } },
+      });
+      expect(dbOne(fixture.database, "SELECT COUNT(*) AS count FROM job")).toEqual({ count: 0 });
+
+      await writeFile(path.join(project.projectRoot, "compositions/scene-1.html"), source(`
+        tl.fromTo("#hero", { scale: 0.7 }, { scale: 1, duration: 0.6, ease: "expo.out" }, 0.2);
+        tl.to("#hero", { rotation: 8, duration: 0.6, ease: "sine.inOut" }, 1.2);`));
+      await expect(enqueue(fixture, project.id)).resolves.toMatchObject({ ok: true });
+    } finally {
+      await fixture.database.destroy();
+    }
+  });
+
+  it("rejects CJK text whose project-local font has no matching glyph before enqueue", async (context) => {
+    const font = await latinFontFixture();
+    if (!font) return context.skip("no known Latin system font is installed");
+    const fixture = await baseFixture();
+    try {
+      const project = await addProject(fixture, "font-glyph-gate", `<!doctype html><html><head><style>
+        @font-face { font-family: "Verified Latin"; src: url("./assets/verified.ttf"); }
+        body { font-family: "Verified Latin", sans-serif; }
+      </style></head><body>
+        <main data-composition-id="main" data-width="320" data-height="180" data-duration="1">
+          <section data-composition-id="scene-1" data-start="0" data-duration="1">日本語 한국어 中文</section>
+        </main></body></html>`);
+      await mkdir(path.join(project.projectRoot, "assets"));
+      await copyFile(font, path.join(project.projectRoot, "assets/verified.ttf"));
+
+      await expect(enqueue(fixture, project.id)).resolves.toMatchObject({
+        ok: false,
+        error: { code: ErrorCode.ProjectInvalid, details: { reason: "font-glyph-missing" } },
+      });
       expect(dbOne(fixture.database, "SELECT COUNT(*) AS count FROM job")).toEqual({ count: 0 });
     } finally {
       await fixture.database.destroy();
@@ -256,6 +532,40 @@ describe("render job with real SQLite and filesystem", () => {
         error: { code: ErrorCode.RemoteAssetNotLocal },
       });
       expect(dbOne(fixture.database, "SELECT COUNT(*) AS count FROM job")).toEqual({ count: 0 });
+    } finally {
+      await fixture.database.destroy();
+    }
+  });
+
+  it("probes the shipped toolchain against the selected project root", async () => {
+    const fixture = await baseFixture();
+    try {
+      const project = await addProject(fixture, "version-probe", `<!doctype html><html><body>
+        <main data-composition-id="main" data-duration="1">
+          <section data-composition-id="scene-1" data-start="0" data-duration="1"></section>
+        </main></body></html>`);
+      const probedRoots: AbsolutePath[] = [];
+      const binaries: BinaryProbePort = {
+        async probe(projectRoot) {
+          probedRoots.push(projectRoot);
+          return fixture.binaries.probe(projectRoot);
+        },
+      };
+
+      const queued = await enqueueRenderJob({
+        workspace: fixture.workspace,
+        composition: new CompositionHf(),
+        journal: fixture.journal,
+        jobs: fixture.jobs,
+        ids: fixture.ids,
+        hashContent,
+        binaries,
+        fonts: fixture.fonts,
+        diagnostics: fixture.diagnostics,
+      }, { projectId: project.id });
+
+      expect(queued.ok).toBe(true);
+      expect(probedRoots).toEqual([project.projectRoot as AbsolutePath]);
     } finally {
       await fixture.database.destroy();
     }
@@ -306,7 +616,9 @@ describe("render job with real SQLite and filesystem", () => {
         workspace: fixture.workspace,
         journal: fixture.journal,
         guard: new LoopbackRuntimeAssetGuard(),
-        binaries: new NodeRenderBinaryProbe(binaryPaths),
+        binaries: new NodeRenderBinaryProbe(binaryPaths, { appDataRoot: fixture.appDataRoot }),
+        fonts: fixture.fonts,
+        diagnostics: fixture.diagnostics,
         runtimeSource: hyperframesRuntimeSource,
         injectGuard: injectRuntimeAssetGuardDocument,
         clock,
@@ -314,7 +626,7 @@ describe("render job with real SQLite and filesystem", () => {
       });
       expect(definition).toMatchObject({ type: "render", concurrency: 2, idempotent: false, maxAttempts: 1 });
       const jobId = "job_real_render" as JobId;
-      const input = { projectId: project.id, bestEffort: true };
+      const input = { projectId: project.id, expectedSourceRevision: 0, bestEffort: true };
       await fixture.jobs.enqueue({
         id: jobId,
         projectId: project.id,
@@ -387,6 +699,113 @@ describe("render job with real SQLite and filesystem", () => {
       });
       await expect(access(path.join(project.projectRoot, "renders", `${queued.value.id}.mp4`)))
         .rejects.toMatchObject({ code: "ENOENT" });
+    } finally {
+      await fixture.database.destroy();
+    }
+  });
+
+  it("preserves the bounded ffprobe diagnostic when rendered bytes are invalid", async () => {
+    const fixture = await baseFixture();
+    try {
+      const project = await addProject(fixture, "invalid-artifact", `<!doctype html><html><body>
+        <main data-composition-id="main" data-duration="1">
+          <section data-composition-id="scene-1" data-start="0" data-duration="1"></section>
+        </main></body></html>`);
+      const harness = await renderHarness(fixture);
+      let calls = 0;
+      const processPort: ProcessSupervisorPort = {
+        async run(input) {
+          calls += 1;
+          if (calls === 1) {
+            const outputIndex = input.command.indexOf("-o");
+            const outputPath = input.command[outputIndex + 1];
+            if (!outputPath) throw new Error("render command did not name its output");
+            await writeFile(outputPath, "not an mp4", "utf8");
+          }
+          return calls === 1
+            ? {
+              status: "exited" as const,
+              output: { exitCode: 0, stdout: "", stderr: "", timedOut: false },
+            }
+            : {
+              status: "exited" as const,
+              output: {
+                exitCode: 1,
+                stdout: "",
+                stderr: "moov atom not found",
+                timedOut: false,
+              },
+            };
+        },
+      };
+      const queued = await enqueue(fixture, project.id);
+      expect(queued.ok).toBe(true);
+      if (!queued.ok) return;
+
+      await execute(fixture, harness.definition(processPort));
+
+      expect(calls).toBe(2);
+      await expect(fixture.jobs.get(queued.value.id as JobId)).resolves.toMatchObject({
+        status: "failed",
+        error: {
+          code: ErrorCode.Internal,
+          message: "render artifact validation failed (ffprobe exited 1: moov atom not found)",
+        },
+      });
+    } finally {
+      await fixture.database.destroy();
+    }
+  });
+
+  it("rejects a zero-exit renderer that published no artifact and disables experimental capture", async () => {
+    const fixture = await baseFixture();
+    try {
+      const project = await addProject(fixture, "missing-artifact", `<!doctype html><html><body>
+        <main data-composition-id="main" data-duration="1">
+          <section data-composition-id="scene-1" data-start="0" data-duration="1"></section>
+        </main></body></html>`);
+      const harness = await renderHarness(fixture);
+      let calls = 0;
+      let routerSetting: string | undefined;
+      let fastCaptureSetting: string | undefined;
+      let renderTimeoutMs: number | undefined;
+      const processPort: ProcessSupervisorPort = {
+        async run(input) {
+          calls += 1;
+          routerSetting = input.environment?.HF_DE_PARALLEL_ROUTER;
+          fastCaptureSetting = input.environment?.PRODUCER_EXPERIMENTAL_FAST_CAPTURE;
+          renderTimeoutMs = input.timeoutMs;
+          return {
+            status: "exited" as const,
+            output: {
+              exitCode: 0,
+              stdout: `${"early warning ".repeat(300)}render completed`,
+              stderr: "Render failed: browser navigation was blocked offline",
+              timedOut: false,
+            },
+          };
+        },
+      };
+      const queued = await enqueue(fixture, project.id);
+      expect(queued.ok).toBe(true);
+      if (!queued.ok) return;
+
+      await execute(fixture, harness.definition(processPort));
+
+      expect(calls).toBe(1);
+      expect(routerSetting).toBe("false");
+      expect(fastCaptureSetting).toBe("false");
+      expect(renderTimeoutMs).toBe(MIN_RENDER_PROCESS_TIMEOUT_MS);
+      expect(harness.definition(processPort).timeoutMs).toBe(RENDER_JOB_TIMEOUT_MS);
+      await expect(fixture.jobs.get(queued.value.id as JobId)).resolves.toMatchObject({
+        status: "failed",
+        error: {
+          code: ErrorCode.Internal,
+          message: expect.stringMatching(
+            /^HyperFrames exited 0 without producing the render artifact .*Render failed: browser navigation was blocked offline\)$/u,
+          ),
+        },
+      });
     } finally {
       await fixture.database.destroy();
     }

@@ -13,8 +13,11 @@ import { createMcpHttpHandlers } from "@vidcom/mcp";
 import {
   CONTRACT_MATRIX_CASES,
   createContractMatrixRegistry,
+  matrixBgmPath,
+  matrixBgmProviderTrack,
   matrixHash,
   matrixNewHash,
+  matrixRenderPath,
 } from "./support";
 
 const fixture = fileURLToPath(new URL("./fixtures/contract-matrix-server.ts", import.meta.url));
@@ -84,6 +87,95 @@ const expectedSuccess: Record<string, object> = {
     status: "installed",
     library: { id: "gsap", loader: "global", globalName: "gsap" },
     revision: 3,
+  },
+  create_project: { projectId: "project_matrix", slug: "matrix-two" },
+  adopt_project: { projectId: "project_matrix" },
+  rename_project: { slug: "contract-matrix-renamed" },
+  delete_project: { backupId: "backup-contract-matrix" },
+  list_project_assets: {
+    assets: [{ path: matrixBgmPath, kind: "audio", referencedByPreviewSettings: false }],
+    truncated: false,
+  },
+  set_preview_settings: {
+    revision: 3,
+    diagnostics: [],
+    previewSettings: {
+      theme: {
+        paletteId: "sunset",
+        variables: { "--background": "#FFE8B4", "--text": "#5E244E" },
+      },
+    },
+  },
+  get_narration_cues: {
+    cues: [{ cueId: "scene-1", voice: "matrix-voice", offsetSeconds: 0 }],
+    contentHash: matrixHash,
+  },
+  replace_narration_cues: {
+    cues: [{ cueId: "scene-1", text: "Xin chào" }],
+    contentHash: matrixNewHash,
+    revision: 3,
+  },
+  patch_narration_cue: {
+    cues: [{ cueId: "scene-1", text: "Chào bạn" }],
+    contentHash: matrixNewHash,
+    revision: 3,
+  },
+  cancel_job: { jobId: "job_matrix", status: "succeeded", requested: false },
+  get_render_output: {
+    jobId: "job_render",
+    projectId,
+    path: matrixRenderPath,
+    mediaType: "video/mp4",
+    outcome: "succeeded",
+  },
+  list_bgm_beds: {
+    // toMatchObject compares arrays element-wise, so every entry is listed; the
+    // ids and the selection metadata are what a picker actually reads.
+    beds: [
+      { id: "ambient", selection: { tempo: "slow", hasVocals: false } },
+      { id: "cinematic" },
+      { id: "lofi" },
+      { id: "piano" },
+      { id: "dark" },
+    ],
+    // The shipped catalogue always lists; `available` reports whether this build
+    // actually carries the audio, and the licence gap is visible in the data.
+    tracks: [
+      { id: "corporate-synth", available: true, license: { kind: "unknown" } },
+      { id: "corporate-marimba", available: true },
+      { id: "lofi-chill", available: true },
+      { id: "promo-dance", available: true },
+    ],
+    library: [{ id: "bgm_matrix", source: "import" }],
+    defaultVolume: 0.12,
+  },
+  list_color_palettes: {
+    defaultPaletteId: "clean-slate",
+    palettes: [
+      { id: "electric", guidance: { moods: ["energetic", "innovative", "futuristic"] } },
+      { id: "midnight", category: "dark", source: { provider: "color-hunt" } },
+      { id: "cyber", category: "dark" },
+    ],
+  },
+  search_bgm: {
+    tracks: [matrixBgmProviderTrack],
+    providers: [{ providerId: "matrix-music", status: "ok", resultCount: 1 }],
+    offlineFallbackAvailable: true,
+  },
+  install_bgm: {
+    track: {
+      name: "bgm_matrix_remote.mp3",
+      path: "preview-assets/bgm/bgm_matrix_remote.mp3",
+      durationSeconds: 90,
+    },
+    volume: 0.12,
+    loop: true,
+    revision: 3,
+  },
+  import_bgm: { entry: { id: "bgm_matrix" }, alreadyPresent: false },
+  record_bgm_license: {
+    trackId: "corporate-synth",
+    license: { kind: "cc-by", holder: "Contract Matrix" },
   },
 };
 

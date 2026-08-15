@@ -113,9 +113,12 @@ function diagnosticsWithMissingCheck(value: Awaited<ReturnType<typeof fixture>>)
     authority: value.application.authority,
     lint: new NodeHyperframesDiagnosticsLint(
       new NodeProcessRunner(2_000),
-      path.join(value.root, "missing-hyperframes-cli.mjs") as AbsolutePath,
-      2_000,
+      {
+        cliPath: path.join(value.root, "missing-hyperframes-cli.mjs") as AbsolutePath,
+        timeoutMs: 2_000,
+      },
     ),
+    fonts: value.application.fonts,
   });
 }
 
@@ -148,7 +151,7 @@ describe("Phase M diagnostics and thumbnails on real SQLite/filesystem", () => {
       frameRate: 60,
       scenes: [{
         id: "timed",
-        src: null,
+        src: "compositions/timed.html",
         start: 0,
         duration: 4,
         trackIndex: 0,
@@ -223,6 +226,7 @@ describe("Phase M diagnostics and thumbnails on real SQLite/filesystem", () => {
           return { available: true, diagnostics: [{ severity: "warning", code: "lint:sample", message: "sample" }] };
         },
       },
+      fonts: value.application.fonts,
     });
     const report = await service.forProject(id);
     expect(report.ok).toBe(true);
@@ -234,6 +238,7 @@ describe("Phase M diagnostics and thumbnails on real SQLite/filesystem", () => {
       "empty-scene",
       "platform-mismatch",
       "missing-asset",
+      "story-motion-unverified",
       "lint:sample",
     ]));
   });
@@ -262,6 +267,7 @@ describe("Phase M diagnostics and thumbnails on real SQLite/filesystem", () => {
       workspace: value.infrastructure.workspace,
       composition: value.infrastructure.composition,
       journal: value.infrastructure.journal,
+      fonts: value.application.fonts,
     };
     await expect(prepareRender(jobDeps, id)).resolves.toMatchObject({ ok: false, error: { code: ErrorCode.ProjectInvalid } });
     await expect(prepareSnapshot(jobDeps, id)).resolves.toMatchObject({ ok: false, error: { code: ErrorCode.ProjectInvalid } });
@@ -358,6 +364,7 @@ describe("Phase M diagnostics and thumbnails on real SQLite/filesystem", () => {
       journal: value.infrastructure.journal,
       authority: value.application.authority,
       lint: { async check() { return { available: true, diagnostics: [] }; } },
+      fonts: value.application.fonts,
     });
 
     const before = await service.forProject(id);
@@ -401,7 +408,10 @@ describe("Phase M diagnostics and thumbnails on real SQLite/filesystem", () => {
       contrast:{findings:[{code:"contrast",severity:"error",message:"contrast"}]}
     }));\n`);
     const root = value.workspaceRoot as AbsolutePath;
-    const lint = new NodeHyperframesDiagnosticsLint(new NodeProcessRunner(5_000), cli as AbsolutePath, 5_000);
+    const lint = new NodeHyperframesDiagnosticsLint(new NodeProcessRunner(5_000), {
+      cliPath: cli as AbsolutePath,
+      timeoutMs: 5_000,
+    });
     const result = await lint.check({
       id: "project_lint" as ProjectId, slug: "lint", root, entry: "index.html" as RelPath,
     });
@@ -409,5 +419,25 @@ describe("Phase M diagnostics and thumbnails on real SQLite/filesystem", () => {
     expect(result.diagnostics.map(({ code }) => code)).toEqual([
       "lint:static", "lint:runtime", "lint:layout", "lint:motion", "lint:contrast",
     ]);
+  });
+
+  it("parses HyperFrames diagnostic JSON larger than the default process capture budget", async () => {
+    const value = await fixture();
+    const cli = path.join(value.root, "large-fake-check.mjs");
+    await writeFile(cli, `process.stdout.write(JSON.stringify({
+      lint:{findings:[{code:"large",severity:"warning",message:"x".repeat(70 * 1024)}]}
+    }));\n`);
+    const root = value.workspaceRoot as AbsolutePath;
+    const lint = new NodeHyperframesDiagnosticsLint(new NodeProcessRunner(5_000), {
+      cliPath: cli as AbsolutePath,
+      timeoutMs: 5_000,
+    });
+    const result = await lint.check({
+      id: "project_large_lint" as ProjectId, slug: "large-lint", root, entry: "index.html" as RelPath,
+    });
+    expect(result.available).toBe(true);
+    expect(result.diagnostics).toHaveLength(1);
+    expect(result.diagnostics[0]).toMatchObject({ code: "lint:large", severity: "warning" });
+    expect(result.diagnostics[0]?.message).toHaveLength(70 * 1024);
   });
 });

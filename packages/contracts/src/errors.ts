@@ -11,6 +11,8 @@ export enum ErrorCode {
   OriginNotAllowed = "origin_not_allowed",
   AssetNotAllowed = "asset_not_allowed",
   PathOutsideProject = "path_outside_project",
+  /** The operating system refused to read a path. An answer, not a fault. */
+  PathPermissionDenied = "path_permission_denied",
   ProjectNotFound = "project_not_found",
   ProjectInvalid = "project_invalid",
   IdentityParseError = "identity_parse_error",
@@ -31,6 +33,12 @@ export enum ErrorCode {
   Internal = "internal",
   StorageUnavailable = "storage_unavailable",
   WorkspaceLeaseDenied = "workspace_lease_denied",
+  /** A switch was refused because work is still running in the current workspace. */
+  WorkspaceBusy = "workspace_busy",
+  /** A mutation arrived while a switch was mid-flight; the caller should retry. */
+  WorkspaceSwitching = "workspace_switching",
+  /** The requested workspace could not be brought up at all. */
+  WorkspaceUnavailable = "workspace_unavailable",
   ApprovalRequired = "approval_required",
   ApprovalExpired = "approval_expired",
   ApprovalInvalid = "approval_invalid",
@@ -53,6 +61,32 @@ export enum ErrorCode {
   TtsVoiceNotSupported = "tts_voice_not_supported",
   TtsQuotaExceeded = "tts_quota_exceeded",
   TtsSynthesisFailed = "tts_synthesis_failed",
+  BridgeCredentialUnavailable = "bridge_credential_unavailable",
+  /** The system bridge bearer is invalid; user MCP credentials use `credential_invalid`. */
+  BridgeCredentialInvalid = "bridge_credential_invalid",
+  BridgeRotationInProgress = "bridge_rotation_in_progress",
+  DownloadTlsUntrusted = "download_tls_untrusted",
+  /**
+   * A runtime download could not complete: unreachable, timed out, or left
+   * partial. Distinct from `download_tls_untrusted`, which names a trust
+   * failure the user can fix by supplying a bundle.
+   */
+  DownloadUnavailable = "download_unavailable",
+  /** An HTTP body crossed its route limit; project asset quotas use `too_large`. */
+  PayloadTooLarge = "payload_too_large",
+  DaemonIdentityMismatch = "daemon_identity_mismatch",
+  DaemonUnavailable = "daemon_unavailable",
+  CompilerUnavailable = "compiler_unavailable",
+  RuntimeManifestInvalid = "runtime_manifest_invalid",
+  RuntimeExtractionIncomplete = "runtime_extraction_incomplete",
+  BootstrapLockTimeout = "bootstrap_lock_timeout",
+  PathTimeout = "path_timeout",
+  BrowseTokenInvalid = "browse_token_invalid",
+  ProjectImportConflict = "project_import_conflict",
+  /** The agent CLI is not installed, or the PTY layer refused to start it. */
+  AgentUnavailable = "agent_unavailable",
+  /** Opening another agent terminal would cross the concurrent-process ceiling. */
+  AgentSessionLimit = "agent_session_limit",
 }
 
 /** Stable machine-readable warning codes exposed with job results. */

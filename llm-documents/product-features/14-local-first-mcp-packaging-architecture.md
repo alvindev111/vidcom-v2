@@ -436,6 +436,8 @@ MCP cung cấp capability **cho một AI host bên ngoài**. Tab AI Composer tro
 
 Việc export MCP server (D1) **không** tự động biến tab AI Composer hiện tại thành agent thật.
 
+**Đã chọn Hướng A.** Agent chạy dưới `node-pty` với `cwd` = thư mục project, và nối tới MCP **HTTP** của daemon chứ không phải một `vidcom mcp` spawn thêm — server stdio đó cần lease workspace mà daemon đang giữ. Giới hạn theo §13: trần phiên đồng thời, kill khi không còn ai đọc stream, kill khi đổi workspace hoặc dừng daemon, credential riêng nhãn `agent:terminal`, bearer qua env chứ không qua argv. Chi tiết ở [09-feature-ai-composer](09-feature-ai-composer.md).
+
 ---
 
 ## 13. Local security baseline

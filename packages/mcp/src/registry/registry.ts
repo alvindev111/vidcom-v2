@@ -1,4 +1,12 @@
-import { ErrorCode, type DomainError, type Era, type ProjectId, type ToolLevel } from "@vidcom/contracts";
+import {
+  ErrorCode,
+  TOOL_SCHEMA_CATALOGUE,
+  type DomainError,
+  type Era,
+  type ProjectId,
+  type ToolLevel,
+  type ToolSchemaEntry,
+} from "@vidcom/contracts";
 import type { ToolAuditEntry } from "@vidcom/core";
 
 import type {
@@ -20,6 +28,8 @@ const defaultRuntime: RegistryRuntime = {
   newInvocationId: () => crypto.randomUUID(),
   now: () => new Date(),
 };
+
+const publicToolSchemas: Readonly<Record<string, ToolSchemaEntry>> = TOOL_SCHEMA_CATALOGUE;
 
 function failure(code: ErrorCode, message: string, field?: string): { ok: false; error: DomainError } {
   return { ok: false, error: { code, message, ...(field ? { field } : {}) } };
@@ -54,7 +64,7 @@ function elapsedMilliseconds(startedAt: Date, endedAt: Date): number {
   return Math.max(0, endedAt.getTime() - startedAt.getTime());
 }
 
-/** Derives host hints from authorization level; callers cannot override safety metadata. */
+/** Derives safety hints from authorization level; tools only choose whether they access the open world. */
 export function annotationsForLevel(level: ToolLevel): ToolAnnotations {
   if (level === "read") {
     return { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false };
@@ -78,9 +88,35 @@ export class ToolRegistry {
     if (this.definitions.has(definition.name)) throw new TypeError(`tool is already registered: ${definition.name}`);
     const canonical: ToolDefinition<I, O> = {
       ...definition,
-      annotations: annotationsForLevel(definition.level),
+      annotations: {
+        ...annotationsForLevel(definition.level),
+        openWorldHint: definition.annotations.openWorldHint,
+      },
     };
     this.definitions.set(definition.name, canonical as ToolDefinition<unknown, unknown>);
+  }
+
+  /** Seals full public registration against the contracts catalogue in both directions. */
+  assertPublicCatalogue(): void {
+    const expectedNames = Object.keys(publicToolSchemas).sort();
+    const registeredNames = [...this.definitions.keys()].sort();
+    if (
+      expectedNames.length !== registeredNames.length
+      || expectedNames.some((name, index) => name !== registeredNames[index])
+    ) {
+      throw new TypeError("public tool registry does not match the contracts catalogue");
+    }
+    for (const name of expectedNames) {
+      const expected = publicToolSchemas[name];
+      const registered = this.definitions.get(name);
+      if (!expected || !registered || (
+        expected.input !== registered.input
+        || expected.output !== registered.output
+        || expected.level !== registered.level
+      )) {
+        throw new TypeError(`tool does not match its contracts catalogue entry: ${name}`);
+      }
+    }
   }
 
   list(era: Era): ToolDescriptor[] {
@@ -136,7 +172,8 @@ export class ToolRegistry {
     }
     const revisionBefore = await this.dependencies.audit.currentRevision(projectId);
     const detail = { input, invocationId };
-    const journalOwned = definition.level === "write" || definition.level === "destructive";
+    const journalOwned = definition.journalOwned
+      ?? (definition.level === "write" || definition.level === "destructive");
     const pending = journalOwned
       ? this.dependencies.audit.prepareWrite({
           invocationId,
@@ -151,6 +188,10 @@ export class ToolRegistry {
           revisionBefore,
         })
       : null;
+    // Set when write authority proves the project already matched the request, so
+    // no journal was opened. Nothing else may set it: the ownership check below is
+    // what catches a handler mutating outside the journal.
+    let unchanged = false;
     const context = {
       actor: "agent" as const,
       era: request.era,
@@ -158,7 +199,7 @@ export class ToolRegistry {
       grantId: definition.level === "destructive" ? grantIdOf(input) : null,
       credentialId: request.credentialId,
       invocationId,
-      writeInvocation: { toolAudit: pending },
+      writeInvocation: { toolAudit: pending, noteUnchanged: () => { unchanged = true; } },
       requestInput: request.requestInput,
     };
 
@@ -224,7 +265,12 @@ export class ToolRegistry {
       await this.dependencies.audit.recordFailureIfCallerOwned(invocationId, terminal);
     } else {
       const ownership = await this.dependencies.audit.ownershipOf(invocationId, definition.name);
-      if (ownership !== "journal_owned") {
+      if (ownership === "caller_owned" && unchanged) {
+        // An idempotent write: the request was already satisfied, so there is no
+        // journal to own the audit and the invocation is recorded the way a read
+        // is. Rejecting it would make re-sending the same content a hard failure.
+        await this.dependencies.audit.recordRead(terminal);
+      } else if (ownership !== "journal_owned") {
         return failure(ErrorCode.Internal, ownership === "unknown"
           ? "tool audit ownership could not be determined"
           : "write tool completed without durable journal audit ownership");

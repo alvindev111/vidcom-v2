@@ -11,10 +11,12 @@ import {
 
 import type { CompositionSource, ProjectRef } from "../domain/models";
 import { findMotionLibrary, scanRemoteMotionLibraries } from "../domain/motion-libraries";
+import { storyMotionDiagnostics } from "../domain/story-motion";
 import { err, ok, type Result } from "../error/result";
 import type { CompositionPort, DiagnosticsLintPort, MutationJournalPort, WorkspacePort } from "../port/ports";
 import { canonicalizeJson } from "../service/canonical-json";
 import type { EntryId } from "../service/entry-registry";
+import type { FontCompatibilityService } from "../service/font-compatibility";
 import type { DerivedMutationPath, WriteAuthority } from "../service/write-authority";
 import type { ProjectIdentityService } from "./project-identity";
 import type { WorkspaceEntry } from "./scan-workspace";
@@ -35,6 +37,7 @@ export interface DiagnosticsServiceDependencies {
   journal: Pick<MutationJournalPort, "latestSourceRevision">;
   authority: Pick<WriteAuthority, "mutateDerived">;
   lint: DiagnosticsLintPort;
+  fonts: FontCompatibilityService;
 }
 
 function invalidDiagnostic(entry: Extract<WorkspaceEntry, { state: "invalid" }>): Diagnostic {
@@ -159,7 +162,14 @@ export class DiagnosticsService {
         diagnostics.push({ severity: "error", code: "composition_parse_error", message: "Composition could not be parsed." });
       }
       if (model) {
-        diagnostics.push(...model.diagnostics, ...model.scenes.flatMap(sceneDiagnostics));
+        diagnostics.push(
+          ...model.diagnostics,
+          ...model.scenes.flatMap(sceneDiagnostics),
+          // VidCom-authored story beats are mounted sub-compositions. Inline
+          // legacy/utility scenes stay readable; the agent-kit creates every new
+          // story scene as its own source and therefore cannot bypass this gate.
+          ...storyMotionDiagnostics(model.scenes.filter((scene) => scene.src !== null)),
+        );
         if (model.scenes.length === 0) diagnostics.push({
           severity: "info", code: "no-scenes", message: "Composition has no scenes yet.",
         });
@@ -178,6 +188,7 @@ export class DiagnosticsService {
           message: `Declared ${platform.width}x${platform.height}@${platform.fps}fps differs from composition ${model.project.width}x${model.project.height}@${model.frameRate ?? 30}fps.`,
         });
         diagnostics.push(...await this.remoteMotionLibraryDiagnostics(ref, model.sources));
+        diagnostics.push(...await this.dependencies.fonts.inspect(ref, model.sources));
         const sources = new Set(model.sources.map(({ path }) => path));
         for (const reference of model.references) {
           if (sources.has(reference.path)) continue;

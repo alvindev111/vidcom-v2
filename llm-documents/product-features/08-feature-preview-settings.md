@@ -89,6 +89,13 @@ Vị trí UI: tab `Preview editor` bên cạnh tab `Scene` (nửa dưới của 
 5. Ghi settings `{ bgm: { enabled: true, track: { name, path: "preview-assets/bgm/<safeName>" } } }` — upload **tự bật** BGM.
 6. Trả settings mới.
 
+**Backend v1 và MCP hiện tại:** UI compatibility ở trên vẫn chỉ có nút upload, nhưng backend không còn upload-only:
+
+- `search_bgm` và `GET /api/v1/bgm/search?mood=...&limit=...` tìm nhạc instrumental theo mood qua hai nguồn keyless độc lập: Openverse trước, ccMixter làm fallback. Lỗi/rate-limit của một nguồn được trả thành trạng thái `unavailable`, không làm mất nguồn còn lại; `offlineFallbackAvailable` luôn chỉ rõ còn đường offline.
+- Kết quả remote chỉ cho phép Public Domain, CC0 hoặc CC BY. CC BY phải có holder và URL HTTP(S); agent/người dùng vẫn phải kiểm tra landing page vì catalog tổng hợp không chứng minh quyền thay tác giả.
+- Cài bằng `{ providerTrack: { providerId, trackId } }` bắt buộc tải lại đúng track đã chọn. Bytes được đóng băng trong thư viện máy cùng licence, attribution và provenance trước khi copy vào `preview-assets/bgm/`; render không phụ thuộc mạng.
+- `list_bgm_beds`/`GET /api/v1/bgm` giữ năm bed synth và thư viện máy làm fallback khi mạng/catalog không phù hợp. Agent workflow coi BGM là mặc định sau khi biết duration; chỉ bỏ khi người dùng yêu cầu hoặc im lặng có chủ đích biên tập.
+
 **Logic phát** (`buildBgmHtml` — [preview-settings.ts:557](../../src/lib/studio/preview-settings.ts#L557)):
 ```html
 <audio id="hf-preview-bgm" class="clip"
@@ -105,11 +112,12 @@ Chèn vào body của **root** preview. `class="clip"` khiến runtime HyperFram
 - Không xoá được track cũ → `preview-assets/bgm/` tích tụ file rác.
 - Không có waveform, không trim, không fade in/out, không ducking khi có narration.
 - Chỉ **một** track cho cả project.
+- UI card chưa expose tìm kiếm remote, attribution và trạng thái từng provider; các khả năng này hiện có qua REST/MCP.
 
 **Kỳ vọng backend:**
 - Validate magic bytes + probe (ffprobe) → trả duration, sample rate, channels.
 - Nhiều track BGM với `start`/`duration`/`fadeIn`/`fadeOut`/`gain`.
-- Thư viện nhạc / gợi ý theo mood.
+- Picker UI cho thư viện máy + tìm theo mood, xem licence/attribution trước khi cài.
 - Auto-ducking dưới narration.
 - Normalize loudness (LUFS).
 - Xoá/quản lý asset.

@@ -48,6 +48,18 @@ function respondWith(body: unknown, status = 200): typeof globalThis.fetch {
   });
 }
 
+/** Captures every request body the adapter sends, alongside a fixed response. */
+function recordingFetch(body: unknown): { fetch: typeof globalThis.fetch; sent: Record<string, unknown>[] } {
+  const sent: Record<string, unknown>[] = [];
+  return {
+    sent,
+    fetch: async (_input, init) => {
+      sent.push(JSON.parse(String(init?.body ?? "{}")) as Record<string, unknown>);
+      return new Response(JSON.stringify(body), { status: 200, headers: { "content-type": "application/json" } });
+    },
+  };
+}
+
 function audioResponse(text: string) {
   return {
     audio_base64: Buffer.alloc(1_024, 9).toString("base64"),
@@ -65,6 +77,7 @@ function request(overrides: Partial<TtsSynthesisRequest> = {}): TtsSynthesisRequ
     languageCode: "vi",
     ratePercent: 0,
     computeDevice: "cpu",
+    seed: 4_242,
     ...overrides,
   };
 }
@@ -100,6 +113,68 @@ describe("ElevenLabsTtsProvider", () => {
     expect((await readFile(produced[0]!.filePath)).byteLength).toBe(1_024);
     expect(produced[0]?.words.map((word) => word.text)).toEqual(["hi", "there"]);
     expect(produced[0]?.words[0]).toMatchObject({ startSeconds: 0, endSeconds: 0.2 });
+  });
+
+  it("tells the model what it spoke before and what comes next", async () => {
+    const recorder = recordingFetch(audioResponse("middle"));
+    const subject = new ElevenLabsTtsProvider({ apiKey: "k", fetch: recorder.fetch });
+    const scratchDir = await scratch();
+
+    await subject.synthesize(request({
+      cues: [
+        { id: "one", text: "Câu một" },
+        { id: "two", text: "Câu hai" },
+        { id: "three", text: "Câu ba" },
+      ],
+    }), { scratchDir });
+
+    // The API takes these for exactly this case — separate generations played back
+    // to back. Without them every cue is spoken as if it were the whole piece, and
+    // the seam between two scenes is audible.
+    expect(recorder.sent[0]).toMatchObject({ next_text: "Câu hai" });
+    expect(recorder.sent[0]?.previous_text).toBeUndefined();
+    expect(recorder.sent[1]).toMatchObject({ previous_text: "Câu một", next_text: "Câu ba" });
+    expect(recorder.sent[2]).toMatchObject({ previous_text: "Câu hai" });
+    expect(recorder.sent[2]?.next_text).toBeUndefined();
+  });
+
+  it("pins the sampler with the batch seed and records that it did", async () => {
+    const recorder = recordingFetch(audioResponse("hi"));
+    const subject = new ElevenLabsTtsProvider({ apiKey: "k", fetch: recorder.fetch });
+    const scratchDir = await scratch();
+
+    const produced = await subject.synthesize(request({ seed: 4_242 }), { scratchDir });
+
+    expect(recorder.sent[0]).toMatchObject({ seed: 4_242 });
+    // Recorded so the narration sidecar shows a pinned cue as pinned, rather than
+    // leaving a cue that was left to chance indistinguishable from one that wasn't.
+    expect(produced[0]?.metadata).toMatchObject({ seed: 4_242, continuityContext: false });
+  });
+
+  it("leaves the sampler alone when the batch asked for no seed", async () => {
+    const recorder = recordingFetch(audioResponse("hi"));
+    const subject = new ElevenLabsTtsProvider({ apiKey: "k", fetch: recorder.fetch });
+    const scratchDir = await scratch();
+
+    const produced = await subject.synthesize(request({ seed: null }), { scratchDir });
+
+    expect(recorder.sent[0]?.seed).toBeUndefined();
+    expect(produced[0]?.metadata.seed).toBeUndefined();
+  });
+
+  it("keeps the seed inside the range the API accepts", async () => {
+    const recorder = recordingFetch(audioResponse("hi"));
+    const subject = new ElevenLabsTtsProvider({ apiKey: "k", fetch: recorder.fetch });
+    const scratchDir = await scratch();
+
+    await subject.synthesize(request({ seed: -8_589_934_594 }), { scratchDir });
+
+    // The API takes 0..2^32-1 and rejects anything else outright, which would turn
+    // a seed VidCom chose into a failed batch.
+    const seed = recorder.sent[0]?.seed;
+    expect(typeof seed).toBe("number");
+    expect(seed as number).toBeGreaterThanOrEqual(0);
+    expect(seed as number).toBeLessThan(4_294_967_296);
   });
 
   it("reports the rate as already applied, since v3 takes a speed parameter", async () => {

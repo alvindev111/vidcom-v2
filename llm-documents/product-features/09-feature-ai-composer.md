@@ -1,6 +1,6 @@
 # 09 — AI Composer
 
-File liên quan: [ai-composer-panel.tsx](../../src/components/studio/ai-composer-panel.tsx), [terminal-view.tsx](../../src/components/studio/terminal-view.tsx), [agent-session.ts](../../src/lib/studio/agent-session.ts), [sdk.server.ts](../../src/lib/hyperframes/sdk.server.ts) (`createScene`), [api/hf/[slug]/scene/route.ts](../../src/app/api/hf/[slug]/scene/route.ts) (`mcpTranscript`)
+File liên quan: [ai-composer-panel.tsx](../../src/components/studio/ai-composer-panel.tsx), [agent-terminal-client.ts](../../src/lib/studio/agent-terminal-client.ts), [agent-session.ts](../../src/lib/studio/agent-session.ts), [agent-terminal.ts (routes)](../../packages/server/src/routes/agent-terminal.ts), [start-agent-terminal.ts](../../packages/core/src/usecase/start-agent-terminal.ts), [agent-terminal-pty.ts](../../packages/adapter/src/agent/agent-terminal-pty.ts), [project-writes.ts](../../packages/server/src/routes/project-writes.ts) (`mcpTranscript`)
 
 Tab thứ 3 của SourcePane. Tab trigger luôn có viền accent (kể cả khi không active) để "AI surface" luôn nhận diện được.
 
@@ -22,18 +22,22 @@ AGENT_COMMAND = { claude: "claude",      codex: "codex" }
 
 ## F-9.2 — Transcript mở đầu (canned)
 
-**Là gì:** Terminal đen hiển thị một session agent đã có sẵn.
+**Là gì:** Terminal thật chạy chính CLI `claude` hoặc `codex` của người dùng.
 
-**Logic hiện tại** (`terminalTranscript(agent, project)`):
-- Header chung: `~/projects/<slug>` (muted) + dòng command (`claude` / `codex`).
-- Với `codex`: 7 dòng — `● Codex CLI — workspace <slug>`, prompt giả `> tighten the headline tracking on scene-01`, `· patch index.html`, kết luận `letter-spacing: -0.02em → -0.035em on .headline.`
-- Với `claude`: 11 dòng — `● Claude Code v2.1.0 — composing in <slug>`, prompt giả `> add a logo cascade after the headline, staggered 80ms`, các bước `· Read index.html (78 lines)`, `· Edit index.html — +34 −2`, `· Bash hyperframes lint`, `✓ lint: 0 errors, 0 warnings`, rồi 2 dòng tóm tắt.
+**Logic hiện tại:**
+- Daemon spawn CLI dưới pseudo-terminal (`node-pty`) với `cwd` = thư mục project, qua [`NodePtyAgentTerminals`](../../packages/adapter/src/agent/agent-terminal-pty.ts). Policy — agent nào được phép, tái gắn thay vì mở phiên thứ hai, trần số phiên đồng thời — nằm ở use case [`startAgentTerminal`](../../packages/core/src/usecase/start-agent-terminal.ts).
+- Output đi về client bằng SSE (`GET /v1/projects/:id/agent-terminal/:sessionId/stream`), phím gõ và resize đi lên bằng POST. Không dùng WebSocket: upgrade sẽ đi vòng qua middleware perimeter (Host check, CORS, session cookie).
+- Agent được trỏ vào MCP HTTP của **chính daemon đang chạy** (`/api/mcp`) với một credential riêng nhãn `agent:terminal`. Không spawn `vidcom mcp`: server stdio đó cần lease workspace mà daemon đang giữ, nên nó khởi động rồi chết và agent báo "Tools: (none)".
+- Bearer đi qua biến môi trường (`VIDCOM_MCP_TOKEN`), không bao giờ qua argv — Claude Code nội suy `${VAR}` trong `--mcp-config`, Codex có `bearer_token_env_var`.
 
-Comment [agent-session.ts:14](../../src/lib/studio/agent-session.ts#L14): "Canned session for the AI Composer pane. Running a real agent needs a PTY on the server; until that exists this shows the shape of the session."
+Render ([ai-composer-panel.tsx](../../src/components/studio/ai-composer-panel.tsx)): xterm.js + addon-fit, nạp động trong effect vì trang này là static export và xterm chạm `document` lúc khởi tạo.
 
-Render ([terminal-view.tsx](../../src/components/studio/terminal-view.tsx)): 4 kind → màu literal (không dùng theme token, vì terminal luôn tối ở cả 2 theme): `command` neutral-100 (có prefix `$ ` teal), `output` neutral-300, `muted` neutral-500, `accent` teal-300. Cuối cùng có con trỏ nhấp nháy.
+**Nhập tiếng Việt — hai lỗi riêng biệt, đừng lẫn:**
 
-**Trạng thái:** MOCK hoàn toàn.
+1. **Console code page (Windows).** Ứng dụng ở chế độ virtual-terminal input nhận phím do ConPTY mã hoá **qua console input code page**. Máy đặt 932 thì mọi dấu tiếng Việt thành `?` (`Chào bạn` → `Ch?o b?n`). Đã đo: node-pty tự nó không hỏng (cmd.exe echo giữ nguyên dấu), `useConptyDll: true` không sửa được, winpty cũng không. Cách sửa duy nhất hiệu quả là đặt code page trước khi agent khởi động — xem [consoleLaunchPlan](../../packages/adapter/src/agent/executable-lookup.ts).
+2. **Bộ gõ vs xterm.** UniKey/EVKey không phát composition event mà gõ backspace rồi thay ký tự; xterm reset textarea ẩn sau mỗi phím nên ký tự cần thay đã biến mất. Vì vậy pane có thêm một `<input>` thật ở đáy: gõ ở đó, Enter đẩy cả dòng xuống pty.
+
+**Trạng thái:** THẬT. Đã kiểm chứng bằng phiên Codex trả về đủ 18 tool của server `vidcom` kèm `Auth: Bearer token`.
 
 ---
 

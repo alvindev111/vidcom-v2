@@ -40,6 +40,8 @@ export interface WorkspaceProjectCreateRequest {
   projectId: import("@vidcom/contracts").ProjectId;
   files: Array<{ path: RelPath; content: string | Uint8Array }>;
   actor: Actor;
+  /** Present only for an MCP-invoked lifecycle write, which the journal then owns. */
+  toolAudit?: PendingToolAudit | null;
 }
 
 export interface WorkspaceProjectRenameRequest {
@@ -48,6 +50,7 @@ export interface WorkspaceProjectRenameRequest {
   fromSlug: string;
   toSlug: string;
   actor: Actor;
+  toolAudit?: PendingToolAudit | null;
 }
 
 export interface WorkspaceProjectDeleteRequest {
@@ -58,6 +61,7 @@ export interface WorkspaceProjectDeleteRequest {
   expectedTargetHashes: Record<RelPath, ContentHash>;
   grantId?: string;
   actor: Actor;
+  toolAudit?: PendingToolAudit | null;
 }
 
 export interface WorkspaceProjectLocation {
@@ -80,6 +84,8 @@ export interface WorkspaceMutationCoordinatorDependencies {
   hashContent(content: string | Uint8Array): ContentHash;
   directories?: ProjectDirectoryPort;
   clock?: ClockPort;
+  /** Re-registers an import that was published before its job settled. */
+  recoverImportedProject?(root: AbsolutePath, slug: string): Promise<void>;
 }
 
 class WorkspaceMutex {
@@ -165,6 +171,7 @@ export class WorkspaceMutationCoordinator {
           backupId: null,
           actor: request.actor,
           action: "project.create",
+          toolAudit: request.toolAudit ?? null,
         }, request.files.map((file, ordinal) => ({
           ordinal,
           path: file.path,
@@ -244,6 +251,7 @@ export class WorkspaceMutationCoordinator {
           backupId: null,
           actor: request.actor,
           action: "project.rename",
+          toolAudit: request.toolAudit ?? null,
         }, [fromRoot, toRoot].map((root, ordinal) => ({
           ordinal,
           path: (ordinal === 0 ? request.fromSlug : request.toSlug) as RelPath,
@@ -302,6 +310,7 @@ export class WorkspaceMutationCoordinator {
           grantId: request.grantId ?? null,
           actor: request.actor,
           action: "project.delete",
+          toolAudit: request.toolAudit ?? null,
         }, [{
           ordinal: 0,
           path: request.slug as RelPath,
@@ -646,6 +655,32 @@ export class WorkspaceMutationCoordinator {
       return { operationId: operation.id, terminal: "orphaned" };
     };
     try {
+      if (operation.kind === "project_import") {
+        if (!operation.toPath || !operation.stagingPath || !this.dependencies.recoverImportedProject) {
+          return orphan();
+        }
+        const finalRoot = await directories.projectRoot(operation.workspaceRoot, operation.toPath);
+        const [finalState, stagingState] = await Promise.all([
+          directories.inspect(finalRoot),
+          directories.inspect(operation.stagingPath as AbsolutePath),
+        ]);
+        if (finalState === "directory" && stagingState === "absent") {
+          await this.dependencies.recoverImportedProject(finalRoot, operation.toPath);
+          await this.dependencies.journal.recover(operation.id);
+          return { operationId: operation.id, terminal: "recovered" };
+        }
+        if (finalState === "absent" && stagingState === "directory") {
+          await directories.removeOwned(operation.stagingPath as AbsolutePath);
+          await this.dependencies.journal.abort(operation.id, ErrorCode.StorageUnavailable);
+          return { operationId: operation.id, terminal: "aborted" };
+        }
+        if (finalState === "absent" && stagingState === "absent") {
+          await this.dependencies.journal.abort(operation.id, ErrorCode.StorageUnavailable);
+          return { operationId: operation.id, terminal: "aborted" };
+        }
+        return orphan();
+      }
+
       if (operation.kind === "project_create") {
         if (!operation.projectId || !operation.toPath) return orphan();
         const finalRoot = await directories.projectRoot(operation.workspaceRoot, operation.toPath);

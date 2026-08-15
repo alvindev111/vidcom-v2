@@ -86,7 +86,7 @@ export function buildPreviewCss(settings: RenderablePreviewSettings): string {
   const mainAlpha = LIGHT_INTENSITIES[tone.mainLightIntensity];
   const softAlpha = LIGHT_INTENSITIES[tone.softLightIntensity];
   const cream = tone.colorMode === "cream";
-  const background = cream ? "#fff3df" : tone.backgroundColor;
+  const background = tone.backgroundColor;
   const variables = Object.entries(theme.variables).map(([name, value]) => `  ${name}: ${value};`).join("\n");
   const hidden = Object.entries(settings.scenes)
     .filter(([, value]) => value.hidden)

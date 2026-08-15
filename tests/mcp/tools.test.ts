@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import type { Actor, ContentHash, ProjectId, RelPath } from "@vidcom/contracts";
+import { StartRenderInputSchema, type Actor, type ContentHash, type ProjectId, type RelPath } from "@vidcom/contracts";
 import {
   ok,
   ToolAuditService,
@@ -101,6 +101,42 @@ describe("all registered tool handlers", () => {
         ok: false as const,
         error: { code: "project_not_found", message: "project was not found" },
       }),
+      mimeFromPath: () => "video/mp4",
+      bgmSynth: { render: () => new Uint8Array([82, 73, 70, 70]) },
+      bgmLibrary: {
+        list: async () => [],
+        hasShipped: async () => false,
+        readShipped: async () => null,
+        shippedLicenses: async () => ({}),
+        recordShippedLicense: async () => undefined,
+        read: async () => null,
+        add: async () => ({
+          ok: false as const,
+          error: { code: "project_not_found", message: "workspace fixture is unavailable" },
+        }),
+      },
+      lifecycle: {
+        create: async () => ({
+          ok: false as const,
+          error: { code: "project_not_found", message: "workspace fixture is unavailable" },
+        }),
+        adopt: async () => ({
+          ok: false as const,
+          error: { code: "project_not_found", message: "workspace fixture is unavailable" },
+        }),
+        rename: async () => ({
+          ok: false as const,
+          error: { code: "project_not_found", message: "project was not found" },
+        }),
+        planRemove: async () => ({
+          ok: false as const,
+          error: { code: "project_not_found", message: "project was not found" },
+        }),
+        remove: async () => ({
+          ok: false as const,
+          error: { code: "project_not_found", message: "project was not found" },
+        }),
+      },
     } as unknown as VidcomToolDependencies;
     dependencies.reads = dependencies;
     registerVidcomTools(tools, dependencies);
@@ -124,9 +160,35 @@ describe("all registered tool handlers", () => {
       get_job_status: { jobId: "job-1" },
       validate_project: { projectId },
       start_snapshot: { projectId },
-      start_render: { projectId },
+      start_render: { projectId, expectedSourceRevision: 0 },
       install_agent_kit: { operation: "install", hosts: ["codex"] },
       install_motion_library: { projectId, libraryId: "gsap" },
+      create_project: { name: "Project Tools Two", presetId: "vertical-shorts" },
+      adopt_project: { slug: "candidate" },
+      rename_project: { projectId, name: "Project Tools Renamed" },
+      delete_project: { projectId, confirmed: true },
+      list_project_assets: { projectId },
+      set_preview_settings: { projectId, patch: { subtitles: { enabled: true } }, expectedRevision: 0 },
+      get_narration_cues: { projectId, sceneId: "scene-1" },
+      replace_narration_cues: { projectId, sceneId: "scene-1", cues: [], expectedContentHash: null },
+      patch_narration_cue: {
+        projectId, sceneId: "scene-1", cueId: "scene-1", text: "Hello", expectedContentHash: digest("1"),
+      },
+      cancel_job: { jobId: "job-1" },
+      get_render_output: { jobId: "job-1" },
+      list_bgm_beds: {},
+      list_color_palettes: { category: "warm" },
+      search_bgm: { mood: "calm focused", limit: 4 },
+      install_bgm: { projectId, bedId: "ambient", seconds: 10, expectedRevision: 0 },
+      import_bgm: {
+        projectId,
+        path: "preview-assets/bgm/theme.mp3",
+        license: { kind: "unknown", holder: null, url: null, note: null },
+      },
+      record_bgm_license: {
+        trackId: "corporate-synth",
+        license: { kind: "own-work", holder: null, url: null, note: null },
+      },
     };
     expect(Object.keys(cases).sort()).toEqual(tools.list("modern").map((tool) => tool.name));
 
@@ -140,18 +202,65 @@ describe("all registered tool handlers", () => {
       else if (name === "start_tts") {
         expect(result).toMatchObject({ ok: false, error: { code: "tts_provider_unavailable" } });
       }
-      // get_job_status is not project-scoped; an absent job is a plain not_found.
-      else if (name === "get_job_status") {
+      // The job-scoped tools are not project-scoped; an absent job is a plain not_found.
+      else if (name === "record_bgm_license") {
+        expect(result).toMatchObject({ ok: true, value: { trackId: "corporate-synth" } });
+      }
+      else if (name === "list_bgm_beds") {
+        expect(result).toMatchObject({ ok: true, value: { library: [] } });
+      }
+      else if (name === "list_color_palettes") {
+        expect(result).toMatchObject({
+          ok: true,
+          value: {
+            defaultPaletteId: "clean-slate",
+            palettes: [
+              { id: "terracotta", category: "warm" },
+              { id: "sand", category: "warm" },
+              { id: "rose", category: "warm" },
+              { id: "wheat", category: "warm" },
+            ],
+          },
+        });
+      }
+      else if (name === "search_bgm") {
+        expect(result).toMatchObject({
+          ok: true,
+          value: { tracks: [], providers: [], offlineFallbackAvailable: true },
+        });
+      }
+      else if (name === "get_job_status" || name === "cancel_job" || name === "get_render_output") {
         expect(result).toMatchObject({ ok: false, error: { code: "not_found" } });
       }
       else expect(result).toMatchObject({ ok: false, error: { code: "project_not_found" } });
     }
     expect(records).toHaveLength(Object.keys(cases).length);
     expect(new Set(records.map((entry) => entry.tool))).toEqual(new Set(Object.keys(cases)));
+
+    // Every selector install_bgm publishes has to reach the use case. The table
+    // above only exercises bedId, and a handler that forwarded two of the three
+    // failed schema validation on a valid call — with the schema itself correct,
+    // so nothing but this could catch it.
+    for (const selector of [
+      { bedId: "ambient" },
+      { trackId: "lofi-chill" },
+      { libraryEntryId: "bgm-1" },
+      { providerTrack: { providerId: "openverse", trackId: "remote-1" } },
+    ]) {
+      expect(await tools.invoke(
+        "install_bgm",
+        { projectId, ...selector, expectedRevision: 0 },
+        request,
+      )).toMatchObject({ ok: false, error: { code: "project_not_found" } });
+    }
   });
 });
 
-function writeDependencies(captured: Array<{ tool: string; invocation: WriteInvocation }>): WriteToolDependencies {
+function writeDependencies(
+  captured: Array<{ tool: string; invocation: WriteInvocation }>,
+  /** Lets a test stand in for write authority's proven no-op path. */
+  onMutate?: (invocation: WriteInvocation) => void,
+): WriteToolDependencies {
   const model: CompositionModel = {
     project: {
       id: projectId,
@@ -188,6 +297,7 @@ function writeDependencies(captured: Array<{ tool: string; invocation: WriteInvo
       tool: mutation.kind === "file" && mutation.path === "index.html" ? "set_scene_timing" : "save_file",
       invocation: invocation!,
     });
+    if (invocation) onMutate?.(invocation);
     return ok({
       revision: captured.length,
       contentHash: digest(String(captured.length + 1)),
@@ -243,9 +353,49 @@ describe("write tool invocation forwarding", () => {
       tool: "set_scene_timing", invocationId: "invocation-2", projectId, credentialId: "credential-1",
     });
   });
+
+  it("accepts a write whose request was already satisfied and audits it like a read", async () => {
+    // Re-sending content the project already holds opens no journal, so the
+    // invocation cannot be journal-owned. It is still a successful write, and it
+    // has to leave an audit row rather than an `internal` error.
+    const records: ToolAuditEntry[] = [];
+    const captured: Array<{ tool: string; invocation: WriteInvocation }> = [];
+    const dependencies = writeDependencies(captured, (invocation) => invocation.noteUnchanged?.());
+    const tools = registry(records, false);
+    tools.register(saveFileTool(dependencies));
+
+    await expect(tools.invoke("save_file", {
+      projectId,
+      path: "compositions/scene-1.html",
+      content: "<main>before</main>",
+      expectedContentHash: digest("1"),
+    }, request)).resolves.toMatchObject({ ok: true });
+    expect(records).toMatchObject([{ tool: "save_file", level: "write", outcome: "ok" }]);
+  });
+
+  it("still rejects a write that commits without journal ownership and does not claim it was unchanged", async () => {
+    const records: ToolAuditEntry[] = [];
+    const tools = registry(records, false);
+    tools.register(saveFileTool(writeDependencies([])));
+
+    await expect(tools.invoke("save_file", {
+      projectId,
+      path: "compositions/scene-1.html",
+      content: "<main>after</main>",
+      expectedContentHash: digest("1"),
+    }, request)).resolves.toMatchObject({
+      ok: false,
+      error: { code: "internal", message: "write tool completed without durable journal audit ownership" },
+    });
+  });
 });
 
 describe("delivery-loop MCP schemas", () => {
+  it("requires a source revision for start_render", () => {
+    expect(StartRenderInputSchema.safeParse({ projectId }).success).toBe(false);
+    expect(StartRenderInputSchema.safeParse({ projectId, expectedSourceRevision: 0 }).success).toBe(true);
+  });
+
   it("forwards idempotency only when the caller explicitly supplies it", async () => {
     const renderInputs: unknown[] = [];
     const snapshotInputs: unknown[] = [];
@@ -259,13 +409,17 @@ describe("delivery-loop MCP schemas", () => {
         return ok({ id: "job-snapshot" });
       },
     } as unknown as DeliveryLoopToolDependencies;
-    await startRenderTool(dependencies).handler({} as never, { projectId });
-    await startRenderTool(dependencies).handler({} as never, { projectId, idempotencyKey: "render-request-2" });
+    await startRenderTool(dependencies).handler({} as never, { projectId, expectedSourceRevision: 2 });
+    await startRenderTool(dependencies).handler({} as never, {
+      projectId,
+      expectedSourceRevision: 2,
+      idempotencyKey: "render-request-2",
+    });
     await startSnapshotTool(dependencies).handler({} as never, { projectId });
     await startSnapshotTool(dependencies).handler({} as never, { projectId, idempotencyKey: "snapshot-request-2" });
     expect(renderInputs).toEqual([
-      { projectId },
-      { projectId, idempotencyKey: "render-request-2" },
+      { projectId, expectedSourceRevision: 2 },
+      { projectId, expectedSourceRevision: 2, idempotencyKey: "render-request-2" },
     ]);
     expect(snapshotInputs).toEqual([
       { projectId },

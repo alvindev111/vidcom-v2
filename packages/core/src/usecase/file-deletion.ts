@@ -115,7 +115,7 @@ export async function deleteFile(
       path: input.plan.path,
       expectedContentHash: input.plan.expectedContentHash,
     }],
-    toolAudit: invocation.toolAudit,
+    ...invocation,
     diagnostics: input.plan.diagnostics,
     backup: true,
     grant: { id: input.grantId, binding: prepared.value.binding },

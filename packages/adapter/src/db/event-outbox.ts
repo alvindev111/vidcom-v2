@@ -1,6 +1,6 @@
 import { asc, gt, lt, max, sql } from "drizzle-orm";
 
-import type { DomainEvent, ProjectId } from "@vidcom/contracts";
+import { HOST_DOMAIN_EVENT_TYPES, type DomainEvent, type ProjectId } from "@vidcom/contracts";
 import type { ClockPort, EventOutboxPort, StoredEvent } from "@vidcom/core";
 
 import type { VidcomDatabase } from "./client";
@@ -8,6 +8,13 @@ import { eventOutbox } from "./schema";
 
 export const EVENT_RETENTION_MS = 24 * 60 * 60 * 1_000;
 export const EVENT_RETENTION_ROWS = 5_000;
+const HOST_EVENT_TYPE_SET = new Set<DomainEvent["type"]>(HOST_DOMAIN_EVENT_TYPES);
+
+function isHostEventType(
+  type: DomainEvent["type"],
+): type is Extract<DomainEvent, { projectId: null }>["type"] {
+  return HOST_EVENT_TYPE_SET.has(type);
+}
 
 /** Durable event stream with independent sequence and bounded retention. */
 export class SqliteEventOutbox implements EventOutboxPort {
@@ -41,10 +48,10 @@ export class SqliteEventOutbox implements EventOutboxPort {
       .orderBy(asc(eventOutbox.seq)).limit(boundedLimit).all();
     return {
       gap,
-      events: rows.map((row): StoredEvent => row.type === "workspace.changed"
+      events: rows.map((row): StoredEvent => isHostEventType(row.type)
         ? {
             seq: row.seq,
-            type: "workspace.changed",
+            type: row.type,
             projectId: null,
             payload: JSON.parse(row.payload) as Record<string, unknown>,
           }

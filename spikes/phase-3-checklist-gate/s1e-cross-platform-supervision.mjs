@@ -40,22 +40,34 @@ async function startTree(scratch, label) {
   // runner would otherwise be measured as a missing process.
   for (let i = 0; i < 60; i += 1) {
     const rows = await readLedger(ledgerPath);
-    if (rows.length >= 4) return { rootPid: root.pid, ledger: rows, handle: root };
+    if (rows.length >= 4) {
+      const identities = new Map(enumerate().map((row) => [row.pid, row.startedAt]));
+      return {
+        rootPid: root.pid,
+        ledger: rows.map((row) => ({ ...row, startedAt: identities.get(row.pid) ?? null })),
+        handle: root,
+      };
+    }
     await sleep(250);
   }
   return { rootPid: root.pid, ledger: await readLedger(ledgerPath), handle: root };
 }
 
-function sweepAlive(pids) { return pids.filter(isAlive); }
+function sweepAlive(records) {
+  const current = new Map(enumerate().map((row) => [row.pid, row.startedAt]));
+  return records.filter((row) => row.startedAt === null
+    ? isAlive(row.pid)
+    : current.get(row.pid) === row.startedAt);
+}
 
 async function runNaiveArm(scratch) {
   const tree = await startTree(scratch, "naive");
-  const everyPid = tree.ledger.map((row) => row.pid);
   // Exactly today's behaviour: kill the root's group, nothing else.
   killGroup(tree.rootPid);
   await sleep(1200);
 
-  const survivorsByProbe = sweepAlive(everyPid);
+  const survivorRows = sweepAlive(tree.ledger);
+  const survivorsByProbe = survivorRows.map((row) => row.pid);
   // The measurement that lied in S1c, kept so the trap is demonstrated rather
   // than asserted: after the parent dies the tree walk finds nothing.
   const ppidWalkCount = descendantsOf(enumerate(), tree.rootPid).length;
@@ -75,7 +87,7 @@ async function runThreePhaseArm(scratch) {
   const state = await capture(tree.rootPid, 1000);
   const proof = await terminateAndVerify(tree.rootPid, state);
   // Ground truth from the ledger, independent of what capture happened to see.
-  const ledgerSurvivors = sweepAlive(tree.ledger.map((row) => row.pid));
+  const ledgerSurvivors = sweepAlive(tree.ledger).map((row) => row.pid);
   for (const pid of ledgerSurvivors) killPid(pid);
   return {
     ledger: tree.ledger,

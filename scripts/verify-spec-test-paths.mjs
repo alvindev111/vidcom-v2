@@ -14,6 +14,11 @@ const matrices = [
     path: "llm-documents/specs-and-process/specs/spec-project-delivery-loop/spec-project-delivery-loop-implementation-checklist.md",
     phases: "ABCDEFGHIJKLMNOPQRS",
   },
+  {
+    label: "packaging & distribution",
+    path: "llm-documents/specs-and-process/specs/spec-packaging-and-distribution/spec-packaging-and-distribution-implementation-checklist.md",
+    phases: "ABCDEFGHIJKLM",
+  },
 ];
 
 let verifiedPathCount = 0;

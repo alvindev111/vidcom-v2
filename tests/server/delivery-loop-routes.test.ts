@@ -1,9 +1,17 @@
-import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { access, mkdtemp, mkdir, readFile, realpath, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
-import { initializeDatabase } from "@vidcom/adapter";
-import { getNextHostedRuntime, handleNextHostedRequest } from "@vidcom/cli";
+import { AppSettingsStore, initializeDatabase } from "@vidcom/adapter";
+import {
+  getNextHostedRuntime,
+  handleNextHostedRequest,
+  hostBrowseTokens,
+  HOST_BROWSE_SESSION,
+  registerHostedRuntime,
+  startNextHostedRuntime,
+  type HostedRuntimeHost,
+} from "@vidcom/cli";
 import { ErrorCode, type ProjectId, type RelPath } from "@vidcom/contracts";
 import {
   canonicalizeJobInput,
@@ -13,7 +21,7 @@ import {
   type JobId,
   type ProjectIdentity,
 } from "@vidcom/core";
-import { createServerApp, InMemoryNonceStore, InMemorySessionStore } from "@vidcom/server";
+import { createServerApp, InMemoryNonceStore, InMemorySessionStore, sessionFingerprint } from "@vidcom/server";
 import { enqueueRenderJob, enqueueSnapshotJob } from "@vidcom/worker";
 import { afterEach, describe, expect, it } from "vitest";
 
@@ -27,9 +35,37 @@ import { createSequentialIdPort } from "../support/deterministic";
 
 const roots: string[] = [];
 const clock = { now: () => new Date("2026-08-04T18:00:00.000Z") };
+// This real SQLite/filesystem integration shares a two-worker Windows runner
+// with process-tree tests that regularly occupy the CPU for 20+ seconds. Keep
+// the budget finite, but large enough that scheduler contention is not reported
+// as a delivery-loop failure.
+const CONTENDED_INTEGRATION_TIMEOUT_MS = 30_000;
+
+function qualifiedSceneSource(sceneId: string, duration: number): string {
+  return `<!doctype html><html><body><template>
+    <style>#${sceneId}{width:1920px;height:1080px}</style>
+    <section id="${sceneId}" data-composition-id="${sceneId}" data-width="1920" data-height="1080" data-duration="${duration}">
+      <div id="hero">Opening</div>
+      <script>
+        const tl = gsap.timeline({ paused: true });
+        tl.fromTo("#hero", { scale: 0.72 }, { scale: 1, duration: 0.6, ease: "expo.out" }, 0.2);
+        tl.to("#hero", { rotation: 8, duration: 0.6, ease: "sine.inOut" }, 1.2);
+        window.__timelines = window.__timelines || {};
+        window.__timelines["${sceneId}"] = tl;
+      </script>
+    </section>
+  </template></body></html>`;
+}
 
 afterEach(async () => {
-  await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
+  await Promise.all(roots.splice(0).map((root) => rm(root, {
+    recursive: true,
+    force: true,
+    // Windows can retain the SQLite handle briefly after destroy(). Retrying
+    // waits for the ordered close; a persistent leak still fails cleanup.
+    maxRetries: 10,
+    retryDelay: 100,
+  })));
 });
 
 async function fixture() {
@@ -63,6 +99,14 @@ async function fixture() {
         ffmpegPath: process.execPath as AbsolutePath,
         ffprobePath: process.execPath as AbsolutePath,
         warnings: [],
+      }),
+    },
+    fonts: application.fonts,
+    diagnostics: {
+      forProject: async (projectId: ProjectId) => ok({
+        diagnostics: [],
+        computedAtSourceRevision: await infrastructure.journal.latestSourceRevision(projectId) ?? 0,
+        lintSourceAvailable: true,
       }),
     },
   };
@@ -123,6 +167,30 @@ async function fixture() {
   };
 }
 
+/**
+ * Mints a selection token the way a browse would.
+ *
+ * The route no longer accepts a path, so the harness has to produce a real
+ * token — which is why F.3 had to land before F.5. The stub activation ignores
+ * the value, but the request body has to be shaped like the real one or the
+ * strict schema rejects it.
+ */
+function mintSelection(canonicalPath: string, sessionId = HOST_BROWSE_SESSION): string {
+  // Minted into the store the host actually reads. A second store would produce
+  // a token the route could never redeem, which is the mistake this replaces.
+  return hostBrowseTokens.mint({
+    sessionId,
+    canonicalPath,
+    identity: { device: "1", inode: canonicalPath },
+  }).token;
+}
+
+function browseSession(cookie: string): string {
+  const token = cookie.split("=", 2)[1];
+  if (!token) throw new Error("browser session cookie is missing its token");
+  return sessionFingerprint(token);
+}
+
 describe("project delivery HTTP routes on real SQLite and filesystem", () => {
   it("maps Phase-O errors through the real middleware and route pipeline", async () => {
     const value = await fixture();
@@ -140,7 +208,7 @@ describe("project delivery HTTP routes on real SQLite and filesystem", () => {
         value.setActivationError(code);
         const response = await value.request("/api/v1/workspace/active", {
           method: "PUT", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ path: value.workspaceRoot }),
+          body: JSON.stringify({ selectionToken: mintSelection(value.workspaceRoot) }),
         });
         expect(response.status, code).toBe(status);
         expect(await response.json()).toMatchObject({ error: { code } });
@@ -253,7 +321,7 @@ describe("project delivery HTTP routes on real SQLite and filesystem", () => {
         id: "project_replacement", schemaVersion: 1,
       });
       expect((await value.request("/api/v1/workspace/active", {
-        method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ path: value.workspaceRoot }),
+        method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ selectionToken: mintSelection(value.workspaceRoot) }),
       })).status).toBe(200);
     } finally {
       await value.infrastructure.database.destroy();
@@ -282,6 +350,11 @@ describe("project delivery HTTP routes on real SQLite and filesystem", () => {
       });
       expect(scene.status).toBe(201);
       expect(await scene.json()).toMatchObject({ scene: { id: "scene-1" } });
+      await writeFile(
+        path.join(ref.root, "compositions", "scene-1.html"),
+        qualifiedSceneSource("scene-1", 3),
+        "utf8",
+      );
 
       const afterScene = await value.infrastructure.workspace.readWorkspaceFile!(ref.root, "index.html");
       if (!afterScene) throw new Error("scene mutation did not publish the entry file");
@@ -336,7 +409,7 @@ describe("project delivery HTTP routes on real SQLite and filesystem", () => {
     } finally {
       await value.infrastructure.database.destroy();
     }
-  }, 15_000);
+  }, CONTENDED_INTEGRATION_TIMEOUT_MS);
 
   it("keeps HTTP and MCP set-scene-timing semantics identical on equivalent fixtures", async () => {
     const value = await fixture();
@@ -548,13 +621,14 @@ describe("project delivery HTTP routes on real SQLite and filesystem", () => {
     }
   });
 
-  it("hot-swaps the selected workspace, clears recovery tokens, and requires reauthentication", async () => {
+  it("hot-swaps the selected workspace, clears recovery tokens, and preserves the host session", async () => {
     const root = await mkdtemp(path.join(tmpdir(), "vidcom-workspace-swap-"));
     roots.push(root);
     const firstWorkspace = path.join(root, "workspace-one");
     const secondWorkspace = path.join(root, "workspace-two");
     const appData = path.join(root, "app-data");
     await Promise.all([mkdir(firstWorkspace), mkdir(secondWorkspace)]);
+    const canonicalSecondWorkspace = await realpath(secondWorkspace);
     const prior = {
       appData: process.env.VIDCOM_APP_DATA,
       workspace: process.env.VIDCOM_WORKSPACE,
@@ -582,24 +656,46 @@ describe("project delivery HTTP routes on real SQLite and filesystem", () => {
         body: JSON.stringify({ nonce }),
       }));
       const cookie = exchanged.headers.get("set-cookie")!.split(";", 1)[0]!;
+      const secondNonce = first.nonces.issue();
+      const secondExchange = await handleNextHostedRequest(new Request(`http://${host}/api/v1/auth/exchange`, {
+        method: "POST",
+        headers: { Host: host, "Content-Type": "application/json" },
+        body: JSON.stringify({ nonce: secondNonce }),
+      }));
+      expect(secondExchange.status).toBe(204);
+      const secondCookie = secondExchange.headers.get("set-cookie")!.split(";", 1)[0]!;
+      const secondIdentity = await stat(secondWorkspace, { bigint: true });
+      const selectionToken = hostBrowseTokens.mint({
+        sessionId: browseSession(cookie),
+        canonicalPath: canonicalSecondWorkspace,
+        identity: { device: String(secondIdentity.dev), inode: String(secondIdentity.ino) },
+      }).token;
+      const foreignSession = await handleNextHostedRequest(new Request(`http://${host}/api/v1/workspace/active`, {
+        method: "PUT",
+        headers: { Host: host, Cookie: secondCookie, "Content-Type": "application/json" },
+        body: JSON.stringify({ selectionToken }),
+      }));
+      expect(foreignSession.status).toBe(400);
+      expect(await foreignSession.json()).toMatchObject({ error: { code: ErrorCode.BrowseTokenInvalid } });
       const activated = await handleNextHostedRequest(new Request(`http://${host}/api/v1/workspace/active`, {
         method: "PUT",
         headers: { Host: host, Cookie: cookie, "Content-Type": "application/json" },
-        body: JSON.stringify({ path: secondWorkspace }),
+        body: JSON.stringify({ selectionToken }),
       }));
       expect(activated.status).toBe(200);
       expect(await activated.json()).toEqual({
-        workspaceRoot: secondWorkspace,
+        workspaceRoot: canonicalSecondWorkspace,
         reauthRequired: true,
       });
       expect(first.foundation.infrastructure.entries.resolve(recoveryId)).toBeNull();
 
       second = await getNextHostedRuntime(port);
-      expect(second.foundation.infrastructure.workspaceRoot).toBe(secondWorkspace);
+      expect(second.foundation.infrastructure.workspaceRoot).toBe(canonicalSecondWorkspace);
       const oldSession = await handleNextHostedRequest(new Request(`http://${host}/api/v1/workspace`, {
         headers: { Host: host, Cookie: cookie },
       }));
-      expect(oldSession.status).toBe(401);
+      expect(oldSession.status).toBe(200);
+      expect(await oldSession.json()).toMatchObject({ workspaceRoot: canonicalSecondWorkspace });
     } finally {
       await Promise.allSettled([first.foundation.stop(), second?.foundation.stop()]);
       if (prior.appData === undefined) delete process.env.VIDCOM_APP_DATA;
@@ -612,4 +708,179 @@ describe("project delivery HTTP routes on real SQLite and filesystem", () => {
       else process.env.VIDCOM_SETTINGS = prior.settings;
     }
   });
+
+  it("keeps the old real foundation authoritative when discovery publication fails", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "vidcom-workspace-rollback-"));
+    roots.push(root);
+    const firstPath = path.join(root, "workspace-one");
+    const secondPath = path.join(root, "workspace-two");
+    await Promise.all([mkdir(firstPath), mkdir(secondPath)]);
+    const [firstWorkspace, secondWorkspace] = await Promise.all([realpath(firstPath), realpath(secondPath)]);
+    const appData = path.join(root, "app-data");
+    const prior = {
+      appData: process.env.VIDCOM_APP_DATA,
+      workspace: process.env.VIDCOM_WORKSPACE,
+      nonce: process.env.VIDCOM_BOOTSTRAP_NONCE,
+      settings: process.env.VIDCOM_SETTINGS,
+    };
+    const nonce = Buffer.alloc(32, 12).toString("base64url");
+    const port = 49_334;
+    const hostName = `127.0.0.1:${port}`;
+    let currentRecord = firstWorkspace;
+    let failReplacement = true;
+    const host: HostedRuntimeHost = {
+      async replaceDiscovery(previous, next) {
+        if (previous?.workspaceRoot === currentRecord) currentRecord = "";
+        if (failReplacement && next.workspaceRoot === secondWorkspace) {
+          failReplacement = false;
+          throw new Error("injected discovery publication failure");
+        }
+        currentRecord = next.workspaceRoot;
+      },
+      async removeDiscovery(runtime) {
+        if (currentRecord === runtime.workspaceRoot) currentRecord = "";
+      },
+      exitHeadless: () => Promise.reject(new Error("headless exit must not run")),
+    };
+    process.env.VIDCOM_APP_DATA = appData;
+    process.env.VIDCOM_WORKSPACE = firstWorkspace;
+    process.env.VIDCOM_BOOTSTRAP_NONCE = nonce;
+    process.env.VIDCOM_SETTINGS = path.join(root, "setting.json");
+    const pending = startNextHostedRuntime(port, firstWorkspace, { host });
+    registerHostedRuntime(port, pending);
+    const first = await pending;
+    let activeBrowseSession = HOST_BROWSE_SESSION;
+    try {
+      const settings = new AppSettingsStore(first.foundation.infrastructure.database);
+      settings.set("active_workspace", firstWorkspace);
+      const exchange = await first.app.request(`http://${hostName}/api/v1/auth/exchange`, {
+        method: "POST",
+        headers: { Host: hostName, "Content-Type": "application/json" },
+        body: JSON.stringify({ nonce }),
+      });
+      const cookie = exchange.headers.get("set-cookie")!.split(";", 1)[0]!;
+      activeBrowseSession = browseSession(cookie);
+      const identity = await stat(secondWorkspace, { bigint: true });
+      const selectionToken = hostBrowseTokens.mint({
+        sessionId: activeBrowseSession,
+        canonicalPath: secondWorkspace,
+        identity: { device: identity.dev.toString(), inode: identity.ino.toString() },
+      }).token;
+
+      const failed = await first.app.request(`http://${hostName}/api/v1/workspace/active`, {
+        method: "PUT",
+        headers: { Host: hostName, Cookie: cookie, "Content-Type": "application/json" },
+        body: JSON.stringify({ selectionToken }),
+      });
+      expect(failed.status).toBe(503);
+      expect(await failed.json()).toMatchObject({ error: { code: ErrorCode.WorkspaceUnavailable } });
+      expect(currentRecord).toBe(firstWorkspace);
+      expect(settings.get("active_workspace")).toBe(firstWorkspace);
+      expect((await getNextHostedRuntime(port)).workspaceRoot).toBe(firstWorkspace);
+
+      const created = await first.app.request(`http://${hostName}/api/v1/projects`, {
+        method: "POST",
+        headers: { Host: hostName, Cookie: cookie, "Content-Type": "application/json" },
+        body: JSON.stringify({ name: "After Rollback", presetId: "vertical-shorts" }),
+      });
+      expect(created.status).toBe(201);
+      await expect(access(path.join(firstWorkspace, "after-rollback", "vidcom.json"))).resolves.toBeUndefined();
+      await expect(access(path.join(secondWorkspace, "after-rollback"))).rejects.toMatchObject({ code: "ENOENT" });
+    } finally {
+      hostBrowseTokens.revokeSession(activeBrowseSession);
+      await first.foundation.stop();
+      if (prior.appData === undefined) delete process.env.VIDCOM_APP_DATA;
+      else process.env.VIDCOM_APP_DATA = prior.appData;
+      if (prior.workspace === undefined) delete process.env.VIDCOM_WORKSPACE;
+      else process.env.VIDCOM_WORKSPACE = prior.workspace;
+      if (prior.nonce === undefined) delete process.env.VIDCOM_BOOTSTRAP_NONCE;
+      else process.env.VIDCOM_BOOTSTRAP_NONCE = prior.nonce;
+      if (prior.settings === undefined) delete process.env.VIDCOM_SETTINGS;
+      else process.env.VIDCOM_SETTINGS = prior.settings;
+    }
+  });
+
+  it("imports through the production host wiring and exposes the real async job", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "vidcom-hosted-import-"));
+    roots.push(root);
+    const workspace = path.join(root, "workspace");
+    const source = path.join(root, "outside", "source-project");
+    const appData = path.join(root, "app-data");
+    await Promise.all([mkdir(workspace), mkdir(source, { recursive: true })]);
+    await writeFile(path.join(source, "hyperframes.json"), "{}\n");
+    await writeFile(path.join(source, "vidcom.json"), '{"id":"project_hosted_import_source"}\n');
+    await writeFile(path.join(source, "index.html"),
+      '<main data-composition-id="main" data-width="1920" data-height="1080" data-duration="1"></main>\n');
+    const prior = {
+      appData: process.env.VIDCOM_APP_DATA,
+      workspace: process.env.VIDCOM_WORKSPACE,
+      nonce: process.env.VIDCOM_BOOTSTRAP_NONCE,
+      settings: process.env.VIDCOM_SETTINGS,
+    };
+    const nonce = Buffer.alloc(32, 11).toString("base64url");
+    const port = 49332;
+    process.env.VIDCOM_APP_DATA = appData;
+    process.env.VIDCOM_WORKSPACE = workspace;
+    process.env.VIDCOM_BOOTSTRAP_NONCE = nonce;
+    process.env.VIDCOM_SETTINGS = path.join(root, "setting.json");
+    hostBrowseTokens.revokeSession(HOST_BROWSE_SESSION);
+    let runtime: Awaited<ReturnType<typeof startNextHostedRuntime>> | null = null;
+    let activeBrowseSession = HOST_BROWSE_SESSION;
+    try {
+      runtime = await startNextHostedRuntime(port, workspace);
+      const host = `127.0.0.1:${port}`;
+      const exchange = await runtime.app.request(`http://${host}/api/v1/auth/exchange`, {
+        method: "POST",
+        headers: { Host: host, "Content-Type": "application/json" },
+        body: JSON.stringify({ nonce }),
+      });
+      expect(exchange.status).toBe(204);
+      const cookie = exchange.headers.get("set-cookie")!.split(";", 1)[0]!;
+      activeBrowseSession = browseSession(cookie);
+      const identity = await stat(source, { bigint: true });
+      const token = hostBrowseTokens.mint({
+        sessionId: activeBrowseSession,
+        canonicalPath: source,
+        identity: { device: identity.dev.toString(), inode: identity.ino.toString() },
+      }).token;
+      const requestImport = () => runtime!.app.request(`http://${host}/api/v1/projects/imports`, {
+        method: "POST",
+        headers: { Host: host, Cookie: cookie, "Content-Type": "application/json" },
+        body: JSON.stringify({ sourceToken: token, targetName: "Hosted Copy" }),
+      });
+      const accepted = await requestImport();
+      expect(accepted.status).toBe(202);
+      const { jobId } = await accepted.json() as { jobId: string };
+
+      let job: { status: string; result?: { slug?: string } } | null = null;
+      for (let attempt = 0; attempt < 200; attempt += 1) {
+        const response = await runtime.app.request(`http://${host}/api/v1/jobs/${jobId}`, {
+          headers: { Host: host, Cookie: cookie },
+        });
+        expect(response.status).toBe(200);
+        job = await response.json() as typeof job;
+        if (["succeeded", "partial", "failed", "cancelled"].includes(job!.status)) break;
+        await new Promise((resolve) => setTimeout(resolve, 10));
+      }
+      expect(job).toMatchObject({ status: "succeeded", result: { slug: "hosted-copy" } });
+      expect(await readFile(path.join(workspace, "hosted-copy", "index.html"), "utf8"))
+        .toContain("data-composition-id");
+      expect(JSON.parse(await readFile(path.join(workspace, "hosted-copy", "vidcom.json"), "utf8")))
+        .toMatchObject({ id: expect.stringMatching(/^project_/u) });
+      expect(JSON.parse(await readFile(path.join(source, "vidcom.json"), "utf8")))
+        .toEqual({ id: "project_hosted_import_source" });
+      expect((await requestImport()).status).toBe(409);
+    } finally {
+      hostBrowseTokens.revokeSession(activeBrowseSession);
+      await runtime?.foundation.stop();
+      if (prior.appData === undefined) delete process.env.VIDCOM_APP_DATA;
+      else process.env.VIDCOM_APP_DATA = prior.appData;
+      if (prior.workspace === undefined) delete process.env.VIDCOM_WORKSPACE;
+      else process.env.VIDCOM_WORKSPACE = prior.workspace;
+      if (prior.nonce === undefined) delete process.env.VIDCOM_BOOTSTRAP_NONCE;
+      else process.env.VIDCOM_BOOTSTRAP_NONCE = prior.nonce;
+      if (prior.settings === undefined) delete process.env.VIDCOM_SETTINGS;
+      else process.env.VIDCOM_SETTINGS = prior.settings;
+    }
+  }, 15_000);
 });

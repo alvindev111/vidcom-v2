@@ -1,0 +1,76 @@
+name: Browser session
+
+# Kept out of the main CI matrix deliberately. The browser is a ~200 MB
+# download per job, and the main workflow already runs 13-16 minutes on
+# Windows; paying that on every push would buy two assertions that a real
+# browser is the only way to make. The repository already separates a heavy
+# dependency this way in phase4-python-stack.yml.
+on:
+  workflow_call:
+  workflow_dispatch:
+  pull_request:
+  schedule:
+    # Once a day, so a regression in cookie or SSE behaviour surfaces within a
+    # day rather than at release.
+    - cron: "0 3 * * *"
+
+permissions:
+  contents: read
+
+concurrency:
+  # Kept distinct from the CI wrapper that calls this workflow. In a reusable
+  # workflow github.workflow is the caller name, so using it here can cancel the
+  # caller instead of merely superseding an older browser run.
+  group: browser-session-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  browser-session:
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            name: Linux x64
+          - os: windows-latest
+            name: Windows x64
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24.9.0
+
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.14
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      # SameSite is enforced by the browser and by nothing else — spike S9
+      # measured curl answering differently — so this job exists to run a real
+      # one. `hyperframes browser ensure` puts it in the same cache the
+      # resolver already searches.
+      - name: Install chrome-headless-shell
+        run: node node_modules/hyperframes/bin/hyperframes.mjs browser ensure
+
+      - name: Build the static frontend
+        run: bun run build
+
+      - name: Browser session tests
+        run: npm run test:browser-session
+        env:
+          # Set only where the browser was actually installed. Keying this on CI
+          # itself would fail every job that never had one.
+          VIDCOM_REQUIRE_BROWSER: "1"

@@ -1,5 +1,5 @@
-# x-vidcom-agent-kit: 2
+# x-vidcom-agent-kit: 8
 interface:
   display_name: "VidCom Render"
   short_description: "Preview and render VidCom projects"
-  default_prompt: "Preview and render this project through VidCom MCP."
+  default_prompt: "Reject shallow fade-only scenes, verify each story beat's motion payoff, then preview and render through VidCom MCP."

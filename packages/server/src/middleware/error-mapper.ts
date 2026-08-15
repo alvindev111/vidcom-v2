@@ -55,6 +55,33 @@ const ERROR_STATUS = {
   [ErrorCode.TtsVoiceNotSupported]: 422,
   [ErrorCode.TtsQuotaExceeded]: 429,
   [ErrorCode.TtsSynthesisFailed]: 502,
+  [ErrorCode.BridgeCredentialUnavailable]: 503,
+  [ErrorCode.BridgeCredentialInvalid]: 401,
+  [ErrorCode.BridgeRotationInProgress]: 409,
+  // 409: the workspace is doing something else, and retrying later can succeed.
+  // 403: the user's own operating system said no; the request was well formed.
+  [ErrorCode.PathPermissionDenied]: 403,
+  [ErrorCode.WorkspaceBusy]: 409,
+  // 503: mid-switch is explicitly temporary, so it advertises a retry.
+  [ErrorCode.WorkspaceSwitching]: 503,
+  [ErrorCode.WorkspaceUnavailable]: 503,
+  [ErrorCode.DownloadTlsUntrusted]: 502,
+  // A dependency the daemon could not fetch, not a fault in the request.
+  [ErrorCode.DownloadUnavailable]: 502,
+  [ErrorCode.PayloadTooLarge]: 413,
+  [ErrorCode.DaemonIdentityMismatch]: 409,
+  [ErrorCode.DaemonUnavailable]: 503,
+  [ErrorCode.CompilerUnavailable]: 503,
+  [ErrorCode.RuntimeManifestInvalid]: 500,
+  [ErrorCode.RuntimeExtractionIncomplete]: 503,
+  [ErrorCode.BootstrapLockTimeout]: 503,
+  [ErrorCode.PathTimeout]: 504,
+  [ErrorCode.BrowseTokenInvalid]: 400,
+  [ErrorCode.ProjectImportConflict]: 409,
+  // 503: the agent CLI is missing from the machine, not from the request.
+  [ErrorCode.AgentUnavailable]: 503,
+  // 409: another terminal has to be closed first, and then this same call works.
+  [ErrorCode.AgentSessionLimit]: 409,
 } as const satisfies Record<ErrorCode, number>;
 
 export class HttpBoundaryError extends Error {

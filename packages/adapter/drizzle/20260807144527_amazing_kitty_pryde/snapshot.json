@@ -1,0 +1,3379 @@
+{
+  "version": "7",
+  "dialect": "sqlite",
+  "id": "e18b3c16-bc74-4d18-ad5e-a48249bbe40b",
+  "prevIds": [
+    "487e499f-11f2-48ca-86e8-8e6b762de179"
+  ],
+  "ddl": [
+    {
+      "name": "app_settings",
+      "entityType": "tables"
+    },
+    {
+      "name": "approval_grant",
+      "entityType": "tables"
+    },
+    {
+      "name": "audit_entry",
+      "entityType": "tables"
+    },
+    {
+      "name": "backup_manifest",
+      "entityType": "tables"
+    },
+    {
+      "name": "entity_state",
+      "entityType": "tables"
+    },
+    {
+      "name": "event_outbox",
+      "entityType": "tables"
+    },
+    {
+      "name": "job",
+      "entityType": "tables"
+    },
+    {
+      "name": "mcp_credential",
+      "entityType": "tables"
+    },
+    {
+      "name": "mutation_journal",
+      "entityType": "tables"
+    },
+    {
+      "name": "mutation_step",
+      "entityType": "tables"
+    },
+    {
+      "name": "project_registry",
+      "entityType": "tables"
+    },
+    {
+      "name": "registry_cache",
+      "entityType": "tables"
+    },
+    {
+      "name": "revision",
+      "entityType": "tables"
+    },
+    {
+      "name": "revision_blob",
+      "entityType": "tables"
+    },
+    {
+      "name": "revision_step",
+      "entityType": "tables"
+    },
+    {
+      "name": "workspace_lease",
+      "entityType": "tables"
+    },
+    {
+      "name": "workspace_operation",
+      "entityType": "tables"
+    },
+    {
+      "name": "workspace_operation_step",
+      "entityType": "tables"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "key",
+      "entityType": "columns",
+      "table": "app_settings"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "value",
+      "entityType": "columns",
+      "table": "app_settings"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "updated_at",
+      "entityType": "columns",
+      "table": "app_settings"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "id",
+      "entityType": "columns",
+      "table": "approval_grant"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "project_id",
+      "entityType": "columns",
+      "table": "approval_grant"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "tool",
+      "entityType": "columns",
+      "table": "approval_grant"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "target",
+      "entityType": "columns",
+      "table": "approval_grant"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "expected_revision",
+      "entityType": "columns",
+      "table": "approval_grant"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "plan_digest",
+      "entityType": "columns",
+      "table": "approval_grant"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "target_hashes",
+      "entityType": "columns",
+      "table": "approval_grant"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "summary",
+      "entityType": "columns",
+      "table": "approval_grant"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "status",
+      "entityType": "columns",
+      "table": "approval_grant"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "approver",
+      "entityType": "columns",
+      "table": "approval_grant"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "created_at",
+      "entityType": "columns",
+      "table": "approval_grant"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "issued_at",
+      "entityType": "columns",
+      "table": "approval_grant"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "reserved_at",
+      "entityType": "columns",
+      "table": "approval_grant"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "consumed_at",
+      "entityType": "columns",
+      "table": "approval_grant"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "invalidated_at",
+      "entityType": "columns",
+      "table": "approval_grant"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "invalidated_reason",
+      "entityType": "columns",
+      "table": "approval_grant"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "expires_at",
+      "entityType": "columns",
+      "table": "approval_grant"
+    },
+    {
+      "type": "integer",
+      "notNull": false,
+      "autoincrement": true,
+      "default": null,
+      "generated": null,
+      "name": "id",
+      "entityType": "columns",
+      "table": "audit_entry"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "project_id",
+      "entityType": "columns",
+      "table": "audit_entry"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "action",
+      "entityType": "columns",
+      "table": "audit_entry"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "actor",
+      "entityType": "columns",
+      "table": "audit_entry"
+    },
+    {
+      "type": "integer",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "revision_id",
+      "entityType": "columns",
+      "table": "audit_entry"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "job_id",
+      "entityType": "columns",
+      "table": "audit_entry"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "protocol_version",
+      "entityType": "columns",
+      "table": "audit_entry"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "outcome",
+      "entityType": "columns",
+      "table": "audit_entry"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "error_code",
+      "entityType": "columns",
+      "table": "audit_entry"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "detail",
+      "entityType": "columns",
+      "table": "audit_entry"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "created_at",
+      "entityType": "columns",
+      "table": "audit_entry"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "id",
+      "entityType": "columns",
+      "table": "backup_manifest"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "project_id",
+      "entityType": "columns",
+      "table": "backup_manifest"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "workspace_root",
+      "entityType": "columns",
+      "table": "backup_manifest"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "slug",
+      "entityType": "columns",
+      "table": "backup_manifest"
+    },
+    {
+      "type": "integer",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "revision_id",
+      "entityType": "columns",
+      "table": "backup_manifest"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "reason",
+      "entityType": "columns",
+      "table": "backup_manifest"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "entries",
+      "entityType": "columns",
+      "table": "backup_manifest"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "manifest_hash",
+      "entityType": "columns",
+      "table": "backup_manifest"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "created_at",
+      "entityType": "columns",
+      "table": "backup_manifest"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "payload_pruned_at",
+      "entityType": "columns",
+      "table": "backup_manifest"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "project_id",
+      "entityType": "columns",
+      "table": "entity_state"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "entity",
+      "entityType": "columns",
+      "table": "entity_state"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "revision",
+      "entityType": "columns",
+      "table": "entity_state"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "content_hash",
+      "entityType": "columns",
+      "table": "entity_state"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "backing_path",
+      "entityType": "columns",
+      "table": "entity_state"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "last_actor",
+      "entityType": "columns",
+      "table": "entity_state"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "updated_at",
+      "entityType": "columns",
+      "table": "entity_state"
+    },
+    {
+      "type": "integer",
+      "notNull": false,
+      "autoincrement": true,
+      "default": null,
+      "generated": null,
+      "name": "seq",
+      "entityType": "columns",
+      "table": "event_outbox"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "type",
+      "entityType": "columns",
+      "table": "event_outbox"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "project_id",
+      "entityType": "columns",
+      "table": "event_outbox"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "payload",
+      "entityType": "columns",
+      "table": "event_outbox"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "created_at",
+      "entityType": "columns",
+      "table": "event_outbox"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "id",
+      "entityType": "columns",
+      "table": "job"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "project_id",
+      "entityType": "columns",
+      "table": "job"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "type",
+      "entityType": "columns",
+      "table": "job"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "'queued'",
+      "generated": null,
+      "name": "status",
+      "entityType": "columns",
+      "table": "job"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "input",
+      "entityType": "columns",
+      "table": "job"
+    },
+    {
+      "type": "real",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "0",
+      "generated": null,
+      "name": "progress",
+      "entityType": "columns",
+      "table": "job"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "stage",
+      "entityType": "columns",
+      "table": "job"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "result",
+      "entityType": "columns",
+      "table": "job"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "error_code",
+      "entityType": "columns",
+      "table": "job"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "error_message",
+      "entityType": "columns",
+      "table": "job"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "warnings_json",
+      "entityType": "columns",
+      "table": "job"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "false",
+      "generated": null,
+      "name": "cleanup_pending",
+      "entityType": "columns",
+      "table": "job"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "termination_proof_json",
+      "entityType": "columns",
+      "table": "job"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "0",
+      "generated": null,
+      "name": "attempt",
+      "entityType": "columns",
+      "table": "job"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "idempotency_key",
+      "entityType": "columns",
+      "table": "job"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "input_hash",
+      "entityType": "columns",
+      "table": "job"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "false",
+      "generated": null,
+      "name": "cancel_requested",
+      "entityType": "columns",
+      "table": "job"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "worker_id",
+      "entityType": "columns",
+      "table": "job"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "heartbeat_at",
+      "entityType": "columns",
+      "table": "job"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "created_at",
+      "entityType": "columns",
+      "table": "job"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "started_at",
+      "entityType": "columns",
+      "table": "job"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "finished_at",
+      "entityType": "columns",
+      "table": "job"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "id",
+      "entityType": "columns",
+      "table": "mcp_credential"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "label",
+      "entityType": "columns",
+      "table": "mcp_credential"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "secret_hash",
+      "entityType": "columns",
+      "table": "mcp_credential"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "status",
+      "entityType": "columns",
+      "table": "mcp_credential"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "created_at",
+      "entityType": "columns",
+      "table": "mcp_credential"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "rotated_from",
+      "entityType": "columns",
+      "table": "mcp_credential"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "expires_at",
+      "entityType": "columns",
+      "table": "mcp_credential"
+    },
+    {
+      "type": "integer",
+      "notNull": false,
+      "autoincrement": true,
+      "default": null,
+      "generated": null,
+      "name": "id",
+      "entityType": "columns",
+      "table": "mutation_journal"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "project_id",
+      "entityType": "columns",
+      "table": "mutation_journal"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "kind",
+      "entityType": "columns",
+      "table": "mutation_journal"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "path",
+      "entityType": "columns",
+      "table": "mutation_journal"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "entity",
+      "entityType": "columns",
+      "table": "mutation_journal"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "from_hash",
+      "entityType": "columns",
+      "table": "mutation_journal"
+    },
+    {
+      "type": "blob",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "previous_content",
+      "entityType": "columns",
+      "table": "mutation_journal"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "previous_object_hash",
+      "entityType": "columns",
+      "table": "mutation_journal"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "0",
+      "generated": null,
+      "name": "previous_byte_size",
+      "entityType": "columns",
+      "table": "mutation_journal"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "staged_tmp_path",
+      "entityType": "columns",
+      "table": "mutation_journal"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "staged_target_path",
+      "entityType": "columns",
+      "table": "mutation_journal"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "staged_content_hash",
+      "entityType": "columns",
+      "table": "mutation_journal"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "to_hash",
+      "entityType": "columns",
+      "table": "mutation_journal"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "'pending'",
+      "generated": null,
+      "name": "status",
+      "entityType": "columns",
+      "table": "mutation_journal"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "actor",
+      "entityType": "columns",
+      "table": "mutation_journal"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "grant_id",
+      "entityType": "columns",
+      "table": "mutation_journal"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "backup_id",
+      "entityType": "columns",
+      "table": "mutation_journal"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "tool_audit_json",
+      "entityType": "columns",
+      "table": "mutation_journal"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "created_at",
+      "entityType": "columns",
+      "table": "mutation_journal"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "settled_at",
+      "entityType": "columns",
+      "table": "mutation_journal"
+    },
+    {
+      "type": "integer",
+      "notNull": false,
+      "autoincrement": true,
+      "default": null,
+      "generated": null,
+      "name": "id",
+      "entityType": "columns",
+      "table": "mutation_step"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "journal_id",
+      "entityType": "columns",
+      "table": "mutation_step"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "ordinal",
+      "entityType": "columns",
+      "table": "mutation_step"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "kind",
+      "entityType": "columns",
+      "table": "mutation_step"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "path",
+      "entityType": "columns",
+      "table": "mutation_step"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "entity",
+      "entityType": "columns",
+      "table": "mutation_step"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "from_hash",
+      "entityType": "columns",
+      "table": "mutation_step"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "to_hash",
+      "entityType": "columns",
+      "table": "mutation_step"
+    },
+    {
+      "type": "blob",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "previous_content",
+      "entityType": "columns",
+      "table": "mutation_step"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "previous_object_hash",
+      "entityType": "columns",
+      "table": "mutation_step"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "0",
+      "generated": null,
+      "name": "previous_byte_size",
+      "entityType": "columns",
+      "table": "mutation_step"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "rollback_path",
+      "entityType": "columns",
+      "table": "mutation_step"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "captured_hash",
+      "entityType": "columns",
+      "table": "mutation_step"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "'pending'",
+      "generated": null,
+      "name": "capture_state",
+      "entityType": "columns",
+      "table": "mutation_step"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "'pending'",
+      "generated": null,
+      "name": "status",
+      "entityType": "columns",
+      "table": "mutation_step"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "id",
+      "entityType": "columns",
+      "table": "project_registry"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "workspace_root",
+      "entityType": "columns",
+      "table": "project_registry"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "slug",
+      "entityType": "columns",
+      "table": "project_registry"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "first_seen_at",
+      "entityType": "columns",
+      "table": "project_registry"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "last_seen_at",
+      "entityType": "columns",
+      "table": "project_registry"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "deleted_at",
+      "entityType": "columns",
+      "table": "project_registry"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "key",
+      "entityType": "columns",
+      "table": "registry_cache"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "payload",
+      "entityType": "columns",
+      "table": "registry_cache"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "fetched_at",
+      "entityType": "columns",
+      "table": "registry_cache"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "expires_at",
+      "entityType": "columns",
+      "table": "registry_cache"
+    },
+    {
+      "type": "integer",
+      "notNull": false,
+      "autoincrement": true,
+      "default": null,
+      "generated": null,
+      "name": "id",
+      "entityType": "columns",
+      "table": "revision"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "project_id",
+      "entityType": "columns",
+      "table": "revision"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "kind",
+      "entityType": "columns",
+      "table": "revision"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "path",
+      "entityType": "columns",
+      "table": "revision"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "entity",
+      "entityType": "columns",
+      "table": "revision"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "content_hash",
+      "entityType": "columns",
+      "table": "revision"
+    },
+    {
+      "type": "integer",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "parent_revision",
+      "entityType": "columns",
+      "table": "revision"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "actor",
+      "entityType": "columns",
+      "table": "revision"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "summary",
+      "entityType": "columns",
+      "table": "revision"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "1",
+      "generated": null,
+      "name": "advances_source",
+      "entityType": "columns",
+      "table": "revision"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "created_at",
+      "entityType": "columns",
+      "table": "revision"
+    },
+    {
+      "type": "integer",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "revision_id",
+      "entityType": "columns",
+      "table": "revision_blob"
+    },
+    {
+      "type": "blob",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "previous_content",
+      "entityType": "columns",
+      "table": "revision_blob"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "previous_object_hash",
+      "entityType": "columns",
+      "table": "revision_blob"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "byte_size",
+      "entityType": "columns",
+      "table": "revision_blob"
+    },
+    {
+      "type": "integer",
+      "notNull": false,
+      "autoincrement": true,
+      "default": null,
+      "generated": null,
+      "name": "id",
+      "entityType": "columns",
+      "table": "revision_step"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "revision_id",
+      "entityType": "columns",
+      "table": "revision_step"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "ordinal",
+      "entityType": "columns",
+      "table": "revision_step"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "kind",
+      "entityType": "columns",
+      "table": "revision_step"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "path",
+      "entityType": "columns",
+      "table": "revision_step"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "entity",
+      "entityType": "columns",
+      "table": "revision_step"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "from_hash",
+      "entityType": "columns",
+      "table": "revision_step"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "to_hash",
+      "entityType": "columns",
+      "table": "revision_step"
+    },
+    {
+      "type": "blob",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "previous_content",
+      "entityType": "columns",
+      "table": "revision_step"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "previous_object_hash",
+      "entityType": "columns",
+      "table": "revision_step"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "0",
+      "generated": null,
+      "name": "byte_size",
+      "entityType": "columns",
+      "table": "revision_step"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "backup_id",
+      "entityType": "columns",
+      "table": "revision_step"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "workspace_root",
+      "entityType": "columns",
+      "table": "workspace_lease"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "lease_id",
+      "entityType": "columns",
+      "table": "workspace_lease"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "holder_id",
+      "entityType": "columns",
+      "table": "workspace_lease"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "acquired_at",
+      "entityType": "columns",
+      "table": "workspace_lease"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "expires_at",
+      "entityType": "columns",
+      "table": "workspace_lease"
+    },
+    {
+      "type": "integer",
+      "notNull": false,
+      "autoincrement": true,
+      "default": null,
+      "generated": null,
+      "name": "id",
+      "entityType": "columns",
+      "table": "workspace_operation"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "workspace_root",
+      "entityType": "columns",
+      "table": "workspace_operation"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "kind",
+      "entityType": "columns",
+      "table": "workspace_operation"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "project_id",
+      "entityType": "columns",
+      "table": "workspace_operation"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "from_path",
+      "entityType": "columns",
+      "table": "workspace_operation"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "to_path",
+      "entityType": "columns",
+      "table": "workspace_operation"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "staging_path",
+      "entityType": "columns",
+      "table": "workspace_operation"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "backup_id",
+      "entityType": "columns",
+      "table": "workspace_operation"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "grant_id",
+      "entityType": "columns",
+      "table": "workspace_operation"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "'pending'",
+      "generated": null,
+      "name": "status",
+      "entityType": "columns",
+      "table": "workspace_operation"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "actor",
+      "entityType": "columns",
+      "table": "workspace_operation"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "action",
+      "entityType": "columns",
+      "table": "workspace_operation"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "tool_audit_json",
+      "entityType": "columns",
+      "table": "workspace_operation"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "created_at",
+      "entityType": "columns",
+      "table": "workspace_operation"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "settled_at",
+      "entityType": "columns",
+      "table": "workspace_operation"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "operation_id",
+      "entityType": "columns",
+      "table": "workspace_operation_step"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "ordinal",
+      "entityType": "columns",
+      "table": "workspace_operation_step"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "path",
+      "entityType": "columns",
+      "table": "workspace_operation_step"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "from_hash",
+      "entityType": "columns",
+      "table": "workspace_operation_step"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "to_hash",
+      "entityType": "columns",
+      "table": "workspace_operation_step"
+    },
+    {
+      "type": "blob",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "previous_content",
+      "entityType": "columns",
+      "table": "workspace_operation_step"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "previous_object_hash",
+      "entityType": "columns",
+      "table": "workspace_operation_step"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "0",
+      "generated": null,
+      "name": "previous_byte_size",
+      "entityType": "columns",
+      "table": "workspace_operation_step"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "rollback_path",
+      "entityType": "columns",
+      "table": "workspace_operation_step"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "captured_hash",
+      "entityType": "columns",
+      "table": "workspace_operation_step"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "'pending'",
+      "generated": null,
+      "name": "capture_state",
+      "entityType": "columns",
+      "table": "workspace_operation_step"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "'pending'",
+      "generated": null,
+      "name": "status",
+      "entityType": "columns",
+      "table": "workspace_operation_step"
+    },
+    {
+      "columns": [
+        "project_id"
+      ],
+      "tableTo": "project_registry",
+      "columnsTo": [
+        "id"
+      ],
+      "onUpdate": "NO ACTION",
+      "onDelete": "NO ACTION",
+      "nameExplicit": false,
+      "name": "fk_approval_grant_project_id_project_registry_id_fk",
+      "entityType": "fks",
+      "table": "approval_grant"
+    },
+    {
+      "columns": [
+        "project_id"
+      ],
+      "tableTo": "project_registry",
+      "columnsTo": [
+        "id"
+      ],
+      "onUpdate": "NO ACTION",
+      "onDelete": "NO ACTION",
+      "nameExplicit": false,
+      "name": "fk_audit_entry_project_id_project_registry_id_fk",
+      "entityType": "fks",
+      "table": "audit_entry"
+    },
+    {
+      "columns": [
+        "revision_id"
+      ],
+      "tableTo": "revision",
+      "columnsTo": [
+        "id"
+      ],
+      "onUpdate": "NO ACTION",
+      "onDelete": "NO ACTION",
+      "nameExplicit": false,
+      "name": "fk_audit_entry_revision_id_revision_id_fk",
+      "entityType": "fks",
+      "table": "audit_entry"
+    },
+    {
+      "columns": [
+        "job_id"
+      ],
+      "tableTo": "job",
+      "columnsTo": [
+        "id"
+      ],
+      "onUpdate": "NO ACTION",
+      "onDelete": "NO ACTION",
+      "nameExplicit": false,
+      "name": "fk_audit_entry_job_id_job_id_fk",
+      "entityType": "fks",
+      "table": "audit_entry"
+    },
+    {
+      "columns": [
+        "project_id"
+      ],
+      "tableTo": "project_registry",
+      "columnsTo": [
+        "id"
+      ],
+      "onUpdate": "NO ACTION",
+      "onDelete": "NO ACTION",
+      "nameExplicit": false,
+      "name": "fk_backup_manifest_project_id_project_registry_id_fk",
+      "entityType": "fks",
+      "table": "backup_manifest"
+    },
+    {
+      "columns": [
+        "revision_id"
+      ],
+      "tableTo": "revision",
+      "columnsTo": [
+        "id"
+      ],
+      "onUpdate": "NO ACTION",
+      "onDelete": "NO ACTION",
+      "nameExplicit": false,
+      "name": "fk_backup_manifest_revision_id_revision_id_fk",
+      "entityType": "fks",
+      "table": "backup_manifest"
+    },
+    {
+      "columns": [
+        "project_id"
+      ],
+      "tableTo": "project_registry",
+      "columnsTo": [
+        "id"
+      ],
+      "onUpdate": "NO ACTION",
+      "onDelete": "NO ACTION",
+      "nameExplicit": false,
+      "name": "fk_entity_state_project_id_project_registry_id_fk",
+      "entityType": "fks",
+      "table": "entity_state"
+    },
+    {
+      "columns": [
+        "project_id"
+      ],
+      "tableTo": "project_registry",
+      "columnsTo": [
+        "id"
+      ],
+      "onUpdate": "NO ACTION",
+      "onDelete": "NO ACTION",
+      "nameExplicit": false,
+      "name": "fk_event_outbox_project_id_project_registry_id_fk",
+      "entityType": "fks",
+      "table": "event_outbox"
+    },
+    {
+      "columns": [
+        "project_id"
+      ],
+      "tableTo": "project_registry",
+      "columnsTo": [
+        "id"
+      ],
+      "onUpdate": "NO ACTION",
+      "onDelete": "NO ACTION",
+      "nameExplicit": false,
+      "name": "fk_job_project_id_project_registry_id_fk",
+      "entityType": "fks",
+      "table": "job"
+    },
+    {
+      "columns": [
+        "rotated_from"
+      ],
+      "tableTo": "mcp_credential",
+      "columnsTo": [
+        "id"
+      ],
+      "onUpdate": "NO ACTION",
+      "onDelete": "NO ACTION",
+      "nameExplicit": false,
+      "name": "fk_mcp_credential_rotated_from_mcp_credential_id_fk",
+      "entityType": "fks",
+      "table": "mcp_credential"
+    },
+    {
+      "columns": [
+        "project_id"
+      ],
+      "tableTo": "project_registry",
+      "columnsTo": [
+        "id"
+      ],
+      "onUpdate": "NO ACTION",
+      "onDelete": "NO ACTION",
+      "nameExplicit": false,
+      "name": "fk_mutation_journal_project_id_project_registry_id_fk",
+      "entityType": "fks",
+      "table": "mutation_journal"
+    },
+    {
+      "columns": [
+        "grant_id"
+      ],
+      "tableTo": "approval_grant",
+      "columnsTo": [
+        "id"
+      ],
+      "onUpdate": "NO ACTION",
+      "onDelete": "SET NULL",
+      "nameExplicit": false,
+      "name": "fk_mutation_journal_grant_id_approval_grant_id_fk",
+      "entityType": "fks",
+      "table": "mutation_journal"
+    },
+    {
+      "columns": [
+        "backup_id"
+      ],
+      "tableTo": "backup_manifest",
+      "columnsTo": [
+        "id"
+      ],
+      "onUpdate": "NO ACTION",
+      "onDelete": "NO ACTION",
+      "nameExplicit": false,
+      "name": "fk_mutation_journal_backup_id_backup_manifest_id_fk",
+      "entityType": "fks",
+      "table": "mutation_journal"
+    },
+    {
+      "columns": [
+        "journal_id"
+      ],
+      "tableTo": "mutation_journal",
+      "columnsTo": [
+        "id"
+      ],
+      "onUpdate": "NO ACTION",
+      "onDelete": "NO ACTION",
+      "nameExplicit": false,
+      "name": "fk_mutation_step_journal_id_mutation_journal_id_fk",
+      "entityType": "fks",
+      "table": "mutation_step"
+    },
+    {
+      "columns": [
+        "project_id"
+      ],
+      "tableTo": "project_registry",
+      "columnsTo": [
+        "id"
+      ],
+      "onUpdate": "NO ACTION",
+      "onDelete": "NO ACTION",
+      "nameExplicit": false,
+      "name": "fk_revision_project_id_project_registry_id_fk",
+      "entityType": "fks",
+      "table": "revision"
+    },
+    {
+      "columns": [
+        "parent_revision"
+      ],
+      "tableTo": "revision",
+      "columnsTo": [
+        "id"
+      ],
+      "onUpdate": "NO ACTION",
+      "onDelete": "NO ACTION",
+      "nameExplicit": false,
+      "name": "fk_revision_parent_revision_revision_id_fk",
+      "entityType": "fks",
+      "table": "revision"
+    },
+    {
+      "columns": [
+        "revision_id"
+      ],
+      "tableTo": "revision",
+      "columnsTo": [
+        "id"
+      ],
+      "onUpdate": "NO ACTION",
+      "onDelete": "CASCADE",
+      "nameExplicit": false,
+      "name": "fk_revision_blob_revision_id_revision_id_fk",
+      "entityType": "fks",
+      "table": "revision_blob"
+    },
+    {
+      "columns": [
+        "revision_id"
+      ],
+      "tableTo": "revision",
+      "columnsTo": [
+        "id"
+      ],
+      "onUpdate": "NO ACTION",
+      "onDelete": "CASCADE",
+      "nameExplicit": false,
+      "name": "fk_revision_step_revision_id_revision_id_fk",
+      "entityType": "fks",
+      "table": "revision_step"
+    },
+    {
+      "columns": [
+        "backup_id"
+      ],
+      "tableTo": "backup_manifest",
+      "columnsTo": [
+        "id"
+      ],
+      "onUpdate": "NO ACTION",
+      "onDelete": "NO ACTION",
+      "nameExplicit": false,
+      "name": "fk_revision_step_backup_id_backup_manifest_id_fk",
+      "entityType": "fks",
+      "table": "revision_step"
+    },
+    {
+      "columns": [
+        "grant_id"
+      ],
+      "tableTo": "approval_grant",
+      "columnsTo": [
+        "id"
+      ],
+      "onUpdate": "NO ACTION",
+      "onDelete": "NO ACTION",
+      "nameExplicit": false,
+      "name": "fk_workspace_operation_grant_id_approval_grant_id_fk",
+      "entityType": "fks",
+      "table": "workspace_operation"
+    },
+    {
+      "columns": [
+        "operation_id"
+      ],
+      "tableTo": "workspace_operation",
+      "columnsTo": [
+        "id"
+      ],
+      "onUpdate": "NO ACTION",
+      "onDelete": "CASCADE",
+      "nameExplicit": false,
+      "name": "fk_workspace_operation_step_operation_id_workspace_operation_id_fk",
+      "entityType": "fks",
+      "table": "workspace_operation_step"
+    },
+    {
+      "columns": [
+        "project_id",
+        "entity"
+      ],
+      "nameExplicit": false,
+      "name": "entity_state_pk",
+      "entityType": "pks",
+      "table": "entity_state"
+    },
+    {
+      "columns": [
+        "operation_id",
+        "ordinal"
+      ],
+      "nameExplicit": false,
+      "name": "workspace_operation_step_pk",
+      "entityType": "pks",
+      "table": "workspace_operation_step"
+    },
+    {
+      "columns": [
+        "key"
+      ],
+      "nameExplicit": false,
+      "name": "app_settings_pk",
+      "table": "app_settings",
+      "entityType": "pks"
+    },
+    {
+      "columns": [
+        "id"
+      ],
+      "nameExplicit": false,
+      "name": "approval_grant_pk",
+      "table": "approval_grant",
+      "entityType": "pks"
+    },
+    {
+      "columns": [
+        "id"
+      ],
+      "nameExplicit": false,
+      "name": "audit_entry_pk",
+      "table": "audit_entry",
+      "entityType": "pks"
+    },
+    {
+      "columns": [
+        "id"
+      ],
+      "nameExplicit": false,
+      "name": "backup_manifest_pk",
+      "table": "backup_manifest",
+      "entityType": "pks"
+    },
+    {
+      "columns": [
+        "seq"
+      ],
+      "nameExplicit": false,
+      "name": "event_outbox_pk",
+      "table": "event_outbox",
+      "entityType": "pks"
+    },
+    {
+      "columns": [
+        "id"
+      ],
+      "nameExplicit": false,
+      "name": "job_pk",
+      "table": "job",
+      "entityType": "pks"
+    },
+    {
+      "columns": [
+        "id"
+      ],
+      "nameExplicit": false,
+      "name": "mcp_credential_pk",
+      "table": "mcp_credential",
+      "entityType": "pks"
+    },
+    {
+      "columns": [
+        "id"
+      ],
+      "nameExplicit": false,
+      "name": "mutation_journal_pk",
+      "table": "mutation_journal",
+      "entityType": "pks"
+    },
+    {
+      "columns": [
+        "id"
+      ],
+      "nameExplicit": false,
+      "name": "mutation_step_pk",
+      "table": "mutation_step",
+      "entityType": "pks"
+    },
+    {
+      "columns": [
+        "id"
+      ],
+      "nameExplicit": false,
+      "name": "project_registry_pk",
+      "table": "project_registry",
+      "entityType": "pks"
+    },
+    {
+      "columns": [
+        "key"
+      ],
+      "nameExplicit": false,
+      "name": "registry_cache_pk",
+      "table": "registry_cache",
+      "entityType": "pks"
+    },
+    {
+      "columns": [
+        "id"
+      ],
+      "nameExplicit": false,
+      "name": "revision_pk",
+      "table": "revision",
+      "entityType": "pks"
+    },
+    {
+      "columns": [
+        "revision_id"
+      ],
+      "nameExplicit": false,
+      "name": "revision_blob_pk",
+      "table": "revision_blob",
+      "entityType": "pks"
+    },
+    {
+      "columns": [
+        "id"
+      ],
+      "nameExplicit": false,
+      "name": "revision_step_pk",
+      "table": "revision_step",
+      "entityType": "pks"
+    },
+    {
+      "columns": [
+        "workspace_root"
+      ],
+      "nameExplicit": false,
+      "name": "workspace_lease_pk",
+      "table": "workspace_lease",
+      "entityType": "pks"
+    },
+    {
+      "columns": [
+        "id"
+      ],
+      "nameExplicit": false,
+      "name": "workspace_operation_pk",
+      "table": "workspace_operation",
+      "entityType": "pks"
+    },
+    {
+      "columns": [
+        {
+          "value": "project_id",
+          "isExpression": false
+        }
+      ],
+      "isUnique": false,
+      "where": null,
+      "origin": "manual",
+      "name": "idx_grant_project",
+      "entityType": "indexes",
+      "table": "approval_grant"
+    },
+    {
+      "columns": [
+        {
+          "value": "status",
+          "isExpression": false
+        }
+      ],
+      "isUnique": false,
+      "where": null,
+      "origin": "manual",
+      "name": "idx_grant_status",
+      "entityType": "indexes",
+      "table": "approval_grant"
+    },
+    {
+      "columns": [
+        {
+          "value": "expires_at",
+          "isExpression": false
+        }
+      ],
+      "isUnique": false,
+      "where": null,
+      "origin": "manual",
+      "name": "idx_grant_expires",
+      "entityType": "indexes",
+      "table": "approval_grant"
+    },
+    {
+      "columns": [
+        {
+          "value": "project_id",
+          "isExpression": false
+        }
+      ],
+      "isUnique": false,
+      "where": null,
+      "origin": "manual",
+      "name": "idx_audit_project",
+      "entityType": "indexes",
+      "table": "audit_entry"
+    },
+    {
+      "columns": [
+        {
+          "value": "action",
+          "isExpression": false
+        }
+      ],
+      "isUnique": false,
+      "where": null,
+      "origin": "manual",
+      "name": "idx_audit_action",
+      "entityType": "indexes",
+      "table": "audit_entry"
+    },
+    {
+      "columns": [
+        {
+          "value": "created_at",
+          "isExpression": false
+        }
+      ],
+      "isUnique": false,
+      "where": null,
+      "origin": "manual",
+      "name": "idx_audit_created",
+      "entityType": "indexes",
+      "table": "audit_entry"
+    },
+    {
+      "columns": [
+        {
+          "value": "project_id",
+          "isExpression": false
+        }
+      ],
+      "isUnique": false,
+      "where": null,
+      "origin": "manual",
+      "name": "idx_backup_project",
+      "entityType": "indexes",
+      "table": "backup_manifest"
+    },
+    {
+      "columns": [
+        {
+          "value": "workspace_root",
+          "isExpression": false
+        },
+        {
+          "value": "slug",
+          "isExpression": false
+        }
+      ],
+      "isUnique": false,
+      "where": null,
+      "origin": "manual",
+      "name": "idx_backup_location",
+      "entityType": "indexes",
+      "table": "backup_manifest"
+    },
+    {
+      "columns": [
+        {
+          "value": "created_at",
+          "isExpression": false
+        }
+      ],
+      "isUnique": false,
+      "where": null,
+      "origin": "manual",
+      "name": "idx_backup_created",
+      "entityType": "indexes",
+      "table": "backup_manifest"
+    },
+    {
+      "columns": [
+        {
+          "value": "project_id",
+          "isExpression": false
+        },
+        {
+          "value": "backing_path",
+          "isExpression": false
+        }
+      ],
+      "isUnique": false,
+      "where": null,
+      "origin": "manual",
+      "name": "idx_entity_backing",
+      "entityType": "indexes",
+      "table": "entity_state"
+    },
+    {
+      "columns": [
+        {
+          "value": "type",
+          "isExpression": false
+        }
+      ],
+      "isUnique": false,
+      "where": null,
+      "origin": "manual",
+      "name": "idx_event_type",
+      "entityType": "indexes",
+      "table": "event_outbox"
+    },
+    {
+      "columns": [
+        {
+          "value": "project_id",
+          "isExpression": false
+        }
+      ],
+      "isUnique": false,
+      "where": null,
+      "origin": "manual",
+      "name": "idx_event_project",
+      "entityType": "indexes",
+      "table": "event_outbox"
+    },
+    {
+      "columns": [
+        {
+          "value": "created_at",
+          "isExpression": false
+        }
+      ],
+      "isUnique": false,
+      "where": null,
+      "origin": "manual",
+      "name": "idx_event_created",
+      "entityType": "indexes",
+      "table": "event_outbox"
+    },
+    {
+      "columns": [
+        {
+          "value": "type",
+          "isExpression": false
+        }
+      ],
+      "isUnique": false,
+      "where": null,
+      "origin": "manual",
+      "name": "idx_job_type",
+      "entityType": "indexes",
+      "table": "job"
+    },
+    {
+      "columns": [
+        {
+          "value": "status",
+          "isExpression": false
+        },
+        {
+          "value": "type",
+          "isExpression": false
+        },
+        {
+          "value": "created_at",
+          "isExpression": false
+        }
+      ],
+      "isUnique": false,
+      "where": null,
+      "origin": "manual",
+      "name": "idx_job_claim",
+      "entityType": "indexes",
+      "table": "job"
+    },
+    {
+      "columns": [
+        {
+          "value": "status",
+          "isExpression": false
+        },
+        {
+          "value": "heartbeat_at",
+          "isExpression": false
+        }
+      ],
+      "isUnique": false,
+      "where": null,
+      "origin": "manual",
+      "name": "idx_job_recovery",
+      "entityType": "indexes",
+      "table": "job"
+    },
+    {
+      "columns": [
+        {
+          "value": "cleanup_pending",
+          "isExpression": false
+        }
+      ],
+      "isUnique": false,
+      "where": "\"job\".\"cleanup_pending\" = 1",
+      "origin": "manual",
+      "name": "idx_job_cleanup",
+      "entityType": "indexes",
+      "table": "job"
+    },
+    {
+      "columns": [
+        {
+          "value": "project_id",
+          "isExpression": false
+        },
+        {
+          "value": "type",
+          "isExpression": false
+        },
+        {
+          "value": "idempotency_key",
+          "isExpression": false
+        }
+      ],
+      "isUnique": true,
+      "where": "\"job\".\"idempotency_key\" IS NOT NULL",
+      "origin": "manual",
+      "name": "uq_job_idempotency",
+      "entityType": "indexes",
+      "table": "job"
+    },
+    {
+      "columns": [
+        {
+          "value": "secret_hash",
+          "isExpression": false
+        }
+      ],
+      "isUnique": true,
+      "where": null,
+      "origin": "manual",
+      "name": "uq_credential_secret_hash",
+      "entityType": "indexes",
+      "table": "mcp_credential"
+    },
+    {
+      "columns": [
+        {
+          "value": "status",
+          "isExpression": false
+        }
+      ],
+      "isUnique": false,
+      "where": null,
+      "origin": "manual",
+      "name": "idx_credential_status",
+      "entityType": "indexes",
+      "table": "mcp_credential"
+    },
+    {
+      "columns": [
+        {
+          "value": "project_id",
+          "isExpression": false
+        }
+      ],
+      "isUnique": false,
+      "where": null,
+      "origin": "manual",
+      "name": "idx_journal_project",
+      "entityType": "indexes",
+      "table": "mutation_journal"
+    },
+    {
+      "columns": [
+        {
+          "value": "status",
+          "isExpression": false
+        },
+        {
+          "value": "created_at",
+          "isExpression": false
+        }
+      ],
+      "isUnique": false,
+      "where": null,
+      "origin": "manual",
+      "name": "idx_journal_pending",
+      "entityType": "indexes",
+      "table": "mutation_journal"
+    },
+    {
+      "columns": [
+        {
+          "value": "grant_id",
+          "isExpression": false
+        }
+      ],
+      "isUnique": true,
+      "where": "\"mutation_journal\".\"grant_id\" IS NOT NULL",
+      "origin": "manual",
+      "name": "uq_journal_grant_id",
+      "entityType": "indexes",
+      "table": "mutation_journal"
+    },
+    {
+      "columns": [
+        {
+          "value": "project_id",
+          "isExpression": false
+        },
+        {
+          "value": "status",
+          "isExpression": false
+        }
+      ],
+      "isUnique": false,
+      "where": null,
+      "origin": "manual",
+      "name": "idx_journal_project_unresolved",
+      "entityType": "indexes",
+      "table": "mutation_journal"
+    },
+    {
+      "columns": [
+        {
+          "value": "journal_id",
+          "isExpression": false
+        },
+        {
+          "value": "ordinal",
+          "isExpression": false
+        }
+      ],
+      "isUnique": true,
+      "where": null,
+      "origin": "manual",
+      "name": "uq_step_journal_ordinal",
+      "entityType": "indexes",
+      "table": "mutation_step"
+    },
+    {
+      "columns": [
+        {
+          "value": "journal_id",
+          "isExpression": false
+        },
+        {
+          "value": "ordinal",
+          "isExpression": false
+        }
+      ],
+      "isUnique": false,
+      "where": null,
+      "origin": "manual",
+      "name": "idx_step_journal",
+      "entityType": "indexes",
+      "table": "mutation_step"
+    },
+    {
+      "columns": [
+        {
+          "value": "workspace_root",
+          "isExpression": false
+        },
+        {
+          "value": "slug",
+          "isExpression": false
+        }
+      ],
+      "isUnique": true,
+      "where": "\"project_registry\".\"deleted_at\" IS NULL",
+      "origin": "manual",
+      "name": "uq_project_location",
+      "entityType": "indexes",
+      "table": "project_registry"
+    },
+    {
+      "columns": [
+        {
+          "value": "last_seen_at",
+          "isExpression": false
+        }
+      ],
+      "isUnique": false,
+      "where": null,
+      "origin": "manual",
+      "name": "idx_project_last_seen",
+      "entityType": "indexes",
+      "table": "project_registry"
+    },
+    {
+      "columns": [
+        {
+          "value": "deleted_at",
+          "isExpression": false
+        }
+      ],
+      "isUnique": false,
+      "where": null,
+      "origin": "manual",
+      "name": "idx_project_deleted",
+      "entityType": "indexes",
+      "table": "project_registry"
+    },
+    {
+      "columns": [
+        {
+          "value": "expires_at",
+          "isExpression": false
+        }
+      ],
+      "isUnique": false,
+      "where": null,
+      "origin": "manual",
+      "name": "idx_registry_cache_expires",
+      "entityType": "indexes",
+      "table": "registry_cache"
+    },
+    {
+      "columns": [
+        {
+          "value": "project_id",
+          "isExpression": false
+        },
+        {
+          "value": "created_at",
+          "isExpression": false
+        }
+      ],
+      "isUnique": false,
+      "where": null,
+      "origin": "manual",
+      "name": "idx_revision_project_created",
+      "entityType": "indexes",
+      "table": "revision"
+    },
+    {
+      "columns": [
+        {
+          "value": "project_id",
+          "isExpression": false
+        },
+        {
+          "value": "advances_source",
+          "isExpression": false
+        },
+        {
+          "value": "\"id\" DESC",
+          "isExpression": true
+        }
+      ],
+      "isUnique": false,
+      "where": null,
+      "origin": "manual",
+      "name": "idx_revision_source",
+      "entityType": "indexes",
+      "table": "revision"
+    },
+    {
+      "columns": [
+        {
+          "value": "project_id",
+          "isExpression": false
+        },
+        {
+          "value": "path",
+          "isExpression": false
+        },
+        {
+          "value": "\"id\" DESC",
+          "isExpression": true
+        }
+      ],
+      "isUnique": false,
+      "where": "\"revision\".\"advances_source\" = 0",
+      "origin": "manual",
+      "name": "idx_revision_derived_path",
+      "entityType": "indexes",
+      "table": "revision"
+    },
+    {
+      "columns": [
+        {
+          "value": "revision_id",
+          "isExpression": false
+        },
+        {
+          "value": "ordinal",
+          "isExpression": false
+        }
+      ],
+      "isUnique": true,
+      "where": null,
+      "origin": "manual",
+      "name": "uq_revision_step_ordinal",
+      "entityType": "indexes",
+      "table": "revision_step"
+    },
+    {
+      "columns": [
+        {
+          "value": "revision_id",
+          "isExpression": false
+        },
+        {
+          "value": "ordinal",
+          "isExpression": false
+        }
+      ],
+      "isUnique": false,
+      "where": null,
+      "origin": "manual",
+      "name": "idx_revision_step",
+      "entityType": "indexes",
+      "table": "revision_step"
+    },
+    {
+      "columns": [
+        {
+          "value": "expires_at",
+          "isExpression": false
+        }
+      ],
+      "isUnique": false,
+      "where": null,
+      "origin": "manual",
+      "name": "idx_workspace_lease_expires",
+      "entityType": "indexes",
+      "table": "workspace_lease"
+    },
+    {
+      "columns": [
+        {
+          "value": "status",
+          "isExpression": false
+        },
+        {
+          "value": "created_at",
+          "isExpression": false
+        }
+      ],
+      "isUnique": false,
+      "where": null,
+      "origin": "manual",
+      "name": "idx_workspace_operation_pending",
+      "entityType": "indexes",
+      "table": "workspace_operation"
+    },
+    {
+      "columns": [
+        {
+          "value": "project_id",
+          "isExpression": false
+        },
+        {
+          "value": "status",
+          "isExpression": false
+        }
+      ],
+      "isUnique": false,
+      "where": null,
+      "origin": "manual",
+      "name": "idx_workspace_operation_project",
+      "entityType": "indexes",
+      "table": "workspace_operation"
+    },
+    {
+      "columns": [
+        {
+          "value": "grant_id",
+          "isExpression": false
+        }
+      ],
+      "isUnique": true,
+      "where": "\"workspace_operation\".\"grant_id\" IS NOT NULL",
+      "origin": "manual",
+      "name": "uq_workspace_operation_grant",
+      "entityType": "indexes",
+      "table": "workspace_operation"
+    },
+    {
+      "columns": [
+        {
+          "value": "operation_id",
+          "isExpression": false
+        },
+        {
+          "value": "path",
+          "isExpression": false
+        }
+      ],
+      "isUnique": true,
+      "where": null,
+      "origin": "manual",
+      "name": "uq_workspace_operation_step_path",
+      "entityType": "indexes",
+      "table": "workspace_operation_step"
+    },
+    {
+      "columns": [
+        {
+          "value": "path",
+          "isExpression": false
+        },
+        {
+          "value": "operation_id",
+          "isExpression": false
+        }
+      ],
+      "isUnique": false,
+      "where": null,
+      "origin": "manual",
+      "name": "idx_workspace_operation_step_path",
+      "entityType": "indexes",
+      "table": "workspace_operation_step"
+    },
+    {
+      "columns": [
+        "revision_id"
+      ],
+      "nameExplicit": false,
+      "name": "backup_manifest_revision_id_unique",
+      "entityType": "uniques",
+      "table": "backup_manifest"
+    },
+    {
+      "value": "\"expected_revision\" >= 0",
+      "name": "ck_grant_expected_revision",
+      "entityType": "checks",
+      "table": "approval_grant"
+    },
+    {
+      "value": "json_valid(\"target_hashes\")",
+      "name": "ck_grant_target_hashes_json",
+      "entityType": "checks",
+      "table": "approval_grant"
+    },
+    {
+      "value": "(\"project_id\" IS NULL AND \"target\" LIKE 'location:%') OR (\"project_id\" IS NOT NULL AND \"target\" NOT LIKE 'location:%')",
+      "name": "ck_grant_owner",
+      "entityType": "checks",
+      "table": "approval_grant"
+    },
+    {
+      "value": "\"status\" IN ('requested', 'issued', 'reserved', 'consumed', 'expired', 'revoked', 'invalidated')",
+      "name": "ck_grant_status",
+      "entityType": "checks",
+      "table": "approval_grant"
+    },
+    {
+      "value": "\"approver\" IS NULL OR \"approver\" IN ('ui', 'cli')",
+      "name": "ck_grant_approver",
+      "entityType": "checks",
+      "table": "approval_grant"
+    },
+    {
+      "value": "\"invalidated_reason\" IS NULL OR \"invalidated_reason\" IN ('orphaned', 'rollback_failed')",
+      "name": "ck_grant_invalidated_reason",
+      "entityType": "checks",
+      "table": "approval_grant"
+    },
+    {
+      "value": "\"actor\" IN ('user', 'agent', 'cli-external', 'system')",
+      "name": "ck_audit_actor",
+      "entityType": "checks",
+      "table": "audit_entry"
+    },
+    {
+      "value": "\"outcome\" IN ('ok', 'error')",
+      "name": "ck_audit_outcome",
+      "entityType": "checks",
+      "table": "audit_entry"
+    },
+    {
+      "value": "json_valid(\"entries\")",
+      "name": "ck_backup_entries_json",
+      "entityType": "checks",
+      "table": "backup_manifest"
+    },
+    {
+      "value": "(\"project_id\" IS NOT NULL AND \"workspace_root\" IS NULL AND \"slug\" IS NULL) OR (\"project_id\" IS NULL AND \"workspace_root\" IS NOT NULL AND \"slug\" IS NOT NULL)",
+      "name": "ck_backup_owner",
+      "entityType": "checks",
+      "table": "backup_manifest"
+    },
+    {
+      "value": "\"last_actor\" IN ('user', 'agent', 'cli-external', 'system')",
+      "name": "ck_entity_actor",
+      "entityType": "checks",
+      "table": "entity_state"
+    },
+    {
+      "value": "\"type\" IN ('file.changed', 'project.changed', 'job.progress', 'job.done', 'workspace.changed', 'workspace.lease_lost', 'workspace.reattached', 'runtime.preparing', 'runtime.ready')",
+      "name": "ck_event_type",
+      "entityType": "checks",
+      "table": "event_outbox"
+    },
+    {
+      "value": "(\"type\" IN ('workspace.changed', 'workspace.lease_lost', 'workspace.reattached', 'runtime.preparing', 'runtime.ready') AND \"project_id\" IS NULL) OR (\"type\" IN ('file.changed', 'project.changed', 'job.progress', 'job.done') AND \"project_id\" IS NOT NULL)",
+      "name": "ck_event_project_shape",
+      "entityType": "checks",
+      "table": "event_outbox"
+    },
+    {
+      "value": "\"progress\" BETWEEN 0 AND 1",
+      "name": "ck_job_progress",
+      "entityType": "checks",
+      "table": "job"
+    },
+    {
+      "value": "\"attempt\" >= 0",
+      "name": "ck_job_attempt",
+      "entityType": "checks",
+      "table": "job"
+    },
+    {
+      "value": "\"status\" IN ('queued', 'running', 'succeeded', 'partial', 'failed', 'cancelled')",
+      "name": "ck_job_status",
+      "entityType": "checks",
+      "table": "job"
+    },
+    {
+      "value": "\"cancel_requested\" IN (0, 1)",
+      "name": "ck_job_cancel",
+      "entityType": "checks",
+      "table": "job"
+    },
+    {
+      "value": "\"cleanup_pending\" IN (0, 1)",
+      "name": "ck_job_cleanup_pending",
+      "entityType": "checks",
+      "table": "job"
+    },
+    {
+      "value": "\"warnings_json\" IS NULL OR json_valid(\"warnings_json\")",
+      "name": "ck_job_warnings_json",
+      "entityType": "checks",
+      "table": "job"
+    },
+    {
+      "value": "\"termination_proof_json\" IS NULL OR json_valid(\"termination_proof_json\")",
+      "name": "ck_job_termination_proof_json",
+      "entityType": "checks",
+      "table": "job"
+    },
+    {
+      "value": "substr(\"secret_hash\", 1, 7) = 'sha256:' AND length(\"secret_hash\") = 71 AND substr(\"secret_hash\", 8) NOT GLOB '*[^0-9a-f]*'",
+      "name": "ck_credential_secret_hash",
+      "entityType": "checks",
+      "table": "mcp_credential"
+    },
+    {
+      "value": "\"status\" IN ('active', 'rotating', 'revoked')",
+      "name": "ck_credential_status",
+      "entityType": "checks",
+      "table": "mcp_credential"
+    },
+    {
+      "value": "\"kind\" IN ('file', 'entity', 'composite')",
+      "name": "ck_journal_kind",
+      "entityType": "checks",
+      "table": "mutation_journal"
+    },
+    {
+      "value": "\"status\" IN ('pending', 'committed', 'aborted', 'recovered', 'orphaned', 'rolled_back')",
+      "name": "ck_journal_status",
+      "entityType": "checks",
+      "table": "mutation_journal"
+    },
+    {
+      "value": "\"tool_audit_json\" IS NULL OR json_valid(\"tool_audit_json\")",
+      "name": "ck_journal_tool_audit_json",
+      "entityType": "checks",
+      "table": "mutation_journal"
+    },
+    {
+      "value": "\"actor\" IN ('user', 'agent', 'cli-external', 'system')",
+      "name": "ck_journal_actor",
+      "entityType": "checks",
+      "table": "mutation_journal"
+    },
+    {
+      "value": "\"previous_byte_size\" >= 0",
+      "name": "ck_journal_previous_size",
+      "entityType": "checks",
+      "table": "mutation_journal"
+    },
+    {
+      "value": "\"kind\" IN ('write', 'delete', 'entity')",
+      "name": "ck_step_kind",
+      "entityType": "checks",
+      "table": "mutation_step"
+    },
+    {
+      "value": "\"status\" IN ('pending', 'written', 'rolled_back')",
+      "name": "ck_step_status",
+      "entityType": "checks",
+      "table": "mutation_step"
+    },
+    {
+      "value": "\"previous_byte_size\" >= 0",
+      "name": "ck_step_previous_size",
+      "entityType": "checks",
+      "table": "mutation_step"
+    },
+    {
+      "value": "\"capture_state\" IN ('pending', 'captured')",
+      "name": "ck_step_capture_state",
+      "entityType": "checks",
+      "table": "mutation_step"
+    },
+    {
+      "value": "(\"capture_state\" = 'pending' OR ((\"previous_content\" IS NULL AND \"previous_object_hash\" IS NULL AND \"captured_hash\" IS NULL) OR ((\"previous_content\" IS NOT NULL OR \"previous_object_hash\" IS NOT NULL) AND \"captured_hash\" IS \"from_hash\")))",
+      "name": "ck_step_capture_shape",
+      "entityType": "checks",
+      "table": "mutation_step"
+    },
+    {
+      "value": "((\"kind\" = 'entity' AND \"path\" IS NULL AND \"entity\" IS NOT NULL) OR (\"kind\" IN ('write', 'delete') AND \"path\" IS NOT NULL AND \"entity\" IS NULL))",
+      "name": "ck_step_shape",
+      "entityType": "checks",
+      "table": "mutation_step"
+    },
+    {
+      "value": "\"kind\" IN ('file', 'entity', 'composite')",
+      "name": "ck_revision_kind",
+      "entityType": "checks",
+      "table": "revision"
+    },
+    {
+      "value": "\"actor\" IN ('user', 'agent', 'cli-external', 'system')",
+      "name": "ck_revision_actor",
+      "entityType": "checks",
+      "table": "revision"
+    },
+    {
+      "value": "\"advances_source\" IN (0, 1)",
+      "name": "ck_revision_advances_source",
+      "entityType": "checks",
+      "table": "revision"
+    },
+    {
+      "value": "\"byte_size\" >= 0",
+      "name": "ck_revision_blob_size",
+      "entityType": "checks",
+      "table": "revision_blob"
+    },
+    {
+      "value": "\"kind\" IN ('write', 'delete', 'entity')",
+      "name": "ck_revision_step_kind",
+      "entityType": "checks",
+      "table": "revision_step"
+    },
+    {
+      "value": "\"byte_size\" >= 0",
+      "name": "ck_revision_step_size",
+      "entityType": "checks",
+      "table": "revision_step"
+    },
+    {
+      "value": "((\"kind\" = 'entity' AND \"path\" IS NULL AND \"entity\" IS NOT NULL) OR (\"kind\" IN ('write', 'delete') AND \"path\" IS NOT NULL AND \"entity\" IS NULL))",
+      "name": "ck_revision_step_shape",
+      "entityType": "checks",
+      "table": "revision_step"
+    },
+    {
+      "value": "\"kind\" IN ('agent_kit_files', 'project_create', 'project_rename', 'project_delete')",
+      "name": "ck_workspace_operation_kind",
+      "entityType": "checks",
+      "table": "workspace_operation"
+    },
+    {
+      "value": "\"status\" IN ('pending', 'committed', 'aborted', 'recovered', 'orphaned')",
+      "name": "ck_workspace_operation_status",
+      "entityType": "checks",
+      "table": "workspace_operation"
+    },
+    {
+      "value": "\"actor\" IN ('user', 'agent', 'cli-external', 'system')",
+      "name": "ck_workspace_operation_actor",
+      "entityType": "checks",
+      "table": "workspace_operation"
+    },
+    {
+      "value": "\"tool_audit_json\" IS NULL OR json_valid(\"tool_audit_json\")",
+      "name": "ck_workspace_operation_tool_audit_json",
+      "entityType": "checks",
+      "table": "workspace_operation"
+    },
+    {
+      "value": "\"previous_byte_size\" >= 0",
+      "name": "ck_workspace_operation_step_previous_size",
+      "entityType": "checks",
+      "table": "workspace_operation_step"
+    },
+    {
+      "value": "\"capture_state\" IN ('pending', 'captured')",
+      "name": "ck_workspace_operation_step_capture_state",
+      "entityType": "checks",
+      "table": "workspace_operation_step"
+    },
+    {
+      "value": "\"status\" IN ('pending', 'written', 'rolled_back')",
+      "name": "ck_workspace_operation_step_status",
+      "entityType": "checks",
+      "table": "workspace_operation_step"
+    }
+  ],
+  "renames": []
+}

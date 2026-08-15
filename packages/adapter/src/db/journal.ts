@@ -932,18 +932,20 @@ export class MutationJournal implements MutationJournalPort, CompositeMutationJo
     }
   }
 
-  async begin(intent: MutationIntent): Promise<JournalId> {
+  async begin(intent: MutationIntent, toolAudit: PendingToolAudit | null = null): Promise<JournalId> {
     const previous = await this.preparePrevious(intent.previousContent);
     return this.database.transaction((transaction) => {
       const row = transaction.get<{ id: number }>(sql`
         INSERT INTO mutation_journal (
           project_id, kind, path, entity, from_hash, previous_content, previous_object_hash, previous_byte_size,
-          staged_tmp_path, staged_target_path, staged_content_hash, to_hash, actor, created_at, settled_at
+          staged_tmp_path, staged_target_path, staged_content_hash, to_hash, actor, tool_audit_json,
+          created_at, settled_at
         ) VALUES (
           ${intent.projectId}, ${intent.kind}, ${intent.path}, ${intent.entity}, ${intent.fromHash},
           ${previous.inline}, ${previous.objectHash}, ${previous.byteSize}, ${intent.stagedAsset?.temporaryPath ?? null},
           ${intent.stagedAsset?.targetPath ?? null}, ${intent.stagedAsset?.contentHash ?? null},
-          ${intent.toHash}, ${intent.actor}, ${this.clock.now().toISOString()}, NULL
+          ${intent.toHash}, ${intent.actor}, ${toolAudit === null ? null : serializePendingToolAudit(toolAudit)},
+          ${this.clock.now().toISOString()}, NULL
         ) RETURNING id
       `);
       if (!row) throw new Error("mutation journal insert returned no id");
@@ -1136,6 +1138,7 @@ export class MutationJournal implements MutationJournalPort, CompositeMutationJo
     seed: EntitySeed,
     intent: MutationIntent,
     duplicateFrom: ProjectId | null,
+    toolAudit: PendingToolAudit | null = null,
   ): Promise<JournalId> {
     const previous = await this.preparePrevious(intent.previousContent);
     return this.database.transaction((transaction) => {
@@ -1180,12 +1183,14 @@ export class MutationJournal implements MutationJournalPort, CompositeMutationJo
       const row = transaction.get<{ id: number }>(sql`
         INSERT INTO mutation_journal (
           project_id, kind, path, entity, from_hash, previous_content, previous_object_hash, previous_byte_size,
-          staged_tmp_path, staged_target_path, staged_content_hash, to_hash, actor, created_at, settled_at
+          staged_tmp_path, staged_target_path, staged_content_hash, to_hash, actor, tool_audit_json,
+          created_at, settled_at
         ) VALUES (
           ${intent.projectId}, ${intent.kind}, ${intent.path}, ${intent.entity}, ${intent.fromHash},
           ${previous.inline}, ${previous.objectHash}, ${previous.byteSize}, ${intent.stagedAsset?.temporaryPath ?? null},
           ${intent.stagedAsset?.targetPath ?? null}, ${intent.stagedAsset?.contentHash ?? null},
-          ${intent.toHash}, ${intent.actor}, ${registration.lastSeenAt}, NULL
+          ${intent.toHash}, ${intent.actor}, ${toolAudit === null ? null : serializePendingToolAudit(toolAudit)},
+          ${registration.lastSeenAt}, NULL
         ) RETURNING id
       `);
       if (!row) throw new Error("bootstrap journal insert returned no id");
@@ -1218,10 +1223,11 @@ export class MutationJournal implements MutationJournalPort, CompositeMutationJo
     const previous = await this.preparePrevious(result.previousContent);
     const now = this.clock.now().toISOString();
     return this.database.transaction((transaction) => {
-      const pending = transaction.get<{ status: string }>(sql`
-        SELECT status FROM mutation_journal WHERE id = ${id}
+      const pending = transaction.get<{ status: string; auditJson: string | null }>(sql`
+        SELECT status, tool_audit_json AS auditJson FROM mutation_journal WHERE id = ${id}
       `);
       if (pending?.status !== "pending") throw new Error("mutation journal is not pending");
+      const toolAudit = storedMutationContext(pending.auditJson).toolAudit;
       const parent = transaction.get<{ id: number }>(sql`
         SELECT id FROM revision WHERE project_id = ${result.projectId} ORDER BY id DESC LIMIT 1
       `);
@@ -1278,6 +1284,19 @@ export class MutationJournal implements MutationJournalPort, CompositeMutationJo
         ) VALUES (
           ${result.projectId}, ${result.kind === "file" ? "file.write" : "entity.patch"},
           ${result.actor}, ${revision.id}, NULL, NULL, 'ok', NULL, NULL, ${now}
+        )
+      `);
+      // An MCP-owned bootstrap also records its invocation, the way a composite
+      // mutation does: without it the tool, era and invocation id the registry
+      // promised were durable would exist only in the journal row it clears.
+      if (toolAudit) transaction.run(sql`
+        INSERT INTO audit_entry (
+          project_id, action, actor, revision_id, job_id, protocol_version,
+          outcome, error_code, detail, created_at
+        ) VALUES (
+          ${result.projectId}, ${`tool:${toolAudit.tool}`}, ${result.actor}, ${revision.id}, NULL,
+          ${toolAudit.protocolVersion}, 'ok', NULL,
+          ${canonicalizeJson(terminalToolAuditDetail(toolAudit, now, returnedRevision))}, ${now}
         )
       `);
       transaction.run(sql`

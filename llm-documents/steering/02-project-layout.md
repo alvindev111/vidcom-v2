@@ -70,7 +70,7 @@ Câu hỏi này sẽ được hỏi lại, nên trả lời một lần ở đâ
 
 `worker` thì ngược lại: nó **là** chỗ infrastructure chạy. Một job render phải chạm filesystem, FFmpeg, Chromium. Cấm nó import `adapter` là biến `cli` thành nơi phải chuyển tiếp mọi thứ, không được gì.
 
-Cái giá của luật 3 là một interface mỏng: khi `mcp` cần gọi ra ngoài (ví dụ bridge gọi daemon), nó khai `interface` rồi để `cli` dựng hiện thực. Cái được là `packages/mcp` test được mà không cần dựng infrastructure, và `@vidcom/adapter` — vốn chỉ có **một** `exports: "./src/index.ts"`, tức mở là mở hết Drizzle, `node:fs`, `puppeteer-core`, TTS — không lọt vào tầng giao thức.
+Cái giá của luật 3 là một interface mỏng: khi `mcp` cần gọi ra ngoài (ví dụ bridge gọi daemon), nó khai `interface` rồi để `cli` dựng hiện thực. Cái được là `packages/mcp` test được mà không cần dựng infrastructure. `@vidcom/adapter` có public barrel cùng ba narrow bootstrap/compiler subpath dành cho composition root; barrel vẫn mở Drizzle, `node:fs`, `puppeteer-core`, TTS, còn narrow subpath chỉ phục vụ thứ tự boot trước runtime graph. **Tất cả** các export đó vẫn bị cấm ở tầng giao thức.
 
 > `cli` không có dòng trong bảng vì nó là composition root: nó được import **tất cả**, và là package duy nhất thấy được cả `mcp` lẫn `adapter`. Mọi chỗ hai bên cần gặp nhau thì gặp ở đây.
 

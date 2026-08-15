@@ -1,9 +1,178 @@
 {
   "tools": [
     {
+      "name": "adopt_project",
+      "title": "Adopt a workspace folder",
+      "description": "Use when a HyperFrames folder already sits in the workspace unowned and needs a VidCom identity before it can be edited. Do not use for a folder outside the workspace, for a project that already has vidcom.json, or to create a project from nothing. Preconditions: slug is the folder name directly inside the active workspace, and that folder must contain hyperframes.json but no vidcom.json. Side effects: writes vidcom.json with a new projectId, seeds preview settings, and registers the project in one journaled bootstrap write. Errors/recovery: project_not_found means no such folder; write_conflict means it is already adopted; composition_parse_error means its index.html must be fixed before adoption.",
+      "inputSchema": {
+        "type": "object",
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "slug": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 255
+          }
+        },
+        "required": [
+          "slug"
+        ],
+        "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": false
+      },
+      "outputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "projectId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 255
+          }
+        },
+        "required": [
+          "projectId"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "cancel_job",
+      "title": "Cancel a background job",
+      "description": "Use when a render, snapshot or narration job you queued is no longer wanted and should stop before it finishes. Do not use to delete a finished artifact, and do not treat it as proof the work stopped. Preconditions: jobId comes from the tool that queued the work. Side effects: records a cooperative cancellation request; a job already succeeded, partial, failed or cancelled is left untouched and returns requested=false. Errors/recovery: not_found means the jobId is unknown; after requested=true keep polling get_job_status until it reports the cancelled outcome, because cancellation is not instant.",
+      "inputSchema": {
+        "type": "object",
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "jobId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 255
+          }
+        },
+        "required": [
+          "jobId"
+        ],
+        "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": false
+      },
+      "outputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "jobId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 255
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "queued",
+              "running",
+              "succeeded",
+              "partial",
+              "failed",
+              "cancelled"
+            ]
+          },
+          "requested": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "jobId",
+          "status",
+          "requested"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "create_project",
+      "title": "Create a VidCom project",
+      "description": "Use when starting a new video from nothing, before any other project-scoped tool can be called. Do not use to re-create an existing project, to adopt a folder that already holds a composition, or to choose where the project is stored. Preconditions: name must produce a slug of letters, digits and hyphens; presetId is vertical-shorts, horizontal-youtube, or custom, and only custom accepts width, height and fps. Side effects: creates the project directory inside the active workspace with vidcom.json, hyperframes.json, preview-settings.json and an index.html root composition, as one journaled lifecycle write. Errors/recovery: fix schema_invalid on the name or preset fields; write_conflict means that slug is taken, so choose another name; storage_unavailable means no workspace is active, which only the UI or CLI can fix.",
+      "inputSchema": {
+        "type": "object",
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 255
+          },
+          "presetId": {
+            "type": "string",
+            "enum": [
+              "vertical-shorts",
+              "horizontal-youtube",
+              "custom"
+            ]
+          },
+          "width": {
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
+          },
+          "height": {
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
+          },
+          "fps": {
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
+          }
+        },
+        "required": [
+          "name",
+          "presetId"
+        ],
+        "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": false
+      },
+      "outputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "projectId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 255
+          },
+          "slug": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 255
+          }
+        },
+        "required": [
+          "projectId",
+          "slug"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
       "name": "create_scene",
       "title": "Create a scene",
-      "description": "Use when adding one new mounted scene with a source file and narration sidecar. Do not use to edit an existing scene or save an arbitrary source file. Preconditions: entry-file expectedContentHash must be the current entry-composition hash from get_project_context or read_composition. Side effects: atomically creates the scene source and narration, updates the entry composition and root duration, and commits one revision. Errors/recovery: on write_conflict refresh context and re-plan; on recovery_required stop writes and recover; committed_response_error means the mutation committed, so do not retry it.",
+      "description": "Use when adding one new mounted story beat with a source file and narration sidecar. Do not use to edit an existing scene, save an arbitrary source file, or add a beat whose narrative role and handoff are not yet defined. Preconditions: entry-file expectedContentHash must be the current entry-composition hash from get_project_context or read_composition; before calling, the storyboard names this beat's role, viewer experience, meaningful visual change, multi-phase choreography, and transition. Side effects: atomically creates the scene source and narration, updates the entry composition and root duration, and commits one revision. Errors/recovery: on write_conflict refresh context and re-plan; on recovery_required stop writes and recover; committed_response_error means the mutation committed, so do not retry it.",
       "inputSchema": {
         "type": "object",
         "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -263,6 +432,13 @@
                       "type": "string",
                       "minLength": 1
                     },
+                    "details": {
+                      "type": "object",
+                      "propertyNames": {
+                        "type": "string"
+                      },
+                      "additionalProperties": {}
+                    },
                     "fix": {
                       "type": "object",
                       "properties": {
@@ -480,6 +656,13 @@
                       "type": "string",
                       "minLength": 1
                     },
+                    "details": {
+                      "type": "object",
+                      "propertyNames": {
+                        "type": "string"
+                      },
+                      "additionalProperties": {}
+                    },
                     "fix": {
                       "type": "object",
                       "properties": {
@@ -534,6 +717,57 @@
         "required": [
           "deleted",
           "envelope",
+          "backupId"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "delete_project",
+      "title": "Delete a project",
+      "description": "Use when permanently removing one entire project directory with a verified backup. Do not use to remove a single scene or file, to archive a project, or without the user asking for deletion in those words. Preconditions: projectId comes from list_projects, confirmed must be true, and omitting grantId creates an approval request to retry once with the issued grantId. Side effects: after approval, verifies a full backup, quarantines and removes the directory, consumes the grant, and commits one destructive lifecycle revision returning backupId. Errors/recovery: write_conflict means a running job or a file that changed after approval, so re-plan; backup_failed means nothing was deleted; request new approval after approval_invalid or approval_expired; recovery_required means the deletion is half-applied and must be recovered before anything else.",
+      "inputSchema": {
+        "type": "object",
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "projectId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 255
+          },
+          "confirmed": {
+            "type": "boolean",
+            "const": true
+          },
+          "grantId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 255
+          }
+        },
+        "required": [
+          "projectId",
+          "confirmed"
+        ],
+        "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": false
+      },
+      "outputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "backupId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 255
+          }
+        },
+        "required": [
           "backupId"
         ],
         "additionalProperties": false
@@ -721,6 +955,13 @@
                       "type": "string",
                       "minLength": 1
                     },
+                    "details": {
+                      "type": "object",
+                      "propertyNames": {
+                        "type": "string"
+                      },
+                      "additionalProperties": {}
+                    },
                     "fix": {
                       "type": "object",
                       "properties": {
@@ -807,7 +1048,7 @@
     {
       "name": "get_job_status",
       "title": "Get background job status",
-      "description": "Use when you need to poll a jobId returned by start_tts, start_snapshot, or start_render until it reaches a terminal outcome. Do not use to list jobs or to cancel one. Preconditions: jobId comes from the tool that queued the work. Side effects: read-only. Errors/recovery: wait pollAfterMs before the next poll; terminal outcome is explicit, including partial. On failed, fix error.code before a deliberate resubmission.",
+      "description": "Use when you need to poll a jobId returned by start_tts, start_snapshot, or start_render until it reaches a terminal outcome. Do not use to list jobs or to cancel one. Preconditions: jobId comes from the tool that queued the work. Side effects: read-only. Errors/recovery: wait pollAfterMs before the next poll and stop as soon as outcome is non-null — outcome, not status, is the terminal signal, and partial is one of its values (succeeded, partial, failed, cancelled), so a loop that waits only for succeeded polls forever. On failed, fix error.code before a deliberate resubmission.",
       "inputSchema": {
         "type": "object",
         "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -1088,6 +1329,141 @@
           "finishedAt",
           "outcome",
           "pollAfterMs"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "get_narration_cues",
+      "title": "Read scene narration cues",
+      "description": "Use when you need one scene's authored narration cues, their offsets and their synthesis staleness before writing cues or calling start_tts. Do not use to read composition source or to list scenes. Preconditions: projectId comes from list_projects and sceneId comes from list_scenes. Side effects: read-only; a scene with no sidecar returns an empty cue list and a null contentHash instead of an error. Errors/recovery: project_invalid means the sidecar is corrupt and must be replaced with replace_narration_cues; carry contentHash into the next cue write as its precondition.",
+      "inputSchema": {
+        "type": "object",
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "projectId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 255
+          },
+          "sceneId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 255
+          }
+        },
+        "required": [
+          "projectId",
+          "sceneId"
+        ],
+        "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "outputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "cues": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "cueId": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 255
+                },
+                "text": {
+                  "type": "string"
+                },
+                "voice": {
+                  "type": "string"
+                },
+                "offsetSeconds": {
+                  "type": "number",
+                  "minimum": 0
+                },
+                "durationSeconds": {
+                  "anyOf": [
+                    {
+                      "type": "number",
+                      "minimum": 0
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "staleSince": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "status": {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "enum": [
+                        "mock",
+                        "generated"
+                      ]
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "audioPath": {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 4096
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              },
+              "required": [
+                "cueId",
+                "text",
+                "voice",
+                "offsetSeconds",
+                "durationSeconds",
+                "staleSince",
+                "status",
+                "audioPath"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "contentHash": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^sha256:[0-9a-f]{64}$"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "cues",
+          "contentHash"
         ],
         "additionalProperties": false
       }
@@ -1499,6 +1875,38 @@
               "theme": {
                 "type": "object",
                 "properties": {
+                  "paletteId": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "enum": [
+                          "clean-slate",
+                          "ocean",
+                          "forest",
+                          "lavender",
+                          "sunset",
+                          "candy",
+                          "electric",
+                          "tropical",
+                          "midnight",
+                          "noir",
+                          "cyber",
+                          "ember",
+                          "newsroom",
+                          "vintage",
+                          "monograph",
+                          "academia",
+                          "terracotta",
+                          "sand",
+                          "rose",
+                          "wheat"
+                        ]
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
                   "variables": {
                     "type": "object",
                     "properties": {
@@ -1514,6 +1922,18 @@
                       "--accent-light": {
                         "type": "string"
                       },
+                      "--background": {
+                        "type": "string"
+                      },
+                      "--surface": {
+                        "type": "string"
+                      },
+                      "--text": {
+                        "type": "string"
+                      },
+                      "--text-muted": {
+                        "type": "string"
+                      },
                       "--success": {
                         "type": "string"
                       },
@@ -1526,6 +1946,10 @@
                       "--primary-light",
                       "--accent",
                       "--accent-light",
+                      "--background",
+                      "--surface",
+                      "--text",
+                      "--text-muted",
                       "--success",
                       "--info"
                     ],
@@ -1533,6 +1957,7 @@
                   }
                 },
                 "required": [
+                  "paletteId",
                   "variables"
                 ],
                 "additionalProperties": false
@@ -1740,6 +2165,13 @@
                   "type": "string",
                   "minLength": 1
                 },
+                "details": {
+                  "type": "object",
+                  "propertyNames": {
+                    "type": "string"
+                  },
+                  "additionalProperties": {}
+                },
                 "fix": {
                   "type": "object",
                   "properties": {
@@ -1844,9 +2276,359 @@
       }
     },
     {
+      "name": "get_render_output",
+      "title": "Locate a finished render",
+      "description": "Use when a render job has succeeded and you need the produced file's path, size, hash and media type to report or open it. Do not use to poll progress, to fetch the video bytes through this tool, or for snapshot jobs. Preconditions: jobId comes from start_render and get_job_status must already report succeeded or partial. Side effects: read-only; the artifact stays where the render wrote it. Errors/recovery: precondition_required means the job has not finished, so keep polling get_job_status; not_found means the job is not a render or its artifact is gone, so render again; a partial outcome means the file exists but the render reported warnings worth repeating.",
+      "inputSchema": {
+        "type": "object",
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "jobId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 255
+          }
+        },
+        "required": [
+          "jobId"
+        ],
+        "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "outputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "jobId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 255
+          },
+          "projectId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 255
+          },
+          "path": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 4096,
+            "pattern": "^(?!\\/)(?![A-Za-z]:)(?!.*\\\\)(?!.*\\0)(?!.*\\/\\/)(?!\\.{1,2}(?:\\/|$))(?!.*\\/\\.{1,2}(?:\\/|$)).+$"
+          },
+          "absolutePath": {
+            "type": "string",
+            "minLength": 1
+          },
+          "byteSize": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "contentHash": {
+            "type": "string",
+            "pattern": "^sha256:[0-9a-f]{64}$"
+          },
+          "mediaType": {
+            "type": "string",
+            "minLength": 1
+          },
+          "outcome": {
+            "type": "string",
+            "enum": [
+              "succeeded",
+              "partial"
+            ]
+          }
+        },
+        "required": [
+          "jobId",
+          "projectId",
+          "path",
+          "absolutePath",
+          "byteSize",
+          "contentHash",
+          "mediaType",
+          "outcome"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "import_bgm",
+      "title": "Import a track into the BGM library",
+      "description": "Use when a track already inside the project should become reusable by every project on this machine, with the licence it is allowed under recorded alongside it. Do not use to attach music to a project — that is install_bgm — and do not use for a file outside the project. Preconditions: projectId comes from list_projects and path is a project-relative mp3, wav, ogg or m4a as listed by list_project_assets; license.kind must be stated, and unknown is the honest value when nobody knows. Side effects: copies the bytes into the machine's BGM library and appends one ledger entry; the library is content-addressed, so importing the same bytes twice returns alreadyPresent=true and adds nothing. Errors/recovery: no_file means the path is not in the project; unsupported_media means the extension or the duration could not be read, so re-encode it; asset_not_allowed means the path is outside the project's asset allowlist.",
+      "inputSchema": {
+        "type": "object",
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "projectId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 255
+          },
+          "path": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 4096
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 255
+          },
+          "license": {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "unknown",
+                  "public-domain",
+                  "cc0",
+                  "cc-by",
+                  "royalty-free",
+                  "licensed",
+                  "own-work"
+                ]
+              },
+              "holder": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "maxLength": 255
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "url": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "maxLength": 2048
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "note": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "maxLength": 1024
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "required": [
+              "kind",
+              "holder",
+              "url",
+              "note"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "projectId",
+          "path",
+          "license"
+        ],
+        "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": false
+      },
+      "outputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "entry": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 255
+              },
+              "name": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 255
+              },
+              "source": {
+                "type": "string",
+                "enum": [
+                  "synth",
+                  "import",
+                  "provider"
+                ]
+              },
+              "bedId": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "enum": [
+                      "ambient",
+                      "cinematic",
+                      "lofi",
+                      "piano",
+                      "dark"
+                    ]
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "durationSeconds": {
+                "type": "number",
+                "exclusiveMinimum": 0
+              },
+              "byteSize": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              "contentHash": {
+                "type": "string",
+                "pattern": "^sha256:[0-9a-f]{64}$"
+              },
+              "license": {
+                "type": "object",
+                "properties": {
+                  "kind": {
+                    "type": "string",
+                    "enum": [
+                      "unknown",
+                      "public-domain",
+                      "cc0",
+                      "cc-by",
+                      "royalty-free",
+                      "licensed",
+                      "own-work"
+                    ]
+                  },
+                  "holder": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "maxLength": 255
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "url": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "maxLength": 2048
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "note": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "maxLength": 1024
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "kind",
+                  "holder",
+                  "url",
+                  "note"
+                ],
+                "additionalProperties": false
+              },
+              "provenance": {
+                "type": "object",
+                "properties": {
+                  "providerId": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 255
+                  },
+                  "trackId": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 255
+                  },
+                  "sourceUrl": {
+                    "type": "string",
+                    "maxLength": 2048,
+                    "format": "uri"
+                  },
+                  "attribution": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 2048
+                  }
+                },
+                "required": [
+                  "providerId",
+                  "trackId",
+                  "sourceUrl",
+                  "attribution"
+                ],
+                "additionalProperties": false
+              },
+              "addedAt": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "required": [
+              "id",
+              "name",
+              "source",
+              "bedId",
+              "durationSeconds",
+              "byteSize",
+              "contentHash",
+              "license",
+              "addedAt"
+            ],
+            "additionalProperties": false
+          },
+          "alreadyPresent": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "entry",
+          "alreadyPresent"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
       "name": "install_agent_kit",
       "title": "Install the VidCom agent kit",
-      "description": "Use when explicitly installing or repairing VidCom instructions and native skill routers for selected agent hosts. Do not use to install both hosts implicitly or overwrite foreign/newer files. Preconditions: install requires non-empty unique hosts; link is Claude-only; replace requires one manifest path and its current expectedContentHash. Side effects: writes one journaled workspace batch, or records an audited no-change when everything selected is pristine. Errors/recovery: follow installationState.recovery; re-read hashes after write_conflict and never invent a Codex import line.",
+      "description": "Use when starting any VidCom MCP session: attempt this once before planning video work to install or refresh the workspace instructions and native skill router for the active host, and use it again when repairing that kit later. Read the installed AGENTS.md or CLAUDE.md and vidcom/SKILL.md before choosing a workflow. Do not use it to install both hosts implicitly, overwrite foreign/newer files, loop until ready, or block video work on manual_merge. Preconditions: install requires non-empty unique hosts; link is Claude-only; replace requires one manifest path and its current expectedContentHash. Side effects: writes one journaled workspace batch, or records an audited no-change when everything selected is pristine. Errors/recovery: when a foreign main file leaves the host degraded, read AGENTS.vidcom.md or CLAUDE.vidcom.md and the installed router directly, then proceed; re-read hashes after write_conflict and never invent a Codex import line.",
       "inputSchema": {
         "type": "object",
         "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -2124,9 +2906,153 @@
       }
     },
     {
+      "name": "install_bgm",
+      "title": "Install background music",
+      "description": "Use when adding background music, which is the default for every video after its composition has a duration unless the user explicitly requests no music or silence is editorially required: renders a built-in bed, copies a shipped or imported track, or downloads the exact provider result and freezes it locally before attaching it. Do not use to change only volume or to detach music — that is set_preview_settings — and do not use to add narration or a sound effect. Preconditions: projectId and expectedRevision come from get_project_context; pass exactly one offline source from list_bgm_beds or providerTrack from search_bgm; verify the provider result's source and attribution before publishing; omit seconds to match the project duration. Side effects: provider music is first frozen in the machine library with its licence and provenance; then preview-assets/bgm/<name> is written and one revision sets bgm.enabled, track, volume and loop. Re-installing the same name is rejected rather than silently replaced. Errors/recovery: no_composition means the project has no duration yet, so pass seconds; write_conflict means expectedRevision is stale, so re-read get_project_context; storage_unavailable means this daemon cannot stage assets.",
+      "inputSchema": {
+        "type": "object",
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "projectId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 255
+          },
+          "bedId": {
+            "type": "string",
+            "enum": [
+              "ambient",
+              "cinematic",
+              "lofi",
+              "piano",
+              "dark"
+            ]
+          },
+          "trackId": {
+            "type": "string",
+            "enum": [
+              "corporate-synth",
+              "corporate-marimba",
+              "lofi-chill",
+              "promo-dance"
+            ]
+          },
+          "libraryEntryId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 255
+          },
+          "providerTrack": {
+            "type": "object",
+            "properties": {
+              "providerId": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 255
+              },
+              "trackId": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 255
+              }
+            },
+            "required": [
+              "providerId",
+              "trackId"
+            ],
+            "additionalProperties": false
+          },
+          "seconds": {
+            "type": "number",
+            "minimum": 5,
+            "maximum": 600
+          },
+          "volume": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1
+          },
+          "loop": {
+            "type": "boolean"
+          },
+          "expectedRevision": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          }
+        },
+        "required": [
+          "projectId",
+          "expectedRevision"
+        ],
+        "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": true
+      },
+      "outputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "track": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string",
+                "minLength": 1
+              },
+              "path": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 4096
+              },
+              "durationSeconds": {
+                "type": "number",
+                "exclusiveMinimum": 0
+              },
+              "contentHash": {
+                "type": "string",
+                "pattern": "^sha256:[0-9a-f]{64}$"
+              }
+            },
+            "required": [
+              "name",
+              "path",
+              "durationSeconds",
+              "contentHash"
+            ],
+            "additionalProperties": false
+          },
+          "volume": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1
+          },
+          "loop": {
+            "type": "boolean"
+          },
+          "revision": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          }
+        },
+        "required": [
+          "track",
+          "volume",
+          "loop",
+          "revision"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
       "name": "install_motion_library",
       "title": "Vendor a motion library",
-      "description": "Use when a composition needs GSAP, Anime.js, Motion One, Lottie, or Three.js, before referencing it in source. Do not use to add a CDN script tag, to install an arbitrary npm package, or to write the composition markup itself. Preconditions: projectId comes from list_projects; the library version is pinned by the studio and is not caller-selectable. Side effects: copies the pinned library into assets/vendor/ as one atomic mutation and commits one revision; re-running returns already_installed without a write. Errors/recovery: returns the paste-ready scriptTag and entry path to use; on write_conflict re-read and retry; storage_unavailable means the studio install is incomplete, so report it instead of falling back to a CDN.",
+      "description": "Use when a composition needs GSAP, Anime.js, Motion One, Lottie, or Three.js before referencing it in source; GSAP is the default for the multi-phase choreography required by story scenes. Do not use to add a CDN script tag, install an arbitrary npm package, write the composition markup itself, or substitute a library install for an actual motion map. Preconditions: projectId comes from list_projects; the library version is pinned by the studio and is not caller-selectable. Side effects: copies the pinned library into assets/vendor/ as one atomic mutation and commits one revision; re-running returns already_installed without a write. Errors/recovery: returns the paste-ready scriptTag and entry path to use; on write_conflict re-read and retry; storage_unavailable means the studio install is incomplete, so report it instead of falling back to a CDN.",
       "inputSchema": {
         "type": "object",
         "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -2280,6 +3206,838 @@
           "library",
           "files",
           "revision"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "list_bgm_beds",
+      "title": "List background music options",
+      "description": "Use when choosing background music, before install_bgm, to see the built-in beds and the tracks this machine has imported. Do not use to read a project's current music; get_project_context returns previewSettings.bgm. Preconditions: none; the built-in beds are always available offline and need no credential. Side effects: read-only; nothing is synthesized or written until install_bgm. Errors/recovery: an empty library is normal on a fresh install — pick a bed id instead; each library entry carries the licence it was imported under, and license.kind=unknown means nobody recorded one.",
+      "inputSchema": {
+        "type": "object",
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {},
+        "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "outputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "beds": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "enum": [
+                    "ambient",
+                    "cinematic",
+                    "lofi",
+                    "piano",
+                    "dark"
+                  ]
+                },
+                "label": {
+                  "type": "string"
+                },
+                "role": {
+                  "type": "string"
+                },
+                "selection": {
+                  "type": "object",
+                  "properties": {
+                    "tempo": {
+                      "type": "string",
+                      "enum": [
+                        "slow",
+                        "medium",
+                        "medium-fast",
+                        "fast"
+                      ]
+                    },
+                    "hasVocals": {
+                      "type": "boolean"
+                    },
+                    "style": {
+                      "type": "string"
+                    },
+                    "recommendedFor": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "mood": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    }
+                  },
+                  "required": [
+                    "tempo",
+                    "hasVocals",
+                    "style",
+                    "recommendedFor",
+                    "mood"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "required": [
+                "id",
+                "label",
+                "role",
+                "selection"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "tracks": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "enum": [
+                    "corporate-synth",
+                    "corporate-marimba",
+                    "lofi-chill",
+                    "promo-dance"
+                  ]
+                },
+                "label": {
+                  "type": "string"
+                },
+                "role": {
+                  "type": "string"
+                },
+                "selection": {
+                  "type": "object",
+                  "properties": {
+                    "tempo": {
+                      "type": "string",
+                      "enum": [
+                        "slow",
+                        "medium",
+                        "medium-fast",
+                        "fast"
+                      ]
+                    },
+                    "hasVocals": {
+                      "type": "boolean"
+                    },
+                    "style": {
+                      "type": "string"
+                    },
+                    "recommendedFor": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "mood": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    }
+                  },
+                  "required": [
+                    "tempo",
+                    "hasVocals",
+                    "style",
+                    "recommendedFor",
+                    "mood"
+                  ],
+                  "additionalProperties": false
+                },
+                "durationSeconds": {
+                  "type": "number",
+                  "exclusiveMinimum": 0
+                },
+                "license": {
+                  "type": "object",
+                  "properties": {
+                    "kind": {
+                      "type": "string",
+                      "enum": [
+                        "unknown",
+                        "public-domain",
+                        "cc0",
+                        "cc-by",
+                        "royalty-free",
+                        "licensed",
+                        "own-work"
+                      ]
+                    },
+                    "holder": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "maxLength": 255
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "url": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "maxLength": 2048
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "note": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "maxLength": 1024
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "kind",
+                    "holder",
+                    "url",
+                    "note"
+                  ],
+                  "additionalProperties": false
+                },
+                "available": {
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "id",
+                "label",
+                "role",
+                "selection",
+                "durationSeconds",
+                "license",
+                "available"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "library": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 255
+                },
+                "name": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 255
+                },
+                "source": {
+                  "type": "string",
+                  "enum": [
+                    "synth",
+                    "import",
+                    "provider"
+                  ]
+                },
+                "bedId": {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "enum": [
+                        "ambient",
+                        "cinematic",
+                        "lofi",
+                        "piano",
+                        "dark"
+                      ]
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "durationSeconds": {
+                  "type": "number",
+                  "exclusiveMinimum": 0
+                },
+                "byteSize": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                },
+                "contentHash": {
+                  "type": "string",
+                  "pattern": "^sha256:[0-9a-f]{64}$"
+                },
+                "license": {
+                  "type": "object",
+                  "properties": {
+                    "kind": {
+                      "type": "string",
+                      "enum": [
+                        "unknown",
+                        "public-domain",
+                        "cc0",
+                        "cc-by",
+                        "royalty-free",
+                        "licensed",
+                        "own-work"
+                      ]
+                    },
+                    "holder": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "maxLength": 255
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "url": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "maxLength": 2048
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "note": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "maxLength": 1024
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "kind",
+                    "holder",
+                    "url",
+                    "note"
+                  ],
+                  "additionalProperties": false
+                },
+                "provenance": {
+                  "type": "object",
+                  "properties": {
+                    "providerId": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 255
+                    },
+                    "trackId": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 255
+                    },
+                    "sourceUrl": {
+                      "type": "string",
+                      "maxLength": 2048,
+                      "format": "uri"
+                    },
+                    "attribution": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 2048
+                    }
+                  },
+                  "required": [
+                    "providerId",
+                    "trackId",
+                    "sourceUrl",
+                    "attribution"
+                  ],
+                  "additionalProperties": false
+                },
+                "addedAt": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              },
+              "required": [
+                "id",
+                "name",
+                "source",
+                "bedId",
+                "durationSeconds",
+                "byteSize",
+                "contentHash",
+                "license",
+                "addedAt"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "defaultVolume": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1
+          }
+        },
+        "required": [
+          "beds",
+          "tracks",
+          "library",
+          "defaultVolume"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "list_color_palettes",
+      "title": "List standardized video palettes",
+      "description": "Use when choosing a video's look and the user and brand kit provide no explicit color direction; filter by mood or category when the brief implies one. Do not use a preset to replace colors explicitly supplied by the user or brand; custom direction always wins. Preconditions: none; every entry includes semantic color roles, controlled moods, harmony, choose/avoid guidance, and its source palette URL and swatches. Side effects: read-only; to apply one result atomically, call set_preview_settings with patch.theme.paletteId set to its id. Errors/recovery: an omitted category returns the complete catalog; defaultPaletteId is the deterministic fallback when no palette better matches the brief.",
+      "inputSchema": {
+        "type": "object",
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "category": {
+            "type": "string",
+            "enum": [
+              "minimal",
+              "vibrant",
+              "dark",
+              "editorial",
+              "warm"
+            ]
+          },
+          "mood": {
+            "type": "string",
+            "enum": [
+              "clean",
+              "trustworthy",
+              "calm",
+              "natural",
+              "gentle",
+              "energetic",
+              "playful",
+              "innovative",
+              "fresh",
+              "premium",
+              "dramatic",
+              "futuristic",
+              "urgent",
+              "authoritative",
+              "nostalgic",
+              "intellectual",
+              "handcrafted",
+              "understated",
+              "romantic",
+              "grounded"
+            ]
+          }
+        },
+        "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "outputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "defaultPaletteId": {
+            "type": "string",
+            "enum": [
+              "clean-slate",
+              "ocean",
+              "forest",
+              "lavender",
+              "sunset",
+              "candy",
+              "electric",
+              "tropical",
+              "midnight",
+              "noir",
+              "cyber",
+              "ember",
+              "newsroom",
+              "vintage",
+              "monograph",
+              "academia",
+              "terracotta",
+              "sand",
+              "rose",
+              "wheat"
+            ]
+          },
+          "palettes": {
+            "maxItems": 20,
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "enum": [
+                    "clean-slate",
+                    "ocean",
+                    "forest",
+                    "lavender",
+                    "sunset",
+                    "candy",
+                    "electric",
+                    "tropical",
+                    "midnight",
+                    "noir",
+                    "cyber",
+                    "ember",
+                    "newsroom",
+                    "vintage",
+                    "monograph",
+                    "academia",
+                    "terracotta",
+                    "sand",
+                    "rose",
+                    "wheat"
+                  ]
+                },
+                "name": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 80
+                },
+                "category": {
+                  "type": "string",
+                  "enum": [
+                    "minimal",
+                    "vibrant",
+                    "dark",
+                    "editorial",
+                    "warm"
+                  ]
+                },
+                "appearance": {
+                  "type": "string",
+                  "enum": [
+                    "light",
+                    "dark"
+                  ]
+                },
+                "contrast": {
+                  "type": "string",
+                  "enum": [
+                    "soft",
+                    "balanced",
+                    "high"
+                  ]
+                },
+                "description": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 240
+                },
+                "colorStory": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 320
+                },
+                "recommendedFor": {
+                  "minItems": 1,
+                  "maxItems": 8,
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 80
+                  }
+                },
+                "colors": {
+                  "type": "object",
+                  "properties": {
+                    "primary": {
+                      "type": "string",
+                      "pattern": "^#[0-9a-fA-F]{6}$"
+                    },
+                    "accent": {
+                      "type": "string",
+                      "pattern": "^#[0-9a-fA-F]{6}$"
+                    },
+                    "background": {
+                      "type": "string",
+                      "pattern": "^#[0-9a-fA-F]{6}$"
+                    },
+                    "surface": {
+                      "type": "string",
+                      "pattern": "^#[0-9a-fA-F]{6}$"
+                    },
+                    "text": {
+                      "type": "string",
+                      "pattern": "^#[0-9a-fA-F]{6}$"
+                    }
+                  },
+                  "required": [
+                    "primary",
+                    "accent",
+                    "background",
+                    "surface",
+                    "text"
+                  ],
+                  "additionalProperties": false
+                },
+                "guidance": {
+                  "type": "object",
+                  "properties": {
+                    "moods": {
+                      "minItems": 1,
+                      "maxItems": 6,
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "enum": [
+                          "clean",
+                          "trustworthy",
+                          "calm",
+                          "natural",
+                          "gentle",
+                          "energetic",
+                          "playful",
+                          "innovative",
+                          "fresh",
+                          "premium",
+                          "dramatic",
+                          "futuristic",
+                          "urgent",
+                          "authoritative",
+                          "nostalgic",
+                          "intellectual",
+                          "handcrafted",
+                          "understated",
+                          "romantic",
+                          "grounded"
+                        ]
+                      }
+                    },
+                    "harmony": {
+                      "type": "string",
+                      "enum": [
+                        "monochromatic",
+                        "analogous",
+                        "complementary",
+                        "split-complementary",
+                        "triadic",
+                        "accented-neutral"
+                      ]
+                    },
+                    "temperature": {
+                      "type": "string",
+                      "enum": [
+                        "cool",
+                        "neutral",
+                        "warm",
+                        "mixed"
+                      ]
+                    },
+                    "energy": {
+                      "type": "string",
+                      "enum": [
+                        "calm",
+                        "balanced",
+                        "energetic"
+                      ]
+                    },
+                    "chooseWhen": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 240
+                    },
+                    "avoidWhen": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 240
+                    }
+                  },
+                  "required": [
+                    "moods",
+                    "harmony",
+                    "temperature",
+                    "energy",
+                    "chooseWhen",
+                    "avoidWhen"
+                  ],
+                  "additionalProperties": false
+                },
+                "source": {
+                  "type": "object",
+                  "properties": {
+                    "provider": {
+                      "type": "string",
+                      "const": "color-hunt"
+                    },
+                    "url": {
+                      "type": "string",
+                      "format": "uri"
+                    },
+                    "swatches": {
+                      "type": "array",
+                      "prefixItems": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "string"
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "provider",
+                    "url",
+                    "swatches"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "required": [
+                "id",
+                "name",
+                "category",
+                "appearance",
+                "contrast",
+                "description",
+                "colorStory",
+                "recommendedFor",
+                "colors",
+                "guidance",
+                "source"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "defaultPaletteId",
+          "palettes"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "list_project_assets",
+      "title": "List project media assets",
+      "description": "Use when you need to discover the audio, image, video and font files that exist in the project, including one a person just copied into it by hand. Do not use to read composition source, to list scenes, or to browse anything outside this project. Preconditions: projectId comes from list_projects; pass directory to narrow to one project-relative folder such as preview-assets/bgm or assets. Side effects: read-only; nothing is written and no revision is created. Errors/recovery: path_invalid means the directory is not project-relative; truncated=true means only the first page is listed, so narrow with directory; referencedByPreviewSettings=true marks the track preview settings already point at.",
+      "inputSchema": {
+        "type": "object",
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "projectId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 255
+          },
+          "directory": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 4096
+          }
+        },
+        "required": [
+          "projectId"
+        ],
+        "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "outputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "assets": {
+            "maxItems": 500,
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "path": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 4096,
+                  "pattern": "^(?!\\/)(?![A-Za-z]:)(?!.*\\\\)(?!.*\\0)(?!.*\\/\\/)(?!\\.{1,2}(?:\\/|$))(?!.*\\/\\.{1,2}(?:\\/|$)).+$"
+                },
+                "kind": {
+                  "type": "string",
+                  "enum": [
+                    "audio",
+                    "image",
+                    "video",
+                    "font",
+                    "other"
+                  ]
+                },
+                "byteSize": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                },
+                "modifiedAt": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "referencedByPreviewSettings": {
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "path",
+                "kind",
+                "byteSize",
+                "modifiedAt",
+                "referencedByPreviewSettings"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "truncated": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "assets",
+          "truncated"
         ],
         "additionalProperties": false
       }
@@ -2449,6 +4207,13 @@
                 "message": {
                   "type": "string",
                   "minLength": 1
+                },
+                "details": {
+                  "type": "object",
+                  "propertyNames": {
+                    "type": "string"
+                  },
+                  "additionalProperties": {}
                 },
                 "fix": {
                   "type": "object",
@@ -2699,6 +4464,13 @@
                   "type": "string",
                   "minLength": 1
                 },
+                "details": {
+                  "type": "object",
+                  "propertyNames": {
+                    "type": "string"
+                  },
+                  "additionalProperties": {}
+                },
                 "fix": {
                   "type": "object",
                   "properties": {
@@ -2926,6 +4698,162 @@
       }
     },
     {
+      "name": "patch_narration_cue",
+      "title": "Update one narration cue",
+      "description": "Use when correcting the text, voice or offset of exactly one existing cue while its siblings keep their synthesis state. Do not use to add or remove cues, which replace_narration_cues owns, and do not use to synthesize audio. Preconditions: projectId, sceneId, cueId and expectedContentHash come from get_narration_cues, and at least one of text, voice or offsetSeconds must be present. Side effects: rewrites the sidecar as one journaled write and commits one revision; changing text or voice marks only that cue stale, while an offset change keeps its audio valid. Errors/recovery: not_found means that cueId is gone; write_conflict means the sidecar changed, so re-read it; re-run start_tts for cues whose staleSince is set.",
+      "inputSchema": {
+        "type": "object",
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "projectId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 255
+          },
+          "sceneId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 255
+          },
+          "cueId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 255
+          },
+          "text": {
+            "type": "string"
+          },
+          "voice": {
+            "type": "string",
+            "minLength": 1
+          },
+          "offsetSeconds": {
+            "type": "number",
+            "minimum": 0
+          },
+          "expectedContentHash": {
+            "type": "string",
+            "pattern": "^sha256:[0-9a-f]{64}$"
+          }
+        },
+        "required": [
+          "projectId",
+          "sceneId",
+          "cueId",
+          "expectedContentHash"
+        ],
+        "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": false
+      },
+      "outputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "cues": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "cueId": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 255
+                },
+                "text": {
+                  "type": "string"
+                },
+                "voice": {
+                  "type": "string"
+                },
+                "offsetSeconds": {
+                  "type": "number",
+                  "minimum": 0
+                },
+                "durationSeconds": {
+                  "anyOf": [
+                    {
+                      "type": "number",
+                      "minimum": 0
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "staleSince": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "status": {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "enum": [
+                        "mock",
+                        "generated"
+                      ]
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "audioPath": {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 4096
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              },
+              "required": [
+                "cueId",
+                "text",
+                "voice",
+                "offsetSeconds",
+                "durationSeconds",
+                "staleSince",
+                "status",
+                "audioPath"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "contentHash": {
+            "type": "string",
+            "pattern": "^sha256:[0-9a-f]{64}$"
+          },
+          "revision": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          }
+        },
+        "required": [
+          "cues",
+          "contentHash",
+          "revision"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
       "name": "read_composition",
       "title": "Read composition source",
       "description": "Use when you need one allowlisted project-relative composition source and its current content hash before a source write. Do not use for binary assets, external paths, or project-wide context. Preconditions: projectId comes from list_projects and path comes from project context or another trusted project-relative reference; no expected hash is required. Side effects: read-only; no source file or revision is changed. Errors/recovery: correct path_invalid, path_outside_project, asset_not_allowed, not_found, or source-size limit errors; if recovery is blocked, recover the project before writing.",
@@ -3026,9 +4954,400 @@
       }
     },
     {
+      "name": "record_bgm_license",
+      "title": "Record a shipped track's licence",
+      "description": "Use when the licence of a shipped BGM track has been established and should be recorded, replacing the catalogue's unknown. Do not use to guess a licence, and do not use for a library entry — an import records its own licence. Preconditions: trackId comes from list_bgm_beds; license.kind must be the licence that was actually established, and holder plus url are required by attribution licences such as cc-by. Side effects: writes one entry into this machine's BGM ledger; every project on this install then reports that licence instead of unknown. Errors/recovery: not_found means the trackId is not a shipped track; recording again replaces the previous answer rather than failing.",
+      "inputSchema": {
+        "type": "object",
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "trackId": {
+            "type": "string",
+            "enum": [
+              "corporate-synth",
+              "corporate-marimba",
+              "lofi-chill",
+              "promo-dance"
+            ]
+          },
+          "license": {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "unknown",
+                  "public-domain",
+                  "cc0",
+                  "cc-by",
+                  "royalty-free",
+                  "licensed",
+                  "own-work"
+                ]
+              },
+              "holder": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "maxLength": 255
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "url": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "maxLength": 2048
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "note": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "maxLength": 1024
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "required": [
+              "kind",
+              "holder",
+              "url",
+              "note"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "trackId",
+          "license"
+        ],
+        "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": false
+      },
+      "outputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "trackId": {
+            "type": "string",
+            "enum": [
+              "corporate-synth",
+              "corporate-marimba",
+              "lofi-chill",
+              "promo-dance"
+            ]
+          },
+          "license": {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "unknown",
+                  "public-domain",
+                  "cc0",
+                  "cc-by",
+                  "royalty-free",
+                  "licensed",
+                  "own-work"
+                ]
+              },
+              "holder": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "maxLength": 255
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "url": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "maxLength": 2048
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "note": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "maxLength": 1024
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "required": [
+              "kind",
+              "holder",
+              "url",
+              "note"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "trackId",
+          "license"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "rename_project",
+      "title": "Rename a project",
+      "description": "Use when the project's title and folder slug must change together. Do not use to move a project between workspaces, to change composition content, or while one of its jobs is running. Preconditions: projectId comes from list_projects and name must produce a valid slug. Side effects: renames the project directory and updates its registration in one journaled lifecycle write; every project-relative path stays valid. Errors/recovery: schema_invalid means the name yields no slug; write_conflict means the target slug exists or a render, snapshot or narration job is running, so wait for get_job_status to report a terminal outcome and retry.",
+      "inputSchema": {
+        "type": "object",
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "projectId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 255
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 255
+          }
+        },
+        "required": [
+          "projectId",
+          "name"
+        ],
+        "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": false
+      },
+      "outputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "slug": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 255
+          }
+        },
+        "required": [
+          "slug"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "replace_narration_cues",
+      "title": "Replace scene narration cues",
+      "description": "Use when writing or rewriting the complete spoken script of one scene before start_tts. Do not use to edit a single cue, to change on-screen text, or to synthesize audio. Preconditions: projectId and sceneId come from project context, cueIds must be unique, and expectedContentHash comes from get_narration_cues — null when that scene has no sidecar yet. Side effects: rewrites narration/<sceneId>.json as one journaled write, resets synthesis metadata for every cue, and commits one project revision; existing audio becomes stale. Errors/recovery: write_conflict means the sidecar changed, so re-read get_narration_cues; schema_invalid on cues means duplicate cueIds; run start_tts afterwards to produce audio again.",
+      "inputSchema": {
+        "type": "object",
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "projectId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 255
+          },
+          "sceneId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 255
+          },
+          "cues": {
+            "maxItems": 50,
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "cueId": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 255
+                },
+                "text": {
+                  "type": "string"
+                },
+                "voice": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "offsetSeconds": {
+                  "type": "number",
+                  "minimum": 0
+                }
+              },
+              "required": [
+                "cueId",
+                "text",
+                "voice",
+                "offsetSeconds"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "expectedContentHash": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^sha256:[0-9a-f]{64}$"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "projectId",
+          "sceneId",
+          "cues",
+          "expectedContentHash"
+        ],
+        "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": false
+      },
+      "outputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "cues": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "cueId": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 255
+                },
+                "text": {
+                  "type": "string"
+                },
+                "voice": {
+                  "type": "string"
+                },
+                "offsetSeconds": {
+                  "type": "number",
+                  "minimum": 0
+                },
+                "durationSeconds": {
+                  "anyOf": [
+                    {
+                      "type": "number",
+                      "minimum": 0
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "staleSince": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "status": {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "enum": [
+                        "mock",
+                        "generated"
+                      ]
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "audioPath": {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 4096
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              },
+              "required": [
+                "cueId",
+                "text",
+                "voice",
+                "offsetSeconds",
+                "durationSeconds",
+                "staleSince",
+                "status",
+                "audioPath"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "contentHash": {
+            "type": "string",
+            "pattern": "^sha256:[0-9a-f]{64}$"
+          },
+          "revision": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          }
+        },
+        "required": [
+          "cues",
+          "contentHash",
+          "revision"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
       "name": "save_file",
       "title": "Save composition source",
-      "description": "Use when replacing the complete content of one allowlisted project-relative text or composition source. Do not use for binary assets, oversized content, or targeted text edits better handled by set_text. Protected project metadata is rejected. Preconditions: path and expectedContentHash come from read_composition or current project context; the hash is for that exact file. Side effects: atomically replaces that source file, returns its new content hash, and commits one revision. Errors/recovery: correct path or size errors; on write_conflict re-read and re-plan; on recovery_required recover first; never retry a committed_response_error mutation.",
+      "description": "Use when replacing the complete content of one allowlisted project-relative text or composition source, including authored story choreography. Do not use for binary assets, oversized content, targeted text edits better handled by set_text, or a story scene whose only motion is fade, gentle rise/drop, or repeated opacity-plus-translate. Protected project metadata is rejected. Preconditions: path and expectedContentHash come from read_composition or current project context; the hash is for that exact file. A story scene source must implement setup, development, payoff and hold with motion that reveals meaning or changes visual state. Side effects: atomically replaces that source file, returns its new content hash, and commits one revision. Errors/recovery: correct path or size errors; on write_conflict re-read and re-plan; on recovery_required recover first; never retry a committed_response_error mutation.",
       "inputSchema": {
         "type": "object",
         "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -3168,6 +5487,13 @@
                       "type": "string",
                       "minLength": 1
                     },
+                    "details": {
+                      "type": "object",
+                      "propertyNames": {
+                        "type": "string"
+                      },
+                      "additionalProperties": {}
+                    },
                     "fix": {
                       "type": "object",
                       "properties": {
@@ -3217,6 +5543,998 @@
         "required": [
           "file",
           "envelope"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "search_bgm",
+      "title": "Search open background music",
+      "description": "Use when the built-in beds are not expressive enough and you need openly licensed music matched to a mood before install_bgm. Do not use after choosing a track, to fetch arbitrary URLs, or to assume a search result is publication clearance; verify its source link and attribution. Preconditions: describe the intended mood in plain language; results are restricted to CC0, public-domain, or CC BY sources and vocal-tagged tracks are excluded. Side effects: calls Openverse and ccMixter but writes nothing; provider failures are isolated and offlineFallbackAvailable remains true. Errors/recovery: unavailable or empty providers are reported in the output; fall back to list_bgm_beds when every remote source is unavailable.",
+      "inputSchema": {
+        "type": "object",
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "mood": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 120
+          },
+          "limit": {
+            "default": 8,
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 12
+          }
+        },
+        "required": [
+          "mood"
+        ],
+        "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      },
+      "outputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "tracks": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "providerId": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 255
+                },
+                "trackId": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 255
+                },
+                "title": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 255
+                },
+                "creator": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 255
+                },
+                "durationSeconds": {
+                  "type": "number",
+                  "exclusiveMinimum": 0
+                },
+                "extension": {
+                  "type": "string",
+                  "enum": [
+                    "mp3",
+                    "wav",
+                    "ogg",
+                    "m4a"
+                  ]
+                },
+                "license": {
+                  "type": "object",
+                  "properties": {
+                    "kind": {
+                      "type": "string",
+                      "enum": [
+                        "unknown",
+                        "public-domain",
+                        "cc0",
+                        "cc-by",
+                        "royalty-free",
+                        "licensed",
+                        "own-work"
+                      ]
+                    },
+                    "holder": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "maxLength": 255
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "url": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "maxLength": 2048
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "note": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "maxLength": 1024
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "kind",
+                    "holder",
+                    "url",
+                    "note"
+                  ],
+                  "additionalProperties": false
+                },
+                "sourceUrl": {
+                  "type": "string",
+                  "maxLength": 2048,
+                  "format": "uri"
+                },
+                "attribution": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 2048
+                },
+                "tags": {
+                  "maxItems": 100,
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 100
+                  }
+                }
+              },
+              "required": [
+                "providerId",
+                "trackId",
+                "title",
+                "creator",
+                "durationSeconds",
+                "extension",
+                "license",
+                "sourceUrl",
+                "attribution",
+                "tags"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "providers": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "providerId": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 255
+                },
+                "status": {
+                  "type": "string",
+                  "enum": [
+                    "ok",
+                    "empty",
+                    "unavailable"
+                  ]
+                },
+                "resultCount": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                },
+                "message": {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "maxLength": 512
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              },
+              "required": [
+                "providerId",
+                "status",
+                "resultCount",
+                "message"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "offlineFallbackAvailable": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "tracks",
+          "providers",
+          "offlineFallbackAvailable"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "set_preview_settings",
+      "title": "Patch preview settings",
+      "description": "Use when applying a bundled color palette by theme.paletteId, changing individual tone or theme colors, styling subtitles, setting per-scene sounds, or attaching background music already in the project. Do not use to edit composition source, to upload bytes, or to change scene timing. Preconditions: projectId and expectedRevision come from get_project_context; a bgm.track path must name an existing mp3, wav, ogg or m4a asset listed by list_project_assets, and setting bgm.track to null detaches the music. Side effects: merges the patch into preview-settings.json as one journaled entity mutation, returning the complete settings and their new revision; a palette id applies all semantic colors atomically, while an individual color override clears the preset id. Errors/recovery: no_file or unsupported_media means the track is missing or not audio, so run list_project_assets; write_conflict means expectedRevision is stale, so re-read get_project_context; never retry a committed_response_error mutation.",
+      "inputSchema": {
+        "type": "object",
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "projectId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 255
+          },
+          "patch": {
+            "type": "object",
+            "properties": {
+              "tone": {
+                "type": "object",
+                "properties": {
+                  "enabled": {
+                    "type": "boolean"
+                  },
+                  "colorMode": {
+                    "type": "string",
+                    "enum": [
+                      "dark",
+                      "cream"
+                    ]
+                  },
+                  "backgroundColor": {
+                    "type": "string",
+                    "pattern": "^#[0-9a-fA-F]{6}$"
+                  },
+                  "backgroundFx": {
+                    "type": "string",
+                    "enum": [
+                      "none",
+                      "scan",
+                      "particles",
+                      "rings",
+                      "lorenz"
+                    ]
+                  },
+                  "mainLight": {
+                    "type": "string",
+                    "pattern": "^#[0-9a-fA-F]{6}$"
+                  },
+                  "mainLightPosition": {
+                    "type": "string",
+                    "enum": [
+                      "top-left",
+                      "top-center",
+                      "top-right",
+                      "center-left",
+                      "center",
+                      "center-right",
+                      "bottom-left",
+                      "bottom-center",
+                      "bottom-right"
+                    ]
+                  },
+                  "mainLightIntensity": {
+                    "type": "string",
+                    "enum": [
+                      "low",
+                      "medium",
+                      "high",
+                      "max"
+                    ]
+                  },
+                  "softLight": {
+                    "type": "string",
+                    "pattern": "^#[0-9a-fA-F]{6}$"
+                  },
+                  "softLightPosition": {
+                    "type": "string",
+                    "enum": [
+                      "top-left",
+                      "top-center",
+                      "top-right",
+                      "center-left",
+                      "center",
+                      "center-right",
+                      "bottom-left",
+                      "bottom-center",
+                      "bottom-right"
+                    ]
+                  },
+                  "softLightIntensity": {
+                    "type": "string",
+                    "enum": [
+                      "low",
+                      "medium",
+                      "high",
+                      "max"
+                    ]
+                  }
+                },
+                "additionalProperties": false
+              },
+              "theme": {
+                "type": "object",
+                "properties": {
+                  "paletteId": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "enum": [
+                          "clean-slate",
+                          "ocean",
+                          "forest",
+                          "lavender",
+                          "sunset",
+                          "candy",
+                          "electric",
+                          "tropical",
+                          "midnight",
+                          "noir",
+                          "cyber",
+                          "ember",
+                          "newsroom",
+                          "vintage",
+                          "monograph",
+                          "academia",
+                          "terracotta",
+                          "sand",
+                          "rose",
+                          "wheat"
+                        ]
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "variables": {
+                    "type": "object",
+                    "properties": {
+                      "--primary": {
+                        "type": "string"
+                      },
+                      "--primary-light": {
+                        "type": "string"
+                      },
+                      "--accent": {
+                        "type": "string"
+                      },
+                      "--accent-light": {
+                        "type": "string"
+                      },
+                      "--background": {
+                        "type": "string"
+                      },
+                      "--surface": {
+                        "type": "string"
+                      },
+                      "--text": {
+                        "type": "string"
+                      },
+                      "--text-muted": {
+                        "type": "string"
+                      },
+                      "--success": {
+                        "type": "string"
+                      },
+                      "--info": {
+                        "type": "string"
+                      }
+                    },
+                    "additionalProperties": false
+                  }
+                },
+                "additionalProperties": false
+              },
+              "bgm": {
+                "type": "object",
+                "properties": {
+                  "enabled": {
+                    "type": "boolean"
+                  },
+                  "volume": {
+                    "type": "number",
+                    "minimum": 0,
+                    "maximum": 1
+                  },
+                  "loop": {
+                    "type": "boolean"
+                  },
+                  "track": {
+                    "anyOf": [
+                      {
+                        "type": "object",
+                        "properties": {
+                          "name": {
+                            "type": "string",
+                            "minLength": 1
+                          },
+                          "path": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 4096
+                          }
+                        },
+                        "required": [
+                          "name",
+                          "path"
+                        ],
+                        "additionalProperties": false
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "additionalProperties": false
+              },
+              "subtitles": {
+                "type": "object",
+                "properties": {
+                  "enabled": {
+                    "type": "boolean"
+                  },
+                  "override": {
+                    "type": "boolean"
+                  },
+                  "color": {
+                    "type": "string",
+                    "pattern": "^#[0-9a-fA-F]{6}$"
+                  },
+                  "activeColor": {
+                    "type": "string",
+                    "pattern": "^#[0-9a-fA-F]{6}$"
+                  },
+                  "fontSize": {
+                    "type": "number"
+                  },
+                  "bottom": {
+                    "type": "number"
+                  }
+                },
+                "additionalProperties": false
+              },
+              "scenes": {
+                "type": "object",
+                "propertyNames": {
+                  "type": "string"
+                },
+                "additionalProperties": {
+                  "type": "object",
+                  "properties": {
+                    "transitionSound": {
+                      "type": "string",
+                      "enum": [
+                        "gong",
+                        "rise",
+                        "bass",
+                        "chime",
+                        "sweep",
+                        "boom",
+                        "alarm",
+                        "chord",
+                        "ascending",
+                        "retro",
+                        "minimal",
+                        "dramatic"
+                      ]
+                    },
+                    "revealSound": {
+                      "type": "string",
+                      "enum": [
+                        "ping",
+                        "pop",
+                        "chime",
+                        "click",
+                        "bubble",
+                        "woosh",
+                        "sparkle",
+                        "drop",
+                        "tick",
+                        "bell",
+                        "blip",
+                        "snap"
+                      ]
+                    },
+                    "hidden": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "transitionSound",
+                    "revealSound",
+                    "hidden"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "scenesRemove": {
+                "maxItems": 1000,
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 255
+                }
+              }
+            },
+            "additionalProperties": false
+          },
+          "expectedRevision": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          }
+        },
+        "required": [
+          "projectId",
+          "patch",
+          "expectedRevision"
+        ],
+        "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": false
+      },
+      "outputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "previewSettings": {
+            "type": "object",
+            "properties": {
+              "tone": {
+                "type": "object",
+                "properties": {
+                  "enabled": {
+                    "type": "boolean"
+                  },
+                  "colorMode": {
+                    "type": "string",
+                    "enum": [
+                      "dark",
+                      "cream"
+                    ]
+                  },
+                  "backgroundColor": {
+                    "type": "string",
+                    "pattern": "^#[0-9a-fA-F]{6}$"
+                  },
+                  "backgroundFx": {
+                    "type": "string",
+                    "enum": [
+                      "none",
+                      "scan",
+                      "particles",
+                      "rings",
+                      "lorenz"
+                    ]
+                  },
+                  "mainLight": {
+                    "type": "string",
+                    "pattern": "^#[0-9a-fA-F]{6}$"
+                  },
+                  "mainLightPosition": {
+                    "type": "string",
+                    "enum": [
+                      "top-left",
+                      "top-center",
+                      "top-right",
+                      "center-left",
+                      "center",
+                      "center-right",
+                      "bottom-left",
+                      "bottom-center",
+                      "bottom-right"
+                    ]
+                  },
+                  "mainLightIntensity": {
+                    "type": "string",
+                    "enum": [
+                      "low",
+                      "medium",
+                      "high",
+                      "max"
+                    ]
+                  },
+                  "softLight": {
+                    "type": "string",
+                    "pattern": "^#[0-9a-fA-F]{6}$"
+                  },
+                  "softLightPosition": {
+                    "type": "string",
+                    "enum": [
+                      "top-left",
+                      "top-center",
+                      "top-right",
+                      "center-left",
+                      "center",
+                      "center-right",
+                      "bottom-left",
+                      "bottom-center",
+                      "bottom-right"
+                    ]
+                  },
+                  "softLightIntensity": {
+                    "type": "string",
+                    "enum": [
+                      "low",
+                      "medium",
+                      "high",
+                      "max"
+                    ]
+                  }
+                },
+                "required": [
+                  "enabled",
+                  "colorMode",
+                  "backgroundColor",
+                  "backgroundFx",
+                  "mainLight",
+                  "mainLightPosition",
+                  "mainLightIntensity",
+                  "softLight",
+                  "softLightPosition",
+                  "softLightIntensity"
+                ],
+                "additionalProperties": false
+              },
+              "theme": {
+                "type": "object",
+                "properties": {
+                  "paletteId": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "enum": [
+                          "clean-slate",
+                          "ocean",
+                          "forest",
+                          "lavender",
+                          "sunset",
+                          "candy",
+                          "electric",
+                          "tropical",
+                          "midnight",
+                          "noir",
+                          "cyber",
+                          "ember",
+                          "newsroom",
+                          "vintage",
+                          "monograph",
+                          "academia",
+                          "terracotta",
+                          "sand",
+                          "rose",
+                          "wheat"
+                        ]
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "variables": {
+                    "type": "object",
+                    "properties": {
+                      "--primary": {
+                        "type": "string"
+                      },
+                      "--primary-light": {
+                        "type": "string"
+                      },
+                      "--accent": {
+                        "type": "string"
+                      },
+                      "--accent-light": {
+                        "type": "string"
+                      },
+                      "--background": {
+                        "type": "string"
+                      },
+                      "--surface": {
+                        "type": "string"
+                      },
+                      "--text": {
+                        "type": "string"
+                      },
+                      "--text-muted": {
+                        "type": "string"
+                      },
+                      "--success": {
+                        "type": "string"
+                      },
+                      "--info": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "--primary",
+                      "--primary-light",
+                      "--accent",
+                      "--accent-light",
+                      "--background",
+                      "--surface",
+                      "--text",
+                      "--text-muted",
+                      "--success",
+                      "--info"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                "required": [
+                  "paletteId",
+                  "variables"
+                ],
+                "additionalProperties": false
+              },
+              "bgm": {
+                "type": "object",
+                "properties": {
+                  "enabled": {
+                    "type": "boolean"
+                  },
+                  "volume": {
+                    "type": "number",
+                    "minimum": 0,
+                    "maximum": 1
+                  },
+                  "loop": {
+                    "type": "boolean"
+                  },
+                  "track": {
+                    "anyOf": [
+                      {
+                        "type": "object",
+                        "properties": {
+                          "name": {
+                            "type": "string",
+                            "minLength": 1
+                          },
+                          "path": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 4096
+                          }
+                        },
+                        "required": [
+                          "name",
+                          "path"
+                        ],
+                        "additionalProperties": false
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "enabled",
+                  "volume",
+                  "loop",
+                  "track"
+                ],
+                "additionalProperties": false
+              },
+              "subtitles": {
+                "type": "object",
+                "properties": {
+                  "enabled": {
+                    "type": "boolean"
+                  },
+                  "override": {
+                    "type": "boolean"
+                  },
+                  "color": {
+                    "type": "string",
+                    "pattern": "^#[0-9a-fA-F]{6}$"
+                  },
+                  "activeColor": {
+                    "type": "string",
+                    "pattern": "^#[0-9a-fA-F]{6}$"
+                  },
+                  "fontSize": {
+                    "type": "number"
+                  },
+                  "bottom": {
+                    "type": "number"
+                  }
+                },
+                "required": [
+                  "enabled",
+                  "override",
+                  "color",
+                  "activeColor",
+                  "fontSize",
+                  "bottom"
+                ],
+                "additionalProperties": false
+              },
+              "scenes": {
+                "type": "object",
+                "propertyNames": {
+                  "type": "string"
+                },
+                "additionalProperties": {
+                  "type": "object",
+                  "properties": {
+                    "transitionSound": {
+                      "type": "string",
+                      "enum": [
+                        "gong",
+                        "rise",
+                        "bass",
+                        "chime",
+                        "sweep",
+                        "boom",
+                        "alarm",
+                        "chord",
+                        "ascending",
+                        "retro",
+                        "minimal",
+                        "dramatic"
+                      ]
+                    },
+                    "revealSound": {
+                      "type": "string",
+                      "enum": [
+                        "ping",
+                        "pop",
+                        "chime",
+                        "click",
+                        "bubble",
+                        "woosh",
+                        "sparkle",
+                        "drop",
+                        "tick",
+                        "bell",
+                        "blip",
+                        "snap"
+                      ]
+                    },
+                    "hidden": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "transitionSound",
+                    "revealSound",
+                    "hidden"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            },
+            "required": [
+              "tone",
+              "theme",
+              "bgm",
+              "subtitles",
+              "scenes"
+            ],
+            "additionalProperties": false
+          },
+          "revision": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "diagnostics": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "severity": {
+                  "type": "string",
+                  "enum": [
+                    "error",
+                    "warning",
+                    "info"
+                  ]
+                },
+                "code": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "sceneId": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 255
+                },
+                "elementId": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 255
+                },
+                "effectId": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 255
+                },
+                "file": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 4096
+                },
+                "line": {
+                  "type": "integer",
+                  "exclusiveMinimum": 0,
+                  "maximum": 9007199254740991
+                },
+                "message": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "details": {
+                  "type": "object",
+                  "propertyNames": {
+                    "type": "string"
+                  },
+                  "additionalProperties": {}
+                },
+                "fix": {
+                  "type": "object",
+                  "properties": {
+                    "kind": {
+                      "type": "string",
+                      "const": "set-attribute"
+                    },
+                    "target": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "attribute": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "value": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "kind",
+                    "target",
+                    "attribute",
+                    "value"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "required": [
+                "severity",
+                "code",
+                "message"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "previewSettings",
+          "revision",
+          "diagnostics"
         ],
         "additionalProperties": false
       }
@@ -3480,6 +6798,13 @@
                     "message": {
                       "type": "string",
                       "minLength": 1
+                    },
+                    "details": {
+                      "type": "object",
+                      "propertyNames": {
+                        "type": "string"
+                      },
+                      "additionalProperties": {}
                     },
                     "fix": {
                       "type": "object",
@@ -3828,6 +7153,13 @@
                       "type": "string",
                       "minLength": 1
                     },
+                    "details": {
+                      "type": "object",
+                      "propertyNames": {
+                        "type": "string"
+                      },
+                      "additionalProperties": {}
+                    },
                     "fix": {
                       "type": "object",
                       "properties": {
@@ -3889,7 +7221,7 @@
     {
       "name": "start_render",
       "title": "Start a video render",
-      "description": "Use when the validated, visually inspected project is ready for one MP4 render. Do not use before validate_project and start_snapshot, or to wait synchronously for video completion. Preconditions: projectId comes from list_projects and optional idempotencyKey must identify this exact request. Side effects: enqueues one render job and returns immediately without publishing an artifact yet. Errors/recovery: poll get_job_status after pollAfterMs; fix stable gate errors before retrying and report warnings, outcome, and cleanupPending honestly.",
+      "description": "Use when the validated, visually inspected project is ready for one MP4 render, every story beat has meaningful multi-phase motion, and authored Unicode text has verified project-local font coverage. Do not use before validate_project and start_snapshot, to wait synchronously for completion, or when story scenes rely only on fade, gentle rise/drop, or repeated opacity-plus-translate entrances. Preconditions: projectId comes from list_projects and expectedSourceRevision must equal the computedAtSourceRevision returned by validate_project for the exact inspected generation; optional idempotencyKey must identify this exact revision, and the reviewed storyboard plus scene sources must show a value-first story spine and setup/development/payoff/hold choreography. Side effects: re-checks the exact source revision, diagnostics, encoding, font coverage and render lint before enqueueing one render job; it returns immediately without publishing an artifact yet. Errors/recovery: write_conflict means the project changed after review, so re-read, revalidate and inspect the new revision; poll get_job_status after pollAfterMs; fix stable gate errors before retrying and report warnings, outcome, and cleanupPending honestly.",
       "inputSchema": {
         "type": "object",
         "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -3898,6 +7230,11 @@
             "type": "string",
             "minLength": 1,
             "maxLength": 255
+          },
+          "expectedSourceRevision": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
           },
           "bestEffort": {
             "type": "boolean"
@@ -3914,7 +7251,8 @@
           }
         },
         "required": [
-          "projectId"
+          "projectId",
+          "expectedSourceRevision"
         ],
         "additionalProperties": false
       },
@@ -3943,7 +7281,7 @@
     {
       "name": "start_snapshot",
       "title": "Start project snapshots",
-      "description": "Use when creating midpoint snapshots for visual inspection before final render. Do not use as a substitute for validate_project or to wait synchronously for every image. Preconditions: projectId comes from list_projects and optional idempotencyKey must identify this exact request. Side effects: enqueues one snapshot job and returns immediately without publishing frames yet. Errors/recovery: poll get_job_status after pollAfterMs; report a partial outcome and its missingSceneIds, then retry deliberately after fixing the cause.",
+      "description": "Use when creating midpoint snapshots for visual inspection before final render. Do not use as a substitute for validate_project or to wait synchronously for every image. Preconditions: projectId comes from list_projects, optional idempotencyKey must identify this exact request, and authored Unicode text must pass the same encoding/font gate as render. Side effects: re-checks encoding/font coverage, enqueues one snapshot job, and returns immediately without publishing frames yet. Errors/recovery: poll get_job_status after pollAfterMs; report a partial outcome and its missingSceneIds, then retry deliberately after fixing the cause.",
       "inputSchema": {
         "type": "object",
         "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -4101,7 +7439,7 @@
     {
       "name": "validate_project",
       "title": "Validate a VidCom project",
-      "description": "Use when validating a project after an edit and before snapshot or render. Do not use to mutate source or to inspect rendered pixels. Preconditions: projectId comes from list_projects. Side effects: computes diagnostics and refreshes only the derived diagnostics projection; source revision is unchanged. Errors/recovery: fix every error diagnostic before continuing; no-composition is an informational result for an empty project, not a tool failure.",
+      "description": "Use when validating a project after an edit and before snapshot or render, including UTF-8 decoding and exact project-local font glyph coverage for authored Unicode text. Do not use to mutate source or to inspect rendered pixels. Preconditions: projectId comes from list_projects. Side effects: computes diagnostics and refreshes only the derived diagnostics projection; source revision is unchanged. Errors/recovery: fix every error diagnostic before continuing; text-encoding-invalid, font-file-invalid, and font-glyph-missing block snapshot/render, while font-coverage-unverified means vendor an inspectable font instead of trusting machine fallback. no-composition is informational for an empty project.",
       "inputSchema": {
         "type": "object",
         "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -4172,6 +7510,13 @@
                 "message": {
                   "type": "string",
                   "minLength": 1
+                },
+                "details": {
+                  "type": "object",
+                  "propertyNames": {
+                    "type": "string"
+                  },
+                  "additionalProperties": {}
                 },
                 "fix": {
                   "type": "object",

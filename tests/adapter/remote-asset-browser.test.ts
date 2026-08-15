@@ -89,8 +89,15 @@ describe.skipIf(!executablePath)("remote asset guard in a real browser", () => {
     });
     const assetPort = await listen(asset);
     const imageUrl = `http://127.0.0.1:${assetPort}/runtime.png`;
+    // The listener is authored after the guard's own, so it runs after it — and
+    // the guard reports with a synchronous XHR. By the time this flag is set,
+    // the report has already been delivered, which makes it a signal the test
+    // can wait on instead of a fixed sleep.
     const html = injectRuntimeAssetGuardDocument(
-      `<!doctype html><html><head><meta charset="utf-8"><script>addEventListener("load",()=>{const image=new Image();image.src=${JSON.stringify(imageUrl)};document.body.append(image);});</script></head><body></body></html>`,
+      `<!doctype html><html><head><meta charset="utf-8"><script>`
+      + `addEventListener("securitypolicyviolation",()=>{globalThis.__guardViolation=true;});`
+      + `addEventListener("load",()=>{const image=new Image();image.src=${JSON.stringify(imageUrl)};document.body.append(image);});`
+      + `</script></head><body></body></html>`,
       opened,
     );
     const document = createServer((_request, response) => {

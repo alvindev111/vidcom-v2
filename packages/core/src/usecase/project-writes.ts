@@ -99,6 +99,7 @@ export async function patchPreviewSettings(
   dependencies: ProjectWriteDependencies,
   input: { projectId: ProjectId; patch: PreviewSettingsPatchDto; expectedRevision: number },
   actor: Actor,
+  invocation: WriteInvocation = { toolAudit: null },
 ) {
   const ref = await findRef(dependencies, input.projectId);
   if (!ref.ok) return ref;
@@ -108,7 +109,7 @@ export async function patchPreviewSettings(
     entity: "preview-settings",
     patch: input.patch,
     expectedRevision: input.expectedRevision,
-  }, actor);
+  }, actor, invocation);
   return written.ok
     ? ok({
         previewSettings: written.value.previewSettings!,
@@ -367,7 +368,7 @@ export async function setSceneScript(
   const written = await dependencies.authority.mutateSource({
     ref: ref.value,
     steps,
-    toolAudit: invocation.toolAudit,
+    ...invocation,
     backup: false,
   }, actor);
   if (!written.ok) return written;
@@ -542,9 +543,23 @@ export async function regenerateNarration(
   return written.ok ? ok(narration) : written;
 }
 
-function sceneSource(sceneId: string, title: string, duration: number): string {
+function sceneSource(
+  sceneId: string,
+  title: string,
+  duration: number,
+  dimensions: { width: number; height: number },
+): string {
   const escaped = title.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
-  return `<!doctype html><html><head><meta charset="UTF-8" /><style>html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#0f172a;color:#f8fafc;font-family:system-ui,sans-serif}#${sceneId}{display:grid;place-items:center;width:1920px;height:1080px}h2{max-width:1400px;margin:0;padding:96px;text-align:center;font-size:96px;line-height:1.1}</style></head><body><div id="${sceneId}" data-composition-id="${sceneId}" data-width="1920" data-height="1080" data-start="0" data-duration="${duration}"><h2>${escaped}</h2></div></body></html>\n`;
+  return `<!doctype html><html><head><meta charset="UTF-8" /></head><body><template><style>#${sceneId}{display:grid;place-items:center;width:${dimensions.width}px;height:${dimensions.height}px;overflow:hidden;box-sizing:border-box;background:#0f172a;color:#f8fafc;font-family:system-ui,sans-serif}#${sceneId} h2{max-width:80%;margin:0;padding:8%;text-align:center;font-size:clamp(48px,5vw,96px);line-height:1.1}</style><div id="${sceneId}" data-composition-id="${sceneId}" data-width="${dimensions.width}" data-height="${dimensions.height}" data-start="0" data-duration="${duration}"><h2>${escaped}</h2></div></template></body></html>\n`;
+}
+
+function sceneMount(
+  sceneId: string,
+  scenePath: RelPath,
+  timing: { start: number; duration: number; trackIndex: number },
+  dimensions: { width: number; height: number },
+): string {
+  return `<div id="${sceneId}-layer" class="comp-layer clip" data-composition-id="${sceneId}" data-composition-src="${scenePath}" data-start="${timing.start}" data-duration="${timing.duration}" data-track-index="${timing.trackIndex}" data-width="${dimensions.width}" data-height="${dimensions.height}"></div>`;
 }
 
 export async function createScene(
@@ -585,12 +600,18 @@ export async function createScene(
     const trackIndex = input.trackIndex ?? 0;
     const sceneId = "scene-1";
     const scenePath = `compositions/${sceneId}.html` as RelPath;
-    const mount = `<div id="${sceneId}-layer" class="comp-layer clip" data-composition-id="${sceneId}" data-composition-src="${scenePath}" data-start="0" data-duration="${duration}" data-track-index="${trackIndex}"></div>`;
+    const dimensions = identity.identity.platform;
+    const mount = sceneMount(sceneId, scenePath, { start: 0, duration, trackIndex }, dimensions);
     const cue = initialCue(sceneId, input.title);
     const written = await dependencies.authority.mutateSource({
       ref: ref.value,
       steps: [
-        { kind: "write", path: scenePath, content: sceneSource(sceneId, input.title, duration), expectedContentHash: null },
+        {
+          kind: "write",
+          path: scenePath,
+          content: sceneSource(sceneId, input.title, duration, dimensions),
+          expectedContentHash: null,
+        },
         {
           kind: "write", path: ref.value.entry,
           content: rootCompositionSource(identity.identity.platform, mount, duration), expectedContentHash: null,
@@ -601,7 +622,7 @@ export async function createScene(
           expectedContentHash: null,
         },
       ],
-      toolAudit: invocation.toolAudit,
+      ...invocation,
       backup: false,
     }, actor);
     if (!written.ok) return written;
@@ -667,7 +688,8 @@ export async function createScene(
     },
   });
   const scenePath = `compositions/${sceneId}.html` as RelPath;
-  const html = `<div id="${sceneId}-layer" class="comp-layer clip" data-composition-id="${sceneId}" data-composition-src="${scenePath}" data-start="${start}" data-duration="${duration}" data-track-index="${trackIndex}"></div>`;
+  const dimensions = { width: model.project.width, height: model.project.height };
+  const html = sceneMount(sceneId, scenePath, { start, duration, trackIndex }, dimensions);
   const insertionReference = track[index];
   const documentIndex = insertionReference
     ? model.scenes.findIndex((scene) => scene.id === insertionReference.id)
@@ -690,7 +712,7 @@ export async function createScene(
       {
         kind: "write",
         path: scenePath,
-        content: sceneSource(sceneId, input.title, duration),
+        content: sceneSource(sceneId, input.title, duration, dimensions),
         expectedContentHash: null,
       },
       {
@@ -706,7 +728,7 @@ export async function createScene(
         expectedContentHash: null,
       },
     ],
-    toolAudit: invocation.toolAudit,
+    ...invocation,
     backup: false,
   }, actor);
   if (!written.ok) return written;
@@ -763,6 +785,7 @@ async function persistNarrationCues(
     expectedContentHash: ContentHash | null;
   },
   actor: Actor,
+  invocation: WriteInvocation = { toolAudit: null },
 ) {
   const ref = await findRef(dependencies, input.projectId);
   if (!ref.ok) return ref;
@@ -789,7 +812,7 @@ async function persistNarrationCues(
     path,
     content: serializeNarrationSidecar(input.sceneId, cues, revision + 1, dependencies.clock.now().toISOString()),
     expectedContentHash: input.expectedContentHash,
-  }, actor);
+  }, actor, invocation);
   return written.ok ? ok({ cues, contentHash: written.value.contentHash, revision: written.value.revision }) : written;
 }
 
@@ -803,6 +826,7 @@ export function replaceNarrationCues(
     expectedContentHash: ContentHash | null;
   },
   actor: Actor,
+  invocation: WriteInvocation = { toolAudit: null },
 ) {
   return persistNarrationCues(dependencies, {
     ...input,
@@ -811,7 +835,7 @@ export function replaceNarrationCues(
       voice: cue.voice,
       offsetSeconds: cue.offsetSeconds,
     })),
-  }, actor);
+  }, actor, invocation);
 }
 
 /** Updates one narration cue without rebuilding metadata for it or its siblings. */
@@ -825,6 +849,7 @@ export async function patchNarrationCue(
     expectedContentHash: ContentHash;
   },
   actor: Actor,
+  invocation: WriteInvocation = { toolAudit: null },
 ) {
   const current = await readNarrationCues(dependencies, input);
   if (!current.ok) return current;
@@ -847,5 +872,5 @@ export async function patchNarrationCue(
       staleSince,
     } : candidate),
     expectedContentHash: input.expectedContentHash,
-  }, actor);
+  }, actor, invocation);
 }

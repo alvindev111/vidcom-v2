@@ -77,6 +77,7 @@ Cần: **job queue + worker + progress streaming** (SSE/WebSocket). Không có c
 | PM-7 | Báo lỗi project không parse được (thay vì im lặng loại bỏ) | Cao |
 | PM-8 | Import (zip/git) / Export (zip) | Thấp |
 | PM-9 | Settings project: kích thước canvas, fps, palette default, voice default | Trung |
+| PM-10 | Catalog palette video chuẩn qua MCP: mã màu có source URL/swatches, nhóm phong cách, controlled mood, harmony, semantic roles, choose/avoid guidance và tương phản; ưu tiên màu user/brand, fallback deterministic khi brief không chỉ định màu | Cao |
 
 ### 3.2 File & asset
 
@@ -140,6 +141,7 @@ Cần: **job queue + worker + progress streaming** (SSE/WebSocket). Không có c
 | VD-4 | Quick fix (đề xuất giá trị `data-duration` mới) | Trung |
 | VD-5 | `hyperframes keyframes` diagnostics | Thấp |
 | VD-6 | Hiện diagnostic inline trong editor (gutter marker) | Trung |
+| VD-7 | Kiểm tra UTF-8 strict và glyph coverage theo `cmap` của font project-local; chặn snapshot/render khi thiếu glyph hoặc font hỏng | Cao |
 
 Schema đề xuất:
 ```ts

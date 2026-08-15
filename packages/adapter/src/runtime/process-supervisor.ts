@@ -1,4 +1,6 @@
 import { execFile, spawn } from "node:child_process";
+import { lstat, readFile } from "node:fs/promises";
+import path from "node:path";
 import { promisify } from "node:util";
 
 import { ErrorCode } from "@vidcom/contracts";
@@ -16,13 +18,89 @@ export const PROCESS_VERIFY_SWEEP_INTERVAL_MS = 100;
 export const PROCESS_VERIFY_MAX_SWEEPS = 20;
 export const PROCESS_COMMAND_TIMEOUT_MS = 2_000;
 export const PROCESS_VERIFY_TIMEOUT_MS = 5_000;
+/**
+ * Headroom for the identity probe, which spawns PowerShell and is answered in
+ * roughly 350ms once its environment is right.
+ *
+ * The budget is not what made this probe fail — a bad `PSModulePath` did — but
+ * it stays separate from the 2s termination budget: an inconclusive self-probe
+ * stops a directory lock from ever being published, so this one is worth
+ * waiting on rather than abandoning early.
+ */
+export const PROCESS_IDENTITY_PROBE_TIMEOUT_MS = 15_000;
+
+/**
+ * Scheme prefix on every Windows start identity.
+ *
+ * Identities are compared as opaque strings, so changing how one is measured
+ * would make an identity written by another build look like a different
+ * process — and a live lock owner would be reclaimed as if it had died. The
+ * prefix names the measurement, and a prefix this build did not produce is
+ * treated as unknown rather than dead. `windows-cim:` was the WMI-backed
+ * predecessor; it must never be re-used for a different measurement.
+ */
+export const WINDOWS_IDENTITY_SCHEME = "windows-start";
+
+/** The measurement that produced an identity, or undefined when unlabelled. */
+export function identityScheme(startedAt: string): string | undefined {
+  const separator = startedAt.indexOf(":");
+  return separator <= 0 ? undefined : startedAt.slice(0, separator);
+}
+
+/**
+ * True when two identities were measured the same way and can be compared.
+ *
+ * Identities from different schemes carry no information about each other: they
+ * are neither a match nor a mismatch.
+ */
+export function identitySchemesAgree(left: string, right: string): boolean {
+  return identityScheme(left) === identityScheme(right);
+}
 
 const DEFAULT_TIMEOUT_MS = 5 * 60 * 1_000;
-const MAX_CAPTURE_BYTES = 64 * 1024;
+export const DEFAULT_PROCESS_CAPTURE_MAX_BYTES = 64 * 1024;
+export const MAX_PROCESS_CAPTURE_MAX_BYTES = 8 * 1024 * 1024;
 const execFileAsync = promisify(execFile);
+const POSIX_PS = process.platform === "darwin" ? "/bin/ps" : "/usr/bin/ps";
+
+function posixProbeEnvironment(): NodeJS.ProcessEnv {
+  return {
+    NODE_ENV: process.env.NODE_ENV,
+    PATH: "/usr/bin:/bin",
+    LANG: "C",
+    LC_ALL: "C",
+    TZ: "UTC",
+  };
+}
 
 interface ProcessRow { pid: number; ppid: number | null; pgid: number | null; startedAt: string }
 interface CaptureState { pids: Map<number, string>; groups: Map<number, string>; exhaustive: boolean }
+interface StreamCapture { chunks: Buffer[]; byteLength: number }
+
+export interface NodeProcessSupervisorOptions {
+  /** Trusted values required by every child; per-invocation duplicates cannot replace them. */
+  defaultEnvironment?: Readonly<Record<string, string>>;
+  /** Configured trust bundle for every supervised Node child. */
+  caBundlePath?: string;
+}
+
+/** One exact operating-system process instance, including its start identity. */
+export interface ProcessIdentity {
+  pid: number;
+  startedAt: string;
+}
+
+/** Result of one OS process-table probe; non-exhaustive results cannot prove death or PID reuse. */
+export interface ProcessIdentityProbeResult {
+  identity: ProcessIdentity | undefined;
+  exhaustive: boolean;
+  /**
+   * Why an inconclusive probe gave up. Diagnostics only — never a control flow
+   * input. A blind probe stops a directory lock from being published, and
+   * without this the failure is indistinguishable from lock contention.
+   */
+  reason?: string;
+}
 
 /** True only when a numeric PID still names the exact process instance captured earlier. */
 export function processIdentityMatches(
@@ -30,6 +108,37 @@ export function processIdentityMatches(
   current: { pid: number; startedAt: string } | undefined,
 ): boolean {
   return current?.pid === captured.pid && current.startedAt === captured.startedAt;
+}
+
+/**
+ * Reads the exact OS start identity currently assigned to `pid`, if any.
+ *
+ * An absent identity proves death only with `exhaustive: true`; malformed or
+ * unavailable probe output returns `exhaustive: false` and remains unknown.
+ */
+export async function probeProcessIdentity(pid: number): Promise<ProcessIdentityProbeResult> {
+  if (!Number.isSafeInteger(pid) || pid <= 0) throw new TypeError("process pid must be a positive safe integer");
+  if (process.platform === "linux") return probeLinuxProcessIdentity(pid);
+  if (process.platform === "win32") return probeWindowsProcessIdentity(pid);
+  return probePosixProcessIdentity(pid);
+}
+
+let currentProcessIdentity: { pid: number; result: ProcessIdentityProbeResult } | undefined;
+
+/**
+ * Probes this process's own identity at most once.
+ *
+ * A live process cannot change its own PID or start time, so repeating the probe
+ * only repeats its cost — on Windows a PowerShell spawn per call. Only an
+ * exhaustive answer is cached; an inconclusive probe stays retryable.
+ */
+export async function probeCurrentProcessIdentity(): Promise<ProcessIdentityProbeResult> {
+  if (currentProcessIdentity?.pid === process.pid) return currentProcessIdentity.result;
+  const result = await probeProcessIdentity(process.pid);
+  if (result.exhaustive && result.identity !== undefined) {
+    currentProcessIdentity = { pid: process.pid, result };
+  }
+  return result;
 }
 
 /** Error raised when direct PID probes still find survivors after the sweep budget. */
@@ -43,16 +152,30 @@ export class ProcessTerminationUnverifiedError extends Error {
 
 /** Node implementation of the capture, kill and direct-probe process protocol. */
 export class NodeProcessSupervisor implements ProcessSupervisorPort {
-  constructor(private readonly defaultTimeoutMs: number = DEFAULT_TIMEOUT_MS) {}
+  constructor(
+    private readonly defaultTimeoutMs: number = DEFAULT_TIMEOUT_MS,
+    private readonly options: NodeProcessSupervisorOptions = {},
+  ) {}
 
   async run(input: ProcessRunInput): Promise<SupervisedProcessResult> {
     const [executable, ...args] = input.command;
     if (!executable) throw new TypeError("process command must name an executable");
+    const captureMaxBytes = resolveCaptureMaxBytes(input.captureMaxBytes);
     input.signal?.throwIfAborted();
+    const configuredEnvironment = {
+      ...this.options.defaultEnvironment,
+      ...(this.options.caBundlePath
+        ? { NODE_EXTRA_CA_CERTS: this.options.caBundlePath }
+        : {}),
+    };
 
     const child = spawn(executable, args, {
       cwd: input.cwd,
-      env: allowlistedEnvironment(process.env, input.environment),
+      env: allowlistedEnvironment(
+        process.env,
+        { ...input.environment, ...configuredEnvironment },
+        { caBundlePath: this.options.caBundlePath },
+      ),
       shell: false,
       detached: process.platform !== "win32",
       windowsHide: true,
@@ -62,10 +185,10 @@ export class NodeProcessSupervisor implements ProcessSupervisorPort {
       return await new Promise<never>((_resolve, reject) => child.once("error", reject));
     }
     const rootPid = child.pid;
-    let stdout = "";
-    let stderr = "";
-    captureStream(child.stdout, (chunk) => { stdout = truncate(stdout + chunk); });
-    captureStream(child.stderr, (chunk) => { stderr = truncate(stderr + chunk); });
+    const stdout = createStreamCapture();
+    const stderr = createStreamCapture();
+    captureStream(child.stdout, stdout, captureMaxBytes);
+    captureStream(child.stderr, stderr, captureMaxBytes);
 
     const state: CaptureState = { pids: new Map(), groups: new Map(), exhaustive: true };
     const exit = new Promise<{ kind: "exit"; code: number | null }>((resolve, reject) => {
@@ -93,7 +216,15 @@ export class NodeProcessSupervisor implements ProcessSupervisorPort {
     try {
       const first = await Promise.race([exit, abort, timeout]);
       if (first.kind === "exit") {
-        return { status: "exited", output: { exitCode: first.code, stdout, stderr, timedOut: false } };
+        return {
+          status: "exited",
+          output: {
+            exitCode: first.code,
+            stdout: capturedText(stdout),
+            stderr: capturedText(stderr),
+            timedOut: false,
+          },
+        };
       }
       const proof = await this.terminateAndVerify(rootPid, state, first.reason, async () => {
         if (process.platform === "win32") await killPid(rootPid, true);
@@ -246,11 +377,267 @@ export function descendantsOf(rows: readonly ProcessRow[], rootPid: number): Pro
   return result;
 }
 
+const LINUX_BOOT_ID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/u;
+const POSIX_START_PATTERN = /^(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun) (?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec) [ 0-3][0-9] [0-2][0-9]:[0-5][0-9]:[0-6][0-9] [0-9]{4}$/u;
+
+async function probeLinuxProcessIdentity(pid: number): Promise<ProcessIdentityProbeResult> {
+  let bootId: string;
+  try {
+    bootId = (await readFile("/proc/sys/kernel/random/boot_id", "utf8")).trim();
+  } catch {
+    return { identity: undefined, exhaustive: false };
+  }
+  if (!LINUX_BOOT_ID_PATTERN.test(bootId)) return { identity: undefined, exhaustive: false };
+
+  let stat: string;
+  try {
+    stat = await readFile(`/proc/${pid}/stat`, "utf8");
+  } catch (error) {
+    return hasErrorCode(error, "ENOENT")
+      ? { identity: undefined, exhaustive: true }
+      : { identity: undefined, exhaustive: false };
+  }
+  const prefix = `${pid} (`;
+  const close = stat.lastIndexOf(") ");
+  if (!stat.startsWith(prefix) || close < prefix.length) return { identity: undefined, exhaustive: false };
+  const fields = stat.slice(close + 2).trim().split(/\s+/u);
+  const state = fields[0];
+  const startTicks = fields[19];
+  if (!state || !/^[A-Za-z]$/u.test(state) || !startTicks || !/^[0-9]+$/u.test(startTicks)) {
+    return { identity: undefined, exhaustive: false };
+  }
+  return {
+    identity: { pid, startedAt: `linux-proc:${bootId}:${startTicks}` },
+    exhaustive: true,
+  };
+}
+
+async function probePosixProcessIdentity(pid: number): Promise<ProcessIdentityProbeResult> {
+  let stdout: string;
+  try {
+    const result = await execFileAsync(POSIX_PS, ["-p", String(pid), "-o", "pid=,lstart="], {
+      encoding: "utf8",
+      timeout: PROCESS_COMMAND_TIMEOUT_MS,
+      env: posixProbeEnvironment(),
+    });
+    if (result.stderr !== "") return { identity: undefined, exhaustive: false };
+    stdout = result.stdout;
+  } catch (error) {
+    return posixProbeProvesAbsent(error)
+      ? { identity: undefined, exhaustive: true }
+      : { identity: undefined, exhaustive: false };
+  }
+  const lines = stdout.trim().split(/\r?\n/u);
+  if (lines.length !== 1) return { identity: undefined, exhaustive: false };
+  const match = /^\s*([0-9]+)\s+(.+?)\s*$/u.exec(lines[0] ?? "");
+  if (!match || Number(match[1]) !== pid || !POSIX_START_PATTERN.test(match[2] ?? "")) {
+    return { identity: undefined, exhaustive: false };
+  }
+  return {
+    identity: { pid, startedAt: `posix-ps-utc:${match[2]}` },
+    exhaustive: true,
+  };
+}
+
+async function probeWindowsProcessIdentity(pid: number): Promise<ProcessIdentityProbeResult> {
+  const blind = (reason: string): ProcessIdentityProbeResult =>
+    ({ identity: undefined, exhaustive: false, reason });
+  const disabled = new Set((process.env.VIDCOM_DISABLE_ENUMERATORS ?? "")
+    .split(",").map((value) => value.trim()).filter(Boolean));
+  if (disabled.has("powershell-cim")) return blind("powershell probe disabled by VIDCOM_DISABLE_ENUMERATORS");
+  const windowsRoot = canonicalWindowsRoot();
+  if (!windowsRoot) {
+    return blind(`SystemRoot is not a canonical Windows directory: ${process.env.SystemRoot ?? "<unset>"}`);
+  }
+  const powershell = await windowsIdentityShell(windowsRoot);
+  let stdout: string;
+  try {
+    // Call System.Diagnostics directly. Even `Get-Process` can trigger module
+    // discovery before it reaches the same .NET API, which made a cold Windows
+    // runner consume the whole probe budget despite an empty PSModulePath.
+    const command = "$ErrorActionPreference = 'Stop'; "
+      + `try { $p = [System.Diagnostics.Process]::GetProcessById(${pid}); `
+      + "$started = $p.StartTime.ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ss.fffffffZ', "
+      + "[System.Globalization.CultureInfo]::InvariantCulture); "
+      + "[Console]::Out.Write('VIDCOM_FOUND ' + [int]$p.Id + '|' + $started) "
+      + "} catch { if ($_.Exception -is [System.ArgumentException] -or "
+      + "$_.Exception.InnerException -is [System.ArgumentException]) { "
+      + "[Console]::Out.Write('VIDCOM_ABSENT') } else { throw } }";
+    const result = await execFileAsync(powershell, [
+      "-NoLogo", "-NoProfile", "-NonInteractive", "-Command", command,
+    ], {
+      encoding: "utf8",
+      timeout: PROCESS_IDENTITY_PROBE_TIMEOUT_MS,
+      env: windowsProbeEnvironment(windowsRoot, powershell),
+    });
+    if (result.stderr !== "") return blind(`powershell wrote to stderr: ${truncateReason(result.stderr)}`);
+    stdout = result.stdout.trim();
+  } catch (error) {
+    const forwarded = WINDOWS_PROBE_PASSTHROUGH.filter((name) => process.env[name] !== undefined);
+    return blind(
+      `powershell probe failed: ${probeFailureDetail(error)}`
+      + ` (forwarded: ${forwarded.join(",") || "none"})`,
+    );
+  }
+  if (stdout === "VIDCOM_ABSENT") return { identity: undefined, exhaustive: true };
+  if (!stdout.startsWith("VIDCOM_FOUND ") || stdout.includes("\n") || stdout.includes("\r")) {
+    return blind(`unexpected probe output: ${truncateReason(stdout)}`);
+  }
+  const match = /^VIDCOM_FOUND ([0-9]+)\|(.+)$/u.exec(stdout);
+  if (!match || Number(match[1]) !== pid || !canonicalWindowsCreationDate(match[2] ?? "")) {
+    return blind("probe output did not describe the requested process canonically");
+  }
+  return {
+    identity: { pid, startedAt: `${WINDOWS_IDENTITY_SCHEME}:${match[2]}` },
+    exhaustive: true,
+  };
+}
+
+function canonicalWindowsRoot(): string | null {
+  const windowsRoot = process.env.SystemRoot;
+  return windowsRoot
+    && path.win32.isAbsolute(windowsRoot)
+    && path.win32.normalize(windowsRoot) === windowsRoot
+    && path.win32.basename(windowsRoot).toLowerCase() === "windows"
+    ? windowsRoot
+    : null;
+}
+
+function windowsPowerShell(windowsRoot: string): string {
+  return path.win32.join(
+    windowsRoot,
+    "System32",
+    "WindowsPowerShell",
+    "v1.0",
+    "powershell.exe",
+  );
+}
+
+/**
+ * Uses PowerShell 7 when its system-protected conventional install exists.
+ *
+ * GitHub's current Windows image exposes both shells, but Windows PowerShell
+ * 5.1 can spend the entire identity budget in cold CLR startup. PowerShell 7
+ * calls the same `System.Diagnostics.Process.StartTime` authority without that
+ * stall. Stock Windows machines without it retain the built-in fallback.
+ */
+export async function windowsIdentityShell(windowsRoot: string): Promise<string> {
+  const [preferred, fallback] = windowsIdentityShellCandidates(windowsRoot);
+  try {
+    const metadata = await lstat(preferred);
+    if (metadata.isFile() && !metadata.isSymbolicLink()) return preferred;
+  } catch (error) {
+    if (!hasErrorCode(error, "ENOENT")) throw error;
+  }
+  return fallback;
+}
+
+/** Exact trusted candidates in preference order; exported to pin Windows path construction. */
+export function windowsIdentityShellCandidates(windowsRoot: string): readonly [string, string] {
+  const driveRoot = path.win32.parse(windowsRoot).root;
+  return [
+    path.win32.join(driveRoot, "Program Files", "PowerShell", "7", "pwsh.exe"),
+    windowsPowerShell(windowsRoot),
+  ];
+}
+
+function truncateReason(value: string): string {
+  const single = value.replace(/\s+/gu, " ").trim();
+  return single.length > 200 ? `${single.slice(0, 200)}…` : single;
+}
+
+/** Names the mechanical cause: a timeout, a kill signal, an exit code, or a spawn error. */
+function probeFailureDetail(error: unknown): string {
+  if (!error || typeof error !== "object") return String(error);
+  const failure = error as { killed?: boolean; signal?: string; code?: unknown; message?: string };
+  if (failure.killed === true || failure.signal) {
+    return `timed out after ${PROCESS_IDENTITY_PROBE_TIMEOUT_MS}ms (signal ${failure.signal ?? "none"})`;
+  }
+  if (failure.code !== undefined) return `exit ${String(failure.code)}: ${truncateReason(failure.message ?? "")}`;
+  return truncateReason(failure.message ?? String(error));
+}
+
+/**
+ * Variables PowerShell itself needs to start, forwarded verbatim when present.
+ *
+ * The allowlist exists so the probe cannot be steered by an attacker-controlled
+ * environment, but trimming it to five entries starved PowerShell of its
+ * temp directory and drive layout and it hung until the probe timed out. These
+ * names are read, never interpreted, by this process.
+ */
+const WINDOWS_PROBE_PASSTHROUGH = [
+  "SystemDrive",
+  "COMSPEC",
+  "PATHEXT",
+  "TEMP",
+  "TMP",
+  "USERPROFILE",
+  "HOMEDRIVE",
+  "HOMEPATH",
+  "LOCALAPPDATA",
+  "APPDATA",
+  "ProgramData",
+] as const;
+
+/**
+ * Builds the environment the Windows identity probe runs under.
+ *
+ * `PSModulePath` is deliberately empty. Pointing it at the single stock module
+ * directory made every process-inspecting cmdlet hang until it was killed —
+ * measured on CI at over 20s for `Get-Process` and `Get-CimInstance` alike,
+ * while the same shell answered `'ok'` in 244ms. Empty answers in ~320ms
+ * because module discovery never runs, and the cmdlets this probe needs are
+ * already in the default session. Empty is also the stricter setting: no
+ * directory on the module path can introduce code into the probe. Deleting the
+ * variable is NOT equivalent — PowerShell then computes its own default and
+ * hangs again.
+ */
+export function windowsProbeEnvironment(windowsRoot: string, powershell: string): NodeJS.ProcessEnv {
+  const environment: NodeJS.ProcessEnv = {
+    NODE_ENV: process.env.NODE_ENV,
+    SystemRoot: windowsRoot,
+    WINDIR: windowsRoot,
+    PATH: `${path.win32.dirname(powershell)};${path.win32.join(windowsRoot, "System32")}`,
+    PSModulePath: "",
+  };
+  for (const name of WINDOWS_PROBE_PASSTHROUGH) {
+    const value = process.env[name];
+    if (value !== undefined) environment[name] = value;
+  }
+  return environment;
+}
+
+function canonicalWindowsCreationDate(value: string): boolean {
+  if (!/^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\.[0-9]{7}Z$/u.test(value)) {
+    return false;
+  }
+  const milliseconds = `${value.slice(0, 23)}Z`;
+  const parsed = new Date(milliseconds);
+  return Number.isFinite(parsed.getTime()) && parsed.toISOString() === milliseconds;
+}
+
+function posixProbeProvesAbsent(error: unknown): boolean {
+  if (!error || typeof error !== "object") return false;
+  const failure = error as { code?: unknown; stdout?: unknown; stderr?: unknown };
+  return failure.code === 1
+    && failure.stdout === ""
+    && failure.stderr === "";
+}
+
+function hasErrorCode(error: unknown, code: string): boolean {
+  return error !== null
+    && typeof error === "object"
+    && "code" in error
+    && (error as { code?: unknown }).code === code;
+}
+
 async function enumerateProcesses(): Promise<{ rows: ProcessRow[]; exhaustive: boolean }> {
   if (process.platform !== "win32") {
     try {
-      const { stdout } = await execFileAsync("ps", ["-Ao", "pid=,ppid=,pgid=,lstart="], {
-        encoding: "utf8", timeout: PROCESS_COMMAND_TIMEOUT_MS,
+      const { stdout } = await execFileAsync(POSIX_PS, ["-Ao", "pid=,ppid=,pgid=,lstart="], {
+        encoding: "utf8",
+        timeout: PROCESS_COMMAND_TIMEOUT_MS,
+        env: posixProbeEnvironment(),
       });
       return { rows: parsePosixTable(stdout), exhaustive: true };
     } catch {
@@ -260,11 +647,18 @@ async function enumerateProcesses(): Promise<{ rows: ProcessRow[]; exhaustive: b
   const disabled = new Set((process.env.VIDCOM_DISABLE_ENUMERATORS ?? "")
     .split(",").map((value) => value.trim()).filter(Boolean));
   if (disabled.has("powershell-cim")) return { rows: [], exhaustive: false };
+  const windowsRoot = canonicalWindowsRoot();
+  if (!windowsRoot) return { rows: [], exhaustive: false };
+  const powershell = windowsPowerShell(windowsRoot);
   try {
-    const { stdout } = await execFileAsync("powershell.exe", [
+    const { stdout } = await execFileAsync(powershell, [
       "-NoProfile", "-NonInteractive", "-Command",
       "Get-CimInstance Win32_Process | Select-Object ProcessId,ParentProcessId,CreationDate | ConvertTo-Csv -NoTypeInformation",
-    ], { encoding: "utf8", timeout: PROCESS_COMMAND_TIMEOUT_MS });
+    ], {
+      encoding: "utf8",
+      timeout: PROCESS_COMMAND_TIMEOUT_MS,
+      env: windowsProbeEnvironment(windowsRoot, powershell),
+    });
     return { rows: parseWindowsCim(stdout), exhaustive: true };
   } catch {
     return { rows: [], exhaustive: false };
@@ -297,20 +691,49 @@ async function killPid(pid: number, tree = false): Promise<void> {
     try { process.kill(pid, "SIGKILL"); } catch { /* already exited */ }
     return;
   }
+  const windowsRoot = canonicalWindowsRoot();
+  if (!windowsRoot) return;
   try {
-    await execFileAsync("taskkill", ["/pid", String(pid), ...(tree ? ["/t"] : []), "/f"], {
+    await execFileAsync(path.win32.join(windowsRoot, "System32", "taskkill.exe"), [
+      "/pid", String(pid), ...(tree ? ["/t"] : []), "/f",
+    ], {
       encoding: "utf8", timeout: PROCESS_COMMAND_TIMEOUT_MS,
+      env: windowsProbeEnvironment(windowsRoot, windowsPowerShell(windowsRoot)),
     });
   } catch { /* taskkill reports non-zero when the pid already exited */ }
 }
 
-function captureStream(stream: NodeJS.ReadableStream | null, append: (chunk: string) => void): void {
-  stream?.setEncoding("utf8");
-  stream?.on("data", (chunk: string) => append(chunk));
+function resolveCaptureMaxBytes(value: number | undefined): number {
+  const resolved = value ?? DEFAULT_PROCESS_CAPTURE_MAX_BYTES;
+  if (!Number.isSafeInteger(resolved) || resolved <= 0 || resolved > MAX_PROCESS_CAPTURE_MAX_BYTES) {
+    throw new RangeError(
+      `process captureMaxBytes must be a positive integer no greater than ${MAX_PROCESS_CAPTURE_MAX_BYTES}`,
+    );
+  }
+  return resolved;
 }
 
-function truncate(value: string): string {
-  return value.length > MAX_CAPTURE_BYTES ? value.slice(0, MAX_CAPTURE_BYTES) : value;
+function createStreamCapture(): StreamCapture {
+  return { chunks: [], byteLength: 0 };
+}
+
+function captureStream(
+  stream: NodeJS.ReadableStream | null,
+  capture: StreamCapture,
+  maxBytes: number,
+): void {
+  stream?.on("data", (chunk: Buffer | string) => {
+    const remaining = maxBytes - capture.byteLength;
+    if (remaining <= 0) return;
+    const bytes = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+    const retained = bytes.length > remaining ? bytes.subarray(0, remaining) : bytes;
+    capture.chunks.push(retained);
+    capture.byteLength += retained.length;
+  });
+}
+
+function capturedText(capture: StreamCapture): string {
+  return Buffer.concat(capture.chunks, capture.byteLength).toString("utf8");
 }
 
 function sleep(ms: number): Promise<void> {

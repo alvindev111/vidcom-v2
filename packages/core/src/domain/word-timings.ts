@@ -34,12 +34,23 @@ const MINIMUM_WORD_WEIGHT = 1;
  * duration evenly: "chuyển" takes visibly longer to say than "và", and an even
  * split puts the highlight ahead of the voice by the end of a long sentence.
  *
+ * Takes the speech window rather than the cue's duration, and it is not the same
+ * span: published narration carries silence at both ends so consecutive cues do
+ * not run into each other, and apportioning across the whole file put the first
+ * word inside that leading silence and the last one inside the trailing silence.
+ * Engines that report their own timings are unaffected — those already arrive on
+ * the published audio — which is precisely why passing the wrong span here shows
+ * up only on the engines that report nothing.
+ *
  * Pure. `words` is empty only when the text has no words at all.
  */
 export function resolveWordTimings(input: {
   engineWords: readonly TtsWordTiming[];
   text: string;
-  durationSeconds: number;
+  /** First instant of speech in the published audio, i.e. past any leading pad. */
+  speechStartSeconds: number;
+  /** Last instant of speech in the published audio, i.e. before any trailing pad. */
+  speechEndSeconds: number;
 }): ResolvedWordTimings {
   if (input.engineWords.length > 0) {
     // Engines can report a phrase per entry rather than a word; splitting those
@@ -47,9 +58,11 @@ export function resolveWordTimings(input: {
     return { words: input.engineWords.flatMap(splitTimingIntoWords), source: "engine" };
   }
   const words = spokenWords(input.text);
-  if (words.length === 0 || !(input.durationSeconds > 0)) return { words: [], source: "estimated" };
+  if (words.length === 0 || !(input.speechEndSeconds > input.speechStartSeconds)) {
+    return { words: [], source: "estimated" };
+  }
   return {
-    words: apportion(words, 0, input.durationSeconds),
+    words: apportion(words, input.speechStartSeconds, input.speechEndSeconds),
     source: "estimated",
   };
 }

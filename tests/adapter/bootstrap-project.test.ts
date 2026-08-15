@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { mkdtemp, mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
+import { chmod, mkdtemp, mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
@@ -70,6 +70,35 @@ afterEach(async () => {
 });
 
 describe("bootstrapProject", () => {
+  it.skipIf(process.platform === "win32")(
+    "fails closed when a registered project location cannot be inspected",
+    async () => {
+      const directory = await createProject("permission-denied", '{"id":"project_protected"}\n');
+      await chmod(directory, 0o000);
+      try {
+        await expect(projectRegistrationLocationExists({
+          id: "project_protected" as never,
+          workspaceRoot: workspaceRoot as AbsolutePath,
+          slug: "permission-denied",
+          firstSeenAt: "2026-08-01T00:00:00.000Z",
+          lastSeenAt: "2026-08-01T00:00:00.000Z",
+        })).rejects.toMatchObject({ code: expect.stringMatching(/EACCES|EPERM/u) });
+      } finally {
+        await chmod(directory, 0o700);
+      }
+    },
+  );
+
+  it("treats only a genuinely missing registered location as absent", async () => {
+    await expect(projectRegistrationLocationExists({
+      id: "project_missing" as never,
+      workspaceRoot: workspaceRoot as AbsolutePath,
+      slug: "missing",
+      firstSeenAt: "2026-08-01T00:00:00.000Z",
+      lastSeenAt: "2026-08-01T00:00:00.000Z",
+    })).resolves.toBe(false);
+  });
+
   it("assigns a missing ID without touching composition and seeds revision zero", async () => {
     await createProject("alpha");
     const before = await readFile(path.join(workspaceRoot, "alpha/index.html"), "utf8");

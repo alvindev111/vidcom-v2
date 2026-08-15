@@ -3,7 +3,12 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "exports": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts",
+    "./compiler-guard": "./src/hyperframes/compiler-guard.ts",
+    "./compiler-probe-child": "./src/hyperframes/compiler-probe-child.ts",
+    "./runtime-bootstrap": "./src/runtime/runtime-bootstrap.ts"
+  },
   "dependencies": {
     "@elevenlabs/elevenlabs-js": "2.59.0",
     "@hyperframes/core": "0.7.86",
@@ -14,10 +19,13 @@
     "@vidcom/core": "workspace:*",
     "animejs": "^4.5.0",
     "drizzle-orm": "1.0.0-rc.4",
+    "fontkit": "2.0.4",
     "gsap": "^3.15.0",
     "linkedom": "0.18.13",
     "lottie-web": "^5.13.0",
     "motion": "^12.43.0",
+    "node-pty": "1.1.0",
+    "tar": "7.5.22",
     "three": "^0.185.1"
   }
 }

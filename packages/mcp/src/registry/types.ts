@@ -44,7 +44,7 @@ export interface ToolAnnotations {
   readOnlyHint: boolean;
   destructiveHint: boolean;
   idempotentHint: boolean;
-  openWorldHint: false;
+  openWorldHint: boolean;
 }
 
 /** Single source of truth for schema, metadata, scope and execution of one tool. */
@@ -57,6 +57,16 @@ export interface ToolDefinition<I, O> {
   output: z.ZodType<O>;
   annotations: ToolAnnotations;
   availableInLegacy: boolean;
+  /**
+   * Whether this tool's write lands in a project's mutation journal.
+   *
+   * Defaults to true for `write`/`destructive`, which is what a project mutation
+   * does and what the registry verifies before reporting the write as durable. A
+   * tool that changes machine-level state instead — an install-wide library, a
+   * cache — has no project journal to own its audit, and must say so rather than
+   * be declared `read` and lie about mutating.
+   */
+  journalOwned?: boolean;
   projectIdOf(input: I): ProjectId | null;
   handler(context: ToolContext, input: I): Promise<Result<O, DomainError>>;
 }
@@ -77,5 +87,19 @@ export interface ToolRegistryDependencies extends RegistryApprovalDependencies {
 }
 
 export type ToolInvocation = Result<unknown, DomainError>;
+
+/**
+ * Whoever actually runs a tool.
+ *
+ * The registry owns the schema, the list and the era rules; this is the one
+ * thing it does not own. `ToolRegistry` satisfies it directly for the local
+ * case, and the bridge supplies an implementation that forwards to a daemon —
+ * so `mcp` never learns that a daemon exists. It cannot: `mcp` is forbidden
+ * from importing `adapter`, enforced by both ESLint and the boundary script,
+ * and receiving the invoker as a parameter is what keeps that true.
+ */
+export interface ToolInvoker {
+  invoke(name: string, raw: unknown, request: ToolRequestContext): Promise<ToolInvocation>;
+}
 
 export type { ToolLevel } from "@vidcom/contracts";

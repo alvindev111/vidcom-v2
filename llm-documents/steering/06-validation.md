@@ -116,8 +116,17 @@ type Diagnostic = {
   sceneId?: string; elementId?: string; effectId?: string;
   file?: string; line?: number;
   message: string;
+  details?: Record<string, unknown>;
   fix?: { kind: "set-attribute"; target: string; attribute: string; value: string };
 };
 ```
 
 Bốn diagnostic hiện có MUST được giữ: stranded tween · element overrun · unresolved selector · empty scene.
+
+### 8.1 Unicode và font
+
+- Source composition/CSS MUST decode bằng UTF-8 strict; byte lỗi sinh `text-encoding-invalid` mức `error`.
+- Text có code point ngoài ASCII MUST được đối chiếu với `cmap` của font project-local thực tế mà CSS chọn; thiếu glyph sinh `font-glyph-missing` mức `error` kèm danh sách `U+XXXX` trong `details`.
+- Font local hỏng/không đọc được sinh `font-file-invalid` mức `error`.
+- Font hệ thống, `local(...)`, font remote hoặc CSS không resolve được chỉ có thể sinh `font-coverage-unverified`; MUST NOT tuyên bố chúng hỗ trợ một ngôn ngữ khi không có byte font để kiểm chứng.
+- Snapshot và render MUST chạy lại cùng gate; kết quả `error` MUST chặn trước enqueue và `bestEffort` MUST NOT bypass.

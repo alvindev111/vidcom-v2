@@ -1,9 +1,9 @@
 import { createHash } from "node:crypto";
-import { cp, mkdtemp, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
-import { startVidcomFoundation } from "@vidcom/cli";
+import { hashContent, startVidcomFoundation } from "@vidcom/cli";
 import { nodeSchedulerTimers } from "@vidcom/adapter";
 import {
   JobSchema,
@@ -19,6 +19,7 @@ import { createNoopProbeJobType } from "@vidcom/worker";
 import { afterEach, describe, expect, it } from "vitest";
 
 import { createSequentialIdPort } from "../support/deterministic";
+import { writeSampleProject } from "../support/sample-project";
 
 const roots: string[] = [];
 
@@ -35,8 +36,9 @@ describe("Phase O foundation milestone", () => {
     const root = await mkdtemp(path.join(tmpdir(), "vidcom-milestone-"));
     roots.push(root);
     const workspaceRoot = path.join(root, "workspace");
+    await mkdir(workspaceRoot, { recursive: true });
     for (const slug of ["kinetic-type", "swiss-grid", "warm-grain"]) {
-      await cp(path.resolve("projects", slug), path.join(workspaceRoot, slug), { recursive: true });
+      await writeSampleProject(workspaceRoot, { slug, id: `project_${slug.replace(/-/g, "_")}` });
     }
     const clock = { now: () => new Date("2026-08-01T00:00:00.000Z") };
     const nativeDependenciesRoot = path.join(root, "extracted-native") as AbsolutePath;
@@ -66,6 +68,10 @@ describe("Phase O foundation milestone", () => {
       projectWrites: {
         ...foundation.application.writeDependencies,
         reads: foundation.application.readDependencies,
+        bgmSynth: foundation.infrastructure.bgmSynth,
+        bgmLibrary: foundation.infrastructure.bgmLibrary,
+        hashContent,
+        mimeFromPath: foundation.infrastructure.mimeFromPath,
       },
       jobs: foundation.infrastructure.jobs,
       events: foundation.infrastructure.events,

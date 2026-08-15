@@ -1,3 +1,5 @@
+import { fetchService } from "./services";
+
 let exchange: Promise<void> | null = null;
 
 /** Exchanges the CLI URL nonce once, then removes it from browser history. */
@@ -7,11 +9,7 @@ export function ensureBrowserSession(): Promise<void> {
   const nonce = url.searchParams.get("t");
   if (!nonce) return Promise.resolve();
 
-  exchange = fetch("/api/v1/auth/exchange", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ nonce }),
-  }).then(async (response) => {
+  exchange = fetchService("v1.auth.exchange", { body: { nonce } }).then(async (response) => {
     if (!response.ok) throw new Error("The VidCom launch link is invalid or expired.");
     url.searchParams.delete("t");
     window.history.replaceState(null, "", `${url.pathname}${url.search}${url.hash}`);

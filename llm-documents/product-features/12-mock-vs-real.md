@@ -52,7 +52,7 @@ Bảng kiểm kê trạng thái từng chức năng. Dùng để biết viết l
 
 | Chức năng | Mock ở đâu | Cái gì thật trong đó |
 |---|---|---|
-| **Transcript agent** (Claude/Codex) | `terminalTranscript()` — chuỗi hard-code | Không có gì. Không process, không PTY |
+| ~~**Transcript agent** (Claude/Codex)~~ | — | **Đã thành thật**: CLI chạy dưới `node-pty`, nối MCP HTTP của daemon. Xem [09-feature-ai-composer](09-feature-ai-composer.md) F-9.2 |
 | **Transcript MCP** sau generate | `mcpTranscript()` — server dựng chuỗi | Chỉ dòng `add_scene` phản ánh việc thật; `list_compositions`, `tts`, `lint` đều giả |
 | **AI hiểu prompt** | Không có AI | Prompt được dùng nguyên văn làm `<h2>` và text narration |
 | **TTS** | `regenerateNarration` chỉ ghi JSON + lệnh CLI | Record thật, `revision` tăng, `status:"mock"`. **Không có wav** |

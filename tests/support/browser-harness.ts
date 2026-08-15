@@ -1,0 +1,87 @@
+import { homedir } from "node:os";
+import path from "node:path";
+
+import { resolveChrome } from "@vidcom/adapter";
+
+export interface BrowserAvailability {
+  available: boolean;
+  chromePath?: string;
+  version?: string;
+  reason?: string;
+}
+
+/**
+ * Default place a HyperFrames download puts `chrome-headless-shell`.
+ *
+ * Used only when no runtime supplied a `browserCacheRoot`; a packaged artifact
+ * always names one.
+ */
+function defaultCacheRoot(): string {
+  return path.join(homedir(), ".cache", "hyperframes", "chrome");
+}
+
+/**
+ * Reports whether a real browser can be driven here.
+ *
+ * Two rules, and they differ on purpose. On a developer machine a missing
+ * Chrome **skips with the reason printed**, because nobody should have to
+ * download 200 MB to run the unit suite. In CI a missing Chrome **fails**: the
+ * only thing worse than not running these tests is believing they ran. Cookie
+ * `SameSite` behaviour is enforced by the browser and nothing else — S9 showed
+ * `curl` answering differently — so a silent skip here is a silent hole.
+ */
+export async function browserAvailability(browserCacheRoot?: string): Promise<BrowserAvailability> {
+  const resolved = await resolveChrome({
+    browserCacheRoot: browserCacheRoot ?? defaultCacheRoot(),
+    ...process.env.CHROME_PATH ? { chromePathOverride: process.env.CHROME_PATH } : {},
+  });
+  if (resolved) return { available: true, chromePath: resolved.path, version: resolved.version };
+  return {
+    available: false,
+    reason: "no runnable chrome-headless-shell was found; set CHROME_PATH or install the browser cache",
+  };
+}
+
+/**
+ * True when a missing browser must fail rather than skip.
+ *
+ * Keyed on its own flag rather than on `CI`, mirroring `VIDCOM_DOCTOR_STRICT`
+ * at M.5. Using `CI` alone made every CI run red the moment this harness
+ * existed, because no job installs `chrome-headless-shell` — a gate that fails
+ * for a missing tool rather than a missing behaviour teaches people to ignore
+ * it. The CI job sets this flag in the same change that installs the browser.
+ */
+export function browserIsRequired(): boolean {
+  const flag = process.env.VIDCOM_REQUIRE_BROWSER;
+  return flag === "true" || flag === "1";
+}
+
+/**
+ * Resolves how a suite should react to the browser being absent.
+ *
+ * Returns the message to print when skipping, so a skipped run always says why
+ * rather than passing quietly.
+ */
+export async function requireBrowser(browserCacheRoot?: string): Promise<
+  { run: true; chromePath: string } | { run: false; message: string }
+> {
+  // The generic CI matrix can inherit a system Chrome from the runner. That
+  // must not make the heavyweight browser cases run there opportunistically:
+  // the dedicated browser-session workflow installs the exact browser and
+  // sets VIDCOM_REQUIRE_BROWSER so absence and skips are both failures.
+  if ((process.env.CI === "true" || process.env.CI === "1") && !browserIsRequired()) {
+    return {
+      run: false,
+      message: "browser session tests skipped: dedicated browser-session CI owns required coverage",
+    };
+  }
+  const availability = await browserAvailability(browserCacheRoot);
+  if (availability.available && availability.chromePath) {
+    return { run: true, chromePath: availability.chromePath };
+  }
+  const message = `browser session tests skipped: ${availability.reason ?? "unknown"}`;
+  if (browserIsRequired()) {
+    throw new Error(`browser session tests cannot be skipped in CI — ${availability.reason ?? "unknown"}`);
+  }
+  return { run: false, message };
+}

@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 
 import { AGENT_KIT_FILES, AGENT_KIT_VERSION } from "@vidcom/agent-kit";
 import {
@@ -31,16 +31,27 @@ import {
   LoopbackRuntimeAssetGuard,
   NodeProcessSupervisor,
   NodeRenderBinaryProbe,
+  DOWNLOAD_CACHE_COMPONENTS,
+  DownloadCacheCoordinator,
   NodeHyperframesDiagnosticsLint,
+  FontkitCompatibilityInspector,
+  BgmLibraryStore,
+  BgmProviderRegistry,
+  CcMixterBgmProvider,
+  OpenverseBgmProvider,
   NodeModulesMotionLibraryFiles,
+  synthesizeBgmBed,
   WorkspaceLease,
   hyperframesRuntimeSource,
   mimeFromPath,
   openVidcomDatabase,
+  projectRegistrationLocationExists,
+  type RuntimePaths,
 } from "@vidcom/adapter";
 import { DEFAULT_VIDCOM_SETTINGS, type ContentHash, type ProjectId, type ResolvedVidcomSettings } from "@vidcom/contracts";
 import {
   reconcileCompositeMutation,
+  bootstrapProject,
   ApprovalService,
   McpCredentialService,
   ToolAuditService,
@@ -49,6 +60,7 @@ import {
   ProjectIdentityService,
   ProjectLifecycle,
   DiagnosticsService,
+  FontCompatibilityService,
   ThumbnailResolver,
   ProjectStateStore,
   scanWorkspace,
@@ -60,6 +72,8 @@ import {
   type IdPort,
   type LogPort,
   type MetricPort,
+  type ProcessPort,
+  type ProcessRunInput,
   type JobTypeDefinition,
   type ProjectRef,
 } from "@vidcom/core";
@@ -71,7 +85,10 @@ import {
   createRenderJobHandler,
   createSnapshotJobHandler,
   createTtsJobType,
+  createProjectImportJobType,
 } from "@vidcom/worker";
+
+import { createProjectImportJobDependencies } from "./project-import-service";
 
 export interface McpRuntimeConfig {
   approvalRequestTtlMs: number;
@@ -94,6 +111,24 @@ export const DEFAULT_MCP_RUNTIME_CONFIG: McpRuntimeConfig = {
 export interface CompositionRootConfig {
   appDataRoot: string;
   workspaceRoot: AbsolutePath;
+  /**
+   * Every runtime location, already resolved by `resolveRuntimePaths`.
+   *
+   * Supplying this is how a packaged artifact stops relying on the individual
+   * optional fields below. Those fields each default to something reasonable on
+   * their own, which is exactly the problem: a packaged build that forgets one
+   * gets a plausible path pointing at nothing rather than an error. When this is
+   * present it decides, and the resolver has already proven all five are
+   * absolute and complete.
+   */
+  runtimePaths?: RuntimePaths;
+  /**
+   * Certificate bundle for child processes, from the extracted runtime.
+   *
+   * Reaches Node children as `NODE_EXTRA_CA_CERTS`; the sidecar receives its own
+   * pair through the TTS provider.
+   */
+  caBundlePath?: AbsolutePath;
   /** Phase 4 extraction root for native sidecars; never inferred from the source checkout. */
   nativeDependenciesRoot?: AbsolutePath;
   /** Explicit render-sidecar paths; packaging may override the native-root convention. */
@@ -114,6 +149,8 @@ export interface CompositionRootConfig {
   settings?: ResolvedVidcomSettings;
   clock?: ClockPort;
   ids?: IdPort;
+  /** Injectable process seam for deterministic integration tests; production uses NodeProcessRunner. */
+  processes?: ProcessPort;
   runtimeConfig?: Partial<McpRuntimeConfig>;
   logger?: LogPort;
   metrics?: MetricPort;
@@ -128,13 +165,33 @@ function renderBinaryPaths(config: CompositionRootConfig): {
   ffprobePath: AbsolutePath;
 } {
   if (config.renderBinaryPaths) return config.renderBinaryPaths;
-  const nativeRoot = config.nativeDependenciesRoot ?? join(config.appDataRoot, "native") as AbsolutePath;
+  const nativeRoot = (config.runtimePaths?.nativeDependenciesRoot
+    ?? config.nativeDependenciesRoot
+    ?? join(config.appDataRoot, "native")) as AbsolutePath;
   const executableSuffix = process.platform === "win32" ? ".exe" : "";
   return {
     ffmpegPath: (process.env.HYPERFRAMES_FFMPEG_PATH?.trim()
       || join(nativeRoot, "bin", `ffmpeg${executableSuffix}`)) as AbsolutePath,
     ffprobePath: (process.env.HYPERFRAMES_FFPROBE_PATH?.trim()
       || join(nativeRoot, "bin", `ffprobe${executableSuffix}`)) as AbsolutePath,
+  };
+}
+
+/** Resolves registry-owned FFmpeg commands through the verified runtime paths. */
+export function withAudioBinaryPaths(
+  processes: ProcessPort,
+  binaries: { ffmpegPath: AbsolutePath; ffprobePath: AbsolutePath },
+): ProcessPort {
+  return {
+    run(input: ProcessRunInput) {
+      const [executable, ...args] = input.command;
+      const mapped = executable === "ffmpeg"
+        ? binaries.ffmpegPath
+        : executable === "ffprobe"
+          ? binaries.ffprobePath
+          : executable;
+      return processes.run({ ...input, command: mapped === undefined ? [] : [mapped, ...args] });
+    },
   };
 }
 
@@ -156,8 +213,10 @@ export function hashContent(content: string | Uint8Array): ContentHash {
 function vieneuCommand(
   settings: ResolvedVidcomSettings,
   extractionRoot?: string,
+  requirePackagedRuntime = false,
 ): readonly string[] {
-  return settings.tts.vieneu.command ?? defaultVieNeuCommand(extractionRoot);
+  return settings.tts.vieneu.command
+    ?? defaultVieNeuCommand(extractionRoot, requirePackagedRuntime);
 }
 
 /**
@@ -168,6 +227,15 @@ function vieneuCommand(
  */
 function elevenLabsApiKey(settings: ResolvedVidcomSettings): string | null {
   return process.env.ELEVENLABS_API_KEY?.trim() || settings.tts.elevenlabs.apiKey || null;
+}
+
+/**
+ * Offline model reads are opt-in: the first run must still be able to download
+ * weights. The standard Hugging Face/Transformers flags are also what the
+ * packaged-smoke offline pass can set without adding another public setting.
+ */
+function vieneuOffline(): boolean {
+  return process.env.HF_HUB_OFFLINE === "1" || process.env.TRANSFORMERS_OFFLINE === "1";
 }
 
 /** The sole production wiring point for concrete filesystem, SQLite and HyperFrames adapters. */
@@ -185,7 +253,12 @@ export function createInfrastructure(config: CompositionRootConfig) {
     increment() {},
     observeMilliseconds() {},
   };
+  const settings = config.settings ?? DEFAULT_VIDCOM_SETTINGS;
+  const caBundlePath = config.caBundlePath ?? settings.runtime.caBundlePath ?? undefined;
   const database = openVidcomDatabase(config.appDataRoot);
+  const downloads = new DownloadCacheCoordinator({ cacheRoot: config.appDataRoot });
+  const browserCacheRoot = (config.runtimePaths?.browserCacheRoot
+    ?? downloads.componentRoot(DOWNLOAD_CACHE_COMPONENTS.browser)) as AbsolutePath;
   const workspace = new WorkspaceFs(config.workspaceRoot);
   const largeContent = new LargePreviousContentStore(config.appDataRoot);
   const journal = new MutationJournal(database, clock, largeContent);
@@ -200,9 +273,29 @@ export function createInfrastructure(config: CompositionRootConfig) {
     clock,
   });
   const renderProjects = new FsRenderProjectAdapter();
-  const renderProcess = new NodeProcessSupervisor();
+  const renderProcess = new NodeProcessSupervisor(undefined, {
+    defaultEnvironment: { VIDCOM_APP_DATA: config.appDataRoot },
+    caBundlePath,
+  });
+  const processes = config.processes ?? new NodeProcessRunner(undefined, caBundlePath);
+  const ttsProcesses = withAudioBinaryPaths(processes, binaries);
   const renderGuard = new LoopbackRuntimeAssetGuard();
-  const renderBinaries = new NodeRenderBinaryProbe(binaries);
+  // The probe falls back to require.resolve when a path is absent, which cannot
+  // work inside a packaged binary. Handing it the resolved paths is what keeps
+  // that fallback off the artifact path.
+  const renderBinaries = new NodeRenderBinaryProbe({
+    ...binaries,
+    browserCacheRoot,
+    ...config.runtimePaths ? {
+      hyperframesCliPath: config.runtimePaths.hyperframesCliPath as AbsolutePath,
+      hyperframesPackagePath: config.runtimePaths.hyperframesPackagePath as AbsolutePath,
+    } : {},
+  }, {
+    appDataRoot: config.appDataRoot,
+    caBundlePath,
+    processes,
+    downloadCache: downloads,
+  });
   const events = new SqliteEventOutbox(database, clock);
   const cache = new ProjectCache();
   const writtenHashes = new WrittenHashTracker();
@@ -228,22 +321,35 @@ export function createInfrastructure(config: CompositionRootConfig) {
     ids,
     config: { rotationOverlapMs: runtimeConfig.credentialRotationOverlapMs },
   });
-  const settings = config.settings ?? DEFAULT_VIDCOM_SETTINGS;
-  const processes = new NodeProcessRunner();
-  const diagnosticLint = new NodeHyperframesDiagnosticsLint(processes);
+  // The Node half of D.7. The sidecar gets `SSL_CERT_FILE`/`REQUESTS_CA_BUNDLE`
+  // from the TTS provider; every Node child started here gets the same bundle
+  // as `NODE_EXTRA_CA_CERTS`.
+  const diagnosticLint = new NodeHyperframesDiagnosticsLint(processes, {
+    ...(config.runtimePaths
+      ? { cliPath: config.runtimePaths.hyperframesCliPath as AbsolutePath }
+      : {}),
+  });
+  const fontInspector = new FontkitCompatibilityInspector();
   // App-data, never the workspace or the checkout: these are engine
   // intermediates and model weights, and a project directory is watched, backed
   // up and committed by its owner.
   const ttsScratchRoot = join(config.appDataRoot, "tts-scratch");
   const tts = new TtsRegistry({
-    processes,
+    processes: ttsProcesses,
     scratchRoot: ttsScratchRoot,
     providers: [
       new ElevenLabsTtsProvider({ apiKey: elevenLabsApiKey(settings) }),
       new VieNeuTtsProvider({
-        processes,
-        command: () => vieneuCommand(settings, config.nativeDependenciesRoot),
-        modelCacheRoot: join(config.appDataRoot, "models"),
+        processes: ttsProcesses,
+        command: () => vieneuCommand(
+          settings,
+          config.runtimePaths?.nativeDependenciesRoot ?? config.nativeDependenciesRoot,
+          config.runtimePaths?.mode === "artifact",
+        ),
+        modelCacheRoot: downloads.componentRoot(DOWNLOAD_CACHE_COMPONENTS.models),
+        downloadCache: downloads,
+        caBundlePath,
+        offline: vieneuOffline(),
         modelRevision: settings.tts.vieneu.modelRevision,
       }),
     ],
@@ -270,6 +376,7 @@ export function createInfrastructure(config: CompositionRootConfig) {
     clock,
     ids,
     database,
+    downloads,
     workspace,
     largeContent,
     journal,
@@ -296,6 +403,7 @@ export function createInfrastructure(config: CompositionRootConfig) {
     settings,
     processes,
     diagnosticLint,
+    fontInspector,
     tts,
     ttsScratchRoot,
     toolAudit,
@@ -311,7 +419,40 @@ export function createInfrastructure(config: CompositionRootConfig) {
     resolveProjectRef,
     runtimeSource: hyperframesRuntimeSource,
     mimeFromPath,
-    motionLibraries: new NodeModulesMotionLibraryFiles(config.motionLibraryRoot),
+    // An artifact vendors from the directory it extracted, and fails when that is
+    // missing rather than substituting whatever the machine has installed. A source
+    // checkout names no root: its `motionLibraryRoot` points inside app-data, where
+    // nothing extracts during development, so passing it made every
+    // `install_motion_library` call report the library as unavailable while the
+    // pinned package sat in `node_modules`. The version pin is checked either way.
+    motionLibraries: new NodeModulesMotionLibraryFiles(
+      config.runtimePaths && config.runtimePaths.mode !== "artifact"
+        ? undefined
+        : (config.runtimePaths?.motionLibraryRoot ?? config.motionLibraryRoot) as AbsolutePath | undefined,
+    ),
+    bgmSynth: { render: synthesizeBgmBed },
+    bgmProviders: new BgmProviderRegistry([
+      new OpenverseBgmProvider(),
+      new CcMixterBgmProvider(),
+    ]),
+    bgmLibrary: new BgmLibraryStore({
+      appDataRoot: config.appDataRoot,
+      // From the extracted runtime in an artifact; a checkout resolves it inside
+      // the adapter package, where the audio is committed.
+      ...(config.runtimePaths?.bgmAssetRoot === undefined
+        ? {}
+        : { shippedTrackRoot: config.runtimePaths.bgmAssetRoot }),
+      // FFprobe is how a non-WAV import gets its duration; the store parses WAV
+      // headers itself, so a missing probe only limits which formats import.
+      probeDurationSeconds: async (file) => {
+        const probed = await processes.run({
+          command: [binaries.ffprobePath, "-v", "error", "-show_entries",
+            "format=duration", "-of", "csv=p=0", file],
+        });
+        const seconds = Number(String(probed.stdout ?? "").trim());
+        return Number.isFinite(seconds) && seconds > 0 ? seconds : null;
+      },
+    }),
   };
 }
 
@@ -331,10 +472,15 @@ export function createMcpRegistry(
     reads: application.readDependencies,
     jobs: infrastructure.jobs,
     tts: infrastructure.tts,
+    bgmSynth: infrastructure.bgmSynth,
+    bgmLibrary: infrastructure.bgmLibrary,
+    bgmProviders: infrastructure.bgmProviders,
     ids: infrastructure.ids,
     workspaceRoot: infrastructure.workspaceRoot,
     diagnostics: application.diagnostics,
     agentKit: application.agentKit,
+    lifecycle: application.lifecycle,
+    mimeFromPath: infrastructure.mimeFromPath,
     enqueueRender: (input) => enqueueRenderJob({
       workspace: infrastructure.workspace,
       composition: infrastructure.composition,
@@ -343,6 +489,8 @@ export function createMcpRegistry(
       ids: infrastructure.ids,
       hashContent,
       binaries: infrastructure.renderBinaries,
+      fonts: application.fonts,
+      diagnostics: application.diagnostics,
     }, input),
     enqueueSnapshot: (input) => enqueueSnapshotJob({
       workspace: infrastructure.workspace,
@@ -352,6 +500,7 @@ export function createMcpRegistry(
       ids: infrastructure.ids,
       hashContent,
       binaries: infrastructure.renderBinaries,
+      fonts: application.fonts,
     }, input),
   });
   return registry;
@@ -361,6 +510,7 @@ export function createApplication(
   infrastructure: ReturnType<typeof createInfrastructure>,
   leaseId: string,
 ) {
+  let recoverImportedProject: ((root: AbsolutePath, slug: string) => Promise<void>) | null = null;
   const workspaceCoordinator = new WorkspaceMutationCoordinator({
     workspace: infrastructure.workspace,
     journal: infrastructure.workspaceOperations,
@@ -369,6 +519,10 @@ export function createApplication(
     hashContent,
     directories: infrastructure.projectDirectories,
     clock: infrastructure.clock,
+    recoverImportedProject: (root, slug) => {
+      if (!recoverImportedProject) throw new Error("project import recovery is not initialized");
+      return recoverImportedProject(root, slug);
+    },
   });
   const authority = new WriteAuthority({
     workspace: infrastructure.workspace,
@@ -396,6 +550,23 @@ export function createApplication(
       resolveProjectRef: infrastructure.resolveProjectRef,
     }, journalId),
   });
+  recoverImportedProject = async (root, slug) => {
+    const result = await bootstrapProject({
+      workspace: infrastructure.workspace,
+      journal: infrastructure.journal,
+      authority,
+      clock: infrastructure.clock,
+      ids: infrastructure.ids,
+      hashContent,
+      registrationLocationExists: projectRegistrationLocationExists,
+    }, {
+      workspaceRoot: infrastructure.workspaceRoot,
+      root,
+      slug,
+      entry: "index.html" as import("@vidcom/contracts").RelPath,
+    });
+    if (!result.ok) throw new Error(result.error.message);
+  };
   const readDependencies = {
     workspace: infrastructure.workspace,
     composition: infrastructure.composition,
@@ -444,6 +615,7 @@ export function createApplication(
     entries: infrastructure.entries,
     composition: infrastructure.composition,
   }, infrastructure.workspaceRoot);
+  const fonts = new FontCompatibilityService(infrastructure.fontInspector);
   const diagnostics = new DiagnosticsService({
     scan,
     workspace: infrastructure.workspace,
@@ -452,6 +624,7 @@ export function createApplication(
     journal: infrastructure.journal,
     authority,
     lint: infrastructure.diagnosticLint,
+    fonts,
   });
   const thumbnails = new ThumbnailResolver(infrastructure.workspace);
   const agentKit = new AgentKitInstaller({
@@ -464,15 +637,18 @@ export function createApplication(
     },
   });
   return {
+    leaseId,
     authority,
     identity,
     state,
     lifecycle,
     diagnostics,
+    fonts,
     thumbnails,
     agentKit,
     readDependencies,
     writeDependencies,
+    workspaceCoordinator,
     scanWorkspace: scan,
     async openProject(projectId: ProjectId) {
       const ref = await infrastructure.workspace.readProjectRef(projectId);
@@ -503,6 +679,29 @@ export function createJobTypes(
       dependencies: { ...application.writeDependencies, tts: infrastructure.tts },
       actor: "user",
     }),
+    createProjectImportJobType(createProjectImportJobDependencies({
+      journal: infrastructure.workspaceOperations,
+      leaseId: application.leaseId,
+      now: () => infrastructure.clock.now().toISOString(),
+      takenSlugs: async () => (await application.scanWorkspace()).map((entry) => entry.slug),
+      backfill: async (target) => {
+        const result = await bootstrapProject({
+          workspace: infrastructure.workspace,
+          journal: infrastructure.journal,
+          authority: application.authority,
+          clock: infrastructure.clock,
+          ids: infrastructure.ids,
+          hashContent,
+          registrationLocationExists: projectRegistrationLocationExists,
+        }, {
+          workspaceRoot: infrastructure.workspaceRoot,
+          root: target as AbsolutePath,
+          slug: basename(target),
+          entry: "index.html" as import("@vidcom/contracts").RelPath,
+        });
+        if (!result.ok) throw new Error(result.error.message);
+      },
+    })),
     createRenderJobHandler({
       process: infrastructure.renderProcess,
       roots: infrastructure.renderRoots,
@@ -513,6 +712,8 @@ export function createJobTypes(
       journal: infrastructure.journal,
       guard: infrastructure.renderGuard,
       binaries: infrastructure.renderBinaries,
+      fonts: application.fonts,
+      diagnostics: application.diagnostics,
       runtimeSource: infrastructure.runtimeSource,
       injectGuard: injectRuntimeAssetGuardDocument,
       clock: infrastructure.clock,
@@ -529,6 +730,7 @@ export function createJobTypes(
       jobs: infrastructure.jobs,
       guard: infrastructure.renderGuard,
       binaries: infrastructure.renderBinaries,
+      fonts: application.fonts,
       runtimeSource: infrastructure.runtimeSource,
       injectGuard: injectRuntimeAssetGuardDocument,
       clock: infrastructure.clock,

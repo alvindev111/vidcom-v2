@@ -6,11 +6,15 @@ import { promisify } from "node:util";
 
 import {
   NodeProcessSupervisor,
+  DEFAULT_PROCESS_CAPTURE_MAX_BYTES,
+  MAX_PROCESS_CAPTURE_MAX_BYTES,
   PROCESS_CAPTURE_INTERVAL_MS,
   PROCESS_VERIFY_MAX_SWEEPS,
   PROCESS_VERIFY_TIMEOUT_MS,
   PROCESS_VERIFY_SWEEP_INTERVAL_MS,
   ProcessTerminationUnverifiedError,
+  type ProcessIdentity,
+  probeProcessIdentity,
   processIdentityMatches,
   terminationResult,
 } from "@vidcom/adapter";
@@ -37,15 +41,16 @@ async function waitForTree(pathname: string): Promise<Array<{ pid: number; role:
   return ledger(pathname);
 }
 
-function isAlive(pid: number): boolean {
-  try { process.kill(pid, 0); return true; } catch (error) {
-    return (error as NodeJS.ErrnoException).code === "EPERM";
-  }
+async function exactProcessIsAlive(captured: ProcessIdentity): Promise<boolean> {
+  const current = await probeProcessIdentity(captured.pid);
+  if (!current.exhaustive) throw new Error(`could not verify captured PID ${captured.pid}: ${current.reason}`);
+  return processIdentityMatches(captured, current.identity);
 }
 
-async function forceCleanup(pids: readonly number[]): Promise<void> {
-  for (const pid of pids) {
-    try { process.kill(pid, "SIGKILL"); } catch { /* already gone or Windows */ }
+async function forceCleanup(processes: readonly ProcessIdentity[]): Promise<void> {
+  for (const captured of processes) {
+    if (!(await exactProcessIsAlive(captured))) continue;
+    try { process.kill(captured.pid, "SIGKILL"); } catch { /* already gone or Windows */ }
   }
 }
 
@@ -66,6 +71,22 @@ describe("NodeProcessSupervisor", () => {
       { pid: 42, startedAt: "2026-08-05T00:00:00Z" },
       { pid: 42, startedAt: "2026-08-05T00:00:01Z" },
     )).toBe(false);
+  });
+
+  it("retains the conservative default output capture budget", async () => {
+    const result = await new NodeProcessSupervisor(5_000).run({
+      command: [process.execPath, "-e", "process.stdout.write('x'.repeat(80 * 1024))"],
+    });
+    expect(result.status).toBe("exited");
+    if (result.status !== "exited") return;
+    expect(result.output.stdout).toHaveLength(DEFAULT_PROCESS_CAPTURE_MAX_BYTES);
+  });
+
+  it("rejects an invocation that exceeds the hard output capture ceiling", async () => {
+    await expect(new NodeProcessSupervisor().run({
+      command: [process.execPath, "-e", "process.stdout.write('should not run')"],
+      captureMaxBytes: MAX_PROCESS_CAPTURE_MAX_BYTES + 1,
+    })).rejects.toThrow(/captureMaxBytes.*no greater than/u);
   });
 
   it("rejects an exhausted direct-PID sweep instead of allowing cancelled", () => {
@@ -109,8 +130,13 @@ describe("NodeProcessSupervisor", () => {
       signal: controller.signal,
     });
     const rows = await waitForTree(ledgerPath);
+    const captured: ProcessIdentity[] = [];
     try {
       expect(rows.map(({ role }) => role).sort()).toEqual(["escaping", "inGroup", "leaf", "root"]);
+      for (const { pid } of rows) {
+        const probe = await probeProcessIdentity(pid);
+        if (probe.identity !== undefined) captured.push(probe.identity);
+      }
       await new Promise((resolve) => setTimeout(resolve, PROCESS_CAPTURE_INTERVAL_MS * 2));
       controller.abort();
       const result = await execution;
@@ -123,12 +149,43 @@ describe("NodeProcessSupervisor", () => {
       } else {
         expect(result.proof.exhaustive).toBe(true);
         expect(result.warnings).toEqual([]);
+        expect(captured).toHaveLength(rows.length);
         await new Promise((resolve) => setTimeout(resolve, 100));
-        expect(rows.filter(({ pid }) => isAlive(pid))).toEqual([]);
+        const survivors = (await Promise.all(captured.map(async (identity) => ({
+          identity,
+          alive: await exactProcessIsAlive(identity),
+        })))).filter(({ alive }) => alive);
+        expect(survivors).toEqual([]);
       }
     } finally {
       controller.abort();
-      await forceCleanup(rows.map(({ pid }) => pid));
+      await forceCleanup(captured);
+    }
+  }, 30_000);
+
+  it("keeps cancellation proof exhaustive when the packaged PATH is empty", async () => {
+    const previousPath = process.env.PATH;
+    const controller = new AbortController();
+    try {
+      process.env.PATH = "";
+      const execution = new NodeProcessSupervisor(20_000).run({
+        command: [process.execPath, "-e", "setInterval(() => {}, 1000)"],
+        signal: controller.signal,
+      });
+      await new Promise((resolve) => setTimeout(resolve, PROCESS_CAPTURE_INTERVAL_MS * 2));
+      controller.abort();
+      const result = await execution;
+      expect(result.status).toBe("terminated");
+      if (result.status !== "terminated") return;
+      expect(result.proof.survivors).toEqual([]);
+      const windowsEnumeratorDisabled = process.platform === "win32"
+        && (process.env.VIDCOM_DISABLE_ENUMERATORS ?? "").split(",").includes("powershell-cim");
+      expect(result.proof.exhaustive).toBe(!windowsEnumeratorDisabled);
+      expect(result.warnings).toEqual(windowsEnumeratorDisabled ? ["termination_proof_not_exhaustive"] : []);
+    } finally {
+      controller.abort();
+      if (previousPath === undefined) delete process.env.PATH;
+      else process.env.PATH = previousPath;
     }
   }, 30_000);
 

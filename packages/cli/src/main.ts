@@ -1,21 +1,43 @@
 #!/usr/bin/env node
 import { spawn } from "node:child_process";
 import { randomBytes } from "node:crypto";
-import net from "node:net";
-import path from "node:path";
 
 import { defaultAppDataRoot } from "./next-host";
-import { selectWorkspace } from "./workspace-selection";
 import { runMcpCommand } from "./commands/mcp";
 import { runApproveCommand } from "./commands/approve";
 import { runCredentialCommand } from "./commands/credential";
 import { runBackupCommand } from "./commands/backup";
 import { runRecoveryCommand } from "./commands/recovery";
+import { doctorNeedsDeepProbe, parseDoctorCommandArgs, runDoctor } from "./commands/doctor";
+import { createDoctorContext } from "./commands/doctor-context";
+import { repairRuntime } from "./commands/doctor-repair";
+import { runRenderCommand } from "./commands/render";
+import { connectRenderClient, renderWorkspaceSource } from "./commands/render-connect";
+import { runServeCommand, startServing, waitForShutdown } from "./commands/serve";
+import { VIDCOM_VERSION, runVersionCommand } from "./commands/version";
+import { DaemonDiscoveryStore, readVidcomSettings } from "@vidcom/adapter";
+
+import {
+  isNodeSentinel,
+  resolveVerifiedHyperframesRoot,
+  runNodeSentinel,
+} from "./node-sentinel";
 import { CliInputError } from "./cli-error";
+import { prepareRuntimeForCli, runtimeAssetSourceForProcess } from "./runtime-paths-source";
 
 export { CliInputError } from "./cli-error";
 
-export type VidcomCommandName = "app" | "mcp" | "approve" | "credential" | "backup" | "recovery";
+export type VidcomCommandName =
+  | "app"
+  | "serve"
+  | "mcp"
+  | "render"
+  | "doctor"
+  | "version"
+  | "approve"
+  | "credential"
+  | "backup"
+  | "recovery";
 
 export interface ParsedVidcomCommand {
   name: VidcomCommandName;
@@ -27,16 +49,31 @@ export interface AppCommandOptions {
   port?: number;
 }
 
-const COMMAND_NAMES = new Set<VidcomCommandName>([
-  "app", "mcp", "approve", "credential", "backup", "recovery",
-]);
+/**
+ * Every mode the executable answers to, in the order `--help` lists them.
+ *
+ * `worker` is deliberately absent (OQ-9): `packages/worker` stays exactly as it
+ * is, run in-process, and publishing a mode for it would promise a supported
+ * entry point that nothing else in the product uses.
+ */
+export const VIDCOM_COMMAND_NAMES: readonly VidcomCommandName[] = [
+  "app", "serve", "mcp", "render", "doctor", "version",
+  "approve", "credential", "backup", "recovery",
+];
+
+const COMMAND_NAMES = new Set<VidcomCommandName>(VIDCOM_COMMAND_NAMES);
 
 /** Selects one strict top-level command; bare invocation and leading app options alias `vidcom app`. */
 export function parseVidcomCommand(argv: readonly string[]): ParsedVidcomCommand {
   const [first, ...rest] = argv;
   if (first === undefined || first.startsWith("--")) return { name: "app", args: [...argv] };
   if (!COMMAND_NAMES.has(first as VidcomCommandName)) {
-    throw new CliInputError(`unknown command: ${first}`);
+    // Listing them costs one line and saves the user a search. A bare "unknown
+    // command" is the least useful thing a CLI can say when the answer is a
+    // fixed, short set.
+    throw new CliInputError(
+      `unknown command: ${first}. Available: ${VIDCOM_COMMAND_NAMES.join(", ")}`,
+    );
   }
   return { name: first as VidcomCommandName, args: rest };
 }
@@ -67,31 +104,6 @@ export function parseAppCommandArgs(argv: readonly string[]): AppCommandOptions 
   return options;
 }
 
-async function freePort(): Promise<number> {
-  return new Promise((resolve, reject) => {
-    const server = net.createServer();
-    server.once("error", reject);
-    server.listen(0, "127.0.0.1", () => {
-      const address = server.address();
-      if (!address || typeof address === "string") return reject(new Error("could not allocate loopback port"));
-      server.close((error) => error ? reject(error) : resolve(address.port));
-    });
-  });
-}
-
-async function waitUntilReady(url: string, child: ReturnType<typeof spawn>): Promise<void> {
-  const deadline = Date.now() + 30_000;
-  while (Date.now() < deadline) {
-    if (child.exitCode !== null) throw new Error(`VidCom UI exited with code ${child.exitCode}`);
-    try {
-      const response = await fetch(url);
-      if (response.ok) return;
-    } catch { /* listener is not ready yet */ }
-    await new Promise((resolve) => setTimeout(resolve, 100));
-  }
-  throw new Error("VidCom UI did not become ready within 30 seconds");
-}
-
 function openBrowser(url: string): void {
   const command = process.platform === "darwin" ? "open" : process.platform === "win32" ? "cmd" : "xdg-open";
   const args = process.platform === "win32" ? ["/c", "start", "", url] : [url];
@@ -104,71 +116,196 @@ export function createBootstrapNonce(): string {
   return randomBytes(32).toString("base64url");
 }
 
-/** Selects an explicit workspace, launches the production Next host, and opens an authenticated browser handoff. */
+/**
+ * Serves the workspace and hands the browser an authenticated session.
+ *
+ * `app` is `serve` plus two things: it opens a browser, and it mints a
+ * single-use bootstrap nonce for that browser to exchange. It used to spawn
+ * `next start`; the frontend is a static export now, so there is no Next server
+ * to spawn and the daemon serves the exported pack itself.
+ */
 export async function runVidcomApp(options: AppCommandOptions = {}): Promise<void> {
-  const appDataRoot = defaultAppDataRoot();
-  const workspaceRoot = await selectWorkspace({
-    explicit: options.workspace ?? process.env.VIDCOM_WORKSPACE,
-    appDataRoot,
-  });
-  const port = options.port ?? await freePort();
   const nonce = createBootstrapNonce();
-  const nextBin = path.join(process.cwd(), "node_modules", "next", "dist", "bin", "next");
-  const child = spawn(process.execPath, [nextBin, "start", "-p", String(port), "-H", "127.0.0.1"], {
-    cwd: process.cwd(),
-    env: {
-      ...process.env,
-      VIDCOM_APP_DATA: appDataRoot,
-      VIDCOM_WORKSPACE: workspaceRoot,
-      VIDCOM_BOOTSTRAP_NONCE: nonce,
-    },
-    stdio: "inherit",
-  });
-  const baseUrl = `http://127.0.0.1:${port}`;
-  try {
-    await waitUntilReady(baseUrl, child);
-    openBrowser(`${baseUrl}/?t=${encodeURIComponent(nonce)}`);
-    process.stdout.write(`VidCom is running at ${baseUrl}\n`);
-    await new Promise<void>((resolve, reject) => {
-      child.once("exit", (code, signal) => code === 0 || signal === "SIGTERM"
-        ? resolve()
-        : reject(new Error(`VidCom UI exited with code ${code ?? signal}`)));
-      const shutdown = () => child.kill("SIGTERM");
-      process.once("SIGINT", shutdown);
-      process.once("SIGTERM", shutdown);
-    });
-  } catch (error) {
-    child.kill("SIGTERM");
-    throw error;
+  // Read by the host while it builds its nonce store, and deleted there. It is
+  // an environment variable rather than an argument because the host is the
+  // only reader and nothing should be able to pass it in from a command line.
+  process.env.VIDCOM_BOOTSTRAP_NONCE = nonce;
+  const daemon = await startServing(options);
+  openBrowser(`${daemon.baseUrl}/?t=${encodeURIComponent(nonce)}`);
+  process.stdout.write(`VidCom is running at ${daemon.baseUrl}\n`);
+  await waitForShutdown(daemon);
+}
+/**
+ * One yield per interrupt, so `render` can tell the first from the second.
+ *
+ * The handler is removed by `stop()` rather than by the generator's own
+ * `finally`: a generator parked on "the next Ctrl+C" is suspended on a promise
+ * nothing will settle, and `return()` cannot resume it to run cleanup.
+ */
+function interruptSignals(): { stream: AsyncIterable<void>; stop: () => void } {
+  const queue: Array<() => void> = [];
+  let pending = 0;
+  const onSignal = () => {
+    const waiter = queue.shift();
+    if (waiter) waiter();
+    else pending += 1;
+  };
+  process.on("SIGINT", onSignal);
+
+  async function* stream(): AsyncGenerator<void> {
+    for (;;) {
+      if (pending > 0) {
+        pending -= 1;
+        yield;
+        continue;
+      }
+      await new Promise<void>((resolve) => queue.push(resolve));
+      yield;
+    }
   }
+
+  return { stream: stream(), stop: () => process.off("SIGINT", onSignal) };
 }
 
-/** Dispatches the public CLI command tree while preserving bare invocation as the app alias. */
-export async function runVidcomCli(argv: readonly string[] = process.argv.slice(2)): Promise<void> {
+/**
+ * Dispatches one CLI command and returns the exit status its caller must publish.
+ *
+ * Doctor and render failures are normal command outcomes, so this function
+ * returns their codes without mutating the surrounding process.
+ */
+export async function runVidcomCli(argv: readonly string[] = process.argv.slice(2)): Promise<number> {
+  // Dispatched ahead of the public parser on purpose. `parseVidcomCommand`
+  // reads any argv starting with `--` as `vidcom app`, so the sentinel would
+  // otherwise start the whole application instead of running a script — and
+  // silently, since that path raises nothing.
+  if (isNodeSentinel(argv)) {
+    const settings = await readVidcomSettings();
+    const appDataRoot = defaultAppDataRoot(settings);
+    await runNodeSentinel(argv, await resolveVerifiedHyperframesRoot(appDataRoot));
+    return 0;
+  }
   const command = parseVidcomCommand(argv);
   if (command.name === "app") {
     await runVidcomApp(parseAppCommandArgs(command.args));
-    return;
+    return 0;
+  }
+  if (command.name === "doctor") {
+    const options = parseDoctorCommandArgs(command.args);
+    const context = await createDoctorContext({ deep: doctorNeedsDeepProbe(options) });
+    try {
+      return await runDoctor({
+        context,
+        options,
+        repair: (failing) => repairRuntime(failing, {
+          appDataRoot: context.appDataRoot,
+          activeWorkspace: () => context.probes.activeWorkspace()
+            .then((result) => result.detail ?? null),
+          discovery: new DaemonDiscoveryStore(context.appDataRoot),
+          // Wired to the real bootstrap. It used to be a hardwired rejection,
+          // so `--repair` could never repair anything — and under strict, where
+          // a skipped required component counts as missing, the rejection threw
+          // before the report was printed. The packaged smoke found that: a
+          // command whose whole job is to say what is wrong, saying nothing.
+          reextract: async () => {
+            const assetSource = runtimeAssetSourceForProcess();
+            if (!assetSource) {
+              // Correct answer for a source checkout, which carries no archives.
+              throw new CliInputError("this build has no runtime archives to re-extract from");
+            }
+            await prepareRuntimeForCli(context.appDataRoot, { repair: true, assetSource });
+          },
+        }),
+        // The packaged smoke sets this, and there a skipped required component is
+        // a failure rather than a "not yet".
+        strict: process.env.VIDCOM_DOCTOR_STRICT === "1",
+      });
+    } finally {
+      // Windows keeps the file locked until the handle is gone, so leaving it
+      // open turns any later cleanup into EBUSY.
+      await context.close();
+    }
+  }
+  if (command.name === "render") {
+    // The handler's lifetime is owned here, not inside the generator. A
+    // generator parked on "the next Ctrl+C" cannot be resumed to run its own
+    // cleanup, so leaving removal to it would leave the listener installed.
+    const signals = interruptSignals();
+    const code = await runRenderCommand(command.args, {
+      connect: () => connectRenderClient(command.args),
+      workspaceSource: () => renderWorkspaceSource(command.args),
+      interrupts: signals.stream,
+    }).finally(signals.stop);
+    // A non-zero render is a normal outcome, not a CLI input error. Return it
+    // through the same boundary as doctor so the launcher publishes it once.
+    return code;
+  }
+  if (command.name === "serve") {
+    await runServeCommand(command.args);
+    return 0;
+  }
+  if (command.name === "version") {
+    // Read from the embedded manifest, which only a packaged build carries.
+    // Leaving it out made the artifact answer `null` to "which runtime is
+    // this?" — the one question this command exists for, and the packaged smoke
+    // is what noticed.
+    const runtimeManifest = (() => {
+      try {
+        const manifest = runtimeAssetSourceForProcess()?.readManifest();
+        return manifest
+          ? { manifestVersion: manifest.artifactVersion, hyperframes: manifest.versions.hyperframes }
+          : null;
+      } catch {
+        // A manifest this build cannot read is reported as absent rather than
+        // taking `version` down: the command's job is to describe the build,
+        // and refusing to answer at all is the least useful reply.
+        return null;
+      }
+    })();
+    await runVersionCommand(command.args, {
+      // The version is read from the package rather than injected at build
+      // time, so a source checkout reports the same number it was built from.
+      vidcom: VIDCOM_VERSION,
+      runtime: runtimeManifest,
+      buildCommit: process.env.VIDCOM_BUILD_COMMIT ?? null,
+    });
+    return 0;
   }
   if (command.name === "mcp") {
     await runMcpCommand(command.args);
-    return;
+    return 0;
   }
   if (command.name === "approve") {
     await runApproveCommand(command.args);
-    return;
+    return 0;
   }
   if (command.name === "credential") {
-    await runCredentialCommand(command.args);
-    return;
+    // A packaged build hands over the coordinator's database. Opening one here
+    // would migrate against the source-relative history folder, which L.1
+    // rewrites away so the build machine's paths never ship — inside an
+    // artifact that folder does not exist, and `credential issue` came back
+    // `internal_error`. The packaged smoke is what found it.
+    const assetSource = runtimeAssetSourceForProcess();
+    await runCredentialCommand(command.args, {
+      appDataRoot: defaultAppDataRoot,
+      stdout: process.stdout,
+      now: () => new Date(),
+      newId: () => `credential_${crypto.randomUUID()}`,
+      ...(assetSource === null ? {} : {
+        database: async () => {
+          const prepared = await prepareRuntimeForCli(defaultAppDataRoot(), { assetSource });
+          return { database: prepared.database, release: () => prepared.release() };
+        },
+      }),
+    });
+    return 0;
   }
   if (command.name === "backup") {
     await runBackupCommand(command.args);
-    return;
+    return 0;
   }
   if (command.name === "recovery") {
     await runRecoveryCommand(command.args);
-    return;
+    return 0;
   }
   throw new CliInputError(`${command.name} command is not available yet`);
 }
@@ -181,11 +318,10 @@ export interface CliMainIo {
 export async function runCliMain(
   argv: readonly string[],
   io: CliMainIo = { stderr: process.stderr },
-  execute: (args: readonly string[]) => Promise<void> = runVidcomCli,
+  execute: (args: readonly string[]) => Promise<number | void> = runVidcomCli,
 ): Promise<number> {
   try {
-    await execute(argv);
-    return 0;
+    return await execute(argv) ?? 0;
   } catch (error) {
     if (error instanceof CliInputError) {
       io.stderr.write(`${error.message.replace(/[\r\n]+/g, " ").trim()}\n`);

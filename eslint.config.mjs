@@ -17,6 +17,17 @@ const eslintConfig = defineConfig([
     // Pinned third-party motion libraries vendored into a project by
     // install_motion_library. They are minified upstream builds, not our source.
     "projects/*/assets/vendor/**",
+    // Build output and downloaded dependencies produced while running the Phase 4
+    // spikes. Every path here is already in a .gitignore, so none of it is source
+    // this repository reviews — but ESLint has no view of git, and linting them
+    // reported 921 errors from a vendored Python interpreter and Next build
+    // chunks. That made `npm run lint`, the command the Verification Matrix
+    // names, unusable locally while CI stayed green on its clean checkout.
+    "spikes/**/.next/**",
+    "spikes/**/out/**",
+    "spikes/**/.artifacts/**",
+    "spikes/**/python*/**",
+    ".temp-documents/**",
   ]),
   {
     files: ["packages/**/*.ts", "packages/**/*.tsx"],
@@ -180,8 +191,10 @@ const eslintConfig = defineConfig([
               // infrastructure itself. Anything it needs from the outside comes
               // in as an injected interface from the `cli` composition root, so
               // `packages/mcp` stays testable without a filesystem or a DB.
-              // `@vidcom/adapter` has a single export, so opening it would also
-              // expose Drizzle, node:fs and puppeteer-core to the protocol layer.
+              // `@vidcom/adapter` has a public barrel plus narrow boot/compiler
+              // subpaths reserved for the `cli` composition root. MCP may use
+              // none of them; the barrel exposes Drizzle/node:fs/puppeteer-core,
+              // while the narrow exports exist only to preserve pre-graph order.
               // Mirrors scripts/verify-import-boundaries.mjs — keep both in sync.
               message: "MCP is a peer transport that calls Core directly, never through the HTTP server or sibling infrastructure.",
             },

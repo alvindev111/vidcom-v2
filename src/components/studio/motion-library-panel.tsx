@@ -9,6 +9,7 @@ import {
   type MotionLibraryId,
 } from "@vidcom/contracts";
 import { Button } from "@/components/ui/button";
+import { fetchApi } from "@/lib/api/services";
 import type { FileNode } from "@/lib/studio/types";
 
 interface Installed {
@@ -63,7 +64,7 @@ export function MotionLibraryPanel({
     setPending(library.id);
     setError(null);
     try {
-      const response = await fetch(`/api/v1/projects/${projectId}/motion-libraries`, {
+      const response = await fetchApi(`/api/v1/projects/${projectId}/motion-libraries`, {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ libraryId: library.id }),

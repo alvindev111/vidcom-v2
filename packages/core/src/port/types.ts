@@ -51,7 +51,8 @@ export type WorkspaceOperationKind =
   | "agent_kit_files"
   | "project_create"
   | "project_rename"
-  | "project_delete";
+  | "project_delete"
+  | "project_import";
 
 export interface WorkspaceOperationIntent {
   workspaceRoot: AbsolutePath;
@@ -215,6 +216,8 @@ export interface CompositeRequest {
   ref: ProjectRef;
   steps: CompositeStep[];
   toolAudit: PendingToolAudit | null;
+  /** See `WriteInvocation.noteUnchanged`; carried so composite callers keep the signal. */
+  noteUnchanged?: () => void;
   commandAudit?: PendingCommandAudit;
   diagnostics?: Diagnostic[];
   backup: boolean;
@@ -374,6 +377,16 @@ export type McpCredentialSummary = Omit<McpCredentialRecord, "secretHash">;
 /** Optional SDK-neutral context forwarded from a tool registry into write authority. */
 export interface WriteInvocation {
   toolAudit: PendingToolAudit | null;
+  /**
+   * Called when the request was already satisfied, so no journal was opened.
+   *
+   * Write authority proves this rather than assuming it: every step's `fromHash`
+   * equals its `toHash`, which means nothing was written and there is no journal
+   * to own this invocation's audit. Without the signal a caller cannot tell that
+   * apart from a handler that mutated the filesystem behind the journal's back —
+   * and the registry has to treat the second case as a fault.
+   */
+  noteUnchanged?(): void;
 }
 
 /** Canonical mutation result across file, entity, and composite writes. */
@@ -462,7 +475,8 @@ export interface ProjectRevisionProjection {
 
 /** Internal durable job record consumed by Core scheduling logic. */
 export interface Job extends JobDto {
-  projectId: ProjectId;
+  /** Null only while a workspace-scoped job has not produced a project yet. */
+  projectId: ProjectId | null;
   input: unknown;
   inputHash: ContentHash;
   idempotencyKey: string | null;
@@ -475,7 +489,8 @@ export interface Job extends JobDto {
 /** New job data ready for durable enqueue. */
 export interface NewJob {
   id: JobId;
-  projectId: ProjectId;
+  /** Null only for workspace-scoped jobs such as project import. */
+  projectId: ProjectId | null;
   type: string;
   input: unknown;
   inputHash: ContentHash;

@@ -2,6 +2,7 @@
 
 import * as React from "react";
 
+import { fetchApi } from "@/lib/api/services";
 import type { SourceFile } from "@/lib/studio/types";
 
 export interface OpenFile {
@@ -50,7 +51,9 @@ export function useSourceFiles(projectId: string, _projectSlug: string, seed: So
 
       setLoading(path);
       try {
-        const response = await fetch(`/api/v1/projects/${projectId}/files?path=${encodeURIComponent(path)}`);
+        const response = await fetchApi(
+          `/api/v1/projects/${encodeURIComponent(projectId)}/files?path=${encodeURIComponent(path)}`,
+        );
         const payload = (await response.json().catch(() => null)) as {
           file?: { path: string; content: string; contentHash: string };
           error?: { message?: string };
@@ -120,7 +123,7 @@ export function useSourceFiles(projectId: string, _projectSlug: string, seed: So
       });
 
       try {
-        const response = await fetch(`/api/v1/projects/${projectId}/files`, {
+        const response = await fetchApi(`/api/v1/projects/${encodeURIComponent(projectId)}/files`, {
           method: "PUT",
           headers: { "content-type": "application/json" },
           body: JSON.stringify({

@@ -41,6 +41,10 @@ const THEME_LABELS: Record<(typeof THEME_VARIABLES)[number], string> = {
   "--primary-light": "Primary light",
   "--accent": "Accent",
   "--accent-light": "Accent light",
+  "--background": "Background",
+  "--surface": "Surface",
+  "--text": "Text",
+  "--text-muted": "Muted text",
   "--success": "Success",
   "--info": "Info",
 };
