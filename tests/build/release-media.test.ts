@@ -93,7 +93,8 @@ describe("release media provenance", () => {
     // A missing entry is not a smaller claim, it is an unmade one: the check
     // below only compares what is present, so an absent source would pass every
     // comparison it never took part in.
-    const { opus: _dropped, ...sources } = approvedSources();
+    const sources = approvedSources();
+    delete sources.opus;
     await expect(readReleaseMediaProvenance(await releaseMediaRoot({ sources })))
       .rejects.toThrow(/does not name the source set/u);
   });

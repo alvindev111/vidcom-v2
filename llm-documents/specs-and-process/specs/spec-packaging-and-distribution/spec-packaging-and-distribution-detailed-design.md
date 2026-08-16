@@ -1,7 +1,7 @@
 # Spec Packaging & Distribution Runtime — Detailed Design
 
 > **Reference**: [Detailed Goals](./spec-packaging-and-distribution-detailed-goal.md) — **Approved 2026-08-07**
-> **Main spec**: [Packaging & Distribution Runtime](./spec-packaging-and-distribution-inprocess.md)
+> **Main spec**: [Packaging & Distribution Runtime](./spec-packaging-and-distribution-complete.md)
 > **Next**: Implementation Checklist — **được phép tạo** (gate §15 đã mở)
 >
 > **Trạng thái**: **APPROVED** ngày 2026-08-07 bởi alvin0 — xem [§15 Approval Gate](#15-approval-gate). Phase tiếp theo là Implementation Checklist; **production code vẫn bị chặn** cho tới khi checklist đó được duyệt riêng.

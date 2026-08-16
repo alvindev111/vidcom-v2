@@ -1,6 +1,6 @@
 # Spec Packaging & Distribution Runtime — Detailed Goals
 
-> **Reference**: [Main Spec File](./spec-packaging-and-distribution-inprocess.md)
+> **Reference**: [Main Spec File](./spec-packaging-and-distribution-complete.md)
 > **Bản 4 — 2026-08-06.** Viết sau khi soi code thật của Giai đoạn 3 đã hoàn tất (commit `c9922fd`) và sau **hai vòng spike Phase 4** ([`spikes/phase-4/README.md`](../../../../spikes/phase-4/README.md)). Tài liệu này nói **cái gì** và **vì sao**; kiến trúc, bảng schema, endpoint, cấu trúc archive và tên file thuộc [`detailed-design.md`](./spec-packaging-and-distribution-detailed-design.md), đã được mở sau khi Goals được duyệt.
 > Trạng thái: **APPROVED** (2026-08-07) — **Design đã mở**. Spike gate đã mở (S1a, S1b, S2, S3 đều PASS), 13/13 open question đã đóng (§7), và vòng duyệt lại đã chấp nhận ba bản sửa OQ-4/OQ-7/OQ-8. Detailed Design được phép tạo; Implementation Checklist và production code vẫn bị gate sau chặn.
 >
@@ -687,7 +687,7 @@ Tiêu chí PASS được giữ nguyên ở đây để đối chiếu — thứ 
 3. **Ước lượng ~170 SP / 7–8 tuần** — hoặc yêu cầu cắt theo thang cắt ở main spec. Vòng spike thứ hai làm **hai** hạng mục rẻ đi (OQ-10 chỉ là một biến đổi được; OQ-13 chọn shim nên R5 không phải mang thêm Node runtime) nhưng **không** hạ con số: phần đắt của R1 là tách `startVidcomFoundation`, thứ R1.12 cần dù có OQ-10 hay không, và R2 vẫn phải làm handshake mà S7 vừa chứng minh là correctness. Vòng duyệt 2026-08-07 cộng **5 SP vào R1** (21→26) vì OQ-8 hứa chi phí đó từ bản 2 mà **chưa bao giờ vào bảng SP** — R1.19 giờ ghi nó ra. Giữ ~170 làm **sàn**.
 4. ~~Hai bug Phase 3 ở §1.8 đi đâu~~ — **đã quyết và đã sửa** (2026-08-07, §1.8): sửa ngay, trước Giai đoạn 4, vì R3.5 và R8.3 dựa vào cả hai. Đã verify với engine thật; integration test siết thêm assertion và được chứng minh là **fail trên code trước khi sửa**. Không còn câu hỏi phạm vi nào mở.
 
-**Ba món nợ kiểm chứng — đã chuyển thành todo có chủ, chờ máy Windows** (W-1..W-3, chi tiết ở [main spec §During Spec](./spec-packaging-and-distribution-inprocess.md)). Không cái nào chặn Design; cả ba nên chạy **cùng lượt** với vòng kiểm Windows đầu tiên, vì Windows cũng là nơi ACL/`rename`/khoá file/kill-tree của R5.9, R7.12, R3.13, R6.8 phải được kiểm.
+**Ba món nợ kiểm chứng — đã chuyển thành todo có chủ, chờ máy Windows** (W-1..W-3, chi tiết ở [main spec §During Spec](./spec-packaging-and-distribution-complete.md)). Không cái nào chặn Design; cả ba nên chạy **cùng lượt** với vòng kiểm Windows đầu tiên, vì Windows cũng là nơi ACL/`rename`/khoá file/kill-tree của R5.9, R7.12, R3.13, R6.8 phải được kiểm.
 
 | # | Chưa kiểm | Chặn requirement | Rủi ro nếu sai |
 |---|---|---|---|

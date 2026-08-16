@@ -1546,6 +1546,18 @@
           <div><dt class="font-semibold text-slate-200">M.3b authority</dt><dd class="mt-1 text-slate-300">Packaged run 31710887527 xanh ba OS: legacy + modern stdio 35/35 tools cạnh một UI lease, state/credential qua restart, stale handshake bị từ chối; complete evidence validator và upload đều xanh.</dd></div>
         </dl>
       </section>
+      <section class="mt-6 rounded-2xl border border-emerald-400/30 bg-emerald-950/20 p-6 shadow-xl">
+        <p class="text-xs font-semibold uppercase tracking-[0.24em] text-emerald-300">2026-08-16 · C-71 · Nguồn release có đường thực thi</p>
+        <h2 class="mt-2 text-xl font-bold text-white">Một danh sách nguồn được duyệt không tự sinh ra binary nào</h2>
+        <dl class="mt-5 grid gap-4 md:grid-cols-2">
+          <div><dt class="font-semibold text-slate-200">Cái đang thiếu</dt><dd class="mt-1 text-slate-300">C-21 duyệt nguồn release từ Phase M, nhưng <code>build-ffmpeg.mjs</code> chỉ giữ pin và luật build — chưa từng có driver chạy chúng. Vì vậy đường duy nhất tới artifact vẫn là smoke fixture của mirror bên thứ ba, đúng thứ C-21 cấm phát hành.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Provenance là hai câu, không phải một</dt><dd class="mt-1 text-slate-300">Record phải nêu đúng tập nguồn được duyệt <em>và</em> binary cạnh nó vẫn đúng bytes record đã đo. Một record chỉ tự đồng ý với chính nó sẽ cho bất kỳ binary nào được phát hành dưới tên một source build.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Xin không phải là được</dt><dd class="mt-1 text-slate-300">Gọi <code>--release-media</code> mà không có source build thì fail vì thiếu proof, không rơi xuống fixture. Nếu rơi xuống được thì đường mới chính là cách đi vòng qua gate mà opt-in sinh ra để chặn.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Bug thật, tìm ra bằng verifier</dt><dd class="mt-1 text-slate-300">FFmpeg nướng nguyên dòng configure vào binary, nên prefix trong checkout làm <code>verify-artifact</code> từ chối staged <code>ffmpeg</code> với <code>build-root</code>. Prefix nay nằm ngoài checkout: cùng một chuỗi trên mọi máy build, không nêu tên home directory của ai.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Transport ≠ nguồn tin cậy</dt><dd class="mt-1 text-slate-300">Host của x264 trả <code>406</code> cho HTTP client của Node và <code>200</code> cho curl cùng URL. Fallback sang transport thứ hai không hạ chuẩn: digest mới là thứ quyết định bytes có được nhận hay không.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Bằng chứng</dt><dd class="mt-1 text-slate-300">Commit <code>3f49e7c</code>, <code>dirty=false</code>, artifact SHA-256 <code>fb658b6b…56d7a1</code>, <code>ffmpeg 7.1.1</code>. Packaged smoke trên chính artifact đó với PATH rỗng: MP4 8,000000 s có video + audio, VieNeu ra WAV, post-media doctor bốn hạng mục <code>ok</code>. <code>offline</code> là bước duy nhất không chạy được cục bộ vì đòi cắt mạng ở tầng runner; nó đã đóng ở M.4 bằng exact-head CI ba OS.</dd></div>
+        </dl>
+      </section>
     </main>
   </body>
 </html>

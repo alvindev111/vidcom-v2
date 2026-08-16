@@ -27,6 +27,10 @@ const eslintConfig = defineConfig([
     "spikes/**/out/**",
     "spikes/**/.artifacts/**",
     "spikes/**/python*/**",
+    // The same case one directory over: `dist/` holds the staged runtime — a
+    // frozen CPython tree and the packed frontend — and linting it exhausts the
+    // heap rather than reporting anything about this repository's source.
+    "dist/**",
     ".temp-documents/**",
   ]),
   {
