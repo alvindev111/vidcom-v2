@@ -8,16 +8,16 @@
 > cảnh báo hai bản lộ trình sẽ lệch; lần lệch gần nhất (2026-08-04 → 08-05) làm
 > file này giữ danh sách Giai đoạn 3 cũ suốt một vòng re-baseline.
 >
-> Đồng bộ lần cuối: **2026-08-05**.
+> Đồng bộ lần cuối: **2026-08-15**.
 
 | Giai đoạn | Nội dung | Trạng thái |
 |---|---|---|
 | 0 | Spike | ✅ 2026-08-01 — chọn Node SEA |
 | 1 | Nền móng | ✅ 2026-08-01 — 118/118 |
 | 2 | MCP chạy thật | ✅ 2026-08-02 — 10 tool, 2 era |
-| 3 | Đóng vòng lặp sản phẩm | ✅ 2026-08-05 — còn nợ R5 UI → 5.0 |
-| 4 | Đóng gói & runtime phân phối | ⬜ chưa mở spec |
-| 5 | Trải nghiệm editing | ⬜ chưa mở spec |
+| 3 | Đóng vòng lặp sản phẩm | ✅ 2026-08-05 — nợ R5 UI đã trả ở 4.4/R1.19 |
+| 4 | Đóng gói & runtime phân phối | 🟡 đang thực thi — checklist gần xong, còn packaged release-artifact render smoke |
+| 5 | Trải nghiệm editing | 🟡 **đang thực thi** — Goals bản 7, Design bản 12, Checklist đều duyệt 2026-08-16; S0 xong, kế tiếp P0 |
 | 6 | AI Composer & hoàn thiện | ⬜ chưa mở spec |
 
 ## Giai đoạn 0 — Spike (~1 tuần). Chặn mọi thứ
@@ -68,11 +68,11 @@ Re-baseline 2026-08-04 kéo agent-kit từ Giai đoạn 4 lên, vì harness ph�
 
 **Mốc:** người dùng mở app, nhờ AI dựng scene, nghe narration, xuất MP4.
 
-**Nợ còn lại:** 3.4 giao R5 ở tầng Core/adapter/HTTP (`POST /v1/projects` chạy được) nhưng checklist **không có task FE nào**, nên nút `New video` vẫn `disabled`. Đã chuyển thành **5.0**.
+**Nợ còn lại:** 3.4 giao R5 ở tầng Core/adapter/HTTP (`POST /v1/projects` chạy được) nhưng checklist **không có task FE nào**, nên nút `New video` vẫn `disabled`. Đã kéo vào Giai đoạn 4 (4.4/R1.19) và **trả xong 2026-08-13** — `NewProjectDialog` + browser test hai nhánh, xem Phase G task G.8/G.9.
 
-## Giai đoạn 4 — Đóng gói & runtime phân phối (3–4 tuần)
+## Giai đoạn 4 — Đóng gói & runtime phân phối (re-baseline 7–8 tuần)
 
-*(4.1–4.3 — nội dung agent-kit — đã chuyển lên 3.12.)*
+*(4.1–4.3 — nội dung agent-kit — đã chuyển lên 3.12. 5.0 kéo xuống đây thành 4.4/R1.19.)*
 
 Directory picker + token flow → workspace lock/lease + single-writer daemon + MCP bridge qua IPC → `vidcom` CLI đủ mode + `doctor` → Node SEA nhúng frontend asset, bỏ Next → giải nén sidecar runtime **và thư viện motion** vào app-data lần chạy đầu → import project có sẵn → smoke test trên artifact máy sạch.
 
@@ -80,9 +80,13 @@ Thư viện motion là bẫy dễ bỏ sót: `install_motion_library` đọc ch�
 
 **Mốc:** một file tải xuống, chạy trên máy chưa cài gì.
 
-## Giai đoạn 5 — Trải nghiệm editing (3–4 tuần)
+## Giai đoạn 5 — Trải nghiệm editing (re-baseline 9–11 tuần)
 
-**5.0 — nối UI tạo project** (nợ từ 3.4: bỏ `disabled`, dialog tên + preset, `POST /v1/projects`, kèm test cho route) → kéo timing / kéo-thả thứ tự scene → undo/redo → không remount player khi ghi → CRUD file + upload asset → word timestamp cho caption → template scene → registry.
+*(5.0 — nối UI tạo project — đã chuyển xuống 4.4/R1.19 và làm xong.)*
+
+Kéo timing / kéo-thả thứ tự scene → undo/redo → không remount player khi ghi → CRUD file + upload asset → word timestamp cho caption → template scene → registry (cài **và** mount) → dải thumbnail trên clip → kéo asset vào timeline → chọn nhiều clip.
+
+**Re-baseline 2026-08-15:** Goals bản 5 nâng từ 9 lên **12 requirement**, ~212 SP, kỳ vọng **9–11 tuần** chứ không phải 3–4.
 
 ## Giai đoạn 6 — AI Composer & hoàn thiện
 

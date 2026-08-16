@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="vi">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Ghi chú thực thi — Spec Editing Experience</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+  </head>
+  <body class="bg-slate-950 text-slate-100 antialiased">
+    <main class="mx-auto max-w-4xl px-6 py-10 space-y-8">
+      <header class="border-b border-slate-800 pb-6">
+        <h1 class="text-2xl font-semibold">Ghi chú thực thi — Spec Editing Experience (Giai đoạn 5)</h1>
+        <p class="mt-2 text-slate-400">
+          Ghi <strong>ngay trong từng task</strong>, không dồn cuối phase. Mỗi mục nêu: quyết định đã
+          chọn, chỗ lệch Detailed Design, đánh đổi, bất ngờ gặp phải, evidence đã chạy, blocker.
+        </p>
+        <p class="mt-2 text-sm text-slate-500">
+          Goals bản 7 · Design bản 12 · Checklist Approved 2026-08-16 · thứ tự S0 → P0 → P3 → P4 → P1 → P2 → P5 → P6 → P7 → P8 → P9 → P10 → P11
+        </p>
+      </header>
+
+      <section class="space-y-3">
+        <h2 class="text-lg font-semibold text-sky-300">S0 — Bootstrap (2026-08-16)</h2>
+
+        <article class="rounded-lg border border-slate-800 bg-slate-900/50 p-4 space-y-2">
+          <h3 class="font-medium">S0.1 · Kiểm ba gate</h3>
+          <p class="text-slate-300">
+            Goals <strong>Approved bản 7</strong>, Design <strong>Approved bản 12</strong>, Checklist
+            <strong>Approved 2026-08-16</strong>. Đủ điều kiện thực thi; chưa viết dòng production code nào.
+          </p>
+        </article>
+
+        <article class="rounded-lg border border-slate-800 bg-slate-900/50 p-4 space-y-2">
+          <h3 class="font-medium">S0.2 · Đổi <code>pending</code> → <code>inprocess</code></h3>
+          <p class="text-slate-300">
+            Đổi tên bằng <code>git mv</code> để giữ lịch sử. Tham chiếu tên cũ nằm ở <strong>ba</strong>
+            file (build-order, detailed-goal, checklist) — ít hơn con số 5 mà checklist dự đoán, vì
+            Design và <code>process.md</code> vốn trỏ bằng đường dẫn thư mục.
+          </p>
+          <p class="text-slate-400 text-sm">
+            Verify: <code>grep -rn "spec-editing-experience-pending" --include='*.md'</code> → <strong>0</strong>;
+            <code>bun run test:spec-paths</code> → <strong>PASS</strong> (115 test path, 3 spec).
+          </p>
+        </article>
+
+        <article class="rounded-lg border border-slate-800 bg-slate-900/50 p-4 space-y-2">
+          <h3 class="font-medium">S0.3 · Tạo file này</h3>
+          <p class="text-slate-300">
+            Một trang, Tailwind CDN, tiếng Việt. Mỗi task sau đây thêm một <code>&lt;article&gt;</code>
+            vào đúng section của phase.
+          </p>
+        </article>
+
+        <article class="rounded-lg border border-slate-800 bg-slate-900/50 p-4 space-y-2">
+          <h3 class="font-medium">S0.4 · Baseline</h3>
+          <p class="text-slate-300">Xem dòng baseline trong Execution Log của checklist. Tóm tắt:</p>
+          <ul class="list-disc pl-6 text-slate-300 space-y-1">
+            <li><code>HEAD</code> = <code>8c55b81</code>; worktree <strong>không sạch</strong> — 51 mục, toàn bộ là tài liệu spec + <code>spikes/phase-5/</code> của chính vòng làm việc này.</li>
+            <li>Không có thay đổi nào của người dùng ngoài phạm vi spec bị đụng tới; không stage/commit/push gì thêm.</li>
+          </ul>
+        </article>
+
+        <article class="rounded-lg border border-amber-800/60 bg-amber-950/30 p-4 space-y-2">
+          <h3 class="font-medium text-amber-200">Bất ngờ đáng ghi</h3>
+          <p class="text-slate-200">
+            Checklist nói tham chiếu tên file cũ nằm ở <strong>năm</strong> chỗ. Thực tế <strong>ba</strong>.
+            Không phải lỗi — hai chỗ còn lại trỏ bằng đường dẫn thư mục nên không gãy. Ghi lại để lần
+            sau không ai đi tìm hai tham chiếu không tồn tại.
+          </p>
+        </article>
+      </section>
+
+      <section class="space-y-3">
+        <h2 class="text-lg font-semibold text-sky-300">P0 — Nền Core</h2>
+        <p class="text-slate-500 italic">Chưa bắt đầu.</p>
+      </section>
+    </main>
+  </body>
+</html>

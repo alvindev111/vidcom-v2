@@ -1,0 +1,12 @@
+<!doctype html>
+<html>
+  <head><meta charset="utf-8" /><title>spike project</title>
+  <style>body{margin:0;background:#101014;color:#fff;font:16px system-ui}</style>
+  </head>
+  <body data-composition-id="root" data-width="1280" data-height="720" data-duration="12" data-fps="30">
+    <div id="scene-1-layer" class="comp-layer clip" data-composition-id="scene-1" data-composition-src="compositions/scene-1.html" data-start="0" data-duration="6" data-track-index="0"></div>
+    <div id="scene-2-layer" class="comp-layer clip" data-composition-id="scene-2" data-composition-src="compositions/scene-2.html" data-start="6" data-duration="6" data-track-index="0"></div>
+    <img id="missing-asset" src="assets/definitely-missing.png" alt="" />
+    <script>throw new Error("root script boom");</script>
+  </body>
+</html>

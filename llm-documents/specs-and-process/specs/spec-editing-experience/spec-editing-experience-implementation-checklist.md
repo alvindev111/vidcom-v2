@@ -1,0 +1,1435 @@
+# Spec Editing Experience — Implementation Checklist
+
+> **Reference**: [Detailed Goals](./spec-editing-experience-detailed-goal.md) — bản 7, Approved 2026-08-16
+> **Design**: [Detailed Design](./spec-editing-experience-detailed-design.md) — bản 12, Approved 2026-08-16
+> **Main spec**: [spec-editing-experience-inprocess.md](./spec-editing-experience-inprocess.md)
+> **Spike evidence**: [`spikes/phase-5/README.md`](../../../../spikes/phase-5/README.md) — 24 probe hợp lệ PASS + 1 superseded
+
+## Context
+
+Tài liệu này là **nguồn sự thật về thứ tự, trạng thái và evidence thực thi**. Nó không thay thế các
+nguồn có thẩm quyền khác: Detailed Goals quyết định hành vi sản phẩm; Detailed Design quyết định
+contract kỹ thuật; steering quyết định ranh giới kiến trúc; code hiện tại quyết định tên
+file/symbol thật. Khi hai nguồn lệch nhau, dùng quy trình **Design drift** bên dưới, không chọn im
+lặng một phía.
+
+**Đọc trước khi chạy bất kỳ phase nào** (một lần, đầu phiên làm việc):
+1. [`spec-rule.md`](../../rules/spec-rule.md) +
+   [`implementation-guide.md`](../../rules/implementation-guide.md) — phase gate, vòng lặp per-task,
+   quality gate và design-drift.
+2. [Detailed Goals](./spec-editing-experience-detailed-goal.md) rồi
+   [Detailed Design](./spec-editing-experience-detailed-design.md) — đọc header/approval, §5–§11 và
+   §17 trước khi chọn task.
+3. [`02-project-layout`](../../../steering/02-project-layout.md) ·
+   [`03-architecture-ddd`](../../../steering/03-architecture-ddd.md) ·
+   [`07-data-and-storage`](../../../steering/07-data-and-storage.md) ·
+   [`10-testing`](../../../steering/10-testing.md) ·
+   [`11-code-style`](../../../steering/11-code-style.md) — luật luôn áp dụng.
+4. Các steering chuyên biệt trong bảng skill/read-first của phase: API/validation/security cho HTTP,
+   MCP/protocol/agent-kit cho tool, documentation rules khi cập nhật spec.
+
+> **Override cục bộ cho ví dụ cũ trong `implementation-guide.md`**: repo này dùng Hono + Core
+> use case/port/adapter; các câu ví dụ nhắc Elysia hoặc “service abstract static” không phải convention
+> của vidcom-v2. Code hiện tại + steering 02/03 mới là mẫu phải theo.
+
+### Các điểm lệch steering đã được giải quyết trước khi thực thi
+
+Approval checklist này đồng thời cho phép các cập nhật steering **hẹp** dưới đây. Agent phải sửa
+steering ở phase được chỉ định **trước** khi viết đường code liên quan, ghi vào
+`implementation-notes.html`, rồi tiếp tục; không mở lại câu hỏi đã được Design bản 12 chốt.
+
+| Xung đột hiện tại | Quyết định có thẩm quyền cho spec này | Việc phải làm khi thực thi |
+|---|---|---|
+| `implementation-guide.md` yêu cầu branch sạch và commit đã push trước khi đánh `[x]` | Worktree hiện hữu của người dùng phải được bảo toàn; evidence gắn với source identity ở task 11.5a, commit/push chỉ khi người dùng yêu cầu | Áp dụng Autonomous Contract 1, 3, 11; không sửa guide dùng chung |
+| steering 04 §4 nói upload là multipart | R5/Design §5.10 và §7.7 đã chốt XHR gửi raw `File`, daemon stream body trên listener HTTP/1.1 để giữ progress/cancel và RSS cho 500 MB | Task 5.0 cập nhật steering 04 cho raw bounded streaming upload trước task 5.1–5.7c |
+| steering 03/04 yêu cầu MCP parity, steering 05 nói mọi write undo được qua revision history | Undo/redo là affordance của **studio session**, không phải project-content use case stateless; MCP write vẫn gọi cùng Core use case nhưng không được chèn vào stack UI. Decision 12/D7 cấm tool MCP undo/redo | Task S0.5 cập nhật steering 03/04/05 trước production code; P11.3a kiểm không drift, giữ tool parity cho các use case nội dung và không thêm tool undo/redo |
+| steering 03/04 yêu cầu mọi HTTP use case có MCP parity, nhưng R5 nhận file local tới 500 MB | Giai đoạn 5 không phát tool upload/tree CRUD/apply-font mới: chưa có blob/resource transfer + authority an toàn, và MCP không được nhận absolute path. `save_file`/`delete_file` hiện hữu không bị gọi nhầm là parity đầy đủ | Approval checklist chốt ngoại lệ transport D9; task S0.5 ghi vào steering 03/04/05 trước P5 mà không đưa nghiệp vụ ra khỏi Core hoặc phát minh transport trong lúc implement |
+| steering 08 coi mọi “snapshot” là job; P7 dùng batch renderer trực tiếp | Thumbnail timeline là derived-cache tương tác, bounded/cancellable/backpressured, không phải snapshot artifact bền và không ghi project | Task 7.0 làm rõ ngoại lệ trong steering 04/08 trước khi tạo route P7 |
+| steering 10 còn test legacy `confirm` và coi MRTR là xác nhận, trái steering 05/13 | Cả hai era dùng daemon-issued approval grant; MRTR chỉ là kênh dẫn, legacy trả `approval_required` | Task S0.5 đồng bộ steering 10 trước production code; P11.3a kiểm lại trước contract test |
+
+### Mười luật bất biến của spec này (vi phạm = task chưa xong)
+
+| # | Luật | Nguồn |
+|---|---|---|
+| L1 | Mọi ghi project đi qua **`WriteAuthority.mutateSource`** — file authored là step `write`/`delete`, preview settings là step **`kind: "entity"`** trong cùng `CompositeRequest` (xem `project-writes.ts:107` làm mẫu). `mutateEntity` là helper **private** trong `WriteAuthority`, **không** phải API để gọi và **không** được đổi thành public. Không có đường ghi filesystem/entity thứ hai. | Goals §Spec Goal · Design §5.5 |
+| L2 | Một thao tác nội dung của người dùng = **một** mutation composite. Ngoại lệ **duy nhất**: thả file từ ngoài vào timeline (R11.2) = upload rồi mount = hai mutation. | Design §6.1 |
+| L3 | Mọi ghi mang precondition: `expectedContentHash` (file) hoặc `expectedRevision` (entity/plan). Thiếu ⇒ `PreconditionRequired` 400. | Goals §Spec Goal, steering 06 §7 |
+| L4 | Quyết định nội dung nằm ở Core; UI/route không tự tính timing, thứ tự, cue hay tên file. Cơ chế cần dependency infrastructure (SVG DOM parser, media/font probe) đi qua Core port và Adapter hiện thực, không kéo dependency vào Core. | steering 03 · Design §5.12 |
+| L5 | Test logic chạy dưới `environment: "node"` (repo **không có** jsdom/happy-dom). Hành vi chỉ tồn tại trong component là hành vi không test được. | Goals §Testing |
+| L6 | Mã lỗi theo steering 04 §3.3: invariant nghiệp vụ **422**, xung đột hash **409**, quá lớn **413**, chưa hỗ trợ loại **415**. Map ở **middleware**, không rải trong route. | Design §8.1 |
+| L7 | Lịch sử undo **không persist**: bộ nhớ daemon, khoá `(studioSessionId, projectId)`, tối đa 50 mục. Không thêm bảng SQLite cho nó. | Goals OQ-2, Design §6.1 |
+| L8 | Schema request/response định nghĩa một lần trong `packages/contracts/src/editing.ts`, export qua `index.ts`; bề mặt được expose cả HTTP/MCP phải import lại cùng shape, không copy Zod ở route/tool. Ngoại lệ browser-only D7/D9 vẫn dùng contract tập trung cho HTTP, không tạo schema MCP giả. | Design §7 |
+| L9 | Mọi port/service mới phải được nối ở production composition root (`packages/cli/src/composition-root.ts`) và startup/recovery tương ứng; unit test với port giả không chứng minh wiring production. | steering 02/03 · Design §4.5 |
+| L10 | Persistence test dùng SQLite file thật + filesystem temp thật; migration phải generate/version/package được và boot hai lần idempotent. Không mock `node:fs`, không dùng DB in-memory thay evidence. | spec-rule · steering 07/10 |
+
+## Autonomous Execution Contract
+
+Mục này là chỉ dẫn tường minh để agent có thể chạy liên tục **sau khi Approval Gate của checklist
+được người dùng duyệt**, không hỏi lại về lựa chọn kỹ thuật đã nằm trong phạm vi spec.
+
+1. **Khôi phục trước khi chọn việc mới**: đầu mỗi phiên đọc `git status --short`, diff hiện tại,
+   Execution Log và phần cuối `implementation-notes.html`. Nếu có đúng một task `[/]`, resume task
+   đó trước mọi task `[ ]`; không tin trạng thái checkbox nếu diff/evidence hiện tại mâu thuẫn. Nếu
+   phiên trước dừng giữa lệnh test, chạy lại focused gate từ đầu và ghi evidence mới.
+2. Một prerequisite `P<n>` được coi là `[x]` **chỉ khi** mọi task và Acceptance Criteria của phase đó
+   là `[x]`, Deliverables đã ghi đường dẫn thật, và phase gate có dòng `PASS` trong Execution Log.
+   `[!]`, `NOT EXECUTED`, Deliverables trống hoặc chỉ có test hẹp hơn phạm vi đều có nghĩa phase chưa
+   đóng. Khi không có task `[/]`, chọn task `[ ]` đầu tiên theo **Recommended execution order** có mọi
+   prerequisite đã đóng; trong một phase làm theo thứ tự task từ trên xuống.
+3. Chỉ một task `[/]` tại một thời điểm. Trước khi đổi `[ ]` → `[/]`, ghi một dòng checkpoint vào
+   Execution Log gồm task, baseline `HEAD`, trạng thái dirty và focused command dự kiến; điều này là
+   điểm phục hồi nếu agent/context bị thay giữa chừng.
+4. Nếu code đã có hành vi task yêu cầu, **không rewrite**: thêm/kiểm evidence đúng phạm vi, log file
+   hiện hữu và đánh `[x]` khi mọi gate pass.
+5. Nếu file/symbol đã đổi tên, dùng CodeGraph trước, rồi `rg --files`/`rg` để tìm equivalent hiện tại;
+   cập nhật `Files affected` + Execution Log và tiếp tục. Đây không phải lý do hỏi người dùng.
+6. Quy tắc chọn khi có nhiều cách kỹ thuật cùng đáp ứng AC: Goals → Design → steering → pattern gần
+   nhất trong code → diff nhỏ nhất. Ghi lựa chọn vào `implementation-notes.html`.
+7. Nếu phát hiện thiếu task nhưng không đổi AC/contract, chèn task vào phase đúng, cập nhật dependency
+   + coverage matrix, log rồi tiếp tục. Task ước vượt 4 giờ phải tách trước khi code.
+8. Nếu cần đổi interface §5/§7, data model §6 hoặc Decision Record §10, cập nhật Detailed Design
+   **trước**, thêm Decision/erratum, đồng bộ checklist và log; tiếp tục mà không hỏi nếu thay đổi chỉ
+   là kỹ thuật nội bộ và vẫn giữ nguyên AC/security/scope.
+9. Chỉ dừng để hỏi khi lựa chọn sẽ đổi hành vi người dùng/AC, mở rộng scope, hạ security hoặc cần một
+   hành động ngoài repo chưa được uỷ quyền. Môi trường thiếu Chrome/network không chặn task độc lập:
+   ghi `[!]` cho đúng evidence, tiếp tục nhánh không phụ thuộc, tuyệt đối không fake PASS.
+10. Test đỏ do diff hiện tại ⇒ sửa trước khi đi tiếp. Test đỏ có sẵn ⇒ chứng minh bằng baseline, ghi
+   log và không disable/đổi assertion để che lỗi.
+11. Không tự làm sạch/stash/reset worktree, commit, push, mở PR hoặc cập nhật hệ thống ngoài repo nếu
+   request thực thi không yêu cầu. Với checklist này, câu “branch sạch/commit đã push” trong
+   `implementation-guide.md` bị override: task được đóng bằng source identity + evidence tại chỗ;
+   khi có PR, exact-HEAD CI chỉ là gate bổ sung.
+12. Mỗi task: Analyze → `[/]` → test fail (khi áp dụng) → implement → focused test → phase gate →
+    cập nhật checklist + `implementation-notes.html` → `[x]` → task sẵn sàng tiếp theo.
+13. Nếu thiếu `node_modules`, chạy `bun install --frozen-lockfile`; không sửa lockfile để “cho qua”.
+    Nếu thiếu Chromium và network có sẵn, dùng đúng bootstrap của workflow:
+    `node node_modules/hyperframes/bin/hyperframes.mjs browser ensure` để cài vào cache mà resolver
+    hiện tại đọc; không đổi sang cache Playwright khác. Nếu network không có thì ghi `[!]` cho đúng
+    browser evidence và tiếp tục task độc lập, không hỏi lại và không giả PASS.
+
+## Approval Gate
+
+> Không viết production code trước khi mục này được xác nhận tường minh.
+
+- **Status**: **Approved**
+- **Confirmed by**: người dùng (chủ dự án)
+- **Confirmation date**: 2026-08-16
+- **Notes / required revisions before code execution**: Việc duyệt
+  bao gồm bảng **Các điểm lệch steering**, erratum path `applyCompositionOps` và D9 MCP blob/file-manager
+  R5 ở trên; Detailed Design bản 12 đã Approved, không cần một vòng duyệt Design khác.
+
+## Sequencing Strategy
+
+**Chosen strategy**: Foundation-First, rồi Feature-Slice.
+
+**Rationale**: Tám requirement (R2, R3, R5, R6, R8, R9, R10, R11) đều cần trực tiếp hoặc gián tiếp
+**cùng** một nền: receipt trong biên
+mutation, step `mkdir`/`rmdir`, `write-staged`, và sự kiện có `paths`. Làm nền trước một lần rẻ hơn
+sửa `WriteAuthority` lặp lại theo từng feature. Sau nền, mỗi requirement là một lát cắt dọc đi từ
+Core ra UI.
+
+## Dependency Order
+
+```
+S0              → P0
+P0              → P3
+P0 + P3         → P1, P2, P4, P5
+P0 + P4 + P5    → P7
+P0 + P2 + P3    → P8
+P3 + P4         → P6
+P2 + P3 + P5    → P9
+P0 + P2 + P3 + P4 → P10
+P1…P10          → P11
+```
+
+**Recommended execution order**: S0 → P0 → P3 → P4 → P1 → P2 → P5 → P6 → P7 → P8 → P9 → P10 → P11.
+
+**Parallelizable**: checklist mặc định cho **một agent tuần tự**. Nếu nhiều agent được người dùng cho
+  phép tường minh, sau P0 làm P3; sau P3 có thể tách P4 · P1 · P5, P2 cũng chờ P3;
+  P8 chờ thêm P2,
+P6 chờ P3 + P4; P7 chờ thêm safe-CSS seam của P5; còn P9/P10/P11 giữ dependency như sơ đồ. Không tự spawn agent từ tài liệu này.
+
+---
+
+## LLM Agent — Skill Activation Per Phase
+
+> [!IMPORTANT]
+> Trước khi thực thi mỗi phase, MUST đọc skill và các file nguồn ở hàng tương ứng. Không đoán API.
+
+| Phase | Skills to activate | Source files to read BEFORE modifying |
+|---|---|---|
+| S0 Bootstrap | `.agents/skills/bun/SKILL.md` | Approval Gate của checklist, header của ba tài liệu spec, `git status --short`, `package.json` scripts, Packaging implementation checklist đang in-process, steering 03/04/05/10 (các câu xung đột trong bảng trên) |
+| P0 Nền Core | `.agents/skills/bun/SKILL.md` (chạy test) | `packages/core/src/service/write-authority.ts` (FULL — `executeComposite`, `validateCompositePreconditions`, `executeValidatedComposite`), `packages/core/src/port/types.ts` (search `CompositeStep`, `WriteEnvelope`, `StagedFileSource`), `packages/core/src/port/ports.ts` (search `CompositeMutationJournalPort`), `packages/adapter/src/db/schema.ts` (search `workspace_operation`) |
+| P1 Kéo timing | `.agents/skills/bun/SKILL.md` | `src/components/studio/timeline.tsx`, `src/components/studio/timeline-track.tsx`, `src/lib/studio/format.ts`, `packages/core/src/usecase/project-writes.ts` (search `setSceneTiming`) |
+| P2 Thứ tự + nhóm | `.agents/skills/bun/SKILL.md` | `src/lib/studio/scene-order.ts` (FULL), `packages/core/src/domain/invariants.ts` (FULL), `packages/core/src/usecase/project-writes.ts` (search `setSceneTiming`), `packages/core/src/usecase/scene-deletion.ts` (search `prepareSceneDeletion`, `digestPlan`) |
+| P3 Undo/redo | `.agents/skills/bun/SKILL.md` + `.agents/skills/hono/SKILL.md` | P0 deliverables, `packages/cli/src/{composition-root.ts,startup.ts,next-host.ts}`, `packages/server/src/{app.ts,routes/project-writes.ts,middleware/error-mapper.ts}`, `src/lib/api/services.ts` |
+| P4 Preview host | `.agents/skills/bun/SKILL.md` | `src/components/studio/use-hyperframes-player.ts` (FULL), `src/components/studio/studio-shell.tsx`, `packages/adapter/src/hyperframes/document.ts` (FULL), `packages/core/src/usecase/project-reads.ts` (search `getProjectPreview`), `packages/worker/src/render-job.ts` (search `preflightRenderDocument`), `spikes/phase-5/run-spike-5.mjs` (FULL) |
+| P5 File & asset | `.agents/skills/bun/SKILL.md` + `.agents/skills/hono/SKILL.md` | `llm-documents/steering/04-api-design.md` §4, `packages/server/src/app.ts` (body limit), `packages/server/src/routes/project-writes.ts` (search `assets/bgm`), `packages/core/src/usecase/project-assets.ts`, `packages/core/src/usecase/file-deletion.ts`, `packages/adapter/src/fs/workspace-fs.ts`, `packages/adapter/src/runtime/node-process-runner.ts`, `packages/adapter/src/hyperframes/font-compatibility.ts`, `packages/cli/src/{composition-root.ts,startup.ts}` |
+| P6 Caption | `.agents/skills/bun/SKILL.md` | `packages/core/src/domain/word-timings.ts` (FULL), `packages/core/src/port/tts-port.ts` (search `TtsWordTiming`), `packages/adapter/src/hyperframes/sdk-ops.ts` (FULL `applyCompositionOps`) + `parse.ts` (caller), `packages/adapter/src/hyperframes/preview-style.ts` (FULL), `spikes/phase-5/fixture/index.html` (script caption đã đo) |
+| P7 Thumbnail | `.agents/skills/bun/SKILL.md` + skill global `hyperframes-cli` (đọc `SKILL.md` từ skill catalog đang hoạt động) | `llm-documents/steering/04-api-design.md` §6 + `08-jobs-and-queue.md`, deliverable của P5: `packages/adapter/src/hyperframes/safe-css.ts` (chưa tồn tại trước P5), `packages/worker/src/snapshot-job.ts` (FULL — mẫu batch + AbortSignal), `packages/core/src/usecase/thumbnail.ts`, `packages/adapter/src/hyperframes/parse.ts` (FULL), `src/components/studio/timeline-elements.tsx` |
+| P8 Catalog + block | `.agents/skills/bun/SKILL.md` + `.agents/skills/http-driver/SKILL.md` | `packages/core/src/usecase/motion-library-install.ts` (FULL), `node_modules/@hyperframes/core/dist/registry/types.d.ts` (schema 0.7.86 thực), `node_modules/hyperframes/dist/cli.js` (search `DEFAULT_REGISTRY_URL`, `fetchRegistryManifest`, `fetchItemManifest`), `packages/adapter/src/bgm/bgm-provider.ts` (bounded HTTPS/SSRF pattern), `packages/adapter/src/runtime/{runtime-paths.ts,packaged-runtime-manifest.ts,runtime-asset-source.ts}`, `packages/cli/src/runtime-paths-source.ts`, `scripts/{stage-artifact-runtime,build-runtime-archives,verify-artifact}.mjs` |
+| P9 Kéo asset | `.agents/skills/bun/SKILL.md` + `.agents/skills/hono/SKILL.md` | P5 + P2 + P3 deliverables, `packages/core/src/usecase/project-writes.ts` (search `createScene`), `packages/cli/src/startup.ts`, `src/components/studio/scene-media-list.tsx` |
+| P10 Draft & phím tắt | `.agents/skills/bun/SKILL.md` + `.agents/skills/http-driver/SKILL.md` | `src/components/studio/use-source-files.ts` (FULL), `src/app/projects/[slug]/composer-client.tsx` (FULL), `src/lib/studio/format.ts` |
+| P11 Chốt chất lượng | `.agents/skills/bun/SKILL.md` + `.agents/skills/mcp-builder/SKILL.md` | `llm-documents/steering/{03-architecture-ddd,04-api-design,05-mcp-tool-design,10-testing,13-mcp-protocol-compatibility}.md` (các đoạn D1/parity/approval), `tests/support/browser-harness.ts` (FULL), `package.json` (FULL), `.github/workflows/phase4-browser-session.yml`, `packages/mcp/src/registry/registry.ts` (FULL), `packages/mcp/src/registry/write-tools.ts`, `packages/agent-kit/AGENTS.md` |
+
+**Lưu ý về template**: template checklist nhắc tới `backend-docs/` và `frontend-docs/` — hai thư mục đó **không tồn tại** trong repo này. Luật code nằm ở
+`llm-documents/steering/11-code-style.md`; đọc nó một lần trước P0.
+
+---
+
+## Task Status Legend
+
+- `[ ]` — chưa bắt đầu
+- `[/]` — đang làm
+- `[x]` — xong (đã implement, có test, đã validate)
+- `[!]` — bị chặn (kèm ghi chú nêu rõ vì sao)
+
+---
+
+## Phase S0: Bootstrap thực thi sau khi checklist được duyệt
+
+**Addresses**: phase gate, provenance và khả năng tiếp tục qua nhiều phiên
+**Design reference**: Design Approval Gate §15 · `spec-rule.md` Task Execution Workflow
+**Files affected**: main spec + mọi reference do S0.2 discover trong repo; `llm-documents/steering/{03-architecture-ddd,04-api-design,05-mcp-tool-design,10-testing}.md`; tạo `implementation-notes.html`
+**Prerequisite**: Approval Gate của checklist đã được người dùng chuyển sang `Approved`
+**Skill**: `.agents/skills/bun/SKILL.md`
+**Read first**: header/Approval Gate của Goals, Design, checklist và main spec; `package.json`;
+`git status --short`; trạng thái/gate còn mở trong
+`../spec-packaging-and-distribution/spec-packaging-and-distribution-implementation-checklist.md`;
+steering 03/04/05/10 ở đúng các đoạn D1/parity/history/approval đã liệt kê
+
+**Tasks**:
+- [x] S0.1 Xác nhận Goals, Design và checklist đều Approved; nếu chưa thì dừng trước production code
+  - _Requirements: process gate_ — _Design: §15 · spec-rule workflow_
+- [x] S0.2 Đổi main spec `pending` → `inprocess` và sửa **mọi** tham chiếu tên file cũ
+  - Trước rename, chạy `rg -l "spec-editing-experience-"'pending' --glob '!node_modules/**' --glob '!dist/**'`
+    từ repo root và dùng **kết quả hiện tại** làm danh sách authority; không hard-code số file hay đoán
+    Design/`process.md` có link. Sửa mọi kết quả + rename file bằng thao tác recoverable.
+  - **Kiểm bắt buộc sau khi đổi**: cùng lệnh `rg` ghép pattern ở trên trả về **rỗng**; mọi target
+    Markdown vừa sửa tồn tại. Chạy `bun run test:spec-paths` như regression repo, nhưng không dùng
+    nó làm bằng chứng cho spec này vì script chưa đăng ký Editing Experience cho tới task 11.5a.
+  - Không đổi nội dung Goals/Design đã duyệt — chỉ sửa đường dẫn
+  - _Requirements: process state_ — _Design: §15 · spec-rule workflow_
+- [x] S0.3 Tạo `implementation-notes.html` cạnh checklist: tiếng Việt, một trang Tailwind CDN; có mục quyết định, lệch Design, trade-off, bất ngờ/gotcha, test/evidence và blocker; append **ngay trong từng task**, không batch cuối phase
+  - _Requirements: execution evidence_ — _Design: §11, §15 · spec-rule workflow_
+- [x] S0.4 Ghi baseline vào Execution Log: HEAD, `git status --short`, thay đổi có sẵn của người dùng; chạy `bun run typecheck` và focused suite gần nhất hoặc ghi rõ lỗi baseline có sẵn
+  - Ghi riêng trạng thái spec Packaging và exact AC packaged/release còn mở. Nếu exact-host artifact +
+    runtime inputs đã có, chạy full strict packaged smoke baseline; nếu không thì ghi `NOT EXECUTED`.
+    P11 chỉ được gọi một failure là baseline khi có evidence S0 hoặc nó map đúng nguyên văn tới AC
+    Packaging vẫn đang mở ở source identity lúc P11 chạy.
+  - Không stage/ghi đè thay đổi không thuộc spec; không tự commit/push/PR.
+  - _Requirements: provenance_ — _Design: §11_
+- [ ] S0.5 Đồng bộ authority steering đã được Approval Gate ratify, **trước production code**
+  - Sửa steering 03/04: D1 vẫn bắt mọi nghiệp vụ/use case ở Core, nhưng parity transport chỉ bắt
+    operation có input biểu diễn an toàn trên cả HTTP/MCP; local studio-session D7 và local-file/blob
+    D9 là hai defer tường minh, không phải giấy phép đặt nghiệp vụ trong route.
+  - Sửa steering 05: write vẫn audit/precondition, nhưng chỉ mutation có `origin.kind:"studio"` và
+    đúng session mới vào history; MCP/CLI/external write không vào stack UI; không phát tool undo/redo.
+  - Sửa steering 10: legacy thiếu daemon approval grant trả `approval_required`; modern MRTR chỉ là
+    kênh dẫn tới grant, không phải bằng chứng duyệt; bỏ expectation `confirm:true` cũ.
+  - Chỉ sửa đúng các câu xung đột được liệt kê; ghi diff + link mục steering vào
+    `implementation-notes.html`, rồi chạy link/check format trước khi đóng S0.
+  - _Requirements: process authority; Deferred D7/D9_ — _Design: §7, Decision 12, §13, §15_
+
+**Acceptance Criteria**:
+- [ ] Main spec ở trạng thái `inprocess`; mọi link được S0.2 sửa đều trỏ target tồn tại
+- [x] `implementation-notes.html` tồn tại; baseline ghi rõ PASS (typecheck, write-authority 26/26) và không có FAIL có sẵn
+- [ ] Steering 03/04/05/10 không còn câu buộc agent chọn ngược D7/D9 hoặc approval-grant contract
+
+**Deliverables Created / Modified**:
+- `llm-documents/specs-and-process/specs/spec-editing-experience/spec-editing-experience-inprocess.md` — đổi tên từ `-pending.md` (git mv), header + Phase Approvals + Standups cập nhật
+- `llm-documents/specs-and-process/specs/spec-editing-experience/implementation-notes.html` — mới
+- `llm-documents/product-features/15-build-order.md`, `…/spec-editing-experience-detailed-goal.md`, `…/spec-editing-experience-implementation-checklist.md` — sửa link tên file
+
+---
+
+## Phase 0: Nền Core — receipt, step thư mục, staged write, sự kiện có `paths`
+
+**Addresses**: điều kiện tiên quyết của R2, R3, R5, R8, R9, R10, R11
+**Design reference**: §5.5, §5.7, §5.11 (bảng step thư mục), Decision 1/4/11
+**Files affected**: `packages/core/src/port/{types.ts,ports.ts,mutation-observer.ts}`, `packages/core/src/service/write-authority.ts`, `packages/core/src/usecase/reconcile-composite-mutation.ts`, `packages/adapter/src/fs/{workspace-fs.ts,staged-asset.ts,mutation-capture.ts,watcher.ts,large-content-store.ts}`, `packages/adapter/src/db/{schema.ts,journal.ts,event-outbox.ts,migrate.ts}`, `drizzle/**`, `packages/adapter/src/runtime/packaged-runtime-manifest.ts`, `packages/contracts/src/{editing.ts,errors.ts,index.ts}`, `packages/server/src/middleware/error-mapper.ts`, `packages/cli/src/{composition-root.ts,startup.ts}`
+**Prerequisite**: S0
+**Skill**: `.agents/skills/bun/SKILL.md` — mục chạy test, để chạy `bun run test` sau mỗi task
+**Read first**: `packages/core/src/service/write-authority.ts` (FULL) — hiểu `executeComposite`, thứ tự capture → backup → publish → commit → `discardCaptures`
+
+**Tasks**:
+- [ ] 0.1 Thêm `MutationOrigin` và `MutationReceipt` vào `packages/core/src/port/mutation-observer.ts`
+  - `MutationOrigin { kind: "ui"|"mcp"|"cli"|"system"; sessionId: string|null; label: string|null; historyAction: "record"|"undo"|"redo"|"ignore"; historyOperation:{id,targetReceiptId}|null }`
+  - `UndoContentRef = inline(bytes,encoding,hash) | object(hash,encoding)` và `UndoContentPort`
+    `retainBytes(storage:inline|object)/retainFile/resolve/release`; mở rộng `LargePreviousContentStore` hiện có bằng streaming
+    file/object + live lease, không tạo bảng/history row.
+  - `MutationReceiptStep` là **union năm nhánh**: `file` undoable có
+    `beforeContent`/`afterContent: UndoContentRef|null`, `file` non-undoable (chỉ hash +
+    `omittedReason:"not-undoable"`), `directory` (`op`, `path`, `existedBefore`, `undoable`),
+    `pending-mount` (operation + state trước/sau), và `entity` (`undoable:boolean`, `backingPath`,
+    before/after state, from/to revision).
+  - Receipt có `paths` = path thực sự đổi và
+    `readGuards:{path,state:file(contentHash)|directory}[]` cho ownership dependency không bị mutation ghi.
+    Không flatten guard thành một tập path đối xứng: ownership và typed dependency có hai phép barrier
+    khác nhau ở task 3.1b. Chỉ Core thêm guard đã resolve; transport không nhận field này.
+  - `MutationObserverPort { claimHistoryOperation(...); abortHistoryOperation(...);
+    blockHistoryOperation(...); emit(receipt);
+    observeExternalChange(...); invalidateProject(...) }` — **không ném**. `observeExternalChange`
+    chỉ nhận path watcher đã phân loại external; receipt own-write không đi method này.
+  - Receipt id bền `journal:<decimal JournalId>` theo Design bản 12 (không ULID mới, không cột DB mới). Nhánh recovery dựng lại đúng id và id trỏ thẳng tới audit journal.
+  - _Requirements: R3.1_ — _Design: §5.5_
+- [ ] 0.2a `CompositeRequest` nhận `origin: MutationOrigin`
+  - **Bridge chỉ tồn tại trong P0**: vì P3 chưa có session/header/UI helper, các browser route hiện hữu
+    dùng một hằng có tên `UNTRACKED_UI_ORIGIN = {kind:"ui", sessionId:null, label:null,
+    historyAction:"ignore", historyOperation:null}` để giữ compile + hành vi hiện tại. Không rải object literal và không coi
+    receipt của bridge là lịch sử người dùng. Task 3.3 phải xoá hằng này rồi server **tự** dựng
+    `{kind:"ui", sessionId, historyAction:"record", historyOperation:null}` từ header hợp lệ; nhãn do server/use case quyết,
+    không tin `kind`, `historyAction` hoặc label tuỳ ý từ payload.
+  - Mọi call site không phải browser truyền đúng nguồn (`"mcp"`, `"cli"`, `"system"` cho recovery/bootstrap) với `sessionId:null`, `label:null`, `historyAction:"ignore"`, `historyOperation:null`; compile toàn monorepo bắt mọi call site thiếu.
+  - _Requirements: R3.1_ — _Design: Decision 1_
+- [ ] 0.2b `CompositeRequest` nhận typed internal `historyReadGuards`
+  - Thêm internal `historyReadGuards?:{path,state:file(hash)|directory}[]`; `WriteAuthority` resolve/dedupe và kiểm
+    hash dưới project mutex trước capture/publish. HTTP/MCP schema không nhận field này; catalog Core
+    là caller đầu tiên thêm reuse target. Cùng canonical path + khác hash ⇒ schema invalid; path trùng
+    mutation step bị từ chối để không có hai precondition authority. Mismatch ⇒ `WriteConflict` và
+    zero write. Khi có grant, read-guard hashes được nhập vào `observedHashes` để binding cũng khóa chúng.
+  - _Requirements: R3.1, R3.5_ — _Design: Decision 1_
+- [ ] 0.3a Retain content và reserve history bên trong `executeValidatedComposite`
+  - Sau capture/trước publish, retain before/after content: ≤64 KiB inline, lớn hơn hoặc staged source
+    vào content object theo stream; **tổng inline mỗi receipt tối đa 256 KiB**, phần còn lại ép object
+    dù từng file nhỏ. Retain lỗi ⇒ dừng trước publish. Receipt dùng refs + hash, không
+    dựng `Uint8Array` lớn từ `validated.intent`.
+  - Với origin undo/redo, gọi `claimHistoryOperation` sau mọi precondition/retain và ngay trước publish
+    khi project mutex còn giữ; claim fail ⇒ `WriteConflict`, zero write. Rollback/abort gọi
+    `abortHistoryOperation`; reconciled-committed hoàn tất bằng `emit`, outcome mơ hồ invalidate stack.
+  - _Requirements: R3.1, R3.5_ — _Design: §5.5_
+- [ ] 0.3b Phát receipt **sau** `commitComposite`, **trước** `discardCaptures` và chuyển ownership refs
+  - Entity validated intent có `undoable` chỉ Core use case đặt; standalone `mutateEntity` false,
+    cleanup trong source composite có thể true. Transport schema không nhận cờ này từ client.
+  - Bọc `emit` trong `try/catch` **riêng**, ngoài khối commit; `EmitResult.ok === false` ⇒ gọi `observer.invalidateProject(projectId, "history-desync")`
+  - Quyền sở hữu refs chuyển cho observer khi nhận thành công; fail/rollback/observer reject phải
+    release. Nhánh duplicate recovery để `MutationHistory` release refs bản trùng, không leak ref-count.
+  - _Requirements: R3.1, R3.5_ — _Design: §5.5_
+- [ ] 0.3c Receipt cho reconcile-committed và startup recovery
+  - Reconcile-committed cùng process phát receipt với origin/reservation gốc. Startup reconcile chạy
+    trước listener phát cùng id/steps/paths nhưng origin `system/ignore`, không persist history secret
+    và không dựng lại stack phiên cũ; `id = journal:<JournalId>` để observer idempotent.
+  - _Requirements: R3.1, R3.5_ — _Design: §5.5_
+- [ ] 0.4 Sự kiện composite mang `paths` và source đã redact
+  - Payload thành `{ composite: true, paths, source: origin.kind }`; **dựng từ validated intents trước
+    `commitComposite`** và persist trong cùng giao dịch outbox. Không serialize `sessionId`, label,
+    historyAction, historyOperation hay `readGuards` vào event/SSE/audit payload.
+  - Thêm Core port `ProjectPathInvalidator.invalidate(projectId, paths)`. `WriteAuthority` gọi sau
+    commit bằng đúng tập path đó; composition root hiện fan-out tới `ProjectCache`, P7 nối thêm
+    thumbnail/dependency cache. `WorkspaceWatcher` cũng nhận port này thay vì concrete `ProjectCache`.
+  - Port/fan-out non-throwing, isolate từng consumer (ProjectCache trước); lỗi cache sau commit chỉ
+    log/metric redacted, không đổi mutation thành failure/không giết watcher hoặc bỏ consumer kế tiếp.
+  - `WriteEnvelope.changeSeq:number|null`: journal commit trả seq event insert cùng transaction;
+    unchanged/no-event là null. Thêm `EventOutboxPort.latestProjectSeq(projectId)` + hiện thực SQL
+    `MAX(seq) WHERE project_id = ?`, trả 0 khi chưa có event; watcher dùng exact seq từ `append` hiện có.
+    Không query latest sau mutation để gán nhầm seq của write khác.
+  - _Requirements: R8.1d, R10.6_ — _Design: §5.7_
+- [ ] 0.5a Mở contract `CompositeStep` + capture cho `mkdir` / `rmdir`
+  - `mkdir.expectExisting:"absent"|"either"`: absent collision ⇒ conflict; either chỉ no-op khi target
+    là directory và ghi `existedBefore:true` + directory read guard, file/symlink ⇒ conflict. `rmdir`:
+    hợp lệ khi `entries(path) ⊆ {path của step delete/rmdir đứng trước trong cùng mutation}` — validate trên **snapshot + tập đã lên kế hoạch**, không hỏi trạng thái tương lai
+  - Mở rộng `WorkspacePort`/mutation-capture bằng union file/directory, không gọi `readFile` trên thư mục. Capture thư mục chỉ ghi `existedBefore`, không bytes.
+  - _Requirements: R5.1–5.3_ — _Design: §5.11, Decision 11_
+- [ ] 0.5b Nối publish/rollback/journal/reconcile cho step thư mục
+  - Publish `mkdir` không recursive/không overwrite; race có mục ngoài xuất hiện ⇒ conflict/reconcile, không nhận vơ mục đó. Rollback chỉ `rmdir` thư mục do mutation tạo và còn rỗng.
+  - Publish `rmdir` chỉ khi rỗng; race có mục ngoài xuất hiện ⇒ fail an toàn, không xoá. Rollback chỉ `mkdir` khi thư mục vắng.
+  - Journal serialize/check/reconcile cả hai kind; thứ tự `mkdir` nông-trước, file delete trước, `rmdir` sâu-trước và sau mọi file delete trong cây.
+  - _Requirements: R5.1–5.3_ — _Design: §5.11, Decision 11_
+- [ ] 0.5c Tracker/watcher cho state file, directory và absent
+  - Đổi `WrittenHashTracker` thành tracker trạng thái `file(hash) | directory | absent` cho **mọi**
+    path. Arm theo `journalId` trước publish; watcher gặp path pending phải chờ settle rồi resample.
+    Commit chọn after-state, rollback chọn before-state; trạng thái không xác định/lệch đi đường
+    external. Own `mkdir`/`rmdir`/delete không được phát giả event `source:"external"` rồi tự chặn undo.
+  - Sau khi xác nhận external, watcher gọi cả `ProjectPathInvalidator` và
+    `MutationObserverPort.observeExternalChange`; own-write echo không gọi observer. Hai fan-out đều
+    isolate lỗi để history/cache consumer hỏng không giết watcher.
+  - `fs.watch` filename phải qua `WorkspacePort` resolver/containment rồi mới thành canonical `RelPath`;
+    reject absolute/`..`/NUL/symlink escape, không `path.join` + cast thẳng trước khi hash/event/barrier.
+  - _Requirements: R5.1–5.3_ — _Design: §5.11, Decision 11_
+- [ ] 0.6a Thêm `CompositeStep` kind `write-staged` cho authored write
+  - Guard hiện tại (`authored writes cannot use a staged file source`) đổi thành: authored **chỉ** được staged qua `write-staged`, và hash phải khớp sau publish
+  - Step có `undoable` do Core use case đặt: asset upload chỉ create (`expectedContentHash:null`, false);
+    catalog/history cho phép create hoặc replace có precondition (true). Route không nhận
+    `sourcePath`/role/ref; chỉ use case nhận opaque `StagedFileSource` từ adapter port.
+  - Publish tái sử dụng/mở rộng `StagedAssetPort.stageFile → commit/cleanup`: O_NOFOLLOW + regular-file
+    + hash verify. Create dùng hard-link no-overwrite/EXDEV `COPYFILE_EXCL`; replace copy/link vào temp
+    cùng target directory rồi atomic swap dưới capture/rollback, không overwrite ngoài precondition.
+    `write-staged` yêu cầu parent directory đã tồn tại/contained và không tự `mkdir recursive`; caller
+    cần parent mới phải thêm step `mkdir` journaled đứng trước (catalog/rename/redo package).
+  - _Requirements: R5.4e_ — _Design: Decision 4_
+- [ ] 0.6b Chuyển toàn bộ hậu kiểm/cleanup staged và large-content store sang streaming
+  - Sửa `WorkspaceFs.readHash`, nhánh cleanup target của `AppDataAssetStager` **và**
+    `WorkspaceWatcher.observe` sang hash bằng stream; mở rộng `LargePreviousContentStore.put/read`
+    với file stream + verify hash (không `readFile` object lớn). Watcher mở no-follow, phân biệt regular
+    file/directory/absent. Tuyệt đối không `readFile()` asset lớn ở hậu kiểm/rollback/own-write
+    suppression; notification thư mục không được rơi vào vòng retry.
+  - _Requirements: R5.4e_ — _Design: Decision 4_
+- [ ] 0.7 `PendingMountTransition` bền từ `beginComposite`
+  - `beginComposite(..., pending?: open | close | reopen)` — `operationId` luôn ở top-level và ghi
+    vào cột `pending_transition`; `close.previousFailure` do Core lấy từ row (không từ client),
+    `reopen` mang `expectedSceneId` + failure cần restore và chỉ history inverse tạo.
+  - `open.record` gồm `assetPath`, `assetContentHash`, `uploadFingerprint`, at/track/project. Validate trước publish: path/hash đúng step `write-staged` cùng journal và fingerprint khớp canonical metadata + staged content hash; `close` khớp row uploaded; `reopen` khớp row mounted + scene. `mountedRevision` lấy từ revision commit, không nhận từ client.
+  - `commitComposite` đọc ý định đã bền và áp trong **cùng** transaction; `reconcileCompositeMutation` khi kết luận `committed` **cũng** áp lại
+  - _Requirements: R11.3b_ — _Design: §5.21, §6.5_
+- [ ] 0.8 Migration: bảng `pending_mount` + cột `pending_transition` — sinh bằng **`bun run db:generate`** (`drizzle-kit generate`), giữ file migration sinh ra trong diff; **không** viết SQL tay ngoài pipeline drizzle
+  - Cột/CHECK theo §6.4, gồm `asset_content_hash` + `upload_fingerprint`; index `(project_id, state)`
+    và `(state, updated_at)`; cặp `last_error_code`/`last_error_message` cùng null hoặc cùng có.
+    Thêm expression index trên `mutation_journal` để tra open `pending_transition.operationId` sau
+    khi row pending bị retention xoá; operation đã từng tồn tại không được mở lại như ULID mới.
+  - `mounted`: có scene+revision, không lỗi; `uploaded_unmounted`: không result, có thể có lỗi; `abandoned`: không result và bắt buộc có lý do.
+  - Generate bằng `bun run db:generate`, boot DB file thật hai lần; thêm migration vào `packages/adapter/src/runtime/packaged-runtime-manifest.ts` và artifact staging/smoke. **Không** đổi `workspace_operation`.
+  - _Requirements: R11.3b_ — _Design: §6.4, §6.5_
+- [ ] 0.9 Bổ sung contract/error mapper và production wiring
+  - Tạo `packages/contracts/src/editing.ts`, export ở `index.ts`; HTTP/MCP sẽ dùng chung schema. Thêm `InvariantViolated` (422), `IntegrityMismatch` (422) nếu chưa có; map `PreconditionRequired` thành 400, `TooLarge` 413, `UnsupportedMedia` 415 ở middleware.
+  - `WriteAuthorityDependencies` nhận observer; P0 cung cấp hằng no-op non-throwing ở Core để mọi CLI/test call site vẫn compile. Đây là wiring **tạm thời có tên**, không được còn ở production sau task 3.1d.
+  - Nối journal/pending-transition port mới ở `packages/cli/src/composition-root.ts`; `packages/cli/src/startup.ts` chạy reconcile đúng thứ tự trước khi nhận request.
+  - _Requirements: R3, R5, R9, R11_ — _Design: §4.5, §7, §8.1_
+- [ ] 0.10a Unit test contract thuần cho P0
+  - Unit: union receipt/content refs + ownership/release; 1.024 file nhỏ/receipt không vượt 256 KiB
+    inline và 50 receipt không vượt 12,5 MiB inline; `mkdir`/`rmdir` precondition, order, race cả
+    hai chiều; mkdir absent-vs-either, file/symlink collision và directory read guard; guard
+    `write-staged` create-vs-replace/undoable/opaque source; error mapping.
+  - _Requirements: R3.1, R3.5, R5.1–5.3, R11.3b_ — _Design: §5.5, §5.11, §8.1, §11.1_
+- [ ] 0.10b Integration test persistence/wiring cho P0
+  - Integration (SQLite **file thật** + fs tạm thật): resolve receipt `beforeContent/afterContent` ra
+    đúng bytes/hash sau `discardCaptures`; emit ném/reject ⇒ mutation vẫn `ok` + warning
+    `history-unavailable` + invalidate + không leak ref; migration/boot idempotent; composition root
+    resolve journal/pending/content port và observer seam.
+  - _Requirements: R3.1, R3.5, R11.3b_ — _Design: §5.5, §6.5, §11.2_
+- [ ] 0.10c Integration test staged write, watcher và invalidator cho P0
+  - `write-staged`: source symlink/non-regular/source đổi lúc copy/target race bị từ chối; giả lập EXDEV vẫn publish no-overwrite; post-publish + cleanup + watcher hash không gọi `readFile` và RSS giữ dưới gate P5.
+  - Watcher thật: own write/delete/mkdir/rmdir mỗi loại bị suppress đúng một lần; external file,
+    directory và delete phát event + gọi `ProjectPathInvalidator` và `observeExternalChange` đúng path;
+    không retry directory. External rename/delete thư mục cha phải barrier receipt guard file con;
+    path chung prefix nhưng khác segment (`assets/a`, `assets/ab`) không được conflict.
+  - Watcher filename absolute/traversal/NUL/symlink escape bị bỏ an toàn: không đọc ngoài project,
+    không event, không cache invalidation và không history barrier.
+  - Một invalidator consumer ném: mutation vẫn ok, ProjectCache + consumer sau vẫn được gọi, watcher
+    tiếp tục nhận event; có diagnostic nhưng không duplicate event/write.
+  - _Requirements: R3.1, R3.5, R5.1–5.3_ — _Design: §5.5, §5.11, §11.2_
+- [ ] 0.10d Integration test memory/ref lifecycle cho P0
+  - Payload staged/object 250 MiB và 50 receipt refs không làm heap tăng theo tổng bytes; evict/clear/
+    duplicate recovery release đúng ref, startup cleanup không xoá object journal/live-history còn dùng.
+  - _Requirements: R3.1, R3.5, R5.1–5.3, R11.3b_ — _Design: §5.5, §6.5, §11.2_
+- [ ] 0.10e Recovery/failure-injection test cho P0
+  - Failure injection ở từng ranh `capture → publish → commit → discard`; kill sau publish/trước commit ⇒ reconcile phát receipt cùng id và để record `uploaded_unmounted` đúng lý do, không ghi/rollback hai lần.
+  - Ép watcher observe trước settlement và sau commit/rollback: nó chờ tracker, suppress đúng
+    terminal state; settlement không xác định hoặc hash/state lệch phải phát external, không nuốt.
+  - _Requirements: R3.1, R3.5, R5.1–5.3, R11.3b_ — _Design: §5.5, §5.11, §6.5, §11.2_
+
+**Acceptance Criteria**:
+- [ ] Toàn bộ suite hiện có vẫn xanh (`bun run test`) — P0 là thay đổi contract, hồi quy là rủi ro chính
+- [ ] Một mutation composite ba file sinh **một** receipt với ba step
+- [ ] Receipt phát ở cả nhánh commit thường và nhánh reconciled-committed
+- [ ] Không có bảng nào ngoài `pending_mount` được tạo; lịch sử undo **không** chạm SQLite (L7)
+- [ ] Artifact staging fixture/manifest verifier tìm thấy migration mới và startup production test
+  reconcile được journal/pending transition; SEA binary thật được đóng ở P11, không chặn P0 vì thiếu runtime input ngoài spec
+- [ ] Own write/delete/mkdir/rmdir không bị watcher gắn nhãn external; file/directory đổi thật bên ngoài vẫn invalidates đúng path
+- [ ] Watcher chỉ phát canonical contained `RelPath`; filename không hợp lệ không được chạm filesystem ngoài project hay history
+- [ ] Receipt undoable lớn giữ content bằng leased object ref, không giữ toàn payload trong heap và không tạo persistence cho stack
+
+**Deliverables Created / Modified**: (điền khi thực thi)
+
+---
+
+## Phase 1: Kéo timing trên timeline (R1)
+
+**Addresses**: R1.1–1.13
+**Design reference**: §5.1, §5.2
+**Files affected**: `src/lib/studio/{editor-interaction.ts,snap.ts}`, `src/components/studio/timeline*.tsx`
+**Prerequisite**: P0 + P3 (`paths` và helper session-aware cho browser mutation)
+**Skill**: `.agents/skills/bun/SKILL.md`
+**Read first**: `src/components/studio/timeline-track.tsx`, `packages/core/src/usecase/project-writes.ts` (search `setSceneTiming`)
+
+**Tasks**:
+- [ ] 1.1 `snap.ts`: `snapToleranceSeconds` (8 px quy đổi theo zoom, kẹp `[1 khung, 0.5 s]`), `snapTime`, `roundToFrame`, `hitZone` (mép 8 px mỗi bên, **không quá 40 %** chiều rộng clip)
+  - _Requirements: R1.6, R1.6b, R1.7, R1.13_ — _Design: §5.2_
+- [ ] 1.2 `editor-interaction.ts`: reducer thuần cho phiên kéo — `beginDrag`/`moveDrag`/`commitDrag`, `Esc` huỷ, hiển thị mốc snap và số scene ripple
+  - `commitDrag` trả `null` khi không đổi gì ⇒ **không** gửi request
+  - _Requirements: R1.1–1.5, R1.8_ — _Design: §5.1_
+- [ ] 1.3 Nối timeline vào route 7.1 — một request khi thả, kèm `expectedContentHash`
+  - 409 hash lệch ⇒ giữ nguyên hiển thị, hiện "nguồn đã đổi" + hành động tải lại
+  - 422 vượt root ⇒ hiện lựa chọn `extendRoot`; 422 vượt `MAX_PROJECT_DURATION_SECONDS` ⇒ từ chối, không có lựa chọn nới
+  - _Requirements: R1.4, R1.9–1.11_ — _Design: §7.1, §8.1_
+- [ ] 1.4 Giữ form timing hiện có hoạt động song song
+  - _Requirements: R1.12_ — _Design: §5.1, §7.1_
+- [ ] 1.5 Unit test (node) cho `snap` và reducer; browser test kéo thân/kéo mép/Esc
+  - Ca biên bắt buộc: clip **20 px** (hit-zone còn thân để kéo), hai cận zoom
+  - _Requirements: R1.1–1.13_ — _Design: §9.1, §11_
+
+**Acceptance Criteria**:
+- [ ] Kéo phát **đúng một** request ghi (đếm lời gọi trong test)
+- [ ] Không ghi gì trong lúc kéo và khi thả về đúng chỗ cũ
+
+**Deliverables Created / Modified**: (điền đường dẫn thật, test và screenshot/evidence khi thực thi)
+
+---
+
+## Phase 2: Thứ tự scene + thao tác nhóm (R2, R12)
+
+**Addresses**: R2.1–2.12, R12.1–12.8
+**Design reference**: §5.3, §5.4, §7.2, §7.2b, §7.3, §7.4a/b
+**Files affected**: `packages/core/src/domain/plan-scene-order.ts`, `packages/core/src/usecase/{project-writes,reorder-scenes,move-scenes,delete-scenes,compact-track}.ts`, `packages/server/src/routes/project-writes.ts`, `src/lib/studio/editor-interaction.ts`, `src/components/studio/scene-storyboard.tsx`
+**Prerequisite**: P0 + P3 (cần history để chứng minh đúng một mục undo)
+**Skill**: `.agents/skills/bun/SKILL.md`
+**Read first**: `src/lib/studio/scene-order.ts` (FULL), `packages/core/src/domain/invariants.ts` (FULL), `packages/core/src/usecase/project-writes.ts` (FULL `createScene`), `packages/core/src/usecase/scene-deletion.ts` (search `prepareSceneDeletion`)
+
+**Tasks**:
+- [ ] 2.1 `plan-scene-order.ts`: `planReorder` (giữ gap), `planCompact`, `planGroupShift` (all-or-nothing), `planSceneInsertion`
+  - `toIndex` = vị trí **trong nhóm, trong track** — không phải chỉ số toàn timeline
+  - Nhóm content ↔ transition/overlay phân loại ở **Core** bằng `groupOf`, không ở UI
+  - Tách insertion/shift/root-duration logic từ `createScene`; `createScene`, catalog new-scene và
+    mount asset dùng chung planner rồi tự ghép đúng một composite, không gọi use case commit lồng nhau.
+  - _Requirements: R2.2, R2.3, R2.7, R7.3, R11.1, R12.4_ — _Design: §5.3_
+- [ ] 2.2 Use case `reorderScenes`, `compactTrack` (route riêng, **không** phải cờ), `moveScenes`, `deleteScenes`
+  - `deleteScenes` dùng `prepare → grant → execute` và `backup: true`; execute nhận lại
+    `{sceneIds,expectedRevision,grantId}`, re-plan + reserve như `deleteScene` hiện có; xoá cả file scene + sidecar
+  - `sceneIds` bắt buộc non-empty/unique; duplicate ⇒ `DuplicateMutationTarget`, zero plan/write.
+  - _Requirements: R2.4, R2.3, R12.4, R12.5_ — _Design: §5.4, §7.4a/b_
+- [ ] 2.3 Route 7.2, 7.2b, 7.3, 7.4a, 7.4b
+  - _Requirements: R2, R12_ — _Design: §7_
+- [ ] 2.4 UI: kéo-thả storyboard + timeline; vùng chọn (`Shift` cùng track, `Shift` khác track ⇒ anchor mới, `Cmd/Ctrl` thêm-bớt, marquee); kéo nhóm với **anchor snap** và **ripple tắt**
+  - `Alt`/`Option` + mũi tên dịch scene; giữ focus + thông báo trợ năng sau khi sắp lại
+  - `Esc` bỏ chọn; hiện số clip đang chọn
+  - _Requirements: R2.1, R2.8–2.12, R12.1–12.3, R12.4b–4e, R12.7_ — _Design: §5.1_
+- [ ] 2.5a Unit/integration: planner gap, ranh giới nhóm, all-or-nothing; đếm **một** mutation và **một** mục undo cho xoá nhóm
+  - _Requirements: R2, R12_ — _Design: §5.3, §5.4, §11, §17_
+- [ ] 2.5b Browser: storyboard/timeline kéo-thả, vùng chọn, kéo nhóm, xoá nhóm và bàn phím/focus/announcement
+  - _Requirements: R2, R12_ — _Design: §5.1, §5.4, §11, §17_
+
+**Acceptance Criteria**:
+- [ ] Thứ tự sau khi thả trùng thứ tự cũ ⇒ không ghi
+- [ ] Storyboard và timeline đánh số từ **cùng** `splitScenes`
+- [ ] Chồng lấn trong track là **diagnostic**, không phải lỗi chặn
+
+**Deliverables Created / Modified**: (điền đường dẫn thật, test và browser evidence khi thực thi)
+
+---
+
+## Phase 3: Undo/redo (R3)
+
+**Addresses**: R3.1–3.9
+**Design reference**: §5.6, §5.7, §7.5, §7.6
+**Files affected**: `packages/server/src/service/mutation-history.ts`, `packages/core/src/usecase/apply-mutation-inverse.ts`, `packages/cli/src/{composition-root.ts,startup.ts,next-host.ts}`, `packages/server/src/{app.ts,routes/*}`, `src/lib/{api/services.ts,studio/ids.ts}`, `src/components/studio/*`
+**Prerequisite**: P0
+**Skill**: `.agents/skills/bun/SKILL.md` + `.agents/skills/hono/SKILL.md` — test, middleware, header
+**Read first**: P0 deliverables; `createInfrastructure`/`createApplication` trong `packages/cli/src/composition-root.ts`; startup trước listener; `projectWrites` + `createServerApp` wiring trong `packages/cli/src/next-host.ts`; `packages/server/src/routes/project-writes.ts` (FULL)
+
+**Tasks**:
+- [ ] 3.1a `MutationHistory` khoá `(studioSessionId, projectId)`, 50 mục và hiện thực reservation của `MutationObserverPort`
+  - Public method khớp port Core chính xác: `claimHistoryOperation`/`abortHistoryOperation`/
+    `blockHistoryOperation`/`emit`/`observeExternalChange` + `invalidateProject`; không tạo adapter khác tên. Push khi
+    `historyAction === "record"` và undoable.
+  - `begin(direction)` cấp reservation `{operationId,targetReceiptId}`; chỉ một pending/committing mỗi
+    stack. Claim ngay trước publish; emit undo/redo atomically move receipt gốc rồi release receipt
+    nghịch đảo. Cancel/rollback trả stack nguyên trạng; clear/dispose defer nếu đã committing.
+    Claim recheck target còn top + attachment + barrier **đúng direction**; redo-only barrier không
+    huỷ undo reservation an toàn và ngược lại.
+  - Inverse receipt đã claim không tự barrier target/entry cũ của stack sở hữu; nó vẫn barrier session
+    khác. Record mới cùng stack dùng LIFO/branch-cut, không tự block entry cũ.
+  - _Requirements: R3.1, R3.5, R3.9_ — _Design: §5.6_
+- [ ] 3.1b Barrier ownership/dependency có hướng cho history
+  - Receipt không được push vào stack (khác phiên/nguồn, `ignore`, hoặc `record` non-undoable kể cả
+    cùng phiên) dùng hai primitive segment-safe: `ownedOverlap(A,B)` đối xứng equal/ancestor và
+    `invalidates(changed,guards)` có hướng, chỉ true khi changed path bằng/là ancestor của guard path.
+    `undoBlocked = ownedOverlap(old.paths,incoming.paths) || invalidates(old.paths,incoming.readGuards)`;
+    `redoBlocked = ownedOverlap(old.paths,incoming.paths) || invalidates(incoming.paths,old.readGuards)`.
+    Child/sibling đổi dưới directory-existence guard không block sai; dependency edit không block undo
+    mount chỉ-đọc nhưng block redo.
+  - `observeExternalChange(projectId,paths)` không push entry: block undo bằng ownership overlap;
+    block redo thêm `invalidates(external.paths,old.readGuards)`, không giả external event có read guard.
+    Áp lên mọi stack live với reason `source-changed-externally`. Chỉ watcher gọi sau own-write
+    suppression; không suy lại từ SSE và không cho `WriteAuthority` gọi đường này.
+  - Barrier gắn từng entry ở cả undo/redo stack; chỉ top bị đánh dấu mới block hướng đó. State trả
+    `undoBlocked/redoBlocked` + reason riêng; entry sạch phía trên vẫn áp được, không xoá/nhảy entry sâu.
+  - Step/read-guard precondition lệch trước publish ⇒ `WriteAuthority.blockHistoryOperation` settle
+    reservation và mark đúng target/direction `source-changed-externally`; route cancel sau đó no-op.
+    Không chờ watcher debounce mới disable nút.
+  - _Requirements: R3.5–R3.5b_ — _Design: §5.6, §5.7_
+- [ ] 3.1c Attachment lifecycle, invalidation và ownership của content refs
+  - Receipt UI chỉ push khi studio ID đang attach đúng auth session/project. Startup recovery với
+    session cũ chưa attach không được dựng lại stack; release refs và chỉ barrier stack live giao path.
+  - `invalidateProject` non-throwing; emit lỗi sau commit phải settle/hủy reservation, block project
+    và release refs sau operation committing, không để `busy`/lease treo.
+  - `attach/detach` bind studio ID với browser auth session + project; detach explicit clear sau
+    operation committing. SSE attachment đếm lease; chỉ stream cuối disconnect mới đặt grace 30 s,
+    reconnect cancel timer. Explicit DELETE revoke generation; SSE reconnect không resurrect, chỉ
+    POST attach lại được với stack rỗng. Live attachment không TTL.
+  - Nhận `UndoContentPort`; ignore/non-undoable/id trùng/redo branch-cut/mục 51/clear/dispose release
+    refs đúng một lần. Stack chỉ giữ metadata + refs trong memory, không persist/reconstruct từ objects.
+  - _Requirements: R3.1, R3.5, R3.9_ — _Design: §5.6_
+- [ ] 3.1d Production lifecycle/wiring cho đúng **một** `MutationHistory` mỗi daemon/workspace foundation
+  - `createInfrastructure` dựng singleton trước `createApplication` và trước startup reconcile; `WriteAuthority` nhận chính object đó làm observer.
+  - `WorkspaceWatcher` nhận chính observer singleton đó; external event gọi `observeExternalChange`,
+    còn own-write echo đã suppress không được chạm history. Không dựng observer phụ chỉ cho watcher.
+  - `next-host.ts` truyền **cùng object identity** vào `/undo`, `/redo`, `/history`; không `new MutationHistory()` trong route/app factory, không import Server từ Core.
+  - Workspace switch/dispose bỏ history cũ; CLI/MCP headless vẫn dựng observer để receipt recovery/invalidations an toàn. Xoá no-op production wiring của P0.
+  - _Requirements: R3.1, R3.5, R3.8_ — _Design: §4.5, §5.5, §5.6_
+- [ ] 3.2 `applyMutationInverse` ở Core
+  - Undo resolve `beforeContent`, redo resolve `afterContent`; object ref đi internal `write-staged`
+    theo stream, inline đi `write`; step thư mục đảo phép **và đảo thứ tự**, precondition **theo hướng** (bảng §5.7)
+  - Kiểm hash từng path **trước khi ghi gì**; lệch ⇒ `WriteConflict` + `details.blockedBy`
+  - Entry có step `delete` ⇒ `backup: true`
+  - Step `pending-mount`: undo close ⇒ reopen cùng composite và restore failure; redo ⇒ close theo
+    scene/revision mới. Không được để row mounted trỏ scene đã bị undo.
+  - Entity step undoable đảo toàn before/after state với revision/hash precondition; standalone
+    preview-settings vẫn false. Delete scene có cleanup settings phải còn đúng một mục undo.
+  - _Requirements: R3.2–3.5, R3.5b_ — _Design: §5.7_
+- [ ] 3.3 Route 7.5 (`/undo`, `/redo`) và 7.6 (`/history`) — **bắt buộc** header `x-vidcom-studio-session`, thiếu ⇒ 400
+  - `/history` trả `{canUndo,canRedo,busy,depth,nextUndoLabel,nextRedoLabel,undoBlocked,redoBlocked,
+    undoBlockedReason,redoBlockedReason}`; mỗi hướng lấy barrier đúng top entry.
+  - Undo/redo dùng `begin` rồi truyền operation vào `MutationOrigin`; không có `peek → await apply →
+    commit` ở route. Nhánh không commit luôn `cancel` trong `finally`; operation đồng thời trả 409.
+  - Route 7.6b POST attach/DELETE detach; mọi browser mutation/history kiểm ID đã attach đúng auth
+    session/project. SSE dùng cùng ID, disconnect schedule grace; unknown/cross-project ID ⇒ 400 zero write.
+  - Mọi route ghi từ browser (không riêng history) validate cùng header và dựng `origin.kind="ui"`; nhãn do route/use case định nghĩa, payload không điều khiển origin/history.
+  - Xoá bridge `UNTRACKED_UI_ORIGIN` của P0; test/`rg` chứng minh production server không còn
+    `historyAction:"ignore"` cho browser write và không có đường browser mutation bỏ qua helper header.
+  - _Requirements: R3.7, R3.8_ — _Design: §7.5, §7.6_
+- [ ] 3.4 UI: nút undo/redo hiện nhãn thao tác; khi top của hướng đó bị block hiện lý do + hai lối
+  thoát (tải lại nguồn / giữ nguyên); nói rõ lịch sử theo **phiên**
+  - `src/lib/studio/ids.ts` sinh ULID chuẩn Crockford từ Web Crypto + timestamp, không thêm runtime dependency; cùng helper dùng lại cho pending-mount `operationId`. `packages/contracts/src/editing.ts` là validator ULID duy nhất.
+  - Sinh `studioSessionId` một lần cho mỗi composer/project mount bằng `useRef`; gửi header trong **mọi** browser mutation; không persist vào storage, reload tạo id mới.
+  - Await attach trước khi enable write/SSE; unmount/pagehide gọi detach best-effort. Reconnect SSE trong
+    cùng page tái dùng ID nên không mất stack trong grace.
+  - _Requirements: R3.5b, R3.7, R3.8_ — _Design: §5.6, §7.5, §7.6_
+- [ ] 3.5 **Không** phát hành tool MCP undo/redo
+  - _Requirements: Deferred D7_ — _Design: Decision 12_
+- [ ] 3.6a Unit/integration: stack 50 mục/cắt redo; undo file tạo/thay thế + backup; receipt recovery trùng id; path giao/không giao giữa hai phiên
+  - Thiếu/sai header ⇒ 400 và không ghi; ULID fixed-vector/invalid alphabet/clock+random seam;
+    production test chứng minh observer và route history cùng object/hành vi. Startup recovery trước
+    attach **không** tái tạo stack cũ; recovery cùng daemon với attachment live vẫn hoàn tất đúng stack.
+  - Ref-count test cho ignore/id trùng/branch-cut/eviction/clear; redo package staged lớn sau catalog
+    cache eviction vẫn đúng bytes và RSS không tăng theo payload.
+  - Race barrier: hai undo đồng thời; mutation cùng phiên/khác phiên chen trước claim; clear/dispose
+    khi pending và khi committing; failure trước publish, rollback, reconcile-committed. Project và
+    stack phải cùng kết quả, inverse refs release đúng một lần, không có cửa sổ commit-stack ở route.
+    Incoming chỉ bật barrier hướng đối diện không làm claim hiện tại fail.
+  - _Requirements: R3_ — _Design: §5.6, §5.7, §11, §17_
+- [ ] 3.6b Unit/integration: synchronous block, directional barrier và failure sau commit
+  - Precondition lệch trước watcher event phải gọi block operation đúng một lần, `busy=false`, top
+    giữ nguyên nhưng direction bị block và UI có đúng hai escape paths; retry không lặp 409 với nút bật.
+  - Ép `emit` fail sau commit: mutation vẫn thành công + warning, mọi stack project bị block,
+    reservation/busy/ref-count về trạng thái ổn định.
+  - _Requirements: R3_ — _Design: §5.6, §5.7, §11, §17_
+- [ ] 3.6c Unit/integration: directional barrier matrix và entry sâu
+  - Delete scene có entity cleanup vẫn undo/redo cả source + preview settings trong một entry; thay
+    preview settings độc lập không vào history nhưng block receipt cũ giao backing path; nonundoable
+    same-session file mutation cũng là barrier. Test ownership-vs-guard có hướng: receipt catalog reuse
+    mới block undo entry cũ sở hữu file shared; external edit dependency không block undo mount chỉ đọc
+    nhưng block redo của nó; thêm sibling dưới directory guard không block, xoá/rename chính directory
+    hoặc ancestor vẫn block.
+  - Mark barrier ở entry thứ hai khi top còn sạch: undo top thành công, sau đó entry thứ hai mới block;
+    phủ tương tự redo và reason riêng cho hai hướng, không clear/skip entry sâu.
+  - Undo/redo một entry không tự đánh dấu barrier cho phần stack cùng session vừa được khôi phục, nhưng
+    inverse receipt vẫn đánh dấu entry giao path của session khác.
+  - _Requirements: R3_ — _Design: §5.6, §5.7, §11, §17_
+- [ ] 3.6d Browser: undo/redo labels và blocked escape paths; hai tab tách session; reload trang ⇒ lịch sử rỗng
+  - Chứng minh reload/unmount release refs stack cũ sau detach/grace; transient SSE reconnect <30 s
+    giữ stack; hai SSE stream overlap thì stream cũ đóng không clear stream mới; spoof ID từ auth
+    session/project khác bị từ chối. Sau explicit detach + POST attach lại cùng ID, close event từ
+    generation SSE cũ không được decrement/clear attachment mới.
+  - _Requirements: R3_ — _Design: §5.6, §7.5, §7.6, §11, §17_
+
+**Acceptance Criteria**:
+- [ ] Undo một mutation composite hoàn tác **mọi** file của nó, không hoàn tác một phần
+- [ ] Undo bị chặn ⇒ **không ghi gì** và stack giữ nguyên
+- [ ] Production không còn dùng no-op observer; một receipt phát trong `WriteAuthority` nhìn thấy ngay ở `/history` của đúng session
+- [ ] Production không còn `UNTRACKED_UI_ORIGIN`; mọi browser mutation thiếu/sai session header trả 400 trước khi ghi
+- [ ] Mục 51/clear/reload/duplicate receipt giải phóng content refs; reload không thể dựng lại stack từ object store
+
+**Deliverables Created / Modified**: (điền đường dẫn thật, focused test và integration evidence khi thực thi)
+
+---
+
+## Phase 4: Preview `PlayerHost` + double-buffer (R4)
+
+**Addresses**: R4.1–4.7
+**Design reference**: §5.8, §5.9, Decision 6
+**Files affected**: `src/components/studio/{player-host.tsx,preview-buffer.ts}`, `packages/adapter/src/hyperframes/{document.ts,preview-style.ts}`, `packages/core/src/usecase/project-reads.ts`, `packages/worker/src/render-job.ts`, `packages/server/src/routes/project-reads.ts`
+**Prerequisite**: P0 + P3 (`paths` và cùng session/origin cho các mutation kích reload)
+**Skill**: `.agents/skills/bun/SKILL.md`
+**Read first**: `src/components/studio/use-hyperframes-player.ts` (FULL), `packages/adapter/src/hyperframes/document.ts` (FULL), `spikes/phase-5/run-spike-5.mjs` (FULL — `waitHealthy` và `reload` là bản mẫu **đã đo**, port thẳng chứ đừng phát minh lại)
+
+**Tasks**:
+- [ ] 4.1 Bắt buộc `DocumentOptions.mode: "preview" | "render"` tại mọi call site của document builder
+  - Dùng discriminated union: `preview` bắt buộc `projectRevision + changeSeq`, `render` cấm hai field đó.
+    `getProjectPreview` truyền preview+revision; preflight/worker/render/snapshot truyền render;
+    compile/test chứng minh không còn default/global ngầm.
+  - `buildHealthCollectorScript()` được preview builder tiêm **ngay sau `<head>`**, trước mọi script tác giả; **không** tái sử dụng `injectRuntimeAssetGuardDocument` vì guard đó thuộc render/snapshot path.
+  - Ghi `window.__vidcomHealth = {scriptErrors, rejections, resourceErrors}`; listener `error` ở pha capture phân biệt lỗi tài nguyên với lỗi script
+  - **Chỉ tiêm cho preview**, không cho render
+  - _Requirements: R4.6_ — _Design: §5.9_
+- [ ] 4.2 Route preview trả `Cache-Control: no-store`
+  - `getProjectPreview` đọc project revision + latest project outbox seq trước build, tiêm cả hai vào
+    health collector và trả `X-Vidcom-Project-Revision` + `X-Vidcom-Change-Seq`; changeSeq từ collector
+    là nguồn quyết định swap vì external watcher không tạo project revision. Project chưa có event dùng
+    changeSeq 0; seq global của project khác không được lọt vào preview này.
+  - _Requirements: R4.1b_ — _Design: §5.8_
+- [ ] 4.3a `preview-buffer.ts`: state machine/health/reload engine đệm thuần điều phối
+  - Trình tự đúng: dựng đệm `opacity: 0` phía sau → chờ health (`ready && timeline && scenesLoaded && collectorSeen` + **cửa sổ im lặng 150 ms**, hết hạn **2.5 s**) → **lấy mẫu transport tại thời điểm này** → `seek(min(time, duration mới))` + khôi phục `rate`/`muted`/play → đổi hiển thị → gỡ engine cũ
+  - Health không đạt ⇒ **gỡ đệm**, giữ engine đang chiếu, báo lỗi kèm `PreflightHealth`
+  - Coordinator latest-wins: `desiredChangeSeq` tăng đơn điệu + generation token; coalesce HTTP/SSE
+    trùng seq; tối đa một candidate; seq mới dispose candidate cũ. Mọi continuation sau
+    `await` kiểm generation/project token nên completion/error cũ chỉ cleanup, không swap/ghi đè lỗi.
+    Track `visibleChangeSeq`; swap candidate D>C advance cả visible/desired tới D, nên SSE D tới sau
+    không reload lại tài liệu đang hiển thị.
+  - _Requirements: R4.1, R4.1a, R4.1b, R4.2, R4.2c, R4.3_ — _Design: §5.9_
+- [ ] 4.3b `PlayerHost` giữ danh tính/transport và nối mọi reload vào state machine 4.3a
+  - `requestReload({url,targetChangeSeq})`; candidate chỉ swap khi collector báo
+    `changeSeq >= targetChangeSeq`; stale chỉ retry một lần/generation rồi báo `preview_stale`, giữ
+    engine cũ. Không để lifecycle React theo `previewUrl` remount host; đổi
+    project/unmount abort health wait và cleanup candidate + visible engine đúng một lần.
+  - _Requirements: R4.1–R4.4_ — _Design: §5.8, §5.9_
+- [ ] 4.4 `previewUrl` bỏ `?r=`; mọi thay đổi (kể cả preview settings) đi qua buffer
+  - Cùng URL sau mutation phải trả revision/nội dung mới và `Cache-Control: no-store`; không cache nội bộ theo URL cũ.
+  - _Requirements: R4.5_ — _Design: §5.8, §5.9, Goals bản 7_
+- [ ] 4.5 Ghi từ ngoài qua SSE dùng **cùng** đường buffer
+  - External file/preview-settings edit có project revision không đổi vẫn reload vì SSE seq tăng.
+  - _Requirements: R4.7_ — _Design: §5.8, §5.9_
+- [ ] 4.6a Unit/integration document mode: preview collector đứng trước script tác giả; render **không** có collector; project chưa event = seq 0 và project khác không ảnh hưởng; cùng URL/no-store trả content/changeSeq mới
+  - _Requirements: R4_ — _Design: §5.9, §11_ — _Evidence: S-P17…S-P20_
+- [ ] 4.6b Browser test theo bốn probe đã đo: transport đầy đủ (0 khung, rate, muted) · buffer thiếu scene bị từ chối · clamp khi ngắn hơn · collector bắt lỗi script + 404
+  - Race test A/B/C liên tiếp: trì hoãn A để hoàn tất sau C, duplicate HTTP+SSE của B, và error A
+    đến muộn; chỉ C được swap/hiện trạng thái, tối đa một candidate, không reload trùng. Thêm đổi
+    project/unmount giữa health wait để chứng minh không late swap/leak engine.
+  - Candidate target C nhưng collector trả D>C: swap D đúng một lần, SSE D đến sau coalesce.
+  - _Requirements: R4_ — _Design: §5.9, §11_ — _Evidence: S-P17…S-P20_
+
+**Acceptance Criteria**:
+- [ ] `PlayerHost.id` không đổi qua nhiều lần ghi liên tiếp
+- [ ] Tài liệu mới hỏng ⇒ khung cuối **vẫn hiển thị**, engine cũ không bị gỡ
+
+**Deliverables Created / Modified**: (điền builder/call site, test và browser probe evidence khi thực thi)
+
+---
+
+## Phase 5: File, thư mục, asset, font (R5)
+
+**Addresses**: R5.1–5.9 (gồm 4b–4g, 6b–6d)
+**Design reference**: §5.10, §5.11, §5.12, §7.7–7.10
+**Files affected**: `llm-documents/steering/04-api-design.md`, `packages/core/src/port/ports.ts`, `packages/core/src/usecase/{ingest-asset,create-entry,rename-entry,delete-entry,apply-font}.ts`, `packages/core/src/domain/{magic-bytes,asset-names}.ts`, `packages/adapter/src/{fs/asset-staging.ts,media/probe.ts,hyperframes/{svg-sanitizer,safe-css}.ts}`, `packages/adapter/package.json`, `packages/server/src/{app.ts,routes/*}`, `packages/cli/src/{composition-root.ts,startup.ts}`, `src/components/studio/file-explorer.tsx`
+**Prerequisite**: P0 + P3 (`write-staged`, `mkdir`/`rmdir` và helper session-aware cho XHR/browser mutation)
+**Skill**: `.agents/skills/bun/SKILL.md` + `.agents/skills/hono/SKILL.md` — test và nhận body dạng stream
+**Read first**: `packages/server/src/app.ts` + `packages/server/src/routes/project-writes.ts` (body limit và route `assets/bgm`; **không** nhầm với `packages/core/src/usecase/project-writes.ts`), `packages/core/src/usecase/file-deletion.ts`, `packages/adapter/src/runtime/node-process-runner.ts`, `packages/adapter/src/hyperframes/{dom.ts,font-compatibility.ts}`, `packages/cli/src/composition-root.ts` (search `ffprobePath`)
+
+**Tasks**:
+- [ ] 5.0 Đồng bộ steering 04 §4 trước khi viết upload route: upload có thể là multipart **hoặc** raw
+  binary stream khi contract yêu cầu progress/cancel và payload lớn; vẫn bắt buộc schema metadata,
+  auth, body limit theo bytes thật và backpressure. Ghi rõ route R5 dùng
+  `application/octet-stream`/raw `File`, không biến ngoại lệ thành body không giới hạn.
+  - _Requirements: R5.4–5.5b_ — _Design: §5.10, §7.7 · Steering reconciliation_
+- [ ] 5.1 Core domain `detectAssetKind`/`matchesDeclaredKind`/`sanitizeFilename`/`resolveCollision` + Adapter `SvgSanitizerPort`
+  - Bảng giới hạn: ảnh 25 MB · video 500 MB · audio 100 MB · font 5 MB; allowlist đuôi theo Goals R5
+  - Adapter tái dùng `linkedom` hiện có qua `hyperframes/dom.ts`; Core chỉ phụ thuộc port, không import
+    Adapter/DOM package. Port nhận opaque `StagedFileSource`, không source path/raw client string. SVG
+    dùng DOM transform strict, không regex: reject DOCTYPE/entity; bỏ active/embed element + `on*`;
+    URL attr/CSS chỉ cho fragment `#id`. `<style>`/`style` dùng PostCSS + tokenizer value chung
+    **`packages/adapter/src/hyperframes/safe-css.ts`** (file mới của task này), bỏ `@import`/unsafe URL, không regex. Khai `postcss` direct đúng version transitive
+    đang resolve trong lock là **8.5.25** (upstream range `^8.5.8`), không thêm package tarball mới;
+    output parse lại được và sanitize lần hai byte-identical.
+  - _Requirements: R5.4, R5.4b–4e, R5.8_ — _Design: §5.12_
+- [ ] 5.2a `AssetStagingPort` + adapter staging theo luồng
+  - `open(ref,{filename,maxBytes})`; Core cộng dồn, adapter đếm/hash để staging không vô hạn.
+    `finalize` raw cho `requestContentHash`; non-SVG publish source này. SVG sanitizer adapter nhận
+    opaque staged source (≤25 MB, UTF-8 strict), trả clean string; Core mở writer thứ hai cho output,
+    finalize lấy `assetContentHash`, discard raw. `discard()` idempotent sau finalize tới settle;
+    mọi nhánh finally dọn source không publish. Raw SVG không được move.
+  - `discard()` trong `finally`; `.vidcom/tmp/` quét khi khởi động, xoá mục quá 24 giờ
+  - _Requirements: R5.4–5.5b_ — _Design: §5.10_
+- [ ] 5.2b `ingestAsset` + upload fingerprint/replay/pending-mount open
+  - Probe **sau** move, best-effort — thất bại ⇒ metadata `unknown`, upload vẫn 201
+  - `pendingMount?` chỉ có ở bước 1 của thao tác thả
+  - Parent `assets/` thiếu ⇒ thêm `mkdir either` trong cùng composite trước `write-staged`; staged
+    adapter không tự mkdir. Upload non-undoable giữ directory đã tạo.
+  - Tính `uploadFingerprint = sha256(canonicalJson({kind,filenameNfc,atSeconds,
+    trackIndex,requestContentHash}))` từ body gốc; `assetContentHash` lấy từ bytes cuối sau sanitize.
+    Hai SVG raw khác nhau nhưng output sạch giống nhau vẫn là payload khác. Exact POST replay cùng operation/fingerprint discard temp + trả kết quả
+    cũ, không move/revision; fingerprint khác ⇒ 409. Nếu row đã retention xoá nhưng journal từng thấy
+    operation ⇒ 404 trước mutation; không tái dùng id cũ.
+  - _Requirements: R5.4–5.7_ — _Design: §5.10_
+- [ ] 5.2c Media/font probe adapters + production composition-root/startup wiring
+  - Media adapter dùng `ProcessPort`/`NodeProcessRunner` với `binaries.ffprobePath` đã resolve trong composition root, không gọi binary qua ambient PATH; font adapter dùng dependency `fontkit` đã có, không thêm parser/runtime package.
+  - Composition root nối hai adapter; startup dọn staging >24 h trước khi serve, lỗi cleanup là diagnostic có cấu trúc chứ không chặn boot.
+  - _Requirements: R5.6–5.8_ — _Design: §5.10_
+- [ ] 5.3 CRUD file/thư mục ở Core: `createEntry`, `renameEntry`, `deleteEntry`
+  - Cây con nở thành **một** composite (`write-staged`/`delete` + `mkdir`/`rmdir`); xoá dùng `prepare → grant → execute`
+  - Execute delete lặp `{path,expectedRevision,grantId}`, re-enumerate/re-hash/re-plan rồi reserve;
+    không giữ plan/capability trong RAM giữa hai request.
+  - Rename/move không `readFile` cả cây: `WorkspacePort.openStagedSource(ref,path,expectedHash)` tạo
+    capability nội bộ no-follow/regular-file; plan là mkdir target → `write-staged` non-undoable cho
+    từng file (concurrency tối đa 8) → delete/rmdir source. Source chỉ xoá sau khi mọi target publish;
+    client không truyền `sourcePath`. Delete/backup/capture file lớn cũng đi object/file stream.
+  - Create folder và target dirs của rename dùng `mkdir absent`, không merge vào directory xuất hiện
+    do race. Rename file nhận expected hash; rename folder nhận `expectedTreeDigest` từ GET tree,
+    canonical theo ordered path/kind/hash. Re-enumerate no-follow; reject same/ancestor/descendant,
+    symlink/special file. Race sau digest check bị step/rmdir precondition dưới mutex bắt zero-write.
+  - _Requirements: R5.1–5.3_ — _Design: §5.11_
+- [ ] 5.4 `applyFont` — use case **tự đọc** family/style từ file font, **không** nhận từ client; font vào bộ chọn; preview và render dùng file trong project
+  - Không đọc được ⇒ giữ file, không hiện trong bộ chọn, nêu lý do
+  - Font name/style NFC ≤256 code point, reject control, serialize bằng `escapeCssString`; font RelPath
+    percent-encode từng segment. Không nối raw font metadata/path vào CSS/HTML.
+  - Thêm `{path:fontPath,state:file(fontContentHash)}` vào `historyReadGuards`: external delete không block undo gỡ
+    style nhưng block redo; redo recheck hash dưới mutex kể cả watcher chưa hết debounce.
+  - _Requirements: R5.6b–6d_ — _Design: §5.11_
+- [ ] 5.5 Route 7.7 (stream + metadata qua query), 7.8a–7.8d, 7.9, 7.10
+  - Trong dispatcher `bodyLimit` của `packages/server/src/app.ts`, bypass **chỉ** đúng method/path
+    `POST /api/v1/projects/:id/assets`, sau request-id/logger/Host/CORS/session auth; không nới/bỏ limit
+    cho route khác. Không thay bằng Hono `bodyLimit` 500 MB: khi thiếu `Content-Length` hoặc dùng
+    `Transfer-Encoding`, implementation hiện cài gom mọi chunk trước `next()`. Giới hạn theo kind do
+    Core + staging adapter cùng đếm. Không gọi `arrayBuffer()`/`text()` cho binary body; truyền
+    `ReadableStream` với backpressure và `c.req.raw.signal`.
+  - Request/response import từ `packages/contracts/src/editing.ts`; validate metadata all-or-none trước khi đọc body.
+  - _Requirements: R5_ — _Design: §7_
+- [ ] 5.6 UI: cây file có tạo/đổi tên/xoá; dropzone upload có tiến độ byte + huỷ; hiện metadata hoặc `unknown` kèm lý do
+  - Listener hiện là HTTP/1.1 nên **không** dùng browser `fetch` + request `ReadableStream`/`duplex:"half"` (Chromium từ chối trên HTTP/1.x). Dùng `XMLHttpRequest.send(file)` với raw `File`, không multipart/không `arrayBuffer`; `upload.onprogress.loaded / file.size` cho 0–90 %, 90–100 % chờ finalize/probe/response. `xhr.abort()` phải đóng request, kích `c.req.raw.signal`, dừng staging và dọn temp.
+  - Đặt `Content-Type: application/octet-stream`; server không tin media type này để phân loại mà
+    vẫn dùng kind đã validate + magic bytes/sanitizer. Không để browser tự đổi thành multipart.
+  - XHR gửi cùng cookie/session và `x-vidcom-studio-session` như mọi browser mutation; dùng helper session-aware chung từ P3, không mở client API thứ hai thiếu auth/precondition.
+  - _Requirements: R5.5, R5.5b, R5.6, R5.7, R5.9_ — _Design: §5.10, §7.7_
+- [ ] 5.7a Unit/HTTP contract: magic byte, SVG sanitize, tên/collision; containment (`../`, symlink, absolute) trên **mọi** route file mới; body limit route khác vẫn 1 MiB
+  - SVG cases: script/foreignObject/event attr, href/xlink/style `url()` mọi scheme, DOCTYPE/entity,
+    malformed, fragment local, idempotence. Font metadata cases: quote/backslash/newline/`}`/`url()`;
+    CSS parse lại chỉ có đúng một font-face + một local URL.
+  - SVG raw khác nhau nhưng sanitize cùng output phải có request fingerprint khác; asset hash giống.
+  - _Requirements: R5_ — _Design: §5.10–§5.12, §7, §11_
+- [ ] 5.7b Streaming integration: đúng **500 MB** được nhận, 500 MB + 1 byte và 512 MB bị 413 sớm; RSS đỉnh <64 MB; huỷ giữa chừng ⇒ `.vidcom/tmp` sạch; không gọi `arrayBuffer`
+  - Dùng SQLite file thật + temp fs thật; kiểm startup cleanup và AbortSignal/backpressure. Phủ cả
+    request có `Content-Length` và client chunked/no-content-length để chứng minh Hono body-limit không
+    buffer route upload; route JSON/file/BGM hiện hữu vẫn giữ limit cũ. Browser/listener test phải đi
+    qua `bindLoopback` HTTP/1.1 thật và XHR path, không chỉ `app.request()`.
+  - Replay cùng operation với bytes/metadata giống ⇒ không ghi lần hai; đổi một trong filename/kind/
+    at/track/bytes ⇒ 409 sau khi dọn temp. Row đã xoá do retention nhưng journal còn dấu ⇒ 404 và zero write.
+  - _Requirements: R5.4–5.5b_ — _Design: §5.10, §9.1, §11.2_
+- [ ] 5.7c Filesystem/font integration: đổi tên cây 200 file ⇒ một revision; ép lỗi file 100 ⇒ rollback; font probe/apply thật; composition-root wiring
+  - Dùng SQLite file thật + temp fs thật, không mock `node:fs`; cây có asset lớn và test RSS chứng
+    minh rename/delete/rollback không giữ tổng bytes trong heap, target/source không cùng tồn tại dở dang sau settle.
+  - Tree digest stale, target xuất hiện giữa plan/mutex, rename vào descendant, symlink/special entry
+    đều zero-write; `mkdir absent` không merge cây, `either` chỉ reuse directory thật.
+  - _Requirements: R5_ — _Design: §9.1, §11.2, §17_
+
+**Acceptance Criteria**:
+- [ ] Không lúc nào tồn tại file dở dang ở vị trí đích
+- [ ] Font hỏng ⇒ upload vẫn 201; chỉ `applyFont` mới 422
+
+**Deliverables Created / Modified**: (điền port/adapter/route/UI, migration nếu có và memory evidence khi thực thi)
+
+---
+
+## Phase 6: Caption (R6)
+
+**Addresses**: R6.1–6.14
+**Design reference**: §5.13, §5.14, §5.15, §7.11
+**Files affected**: `packages/core/src/domain/{models,plan-caption-cues}.ts`, `packages/core/src/usecase/generate-captions.ts`, `packages/adapter/src/hyperframes/{parse,sdk-ops,preview-style}.ts`, `packages/server/src/routes/*`, `src/components/studio/scene-narration.tsx`
+**Prerequisite**: P3 + P4 (session-aware mutation và script tiêm đi cùng đường dựng tài liệu preview)
+**Skill**: `.agents/skills/bun/SKILL.md`
+**Read first**: `packages/core/src/domain/word-timings.ts` (FULL), `packages/adapter/src/hyperframes/sdk-ops.ts` (FULL `applyCompositionOps`) + `parse.ts` (caller), `spikes/phase-5/fixture/index.html` (script caption **đã đo** — cách đọc `state.frame`, fps hữu tỉ, trừ `layerStart`)
+
+**Tasks**:
+- [ ] 6.1 `plan-caption-cues.ts` — planner thuần
+  - Rebase **một chỗ duy nhất**: `absolute = cue.start + word.startSeconds`
+  - Cắt cue: > 84 Unicode code point **hoặc** > 7 giây **hoặc** im lặng ≥ 0.6 giây; sàn 1.2 giây theo thang ưu tiên gộp → kéo dài trong chỗ trống → **kẹp**; không gộp qua ranh giới narration cue; không chồng, không vượt `sceneEnd`. Cue text canonical = spoken words join bằng một U+0020, punctuation giữ trong token.
+  - _Requirements: R6.2–6.5_ — _Design: §5.13_
+- [ ] 6.2 `generateCaptions` — thay **trọn** khối `.captions` trong một mutation; scene không có narration ⇒ **422**
+  - Thêm structured `CompositionOp.replaceCaptions {target,cues,timingSource}`. Core chỉ truyền model;
+    Adapter `applyCompositionOps` thay block và dựng node bằng DOM `textContent`/`setAttribute`, word/cue
+    là text thuần, timing finite. Không Core string concat/import `linkedom`, không raw markup transport.
+  - _Requirements: R6.1, R6.10, R6.13_ — _Design: §5.15_
+- [ ] 6.3 Markup: `<span class="w" data-start data-end>` với mốc **tuyệt đối theo scene**; `data-caption-timing="engine|estimated"`
+  - _Requirements: R6.6, R6.7_ — _Design: §5.14_
+- [ ] 6.4 `buildCaptionRuntimeScript()` — đọc `{source:"hf-preview", type:"state", frame}`, `fps` **hữu tỉ** `{numerator, denominator}`, và trừ `data-start` của layer chứa span
+  - `subtitles.activeColor` từ preview settings
+  - _Requirements: R6.8_ — _Design: §5.14_
+- [ ] 6.5 Stale: sửa script ⇒ đánh dấu stale, **không** tự chạy TTS; UI cảnh báo nhịp có thể sai
+  - Đường đánh dấu nằm trong use case ghi narration/source và sidecar caption, không dựa riêng vào component state; reload/SSE vẫn đọc được stale từ source.
+  - _Requirements: R6.11, R6.12_ — _Design: §5.13, §5.15_
+- [ ] 6.6a Unit/integration: planner bốn ngưỡng, kẹp, đa cue, rebase; generate thay trọn block và stale persistence
+  - Payload độc hại `</span><script>`, entity, bidi/control vẫn round-trip thành text và không tạo
+    node/attribute thực thi; timing NaN/Infinity bị từ chối trước serialize. `p.textContent` khớp cue
+    text, có khoảng trắng giữa từ và không sinh khoảng trắng sai quanh punctuation attached.
+  - _Requirements: R6.14_ — _Design: §5.13–§5.15, §11, §17_
+- [ ] 6.6b Browser: highlight khi phát/seek/đổi tốc độ và scene `start ≠ 0`; chuẩn bị fixture parity preview ↔ render ba mốc cho P11.2
+  - _Requirements: R6.8, R6.14_ — _Design: §5.14, §11, §17_
+
+**Acceptance Criteria**:
+- [ ] Sinh lại caption không để sót cue cũ
+- [ ] Preview và render cho cùng nhịp highlight
+
+**Deliverables Created / Modified**: (điền planner/use case/runtime/markup, test và parity evidence khi thực thi)
+
+---
+
+## Phase 7: Dải thumbnail trên clip (R10)
+
+**Addresses**: R10.1–10.9
+**Design reference**: §5.20, §7.15
+**Files affected**: `llm-documents/steering/{04-api-design,08-jobs-and-queue}.md`, `packages/core/src/port/ports.ts` (`CompositionDependencyPort`, `ThumbnailPort`, `ProjectPathInvalidator`), `packages/core/src/usecase/timeline-thumbnails.ts`, `packages/adapter/{package.json,src/hyperframes/{dependency-graph.ts,snapshot-thumbnail.ts}}`, `packages/adapter/src/cache/thumbnail-cache.ts`, `packages/adapter/src/fs/watcher.ts`, `packages/cli/src/composition-root.ts`, `packages/server/src/routes/*`, `src/components/studio/timeline-elements.tsx`
+**Prerequisite**: P0 + P4 + P5 (`paths`, renderer/document path và safe-CSS tokenizer)
+**Skill**: `.agents/skills/bun/SKILL.md` + skill global `hyperframes-cli` nếu harness có (resolve qua skill catalog, **không** hard-code đường dẫn home). Harness **không** có skill đó ⇒ không phải blocker: đọc `packages/adapter/src/hyperframes/*` và `node_modules/hyperframes` để lấy hành vi CLI, ghi `NOT AVAILABLE` vào Execution Log rồi tiếp tục
+**Read first**: `packages/worker/src/snapshot-job.ts` (FULL — batch `--at`, AbortSignal và staging hiện có), `packages/adapter/src/hyperframes/{parse.ts,dom.ts}` (FULL — parser **chưa** thu `@import`, `url()`, font, module import, đệ quy), `packages/adapter/package.json` + `node_modules/@hyperframes/parsers/package.json` (acorn versions đã có)
+
+**Tasks**:
+- [ ] 7.0 Đồng bộ steering 04 §6 và steering 08 trước khi viết route thumbnail: phân biệt
+  `snapshot` artifact bền (job) với batch thumbnail timeline derived-cache tương tác. Ngoại lệ chỉ
+  hợp lệ khi có giới hạn 256 mốc, scheduler daemon 2 active/8 queued, AbortSignal xuyên suốt,
+  capacity failure hữu hạn, không ghi project và không tạo artifact trong `snapshots/`.
+  - _Requirements: R10.5–R10.9_ — _Design: §5.20, §7.15 · Steering reconciliation_
+- [ ] 7.1a `CompositionDependencyPort` — graph HTML/CSS/JS/font đệ quy, canonical và phát hiện chu trình
+  - Adapter thu HTML `src`/`href`; CSS dùng PostCSS + tokenizer value `packages/adapter/src/hyperframes/safe-css.ts` (deliverable P5) cho
+    `@import`/`url()` + font; JS AST bằng
+    `acorn`/`acorn-walk` cho static import/export-from, literal `import()` và `new URL(...,import.meta.url)`.
+    Khai direct `acorn` **8.18.0** + `acorn-walk` **8.3.5** đúng resolution trong lock; không phantom
+    import/package copy mới.
+    Parse fail hoặc gặp dependency động không chứng minh được (`import(expr)`, URL runtime) ⇒
+    `dependency_graph_unavailable` + placeholder; CSS `var()`/custom property có thể cấp URL mà không
+    resolve tĩnh chắc chắn cũng fail-closed. Không cache fingerprint thiếu/không fallback
+    project-wide. Đường ngoài project
+    không vào fingerprint project; watcher invalidation xoá memo graph cho path đổi ngoài app.
+  - Tham chiếu project đang thiếu vẫn trả path + trạng thái `missing`; file xuất hiện sau đó phải làm fingerprint đổi. Rename/delete invalidates cả path cũ lẫn mới.
+  - _Requirements: R10.6_ — _Design: §5.20_
+- [ ] 7.1b Nối invalidation dependency/thumbnail vào single-writer và watcher
+  - Nối `ProjectPathInvalidator` của P0 tại composition root: một fan-out gọi `ProjectCache` và
+    dependency/thumbnail invalidator. Commit trong `WriteAuthority` và external event từ
+    `WorkspaceWatcher` phải đi cùng seam; không instrument SSE/route và không import Server từ Core/Adapter.
+  - Invalidation dùng overlap equal/ancestor theo segment, nên đổi/xoá directory cha invalidates scene
+    có dependency con; common prefix khác segment không trượt nhầm cache.
+  - _Requirements: R10.6_ — _Design: §5.20_
+- [ ] 7.2a Contract `ThumbnailPort.renderBatch(ref, keys, signal)` + fingerprint/profile của `ThumbnailService`
+  - `fingerprint = sha256(hash scene + ordered(path,state,hash) phụ thuộc + hồ sơ render)`;
+    `atSeconds` scene-local, tâm `(i+.5)*duration/count`, lượng tử `round(t*fps)/fps` và clamp frame cuối.
+  - Public chỉ nhận enum `timeline-v1`; daemon resolve profile: fit aspect project vào box 160×160
+    physical px (round, min 1) + fps/runtimeDigest/rendererVersion. Client không gửi dimension/digest;
+    profile khác ⇒ 400. Render key hash canonical JSON `{fingerprint,atSeconds,resolvedProfile}`.
+  - **Tính lại fingerprint trước khi ghi cache**; lệch ⇒ vứt kết quả, xếp lại
+  - _Requirements: R10.6, R10.7_ — _Design: §5.20_
+- [ ] 7.2b Batch renderer + scheduler hữu hạn
+  - Một POST route gọi đúng **một batch** cho một scene/profile theo mẫu `snapshot-job.ts` (`hyperframes snapshot --at ...`), không coalesce mơ hồ giữa request có AbortSignal khác và không spawn process từng ô. Chỉ tái sử dụng builder/process pattern: **không** enqueue snapshot job, không ghi `snapshots/` vào project/revision. PNG temp ở app-data đổi sang WebP bằng `binaries.ffmpegPath`; không ambient PATH/dependency mới.
+  - Scheduler hữu hạn toàn daemon: tối đa 2 batch chạy + 8 batch chờ; một queued batch cho mỗi
+    `(project,scene,profile)`, request mới supersede queued request cũ; abort xoá queue ngay. Batch
+    tối đa 256 mốc unique. Queue đầy trả failure `thumbnail_capacity`, không tạo promise/process mới.
+    Fingerprint đổi sau render chỉ retry một lần khi generation còn hiện hành, lần hai trả
+    `source_changing`, không requeue vô hạn.
+  - _Requirements: R10.5–R10.8_ — _Design: §5.20_
+- [ ] 7.2c `ThumbnailCacheAdapter` có namespace project và budget toàn daemon
+  - `ThumbnailCacheAdapter`: namespace đĩa `<app-data>/cache/thumbnails/<sha256(projectId)>/`, `renderKey = sha256(canonicalJson({fingerprint,atSeconds,profile}))`, LRU tổng 512 MB + memory 128 ảnh, tmp+rename; API `get/put(projectId,key)` không đọc chéo project.
+  - _Requirements: R10.6, R10.7_ — _Design: §5.20_
+- [ ] 7.3 Route 7.15 — NDJSON, mỗi dòng `{atSeconds, status, url?, reason?}`; ảnh phục vụ qua route riêng, `Cache-Control: immutable`; `AbortSignal` đi **suốt chuỗi** tới tiến trình snapshot
+  - POST kiểm scene thuộc project. GET chỉ nhận key `/^[0-9a-f]{64}$/`, gọi cache bằng `(projectId,key)` và trả 404 cho namespace khác; không ghép input thô vào path.
+  - Disconnect kill tiến trình thật và không ghi cache dở; placeholder reason dùng error code ổn định từ contract chung.
+  - Schema từ chối batch trộn scene/profile, quá 256 mốc hoặc trùng mốc; output đúng một dòng cho mỗi
+    mốc theo thứ tự request, kể cả `thumbnail_capacity`/`source_changing`/
+    `dependency_graph_unavailable`.
+  - Từ chối NaN/Infinity/âm/ngoài duration; scene `start ≠ 0` vẫn render local time, UI không cộng start.
+  - Từ chối profile lạ và field profile object thừa; test client không thể khuếch đại cache bằng
+    width/runtimeDigest giả.
+  - _Requirements: R10.5, R10.8_ — _Design: §7.15_
+- [ ] 7.4 UI: `count = max(1, ceil(clipWidthPx / 80))`, mẫu tại tâm; đổi **mật độ** theo zoom; placeholder ổn định; virtualization tới **từng ô**, biên một khung nhìn
+  - Huỷ request/ô ra ngoài `viewport ± 1 viewport`; zoom tạo bộ mốc mới, không scale bitmap cũ.
+  - _Requirements: R10.1–10.4, R10.9_ — _Design: §5.20, §7.15_
+- [ ] 7.5a Unit/integration cache/renderer: công thức + key; batch cùng project/profile thành một process; WebP; LRU; source đổi lúc render ⇒ bỏ kết quả cũ
+  - Dùng hai temp project thật và process adapter có failure injection; abort kill child + không cache partial; key traversal/sai shape/project khác ⇒ 404; missing→present dependency/profile runtime đổi ⇒ miss; dynamic dependency/parse fail ⇒ placeholder và zero cache; LRU tính tổng qua mọi namespace; project tree/revision không đổi sau thumbnail.
+  - Stress 20 batch chứng minh ≤2 process, queue ≤8, supersede/abort giải phóng slot, capacity trả
+    placeholder, và source đổi liên tục dừng sau đúng một retry.
+  - Fixture scene bắt đầu 6 s chứng minh sample local 0…duration, không render root time 6…end.
+  - _Requirements: R10_ — _Design: §5.20, §11, §17_
+- [ ] 7.5b Integration/browser invalidation/virtualization: đổi **CSS dùng chung** và watcher ngoài app ⇒ trượt đúng scene; clip >5 viewport chỉ sinh `viewport ± 1`
+  - _Requirements: R10_ — _Design: §5.20, §11, §17_
+
+**Acceptance Criteria**:
+- [ ] Ghi ngoài app (file watcher) cũng làm mất hiệu lực đồ thị phụ thuộc + thumbnail liên quan
+
+**Deliverables Created / Modified**: (điền port/service/adapters/routes/UI, cache metrics và browser evidence khi thực thi)
+
+---
+
+## Phase 8: Catalog, template, block (R7, R9)
+
+**Addresses**: R7.1–7.7, R9.1–9.9
+**Design reference**: §5.16, §5.16b, §5.17, §7.12, §7.13a/b
+**Files affected**: `packages/core/src/port/ports.ts` (`CatalogPort`), `packages/adapter/src/catalog/*`, `packages/adapter/assets/catalog/**`, `packages/adapter/src/runtime/{runtime-paths.ts,packaged-runtime-manifest.ts,runtime-asset-source.ts}`, `packages/cli/src/runtime-paths-source.ts`, `scripts/{update-bundled-catalog,stage-artifact-runtime,build-runtime-archives,verify-artifact}.mjs`, `scripts/packaged-smoke/{steps,bodies}.mjs`, runtime fixture/config/tests, `packages/core/src/usecase/{prepare-catalog-install,execute-catalog-install}.ts`, `packages/server/src/routes/*`, `src/components/studio/*`
+**Prerequisite**: P0 + P2 + P3 (dùng chung `planSceneInsertion`, cần history để test undo atomic)
+**Skill**: `.agents/skills/bun/SKILL.md` + `.agents/skills/http-driver/SKILL.md`
+**Read first**: `packages/core/src/usecase/motion-library-install.ts` (FULL — vendor nhiều file một mutation), HyperFrames registry types + remote resolver nêu ở bảng trên (FULL phần liên quan — upstream dùng `hyperframes:*`, example là project scaffold, có `registryDependencies`, không có version/digest), `packages/adapter/src/bgm/bgm-provider.ts` (HTTPS, redirect, DNS public guard, timeout, bounded read), runtime paths/manifest + artifact staging
+
+**Tasks**:
+- [ ] 8.1a Contract `CatalogItem`, version/compatibility và trạng thái materialization
+  - Bundled item dùng semver; snapshot HyperFrames dùng `version = "git:<40 lowercase hex>"`, `source.revision/committedAt`, và dependency closure topo-sort.
+  - Normalize upstream `minCliVersion` thành `compatibility.minHyperframesVersion`; validate semver,
+    so với runtime 0.7.86 và hiện incompatibility trước mount. Khai `compare-versions` direct 6.1.1
+    đã transitively có, không tự viết comparator/không thêm artifact bytes.
+  - Bundled/materialized package có `integrity {algo:"sha256", files, manifest}` +
+    `materialization:"verified"`; network listing metadata-only có `integrity:null` +
+    `materialization:"metadata"`. Provenance sau install luôn lấy từ package verified, không từ listing.
+  - _Requirements: R7.1, R9.1, R9.5_ — _Design: §5.16_
+- [ ] 8.1b Normalize schema HyperFrames 0.7.86 thành template/block VidCom
+  - Normalize **đúng schema 0.7.86**: chỉ top-level `type:"hyperframes:block"` ⇒ `kind:"block"`. `hyperframes:example` là full-project scaffold nên **không** map thành template; `hyperframes:component` chỉ được nhận khi là dependency của block. Template là scene package VidCom curate trong bundled manifest, đúng một scene entry và không target root `index.html`; shape/type khác bị bỏ với diagnostic ổn định.
+  - Top-level block bắt buộc đúng một file `type:"hyperframes:composition"`; target canonical thành
+    `entry`. Zero/hai entry bị drop; composition của dependency không được chọn làm entry. Bundled
+    template khai entry tường minh và entry phải thuộc exact verified file set.
+  - Upstream không có group/category: adapter dùng category rule versioned theo tag/name, fallback
+    `Other`; bundled khai tường minh, UI không tự suy. Name/dependency phải là kebab slug ≤128,
+    không raw-interpolate URL/path. Enforce NFC/bounds Design §5.16 cho mọi metadata.
+  - _Requirements: R7.1, R9.1, R9.5_ — _Design: §5.16_
+- [ ] 8.2a Bundled catalog và artifact runtime
+  - Bundled manifest/files là tài sản frozen tại `packages/adapter/assets/catalog/**` và phải nằm trong
+    source diff; mỗi snapshot ghi upstream commit/digest nguồn. `scripts/update-bundled-catalog.mjs`
+    là tool maintainer nhận **commit 40-hex tường minh**; build/build:artifact không resolve `main` và không gọi mạng.
+  - Thêm `catalogAssetRoot` vào `RuntimePaths`/`RUNTIME_PATH_NAMES`; development trỏ adapter assets, artifact trỏ `<hyperframes archive>/catalog`. `stage-artifact-runtime.mjs` copy catalog vào HyperFrames staging root; cập nhật required archive entries, packaged manifest validator, runtime path source, artifact verifier/fixture/smoke — không tạo fallback source-tree.
+  - _Requirements: R7.6, R9.7, R9.7b, R9.7c_ — _Design: §5.16, Decision 9_
+- [ ] 8.2b `CatalogPort` cache `<app-data>/cache/catalog/`: TTL 24 h, SWR, atomic tmp+rename, negative ≤60 s, offline không chờ mạng
+  - Network fetch HTTPS-only, manual redirect tối đa 3 và revalidate host mỗi hop; DNS/private-address guard theo BGM provider; allowlist cố định `api.github.com` + `raw.githubusercontent.com`, không URL từ payload. Timeout/AbortSignal đi xuyên request.
+  - Resolve branch `main` qua GitHub API thành commit 40-hex + `committedAt`; mọi manifest/file sau đó tải từ raw URL chứa **đúng commit**, không dùng `main`. Đồng thời nhiều lần refresh dùng single-flight.
+  - Refresh chỉ tải index + item manifest metadata ở cùng commit, concurrency tối đa 8; mở/list catalog
+    **không** tải file payload. `materialize(name,version,signal)` mới resolve dependency closure và
+    tải payload.
+  - _Requirements: R7.6, R9.7, R9.7b, R9.7c_ — _Design: §5.16, Decision 9_
+- [ ] 8.2c Materialize payload catalog có bounds, atomic cache và pin lifecycle
+  - `materialize(name,version,signal)` resolve dependency closure và stream file của item được chọn
+    vào temp trong khi hash; sinh verified package rồi atomic publish
+    **toàn package**. Failure/cancel dọn temp và rơi về stale/bundled với source/reason tường minh.
+  - Bounds bắt buộc theo bytes thật: index ≤2 MiB/≤1.024 item; manifest ≤2 MiB; closure ≤256 item,
+    ≤1.024 file, mỗi file ≤25 MiB, tổng package ≤250 MiB. Payload package cache LRU tổng 1 GiB;
+    vượt trần ⇒ `TooLarge`, không partial publish. Thiếu/sai `Content-Length` hoặc redirect không reset count.
+  - `materialize` trả `{path,contentHash,source:StagedFileSource,encoding}[]`, không `Uint8Array[]`;
+    mỗi call giữ verified-cache pin trong phạm vi call và release `finally`; `prepare` không giữ
+    source/pin trong RAM lúc chờ approval, `execute` mới giữ tới mutation settle. `UndoContentPort`
+    giữ refs cần cho redo sau commit.
+  - _Requirements: R7.6, R9.7, R9.7b, R9.7c_ — _Design: §5.16, Decision 9_
+- [ ] 8.3 Kiểm verified package trước khi ghi (§5.16b): từ chối item còn
+  `materialization:"metadata"` · path traversal · path trùng · **tập chính xác** khớp manifest ·
+  digest từng file + digest manifest canonicalize
+  - Normalize tag bằng NFC + dedupe + sort code point; manifest digest phủ cả
+    title/description/category/**canonical sorted tags**/compatibility/duration/**entry**. Mount ghi
+    một `data-catalog-provenance` canonical JSON đã HTML-attribute-escape; parse round-trip đúng object,
+    không cho metadata thoát attribute/tag.
+  - _Requirements: R9.5b, R9.5c_ — _Design: §5.16b, §8.1_
+- [ ] 8.4a Plan/policy cho cài + mount: `binding.planDigest` phủ **toàn bộ** exact plan,
+  `targetHashes` phủ mọi target đang tồn tại; một composite gồm file + mount + provenance
+  - Parent dirs package là step `mkdir either` tường minh, nông-trước; không để file publish tự mkdir
+    recursive ngoài journal. Undo chỉ rmdir directory lần cài tạo và còn rỗng, giữ directory có trước.
+  - Bất biến `kind`: `template` chỉ `new-scene`; `block` cả hai; kind khác ⇒ `InvariantViolated` 422
+  - Prepare union `choice_required | skipped | ready`; intent có
+    `existingPolicy?:reuse|replace|skip`. Giống hệt vẫn hỏi `Reuse & mount/Skip`; reuse ⇒ file
+    `reuse` nhưng **vẫn mount**, replace bị từ chối. Khác version/unmanaged chỉ hỏi Replace/Skip,
+    reuse bị từ chối; skip zero write; **cùng version khác digest ⇒ 422** không cho replace.
+  - Target tồn tại nhưng thiếu provenance hợp lệ ⇒ `comparison:"unmanaged"`, existing
+    version/integrity null + target hashes; không giả là đã cài. Replace bind exact pre-image để undo
+    khôi phục file người dùng, Skip zero write.
+  - _Requirements: R7.3, R9.3–R9.6_ — _Design: §5.17_
+- [ ] 8.4b Assembly một composite file + mount + provenance
+  - `new-scene` gọi `planSceneInsertion`; `into-scene` lấy content qua `CompositionPort.applyOps`;
+    không gọi `createScene()` commit lồng/không copy insertion logic, và chỉ một `mutateSource`.
+  - New-scene tạo wrapper/sidecar sceneId duy nhất trỏ entry package; into-scene thêm sub-composition
+    layer scene-local 0, clamp theo duration scene, overlay track kế tiếp. Chèn cùng item hai lần không
+    trùng sceneId/path; provenance gắn từng instance. `paths` + typed `readGuards` phủ mọi target package;
+    file action `reuse` đi `historyReadGuards` kèm digest còn create/replace đã ở `paths`. Event paths
+    vẫn chỉ chứa file thực sự đổi.
+  - _Requirements: R7.3–R7.5, R9.3–R9.4c, R9.8_ — _Design: §5.17_
+- [ ] 8.4c Exact-intent `prepare → grant → execute`
+  - `prepare` materialize package trước khi tạo plan/grant; intent gồm `expectedRevision`; grant bind
+    `version` + manifest digest đã verified, action/fromHash kể cả `null`, mount/provenance rồi release
+    source/pin. `targetHashes` chỉ chứa hash thật của mutation target đang có + reuse read-guards;
+    target phải vắng được khóa bằng planDigest và step expected-null, không dùng hash giả. `execute` nhận lại cùng
+    `{projectId,name,version,mount,existingPolicy,expectedRevision}`, materialize lại, dựng lại binding
+    và `planReserve(grantId,binding)`; đổi bất kỳ intent/digest/hash/revision nào
+    đều fail trước mutation. Execute hash lại bytes cache, giữ pin tới settle rồi release `finally`.
+    Không có in-memory pending-plan sống qua hai request và grant expire/revoke không được rò pin.
+  - _Requirements: R9.5–R9.8_ — _Design: §5.17_
+- [ ] 8.5 UI: lọc theo `kind` rồi tag/từ khoá; cảnh báo tương thích trước khi chèn; chọn + cuộn tới scene mới; trạng thái rỗng có lý do
+  - Đường chèn template gọi `new-scene`; block cho phép target Design §5.17; UI hiện provenance
+    `bundled|cache|network`, `stale`, version và trạng thái “sẽ xác minh khi cài” nếu metadata-only;
+    sau materialize/install hiện digest thật. Lỗi integrity không bị đổi thành “offline”.
+  - `choice_required` hiện đúng existing/candidate version+digest: identical có `Reuse & mount/Skip`;
+    khác version hoặc unmanaged có `Replace/Skip`. Unmanaged nói rõ file không có provenance, không
+    hiện version giả. Skip không mount; sau reuse UI nói file cũ được dùng lại và mount mới đã tạo.
+  - _Requirements: R7.1, R7.2, R7.4–7.6, R9.1, R9.2, R9.4c_ — _Design: §5.16, §5.17_
+- [ ] 8.6a Unit/cache: lọc kind/category/tag/query; type đầy đủ `hyperframes:*`; category rule/fallback/bounds; top-level entry đúng một/zero/hai + dependency composition không tranh entry; example không thành template/root-index không lọt; canonical digest + provenance escape/round-trip; dependency topo/cycle/missing/target collision; duplicate/traversal; TTL/SWR/negative cache và source/stale semantics
+  - Fake HTTP phủ commit pinning (không request raw `/main/`), mở catalog không request payload,
+    materialize chỉ request closure đã chọn, HTTP downgrade, redirect ra host/private IP, redirect
+    loop, timeout/abort, concurrent single-flight, mọi byte/item/file/package/cache bound và partial
+    stream cleanup; không dùng mạng registry thật.
+  - _Requirements: R7, R9_ — _Design: §5.16, §11, §17_
+- [ ] 8.6b Mutation integration: digest lệch ⇒ zero write; cài + mount = một mutation; same-version/different-digest ⇒ 422; failure injection rollback
+  - Undo gỡ mount + file lần cài tạo, khôi phục file thay thế, không đụng file có từ trước không bị sửa.
+  - Parent dir package thiếu/có sẵn/race file-vs-directory: journal/reconcile đúng; undo xoá đúng dir
+    lần cài tạo và không xoá dir có trước hoặc dir đã có entry mới.
+  - Package fixture lớn đi hoàn toàn qua `write-staged` create/replace; prepare/execute/undo/redo không
+    materialize payload tổng vào heap, catalog LRU eviction sau install không làm redo mất content.
+  - _Requirements: R7, R9_ — _Design: §5.16–§5.17, §11, §17_
+- [ ] 8.6c Approval/exact-intent integration và pin cleanup
+  - Phủ dialog bị bỏ, grant expire/revoke, daemon restart giữa prepare/execute, execute đổi mount/name,
+    cache eviction và failure trước/sau reserve; pin/refcount về baseline, không partial write.
+  - _Requirements: R9.5–R9.8_ — _Design: §5.16–§5.17, §11, §17_
+- [ ] 8.6d Repeat-mount/LIFO/shared-dependency integration
+  - Phủ identical reuse vẫn mount; insert cùng template/block hai lần có scene instance riêng; replace
+    và skip; unmanaged collision replace/skip + restore pre-image; undo LIFO lần hai chỉ gỡ instance
+    hai, undo lần một mới gỡ file mutation một đã tạo.
+  - Hai studio session mount cùng package vào hai scene khác nhau: receipt reuse của tab B read-guard
+    file shared và block tab A undo xoá dependency; không phát invalidation giả cho read-guard-only path.
+    Đổi file reuse sau plan nhưng trước mutex hoặc redo trong cửa sổ watcher debounce đều fail zero-write.
+  - _Requirements: R7, R9_ — _Design: §5.16–§5.17, §11, §17_
+- [ ] 8.6e Thêm packaged-smoke step tự chứa `editing-experience-runtime`
+  - Khi P11 chạy, step dùng app-data/workspace sạch với private PATH + runner network cut; boot daemon/DB hai
+    lần, đọc và cài bundled catalog, xác minh migration/catalog digest/runtime path và tuyệt đối
+    không đọc source tree. Step tự tạo prerequisite của nó, không phụ thuộc
+    `ui-lifecycle`/`render-media`, để `--step editing-experience-runtime` là evidence độc lập.
+  - Đăng ký step là required trong `scripts/packaged-smoke/steps.mjs` và trả evidence machine-readable;
+    ở P8 dùng unit/fixture test cho registration/body, chưa yêu cầu runner đặc quyền. Full smoke thật
+    vẫn chạy ở P11 để bắt regression chéo phase.
+  - _Requirements: R7.6–R7.7, R9.7–R9.7c_ — _Design: §5.16, §9, §11_
+
+**Acceptance Criteria**:
+- [ ] Mọi màn hình catalog hiện `source` (`bundled`/`cache`/`network`) và cờ `stale`
+- [ ] Build/staging test không gọi mạng, runtime fixture không chứa đường dẫn source tree và bundled
+  template không thể thay root `index.html`; SEA binary + runner network cut được đóng ở P11
+
+**Deliverables Created / Modified**: (điền manifest/assets/adapter/use case/UI, digest và packaged-smoke evidence khi thực thi)
+
+---
+
+## Phase 9: Kéo asset vào timeline (R11)
+
+**Addresses**: R11.1–11.9
+**Design reference**: §5.21, §7.14, §7.14b
+**Files affected**: `packages/core/src/usecase/mount-asset.ts`, `packages/adapter/src/db/pending-mount.ts`, `packages/contracts/src/editing.ts`, `packages/cli/src/{composition-root.ts,startup.ts}`, `packages/server/src/routes/*`, `src/components/studio/{scene-media-list.tsx,timeline.tsx}`
+**Prerequisite**: P2 + P3 + P5
+**Skill**: `.agents/skills/bun/SKILL.md` + `.agents/skills/hono/SKILL.md`
+**Read first**: P5 deliverables, `packages/core/src/usecase/project-writes.ts` (search `createScene` — mẫu scene mới ba file)
+
+**Tasks**:
+- [ ] 9.1 `mountAsset` tạo **scene bọc asset**; Core **tự probe** duration theo `assetContentHash`, không nhận từ client; không probe được ⇒ 422, file vẫn ở Media
+  - Input là discriminated union: asset có sẵn nhận path/hash/at/track và không operationId; retry
+    pending chỉ nhận operationId/precondition/onOverflow, rồi Core đọc path/hash/at/track từ row cùng project.
+  - Ảnh: mặc định **4 giây**; `onOverflow: "shrink" | "extend-root"`; "shrink" chỉ rút scene bọc, **không** in/out point
+  - Dùng `planSceneInsertion` từ P2 để dựng root ops rồi ghép wrapper/sidecar/pending close trong một
+    composite; không gọi `createScene()` lồng và không copy thuật toán shift/root duration.
+  - `historyReadGuards` gồm `{path:assetPath,state:file(assetContentHash)}`; undo gỡ reference vẫn được, redo bị block
+    nếu asset đã đổi/xoá và luôn recheck hash đồng bộ trước publish.
+  - _Requirements: R11.1, R11.4, R11.4b, R11.5, R11.6, R11.6b_ — _Design: §5.21_
+- [ ] 9.2a `PendingMountPort` + route 7.14b (GET liệt kê, DELETE = `abandon`)
+  - Port chỉ có `lookup/listPending/markFailed/abandon`; **không** có `open/close`: hai transition đó chỉ
+    journal adapter áp trong transaction từ P0. `lookup` trả union `active(record) | expired |
+    never-seen`, adapter phân biệt bằng row pending + expression-index journal; route/use case không
+    query SQLite trực tiếp và không gộp `expired` với `never-seen`.
+  - `listPending` chỉ trả `uploaded_unmounted` theo `updatedAt`; mounted/abandoned là tombstone ẩn,
+    chỉ exact lookup thấy để idempotency/expiry không biến thành item pending giả.
+  - `markFailed`/`abandon` compare-and-set chỉ trên `uploaded_unmounted`; abandon lặp idempotent,
+    nhưng mounted/cross-project bị từ chối. Race abandon↔close phải cho đúng một phía thắng; close
+    thua thì composite mount rollback, abandon thua thì không đổi row mounted.
+  - Validate nhóm upload `operationId` + `atSeconds` + `trackIndex` all-or-none; ULID, giây hữu hạn ≥0, track integer ≥0. `operationId` gắn project; `uploadFingerprint` server-side phân biệt replay giống/khác ⇒ 409 khi khác.
+  - _Requirements: R11.3b_ — _Design: §5.10, §5.21, §6.4, §6.5, §7.14b_
+- [ ] 9.2b Retention/replay/startup cho pending mount: `mounted` 24 giờ, `abandoned` 7 ngày
+  - Startup: `uploaded_unmounted` quá 7 ngày → `abandoned`; `mounted` giữ tombstone 24 h rồi xoá;
+    replay trong 24 h trả đúng result cũ. Sau TTL, tra open-transition qua journal expression index
+    rồi trả 404 **trước mutation**; không coi operation cũ là ID mới và không tạo scene/file lần hai.
+    Cleanup chỉ ở startup sau khi history daemon cũ đã mất; không periodic-delete row mà receipt undo
+    của daemon hiện tại còn tham chiếu.
+  - _Requirements: R11.3b_ — _Design: §5.10, §5.21, §6.4, §6.5, §7.14b_
+- [ ] 9.3 UI: **một** máy trạng thái `uploading → mounting → done | uploaded_unmounted → retry`; một thanh tiến độ cho cả hai bước; Media hiện "đã upload, chưa mount" kèm nút thử lại
+  - Asset có sẵn gọi mount một mutation, không tạo `operationId`; file ngoài gọi upload (`open`) rồi mount (`close`) và tái dùng operationId. Upload hỏng/huỷ ⇒ không gọi mount.
+  - Hiển thị rõ undo chỉ gỡ mount/scene wrapper, **không** xoá file asset đã upload.
+  - Lỗi transport upload mơ hồ ⇒ GET pending operation trước: đã có row thì đi thẳng mount, chưa có
+    và journal chưa từng thấy mới resend file; 404 expired là terminal, không tự sinh operation mới.
+  - _Requirements: R11.2, R11.3, R11.3b, R11.8_ — _Design: §5.21_
+- [ ] 9.4 Chọn + cuộn tới clip mới; clip thiếu nguồn hiện trạng thái thiếu kèm đường dẫn
+  - _Requirements: R11.7, R11.9_ — _Design: §5.21, §7.14_
+- [ ] 9.5a Pending-mount integration: state/retention, cross-project, replay giống/khác payload, trong/sau TTL, upload lỗi ⇒ zero mount mutation
+  - Chạy SQLite file + temp fs thật và production composition-root/startup thật.
+  - Chứng minh retry mount có operationId bỏ qua mọi path/hash/time/track từ client (schema từ chối
+    field thừa), dùng record server-side; xoá row theo TTL nhưng giữ journal rồi replay ⇒ 404/zero write.
+  - Race abandon/markFailed với close/reopen; không nhánh nào ghi đè row mounted hoặc để scene mount
+    thành công khi row đã abandoned.
+  - _Requirements: R11_ — _Design: §5.21, §6.4–§6.5, §11, §17_
+- [ ] 9.5b Recovery failure injection: kill sau upload publish/trước settle và sau mount publish/trước close; kiểm `lastFailure`/`interrupted`, idempotency và restart UI query
+  - _Requirements: R11.3b_ — _Design: §5.21, §6.4–§6.5, §11.2_
+- [ ] 9.5c Browser/undo: một progress/một result, huỷ từng ranh giới, retry uploaded-unmounted; undo gỡ wrapper+sidecar và **giữ asset**
+  - Pending operation: undo đồng thời reopen row + hiện "mount đã hoàn tác, file vẫn ở Media"; redo
+    đóng lại row. Existing-asset mount không tạo pending row. Failure injection không để row mounted
+    trỏ scene vắng.
+  - Sau undo, sửa/xoá asset ngoài app ⇒ redoBlocked; asset đổi khi vẫn mounted không cản undo gỡ mount.
+  - _Requirements: R11_ — _Design: §5.21, §6.4–§6.5, §11, §17_
+
+**Acceptance Criteria**:
+- [ ] Kill tiến trình giữa upload và mount ⇒ mở lại app vẫn thấy "đã upload, chưa mount"
+
+**Deliverables Created / Modified**: (điền schema adapter/use case/routes/UI, restart/replay/undo evidence khi thực thi)
+
+---
+
+## Phase 10: Draft, timecode, phím tắt (R8)
+
+**Addresses**: R8.1–8.6 (gồm 1b–1e)
+**Design reference**: §5.18, §5.19
+**Files affected**: `src/lib/studio/{draft-store.ts,transport-keys.ts,format.ts}`, `src/components/studio/use-source-files.ts`, `src/app/projects/[slug]/composer-client.tsx`
+**Prerequisite**: P0 + P2 + P3 + P4 (`paths`, Alt-move, undo và reload buffer)
+**Skill**: `.agents/skills/bun/SKILL.md` + `.agents/skills/http-driver/SKILL.md`
+**Read first**: `src/components/studio/use-source-files.ts` (FULL — dòng bỏ draft khi đóng tab), `src/app/projects/[slug]/composer-client.tsx` (FULL — chỗ SSE tải lại snapshot)
+
+**Tasks**:
+- [ ] 10.1 `draft-store.ts`: `DraftEntry {path, baseHash, baseRevision, draft, acknowledgedChangeSeq, incomingGeneration, incomingStatus, incoming, resolution}`; `incomingStatus = idle|loading|ready|failed`; `incoming.content: string | null` (null = file bị xoá ngoài)
+  - Ba lựa chọn conflict: `resolved-keep` **rebase** base lên incoming (giữ được thì phải lưu được); `resolved-take` thay draft; `compare` giữ conflict mở và hiển thị incoming/draft song song. Ca `incoming.content === null` ⇒ giữ draft và tạo lại file khi ghi.
+  - _Requirements: R8.1d_ — _Design: §5.18_
+- [ ] 10.2 Ba đường cảnh báo: đóng tab/cửa sổ trình duyệt · đóng **tab editor** có draft (thay hành vi bỏ draft hiện tại) · điều hướng/đổi project
+  - _Requirements: R8.1, R8.1b, R8.1c, R8.2_ — _Design: §5.18_
+- [ ] 10.3 SSE dùng `paths`: có draft đụng ⇒ hỏi; không đụng ⇒ làm mới im lặng
+  - Content và preview-settings đều vào buffer P4; compare/keep/take không làm rơi draft đang mở.
+  - Conflict path dùng overlap equal/ancestor segment-safe. Mỗi path có generation theo SSE seq;
+    event lập tức đặt `loading` + conflict và disable save **trước** GET; fetch chỉ apply nếu còn latest,
+    404 = deleted/ready, lỗi mạng = failed + retry/reload và vẫn disable save. Event mới sau keep nhưng
+    trước save phải mở conflict lại; SSE gap refetch toàn bộ draft mở trước khi enable save.
+  - Response save của chính draft lấy exact `WriteEnvelope.changeSeq`, coalesce SSE `<=` seq đó và chỉ
+    clear pending generation không mới hơn response; event B mới hơn response A vẫn giữ conflict B.
+    Response no-op/null seq cập nhật base nhưng không clear incoming pending.
+  - _Requirements: R8.1d, R8.1e_ — _Design: §5.18, §5.9_
+- [ ] 10.4 `formatTimecode(seconds, fps)` → `m:ss.ff` với `ff = floor((seconds % 1) * fps)`
+  - _Requirements: R8.3_ — _Design: §5.19_
+- [ ] 10.5 `TRANSPORT_BINDINGS` là **nguồn duy nhất** cho xử lý phím và bảng phím tắt
+  - `Space` · `←`/`→` một khung · `Shift`+`←`/`→` một giây · `Home`/`End` · `Alt`+mũi tên dịch scene · `Esc` bỏ chọn · `mod`+`Z` / `mod`+`Shift`+`Z`
+  - Không nuốt phím khi con trỏ trong ô nhập
+  - _Requirements: R8.4–8.6_ — _Design: §5.19_
+- [ ] 10.6a Unit: draft reducer keep/take/compare + incoming deleted/save-after-keep; `transportActionFor`; `formatTimecode` hai frame liền nhau
+  - Phủ response A về sau B, SSE của chính save đến trước/sau response, external B đến trước response A,
+    save click trong khi latest GET còn pending/failed, external directory parent, common-prefix khác
+    segment, event mới sau keep trước save và SSE gap; draft không nhận snapshot stale/không overwrite im lặng.
+  - _Requirements: R8_ — _Design: §5.18, §5.19, §11, §17_
+- [ ] 10.6b Browser: mọi warning path, SSE khi đang gõ, compare UI, modifier macOS/khác và input không bị nuốt phím
+  - Phủ keep/take/compare, incoming deleted, save sau keep không 409, mọi warning path, modifier macOS/khác, input không bị nuốt phím.
+  - _Requirements: R8_ — _Design: §5.18, §5.19, §11, §17_
+
+**Acceptance Criteria**:
+- [ ] Không đường nào bỏ draft mà không hỏi
+
+**Deliverables Created / Modified**: (điền reducer/UI/bindings, browser conflict/warning evidence khi thực thi)
+
+---
+
+## Phase 11: Chốt chất lượng
+
+**Addresses**: verification gate của R4.1c, R6.14, và parity MCP
+**Design reference**: §5.9 (ngân sách), §7 (MCP parity), §11
+**Files affected**: `tests/**`, `package.json`, `.github/workflows/{phase4-browser-session,packaged-smoke}.yml`, `scripts/{verify-spec-test-paths,source-identity}.mjs`, `scripts/packaged-smoke/{steps,bodies}.mjs`, `packages/mcp/src/**`, `packages/contracts/src/**`, `packages/agent-kit/{AGENTS.md,CLAUDE.md,src/generated-bundle.ts}`
+**Prerequisite**: P1–P10
+**Skill**: `.agents/skills/bun/SKILL.md` + `.agents/skills/mcp-builder/SKILL.md`
+**Read first**: `llm-documents/steering/{03-architecture-ddd,04-api-design,05-mcp-tool-design,10-testing,13-mcp-protocol-compatibility}.md` (các đoạn D1/parity/approval), `tests/support/browser-harness.ts` (FULL)
+
+**Tasks**:
+- [ ] 11.1 **Browser test đo R4.1c end-to-end**: **< 500 ms** cho bốn ca
+  - Browser write: đo từ **response success** → khung đầu phản ánh nội dung/changeSeq mới, riêng content mutation và preview-settings mutation.
+  - Ghi ngoài: đo từ **SSE durable event được browser nhận** → khung đầu phản ánh nội dung/changeSeq mới, riêng content mutation và preview-settings mutation (project revision có thể không đổi).
+  - Cả bốn dùng cùng `previewUrl`, response `no-store`, xác minh nội dung khung mới chứ không chỉ event/DOM; con số spike **251–252 ms** chỉ là `PlayerHost.reload()`, không phải evidence AC.
+  - _Requirements: R4.1c_ — _Design: §5.9, §11.2, §17_
+- [ ] 11.2 Parity preview ↔ render cho caption (R6.14) trên project thật
+  - Capture đúng cùng project/revision tại ba mốc trước/đang/sau từ; so frame/active-word và lưu artifact evidence, không so hai DOM giả.
+  - _Requirements: R6.14_ — _Design: §5.14, §11.1–§11.2_
+- [ ] 11.3a Kiểm steering MCP không drift và chốt shared tool contracts; **không** phát hành undo/redo
+  - Trước khi sửa tool, đối chiếu steering 03/04/05/10 sau S0.5 với Design §7/D7/D9 và contract
+    approval-grant. Nếu còn câu cũ thì S0 chưa đóng hợp lệ: sửa checkpoint S0.5/evidence trước rồi mới
+    tiếp tục P11, không tạo thêm một quyết định mới ở đây.
+  - Ghi ngoại lệ D9: R5 local upload/tree CRUD/apply-font không có tool mới ở Giai đoạn 5; không nhận
+    absolute path, không nhét binary 500 MB vào JSON/MCP và không gọi `save_file` là parity giả.
+  - Chốt input/output chung trong `packages/contracts` cho bảy tool; HTTP và MCP import lại, không copy
+    Zod. Ghi rõ Decision 12/D7 trong registry/agent-kit: không có tool undo/redo.
+  - _Requirements: R2, R6, R7, R9, R11, R12; Deferred D7/D9_ — _Design: §7 MCP parity, Decision 12, §13_
+- [ ] 11.3b Tool scene MCP: `reorder_scenes`, `move_scenes`, `delete_scenes`
+  - Gọi trực tiếp cùng Core use case của P2; khai permission và `availableInLegacy` theo registry hiện
+    tại. `delete_scenes` giữ prepare/grant/execute, daemon approval grant một lần và cùng error semantics;
+    không bypass xác nhận hoặc tự dựng planner trong tool.
+  - _Requirements: R2, R12_ — _Design: §7 MCP parity_
+- [ ] 11.3c Tool catalog/content MCP: `list_catalog_items`, `generate_captions`, `install_catalog_item`, `mount_asset`
+  - `list_catalog_items` là read tool dùng cùng filter/output `{items,source,stale}` của route 7.12;
+    không gọi mạng khác policy `CatalogPort` và không tạo schema catalog thứ hai.
+  - `install_catalog_item` dùng input-required hiện có cho choice identical/different/unmanaged rồi
+    approval grant; retry lặp exact intent/policy/revision. Không biến `choice_required` thành auto-replace.
+  - Ba tool ghi `generate_captions`/`install_catalog_item`/`mount_asset` gọi trực tiếp use case
+    P6/P8/P9, dùng precondition/probe/pending semantics giống HTTP; không thêm transport-only mutation
+    hay tự đưa receipt MCP vào studio history.
+  - _Requirements: R6, R7, R9, R11_ — _Design: §7 MCP parity_
+- [ ] 11.3d Contract parity, agent-kit và packaged catalogue cho bảy tool
+  - Contract test chạy hai lần legacy + modern, HTTP/MCP cùng error semantics và không có Zod schema copy. Update `packages/agent-kit/AGENTS.md`, `CLAUDE.md`, generated bundle/skills bằng build script rồi chạy `test:agent-kit`.
+  - Mở rộng packaged-smoke step `editing-experience-runtime` của P8 để assert MCP catalogue trong cả
+    legacy/modern có đúng tool mới; P11.5d sẽ build và chạy lại step trên source identity cuối.
+  - _Requirements: R2, R6, R7, R9, R11, R12_ — _Design: §7 MCP parity, §11_
+- [ ] 11.4 Xác nhận fps thật của project (fixture spike không đổi được fps runtime bằng `data-fps`) và ghi kết quả vào `spikes/phase-5/README.md`
+  - _Requirements: R6.8_ — _Design: §5.14, §11_
+- [ ] 11.5a Chốt Verification Matrix và source identity không phụ thuộc staging
+  - Thêm `## Phase Verification Matrix` vào checklist trước `## Task Status Legend`, theo đúng thứ tự
+    `S0,P0,P1,…,P11`, chỉ ghi test path **đã tồn tại**; Design §11 link tới matrix này thay vì copy.
+    Mở config của `scripts/verify-spec-test-paths.mjs` từ chuỗi phase một ký tự sang mảng phase id để
+    vẫn kiểm đúng ba spec cũ, rồi đăng ký Editing Experience với 13 id trên. Script hiện chỉ kiểm ba
+    spec cũ nên PASS trước task này không phải evidence của spec.
+  - Thêm `scripts/source-identity.mjs`: digest canonical gồm HEAD + mode/path/content của union
+    `git diff --name-only -z HEAD` và `git ls-files --others --exclude-standard -z`; marker riêng cho
+    file deleted/symlink. Với entry còn tồn tại, dùng `lstat`: mode chuẩn hoá Git
+    `100644|100755|120000`, regular file hash bytes, symlink hash **link-target bytes từ `readlink`**
+    chứ không follow. Entry deleted mang mode + blob id từ HEAD. Encode từng record có length-prefix
+    trước khi hash để path/content không thể ghép mơ hồ; resolve containment, reject NUL/absolute/`..`
+    trước khi đọc và sort bằng UTF-8 path bytes (`Buffer.compare`), không dùng locale.
+    Không dựa vào index/staging và không bỏ sót file untracked. Chỉ loại ba file thay đổi thuần log/state
+    của spec này: checklist, `implementation-notes.html`, main spec `inprocess`; steering, Design,
+    Goals, tests, scripts, generated bundle và mọi source khác vẫn nằm trong digest.
+    CLI `node scripts/source-identity.mjs --json` trả `{head,digest,paths}` theo thứ tự ổn định.
+  - Unit-test staged-only, unstaged, untracked, deleted, symlink và evidence-only change. Ghi identity
+    trước mỗi gate 11.5b–e; identity đổi ⇒ chỉ gate đã chạy từ digest cũ phải chạy lại.
+  - _Requirements: all_ — _Design: §11, §17_
+- [ ] 11.5b Chạy static/local gates — đúng script có trong `package.json`
+  - `bun run typecheck` (`tsc --noEmit`) · `bun run lint` (`eslint`) · `bun run test` (`vitest run`)
+  - `bun run test:boundaries` · `bun run test:golden` · `bun run test:mcp-catalogue` ·
+    `bun run test:mcp-contract` · `bun run test:schema-drift` · `bun run test:spec-paths` ·
+    `bun run test:agent-kit` · `bun run test:vieneu-sidecar` · `bun run test:runtime-smoke`
+  - _Requirements: all_ — _Design: §11, §17_
+- [ ] 11.5c Chạy browser gate exact-identity
+  - Gom browser evidence của spec vào `tests/frontend/editing-experience-browser.test.ts`; thêm file đó vào `test:browser-session` và workflow browser; chạy `bun run test:browser-session`. Thiếu Chrome local ⇒ `[!]` có lý do, nhưng workflow với `VIDCOM_REQUIRE_BROWSER=1` phải fail, không coi skip là PASS.
+  - _Requirements: R1–R4, R6–R12_ — _Design: §11, §17_
+- [ ] 11.5d Chạy build + artifact gate exact-identity
+  - Nếu exact-host runtime inputs chưa có và network sẵn, chuẩn bị **smoke fixture đã pin** bằng
+    `VIDCOM_ALLOW_UNRELEASED_SMOKE_RUNTIME=1 node scripts/prepare-packaged-runtime.mjs --artifact-version 0.1.0-editing-smoke`,
+    rồi build không có `--release`. Evidence này chỉ đóng packaged compatibility của spec; không được
+    gọi là production-release/supply-chain approval. Network không có ⇒ `[!]` đúng artifact gate và
+    tiếp tục gate độc lập, không tự hạ điều kiện hay dùng artifact cũ.
+  - `bun run build` · `bun run build:artifact`; gate packaged của **spec này** là step tự chứa P8:
+    chạy strict `bun run test:packaged-smoke -- --step editing-experience-runtime` với
+    `VIDCOM_DOCTOR_STRICT=1` và `VIDCOM_SMOKE_NETWORK_CUT=1`. Gate cần runner có quyền cắt mạng; nếu
+    local không có, chỉ cùng step trong workflow `packaged-smoke.yml` ở đúng source identity thay thế
+    được. Plain smoke không cắt mạng hoặc run cũ không phải evidence offline.
+  - Ghi output `source-identity.mjs` trước build và step riêng. CI chỉ được dùng khi identity là
+    worktree sạch và SHA workflow đúng HEAD chứa toàn bộ source/test/tooling; CI cũ, synthetic merge
+    SHA hoặc workflow chỉ chứa một phần diff không đóng gate.
+  - _Requirements: all_ — _Design: §11, §17_
+- [ ] 11.5e Chạy full strict packaged regression trên cùng source identity
+  - Sau step riêng vẫn chạy **full** strict packaged smoke để phát hiện regression chéo phase. Failure
+    mới do diff spec gây ra chặn P11. Chỉ failure trùng baseline đã ghi ở S0 và đúng AC production-release
+    còn mở của Giai đoạn 4 mới được log `OUT-OF-SCOPE BASELINE`; nó không biến step
+    `editing-experience-runtime` đã PASS thành fail và không được tuyên bố là Giai đoạn 4 đã hoàn tất.
+  - Ghi lại `source-identity.mjs` trước full smoke và so với 11.5d; khác digest ⇒ rebuild rồi chạy lại
+    step riêng trước khi full smoke. Exact failure/result phải vào Execution Log, không chỉ link run.
+  - _Requirements: all_ — _Design: §11, §17_
+- [ ] 11.6 Council closeout và chuyển trạng thái spec
+  - SM: mọi task/AC/matrix/evidence hoàn tất, không còn `[/]`/`[!]` chưa giải quyết; Execution Log và `implementation-notes.html` đồng bộ.
+  - PO: kiểm UX/failure state/undo scope từng R1–R12; Dev: review boundary, persistence, artifact, security và diff ngoài scope.
+  - Chỉ sau đó discover bằng `rg -l "spec-editing-experience-"'inprocess' --glob '!node_modules/**' --glob '!dist/**'`,
+    đổi main spec `inprocess` → `complete`, sửa mọi kết quả và kiểm cùng lệnh trả rỗng; không tự push/PR.
+  - _Requirements: process closeout_ — _Design: §14–§15 · spec-rule workflow_
+
+**Acceptance Criteria**:
+- [ ] R4.1c có số đo thật, không phải suy ra từ spike
+- [ ] MCP và HTTP không có schema trùng lặp định nghĩa hai nơi
+- [ ] Packaged artifact boot được DB migration, đọc bundled catalog, chạy MCP catalogue và không dựa vào source tree
+
+**Deliverables Created / Modified**: (điền test/artifact/agent-kit/spec closeout, exact-source-identity gate evidence khi thực thi)
+
+---
+
+## Files Changed Summary
+
+(điền trong lúc thực thi — mỗi phase ghi vào mục **Deliverables** của phase đó)
+
+## Validation Commands and Evidence Policy
+
+| Gate | Khi chạy | Lệnh/evidence tối thiểu | Quy tắc PASS |
+|---|---|---|---|
+| Focused unit | Mỗi task domain/UI pure | `bunx vitest run <exact-test-file>` | Test mới + hồi quy gần nhất xanh; ghi exact file |
+| Core persistence | P0, P3, P5, P8, P9 | Focused integration với SQLite file thật + temp fs thật | Có failure injection/rollback/restart; không mock `node:fs` |
+| Contract/boundary | Cuối phase có API/MCP | `bun run typecheck`; `bun run test:boundaries`; focused contract test | Không schema copy, không import ngược Core → Server/Adapter |
+| Browser | P1–P4, P6–P10 | `bun run test:browser-session` | Test feature nằm trong script/workflow; Chrome skip không phải PASS khi evidence bắt buộc |
+| Artifact — staging | P0 (migration), P8 (catalog bundled) | focused `stage-artifact-runtime`/runtime-manifest/boot tests với fixture thật | Staged tree có file đúng digest, không fallback source tree; chưa cần exact-host SEA runtime input |
+| Artifact — Editing step | **P11 bắt buộc** | strict `--step editing-experience-runtime` với `VIDCOM_SMOKE_NETWORK_CUT=1` trên runner có quyền, hoặc cùng step trong workflow exact-identity | Private PATH + network cut; boot migration, bundled catalog, MCP catalogue; không đọc source tree |
+| Artifact — full regression | P11 sau step riêng | full strict packaged smoke | Failure mới chặn spec. Chỉ failure khớp baseline S0 và đúng AC production-release còn mở của Giai đoạn 4 được ghi `OUT-OF-SCOPE BASELINE`; không được gọi PASS hay dùng spec này để đóng nợ Packaging |
+| Full local | P11 | Tất cả lệnh ở task 11.5b–11.5e | Cùng exact source identity; worktree sạch thì identity đó ánh xạ đúng HEAD; không lấy run cũ thay thế |
+| Remote CI | Khi có PR/workflow | URL run + SHA + matrix result | Chỉ evidence bổ sung; mọi required job ở cùng exact HEAD |
+
+Nếu một lệnh không chạy được, ghi `NOT EXECUTED` hoặc `[!]` cùng nguyên nhân và tiếp tục task độc lập;
+không đổi thành PASS từ suy luận, artifact cũ hoặc test gần giống.
+
+## Requirements Coverage Matrix
+
+> Design §17 là traceability chi tiết từng AC. Bảng này thêm **task thực thi + evidence đóng gate**;
+> mọi range dưới đây bao phủ toàn bộ AC, kể cả hậu tố `b/c/d/e`.
+
+| Requirement / AC | Implementation task | Test/evidence đóng gate |
+|---|---|---|
+| R1.1–1.5 | 1.2–1.3 | reducer + browser body/edge/Esc; request counter = 1/0 |
+| R1.6–1.7, 1.13 | 1.1 | unit snap ở hai cận zoom, fps rounding, clip 20 px |
+| R1.8–1.11 | 1.2–1.3 | unit ripple + browser extend/cap/hash-conflict |
+| R1.12 | 1.4 | browser form timing vẫn ghi qua cùng use case |
+| R2.1–2.4 | 2.1–2.4 | planner gap/compact + browser indicator + one mutation |
+| R2.5–2.9 | 2.1–2.5b | Core invariant/group + cross-track/error/no-op/numbering |
+| R2.10–2.12 | 2.4–2.5b | browser keyboard focus/announcement/boundary no-op |
+| R3.1–1c | 0.1–0.6b, 3.1a–3.2 | one receipt/one inverse; created/replaced files + backup |
+| R3.2–3.4 | 3.2–3.3 | real-fs undo/redo/branch-cut integration |
+| R3.5–5b | 0.3a–0.4, 3.1a–3.4 | external/two-session ownership + typed dependency barrier; sync precondition block; two escape paths |
+| R3.6–3.9 | 3.1a–3.6d | WriteAuthority audit; empty/reload/50-entry browser+unit |
+| R4.1–1b, 2–4, 6 | 4.1–4.6b | PlayerHost identity, health reject, transport/clamp/last-frame probes |
+| R4.1c | 11.1 | four response/SSE → first-new-frame measurements <500 ms |
+| R4.5, R4.7 | 4.2, 4.4–4.6b, 11.1 | same URL/no-store; settings + external SSE through buffer |
+| R5.1–3 | 0.5a–0.5c, 5.3, 5.5–5.7c | containment; tree 200 files; destructive grant/backup/rollback |
+| R5.4–4g | 0.6a–0.6b, 5.1–5.2c, 5.5–5.7c | stream limits/magic/SVG/name/collision/RSS/cancel/probe |
+| R5.5–5b | 5.5–5.7c | XHR raw-File progress + abort qua listener HTTP/1.1, server AbortSignal cleanup |
+| R5.6–7 | 5.2a–5.2c, 5.4–5.7c | metadata/font real adapter; unknown reason/probe failure |
+| R5.8–9 | 5.1, 5.6–5.7c | allowlist unit + typed empty/failure UI |
+| R6.1–5 | 6.1–6.2 | planner thresholds/rebase/scene bounds + one mutation |
+| R6.6–10 | 6.2–6.4 | per-word absolute markup + rational-fps runtime browser |
+| R6.11–13 | 6.2, 6.5 | stale persisted; no auto-TTS; missing narration 422 |
+| R6.14 | 6.6a–6.6b, 11.2, 11.4 | real preview/render three-frame parity + project fps |
+| R7.1–2 | 8.1a–8.1b, 8.5 | required kind, template filter/search UI |
+| R7.3–5 | 8.4a–8.6e | template new-scene path + atomic undo/provenance |
+| R7.6–7 | 8.2a–8.2c, 8.5–8.6e | bundled offline empty/failure UX + packaged smoke |
+| R8.1–2 | 10.1–10.3, 10.6a–10.6b | all close/navigation/SSE conflict paths incl compare |
+| R8.3 | 10.4, 10.6a–10.6b | adjacent-frame unit across supported fps |
+| R8.4–6 | 10.5–10.6b | shared binding table + browser input/modifier checks |
+| R9.1–4c | 8.1a–8.1b, 8.4a–8.5 | kind-aware catalog, mount target, visible selection |
+| R9.5–5d | 8.2a–8.4c, 8.6a–8.6e | source allowlist, canonical digest, reinstall matrix |
+| R9.6–8 | 8.2a–8.2c, 8.4a–8.4c, 8.6a–8.6e | no overwrite, offline/SWR, failure-injection rollback |
+| R9.9 | 3.2, 8.6b | undo deletes created/restores replaced/leaves untouched |
+| R10.1–4 | 7.2a–7.4 | sampling formula/center/zoom density/stable placeholder |
+| R10.5 | 7.2a–7.5b | viewport abort kills process and leaves no cache partial |
+| R10.6–7 | 0.4, 7.1a–7.2c, 7.5a–7.5b | dependency fingerprint, selective invalidation, cache hit |
+| R10.8–9 | 7.3–7.5b | reason placeholder + per-cell viewport±1 browser evidence |
+| R11.1–3b | 0.7–0.10e, 5.2a–5.2c, 9.1–9.5c | one/two mutation boundaries; persistent retry/restart |
+| R11.4–6b | 9.1, 9.5a–9.5c | real duration/unknown/4s/shrink-vs-extend cases |
+| R11.7–9 | 3.2, 9.3–9.5c | select/scroll, undo keeps asset, missing-source UI |
+| R12.1–3 | 2.4–2.5b | shift same/cross track, mod toggle, marquee browser |
+| R12.4–4e | 1.1, 2.1–2.5b | anchor snap, no ripple, all-or-nothing/root/cap/no reorder |
+| R12.5–8 | 2.2–2.5b, 3.1a | destructive group delete, one undo, count/Esc, track preserved |
+| steering D1 — MCP parity | 11.3a–11.3d | shared schema + same Core use case; legacy/modern contract, grant policy, agent-kit và packaged catalogue |
+
+## Deferred Items Reference (Giai đoạn 6)
+
+D1 undo cho thao tác filesystem · D2 trim/in-out/re-speed clip media · D3 preview block trước khi cài
+(RG-3) · D4 sort "Popular"/Favorites · D5 sửa keyframe/tween trên timeline · D6 safe margin/style
+caption · D7 tool MCP undo/redo · **D8 PR-11 hot-reload từng sub-composition** (chuyển từ R4.1a bản 5) ·
+**D9 MCP blob/resource transfer + parity upload/tree CRUD/apply-font R5** (không nhận absolute path).
+
+## Execution Log
+
+> Mỗi task xong ghi một dòng. Link chi tiết quyết định/gotcha sang `implementation-notes.html`.
+
+| Date/time | Task | Files/deliverables | Commands/evidence | Result | Design drift / blocker | Next ready |
+|---|---|---|---|---|---|---|
+| — | — | — | — | — | — | S0.1 sau khi gate được duyệt |
+
+## Final Authoring-Readiness Audit
+
+- [x] Approval Gate vẫn `Pending Confirmation`; chưa có production code nào được viết từ checklist này
+- [x] Mọi task có prerequisite, skill/read-first, Requirements và Design reference
+- [x] Mọi phase có Deliverables và focused verification; persistence dùng SQLite/temp-fs thật
+- [x] Tất cả port/service mới có production composition-root/startup/packaged-artifact task
+- [x] Không còn path/symbol không tồn tại được dùng làm điểm sửa bắt buộc
+- [x] Coverage matrix phủ R1–R12 và mọi AC suffix; mọi endpoint task/subtask đều tồn tại; R4.1c có đúng bốn phép đo
+- [x] Dependency graph không yêu cầu test một capability chưa được phase trước tạo
+- [x] Full gate dùng script thật trong `package.json`, browser test mới nằm trong CI script/workflow
+- [x] Sáu lệch steering đã có quyết định, phase cập nhật authority và phạm vi approval tường minh;
+  agent không phải dừng để hỏi lại trong lúc implement
+- [x] Source identity P11 bao phủ staged/unstaged/untracked/deleted/symlink, không tự đổi theo log
+  checklist và bắt rerun gate khi digest đổi
+- [x] Artifact gate của spec có packaged-smoke step tự chứa, network cut và exact identity; không
+  lấy nợ production-release của Packaging làm PASS hoặc blocker giả cho capability Editing
+- [x] HTTP/MCP parity chốt bảy tool dùng chung Core/contract; D7 loại undo/redo và D9 defer blob +
+  file-manager R5 mà không phát minh absolute-path transport
+- [x] Rename `pending`/`inprocess` dùng discovery động với pattern không tự match command audit;
+  không hard-code danh sách tham chiếu
+- [x] Design bản 12 đã đồng bộ receipt reservation/session/per-entry ownership barrier/ref bound; entity + pending-mount
+  undo; change-seq-aware preview latest-wins; staged upload/SVG/font/caption; dependency scheduler
+  thumbnail; normalized catalog exact-intent/repeat mount/provenance; shared scene insertion planner.
+- [x] Link Markdown đã được kiểm trực tiếp; `bun run test:spec-paths` xanh nhưng chỉ là regression cho
+  ba spec cũ, không bị trình bày sai như evidence của Editing Experience. Task 11.5a sở hữu việc đăng ký spec này.
+- [ ] **Gate còn lại duy nhất**: người dùng chuyển Approval Gate của checklist sang `Approved` (Design bản 12 đã duyệt 2026-08-16). Sau đó bắt đầu **S0**, không phải P0

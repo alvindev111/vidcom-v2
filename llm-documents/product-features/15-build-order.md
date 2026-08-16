@@ -140,7 +140,9 @@ D1 là quyết định số một, nhưng nó cần nền móng ở giai đoạn
 
 ---
 
-## Giai đoạn 5 — Trải nghiệm editing (3–4 tuần)
+## Giai đoạn 5 — Trải nghiệm editing (re-baseline 9–11 tuần)
+
+> **Spec đã mở 2026-08-15** — [spec Editing Experience](../specs-and-process/specs/spec-editing-experience/spec-editing-experience-inprocess.md). Goals bản 7, Detailed Design bản 12 và Implementation Checklist đều duyệt 2026-08-16; S0 xong, đang ở P0 (R4 → PlayerHost + double-buffer cho mọi cập nhật, PR-11 sang GĐ 6); Implementation Checklist đang Pending Confirmation; spike năm vòng, 24 PASS + 1 superseded; ước lượng **~212 SP** (sàn), coi 3–4 tuần là con số backlog chứ không phải con số Design.
 
 | # | Việc | ID |
 |---|---|---|
@@ -148,12 +150,15 @@ D1 là quyết định số một, nhưng nó cần nền móng ở giai đoạn
 | 5.1 | Kéo bar / kéo mép trên timeline để đổi timing | SC-7 |
 | 5.2 | Kéo-thả đổi thứ tự scene | SC-6 |
 | 5.3 | Undo/redo cấp composition | CE-8 |
-| 5.4 | Không remount player khi ghi; hot-reload preview settings | PR-10, PR-11, PF-5 |
+| 5.4 | Giữ `PlayerHost` khi ghi; mọi cập nhật, kể cả preview settings, đổi engine bằng double-buffer. **PR-11 hot-reload từng composition chuyển sang GĐ 6** sau spike | PR-10, PF-5 |
 | 5.5 | CRUD file/folder + upload asset + probe metadata | FA-1, FA-2, FA-3 |
 | 5.6 | Word-level timestamp → caption đồng bộ (làm `activeColor` có nghĩa) | NT-8 |
 | 5.7 | Thư viện template scene | SC-12 |
 | 5.8 | Cảnh báo khi đóng tab dirty; timecode có thập phân; phím tắt transport | — |
-| 5.9 | Registry: duyệt catalog, cài block | RG-1, RG-2 |
+| 5.9 | Registry: duyệt catalog, cài **và mount** block | RG-1, RG-2 |
+| 5.10 | Dải thumbnail trên clip timeline (lấy mẫu, cache, huỷ, virtualization) | FA-4 (một phần) |
+| 5.11 | Kéo asset từ panel Media vào timeline (thả tạo scene bọc asset) | FA-2, SC-4 |
+| 5.12 | Chọn nhiều clip: dịch nhóm, xoá nhóm, một mục undo | SC-9 |
 
 ---
 
@@ -178,8 +183,8 @@ D1 là quyết định số một, nhưng nó cần nền móng ở giai đoạn
 | 1 | Nền móng | 3–4 tuần | Backend 100% Hono, CI xanh | ✅ 2026-08-01 — 118/118 |
 | 2 | MCP thật | 2–3 tuần | AI sửa được project qua tool | ✅ 2026-08-02 — 10 tool, 2 era |
 | 3 | Đóng vòng lặp | 7–8 tuần (re-baseline 2026-08-04) | Xuất được MP4 có tiếng | ✅ 2026-08-05 — còn nợ R5 UI → 5.0 |
-| 4 | Đóng gói & runtime phân phối | 7–8 tuần (re-baseline 2026-08-07) | Một file thực thi, smoke native trên 3 target | 🟡 Goals đã duyệt, Design chờ xác nhận |
-| 5 | Editing UX | 3–4 tuần | Studio dùng thoải mái | ⬜ chưa mở spec |
+| 4 | Đóng gói & runtime phân phối | 7–8 tuần (re-baseline 2026-08-07) | Một file thực thi, smoke native trên 3 target | 🟡 đang thực thi — checklist gần xong, còn AC render MP4 từ production release artifact (mở từ 2026-08-13) |
+| 5 | Editing UX | re-baseline 9–11 tuần (~212 SP, 2026-08-16) | Studio dùng thoải mái | 🟡 **đang thực thi** — Goals bản 7, Design bản 12, Checklist đều duyệt 2026-08-16; S0 xong, kế tiếp P0 |
 | 6 | AI Composer & hoàn thiện | — | Sản phẩm đầy đủ | ⬜ chưa mở spec |
 
 > Giai đoạn 4 đã đổi tên từ "Agent kit & đóng gói" sau khi AK-1..3/4/5/6/8 chuyển lên 3.12. Detailed Goals đã xác nhận phần còn lại **không thuần đóng gói**: còn single-writer daemon/MCP bridge, runtime artifact, UI workspace/project tối thiểu và packaged smoke native.

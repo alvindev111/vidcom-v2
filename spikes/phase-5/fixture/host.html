@@ -1,0 +1,48 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>spike host</title>
+    <script src="/vendor/hyperframes-player.global.js"></script>
+    <style>
+      html, body { margin: 0; height: 100%; background: #000; }
+      #stage { position: relative; width: 1280px; height: 720px; }
+      hyperframes-player { position: absolute; inset: 0; }
+    </style>
+  </head>
+  <body>
+    <div id="stage"></div>
+    <script>
+      // Mirrors the studio: the player element is created once and kept.
+      window.__spike = {
+        mounts: 0,
+        runtimeMessages: [],
+        player: null,
+        mount(src) {
+          const stage = document.getElementById("stage");
+          const player = document.createElement("hyperframes-player");
+          player.setAttribute("src", src);
+          player.__spikeId = ++window.__spike.mounts;
+          stage.appendChild(player);
+          window.__spike.player = player;
+          for (const type of ["ready", "timeupdate", "scenes", "error", "runtimeprotocolerror"]) {
+            player.addEventListener(type, (event) => {
+              window.__spike.events = window.__spike.events ?? [];
+              window.__spike.events.push({ type, at: performance.now() });
+            });
+          }
+          return player;
+        },
+        doc() {
+          return window.__spike.player.iframeElement.contentDocument;
+        },
+      };
+      window.addEventListener("message", (event) => {
+        const data = event.data;
+        if (data && data.source === "hf-preview") {
+          window.__spike.runtimeMessages.push({ type: data.type, frame: data.frame, fps: data.fps, at: performance.now() });
+        }
+      });
+    </script>
+  </body>
+</html>
