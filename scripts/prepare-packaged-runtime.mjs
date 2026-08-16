@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { createReadStream } from "node:fs";
-import { chmod, mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { chmod, copyFile, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { gunzipSync } from "node:zlib";
 import { spawnSync } from "node:child_process";
@@ -8,6 +8,7 @@ import { fileURLToPath } from "node:url";
 
 import { REPOSITORY_ROOT } from "./artifact-layout.mjs";
 import { assertEncoders } from "./build-ffmpeg.mjs";
+import { readReleaseMediaProvenance } from "./build-release-media.mjs";
 import { writeRuntimeInputs } from "./build-runtime-inputs.mjs";
 import { hostPlatformTag } from "./stage-artifact-runtime.mjs";
 
@@ -136,9 +137,22 @@ pins = [f"{name}=={version}" for name, version in packages.items()]
 print("\n".join(sorted(pins)))
 `;
 
-/** Creates the exact-host native inputs consumed by build:artifact. */
+/**
+ * Creates the exact-host native inputs consumed by build:artifact.
+ *
+ * Two media supply chains, and they are not interchangeable. `releaseMedia`
+ * takes ffmpeg/ffprobe compiled here from the approved pinned upstream sources
+ * (`build-release-media.mjs`); everything else takes the third-party smoke
+ * fixture, which exercises the artifact on all three runner OSes and MUST NOT
+ * be published (C-21). The opt-in stays on the fixture path alone, so choosing
+ * the release path is not a way to route around it.
+ */
 export async function preparePackagedRuntime(options = {}) {
-  if (options.allowUnreleasedSmokeRuntime !== true
+  const releaseMedia = options.releaseMedia === true
+    ? await readReleaseMediaProvenance(options.releaseMediaRoot)
+    : null;
+  if (releaseMedia === null
+    && options.allowUnreleasedSmokeRuntime !== true
     && process.env.VIDCOM_ALLOW_UNRELEASED_SMOKE_RUNTIME !== "1") {
     fail(
       "the cross-platform media inputs are smoke fixtures, not an approved release supply chain",
@@ -196,16 +210,27 @@ export async function preparePackagedRuntime(options = {}) {
   const suffix = platform === "win32-x64" ? ".exe" : "";
   const ffmpegPath = path.join(outputRoot, `ffmpeg${suffix}`);
   const ffprobePath = path.join(outputRoot, `ffprobe${suffix}`);
-  await materializeMedia(
-    source.ffmpeg,
-    path.join(cacheRoot, `${platform}-ffmpeg.gz`),
-    ffmpegPath,
-  );
-  await materializeMedia(
-    source.ffprobe,
-    path.join(cacheRoot, `${platform}-ffprobe.gz`),
-    ffprobePath,
-  );
+  if (releaseMedia === null) {
+    await materializeMedia(
+      source.ffmpeg,
+      path.join(cacheRoot, `${platform}-ffmpeg.gz`),
+      ffmpegPath,
+    );
+    await materializeMedia(
+      source.ffprobe,
+      path.join(cacheRoot, `${platform}-ffprobe.gz`),
+      ffprobePath,
+    );
+  } else {
+    // Copied rather than referenced in place: the runtime inputs pin these
+    // bytes by digest, and staging re-reads the files at that path. A path
+    // pointing back into the build tree would pin something a later rebuild of
+    // FFmpeg can change underneath a finished artifact.
+    await copyFile(releaseMedia.ffmpegPath, ffmpegPath);
+    await copyFile(releaseMedia.ffprobePath, ffprobePath);
+    await chmod(ffmpegPath, 0o755);
+    await chmod(ffprobePath, 0o755);
+  }
   assertEncoders(ffmpegPath);
 
   return writeRuntimeInputs({
@@ -228,13 +253,19 @@ function argumentValue(argv, flag) {
 }
 
 async function main(argv) {
-  const known = new Set(["--artifact-version", "--cache-root"]);
-  for (let index = 0; index < argv.length; index += 2) {
-    if (!known.has(argv[index]) || argv[index + 1] === undefined) fail("unknown or incomplete argument", { argument: argv[index] });
+  const valued = new Set(["--artifact-version", "--cache-root", "--release-media-root"]);
+  for (let index = 0; index < argv.length; index += 1) {
+    if (argv[index] === "--release-media") continue;
+    if (!valued.has(argv[index]) || argv[index + 1] === undefined) {
+      fail("unknown or incomplete argument", { argument: argv[index] });
+    }
+    index += 1;
   }
   const result = await preparePackagedRuntime({
     artifactVersion: argumentValue(argv, "--artifact-version"),
     cacheRoot: argumentValue(argv, "--cache-root"),
+    releaseMedia: argv.includes("--release-media"),
+    releaseMediaRoot: argumentValue(argv, "--release-media-root"),
   });
   process.stderr.write(`prepare-packaged-runtime: ${result.target}\n`);
 }

@@ -100,10 +100,23 @@ export async function fetchPinnedSource(name, cacheRoot, source = FFMPEG_SOURCES
     await rm(target, { force: true });
   }
 
-  const response = await fetch(source.url);
-  if (!response.ok) fail(`could not download ${name}`, { status: response.status, url: source.url });
   const { writeFile } = await import("node:fs/promises");
-  await writeFile(target, Buffer.from(await response.arrayBuffer()));
+  const response = await fetch(source.url).catch(() => null);
+  if (response?.ok) {
+    await writeFile(target, Buffer.from(await response.arrayBuffer()));
+  } else {
+    // A second transport, not a second source. x264's host answers `406` to
+    // Node's HTTP client and `200` to curl for the same URL, and the digest
+    // check below is what decides whether the bytes are acceptable — so the
+    // client that fetched them is not what this build is trusting.
+    const fetched = spawnSync("curl", ["--fail", "--silent", "--show-error", "--location", "--output", target, source.url], {
+      stdio: ["ignore", "inherit", "inherit"],
+      shell: false,
+    });
+    if (fetched.error || fetched.status !== 0) {
+      fail(`could not download ${name}`, { status: response?.status, url: source.url });
+    }
+  }
 
   const digest = await sha256Of(target);
   if (digest !== source.sha256) {

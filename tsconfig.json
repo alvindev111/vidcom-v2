@@ -42,5 +42,5 @@
     ".next/dev/types/**/*.ts",
     "**/*.mts"
   ],
-  "exclude": ["node_modules", "spikes/**"]
+  "exclude": ["node_modules", "spikes/**", "dist/**"]
 }
