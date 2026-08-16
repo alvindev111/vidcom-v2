@@ -64,23 +64,43 @@ export async function canonicalSmokeDirectories(directories, canonicalize = real
   )));
 }
 
-export async function copyCacheContents(source, destination) {
+/**
+ * Copies one cache directory, and says which entries it could not copy.
+ *
+ * `tolerateErrors` splits the two directions this runs in. Seeding a cache
+ * before the run is part of the setup a step then makes claims about, so a
+ * failure there has to stop the run. Persisting it afterwards is an
+ * optimisation for the next run — a failure costs a download, and letting it
+ * throw once cost thirteen steps of evidence, which is the trade this argument
+ * exists to stop being made silently.
+ */
+export async function copyCacheContents(source, destination, options = {}) {
   const entries = await readdir(source, { withFileTypes: true }).catch(() => []);
   // An absent cache must remain absent. Creating an empty component directory
   // makes the production coordinator classify it as `ready`, which turns a
   // first install into a forced repair instead of a normal download.
-  if (entries.length === 0) return;
+  if (entries.length === 0) return [];
   await mkdir(destination, { recursive: true });
+  const failures = [];
   for (const entry of entries) {
-    await cp(path.join(source, entry.name), path.join(destination, entry.name), {
-      recursive: true,
-      force: true,
-      // Hugging Face snapshots use relative links into their sibling blob
-      // store. Node otherwise rewrites them to the temporary smoke root, so
-      // the persisted cache becomes dangling as soon as that root is removed.
-      verbatimSymlinks: true,
-    });
+    try {
+      await cp(path.join(source, entry.name), path.join(destination, entry.name), {
+        recursive: true,
+        force: true,
+        // Hugging Face snapshots use relative links into their sibling blob
+        // store. Node otherwise rewrites them to the temporary smoke root, so
+        // the persisted cache becomes dangling as soon as that root is removed.
+        verbatimSymlinks: true,
+      });
+    } catch (error) {
+      if (options.tolerateErrors !== true) throw error;
+      failures.push({
+        entry: path.join(destination, entry.name),
+        reason: error instanceof Error ? error.message : String(error),
+      });
+    }
   }
+  return failures;
 }
 
 export async function createSmokeRoot() {
@@ -127,14 +147,18 @@ export async function createSmokeRoot() {
     appData,
     environment: smokeEnvironment(root, process.env, { home, emptyBin, appData }),
     async dispose() {
-      if (cacheRoot) {
-        await Promise.all([
-          copyCacheContents(path.join(root, "home", ".cache"), path.join(cacheRoot, "home-cache")),
-          copyCacheContents(path.join(root, "app-data", "browser-cache"), path.join(cacheRoot, "browser-cache")),
-          copyCacheContents(path.join(root, "app-data", "models"), path.join(cacheRoot, "model-cache")),
-        ]);
-      }
+      const failures = cacheRoot
+        ? (await Promise.all([
+          copyCacheContents(path.join(root, "home", ".cache"), path.join(cacheRoot, "home-cache"), { tolerateErrors: true }),
+          copyCacheContents(path.join(root, "app-data", "browser-cache"), path.join(cacheRoot, "browser-cache"), { tolerateErrors: true }),
+          copyCacheContents(path.join(root, "app-data", "models"), path.join(cacheRoot, "model-cache"), { tolerateErrors: true }),
+        ])).flat()
+        : [];
+      // Removed even when the write-back could not finish: a smoke root left on
+      // disk is hundreds of megabytes per run, and the entries that failed are
+      // named in the report rather than kept around to be guessed at.
       await rm(root, { recursive: true, force: true });
+      return failures;
     },
   };
 }

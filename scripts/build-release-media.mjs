@@ -7,6 +7,7 @@ import { fileURLToPath } from "node:url";
 import { cpus } from "node:os";
 
 import { REPOSITORY_ROOT } from "./artifact-layout.mjs";
+import { buildRootEncodings } from "./build-root-provenance.mjs";
 import {
   FFMPEG_SOURCES,
   X265_CMAKE_ARGS,
@@ -179,6 +180,24 @@ function assertStandalone(binary) {
 }
 
 /**
+ * Refuses a binary that carries this checkout's path in its own bytes.
+ *
+ * FFmpeg bakes its whole configure line into the executable, so a prefix under
+ * the checkout ships to every machine that runs the artifact. `verify-artifact`
+ * already refuses that — but it refuses it after a runtime stage, an archive
+ * pass and a SEA build, which is a quarter of an hour after the mistake was
+ * made. Asking the same question of the binary that just came out of the
+ * compiler moves the answer to where it can be acted on.
+ */
+export async function buildRootOccurrences(binary, buildRoot = REPOSITORY_ROOT) {
+  // Read as latin1 rather than utf8: this is an executable, and utf8 decoding
+  // replaces invalid sequences, which can destroy the very bytes being searched
+  // for when the path sits next to binary data.
+  const text = (await readFile(binary)).toString("latin1");
+  return buildRootEncodings(buildRoot).filter((encoding) => text.includes(encoding));
+}
+
+/**
  * Compiles ffmpeg and ffprobe from the approved pinned sources.
  *
  * Each dependency is installed into one private prefix, and FFmpeg is pointed
@@ -282,6 +301,10 @@ export async function buildReleaseMedia(options = {}) {
     await copyFile(source, target);
     await chmod(target, 0o755);
     assertStandalone(target);
+    const carried = await buildRootOccurrences(target);
+    if (carried.length > 0) {
+      fail("the built binary carries this checkout's path in its own bytes", { binary: target, carried });
+    }
     media[name] = { path: target, sha256: await sha256Of(target) };
   }
   assertEncoders(media.ffmpeg.path);

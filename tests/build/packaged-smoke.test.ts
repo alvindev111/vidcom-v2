@@ -569,6 +569,34 @@ describe("packaged smoke steps", () => {
     }
   });
 
+  it("names the entries a tolerated cache write-back could not copy", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "vidcom-writeback-"));
+    try {
+      const source = path.join(root, "source");
+      const destination = path.join(root, "destination");
+      await mkdir(path.join(source, "usable"), { recursive: true });
+      await writeFile(path.join(source, "usable", "file"), "bytes", "utf8");
+      // A directory in the source and a plain file already at its destination:
+      // `cp` refuses that pair, which is the shape the real run hit while
+      // persisting caches after every step had already passed.
+      await mkdir(destination, { recursive: true });
+      await mkdir(path.join(source, "refused"), { recursive: true });
+      await writeFile(path.join(destination, "refused"), "occupied", "utf8");
+
+      const failures = await copyCacheContents(source, destination, { tolerateErrors: true });
+      expect(failures).toHaveLength(1);
+      expect(failures[0].entry).toBe(path.join(destination, "refused"));
+      expect(failures[0].reason).not.toBe("");
+      // The rest of the cache still made it: tolerating one entry must not turn
+      // into skipping the write-back.
+      expect(await readFile(path.join(destination, "usable", "file"), "utf8")).toBe("bytes");
+
+      await expect(copyCacheContents(source, destination)).rejects.toThrow();
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
   it("allows only named cold-machine doctor skips and rejects hidden runtime skips", () => {
     const items = EXPECTED_DOCTOR_ITEM_IDS.map((id) => ({ id, status: "ok" }));
     const workspace = items.find((item) => item.id === "workspace.active");

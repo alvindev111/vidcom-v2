@@ -111,26 +111,37 @@ async function main(argv) {
     );
   }
 
-  await smoke?.dispose();
-
   const failed = failedStepIds(results, options);
   const isCompleteRun = options.step === undefined && options.from === undefined;
   const allPassed = results.every((result) => result.status === "passed");
+  // Held rather than thrown, so a run that finished thirteen steps still
+  // reports them. The reason is written into the report and the run still ends
+  // non-zero — what it must not do is take the report down with it.
+  let evidenceError = null;
   if (isCompleteRun && allPassed && failed.length === 0) {
-    const evidence = completeSmokeEvidence(tag, context);
-    const evidenceDirectory = process.env.VIDCOM_SMOKE_EVIDENCE_DIR;
-    if (process.env.VIDCOM_SMOKE_RELEASE === "1" && !evidenceDirectory) {
-      throw new Error("a successful release smoke requires VIDCOM_SMOKE_EVIDENCE_DIR");
-    }
-    if (evidenceDirectory) {
-      await mkdir(evidenceDirectory, { recursive: true });
-      await Promise.all([
-        writeFile(path.join(evidenceDirectory, "doctor-report.json"), `${JSON.stringify(evidence.doctor, null, 2)}\n`),
-        writeFile(path.join(evidenceDirectory, "ffprobe.json"), `${JSON.stringify(evidence.ffprobe, null, 2)}\n`),
-        writeFile(path.join(evidenceDirectory, "platform.json"), `${JSON.stringify(evidence.platform, null, 2)}\n`),
-      ]);
+    try {
+      const evidence = completeSmokeEvidence(tag, context);
+      const evidenceDirectory = process.env.VIDCOM_SMOKE_EVIDENCE_DIR;
+      if (process.env.VIDCOM_SMOKE_RELEASE === "1" && !evidenceDirectory) {
+        throw new Error("a successful release smoke requires VIDCOM_SMOKE_EVIDENCE_DIR");
+      }
+      if (evidenceDirectory) {
+        await mkdir(evidenceDirectory, { recursive: true });
+        await Promise.all([
+          writeFile(path.join(evidenceDirectory, "doctor-report.json"), `${JSON.stringify(evidence.doctor, null, 2)}\n`),
+          writeFile(path.join(evidenceDirectory, "ffprobe.json"), `${JSON.stringify(evidence.ffprobe, null, 2)}\n`),
+          writeFile(path.join(evidenceDirectory, "platform.json"), `${JSON.stringify(evidence.platform, null, 2)}\n`),
+        ]);
+      }
+    } catch (error) {
+      evidenceError = error instanceof Error ? error.message : String(error);
     }
   }
+
+  // Torn down after the evidence is on disk, never before. Persisting the
+  // caches is an optimisation for the next run, and it once threw — which
+  // discarded the report for thirteen steps that had already finished.
+  const cacheWriteBack = (await smoke?.dispose()) ?? [];
 
   process.stdout.write(`${JSON.stringify({
     version: 1,
@@ -138,14 +149,23 @@ async function main(argv) {
     strict: options.strict === true,
     measurements: context?.measurements ?? {},
     steps: results,
+    cacheWriteBack,
+    evidenceError,
   }, null, 2)}\n`);
+
+  for (const failure of cacheWriteBack) {
+    process.stderr.write(`packaged-smoke: cache write-back skipped ${failure.entry}: ${failure.reason}\n`);
+  }
 
   if (failed.length > 0) {
     // Named, never just "smoke failed": thirteen steps and one message is a
     // report somebody has to reproduce locally to understand.
     process.stderr.write(`packaged-smoke: failed at ${failed.join(", ")}\n`);
   }
-  process.exitCode = smokeExitCode(results, options);
+  if (evidenceError !== null) {
+    process.stderr.write(`packaged-smoke: evidence was not written: ${evidenceError}\n`);
+  }
+  process.exitCode = evidenceError === null ? smokeExitCode(results, options) : 1;
 }
 
 const invokedAsScript = process.argv[1]
