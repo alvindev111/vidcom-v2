@@ -597,6 +597,24 @@ describe("packaged smoke steps", () => {
     }
   });
 
+  it("tolerates a destination root that cannot be created at all", async () => {
+    // One directory up from the per-entry failure, and it was the shape the
+    // real run hit: tolerating only the copies would leave this throwing.
+    const root = await mkdtemp(path.join(tmpdir(), "vidcom-writeback-root-"));
+    try {
+      const source = path.join(root, "source");
+      const destination = path.join(root, "occupied");
+      await mkdir(path.join(source, "entry"), { recursive: true });
+      await writeFile(destination, "not a directory", "utf8");
+
+      const failures = await copyCacheContents(source, destination, { tolerateErrors: true });
+      expect(failures).toEqual([{ entry: destination, reason: expect.stringContaining("EEXIST") }]);
+      await expect(copyCacheContents(source, destination)).rejects.toThrow();
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
   it("allows only named cold-machine doctor skips and rejects hidden runtime skips", () => {
     const items = EXPECTED_DOCTOR_ITEM_IDS.map((id) => ({ id, status: "ok" }));
     const workspace = items.find((item) => item.id === "workspace.active");

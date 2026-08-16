@@ -80,8 +80,16 @@ export async function copyCacheContents(source, destination, options = {}) {
   // makes the production coordinator classify it as `ready`, which turns a
   // first install into a forced repair instead of a normal download.
   if (entries.length === 0) return [];
-  await mkdir(destination, { recursive: true });
   const failures = [];
+  try {
+    await mkdir(destination, { recursive: true });
+  } catch (error) {
+    // The destination root itself can be unusable — occupied by a file, or not
+    // writable. Tolerating only the per-entry copies would leave that case
+    // throwing, which is the same defect one directory up.
+    if (options.tolerateErrors !== true) throw error;
+    return [{ entry: destination, reason: error instanceof Error ? error.message : String(error) }];
+  }
   for (const entry of entries) {
     try {
       await cp(path.join(source, entry.name), path.join(destination, entry.name), {

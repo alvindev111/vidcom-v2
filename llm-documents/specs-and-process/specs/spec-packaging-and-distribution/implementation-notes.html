@@ -1558,6 +1558,16 @@
           <div><dt class="font-semibold text-slate-200">Bằng chứng</dt><dd class="mt-1 text-slate-300">Commit <code>3f49e7c</code>, <code>dirty=false</code>, artifact SHA-256 <code>fb658b6b…56d7a1</code>, <code>ffmpeg 7.1.1</code>. Packaged smoke trên chính artifact đó với PATH rỗng: MP4 8,000000 s có video + audio, VieNeu ra WAV, post-media doctor bốn hạng mục <code>ok</code>. <code>offline</code> là bước duy nhất không chạy được cục bộ vì đòi cắt mạng ở tầng runner; nó đã đóng ở M.4 bằng exact-head CI ba OS.</dd></div>
         </dl>
       </section>
+      <section class="mt-6 rounded-2xl border border-amber-400/30 bg-amber-950/20 p-6 shadow-xl">
+        <p class="text-xs font-semibold uppercase tracking-[0.24em] text-amber-300">2026-08-16 · C-72 · Dọn dẹp không được xoá bằng chứng</p>
+        <h2 class="mt-2 text-xl font-bold text-white">Mười ba bước đã xong, mất sạch report vì một lệnh copy cache</h2>
+        <dl class="mt-5 grid gap-4 md:grid-cols-2">
+          <div><dt class="font-semibold text-slate-200">Thứ tự sai</dt><dd class="mt-1 text-slate-300"><code>dispose()</code> chạy trước khi ghi bằng chứng. <code>cp</code> ném lúc persist cache ⇒ report và evidence bundle của cả lượt chạy biến mất, dấu vết duy nhất còn lại là một dòng lỗi <code>cp</code>.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Hai chiều, hai luật</dt><dd class="mt-1 text-slate-300">Seed cache vẫn ném: đó là setup mà các bước sau khẳng định dựa lên. Write-back chịu lỗi theo từng entry: nó chỉ tốn một lần tải lại ở lượt sau, và để nó ném từng làm mất mười ba bước bằng chứng.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Không nuốt im lặng</dt><dd class="mt-1 text-slate-300">Entry không copy được đi vào report ở <code>cacheWriteBack</code> và ra stderr. Lỗi evidence thành <code>evidenceError</code> và vẫn làm lượt chạy đỏ — thứ nó không được làm là kéo report chết theo.</dd></div>
+          <div><dt class="font-semibold text-slate-200">Hỏi sớm hơn 15 phút</dt><dd class="mt-1 text-slate-300"><code>verify-artifact</code> vẫn từ chối binary mang đường checkout, nhưng nó từ chối sau runtime stage + archive + SEA build. <code>build-release-media</code> nay hỏi đúng câu đó ngay với binary vừa ra khỏi compiler.</dd></div>
+        </dl>
+      </section>
     </main>
   </body>
 </html>
