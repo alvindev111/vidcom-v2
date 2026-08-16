@@ -3,10 +3,12 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
+import { REPOSITORY_ROOT } from "../../scripts/artifact-layout.mjs";
 import { FFMPEG_SOURCES } from "../../scripts/build-ffmpeg.mjs";
 import {
   RELEASE_MEDIA_PROVENANCE,
   approvedSources,
+  defaultBuildRoot,
   foreignDependencies,
   readReleaseMediaProvenance,
 } from "../../scripts/build-release-media.mjs";
@@ -109,6 +111,16 @@ describe("release media provenance", () => {
   it("refuses an unknown schema instead of reading the fields it recognises", async () => {
     await expect(readReleaseMediaProvenance(await releaseMediaRoot({ schemaVersion: 2 })))
       .rejects.toThrow(/unknown schema/u);
+  });
+
+  it("installs outside the checkout, because the prefix ships inside the binary", () => {
+    // FFmpeg bakes its configure line into the executable, so a prefix under
+    // the checkout would put the build machine's path in every artifact — which
+    // is exactly what `verify-artifact` refuses.
+    for (const platform of ["darwin", "linux", "win32"] as const) {
+      expect(defaultBuildRoot(platform).startsWith(REPOSITORY_ROOT)).toBe(false);
+    }
+    expect(defaultBuildRoot("darwin")).not.toContain("Users");
   });
 
   it("reports every dynamic dependency a clean machine would not already have", () => {

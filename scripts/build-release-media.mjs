@@ -14,7 +14,6 @@ import {
   assertEncoders,
   fetchPinnedSource,
   ffmpegBuildEnvironment,
-  ffmpegBuildRoot,
   ffmpegConfigureArgs,
   ffmpegOutputRoot,
 } from "./build-ffmpeg.mjs";
@@ -42,6 +41,19 @@ export const RELEASE_MEDIA_SCHEMA_VERSION = 1;
  * calls it. Recording it anyway would put a source in the provenance that never
  * contributed a byte to the binaries the record describes.
  */
+/**
+ * Where the dependencies are installed, and why it is not under `dist/`.
+ *
+ * FFmpeg bakes its whole configure line into the binary, so the prefix travels
+ * to every machine that runs the artifact — and `verify-artifact` refuses a
+ * shipped file carrying the build machine's path, which is how this was found
+ * rather than guessed. A fixed location outside the checkout is the same string
+ * on every build host and names nobody's home directory.
+ */
+export function defaultBuildRoot(platform = process.platform) {
+  return platform === "win32" ? "C:\\vidcom-release-media" : "/tmp/vidcom-release-media";
+}
+
 export function approvedSources(architecture = process.arch) {
   return Object.fromEntries(
     Object.entries(FFMPEG_SOURCES)
@@ -174,7 +186,7 @@ function assertStandalone(binary) {
  * reaching past it into a package manager's `.pc` files.
  */
 export async function buildReleaseMedia(options = {}) {
-  const buildRoot = path.resolve(options.buildRoot ?? ffmpegBuildRoot());
+  const buildRoot = path.resolve(options.buildRoot ?? defaultBuildRoot());
   const outputRoot = path.resolve(options.outputRoot ?? ffmpegOutputRoot());
   const cacheRoot = path.resolve(
     options.cacheRoot
