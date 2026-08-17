@@ -8,6 +8,7 @@ export * from "./auth/nonce";
 export * from "./auth/session";
 export * from "./bridge/attachments";
 export * from "./listener";
+export * from "./service/mutation-history";
 export * from "./middleware/error-mapper";
 export * from "./middleware/perimeter";
 export * from "./routes/project-reads";

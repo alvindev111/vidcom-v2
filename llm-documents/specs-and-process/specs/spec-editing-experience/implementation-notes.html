@@ -832,6 +832,30 @@
           </p>
         </article>
       </section>
+      <section class="space-y-3">
+        <h2 class="text-lg font-semibold text-sky-300">P3 — Production singleton 3.1d (2026-08-18)</h2>
+
+        <article class="rounded-lg border border-sky-900/70 bg-sky-950/20 p-4 space-y-2">
+          <h3 class="font-medium">Một history cho toàn workspace foundation</h3>
+          <p class="text-slate-300">
+            Composition root tạo đúng một <code>MutationHistory</code> ngay sau content store. Cùng object đó được
+            truyền vào <code>WriteAuthority</code>, callback startup reconciliation, <code>WorkspaceWatcher</code> và
+            dependency seam <code>createServerApp.history</code>. Không có constructor trong app/route factory và
+            production CLI/Server không còn dùng no-op bridge của P0.
+          </p>
+          <p class="text-slate-400 text-sm">
+            Startup vốn đã tạo infrastructure trước application/reconcile và chỉ mở watcher/listener sau recovery,
+            nên singleton tồn tại đủ sớm cho cả recovery headless. Teardown mới dispose history sau khi watcher dừng,
+            trước khi nhả lease và đóng database; workspace switch vì thế không giữ stack/ref của foundation cũ.
+          </p>
+          <p class="text-slate-400 text-sm">
+            Test production kiểm object identity trong authority và watcher, concrete class thay no-op, cùng thứ tự
+            dispose. Bộ startup/runtime/watcher/host integration 55/55 PASS. Seam server đã nhận đúng singleton;
+            đăng ký và hành vi <code>/undo</code>, <code>/redo</code>, <code>/history</code> vẫn thuộc 3.3 và chưa được
+            trình bày như đã hoàn thành.
+          </p>
+        </article>
+      </section>
     </main>
   </body>
 </html>

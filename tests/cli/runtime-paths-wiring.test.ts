@@ -12,6 +12,7 @@ import {
 import { createApplication, createInfrastructure, withAudioBinaryPaths } from "@vidcom/cli";
 import type { ProjectId, RelPath } from "@vidcom/contracts";
 import type { AbsolutePath, ProcessPort, ProcessRunInput } from "@vidcom/core";
+import { MutationHistory } from "@vidcom/server";
 import { afterEach, describe, expect, it } from "vitest";
 
 const roots: string[] = [];
@@ -110,13 +111,15 @@ describe("runtime path wiring", () => {
       }).dependencies;
       expect(infrastructure.renderRoots).toBeDefined();
       expect(infrastructure.pendingMount).toBeDefined();
-      expect(infrastructure.mutationObserver).toBeDefined();
+      expect(infrastructure.mutationObserver).toBeInstanceOf(MutationHistory);
       expect(infrastructure.largeContent).toBeDefined();
       expect(authorityDependencies.journal).toBe(infrastructure.journal);
       expect(authorityDependencies.compositeJournal).toBe(infrastructure.journal);
       expect(authorityDependencies.pendingMount).toBe(infrastructure.pendingMount);
       expect(authorityDependencies.observer).toBe(infrastructure.mutationObserver);
       expect(authorityDependencies.undoContent).toBe(infrastructure.largeContent);
+      expect((infrastructure.watcher as unknown as { observer: unknown }).observer)
+        .toBe(infrastructure.mutationObserver);
       expect(paths.nativeDependenciesRoot).toContain(appDataRoot);
     } finally {
       await infrastructure.database.destroy();

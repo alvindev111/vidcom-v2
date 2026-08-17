@@ -242,6 +242,7 @@ export async function startVidcomFoundation<Listener>(
     { name: "listener", run: closeListenerOnce },
     { name: "scheduler", run: stopSchedulerOnce },
     { name: "watcher", run: closeWatcherOnce },
+    { name: "mutation-history", run: () => infrastructure.mutationObserver.dispose() },
     { name: "lease", run: releaseLeaseOnce },
     // Recovery entry ids are session-scoped capabilities. Once this foundation
     // stops, keeping them resolvable would let a stale UI address the workspace

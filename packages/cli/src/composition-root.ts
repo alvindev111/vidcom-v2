@@ -69,7 +69,6 @@ import {
   WorkspaceMutationCoordinator,
   ProjectCache,
   ProjectPathInvalidatorFanout,
-  NOOP_MUTATION_OBSERVER,
   type AbsolutePath,
   type ClockPort,
   type IdPort,
@@ -81,6 +80,7 @@ import {
   type ProjectRef,
 } from "@vidcom/core";
 import { registerVidcomTools, ToolRegistry } from "@vidcom/mcp";
+import { MutationHistory } from "@vidcom/server";
 import {
   createNoopProbeJobType,
   enqueueRenderJob,
@@ -264,6 +264,7 @@ export function createInfrastructure(config: CompositionRootConfig) {
     ?? downloads.componentRoot(DOWNLOAD_CACHE_COMPONENTS.browser)) as AbsolutePath;
   const workspace = new WorkspaceFs(config.workspaceRoot);
   const largeContent = new LargePreviousContentStore(config.appDataRoot);
+  const mutationObserver = new MutationHistory(largeContent);
   const journal = new MutationJournal(database, clock, largeContent);
   const pendingMount = new SqlitePendingMountStore(database, clock);
   const workspaceOperations = new WorkspaceOperationJournal(database, clock, largeContent);
@@ -307,7 +308,17 @@ export function createInfrastructure(config: CompositionRootConfig) {
     metrics.increment("project_path_invalidator_error");
   });
   const writtenHashes = new WrittenHashTracker();
-  const watcher = new WorkspaceWatcher(workspace, database, events, pathInvalidator, writtenHashes, clock);
+  const watcher = new WorkspaceWatcher(
+    workspace,
+    database,
+    events,
+    pathInvalidator,
+    writtenHashes,
+    clock,
+    undefined,
+    undefined,
+    mutationObserver,
+  );
   const stagedAssets = new AppDataAssetStager(config.appDataRoot);
   const backups = new AppDataBackupStore(config.appDataRoot, database, clock, ids);
   const composition = new CompositionHf();
@@ -389,7 +400,7 @@ export function createInfrastructure(config: CompositionRootConfig) {
     largeContent,
     journal,
     pendingMount,
-    mutationObserver: NOOP_MUTATION_OBSERVER,
+    mutationObserver,
     workspaceOperations,
     projectDirectories: new FsProjectDirectoryAdapter(config.workspaceRoot),
     lease,

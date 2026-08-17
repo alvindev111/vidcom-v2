@@ -426,8 +426,11 @@ describe("startup order", () => {
         async startWatcher() { return { close() { lifecycle.push("watcher.close"); } }; },
         async openListener() { return { close() { lifecycle.push("listener.close"); } }; },
       });
+      const history = runtime.infrastructure.mutationObserver as unknown as { dispose(): void };
+      const disposeHistory = history.dispose.bind(history);
+      history.dispose = () => { lifecycle.push("history.dispose"); disposeHistory(); };
       await runtime.stop();
-      expect(lifecycle).toEqual(["listener.close", "scheduler.stop", "watcher.close"]);
+      expect(lifecycle).toEqual(["listener.close", "scheduler.stop", "watcher.close", "history.dispose"]);
       const database = await initializeDatabase(path.join(root, "app-data"));
       expect(dbOne(database, "SELECT COUNT(*) AS count FROM workspace_lease"))
         .toEqual({ count: 0 });

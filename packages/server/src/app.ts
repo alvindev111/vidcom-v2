@@ -27,6 +27,7 @@ import { createBridgeRoutes, type BridgeRouteDependencies } from "./routes/bridg
 import { createMcpRoutes, type McpRouteDependencies } from "./routes/mcp";
 import { createSystemRoutes, type SystemRouteDependencies } from "./routes/system";
 import { createDeliveryLoopRoutes, type DeliveryLoopRouteDependencies } from "./routes/delivery-loop";
+import type { MutationHistory } from "./service/mutation-history";
 import { ActivateWorkspaceRequestSchema, ErrorCode, MAX_BGM_BYTES, MAX_SOURCE_BYTES } from "@vidcom/contracts";
 
 export interface ServerAppDependencies {
@@ -43,6 +44,8 @@ export interface ServerAppDependencies {
   projectReads?: ProjectReadRouteDependencies;
   jobs?: JobStorePort;
   events?: EventOutboxPort;
+  /** Workspace-foundation singleton consumed by the browser history routes added in P3.3. */
+  history?: MutationHistory;
   projectWrites?: ProjectWriteRouteDependencies;
   narration?: NarrationRouteDependencies;
   deliveryLoop?: DeliveryLoopRouteDependencies;
