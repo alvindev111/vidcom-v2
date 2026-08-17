@@ -141,7 +141,7 @@ describe("LargePreviousContentStore undo leases", () => {
     expect(await store.cleanupUnreferenced(new Set(), new Date("2100-01-01"))).toBe(0);
     store.release([second]);
     expect(await store.cleanupUnreferenced(new Set(), new Date("2100-01-01"))).toBe(1);
-  });
+  }, 15_000);
 
   it("rejects symlink staged sources instead of following them", async () => {
     const store = new LargePreviousContentStore(root);

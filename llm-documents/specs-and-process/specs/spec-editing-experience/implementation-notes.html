@@ -663,6 +663,28 @@
           </p>
         </article>
       </section>
+      <section class="space-y-3">
+        <h2 class="text-lg font-semibold text-rose-300">P0 CI repair — Linux full-suite timeout (2026-08-18)</h2>
+
+        <article class="rounded-lg border border-rose-900/70 bg-rose-950/20 p-4 space-y-2">
+          <h3 class="font-medium">Một test lifecycle vượt timeout mặc định dưới tải CI</h3>
+          <p class="text-slate-300">
+            Run <code>32074075799</code> trên exact commit <code>8f0b8291ccd0bf7d564f6416b2900c97201ada98</code>
+            cho thấy Linux fail duy nhất tại test stream object 2 MiB hai lần: 2.132 test khác PASS và 5 test
+            được skip theo điều kiện. Test vượt 5 giây mặc định khi chạy chung full suite; đây là evidence đỏ thật,
+            nên P0 chưa được đóng.
+          </p>
+          <p class="text-slate-400 text-sm">
+            Không thay production code hoặc giảm assertion. Test lifecycle được cấp timeout riêng 15 giây,
+            vẫn thấp hơn gate stress 250 MiB đang dùng 30 giây. Sau focused node test và gate cục bộ, checkpoint
+            sẽ được push rồi workflow CI exact-source phải chạy lại toàn bộ.
+          </p>
+          <p class="text-slate-400 text-sm">
+            Focused node suite sau sửa PASS 7/7 trong 3,37 giây và <code>git diff --check</code> PASS. Kết quả này
+            chỉ xác minh patch; run CI mới trên commit đã push vẫn là bằng chứng bắt buộc để đóng P0.
+          </p>
+        </article>
+      </section>
     </main>
   </body>
 </html>
