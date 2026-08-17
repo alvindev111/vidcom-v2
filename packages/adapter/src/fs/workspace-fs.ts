@@ -24,6 +24,7 @@ import {
 } from "@vidcom/core";
 
 import { writeAtomic } from "./atomic-write";
+import { openRegularFileNoFollow } from "./regular-file";
 import { deleteAtomic } from "./atomic-delete";
 import { syncDirectory } from "./durability";
 import { resolveProjectPath, resolveWorkspacePath } from "./resolve";
@@ -64,7 +65,7 @@ async function readProjectRefAt(directory: string, slug: string): Promise<Projec
 }
 
 async function hashRegularFile(pathname: string): Promise<ContentHash> {
-  const handle = await open(pathname, constants.O_RDONLY | constants.O_NOFOLLOW);
+  const handle = await openRegularFileNoFollow(pathname, "hash target is not a regular file");
   try {
     const metadata = await handle.stat();
     if (!metadata.isFile()) throw new TypeError("hash target is not a regular file");

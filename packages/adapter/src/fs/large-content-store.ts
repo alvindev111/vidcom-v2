@@ -1,5 +1,4 @@
 import { createHash, randomUUID } from "node:crypto";
-import { constants } from "node:fs";
 import { link, mkdir, open, readdir, rm, stat, type FileHandle } from "node:fs/promises";
 import path from "node:path";
 
@@ -13,6 +12,7 @@ import type {
 } from "@vidcom/core";
 
 import { syncDirectory } from "./durability";
+import { openRegularFileNoFollow } from "./regular-file";
 
 export const LARGE_PREVIOUS_CONTENT_THRESHOLD = 64 * 1024;
 
@@ -47,7 +47,7 @@ async function digestHandle(handle: FileHandle): Promise<ContentHash> {
 }
 
 async function digestFile(filename: string): Promise<ContentHash> {
-  const handle = await open(filename, constants.O_RDONLY | constants.O_NOFOLLOW);
+  const handle = await openRegularFileNoFollow(filename, "previous-content object is not a regular file");
   try {
     const metadata = await handle.stat();
     if (!metadata.isFile()) throw new TypeError("previous-content object is not a regular file");
@@ -142,7 +142,10 @@ export class LargePreviousContentStore implements PreviousContentStore, UndoCont
     const directory = path.dirname(target);
     await mkdir(directory, { recursive: true });
     const temporary = path.join(directory, `.${path.basename(target)}.${randomUUID()}.tmp`);
-    const sourceHandle = await open(source.sourcePath, constants.O_RDONLY | constants.O_NOFOLLOW);
+    const sourceHandle = await openRegularFileNoFollow(
+      source.sourcePath,
+      "undo content source is not a regular file",
+    );
     let targetHandle: FileHandle | null = null;
     try {
       const before = await sourceHandle.stat();
@@ -220,7 +223,7 @@ export class LargePreviousContentStore implements PreviousContentStore, UndoCont
   /** Compatibility materialization for legacy callers; verification itself stays chunked/no-follow. */
   async read(hash: ContentHash): Promise<Uint8Array> {
     const sourcePath = this.filename(hash);
-    const handle = await open(sourcePath, constants.O_RDONLY | constants.O_NOFOLLOW);
+    const handle = await openRegularFileNoFollow(sourcePath, "previous-content object is not a regular file");
     try {
       const metadata = await handle.stat();
       if (!metadata.isFile()) throw new TypeError("previous-content object is not a regular file");

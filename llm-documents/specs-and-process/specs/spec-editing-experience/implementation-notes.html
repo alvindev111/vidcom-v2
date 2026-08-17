@@ -685,6 +685,31 @@
           </p>
         </article>
       </section>
+      <section class="space-y-3">
+        <h2 class="text-lg font-semibold text-rose-300">P0 CI repair — no-follow trên Windows (2026-08-18)</h2>
+
+        <article class="rounded-lg border border-rose-900/70 bg-rose-950/20 p-4 space-y-2">
+          <h3 class="font-medium">Không dựa riêng vào <code>O_NOFOLLOW</code> ngoài POSIX</h3>
+          <p class="text-slate-300">
+            Run exact-source <code>32074754533</code> tại commit
+            <code>5a79919725abc5c00ae6ecd046bd8cce162552f6</code> làm lộ bốn đường đọc file vẫn theo symlink
+            trên Windows, nơi cờ <code>O_NOFOLLOW</code> không tạo bảo đảm như Linux/macOS. Đây là lỗi bảo mật
+            đa nền tảng thật, không phải lý do để skip test.
+          </p>
+          <p class="text-slate-400 text-sm">
+            Adapter bổ sung một primitive mở file thường: kiểm <code>lstat</code> trước khi mở, kiểm
+            <code>fstat</code> của handle và <code>lstat</code> lại path, rồi đối chiếu identity; handle bị đóng
+            nếu path là symlink, không phải regular file hoặc đổi identity. Workspace hash, staged source,
+            staged cleanup và large-content store dùng chung primitive này. Lỗi thứ năm chỉ thuộc fixture:
+            suffix POSIX được normalize khi so với target Windows để injection thật sự xảy ra.
+          </p>
+          <p class="text-slate-400 text-sm">
+            Năm suite adapter bị ảnh hưởng đã PASS 62/62 với môi trường node trong 3,65 giây; typecheck và
+            diff-check PASS, lint giữ 0 lỗi/5 warning baseline. Vì máy cục bộ không phải Windows, bằng chứng
+            quyết định vẫn phải đến từ một workflow CI mới chạy đúng commit đã push.
+          </p>
+        </article>
+      </section>
     </main>
   </body>
 </html>

@@ -7,6 +7,7 @@ import type { ContentHash, RelPath } from "@vidcom/contracts";
 import type { ResolvedPath, StagedAsset, StagedAssetPort } from "@vidcom/core";
 
 import { syncDirectory } from "./durability";
+import { openRegularFileNoFollow } from "./regular-file";
 
 export interface StagedAssetOperations {
   copySource(source: FileHandle, destination: FileHandle): Promise<void>;
@@ -83,7 +84,7 @@ export class AppDataAssetStager implements StagedAssetPort {
     const directory = path.join(this.appDataRoot, "tmp");
     await mkdir(directory, { recursive: true });
     const temporaryPath = path.join(directory, `artifact-${randomUUID()}.tmp`);
-    const source = await open(sourcePath, constants.O_RDONLY | constants.O_NOFOLLOW);
+    const source = await openRegularFileNoFollow(sourcePath, "staged artifact source is not a regular file");
     let destination: Awaited<ReturnType<typeof open>> | null = null;
     try {
       destination = await open(temporaryPath, "wx", 0o600);
@@ -160,7 +161,7 @@ export class AppDataAssetStager implements StagedAssetPort {
 
 async function hashFile(pathname: string): Promise<ContentHash> {
   const digest = createHash("sha256");
-  const handle = await open(pathname, constants.O_RDONLY | constants.O_NOFOLLOW);
+  const handle = await openRegularFileNoFollow(pathname, "staged target is not a regular file");
   try {
     const metadata = await handle.stat();
     if (!metadata.isFile()) throw new TypeError("staged target is not a regular file");

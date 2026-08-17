@@ -727,7 +727,7 @@ describe("Composite WriteAuthority with real SQLite and filesystem", () => {
       get(target, property) {
         if (property === "publishCaptured") {
           return async (...args: Parameters<WorkspacePort["publishCaptured"]>) =>
-            args[0].target.endsWith(suffix) ? false : target.publishCaptured(...args);
+            args[0].target.replaceAll(path.sep, "/").endsWith(suffix) ? false : target.publishCaptured(...args);
         }
         const value = Reflect.get(target, property, target) as unknown;
         return typeof value === "function" ? value.bind(target) : value;
