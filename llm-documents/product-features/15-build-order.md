@@ -119,7 +119,11 @@ D1 là quyết định số một, nhưng nó cần nền móng ở giai đoạn
 
 ---
 
-## Giai đoạn 4 — Đóng gói & runtime phân phối (re-baseline 7–8 tuần)
+## Giai đoạn 4 — Đóng gói & runtime phân phối (re-baseline 7–8 tuần) ✅
+
+> **Đóng 2026-08-16** — spec chuyển sang [`-complete.md`](../specs-and-process/specs/spec-packaging-and-distribution/spec-packaging-and-distribution-complete.md), 13 phase A–M và 174/174 mục. Mục cuối cùng là AC artifact của Phase D: nguồn release mà C-21 duyệt chưa bao giờ có code chạy nó, nên `scripts/build-release-media.mjs` dựng ffmpeg/ffprobe 7.1.1 từ đúng các pin upstream và `prepare-packaged-runtime --release-media` chỉ nhận binary có provenance khớp cả nguồn lẫn bytes. Artifact production ở commit `3f49e7c` (SHA-256 `fb658b6b…56d7a1`) render **MP4 8,000000 s `h264`+`aac`** với PATH rỗng và app-data/runtime rỗng. Packaged smoke ba OS, browser session và process gate đều xanh ở exact head.
+>
+> **Còn mang sang Giai đoạn 6**: dựng nguồn release cho Linux x64 và Windows x64 **trên chính host của chúng** (DR-1 cấm cross-build), ký/notarize và full 3 OS × 2 kiến trúc. Bước `offline` của smoke chỉ chạy được nơi cắt được mạng ở tầng runner.
 
 > **Detailed Goals đã duyệt 2026-08-07** — nguồn authoritative là [spec Packaging & Distribution Runtime](../specs-and-process/specs/spec-packaging-and-distribution/spec-packaging-and-distribution-detailed-goal.md). Scope hiện là khoảng **170 SP**: ba artifact native target (macOS arm64, Windows x64, Linux x64), packaged smoke trên runner cùng OS, Windows là release gate. `vidcom worker` bị loại khỏi Giai đoạn 4 vì daemon đã sở hữu scheduler; thêm mode này sẽ tạo đường điều phối job thứ hai. Nút `New video` mức tối thiểu được kéo từ 5.0 vào 4.4/R1.19 để artifact tự đi hết vòng demo.
 
@@ -136,7 +140,7 @@ D1 là quyết định số một, nhưng nó cần nền móng ở giai đoạn
 | 4.9 | Import project có sẵn | PK-12 |
 | 4.10 | Smoke test trên artifact, máy sạch, cùng OS với artifact: macOS arm64 + Windows x64 + Linux x64 | — |
 
-**Mốc:** một file tải xuống, chạy được trên máy chưa cài gì.
+**Mốc:** một file tải xuống, chạy được trên máy chưa cài gì. — **Đạt 2026-08-16**: artifact `darwin-arm64` từ nguồn release được duyệt đi hết vòng nhận dạng → doctor → chọn workspace → tạo/import project → MCP bridge cạnh UI → TTS + snapshot + render MP4 → upload/SSE → lease loss → provenance, với `node`/`python`/`bun` không có trên PATH.
 
 ---
 
@@ -183,7 +187,7 @@ D1 là quyết định số một, nhưng nó cần nền móng ở giai đoạn
 | 1 | Nền móng | 3–4 tuần | Backend 100% Hono, CI xanh | ✅ 2026-08-01 — 118/118 |
 | 2 | MCP thật | 2–3 tuần | AI sửa được project qua tool | ✅ 2026-08-02 — 10 tool, 2 era |
 | 3 | Đóng vòng lặp | 7–8 tuần (re-baseline 2026-08-04) | Xuất được MP4 có tiếng | ✅ 2026-08-05 — còn nợ R5 UI → 5.0 |
-| 4 | Đóng gói & runtime phân phối | 7–8 tuần (re-baseline 2026-08-07) | Một file thực thi, smoke native trên 3 target | 🟡 đang thực thi — checklist gần xong, còn AC render MP4 từ production release artifact (mở từ 2026-08-13) |
+| 4 | Đóng gói & runtime phân phối | 7–8 tuần (re-baseline 2026-08-07) | Một file thực thi, smoke native trên 3 target | ✅ 2026-08-16 — 174/174; AC cuối đóng bằng C-71 (release media dựng từ nguồn được duyệt), MP4 8 s `h264`+`aac` render từ artifact production trên PATH rỗng |
 | 5 | Editing UX | re-baseline 9–11 tuần (~212 SP, 2026-08-16) | Studio dùng thoải mái | 🟡 **đang thực thi** — Goals bản 7, Design bản 12, Checklist đều duyệt 2026-08-16; S0 xong, kế tiếp P0 |
 | 6 | AI Composer & hoàn thiện | — | Sản phẩm đầy đủ | ⬜ chưa mở spec |
 

@@ -8,7 +8,7 @@
 > cảnh báo hai bản lộ trình sẽ lệch; lần lệch gần nhất (2026-08-04 → 08-05) làm
 > file này giữ danh sách Giai đoạn 3 cũ suốt một vòng re-baseline.
 >
-> Đồng bộ lần cuối: **2026-08-15**.
+> Đồng bộ lần cuối: **2026-08-16**.
 
 | Giai đoạn | Nội dung | Trạng thái |
 |---|---|---|
@@ -16,7 +16,7 @@
 | 1 | Nền móng | ✅ 2026-08-01 — 118/118 |
 | 2 | MCP chạy thật | ✅ 2026-08-02 — 10 tool, 2 era |
 | 3 | Đóng vòng lặp sản phẩm | ✅ 2026-08-05 — nợ R5 UI đã trả ở 4.4/R1.19 |
-| 4 | Đóng gói & runtime phân phối | 🟡 đang thực thi — checklist gần xong, còn packaged release-artifact render smoke |
+| 4 | Đóng gói & runtime phân phối | ✅ 2026-08-16 — 174/174; MP4 render từ artifact production trên PATH rỗng |
 | 5 | Trải nghiệm editing | 🟡 **đang thực thi** — Goals bản 7, Design bản 12, Checklist đều duyệt 2026-08-16; S0 xong, kế tiếp P0 |
 | 6 | AI Composer & hoàn thiện | ⬜ chưa mở spec |
 
@@ -70,7 +70,7 @@ Re-baseline 2026-08-04 kéo agent-kit từ Giai đoạn 4 lên, vì harness ph�
 
 **Nợ còn lại:** 3.4 giao R5 ở tầng Core/adapter/HTTP (`POST /v1/projects` chạy được) nhưng checklist **không có task FE nào**, nên nút `New video` vẫn `disabled`. Đã kéo vào Giai đoạn 4 (4.4/R1.19) và **trả xong 2026-08-13** — `NewProjectDialog` + browser test hai nhánh, xem Phase G task G.8/G.9.
 
-## Giai đoạn 4 — Đóng gói & runtime phân phối (re-baseline 7–8 tuần)
+## Giai đoạn 4 — Đóng gói & runtime phân phối (re-baseline 7–8 tuần) ✅
 
 *(4.1–4.3 — nội dung agent-kit — đã chuyển lên 3.12. 5.0 kéo xuống đây thành 4.4/R1.19.)*
 
@@ -78,7 +78,9 @@ Directory picker + token flow → workspace lock/lease + single-writer daemon + 
 
 Thư viện motion là bẫy dễ bỏ sót: `install_motion_library` đọc chúng từ `node_modules`, thứ artifact không có. Xem 4.8 trong build-order.
 
-**Mốc:** một file tải xuống, chạy trên máy chưa cài gì.
+**Mốc:** một file tải xuống, chạy trên máy chưa cài gì. — **Đạt 2026-08-16**, spec đã đóng ([`-complete.md`](llm-documents/specs-and-process/specs/spec-packaging-and-distribution/spec-packaging-and-distribution-complete.md), 174/174).
+
+**Nợ mang sang Giai đoạn 6:** nguồn release cho Linux x64 và Windows x64 phải dựng **trên chính host của chúng** (DR-1 cấm cross-build); ký/notarize và full 3 OS × 2 kiến trúc. Bước `offline` của packaged smoke chỉ chạy được nơi cắt được mạng ở tầng runner.
 
 ## Giai đoạn 5 — Trải nghiệm editing (re-baseline 9–11 tuần)
 
