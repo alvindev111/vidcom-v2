@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
@@ -15,6 +15,7 @@ import {
   type ClockPort,
   type ProjectRef,
   type LeasePort,
+  type MutationReceipt,
   type GrantBinding,
   type PendingMutationContext,
   type StepIntent,
@@ -84,6 +85,116 @@ async function liveProject(slug: string, content: string) {
 }
 
 describe("composite recovery persistence", () => {
+  it("rolls directory intents forward and rolls a partially landed tree back", async () => {
+    const { projectId, projectRoot, ref } = await liveProject("directory-recovery", "<main></main>");
+    const journal = new MutationJournal(database, clock);
+    const workspace = new WorkspaceFs(workspaceRoot as AbsolutePath);
+    const mkdirIntent: StepIntent = {
+      ordinal: 0,
+      kind: "mkdir",
+      path: "assets" as RelPath,
+      entity: null,
+      fromHash: null,
+      toHash: null,
+      previousContent: null,
+      existedBefore: false,
+    };
+    const landed = await journal.beginComposite(
+      { projectId, actor: "agent" },
+      [mkdirIntent],
+      { toolAudit: null },
+      authority,
+    );
+    await mkdir(path.join(projectRoot, "assets"));
+    await expect(reconcileCompositeMutation({
+      workspace,
+      journal,
+      async resolveProjectRef() { return ref; },
+    }, landed)).resolves.toMatchObject({ ok: true, value: { terminal: "committed" } });
+    expect(dbOne(database, "SELECT status FROM mutation_journal WHERE id = ?", landed)).toEqual({ status: "committed" });
+
+    const partial = await journal.beginComposite(
+      { projectId, actor: "agent" },
+      [
+        { ...mkdirIntent, path: "tree" as RelPath },
+        { ...mkdirIntent, ordinal: 1, path: "tree/sub" as RelPath },
+      ],
+      { toolAudit: null },
+      authority,
+    );
+    await mkdir(path.join(projectRoot, "tree"));
+    await expect(reconcileCompositeMutation({
+      workspace,
+      journal,
+      async resolveProjectRef() { return ref; },
+    }, partial)).resolves.toMatchObject({ ok: true, value: { terminal: "rolled_back" } });
+    await expect(readdir(path.join(projectRoot, "tree"))).rejects.toMatchObject({ code: "ENOENT" });
+    expect(dbOne(database, "SELECT status FROM mutation_journal WHERE id = ?", partial)).toEqual({ status: "rolled_back" });
+
+    const removed = await journal.beginComposite(
+      { projectId, actor: "agent" },
+      [{ ...mkdirIntent, kind: "rmdir", path: "old-folder" as RelPath, existedBefore: true }],
+      { toolAudit: null },
+      authority,
+    );
+    await expect(reconcileCompositeMutation({
+      workspace,
+      journal,
+      async resolveProjectRef() { return ref; },
+    }, removed)).resolves.toMatchObject({ ok: true, value: { terminal: "committed" } });
+  });
+
+  it("uses the entity backing path in a recovered event without history metadata", async () => {
+    const projectId = "project_entity_recovery" as ProjectId;
+    const slug = "entity-recovery";
+    const before = "{}\n";
+    const after = JSON.stringify({ bgm: { volume: 0.7 } });
+    register(projectId, slug);
+    const projectRoot = path.join(workspaceRoot, slug);
+    await mkdir(projectRoot, { recursive: true });
+    await writeFile(path.join(projectRoot, "vidcom.json"), JSON.stringify({ id: projectId }));
+    await writeFile(path.join(projectRoot, "index.html"), "<main></main>");
+    await writeFile(path.join(projectRoot, "preview-settings.json"), after);
+    dbRun(database, `INSERT INTO entity_state
+      (project_id, entity, revision, content_hash, backing_path, last_actor, updated_at)
+      VALUES (?, 'preview-settings', 0, ?, 'preview-settings.json', 'system', ?)`,
+    projectId, hash(before), now);
+    const ref: ProjectRef = {
+      id: projectId,
+      slug,
+      root: projectRoot as AbsolutePath,
+      entry: "index.html" as RelPath,
+    };
+    const journal = new MutationJournal(database, clock);
+    const id = await journal.beginComposite(
+      { projectId, actor: "agent" },
+      [{
+        ordinal: 0,
+        kind: "entity",
+        path: null,
+        entity: "preview-settings",
+        fromHash: hash(before),
+        toHash: hash(after),
+        previousContent: before,
+      }],
+      { toolAudit: null },
+      authority,
+    );
+
+    await expect(reconcileCompositeMutation({
+      workspace: new WorkspaceFs(workspaceRoot as AbsolutePath),
+      journal,
+      async resolveProjectRef() { return ref; },
+    }, id)).resolves.toMatchObject({ ok: true, value: { terminal: "committed" } });
+    expect(dbOne(database, "SELECT payload FROM event_outbox WHERE project_id = ?", projectId)).toEqual({
+      payload: JSON.stringify({
+        entity: "preview-settings",
+        paths: ["preview-settings.json"],
+        source: "system",
+      }),
+    });
+  });
+
   it("isolates an orphaned project while rolling a healthy project forward", async () => {
     const missingId = "project_missing_recovery" as ProjectId;
     const healthyId = "project_healthy_recovery" as ProjectId;
@@ -108,11 +219,22 @@ describe("composite recovery persistence", () => {
       authority,
     );
     const workspace = new WorkspaceFs(workspaceRoot as AbsolutePath);
+    const receipts: MutationReceipt[] = [];
+    const observer = {
+      claimHistoryOperation: () => ({ ok: true as const }),
+      abortHistoryOperation() {},
+      blockHistoryOperation() {},
+      emit(receipt: MutationReceipt) { receipts.push(receipt); return { ok: true as const }; },
+      observeExternalChange() {},
+      invalidateProject() {},
+    };
 
     const report = await reconcileCompositeMutations({
       workspace,
       journal,
       workspaceRoot,
+      observer,
+      clock,
       async resolveProjectRef(projectId): Promise<ProjectRef | null> {
         return projectId === healthyId
           ? {
@@ -131,6 +253,21 @@ describe("composite recovery persistence", () => {
       rolledBack: [],
       orphaned: [missingJournal],
     });
+    expect(receipts).toMatchObject([{
+      id: `journal:${healthyJournal}`,
+      projectId: healthyId,
+      origin: {
+        kind: "system",
+        sessionId: null,
+        label: null,
+        historyAction: "ignore",
+        historyOperation: null,
+      },
+      paths: ["index.html"],
+      readGuards: [],
+      undoable: false,
+      steps: [{ kind: "file", undoable: false, omittedReason: "not-undoable" }],
+    }]);
     expect(dbOne(database, "SELECT status FROM mutation_journal WHERE id = ?", missingJournal))
       .toEqual({ status: "orphaned" });
     expect(dbOne(database, "SELECT status FROM mutation_journal WHERE id = ?", healthyJournal))

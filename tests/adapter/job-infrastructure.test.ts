@@ -118,6 +118,7 @@ describe("SQLite job infrastructure", () => {
         async append(event) { emitted.push(event.type); return emitted.length; },
         async readFrom() { return { events: [], gap: false }; },
         async latestSeq() { return 0; },
+        async latestProjectSeq() { return 0; },
       }, nodeSchedulerTimers);
       await scheduler.runAvailable();
       await scheduler.waitForIdle();
@@ -235,6 +236,7 @@ describe("SQLite job infrastructure", () => {
         async append(event) { emitted.push(event as typeof emitted[number]); return emitted.length; },
         async readFrom() { return { events: [], gap: false }; },
         async latestSeq() { return 0; },
+        async latestProjectSeq() { return 0; },
       }, nodeSchedulerTimers);
       await scheduler.runAvailable();
       await scheduler.waitForIdle();

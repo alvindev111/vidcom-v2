@@ -219,11 +219,11 @@ steering 03/04/05/10 ở đúng các đoạn D1/parity/history/approval đã li�
     Packaging vẫn đang mở ở source identity lúc P11 chạy.
   - Không stage/ghi đè thay đổi không thuộc spec; không tự commit/push/PR.
   - _Requirements: provenance_ — _Design: §11_
-- [ ] S0.5 Đồng bộ authority steering đã được Approval Gate ratify, **trước production code**
+- [x] S0.5 Đồng bộ authority steering đã được Approval Gate ratify, **trước production code**
   - Sửa steering 03/04: D1 vẫn bắt mọi nghiệp vụ/use case ở Core, nhưng parity transport chỉ bắt
     operation có input biểu diễn an toàn trên cả HTTP/MCP; local studio-session D7 và local-file/blob
     D9 là hai defer tường minh, không phải giấy phép đặt nghiệp vụ trong route.
-  - Sửa steering 05: write vẫn audit/precondition, nhưng chỉ mutation có `origin.kind:"studio"` và
+  - Sửa steering 05: write vẫn audit/precondition, nhưng chỉ mutation có `origin.kind:"ui"` và
     đúng session mới vào history; MCP/CLI/external write không vào stack UI; không phát tool undo/redo.
   - Sửa steering 10: legacy thiếu daemon approval grant trả `approval_required`; modern MRTR chỉ là
     kênh dẫn tới grant, không phải bằng chứng duyệt; bỏ expectation `confirm:true` cũ.
@@ -232,14 +232,15 @@ steering 03/04/05/10 ở đúng các đoạn D1/parity/history/approval đã li�
   - _Requirements: process authority; Deferred D7/D9_ — _Design: §7, Decision 12, §13, §15_
 
 **Acceptance Criteria**:
-- [ ] Main spec ở trạng thái `inprocess`; mọi link được S0.2 sửa đều trỏ target tồn tại
+- [x] Main spec ở trạng thái `inprocess`; mọi link được S0.2 sửa đều trỏ target tồn tại
 - [x] `implementation-notes.html` tồn tại; baseline ghi rõ PASS (typecheck, write-authority 26/26) và không có FAIL có sẵn
-- [ ] Steering 03/04/05/10 không còn câu buộc agent chọn ngược D7/D9 hoặc approval-grant contract
+- [x] Steering 03/04/05/10 không còn câu buộc agent chọn ngược D7/D9 hoặc approval-grant contract
 
 **Deliverables Created / Modified**:
 - `llm-documents/specs-and-process/specs/spec-editing-experience/spec-editing-experience-inprocess.md` — đổi tên từ `-pending.md` (git mv), header + Phase Approvals + Standups cập nhật
 - `llm-documents/specs-and-process/specs/spec-editing-experience/implementation-notes.html` — mới
 - `llm-documents/product-features/15-build-order.md`, `…/spec-editing-experience-detailed-goal.md`, `…/spec-editing-experience-implementation-checklist.md` — sửa link tên file
+- `llm-documents/steering/{03-architecture-ddd,04-api-design,05-mcp-tool-design,10-testing}.md` — đồng bộ D7/D9, lịch sử UI và approval grant
 
 ---
 
@@ -253,7 +254,7 @@ steering 03/04/05/10 ở đúng các đoạn D1/parity/history/approval đã li�
 **Read first**: `packages/core/src/service/write-authority.ts` (FULL) — hiểu `executeComposite`, thứ tự capture → backup → publish → commit → `discardCaptures`
 
 **Tasks**:
-- [ ] 0.1 Thêm `MutationOrigin` và `MutationReceipt` vào `packages/core/src/port/mutation-observer.ts`
+- [x] 0.1 Thêm `MutationOrigin` và `MutationReceipt` vào `packages/core/src/port/mutation-observer.ts`
   - `MutationOrigin { kind: "ui"|"mcp"|"cli"|"system"; sessionId: string|null; label: string|null; historyAction: "record"|"undo"|"redo"|"ignore"; historyOperation:{id,targetReceiptId}|null }`
   - `UndoContentRef = inline(bytes,encoding,hash) | object(hash,encoding)` và `UndoContentPort`
     `retainBytes(storage:inline|object)/retainFile/resolve/release`; mở rộng `LargePreviousContentStore` hiện có bằng streaming
@@ -273,7 +274,7 @@ steering 03/04/05/10 ở đúng các đoạn D1/parity/history/approval đã li�
     chỉ nhận path watcher đã phân loại external; receipt own-write không đi method này.
   - Receipt id bền `journal:<decimal JournalId>` theo Design bản 12 (không ULID mới, không cột DB mới). Nhánh recovery dựng lại đúng id và id trỏ thẳng tới audit journal.
   - _Requirements: R3.1_ — _Design: §5.5_
-- [ ] 0.2a `CompositeRequest` nhận `origin: MutationOrigin`
+- [x] 0.2a `CompositeRequest` nhận `origin: MutationOrigin`
   - **Bridge chỉ tồn tại trong P0**: vì P3 chưa có session/header/UI helper, các browser route hiện hữu
     dùng một hằng có tên `UNTRACKED_UI_ORIGIN = {kind:"ui", sessionId:null, label:null,
     historyAction:"ignore", historyOperation:null}` để giữ compile + hành vi hiện tại. Không rải object literal và không coi
@@ -282,14 +283,14 @@ steering 03/04/05/10 ở đúng các đoạn D1/parity/history/approval đã li�
     không tin `kind`, `historyAction` hoặc label tuỳ ý từ payload.
   - Mọi call site không phải browser truyền đúng nguồn (`"mcp"`, `"cli"`, `"system"` cho recovery/bootstrap) với `sessionId:null`, `label:null`, `historyAction:"ignore"`, `historyOperation:null`; compile toàn monorepo bắt mọi call site thiếu.
   - _Requirements: R3.1_ — _Design: Decision 1_
-- [ ] 0.2b `CompositeRequest` nhận typed internal `historyReadGuards`
+- [x] 0.2b `CompositeRequest` nhận typed internal `historyReadGuards`
   - Thêm internal `historyReadGuards?:{path,state:file(hash)|directory}[]`; `WriteAuthority` resolve/dedupe và kiểm
     hash dưới project mutex trước capture/publish. HTTP/MCP schema không nhận field này; catalog Core
     là caller đầu tiên thêm reuse target. Cùng canonical path + khác hash ⇒ schema invalid; path trùng
     mutation step bị từ chối để không có hai precondition authority. Mismatch ⇒ `WriteConflict` và
     zero write. Khi có grant, read-guard hashes được nhập vào `observedHashes` để binding cũng khóa chúng.
   - _Requirements: R3.1, R3.5_ — _Design: Decision 1_
-- [ ] 0.3a Retain content và reserve history bên trong `executeValidatedComposite`
+- [x] 0.3a Retain content và reserve history bên trong `executeValidatedComposite`
   - Sau capture/trước publish, retain before/after content: ≤64 KiB inline, lớn hơn hoặc staged source
     vào content object theo stream; **tổng inline mỗi receipt tối đa 256 KiB**, phần còn lại ép object
     dù từng file nhỏ. Retain lỗi ⇒ dừng trước publish. Receipt dùng refs + hash, không
@@ -298,19 +299,19 @@ steering 03/04/05/10 ở đúng các đoạn D1/parity/history/approval đã li�
     khi project mutex còn giữ; claim fail ⇒ `WriteConflict`, zero write. Rollback/abort gọi
     `abortHistoryOperation`; reconciled-committed hoàn tất bằng `emit`, outcome mơ hồ invalidate stack.
   - _Requirements: R3.1, R3.5_ — _Design: §5.5_
-- [ ] 0.3b Phát receipt **sau** `commitComposite`, **trước** `discardCaptures` và chuyển ownership refs
+- [x] 0.3b Phát receipt **sau** `commitComposite`, **trước** `discardCaptures` và chuyển ownership refs
   - Entity validated intent có `undoable` chỉ Core use case đặt; standalone `mutateEntity` false,
     cleanup trong source composite có thể true. Transport schema không nhận cờ này từ client.
   - Bọc `emit` trong `try/catch` **riêng**, ngoài khối commit; `EmitResult.ok === false` ⇒ gọi `observer.invalidateProject(projectId, "history-desync")`
   - Quyền sở hữu refs chuyển cho observer khi nhận thành công; fail/rollback/observer reject phải
     release. Nhánh duplicate recovery để `MutationHistory` release refs bản trùng, không leak ref-count.
   - _Requirements: R3.1, R3.5_ — _Design: §5.5_
-- [ ] 0.3c Receipt cho reconcile-committed và startup recovery
+- [x] 0.3c Receipt cho reconcile-committed và startup recovery
   - Reconcile-committed cùng process phát receipt với origin/reservation gốc. Startup reconcile chạy
     trước listener phát cùng id/steps/paths nhưng origin `system/ignore`, không persist history secret
     và không dựng lại stack phiên cũ; `id = journal:<JournalId>` để observer idempotent.
   - _Requirements: R3.1, R3.5_ — _Design: §5.5_
-- [ ] 0.4 Sự kiện composite mang `paths` và source đã redact
+- [x] 0.4 Sự kiện composite mang `paths` và source đã redact
   - Payload thành `{ composite: true, paths, source: origin.kind }`; **dựng từ validated intents trước
     `commitComposite`** và persist trong cùng giao dịch outbox. Không serialize `sessionId`, label,
     historyAction, historyOperation hay `readGuards` vào event/SSE/audit payload.
@@ -324,18 +325,18 @@ steering 03/04/05/10 ở đúng các đoạn D1/parity/history/approval đã li�
     `MAX(seq) WHERE project_id = ?`, trả 0 khi chưa có event; watcher dùng exact seq từ `append` hiện có.
     Không query latest sau mutation để gán nhầm seq của write khác.
   - _Requirements: R8.1d, R10.6_ — _Design: §5.7_
-- [ ] 0.5a Mở contract `CompositeStep` + capture cho `mkdir` / `rmdir`
+- [x] 0.5a Mở contract `CompositeStep` + capture cho `mkdir` / `rmdir`
   - `mkdir.expectExisting:"absent"|"either"`: absent collision ⇒ conflict; either chỉ no-op khi target
     là directory và ghi `existedBefore:true` + directory read guard, file/symlink ⇒ conflict. `rmdir`:
     hợp lệ khi `entries(path) ⊆ {path của step delete/rmdir đứng trước trong cùng mutation}` — validate trên **snapshot + tập đã lên kế hoạch**, không hỏi trạng thái tương lai
   - Mở rộng `WorkspacePort`/mutation-capture bằng union file/directory, không gọi `readFile` trên thư mục. Capture thư mục chỉ ghi `existedBefore`, không bytes.
   - _Requirements: R5.1–5.3_ — _Design: §5.11, Decision 11_
-- [ ] 0.5b Nối publish/rollback/journal/reconcile cho step thư mục
+- [x] 0.5b Nối publish/rollback/journal/reconcile cho step thư mục
   - Publish `mkdir` không recursive/không overwrite; race có mục ngoài xuất hiện ⇒ conflict/reconcile, không nhận vơ mục đó. Rollback chỉ `rmdir` thư mục do mutation tạo và còn rỗng.
   - Publish `rmdir` chỉ khi rỗng; race có mục ngoài xuất hiện ⇒ fail an toàn, không xoá. Rollback chỉ `mkdir` khi thư mục vắng.
   - Journal serialize/check/reconcile cả hai kind; thứ tự `mkdir` nông-trước, file delete trước, `rmdir` sâu-trước và sau mọi file delete trong cây.
   - _Requirements: R5.1–5.3_ — _Design: §5.11, Decision 11_
-- [ ] 0.5c Tracker/watcher cho state file, directory và absent
+- [x] 0.5c Tracker/watcher cho state file, directory và absent
   - Đổi `WrittenHashTracker` thành tracker trạng thái `file(hash) | directory | absent` cho **mọi**
     path. Arm theo `journalId` trước publish; watcher gặp path pending phải chờ settle rồi resample.
     Commit chọn after-state, rollback chọn before-state; trạng thái không xác định/lệch đi đường
@@ -346,7 +347,7 @@ steering 03/04/05/10 ở đúng các đoạn D1/parity/history/approval đã li�
   - `fs.watch` filename phải qua `WorkspacePort` resolver/containment rồi mới thành canonical `RelPath`;
     reject absolute/`..`/NUL/symlink escape, không `path.join` + cast thẳng trước khi hash/event/barrier.
   - _Requirements: R5.1–5.3_ — _Design: §5.11, Decision 11_
-- [ ] 0.6a Thêm `CompositeStep` kind `write-staged` cho authored write
+- [x] 0.6a Thêm `CompositeStep` kind `write-staged` cho authored write
   - Guard hiện tại (`authored writes cannot use a staged file source`) đổi thành: authored **chỉ** được staged qua `write-staged`, và hash phải khớp sau publish
   - Step có `undoable` do Core use case đặt: asset upload chỉ create (`expectedContentHash:null`, false);
     catalog/history cho phép create hoặc replace có precondition (true). Route không nhận
@@ -357,21 +358,21 @@ steering 03/04/05/10 ở đúng các đoạn D1/parity/history/approval đã li�
     `write-staged` yêu cầu parent directory đã tồn tại/contained và không tự `mkdir recursive`; caller
     cần parent mới phải thêm step `mkdir` journaled đứng trước (catalog/rename/redo package).
   - _Requirements: R5.4e_ — _Design: Decision 4_
-- [ ] 0.6b Chuyển toàn bộ hậu kiểm/cleanup staged và large-content store sang streaming
+- [x] 0.6b Chuyển toàn bộ hậu kiểm/cleanup staged và large-content store sang streaming
   - Sửa `WorkspaceFs.readHash`, nhánh cleanup target của `AppDataAssetStager` **và**
     `WorkspaceWatcher.observe` sang hash bằng stream; mở rộng `LargePreviousContentStore.put/read`
     với file stream + verify hash (không `readFile` object lớn). Watcher mở no-follow, phân biệt regular
     file/directory/absent. Tuyệt đối không `readFile()` asset lớn ở hậu kiểm/rollback/own-write
     suppression; notification thư mục không được rơi vào vòng retry.
   - _Requirements: R5.4e_ — _Design: Decision 4_
-- [ ] 0.7 `PendingMountTransition` bền từ `beginComposite`
+- [x] 0.7 `PendingMountTransition` bền từ `beginComposite`
   - `beginComposite(..., pending?: open | close | reopen)` — `operationId` luôn ở top-level và ghi
     vào cột `pending_transition`; `close.previousFailure` do Core lấy từ row (không từ client),
     `reopen` mang `expectedSceneId` + failure cần restore và chỉ history inverse tạo.
   - `open.record` gồm `assetPath`, `assetContentHash`, `uploadFingerprint`, at/track/project. Validate trước publish: path/hash đúng step `write-staged` cùng journal và fingerprint khớp canonical metadata + staged content hash; `close` khớp row uploaded; `reopen` khớp row mounted + scene. `mountedRevision` lấy từ revision commit, không nhận từ client.
   - `commitComposite` đọc ý định đã bền và áp trong **cùng** transaction; `reconcileCompositeMutation` khi kết luận `committed` **cũng** áp lại
   - _Requirements: R11.3b_ — _Design: §5.21, §6.5_
-- [ ] 0.8 Migration: bảng `pending_mount` + cột `pending_transition` — sinh bằng **`bun run db:generate`** (`drizzle-kit generate`), giữ file migration sinh ra trong diff; **không** viết SQL tay ngoài pipeline drizzle
+- [x] 0.8 Migration: bảng `pending_mount` + cột `pending_transition` — sinh bằng **`bun run db:generate`** (`drizzle-kit generate`), giữ file migration sinh ra trong diff; **không** viết SQL tay ngoài pipeline drizzle
   - Cột/CHECK theo §6.4, gồm `asset_content_hash` + `upload_fingerprint`; index `(project_id, state)`
     và `(state, updated_at)`; cặp `last_error_code`/`last_error_message` cùng null hoặc cùng có.
     Thêm expression index trên `mutation_journal` để tra open `pending_transition.operationId` sau
@@ -379,24 +380,24 @@ steering 03/04/05/10 ở đúng các đoạn D1/parity/history/approval đã li�
   - `mounted`: có scene+revision, không lỗi; `uploaded_unmounted`: không result, có thể có lỗi; `abandoned`: không result và bắt buộc có lý do.
   - Generate bằng `bun run db:generate`, boot DB file thật hai lần; thêm migration vào `packages/adapter/src/runtime/packaged-runtime-manifest.ts` và artifact staging/smoke. **Không** đổi `workspace_operation`.
   - _Requirements: R11.3b_ — _Design: §6.4, §6.5_
-- [ ] 0.9 Bổ sung contract/error mapper và production wiring
+- [x] 0.9 Bổ sung contract/error mapper và production wiring
   - Tạo `packages/contracts/src/editing.ts`, export ở `index.ts`; HTTP/MCP sẽ dùng chung schema. Thêm `InvariantViolated` (422), `IntegrityMismatch` (422) nếu chưa có; map `PreconditionRequired` thành 400, `TooLarge` 413, `UnsupportedMedia` 415 ở middleware.
   - `WriteAuthorityDependencies` nhận observer; P0 cung cấp hằng no-op non-throwing ở Core để mọi CLI/test call site vẫn compile. Đây là wiring **tạm thời có tên**, không được còn ở production sau task 3.1d.
   - Nối journal/pending-transition port mới ở `packages/cli/src/composition-root.ts`; `packages/cli/src/startup.ts` chạy reconcile đúng thứ tự trước khi nhận request.
   - _Requirements: R3, R5, R9, R11_ — _Design: §4.5, §7, §8.1_
-- [ ] 0.10a Unit test contract thuần cho P0
+- [x] 0.10a Unit test contract thuần cho P0
   - Unit: union receipt/content refs + ownership/release; 1.024 file nhỏ/receipt không vượt 256 KiB
     inline và 50 receipt không vượt 12,5 MiB inline; `mkdir`/`rmdir` precondition, order, race cả
     hai chiều; mkdir absent-vs-either, file/symlink collision và directory read guard; guard
     `write-staged` create-vs-replace/undoable/opaque source; error mapping.
   - _Requirements: R3.1, R3.5, R5.1–5.3, R11.3b_ — _Design: §5.5, §5.11, §8.1, §11.1_
-- [ ] 0.10b Integration test persistence/wiring cho P0
+- [x] 0.10b Integration test persistence/wiring cho P0
   - Integration (SQLite **file thật** + fs tạm thật): resolve receipt `beforeContent/afterContent` ra
     đúng bytes/hash sau `discardCaptures`; emit ném/reject ⇒ mutation vẫn `ok` + warning
     `history-unavailable` + invalidate + không leak ref; migration/boot idempotent; composition root
     resolve journal/pending/content port và observer seam.
   - _Requirements: R3.1, R3.5, R11.3b_ — _Design: §5.5, §6.5, §11.2_
-- [ ] 0.10c Integration test staged write, watcher và invalidator cho P0
+- [x] 0.10c Integration test staged write, watcher và invalidator cho P0
   - `write-staged`: source symlink/non-regular/source đổi lúc copy/target race bị từ chối; giả lập EXDEV vẫn publish no-overwrite; post-publish + cleanup + watcher hash không gọi `readFile` và RSS giữ dưới gate P5.
   - Watcher thật: own write/delete/mkdir/rmdir mỗi loại bị suppress đúng một lần; external file,
     directory và delete phát event + gọi `ProjectPathInvalidator` và `observeExternalChange` đúng path;
@@ -407,11 +408,11 @@ steering 03/04/05/10 ở đúng các đoạn D1/parity/history/approval đã li�
   - Một invalidator consumer ném: mutation vẫn ok, ProjectCache + consumer sau vẫn được gọi, watcher
     tiếp tục nhận event; có diagnostic nhưng không duplicate event/write.
   - _Requirements: R3.1, R3.5, R5.1–5.3_ — _Design: §5.5, §5.11, §11.2_
-- [ ] 0.10d Integration test memory/ref lifecycle cho P0
+- [x] 0.10d Integration test memory/ref lifecycle cho P0
   - Payload staged/object 250 MiB và 50 receipt refs không làm heap tăng theo tổng bytes; evict/clear/
     duplicate recovery release đúng ref, startup cleanup không xoá object journal/live-history còn dùng.
   - _Requirements: R3.1, R3.5, R5.1–5.3, R11.3b_ — _Design: §5.5, §6.5, §11.2_
-- [ ] 0.10e Recovery/failure-injection test cho P0
+- [x] 0.10e Recovery/failure-injection test cho P0
   - Failure injection ở từng ranh `capture → publish → commit → discard`; kill sau publish/trước commit ⇒ reconcile phát receipt cùng id và để record `uploaded_unmounted` đúng lý do, không ghi/rollback hai lần.
   - Ép watcher observe trước settlement và sau commit/rollback: nó chờ tracker, suppress đúng
     terminal state; settlement không xác định hoặc hash/state lệch phải phát external, không nuốt.
@@ -1406,10 +1407,59 @@ caption · D7 tool MCP undo/redo · **D8 PR-11 hot-reload từng sub-composition
 | Date/time | Task | Files/deliverables | Commands/evidence | Result | Design drift / blocker | Next ready |
 |---|---|---|---|---|---|---|
 | — | — | — | — | — | — | S0.1 sau khi gate được duyệt |
+| 2026-08-17 21:39 +07 | S0.1–S0.4 evidence reconciliation | Main spec `-inprocess.md`; checklist; notes | Approval Gate `Approved`; `-inprocess.md` tồn tại, `-pending.md` không tồn tại và Markdown search tên cũ rỗng; notes ghi baseline `HEAD=8c55b81`, typecheck PASS, write-authority 26/26 PASS; rerun tại `57f602f`: typecheck PASS, write-authority 26/26 PASS | `PASS` | Main spec còn dòng checklist Pending; đồng bộ trạng thái Approved trước khi đóng S0 | S0.5 |
+| 2026-08-17 21:37 +07 | S0.5 checkpoint | `llm-documents/steering/{03-architecture-ddd,04-api-design,05-mcp-tool-design,10-testing}.md`; checklist; notes | Baseline `HEAD=57f602f57cefda11a505240a87da641475a00a90`; worktree clean; planned `bun run test:spec-paths` + steering drift search + Markdown link check | `IN PROGRESS` | Test-fail step N/A: authority-only documentation sync already ratified by Approval Gate | Resume S0.5 |
+| 2026-08-17 21:39 +07 | S0.5 | Steering 03/04/05/10; checklist; notes | Scoped drift search PASS; `git diff --check` PASS; `bun run test:spec-paths` PASS 115/115; typo `origin.kind:"studio"` corrected to Design-authoritative `"ui"` | `PASS` | Steering 13 vẫn có wording legacy và thuộc read-first/gate của P11.3a; không dùng nó để giả PASS ngoài scope S0 | Close S0 |
+| 2026-08-17 21:39 +07 | Phase S0 gate | Main spec; steering 03/04/05/10; checklist; notes | All S0 tasks + AC `[x]`; typecheck PASS; write-authority 26/26 PASS under `environment: node`; spec-paths 115/115 PASS; state/link/diff checks PASS | `PASS` | Không có blocker; chưa sửa production code | P0.0/P0.1 theo thứ tự task |
+| 2026-08-17 21:45 +07 | 0.1 checkpoint | `packages/core/src/port/mutation-observer.ts`; Core/Adapter barrels; `packages/adapter/src/fs/large-content-store.ts`; focused test | Baseline `HEAD=57f602f57cefda11a505240a87da641475a00a90`; dirty chỉ gồm S0 docs/steering của goal này; planned `bun x vitest run tests/adapter/large-content-store.test.ts` | `IN PROGRESS` | Không có blocker; CodeGraph + full P0 read-first + always-on steering đã đọc | Resume 0.1 |
+| 2026-08-17 21:47 +07 | 0.1 | Core mutation observer/content-ref contract; streaming object retention + live lease; focused test | Red: 3 fail/1 pass do thiếu `retainBytes`/`retainFile`; green: focused store+journal 17/17; typecheck PASS; scoped lint PASS; boundaries PASS; full `bun run test` 222 files pass + 1 intentional skip, 2077 pass + 5 intentional skip | `PASS` | Không có SQLite history row; object source no-follow + regular-file/hash/state verify; cleanup hợp nhất durable refs với live refs | 0.2a |
+| 2026-08-17 21:50 +07 | 0.2a checkpoint | `MutationOrigin` propagation qua CompositeRequest/WriteInvocation; browser bridge; MCP/CLI/system callers; focused test | Baseline `HEAD=57f602f57cefda11a505240a87da641475a00a90`; dirty chỉ thay đổi goal S0 + 0.1; planned `bun x vitest run tests/core/mutation-origin.test.ts` rồi typecheck toàn monorepo | `IN PROGRESS` | Không có blocker; actor mapping giữ source đúng cho wrapper single-write trong P0 | Resume 0.2a |
+| 2026-08-17 21:58 +07 | 0.2a | `CompositeRequest.origin`; `WriteInvocation.origin`; Core actor mapper; MCP registry; P0 browser bridge + route call sites; focused/HTTP regressions | Red: focused origin test 1 fail vì mapper chưa tồn tại; compile catch liệt kê mọi caller thiếu origin. Green: typecheck PASS; mutation/authority/usecase/adapter/CLI/MCP focused 175/175; HTTP project/delivery/narration cùng authority set 141/141; lint PASS với 5 warning pre-existing ngoài scope; boundaries + `git diff --check` PASS | `PASS` | Production chỉ có hai điểm tạo ignore origin: Core mapper cho non-browser/default và `UNTRACKED_UI_ORIGIN` bridge có tên; P3.3 phải xoá bridge | 0.2b |
+| 2026-08-17 21:59 +07 | 0.2b checkpoint | Typed internal `historyReadGuards`; canonical dedupe; mutex precondition; grant observed hashes; transport exclusion; focused test | Baseline `HEAD=57f602f57cefda11a505240a87da641475a00a90`; dirty chỉ thay đổi goal S0 + P0.1 + P0.2a; planned `bun x vitest run tests/core/history-read-guards.test.ts tests/core/write-authority.test.ts` rồi typecheck/boundaries | `IN PROGRESS` | Không có blocker; P0 read-first và Design §5.5 đã đọc full | Resume 0.2b |
+| 2026-08-17 22:03 +07 | 0.2b | `CompositeRequest.historyReadGuards`; WriteAuthority canonical resolve/dedupe/overlap + file/directory precondition; grant binding; strict transport regression | Red: real SQLite/temp-fs focused 2 fail vì stale/conflicting guard vẫn ghi. Green: guard/authority/transport focused 47/47; typecheck, lint (0 error; 5 warning pre-existing), boundaries, `git diff --check` PASS | `PASS` | Guard kiểm dưới project mutex trước T1/capture/publish; mismatch zero journal/write; chỉ file hash nhập `observedHashes`, directory giữ typed state | 0.3a |
+| 2026-08-17 22:04 +07 | 0.3a checkpoint | Retain before/after refs sau capture trước publish; 64 KiB/item + 256 KiB total inline; staged streaming; history reservation claim/abort | Baseline `HEAD=57f602f57cefda11a505240a87da641475a00a90`; dirty chỉ thay đổi goal S0 + P0.1–0.2b; planned focused `tests/core/write-authority-history.test.ts` + real store/authority regression, rồi typecheck/boundaries | `IN PROGRESS` | Không có blocker; task 0.3b sở hữu emit/ownership transfer, 0.3c sở hữu recovery receipt | Resume 0.3a |
+| 2026-08-17 22:11 +07 | 0.3a | WriteAuthority retention + reservation lifecycle; bounded fake content port; real content store/composite regressions | Red: claim/publish fault test trả `recovery_required` khi injector vô tình chặn cả rollback; seam được thu hẹp đúng publish-only rồi green. Focused authority/scene/real-store 63/63; typecheck, lint 0 error, boundaries, diff-check PASS | `PASS` | Inline ≤64 KiB/ref và ≤256 KiB/mutation; large before dùng rollback file; retain/claim fail zero publish; rollback abort claim, ambiguous invalidate | 0.3b |
+| 2026-08-17 22:12 +07 | 0.3b checkpoint | Post-commit receipt ordering; entity undoable authority; emit reject/throw ownership; transport exclusion | Baseline `HEAD=57f602f57cefda11a505240a87da641475a00a90`; dirty chỉ goal S0 + P0.1–0.3a; planned receipt shape/order/ownership focused tests + typecheck/boundaries | `IN PROGRESS` | Emit seam đã được đặt để settle 0.3a; còn audit entity policy, strict transport và duplicate ownership contract | Resume 0.3b |
+| 2026-08-17 22:13 +07 | 0.3b | Stable `journal:<id>` receipt; post-commit/pre-discard emit; entity Core policy; ref transfer/reject cleanup; strict transport | Focused receipt/authority/entity/transport + real store 67/67; typecheck PASS; prior lint/boundaries/diff gate PASS and no production lint delta | `PASS` | Observer success nhận ownership; reject/throw release + warning + invalidate. Duplicate-ID release thuộc implementation `MutationHistory` P3.1c theo checklist, port/EmitResult đã giữ contract | 0.3c |
+| 2026-08-17 22:14 +07 | 0.3c checkpoint | Same-process reconciled-commit receipt; startup reconcile system/ignore receipt; stable id/paths/steps; no session persistence | Baseline `HEAD=57f602f57cefda11a505240a87da641475a00a90`; dirty goal S0 + P0.1–0.3b; planned reconciliation/startup focused tests + typecheck/boundaries | `IN PROGRESS` | Không persist origin/session secret; startup receipt phải dựng từ durable journal steps | Resume 0.3c |
+| 2026-08-17 22:15 +07 | 0.3c | Same-process WriteAuthority reconcile delivery; Core startup reconciliation recovery receipt; startup clock seam | Same-process + real SQLite/temp-fs startup focused 42/42; broader P0 receipt/recovery 77/77; typecheck, lint 0 error, boundaries, diff-check PASS | `PASS` | Same-process giữ origin/reservation gốc; startup dựng `system/ignore`, readGuards rỗng, non-undoable, không persist/resurrect session | 0.4 |
+| 2026-08-17 22:16 +07 | 0.4 checkpoint | Redacted composite event paths/source; ProjectPathInvalidator fan-out; envelope changeSeq; latestProjectSeq; watcher integration | Baseline `HEAD=57f602f57cefda11a505240a87da641475a00a90`; dirty goal S0 + P0.1–0.3c; planned journal/outbox + authority/watcher focused tests, typecheck/boundaries | `IN PROGRESS` | Không có blocker; source event chỉ origin.kind, cấm session/label/history/readGuards | Resume 0.4 |
+| 2026-08-17 22:23 +07 | 0.4 | Composite outbox payload; `ProjectPathInvalidator` + isolated fan-out; watcher port; exact `WriteEnvelope.changeSeq`; project-local outbox max | Red/compile: missing fan-out import, invalid test origin/history operation và branded path bị typecheck bắt; direct `bun test` bị loại vì Bun runner không có `node:sqlite`. Green dùng runner chuẩn: typecheck PASS; Vitest/Node focused 4 files/65 tests PASS; lint 0 error (5 warning pre-existing), boundaries và `git diff --check` PASS | `PASS` | Event persist exact `paths/source` không có session/label/history/readGuards; entity recovery dùng backing path. Fan-out dùng chung cho WriteAuthority/watcher, ProjectCache đứng đầu; consumer/observability throw không đổi mutation hoặc chặn consumer sau | 0.5a |
+| 2026-08-17 22:24 +07 | 0.5a checkpoint | `CompositeStep` mkdir/rmdir; typed directory capture; snapshot + planned-delete validation; collision/read-guard cases | Baseline `HEAD=57f602f57cefda11a505240a87da641475a00a90`; dirty chỉ thay đổi goal S0 + P0.1–0.4; planned focused contract/authority tests under Vitest Node, then typecheck/boundaries | `IN PROGRESS` | 0.5a chỉ mở contract, validate và capture; publish/rollback/journal/reconcile thuộc 0.5b, tracker/watcher terminal-state thuộc 0.5c | Resume 0.5a |
+| 2026-08-17 22:30 +07 | 0.5a | Composite directory contracts; no-follow stat/direct-entry snapshot port; typed state-only capture; Core precondition planner + generated guard | Red: 2/2 directory-capture tests fail vì adapter rename directory rồi `readFile`/so object như hash. Green: typecheck PASS; focused Core/real-fs 4 files/70 tests PASS; lint 0 error (5 warning pre-existing), boundaries và diff-check PASS | `PASS` | `mkdir absent` chặn mọi collision; `either` chỉ no-op với directory và sinh directory guard; file/symlink conflict. `rmdir` chỉ nhận direct entries có delete/rmdir đúng loại đứng trước. Publish/rollback/journal vẫn thuộc 0.5b | 0.5b |
+| 2026-08-17 22:30 +07 | 0.5b checkpoint | Directory publish/rollback; durable kind+existedBefore; recovery classification; ordering/race tests | Baseline `HEAD=57f602f57cefda11a505240a87da641475a00a90`; dirty goal S0 + P0.1–0.5a; planned real SQLite/temp-fs composite directory test đỏ, focused recovery/journal, then typecheck/boundaries | `IN PROGRESS` | Không có recursive mkdir/overwrite; mkdir nông-trước, delete trước rmdir, rmdir sâu-trước; 0.5c mới thay tracker state | Resume 0.5b |
+| 2026-08-17 22:45 +07 | 0.5b | Non-recursive directory publish/restore; rollback outside removed tree; durable `existed_before`; generated migration + packaged manifest; recovery/order/race tests | Red: real SQLite/temp-fs directory composite fail trước publish/journal support. Green: typecheck PASS; focused 8 files/97 tests PASS; `db:generate` created `20260817153223_small_power_pack`; schema-drift PASS 28 artifacts; lint 0 error, boundaries, diff-check PASS | `PASS` | mkdir shallow-first; every descendant delete/rmdir precedes parent rmdir. External mkdir/non-empty rmdir preserved. Rollback slots for files under removed trees live outside outermost rmdir; commit/abort cleanup never fsyncs deleted parent | 0.5c |
+| 2026-08-17 22:45 +07 | 0.5c checkpoint | Terminal state tracker `file|directory|absent`; journal settle wait; canonical watcher resolution; external invalidator + history barrier | Baseline `HEAD=57f602f57cefda11a505240a87da641475a00a90`; dirty goal S0 + P0.1–0.5b; planned watcher/tracker test đỏ, real fs events + fault isolation, typecheck/boundaries | `IN PROGRESS` | Own echo chỉ suppress khi state terminal khớp; mismatch/unknown đi external. Không dùng raw filename để hash/event/barrier trước resolver containment | Resume 0.5c |
+| 2026-08-17 22:56 +07 | 0.5c | Journal-correlated state tracker; settle/resample loop; contained watcher path; external invalidator/history barrier; composite production wiring | Red: tracker contract fail `tracker.arm is not a function`; real watcher external file/directory tests fail vì canonical capability `/private/var/...` bị so với aliased ref root `/var/...`. Green: typecheck PASS; focused 6 files/92 tests PASS; lint 0 error/5 baseline warnings; boundaries và diff-check PASS | `PASS` | Candidate chỉ thành `RelPath` sau resolver syntax/purpose/symlink containment; filesystem read dùng `ResolvedPath`. Watcher chờ mọi mutation mới phát sinh trong lúc sample rồi đọc lại; commit chọn after, rollback before, unknown/mismatch external. Composite dùng arm/settle, không để lại legacy hash record trùng | 0.6a |
+| 2026-08-17 22:57 +07 | 0.6a checkpoint | `write-staged` authored-only contract; Core-owned undoable; opaque staged source; no-overwrite create và atomic replace dưới capture | Baseline `HEAD=57f602f57cefda11a505240a87da641475a00a90`; dirty chỉ goal S0 + P0.1–0.5c; planned contract red test, real staged publish/security cases, focused Core/Adapter, then typecheck/lint/boundaries | `IN PROGRESS` | Route/MCP không nhận source path hay role; parent phải có sẵn hoặc được tạo bằng step mkdir đứng trước. 0.6b mới chuyển toàn bộ hậu kiểm/cleanup sang streaming | Resume 0.6a |
+| 2026-08-17 23:06 +07 | 0.6a | Authored-only `write-staged`; Core-owned undoable/create-replace policy; existing-or-journaled parent; staged no-overwrite/EXDEV local-temp publish | Red: `write-staged` bị rơi thành delete intent, trả success nhưng `fileHashes:{}` và không tạo target. Green: typecheck PASS; focused 6 files/92 tests PASS; lint 0 error/5 baseline warnings; boundaries và diff-check PASS | `PASS` | Upload `undoable:false` chỉ create; `undoable:true` create/replace. Ordinary authored `write` vẫn cấm staged source. Route/MCP không có schema `sourcePath`. Existing replace pre-image còn dùng bytes contract cũ; chuyển sang file/object stream đúng scope 0.6b | 0.6b |
+| 2026-08-17 23:07 +07 | 0.6b checkpoint | Stream hash/read/cleanup for WorkspaceFs, staged target, watcher and LargePreviousContentStore; no-follow regular-file state | Baseline `HEAD=57f602f57cefda11a505240a87da641475a00a90`; dirty goal S0 + P0.1–0.6a; planned readFile-forbidden red tests, large-file/ref lifecycle focused suite, typecheck/lint/boundaries | `IN PROGRESS` | Directory notification phải kết thúc như state, không retry. Streaming pre-image phải vẫn giữ journal capture invariant/recovery; không sửa AC hay hạ hash verification | Resume 0.6b |
+| 2026-08-17 23:11 +07 | 0.6b | Chunked no-follow hash for WorkspaceFs/watcher, staged cleanup/recovery, mutation capture; verified object-store open/read | Red: `WorkspaceFs.readHash` follow symlink và staged cleanup follow raced target symlink rồi resolve thành công. Green: typecheck PASS; focused 7 files/63 tests PASS; targeted `readFile` search không còn match; lint 0 error/5 baseline warnings; boundaries và diff-check PASS | `PASS` | Buffer cố định 1 MiB; mọi hash target đòi regular file. Directory/absent là terminal watcher state. `LargePreviousContentStore.open` trả staged capability đã verify; legacy `read` verify trong cùng chunked pass. Existing replace T1 vẫn giữ durable pre-image theo journal invariant | 0.7 |
+| 2026-08-17 23:12 +07 | 0.7 checkpoint | Durable `PendingMountTransition` contract at beginComposite; open/close/reopen validation; commit/reconcile atomic apply | Baseline `HEAD=57f602f57cefda11a505240a87da641475a00a90`; dirty goal S0 + P0.1–0.6b; planned pure contract red test + journal transaction seam tests, then focused persistence/recovery/typecheck | `IN PROGRESS` | 0.7 mở contract/logic; 0.8 mới generate schema/migration. operationId luôn top-level; close failure đọc server row, reopen chỉ history inverse | Resume 0.7 |
+| 2026-08-17 23:16 +07 | 0.7 | Pending mount models/query port; Core open/close/reopen binding under mutex; T1 journal parameter; close receipt revision | Red contract compile: hydrated `PendingCompositeMutation` thiếu required transition field. Green: typecheck PASS; focused 3 files/66 tests PASS; lint 0 error/5 baseline warnings after removing one new unused import; boundaries và diff-check PASS | `PASS` | Open khớp exact write-staged path/hash/project/fingerprint và ULID; close recheck uploaded row + previousFailure; reopen chỉ matching undo inverse. Adapter SQL persistence/apply và generated migration không nhận vơ ở đây: exact scope 0.8 | 0.8 |
+| 2026-08-17 23:17 +07 | 0.8 checkpoint | Drizzle `pending_mount` + journal transition column/index; transactional apply; migration/manifest/boot validation | Baseline `HEAD=57f602f57cefda11a505240a87da641475a00a90`; dirty goal S0 + P0.1–0.7; planned real SQLite red persistence test, schema edit, `bun run db:generate`, schema-drift/manifest/double-boot | `IN PROGRESS` | Không viết migration SQL tay, không đổi workspace_operation. Migration phải giữ row/FK cũ và operation open history lookup sau retention | Resume 0.8 |
+| 2026-08-17 23:27 +07 | 0.8 | Generated pending-mount migration, durable journal transition/apply, SQLite query/status store, packaged migration allowlist | Red: composite journal 12/13 failed because `mutation_journal` had no `pending_transition`. Green: `bun run db:generate` created `20260817162114_solid_daredevil`; focused adapter/manifest 22/22 PASS; migration boot twice + row/FK/CHECK/JSON PASS; open/close/reopen + expired/never-seen PASS; schema-drift PASS; typecheck PASS; boundaries PASS; artifact provenance+staging 62/62 PASS; lint 0 error/5 baseline warnings; diff-check PASS | `PASS` | First artifact test exposed missing product allowlist for both generated P0 migrations; added exact reviewed paths and reran green. One mistyped `bun run boundaries` reported `Script not found`; corrected authoritative command `bun run test:boundaries` PASS. No hand-written migration SQL, no workspace_operation change | 0.9 |
+| 2026-08-17 23:29 +07 | 0.9 checkpoint | Shared editing contracts/error statuses; named noop observer seam; production pending store + observer/reconcile wiring | Baseline `HEAD=57f602f57cefda11a505240a87da641475a00a90`; dirty goal S0 + P0.1–0.8; planned contract/error-map red tests and composition-root wiring assertion, then typecheck/focused CLI-server-core gates | `IN PROGRESS` | Error enum already has TooLarge/UnsupportedMedia but lacks InvariantViolated/IntegrityMismatch; PreconditionRequired is wrongly 409. Startup sequence already orders reconciliation before listener; production application currently omits pendingMount and observer from WriteAuthority/reconcile | Resume 0.9 |
+| 2026-08-17 23:35 +07 | 0.9 | Shared strict editing/pending schemas; error mapping; named noop observer; pending/content/observer production wiring and startup reconcile | Red: editing schemas undefined, error vocabulary missing 2 codes, PreconditionRequired returned 409 (3/16 failed). Green: focused contract/server/core/CLI 61/61 PASS; MCP catalogue 2/2; full MCP contract + stdio E2E 86/86; typecheck/boundaries/spec-paths/diff-check PASS; lint 0 error/5 baseline warnings | `PASS` | Full MCP gate exposed strict WriteEnvelope finalization missing `changeSeq`: first delete_file, then all projected single writes once schema became strict. Propagated exact composite token through WriteResult/project-writes and made MCP envelope require number|null; no committed write is misreported as failure. Startup remains migration→lease→reconcile→listener and now passes same named observer | 0.10a |
+| 2026-08-17 23:37 +07 | 0.10a checkpoint | Pure P0 contract/unit coverage delta, especially receipt memory ceilings | Baseline `HEAD=57f602f57cefda11a505240a87da641475a00a90`; dirty goal S0 + P0.1–0.9; planned node-only red tests for 1,024-step receipt and 50-receipt cumulative inline bound, then focused core/contracts/error gates | `IN PROGRESS` | Existing unit tests already cover ref ownership/release, staged create-vs-replace/undoable/opaque source, mkdir absent/either file+symlink collision/read guard, rmdir snapshot/order, both directory race directions and error map. Không duplicate; chỉ thêm quota delta và chạy aggregate evidence | Resume 0.10a |
+| 2026-08-17 23:41 +07 | 0.10a | Pure P0 receipt/content ownership, quota, directory/staged guards and shared error mapping | Red: origin `historyAction=ignore` vẫn retain 2 inline refs; post-capture mkdir race test ban đầu đòi `WriteConflict` nhưng invariant đúng là `RecoveryRequired`. Green: focused core 43/43; aggregate unit/contracts/error 75/75; MCP contract + stdio 89/89; typecheck/boundaries/spec-paths/diff-check PASS; lint 0 error/5 baseline warnings | `PASS` | History-disabled writes không retain/ref-transfer và receipt không undoable. 1,024 file nhỏ giữ inline receipt dưới 256 KiB; 50 receipt dưới 12.5 MiB. External post-capture mkdir được giữ nguyên và escalates vì không chứng minh ownership; non-empty rmdir race giữ file ngoài và trả conflict. Không đổi production race semantics để chiều fake | 0.10b |
+| 2026-08-17 23:42 +07 | 0.10b checkpoint | P0 persistence/wiring integration: real SQLite file + real temporary filesystem | Baseline `HEAD=57f602f57cefda11a505240a87da641475a00a90`; dirty goal S0 + P0.1–0.10a; planned node-only red tests for post-discard receipt resolution, observer throw/reject non-fatal release/invalidate, migration reboot, and composition-root port identity | `IN PROGRESS` | Resume existing integration coverage first; add only missing AC evidence. No UI/browser scope in this task | Resume 0.10b |
+| 2026-08-17 23:44 +07 | 0.10b | Real SQLite/file-FS receipt persistence, observer failure lifecycle, migration reboot and composition-root identity | `RED N/A`: implementation từ 0.4–0.9 đã đạt AC, integration mới PASS ngay; không tạo lỗi giả/không rewrite code đã đạt AC. Green: focused aggregate 42/42; typecheck/boundaries/spec-paths/diff-check PASS; lint 0 error/5 baseline warnings | `PASS` | Sau capture discard, cả before/after object refs resolve đúng bytes/hash. Observer throw và explicit reject vẫn commit `ok`, warning `history-unavailable`, invalidate 1 lần; released lease cho phép cleanup object receipt-only nhưng giữ object durable từ SQLite. Composition root nối đúng cùng journal cho single/composite và exact pending/content/observer instances; real DB reboot idempotent giữ PASS | 0.10c |
+| 2026-08-17 23:45 +07 | 0.10c checkpoint | P0 staged-write, watcher suppression/external barrier and invalidator integration | Baseline `HEAD=57f602f57cefda11a505240a87da641475a00a90`; dirty goal S0 + P0.1–0.10b; planned node-only inventory then red integration for missing staged source/EXDEV/target race, watcher own-vs-external directory semantics, segment-safe parent barriers and fanout failure isolation | `IN PROGRESS` | Read P0 Read-first remains authoritative; use real temp filesystem/watcher where AC requires it and keep all timing/cue logic out of scope | Resume 0.10c |
+| 2026-08-17 23:50 +07 | 0.10c | Guarded staged streaming, EXDEV no-overwrite, real watcher canonical barriers and invalidator isolation | Red: staged suite 3/4 failed—source identity mutation accepted, injected EXDEV seam unused, fallback target race not exercised. First green introduced FileHandle pipeline timeout in 2 existing staged-authority tests; replaced with explicit 1 MiB positional loop. Green: staged 5/5 incl 250 MiB RSS `<64 MiB`; focused authority/stager 31/31; aggregate P0 FS/watcher 58/58; rerun core set 38/38; typecheck/boundaries/spec-paths/diff-check PASS; lint 0 error/5 baseline warnings | `PASS` | Source now compares dev/ino/size/mtime/ctime before/after copy and closes handles deterministically. Injectable filesystem operations make EXDEV/race proof portable without mocking `node:fs`; fallback still link no-overwrite. Watcher hashes via readHash (readFile throws in test), suppresses own file/delete/mkdir/rmdir, emits exact external file/dir/delete and parent rename paths, rejects invalid filenames, keeps `assets/a` distinct from `assets/ab`; invalidator failure preserves cache-first/later consumer/one revision+event | 0.10d |
+| 2026-08-17 23:51 +07 | 0.10d checkpoint | P0 250 MiB object/receipt memory and reference lifecycle | Baseline `HEAD=57f602f57cefda11a505240a87da641475a00a90`; dirty goal S0 + P0.1–0.10c; planned node-only red lifecycle tests for 50 object receipts without heap growth, evict/clear/duplicate recovery exact release, and startup cleanup protection for durable journal plus live-history leases | `IN PROGRESS` | Reuse 250 MiB streaming harness from 0.10c; measure isolated process memory where aggregate Vitest RSS is not authoritative | Resume 0.10d |
+| 2026-08-17 23:53 +07 | 0.10d | P0 object streaming, 50-lease ref-count lifecycle and safe compaction | `RED N/A`: P0 storage implementation already met the new lifecycle tests; no production rewrite. Green: large/store/journal/staged/core aggregate 68/68; 250 MiB staged/object streaming PASS, 50 shared object leases heap delta `<32 MiB`; typecheck/boundaries/spec-paths/diff-check PASS; lint 0 error/5 baseline warnings | `PASS` | Partial “evict” release keeps shared object; final “clear” release removes exactly large+shared objects; duplicate lease release once does not delete original. `journal.listPreviousObjectHashes()` protects durable SQLite refs and store live lease set protects in-process refs during cleanup. Per Design §5.6, production item-51/clear/duplicate-receipt owner is `MutationHistory` P3.1c/3.6a and remains unclaimed/unclosed there; P0 only proves the port/storage contract | 0.10e |
+| 2026-08-17 23:54 +07 | 0.10e checkpoint | P0 capture→publish→commit→discard failure injection and tracker settlement races | Baseline `HEAD=57f602f57cefda11a505240a87da641475a00a90`; dirty goal S0 + P0.1–0.10d; planned node-only inventory then red tests at missing failure boundaries, post-publish/pre-commit reconciliation receipt/pending-mount outcome, and watcher sampling before settlement for committed/rolled-back/unknown/mismatch | `IN PROGRESS` | Preserve exact journal id and avoid fake duplicate write/rollback evidence; real SQLite/temp FS where persistence matters | Resume 0.10e |
+| 2026-08-17 23:57 +07 | 0.10e | Capture→publish→commit→discard injection, post-publish recovery and watcher settlement matrix | Red: discard failure after committed T2 returned `RecoveryRequired` because cleanup shared commit try/catch. Green: core 44/44; real staged pending-open T2 trigger reconciles `journal:1` without mtime/write change and creates `uploaded_unmounted`; recovery/tracker aggregate 105/105; typecheck/boundaries/spec-paths/diff-check PASS; lint 0 error/5 baseline warnings | `PASS` | Added post-terminal best-effort discard: cleanup failure returns `ok` + `capture-cleanup-unavailable`, exact one receipt/revision/write, zero reconcile call. Existing real injection covers capture/publish/T2a/T2b/T2c and external race; tracker waits before settle, suppresses matching committed/rolled-back state, and routes unknown/mismatch external | P0 phase gate |
+| 2026-08-17 23:58 +07 | P0 phase-gate checkpoint | Full regression + all P0 AC + CI workflow matrix/artifacts | Baseline `HEAD=57f602f57cefda11a505240a87da641475a00a90`; dirty goal S0 + completed P0.1–0.10e; planned `bun run test`, required build/runtime/schema/golden/MCP gates, then dispatch workflow `CI` on `feat-editor` with `GH_TOKEN` loaded from `GH_KEY` without printing secret | `IN PROGRESS` | No P3 work until every P0 AC is evidenced and CI is green; CI failure is repaired before advancing | Resume P0 phase gate |
+| 2026-08-18 00:01 +07 | P0 local phase gate + CI source identity | Full local regression and exact remote-ref eligibility | First full run: 5 stale expectations failed (migration 13→15, PreconditionRequired 409→400, delete changeSeq, 2 tools/list goldens). Fixed and targeted 18/18 PASS. Second full run PASS 225 files/2,135 tests; 1 file/5 VieNeu-real tests conditionally skipped. Explicit MCP 90/90, golden 45/45, typecheck/lint(0 error/5 baseline warning)/boundaries/schema-drift/spec-paths/build/runtime-smoke PASS | `IN PROGRESS` | Remote `refs/heads/feat-editor=57f602f57cefda11a505240a87da641475a00a90`, equal baseline HEAD and excludes all dirty P0 changes. `CI` workflow_dispatch has no patch input; dispatch now would be stale evidence. No commit/push performed without explicit authority. P0 AC/Deliverables remain unchecked until exact-source CI 3 OS + artifacts PASS | Await commit/push authority, then dispatch `CI` |
+| 2026-08-18 00:03 +07 | P0 pre-push scope audit | Exact checkpoint contents and credential hygiene | 83 tracked modifications + 13 untracked files; untracked set is 4 generated migration artifacts plus 9 P0 source/tests. No binary, symlink or mode change; `git diff --check` PASS. Credential-pattern scan found only literal variable names in checklist, no secret value; `.env` is excluded | `READY, NOT PUSHED` | Diff size 5,117 insertions/303 deletions reflects approved S0 steering/spec logs + P0 contract/core/adapter/wiring/tests/goldens. No stage/commit/push performed. Proposed checkpoint scope is the complete current worktree, because splitting would make migrations/contracts/call sites fail compile or stale the exact-source evidence | Await explicit commit/push authority |
+| 2026-08-18 00:04 +07 | P0 exact-source CI authorization gate | Third consecutive goal turn at the same external-state boundary | Re-read worktree, Execution Log and notes. Local `HEAD` and remote `refs/heads/feat-editor` are both `57f602f57cefda11a505240a87da641475a00a90`; remote therefore still excludes the audited S0+P0 checkpoint. Workflow has no patch input, so dispatching it would test stale source | `BLOCKED` | No stage/commit/push was performed. P0 phase AC and Deliverables remain open; P3 remains prohibited. The blocker is authorization, not a test failure or permission to weaken evidence | User must explicitly authorize committing the full current S0+P0 checkpoint and pushing it to `feat-editor`; then resume with `CI` dispatch/watch/download |
+| 2026-08-18 05:00 +07 | P0 exact-source CI authorization resumed | Publish the complete audited S0+P0 checkpoint, then execute CI on that exact remote SHA | User explicitly authorized push and directed that equivalent in-scope checkpoint pushes/CI runs should not pause for repeated confirmation. Re-read worktree/log/notes; branch is `feat-editor`; GitHub CLI authentication and `git diff --check` PASS | `IN PROGRESS` | Authorization covers the complete current S0+P0 worktree and subsequent in-repo checkpoint pushes needed by this checklist; it does not weaken any CI or source-identity gate | Commit/push, resolve exact remote SHA, dispatch/watch/download `CI` |
 
 ## Final Authoring-Readiness Audit
 
-- [x] Approval Gate vẫn `Pending Confirmation`; chưa có production code nào được viết từ checklist này
+- [x] Approval Gate đã `Approved` 2026-08-16; S0 hoàn tất trước production code
 - [x] Mọi task có prerequisite, skill/read-first, Requirements và Design reference
 - [x] Mọi phase có Deliverables và focused verification; persistence dùng SQLite/temp-fs thật
 - [x] Tất cả port/service mới có production composition-root/startup/packaged-artifact task
@@ -1432,4 +1482,4 @@ caption · D7 tool MCP undo/redo · **D8 PR-11 hot-reload từng sub-composition
   thumbnail; normalized catalog exact-intent/repeat mount/provenance; shared scene insertion planner.
 - [x] Link Markdown đã được kiểm trực tiếp; `bun run test:spec-paths` xanh nhưng chỉ là regression cho
   ba spec cũ, không bị trình bày sai như evidence của Editing Experience. Task 11.5a sở hữu việc đăng ký spec này.
-- [ ] **Gate còn lại duy nhất**: người dùng chuyển Approval Gate của checklist sang `Approved` (Design bản 12 đã duyệt 2026-08-16). Sau đó bắt đầu **S0**, không phải P0
+- [x] Approval Gate đã được người dùng chuyển sang `Approved`; S0 đã PASS, task kế tiếp là P0

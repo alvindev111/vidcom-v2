@@ -20,6 +20,7 @@ import {
   type ResolvedPath,
 } from "@vidcom/core";
 
+const TEST_ORIGIN = { kind: "system", sessionId: null, label: null, historyAction: "ignore", historyOperation: null } as const;
 const projectId = "project_motion" as ProjectId;
 const ref: ProjectRef = {
   id: projectId,
@@ -62,6 +63,7 @@ function harness(options: {
             request.steps.filter((step) => step.kind === "write").map((step) => [step.path, writtenHash]),
           ) as Record<RelPath, ContentHash>,
           diagnostics: [],
+          changeSeq: 1,
         });
       },
     },
@@ -185,7 +187,7 @@ describe("installMotionLibrary", () => {
       dependencies,
       { projectId, libraryId: "gsap" },
       "agent",
-      { toolAudit: null, noteUnchanged: () => { unchanged += 1; } },
+      { origin: TEST_ORIGIN, toolAudit: null, noteUnchanged: () => { unchanged += 1; } },
     );
     expect(result.ok).toBe(true);
     if (!result.ok) return;

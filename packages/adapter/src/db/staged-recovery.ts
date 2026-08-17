@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
-import { lstat, readFile, realpath, rm } from "node:fs/promises";
+import { constants } from "node:fs";
+import { lstat, open, realpath, rm } from "node:fs/promises";
 import path from "node:path";
 
 import { sql } from "drizzle-orm";
@@ -13,9 +14,23 @@ import { MutationJournal } from "./journal";
 import type { VidcomDatabase } from "./client";
 
 async function digest(filename: string): Promise<ContentHash | null> {
+  let handle: Awaited<ReturnType<typeof open>> | null = null;
   try {
-    return `sha256:${createHash("sha256").update(await readFile(filename)).digest("hex")}` as ContentHash;
+    handle = await open(filename, constants.O_RDONLY | constants.O_NOFOLLOW);
+    const metadata = await handle.stat();
+    if (!metadata.isFile()) return null;
+    const hash = createHash("sha256");
+    const buffer = Buffer.allocUnsafe(1024 * 1024);
+    let position = 0;
+    while (true) {
+      const { bytesRead } = await handle.read(buffer, 0, buffer.byteLength, position);
+      if (bytesRead === 0) break;
+      hash.update(buffer.subarray(0, bytesRead));
+      position += bytesRead;
+    }
+    return `sha256:${hash.digest("hex")}` as ContentHash;
   } catch { return null; }
+  finally { await handle?.close(); }
 }
 
 function contained(root: string, target: string): boolean {

@@ -63,6 +63,26 @@ async function readProjectRefAt(directory: string, slug: string): Promise<Projec
   }
 }
 
+async function hashRegularFile(pathname: string): Promise<ContentHash> {
+  const handle = await open(pathname, constants.O_RDONLY | constants.O_NOFOLLOW);
+  try {
+    const metadata = await handle.stat();
+    if (!metadata.isFile()) throw new TypeError("hash target is not a regular file");
+    const digest = createHash("sha256");
+    const buffer = Buffer.allocUnsafe(1024 * 1024);
+    let position = 0;
+    while (true) {
+      const { bytesRead } = await handle.read(buffer, 0, buffer.byteLength, position);
+      if (bytesRead === 0) break;
+      digest.update(buffer.subarray(0, bytesRead));
+      position += bytesRead;
+    }
+    return `sha256:${digest.digest("hex")}` as ContentHash;
+  } finally {
+    await handle.close();
+  }
+}
+
 /** Node filesystem implementation scoped to one injected workspace root. */
 export class WorkspaceFs implements WorkspacePort {
   private readonly directProjectRootChecks = new Map<AbsolutePath, Promise<string>>();
@@ -226,7 +246,7 @@ export class WorkspaceFs implements WorkspacePort {
   /** Streams file bytes through sha256; `null` means the file is absent. */
   async readHash(pathname: ResolvedPath): Promise<ContentHash | null> {
     try {
-      return sha256(await readFile(pathname));
+      return await hashRegularFile(pathname);
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code === "ENOENT") return null;
       throw error;
@@ -330,21 +350,22 @@ export class WorkspaceFs implements WorkspacePort {
   /** Moves the live target into a journal-owned rollback slot and verifies its hash at that boundary. */
   captureForMutation(
     pathname: ResolvedPath,
-    expectedHash: ContentHash | null,
+    expectation: Parameters<WorkspacePort["captureForMutation"]>[1],
     journalId: JournalId | WorkspaceOperationId,
     ordinal: number,
+    options?: Parameters<WorkspacePort["captureForMutation"]>[4],
   ) {
-    return captureForMutation(pathname, expectedHash, journalId, ordinal);
+    return captureForMutation(pathname, expectation, journalId, ordinal, options);
   }
 
   /** Publishes bytes without replacing a target created after capture. */
-  publishCaptured(capture: MutationCapture, content: string | Uint8Array | null): Promise<boolean> {
+  publishCaptured(capture: MutationCapture, content: Parameters<WorkspacePort["publishCaptured"]>[1]): Promise<boolean> {
     return publishCaptured(capture, content);
   }
 
   /** Restores captured bytes only while the live target still matches the landed mutation hash. */
-  restoreCaptured(capture: MutationCapture, landedHash: ContentHash | null): Promise<boolean> {
-    return restoreCaptured(capture, landedHash);
+  restoreCaptured(capture: MutationCapture, landedState: Parameters<WorkspacePort["restoreCaptured"]>[1]): Promise<boolean> {
+    return restoreCaptured(capture, landedState);
   }
 
   /** Removes a terminal mutation's rollback slot. */
@@ -377,12 +398,32 @@ export class WorkspaceFs implements WorkspacePort {
   /** Reads portable metadata; `null` means the resolved path is absent. */
   async stat(pathname: ResolvedPath): Promise<FileStat | null> {
     try {
-      const value = await stat(pathname);
+      const value = await lstat(pathname);
       return {
         size: value.size,
         modifiedAt: value.mtime,
-        kind: value.isDirectory() ? "directory" : "file",
+        kind: value.isDirectory()
+          ? "directory"
+          : value.isFile()
+            ? "file"
+            : value.isSymbolicLink() ? "symlink" : "other",
       };
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") return null;
+      throw error;
+    }
+  }
+
+  async readDirectory(pathname: ResolvedPath) {
+    try {
+      return (await readdir(pathname, { withFileTypes: true })).map((entry) => ({
+        name: entry.name,
+        kind: entry.isDirectory()
+          ? "directory" as const
+          : entry.isFile()
+            ? "file" as const
+            : entry.isSymbolicLink() ? "symlink" as const : "other" as const,
+      }));
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code === "ENOENT") return null;
       throw error;

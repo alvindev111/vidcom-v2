@@ -13,9 +13,18 @@ import {
 
 import { DEFAULT_PREVIEW_SETTINGS, mergePreviewSettings, normalizePreviewSettings, serializePreviewSettings } from "../domain/preview-settings";
 import { checkPathPurpose } from "../domain/path-policy";
-import type { ProjectRef } from "../domain/models";
+import type { AbsolutePath, ProjectRef } from "../domain/models";
 import { err, ok, type Result } from "../error/result";
-import type { BackupPort, CompositeMutationJournalPort, LeasePort, MutationJournalPort, StagedAssetPort, WorkspacePort } from "../port/ports";
+import {
+  ignoredMutationOriginForActor,
+  type MutationObserverPort,
+  type MutationReceipt,
+  type MutationReceiptStep,
+  type MutationReadGuard,
+  type UndoContentPort,
+  type UndoContentRef,
+} from "../port/mutation-observer";
+import type { BackupPort, ClockPort, CompositeMutationJournalPort, LeasePort, MutationJournalPort, PendingMountPort, ProjectPathInvalidator, StagedAssetPort, WorkspacePort, WrittenStateTrackerPort } from "../port/ports";
 import type {
   CompositeRequest,
   CompositeReconcileOutcome,
@@ -24,6 +33,7 @@ import type {
   MutationCapture,
   PathPurpose,
   PathRejection,
+  PendingMountOpen,
   PendingToolAudit,
   ResolvedPath,
   StepIntent,
@@ -84,6 +94,8 @@ export interface WriteResult {
   contentHash: ContentHash;
   revision: number;
   diagnostics: Diagnostic[];
+  /** Exact durable outbox sequence when this result was projected from a composite write. */
+  changeSeq?: number | null;
   previewSettings?: PreviewSettingsDto;
 }
 
@@ -97,12 +109,20 @@ export interface WriteAuthorityDependencies {
   hashContent(content: string | Uint8Array): ContentHash;
   validateFileContent?(path: RelPath, content: string | Uint8Array): Promise<Result<void, DomainError>>;
   invalidate(projectId: ProjectId): void;
+  pathInvalidator?: ProjectPathInvalidator;
   recordWrittenHash?(projectId: ProjectId, path: RelPath, hash: ContentHash): void;
+  writtenStates?: WrittenStateTrackerPort;
+  pendingMount?: PendingMountPort;
   notifyEvents(): void;
   stagedAssets?: StagedAssetPort;
   backups?: BackupPort;
   reconcileJournal?(id: JournalId): Promise<Result<CompositeReconcileOutcome, DomainError>>;
   workspaceCoordinator?: WorkspaceMutationCoordinator;
+  /** P0 seam; task 0.9 supplies the named no-op and production composition wiring. */
+  observer?: MutationObserverPort;
+  /** Live history content store; omitted until the P0 production wiring task. */
+  undoContent?: UndoContentPort;
+  clock?: ClockPort;
 }
 
 /** Journal-first identity write prepared by `bootstrapProject`. */
@@ -190,16 +210,72 @@ function conflict(details: Record<string, unknown>, field: string): DomainError 
   };
 }
 
+function isPathBelow(path: RelPath, ancestor: RelPath): boolean {
+  return path.startsWith(`${ancestor}/`);
+}
+
+function validateDirectoryOrder(steps: readonly CompositeStep[]): DomainError | null {
+  for (const [index, step] of steps.entries()) {
+    if (step.kind === "mkdir") {
+      const lateParent = steps.findIndex((candidate, candidateIndex) =>
+        candidateIndex > index && candidate.kind === "mkdir" && isPathBelow(step.path, candidate.path));
+      if (lateParent !== -1) {
+        return { code: ErrorCode.SchemaInvalid, message: "mkdir steps must be ordered shallow-first", field: "steps" };
+      }
+    }
+    if (step.kind === "rmdir") {
+      const lateChildRemoval = steps.findIndex((candidate, candidateIndex) =>
+        candidateIndex > index
+        && (candidate.kind === "delete" || candidate.kind === "rmdir")
+        && isPathBelow(candidate.path, step.path));
+      if (lateChildRemoval !== -1) {
+        return { code: ErrorCode.SchemaInvalid, message: "rmdir must follow every child removal", field: "steps" };
+      }
+    }
+  }
+  return null;
+}
+
+function validOperationId(value: string): boolean {
+  return /^[0-9A-HJKMNP-TV-Z]{26}$/u.test(value);
+}
+
+function validContentHash(value: string): boolean {
+  return /^sha256:[0-9a-f]{64}$/u.test(value);
+}
+
+function samePendingOpen(record: PendingMountOpen, expected: PendingMountOpen): boolean {
+  return canonicalizeJson(record) === canonicalizeJson(expected);
+}
+
 interface PreparedCompositeStep {
   step: CompositeStep;
   target: ResolvedPath;
   entityState: EntityState | null;
 }
 
+interface PreparedHistoryReadGuard {
+  guard: MutationReadGuard;
+  target: ResolvedPath;
+}
+
+interface RetainedCompositeStep {
+  ordinal: number;
+  beforeContent: UndoContentRef | null;
+  afterContent: UndoContentRef | null;
+}
+
+interface RetainedCompositeContent {
+  steps: RetainedCompositeStep[];
+  refs: UndoContentRef[];
+}
+
 interface ValidatedCompositeStep extends PreparedCompositeStep {
   intent: StepIntent;
   content: string | Uint8Array | StagedFileSource | null;
   previewSettings: PreviewSettingsDto | null;
+  previousPreviewSettings: PreviewSettingsDto | null;
+  generatedReadGuard?: MutationReadGuard;
 }
 
 function isStagedFileSource(value: unknown): value is StagedFileSource {
@@ -210,6 +286,8 @@ function isStagedFileSource(value: unknown): value is StagedFileSource {
 
 const SOURCE_ASSET_PREFIXES = ["assets/", "preview-assets/", "narration/"] as const;
 const DERIVED_ASSET_PREFIXES = ["snapshots/", "renders/"] as const;
+const MAX_INLINE_CONTENT_BYTES = 64 * 1024;
+const MAX_INLINE_RECEIPT_BYTES = 256 * 1024;
 
 export type MutationMethod = "source" | "derived" | "workspace";
 
@@ -244,6 +322,8 @@ export class WriteAuthority {
     actor: Actor,
     advancesSource: boolean,
   ): Promise<Result<WriteEnvelope, DomainError>> {
+    const directoryOrderError = validateDirectoryOrder(request.steps);
+    if (directoryOrderError) return err(directoryOrderError);
     if (!(await this.dependencies.lease.assertHeld(this.dependencies.leaseId))) {
       return err({ code: ErrorCode.WorkspaceLeaseLost, message: "the workspace write lease was lost" });
     }
@@ -263,8 +343,17 @@ export class WriteAuthority {
       }
       const prepared = await this.resolveCompositeTargets(request, advancesSource);
       if (!prepared.ok) return prepared;
-      const validated = await this.validateCompositePreconditions(request, prepared.value, advancesSource);
+      const readGuards = await this.resolveHistoryReadGuards(request, prepared.value, advancesSource);
+      if (!readGuards.ok) return readGuards;
+      const validated = await this.validateCompositePreconditions(
+        request,
+        prepared.value,
+        readGuards.value,
+        advancesSource,
+      );
       if (!validated.ok) return validated;
+      const pending = await this.validatePendingMountTransition(request, validated.value);
+      if (!pending.ok) return pending;
       return this.executeValidatedComposite(request, validated.value, actor, advancesSource);
     });
   }
@@ -286,7 +375,12 @@ export class WriteAuthority {
         purpose = "system-write";
       } else {
         path = step.path;
-        const inferred = inferMutationPurpose(advancesSource ? "source" : "derived", step.path);
+        if (step.kind === "write-staged" && !advancesSource) {
+          return err({ code: ErrorCode.SchemaInvalid, message: "write-staged is only available to authored mutations" });
+        }
+        const inferred = step.kind === "mkdir" || step.kind === "rmdir"
+          ? advancesSource ? "authored-write" : null
+          : inferMutationPurpose(advancesSource ? "source" : "derived", step.path);
         if (inferred === null) {
           return err(pathError({ reason: "not_allowed_for_purpose" }));
         }
@@ -307,9 +401,52 @@ export class WriteAuthority {
     return ok(prepared);
   }
 
+  private async resolveHistoryReadGuards(
+    request: CompositeRequest,
+    steps: PreparedCompositeStep[],
+    advancesSource: boolean,
+  ): Promise<Result<PreparedHistoryReadGuard[], DomainError>> {
+    const mutationTargets = new Set(steps.map(({ target }) => target));
+    const byTarget = new Map<ResolvedPath, PreparedHistoryReadGuard>();
+    for (const guard of request.historyReadGuards ?? []) {
+      const purpose = inferMutationPurpose(advancesSource ? "source" : "derived", guard.path);
+      if (purpose === null) return err(pathError({ reason: "not_allowed_for_purpose" }));
+      if (guard.state.kind === "file" && !/^sha256:[0-9a-f]{64}$/u.test(guard.state.contentHash)) {
+        return err({
+          code: ErrorCode.SchemaInvalid,
+          message: "history read guard contentHash must be a sha256 content hash",
+          field: "historyReadGuards",
+        });
+      }
+      const resolved = await this.dependencies.workspace.resolve(request.ref, guard.path, purpose);
+      if (!resolved.ok) return err(pathError(resolved.error));
+      if (mutationTargets.has(resolved.value)) {
+        return err({
+          code: ErrorCode.SchemaInvalid,
+          message: "a history read guard cannot also be a mutation target",
+          field: "historyReadGuards",
+        });
+      }
+      const previous = byTarget.get(resolved.value);
+      if (previous) {
+        if (canonicalizeJson(previous.guard.state) !== canonicalizeJson(guard.state)) {
+          return err({
+            code: ErrorCode.SchemaInvalid,
+            message: "history read guards disagree for one canonical path",
+            field: "historyReadGuards",
+          });
+        }
+        continue;
+      }
+      byTarget.set(resolved.value, { guard, target: resolved.value });
+    }
+    return ok([...byTarget.values()]);
+  }
+
   private async validateCompositePreconditions(
     request: CompositeRequest,
     prepared: PreparedCompositeStep[],
+    readGuards: PreparedHistoryReadGuard[],
     advancesSource: boolean,
   ): Promise<Result<ValidatedCompositeStep[], DomainError>> {
     const validated: ValidatedCompositeStep[] = [];
@@ -340,6 +477,7 @@ export class WriteAuthority {
           ...item,
           content,
           previewSettings,
+          previousPreviewSettings: currentSettings,
           intent: {
             ordinal,
             kind: "entity",
@@ -353,14 +491,113 @@ export class WriteAuthority {
         continue;
       }
 
+      if (step.kind === "mkdir" || step.kind === "rmdir") {
+        const current = await this.dependencies.workspace.stat(item.target);
+        if (step.kind === "mkdir") {
+          if (current !== null && current.kind !== "directory") {
+            return err(conflict({ path: step.path, currentState: current.kind }, "expectExisting"));
+          }
+          if (step.expectExisting === "absent" && current !== null) {
+            return err(conflict({ path: step.path, currentState: "directory" }, "expectExisting"));
+          }
+          const existedBefore = current?.kind === "directory";
+          validated.push({
+            ...item,
+            content: null,
+            previewSettings: null,
+            previousPreviewSettings: null,
+            ...(existedBefore && step.expectExisting === "either"
+              ? { generatedReadGuard: { path: step.path, state: { kind: "directory" } } }
+              : {}),
+            intent: {
+              ordinal,
+              kind: "mkdir",
+              path: step.path,
+              entity: null,
+              fromHash: null,
+              toHash: null,
+              previousContent: null,
+              existedBefore,
+            },
+          });
+          continue;
+        }
+        if (current?.kind !== "directory") {
+          return err(conflict({ path: step.path, currentState: current?.kind ?? "absent" }, "expectEmpty"));
+        }
+        const entries = await this.dependencies.workspace.readDirectory(item.target);
+        if (entries === null) {
+          return err(conflict({ path: step.path, currentState: "absent" }, "expectEmpty"));
+        }
+        const plannedPrior = new Map(
+          prepared.slice(0, ordinal).flatMap(({ step: planned }) =>
+            planned.kind === "delete" || planned.kind === "rmdir"
+              ? [[planned.path, planned.kind] as const]
+              : []),
+        );
+        const unplanned = entries.find((entry) => {
+          const child = `${step.path}/${entry.name}` as RelPath;
+          const plannedKind = plannedPrior.get(child);
+          return entry.kind === "directory"
+            ? plannedKind !== "rmdir"
+            : entry.kind !== "file" || plannedKind !== "delete";
+        });
+        if (unplanned) {
+          return err(conflict({ path: step.path, blockedBy: unplanned.name }, "expectEmpty"));
+        }
+        validated.push({
+          ...item,
+          content: null,
+          previewSettings: null,
+          previousPreviewSettings: null,
+          intent: {
+            ordinal,
+            kind: "rmdir",
+            path: step.path,
+            entity: null,
+            fromHash: null,
+            toHash: null,
+            previousContent: null,
+            existedBefore: true,
+          },
+        });
+        continue;
+      }
+
       const formatError = validateExpectedHash(step.expectedContentHash);
       if (formatError) return err(formatError);
       if (step.kind === "write" && advancesSource && isStagedFileSource(step.content)) {
         return err({ code: ErrorCode.SchemaInvalid, message: "authored writes cannot use a staged file source" });
       }
+      if (step.kind === "write-staged") {
+        if (!advancesSource || !isStagedFileSource(step.source)) {
+          return err({ code: ErrorCode.SchemaInvalid, message: "write-staged requires an opaque staged file source" });
+        }
+        if (!step.undoable && step.expectedContentHash !== null) {
+          return err({
+            code: ErrorCode.SchemaInvalid,
+            message: "a non-undoable staged upload can only create a new target",
+            field: "expectedContentHash",
+          });
+        }
+        const separator = step.path.lastIndexOf("/");
+        if (separator > 0) {
+          const parentPath = step.path.slice(0, separator) as RelPath;
+          const plannedParent = prepared.slice(0, ordinal).some(
+            ({ step: candidate }) => candidate.kind === "mkdir" && candidate.path === parentPath,
+          );
+          if (!plannedParent) {
+            const parent = await this.dependencies.workspace.resolve(request.ref, parentPath, "authored-write");
+            if (!parent.ok || (await this.dependencies.workspace.stat(parent.value))?.kind !== "directory") {
+              return err(conflict({ path: step.path, parent: parentPath }, "path"));
+            }
+          }
+        }
+      }
       const current = await this.dependencies.workspace.readBytes(item.target);
       const currentHash = current?.contentHash ?? null;
-      if (step.kind === "write" && currentHash !== null && step.expectedContentHash === null) {
+      if ((step.kind === "write" || step.kind === "write-staged")
+        && currentHash !== null && step.expectedContentHash === null) {
         return err({
           code: ErrorCode.PreconditionRequired,
           message: "expectedContentHash is required for an existing file",
@@ -385,18 +622,23 @@ export class WriteAuthority {
       if (currentHash !== null) observedHashes[step.path] = currentHash;
       validated.push({
         ...item,
-        content: step.kind === "write" ? step.content : null,
+        content: step.kind === "write"
+          ? step.content
+          : step.kind === "write-staged" ? step.source : null,
         previewSettings: null,
-        intent: step.kind === "write"
+        previousPreviewSettings: null,
+        intent: step.kind === "write" || step.kind === "write-staged"
           ? {
               ordinal,
               kind: "write",
               path: step.path,
               entity: null,
               fromHash: currentHash,
-              toHash: isStagedFileSource(step.content)
-                ? step.content.contentHash
-                : this.dependencies.hashContent(step.content),
+              toHash: step.kind === "write-staged"
+                ? step.source.contentHash
+                : isStagedFileSource(step.content)
+                  ? step.content.contentHash
+                  : this.dependencies.hashContent(step.content),
               previousContent: current?.bytes ?? null,
             }
           : {
@@ -409,6 +651,27 @@ export class WriteAuthority {
               previousContent: current?.bytes ?? null,
             },
       });
+    }
+
+    for (const { guard, target } of readGuards) {
+      const current = await this.dependencies.workspace.stat(target);
+      if (guard.state.kind === "directory") {
+        if (current?.kind !== "directory") {
+          return err(conflict({ path: guard.path, expectedState: "directory" }, "historyReadGuards"));
+        }
+        continue;
+      }
+      const currentHash = current?.kind === "file"
+        ? await this.dependencies.workspace.readHash(target)
+        : null;
+      if (currentHash !== guard.state.contentHash) {
+        return err(conflict({
+          path: guard.path,
+          expectedContentHash: guard.state.contentHash,
+          currentHash,
+        }, "historyReadGuards"));
+      }
+      observedHashes[guard.path] = currentHash;
     }
 
     if (request.grant) {
@@ -426,13 +689,266 @@ export class WriteAuthority {
     return ok(validated);
   }
 
+  private async validatePendingMountTransition(
+    request: CompositeRequest,
+    steps: ValidatedCompositeStep[],
+  ): Promise<Result<void, DomainError>> {
+    const transition = request.pendingMountTransition;
+    if (!transition) return ok(undefined);
+    if (!validOperationId(transition.operationId)) {
+      return err({ code: ErrorCode.SchemaInvalid, message: "pending mount operationId must be a ULID", field: "operationId" });
+    }
+    const pending = this.dependencies.pendingMount;
+    if (!pending) {
+      return err({ code: ErrorCode.StorageUnavailable, message: "pending mount storage is unavailable" });
+    }
+    let lookup: Awaited<ReturnType<PendingMountPort["lookup"]>>;
+    try { lookup = await pending.lookup(request.ref.id, transition.operationId); }
+    catch { return err({ code: ErrorCode.StorageUnavailable, message: "pending mount state could not be read" }); }
+
+    if (transition.kind === "open") {
+      const record = transition.record;
+      if (record.operationId !== transition.operationId
+        || record.projectId !== request.ref.id
+        || !validContentHash(record.assetContentHash)
+        || !validContentHash(record.uploadFingerprint)
+        || !Number.isFinite(record.atSeconds) || record.atSeconds < 0
+        || !Number.isSafeInteger(record.trackIndex) || record.trackIndex < 0) {
+        return err({ code: ErrorCode.SchemaInvalid, message: "pending mount open record is invalid", field: "pendingMountTransition" });
+      }
+      const write = steps.find(({ step }) => step.kind === "write-staged"
+        && step.path === record.assetPath
+        && step.source.contentHash === record.assetContentHash);
+      if (!write) {
+        return err({ code: ErrorCode.SchemaInvalid, message: "pending mount open must match one write-staged step" });
+      }
+      if (lookup.state === "expired") return err({ code: ErrorCode.NotFound, message: "pending mount operation has expired" });
+      if (lookup.state === "active" && !samePendingOpen({
+        operationId: lookup.record.operationId,
+        projectId: lookup.record.projectId,
+        assetPath: lookup.record.assetPath,
+        assetContentHash: lookup.record.assetContentHash,
+        uploadFingerprint: lookup.record.uploadFingerprint,
+        atSeconds: lookup.record.atSeconds,
+        trackIndex: lookup.record.trackIndex,
+      }, record)) {
+        return err({ code: ErrorCode.WriteConflict, message: "pending mount operation was already used with different input" });
+      }
+      return ok(undefined);
+    }
+
+    if (lookup.state !== "active") {
+      return err({ code: ErrorCode.NotFound, message: "pending mount operation was not found" });
+    }
+    if (transition.kind === "close") {
+      if (lookup.record.state !== "uploaded_unmounted"
+        || canonicalizeJson(lookup.record.lastFailure) !== canonicalizeJson(transition.previousFailure)
+        || transition.sceneId.length === 0) {
+        return err({ code: ErrorCode.WriteConflict, message: "pending mount close precondition changed" });
+      }
+      return ok(undefined);
+    }
+    if (request.origin.historyAction !== "undo"
+      || lookup.record.state !== "mounted"
+      || lookup.record.mountedSceneId !== transition.expectedSceneId) {
+      return err({ code: ErrorCode.WriteConflict, message: "pending mount reopen precondition changed" });
+    }
+    return ok(undefined);
+  }
+
+  private async retainCompositeContent(
+    steps: ValidatedCompositeStep[],
+    captures: MutationCapture[],
+    retainsHistory: boolean,
+  ): Promise<Result<RetainedCompositeContent, DomainError>> {
+    const store = this.dependencies.undoContent;
+    if (!store || !retainsHistory) return ok({ steps: [], refs: [] });
+    const retained: RetainedCompositeContent = { steps: [], refs: [] };
+    let inlineBytes = 0;
+    const retainBytes = async (bytes: Uint8Array, encoding: "utf8" | "binary") => {
+      const inline = bytes.byteLength <= MAX_INLINE_CONTENT_BYTES
+        && inlineBytes + bytes.byteLength <= MAX_INLINE_RECEIPT_BYTES;
+      const ref = await store.retainBytes(bytes, encoding, inline ? "inline" : "object");
+      if (inline) inlineBytes += bytes.byteLength;
+      retained.refs.push(ref);
+      return ref;
+    };
+    try {
+      for (const item of steps) {
+        if (item.step.kind === "entity" || item.step.kind === "mkdir" || item.step.kind === "rmdir") continue;
+        if (item.step.kind === "write-staged" && !item.step.undoable) continue;
+        const capture = captures[item.intent.ordinal];
+        let beforeContent: UndoContentRef | null = null;
+        if (item.intent.fromHash !== null && capture?.rollbackPath) {
+          const previous = item.intent.previousContent;
+          if (previous === null) {
+            beforeContent = await store.retainFile({
+              sourcePath: capture.rollbackPath as unknown as AbsolutePath,
+              contentHash: item.intent.fromHash,
+            }, "binary");
+            retained.refs.push(beforeContent);
+          } else {
+          const size = previous instanceof Uint8Array
+            ? previous.byteLength
+            : typeof previous === "string" ? new TextEncoder().encode(previous).byteLength : 0;
+          if (size > MAX_INLINE_CONTENT_BYTES) {
+            beforeContent = await store.retainFile({
+              sourcePath: capture.rollbackPath as unknown as AbsolutePath,
+              contentHash: item.intent.fromHash,
+            }, previous instanceof Uint8Array ? "binary" : "utf8");
+            retained.refs.push(beforeContent);
+          } else if (previous !== null) {
+            const bytes = previous instanceof Uint8Array ? previous : new TextEncoder().encode(previous);
+            beforeContent = await retainBytes(bytes, previous instanceof Uint8Array ? "binary" : "utf8");
+          }
+          }
+        }
+        let afterContent: UndoContentRef | null = null;
+        if (item.step.kind === "write" || item.step.kind === "write-staged") {
+          if (isStagedFileSource(item.content)) {
+            afterContent = await store.retainFile(item.content, "binary");
+            retained.refs.push(afterContent);
+          } else {
+            const bytes = item.content instanceof Uint8Array
+              ? item.content
+              : new TextEncoder().encode(item.content ?? "");
+            afterContent = await retainBytes(bytes, item.content instanceof Uint8Array ? "binary" : "utf8");
+          }
+        }
+        retained.steps.push({ ordinal: item.intent.ordinal, beforeContent, afterContent });
+      }
+      return ok(retained);
+    } catch {
+      store.release(retained.refs);
+      return err({ code: ErrorCode.StorageUnavailable, message: "history content could not be retained" });
+    }
+  }
+
+  private deliverReceipt(
+    request: CompositeRequest,
+    journalId: JournalId,
+    steps: ValidatedCompositeStep[],
+    retained: RetainedCompositeContent,
+    envelope: WriteEnvelope,
+    historyEnabled: boolean,
+  ): WriteEnvelope {
+    const observer = this.dependencies.observer;
+    const clock = this.dependencies.clock;
+    if (!observer || !clock) {
+      this.dependencies.undoContent?.release(retained.refs);
+      return envelope;
+    }
+    const retainedByOrdinal = new Map(retained.steps.map((item) => [item.ordinal, item]));
+    const receiptSteps: MutationReceiptStep[] = steps.map((item) => {
+      if (item.step.kind === "entity") {
+        const state = item.entityState!;
+        return {
+          kind: "entity",
+          undoable: historyEnabled && (item.step.undoable ?? false),
+          entity: item.step.entity,
+          backingPath: state.backingPath,
+          beforeState: item.previousPreviewSettings,
+          afterState: item.previewSettings!,
+          fromRevision: state.revision,
+          toRevision: envelope.entityRevision ?? state.revision + 1,
+          fromHash: item.intent.fromHash,
+          toHash: item.intent.toHash!,
+        };
+      }
+      if (item.step.kind === "mkdir" || item.step.kind === "rmdir") {
+        return {
+          kind: "directory",
+          undoable: historyEnabled,
+          op: item.step.kind,
+          path: item.step.path,
+          existedBefore: item.intent.kind === "mkdir" || item.intent.kind === "rmdir"
+            ? item.intent.existedBefore
+            : false,
+        };
+      }
+      const content = retainedByOrdinal.get(item.intent.ordinal);
+      if (!historyEnabled || !content) {
+        return {
+          kind: "file",
+          undoable: false,
+          path: item.step.path,
+          fromHash: item.intent.fromHash,
+          toHash: item.intent.toHash,
+          omittedReason: "not-undoable",
+        };
+      }
+      return {
+        kind: "file",
+        undoable: true,
+        path: item.step.path,
+        beforeContent: content.beforeContent,
+        afterContent: content.afterContent,
+        fromHash: item.intent.fromHash,
+        toHash: item.intent.toHash,
+      };
+    });
+    if (historyEnabled && request.pendingMountTransition?.kind === "close") {
+      receiptSteps.push({
+        kind: "pending-mount",
+        undoable: true,
+        operationId: request.pendingMountTransition.operationId,
+        before: {
+          state: "uploaded_unmounted",
+          lastFailure: request.pendingMountTransition.previousFailure,
+        },
+        after: {
+          state: "mounted",
+          sceneId: request.pendingMountTransition.sceneId,
+          revision: envelope.projectRevision,
+        },
+      });
+    }
+    const paths = steps.map((item) => item.step.kind === "entity"
+      ? item.entityState!.backingPath
+      : item.step.path);
+    const receipt: MutationReceipt = {
+      id: `journal:${journalId}`,
+      projectId: request.ref.id,
+      origin: request.origin,
+      steps: receiptSteps,
+      paths,
+      readGuards: [
+        ...(request.historyReadGuards ?? []),
+        ...steps.flatMap((item) => item.generatedReadGuard ? [item.generatedReadGuard] : []),
+      ],
+      projectRevision: envelope.projectRevision,
+      at: clock.now().toISOString(),
+      undoable: receiptSteps.every((step) => step.undoable),
+    };
+    let emitted: { ok: true } | { ok: false; reason: string };
+    try {
+      emitted = observer.emit(receipt);
+    } catch {
+      emitted = { ok: false, reason: "history observer threw" };
+    }
+    if (emitted.ok) return envelope;
+    this.dependencies.undoContent?.release(retained.refs);
+    observer.invalidateProject(request.ref.id, "history-desync");
+    return {
+      ...envelope,
+      diagnostics: [...envelope.diagnostics, {
+        severity: "warning",
+        code: "history-unavailable",
+        message: emitted.reason,
+      }],
+    };
+  }
+
   private async executeValidatedComposite(
     request: CompositeRequest,
     steps: ValidatedCompositeStep[],
     actor: Actor,
     advancesSource: boolean,
   ): Promise<Result<WriteEnvelope, DomainError>> {
-    if (steps.every((item) => item.intent.kind !== "delete" && item.intent.fromHash === item.intent.toHash)) {
+    if (steps.every((item) => item.intent.kind === "mkdir"
+      ? item.intent.existedBefore
+      : item.intent.kind !== "delete" && item.intent.kind !== "rmdir"
+        && item.intent.fromHash === item.intent.toHash)) {
       // Nothing to write: the project already holds exactly this content. No
       // journal opens, so the caller has to be told — an MCP tool cannot own its
       // audit through a journal that never existed.
@@ -449,7 +965,7 @@ export class WriteAuthority {
           fileHashes[item.intent.path] = item.intent.toHash;
         }
       }
-      return ok({ projectRevision, entityRevision, fileHashes, diagnostics: request.diagnostics ?? [] });
+      return ok({ projectRevision, entityRevision, fileHashes, diagnostics: request.diagnostics ?? [], changeSeq: null });
     }
     const grantReserve = request.grant
       ? { kind: "reserve" as const, grantId: request.grant.id, binding: request.grant.binding }
@@ -464,6 +980,7 @@ export class WriteAuthority {
         { toolAudit: request.toolAudit, ...(request.commandAudit ? { commandAudit: request.commandAudit } : {}) },
         { leaseId: this.dependencies.leaseId },
         grantReserve,
+        request.pendingMountTransition,
       );
     } catch (error) {
       return err(this.compositeStorageError(error, "composite mutation could not begin"));
@@ -471,11 +988,26 @@ export class WriteAuthority {
 
     for (const item of steps) {
       try {
+        const itemPath = item.step.kind === "write" || item.step.kind === "write-staged" || item.step.kind === "delete"
+          ? item.step.path
+          : null;
         const captured = await this.dependencies.workspace.captureForMutation(
           item.target,
-          item.intent.previousContent === null ? null : item.intent.fromHash,
+          item.intent.kind === "mkdir" || item.intent.kind === "rmdir"
+            ? { kind: "directory", existedBefore: item.intent.existedBefore }
+            : item.step.kind === "write-staged"
+              ? item.intent.fromHash
+              : item.intent.previousContent === null ? null : item.intent.fromHash,
           journalId,
           item.intent.ordinal,
+          itemPath
+            ? {
+                rollbackOutside: steps.flatMap((candidate) =>
+                  candidate.step.kind === "rmdir" && isPathBelow(itemPath, candidate.step.path)
+                    ? [candidate.target]
+                    : []),
+              }
+            : undefined,
         );
         if (!captured.ok) {
           const restored = await this.restoreCapturedSteps(steps, captures, new Set());
@@ -488,7 +1020,12 @@ export class WriteAuthority {
             request.grant ? { kind: "release", grantId: request.grant.id } : undefined,
           );
           await this.discardCaptures(captures);
-          return err(conflict({ currentHash: captured.error.actualHash }, "expectedContentHash"));
+          return err(conflict(
+            "actualHash" in captured.error
+              ? { currentHash: captured.error.actualHash }
+              : { currentState: captured.error.actualState },
+            "expectedContentHash",
+          ));
         }
         captures.push(captured.value);
         await this.dependencies.compositeJournal.markStepCaptured(
@@ -533,6 +1070,7 @@ export class WriteAuthority {
       }
       try {
         const sources = steps.flatMap((item) => {
+          if (item.intent.kind === "mkdir" || item.intent.kind === "rmdir") return [];
           const capture = captures[item.intent.ordinal];
           return item.intent.fromHash === null || !capture?.rollbackPath
             ? []
@@ -564,22 +1102,113 @@ export class WriteAuthority {
       }
     }
 
+    const historyEnabled = advancesSource && request.origin.historyAction !== "ignore";
+    const retainedResult = await this.retainCompositeContent(steps, captures, historyEnabled);
+    if (!retainedResult.ok) {
+      const restored = await this.restoreCapturedSteps(steps, captures, new Set());
+      if (!restored) return this.orphanCapturedMutation(request, journalId, captures, "history-retain");
+      return this.abortRestoredMutation(
+        request,
+        journalId,
+        captures,
+        retainedResult.error,
+        "history-retain-abort",
+      );
+    }
+    const retained = retainedResult.value;
+    let historyClaimed = false;
+    const abandonHistory = () => {
+      if (historyClaimed) this.dependencies.observer?.abortHistoryOperation(request.ref.id, request.origin);
+      this.dependencies.undoContent?.release(retained.refs);
+      historyClaimed = false;
+    };
+    const invalidateHistory = () => {
+      this.dependencies.undoContent?.release(retained.refs);
+      this.dependencies.observer?.invalidateProject(request.ref.id, "history-desync");
+      historyClaimed = false;
+    };
+    if (request.origin.historyAction === "undo" || request.origin.historyAction === "redo") {
+      const claimed = this.dependencies.observer?.claimHistoryOperation(request.ref.id, request.origin)
+        ?? { ok: false as const, reason: "history observer is unavailable" };
+      if (!claimed.ok) {
+        const restored = await this.restoreCapturedSteps(steps, captures, new Set());
+        if (!restored) {
+          abandonHistory();
+          return this.orphanCapturedMutation(request, journalId, captures, "history-claim");
+        }
+        this.dependencies.undoContent?.release(retained.refs);
+        return this.abortRestoredMutation(
+          request,
+          journalId,
+          captures,
+          conflict({ reason: claimed.reason }, "historyOperation"),
+          "history-claim-abort",
+        );
+      }
+      historyClaimed = true;
+    }
+
+    let trackerArmed = false;
+    try {
+      this.dependencies.writtenStates?.arm(request.ref.id, journalId, steps.map((item) => {
+        const path = item.step.kind === "entity" ? item.entityState!.backingPath : item.step.path;
+        if (item.intent.kind === "mkdir" || item.intent.kind === "rmdir") {
+          return {
+            path,
+            before: item.intent.existedBefore ? { kind: "directory" as const } : { kind: "absent" as const },
+            after: item.intent.kind === "mkdir" ? { kind: "directory" as const } : { kind: "absent" as const },
+          };
+        }
+        return {
+          path,
+          before: item.intent.fromHash === null
+            ? { kind: "absent" as const }
+            : { kind: "file" as const, contentHash: item.intent.fromHash },
+          after: item.intent.toHash === null
+            ? { kind: "absent" as const }
+            : { kind: "file" as const, contentHash: item.intent.toHash },
+        };
+      }));
+      trackerArmed = this.dependencies.writtenStates !== undefined;
+    } catch {
+      trackerArmed = false;
+    }
+    const settleWrittenStates = (outcome: "committed" | "rolled_back" | "unknown") => {
+      if (!trackerArmed) return;
+      try { this.dependencies.writtenStates?.settle(journalId, outcome); } catch {}
+      trackerArmed = false;
+    };
+
     const published = new Set<number>();
     try {
       for (const item of steps) {
         const capture = captures[item.intent.ordinal];
         if (!capture) throw new Error("a mutation capture was lost before publish");
         let landed: boolean;
-        if (!advancesSource && item.step.kind === "write"
-          && (item.content instanceof Uint8Array || isStagedFileSource(item.content))) {
+        if (item.step.kind === "mkdir" || item.step.kind === "rmdir") {
+          landed = await this.dependencies.workspace.publishCaptured(
+            capture,
+            { kind: "directory", action: item.step.kind },
+          );
+        } else if (item.step.kind === "write-staged" || (!advancesSource && item.step.kind === "write"
+          && (item.content instanceof Uint8Array || isStagedFileSource(item.content)))) {
           const stager = this.dependencies.stagedAssets;
-          if (!stager) throw new Error("derived binary staging is unavailable");
+          if (!stager) throw new Error("staged file publishing is unavailable");
           const staged = isStagedFileSource(item.content)
-            ? await stager.stageFile(item.target, item.step.path, item.content.sourcePath, item.content.contentHash)
-            : await stager.stage(item.target, item.step.path, item.content);
+            ? await stager.stageFile(
+                item.target,
+                item.step.path,
+                item.content.sourcePath,
+                item.content.contentHash,
+                { createParent: item.step.kind !== "write-staged" },
+              )
+            : item.content instanceof Uint8Array
+              ? await stager.stage(item.target, item.step.path, item.content)
+              : null;
+          if (!staged) throw new Error("staged publish content is invalid");
           try {
             if (staged.contentHash !== item.intent.toHash) {
-              throw new Error("staged derived artifact hash differs from the journal intent");
+              throw new Error("staged artifact hash differs from the journal intent");
             }
             await staged.commit();
             landed = await this.dependencies.workspace.readHash(item.target) === item.intent.toHash;
@@ -588,7 +1217,7 @@ export class WriteAuthority {
             throw error;
           }
         } else {
-          if (isStagedFileSource(item.content)) throw new Error("staged file source reached an authored publish");
+          if (isStagedFileSource(item.content)) throw new Error("staged file source reached an unsupported publish path");
           landed = await this.dependencies.workspace.publishCaptured(
             capture,
             item.step.kind === "delete" ? null : item.content,
@@ -597,6 +1226,8 @@ export class WriteAuthority {
         if (!landed) {
           const restored = await this.restoreCapturedSteps(steps, captures, published);
           if (!restored) {
+            settleWrittenStates("unknown");
+            abandonHistory();
             return this.orphanCapturedMutation(request, journalId, captures, "publish_conflict");
           }
           await this.dependencies.compositeJournal.abortComposite(
@@ -605,6 +1236,8 @@ export class WriteAuthority {
             request.grant ? { kind: "release", grantId: request.grant.id } : undefined,
           );
           await this.discardCaptures(captures);
+          settleWrittenStates("rolled_back");
+          abandonHistory();
           return err(conflict({}, "expectedContentHash"));
         }
         published.add(item.intent.ordinal);
@@ -619,9 +1252,15 @@ export class WriteAuthority {
             request.grant ? { kind: "release", grantId: request.grant.id } : undefined,
           );
           await this.discardCaptures(captures);
+          settleWrittenStates("rolled_back");
+          abandonHistory();
           return err({ code: ErrorCode.StorageUnavailable, message: "a composite filesystem step failed" });
         } catch {
           const reconciled = await this.reconcileCompositeOnce(journalId);
+          settleWrittenStates(reconciled?.ok && ["aborted", "rolled_back"].includes(reconciled.value.terminal)
+            ? "rolled_back"
+            : "unknown");
+          abandonHistory();
           return reconciled?.ok && ["aborted", "rolled_back"].includes(reconciled.value.terminal)
             ? err({ code: ErrorCode.StorageUnavailable, message: "a composite filesystem step failed" })
             : err({
@@ -643,6 +1282,8 @@ export class WriteAuthority {
         // The durable T1 remains pending and still owns its audit context.
         await this.reconcileCompositeOnce(journalId);
       }
+      settleWrittenStates("unknown");
+      invalidateHistory();
       return err({
         code: ErrorCode.RecoveryRequired,
         message: "the composite mutation could not be rolled back safely",
@@ -651,11 +1292,26 @@ export class WriteAuthority {
     }
 
     const single = steps.length === 1 ? steps[0] : null;
+    const changedPaths = steps.map((item) => item.step.kind === "entity"
+      ? item.entityState!.backingPath
+      : item.step.path);
     const event: DomainEvent = single?.step.kind === "entity"
-      ? { type: "project.changed", projectId: request.ref.id, payload: { entity: single.step.entity } }
+      ? {
+          type: "project.changed",
+          projectId: request.ref.id,
+          payload: { entity: single.step.entity, paths: changedPaths, source: request.origin.kind },
+        }
       : single
-        ? { type: "file.changed", projectId: request.ref.id, payload: { path: single.step.path } }
-        : { type: "project.changed", projectId: request.ref.id, payload: { composite: true } };
+        ? {
+            type: "file.changed",
+            projectId: request.ref.id,
+            payload: { path: single.step.path, paths: changedPaths, source: request.origin.kind },
+          }
+        : {
+            type: "project.changed",
+            projectId: request.ref.id,
+            payload: { composite: true, paths: changedPaths, source: request.origin.kind },
+          };
     try {
       const result = {
         projectId: request.ref.id,
@@ -664,32 +1320,61 @@ export class WriteAuthority {
         diagnostics: request.diagnostics ?? [],
         event,
       };
-      const envelope = advancesSource
+      const committedEnvelope = advancesSource
         ? await this.dependencies.compositeJournal.commitComposite(
             journalId,
             result,
             request.grant ? { kind: "consume", grantId: request.grant.id } : undefined,
           )
         : await this.dependencies.compositeJournal.commitDerivedComposite(journalId, result);
-      for (const [path, hash] of Object.entries(envelope.fileHashes)) {
-        this.dependencies.recordWrittenHash?.(request.ref.id, path as RelPath, hash);
-      }
-      this.dependencies.invalidate(request.ref.id);
-      this.dependencies.notifyEvents();
-      await this.discardCaptures(captures);
-      return ok({ ...envelope, ...(backupId ? { backupId } : {}) });
-    } catch {
-      const reconciled = await this.reconcileCompositeOnce(journalId);
-      if (reconciled?.ok && reconciled.value.terminal === "committed") {
-        const envelope = reconciled.value.envelope;
+      settleWrittenStates("committed");
+      const envelope = this.deliverReceipt(
+        request,
+        journalId,
+        steps,
+        retained,
+        committedEnvelope,
+        historyEnabled,
+      );
+      historyClaimed = false;
+      if (!this.dependencies.writtenStates) {
         for (const [path, hash] of Object.entries(envelope.fileHashes)) {
           this.dependencies.recordWrittenHash?.(request.ref.id, path as RelPath, hash);
         }
-        this.dependencies.invalidate(request.ref.id);
-        this.dependencies.notifyEvents();
-        await this.discardCaptures(captures);
-        return ok({ ...envelope, ...(backupId ? { backupId } : {}) });
       }
+      (this.dependencies.pathInvalidator ?? {
+        invalidate: (projectId: ProjectId) => this.dependencies.invalidate(projectId),
+      }).invalidate(request.ref.id, changedPaths);
+      this.dependencies.notifyEvents();
+      const finalized = await this.discardCommittedCaptures(captures, envelope);
+      return ok({ ...finalized, ...(backupId ? { backupId } : {}) });
+    } catch {
+      const reconciled = await this.reconcileCompositeOnce(journalId);
+      if (reconciled?.ok && reconciled.value.terminal === "committed") {
+        settleWrittenStates("committed");
+        const envelope = this.deliverReceipt(
+          request,
+          journalId,
+          steps,
+          retained,
+          reconciled.value.envelope,
+          historyEnabled,
+        );
+        historyClaimed = false;
+        if (!this.dependencies.writtenStates) {
+          for (const [path, hash] of Object.entries(envelope.fileHashes)) {
+            this.dependencies.recordWrittenHash?.(request.ref.id, path as RelPath, hash);
+          }
+        }
+        (this.dependencies.pathInvalidator ?? {
+          invalidate: (projectId: ProjectId) => this.dependencies.invalidate(projectId),
+        }).invalidate(request.ref.id, changedPaths);
+        this.dependencies.notifyEvents();
+        const finalized = await this.discardCommittedCaptures(captures, envelope);
+        return ok({ ...finalized, ...(backupId ? { backupId } : {}) });
+      }
+      settleWrittenStates("unknown");
+      invalidateHistory();
       return err({
         code: ErrorCode.RecoveryRequired,
         message: "the filesystem landed but the terminal transaction is unresolved",
@@ -707,6 +1392,22 @@ export class WriteAuthority {
       const item = steps[capture.ordinal];
       if (!item) return false;
       try {
+        if (capture.kind === "directory") {
+          if (item.intent.kind !== "mkdir" && item.intent.kind !== "rmdir") return false;
+          const current = await this.dependencies.workspace.stat(capture.target);
+          const currentExists = current?.kind === "directory";
+          const landedState = {
+            kind: "directory" as const,
+            exists: published.has(capture.ordinal)
+              ? item.intent.kind === "mkdir"
+              : item.intent.existedBefore,
+          };
+          if (currentExists !== landedState.exists) return false;
+          if (!(await this.dependencies.workspace.restoreCaptured(capture, landedState))) return false;
+          const restored = await this.dependencies.workspace.stat(capture.target);
+          if ((restored?.kind === "directory") !== item.intent.existedBefore) return false;
+          continue;
+        }
         const actual = await this.dependencies.workspace.readHash(capture.target);
         const landedHash = published.has(capture.ordinal) ? item.intent.toHash : null;
         if (actual !== landedHash) {
@@ -724,6 +1425,25 @@ export class WriteAuthority {
 
   private async discardCaptures(captures: MutationCapture[]): Promise<void> {
     for (const capture of captures) await this.dependencies.workspace.discardCapture(capture);
+  }
+
+  private async discardCommittedCaptures(
+    captures: MutationCapture[],
+    envelope: WriteEnvelope,
+  ): Promise<WriteEnvelope> {
+    try {
+      await this.discardCaptures(captures);
+      return envelope;
+    } catch {
+      return {
+        ...envelope,
+        diagnostics: [...envelope.diagnostics, {
+          severity: "warning",
+          code: "capture-cleanup-unavailable",
+          message: "committed mutation cleanup remains pending",
+        }],
+      };
+    }
   }
 
   private async abortRestoredMutation(
@@ -811,7 +1531,10 @@ export class WriteAuthority {
     /** Merged into the same mutation; omitted leaves whatever the project had. */
     volume?: number;
     loop?: boolean;
-  }, actor: Actor, invocation: WriteInvocation = { toolAudit: null }): Promise<Result<WriteResult, DomainError>> {
+  }, actor: Actor, invocation: WriteInvocation = {
+    origin: ignoredMutationOriginForActor(actor),
+    toolAudit: null,
+  }): Promise<Result<WriteResult, DomainError>> {
     if (!(await this.dependencies.lease.assertHeld(this.dependencies.leaseId))) {
       return err({ code: ErrorCode.WorkspaceLeaseLost, message: "the workspace write lease was lost" });
     }
@@ -914,7 +1637,10 @@ export class WriteAuthority {
   async mutateSource(
     request: MutationRequest | CompositeRequest,
     actor: Actor,
-    invocation: WriteInvocation = { toolAudit: null },
+    invocation: WriteInvocation = {
+      origin: ignoredMutationOriginForActor(actor),
+      toolAudit: null,
+    },
   ): Promise<Result<WriteResult | WriteEnvelope, DomainError>> {
     if ("steps" in request) return this.executeComposite(request, actor, true);
     const composite = await this.executeComposite({
@@ -946,6 +1672,7 @@ export class WriteAuthority {
         contentHash: composite.value.fileHashes[request.path] ?? this.dependencies.hashContent(request.content),
         revision: composite.value.projectRevision,
         diagnostics: composite.value.diagnostics,
+        changeSeq: composite.value.changeSeq,
       });
     }
     const state = await this.dependencies.journal.readEntityState(request.ref.id, request.entity);
@@ -960,6 +1687,7 @@ export class WriteAuthority {
       contentHash: composite.value.fileHashes[state.backingPath] ?? state.contentHash,
       revision: composite.value.entityRevision ?? state.revision,
       diagnostics: composite.value.diagnostics,
+      changeSeq: composite.value.changeSeq,
       previewSettings: normalizePreviewSettings(raw),
     });
   }
@@ -1004,6 +1732,7 @@ export class WriteAuthority {
     return this.executeComposite({
       ref: request.ref,
       steps,
+      origin: ignoredMutationOriginForActor(actor),
       toolAudit: null,
       commandAudit: {
         action: "derived.write",

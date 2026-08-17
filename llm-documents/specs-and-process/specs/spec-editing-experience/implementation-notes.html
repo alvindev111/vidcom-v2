@@ -72,7 +72,596 @@
 
       <section class="space-y-3">
         <h2 class="text-lg font-semibold text-sky-300">P0 — Nền Core</h2>
-        <p class="text-slate-500 italic">Chưa bắt đầu.</p>
+
+        <article class="rounded-lg border border-slate-800 bg-slate-900/50 p-4 space-y-2">
+          <h3 class="font-medium">0.1 · Mutation receipt và leased content object</h3>
+          <p class="text-slate-300">
+            Thêm contract Core cho <code>MutationOrigin</code>, union năm nhánh
+            <code>MutationReceiptStep</code>, typed read guard, <code>UndoContentPort</code> và
+            <code>MutationObserverPort</code>. Receipt id vẫn là <code>journal:&lt;decimal&gt;</code> theo
+            Design; task này chỉ định nghĩa contract, chưa phát receipt trước 0.3.
+          </p>
+          <p class="text-slate-300">
+            <code>LargePreviousContentStore</code> hiện thực luôn <code>UndoContentPort</code>. Inline
+            giữ bản copy tách khỏi buffer caller; object dùng file content-addressed và trả lại
+            <code>StagedFileSource</code> để inverse write không nạp payload lớn vào heap. File staged
+            được mở no-follow, bắt buộc regular file, copy/hash theo buffer 1 MiB và so metadata
+            trước/sau. Live ref-count chỉ ở memory; cleanup hợp nhất nó với durable reference set do
+            journal đọc từ SQLite, nên không có bảng hay history row mới.
+          </p>
+          <p class="text-slate-400 text-sm">
+            Red gate: focused test 3 fail/1 pass vì <code>retainBytes</code>/<code>retainFile</code> chưa
+            tồn tại. Green: store + journal 17/17; typecheck, scoped lint, boundaries PASS; full suite
+            222 file PASS + 1 intentional skip, 2077 test PASS + 5 intentional skip. Test chạy dưới
+            <code>environment: node</code>, dùng temp filesystem thật, gồm live lease, hash mismatch và
+            symlink rejection.
+          </p>
+        </article>
+
+        <article class="rounded-lg border border-slate-800 bg-slate-900/50 p-4 space-y-2">
+          <h3 class="font-medium">0.2a · Nguồn mutation bắt buộc tại compile time</h3>
+          <p class="text-slate-300">
+            <code>CompositeRequest</code> và <code>WriteInvocation</code> nay bắt buộc có
+            <code>MutationOrigin</code>. Một mapper Core duy nhất chuyển actor hiện hữu thành nguồn
+            không ghi history: user → UI, agent → MCP, cli-external → CLI và system → system. MCP
+            registry truyền origin qua cùng invocation; restore CLI và recovery/bootstrap dùng đúng
+            nguồn thay vì suy đoán tại adapter.
+          </p>
+          <p class="text-slate-300">
+            Browser write route dùng đúng bridge tạm thời có tên <code>UNTRACKED_UI_ORIGIN</code> và
+            <code>UNTRACKED_UI_INVOCATION</code>; bridge có <code>sessionId:null</code> và
+            <code>historyAction:"ignore"</code>, nên receipt P0 không bị hiểu nhầm là lịch sử người dùng.
+            Các route lifecycle, source, preview settings, BGM, motion library, scene và narration đều
+            truyền invocation tường minh. P3.3 sở hữu việc xoá bridge và thay bằng session header hợp lệ.
+          </p>
+          <p class="text-slate-400 text-sm">
+            Red gate: focused test fail vì mapper chưa tồn tại; sau khi contract bắt buộc, typecheck bắt
+            toàn bộ caller cũ thiếu origin. Green: typecheck PASS; focused Core/Adapter/CLI/MCP
+            <strong>175/175</strong>; nhóm có HTTP project/delivery/narration
+            <strong>141/141</strong>; lint, boundaries và <code>git diff --check</code> PASS. Năm warning
+            lint còn lại đã tồn tại ở spike/test ngoài phạm vi task.
+          </p>
+        </article>
+
+        <article class="rounded-lg border border-slate-800 bg-slate-900/50 p-4 space-y-2">
+          <h3 class="font-medium">0.2b · Read guard nội bộ cho dependency</h3>
+          <p class="text-slate-300">
+            <code>CompositeRequest.historyReadGuards</code> dùng lại typed
+            <code>MutationReadGuard</code>: file khóa SHA-256, directory khóa trạng thái tồn tại đúng
+            loại. WriteAuthority resolve theo path policy, gộp cùng canonical target khi state giống
+            nhau, từ chối state mâu thuẫn và từ chối guard trùng mutation target. Toàn bộ resolve và
+            kiểm state chạy trong project mutex trước khi mở T1, capture hay publish.
+          </p>
+          <p class="text-slate-300">
+            File guard hợp lệ được nhập vào <code>observedHashes</code> của approval binding; directory
+            không bị làm phẳng thành hash. HTTP <code>PutProjectFileRequestSchema</code> và MCP
+            <code>CreateSceneInputSchema</code> vẫn là strict object và test chứng minh field nội bộ bị
+            từ chối trong khi payload gốc hợp lệ.
+          </p>
+          <p class="text-slate-400 text-sm">
+            Red gate: real SQLite/temp-fs có 2 failure — stale guard và conflicting guard vẫn ghi.
+            Green: focused authority/adapter/transport <strong>47/47</strong>; typecheck, lint,
+            boundaries và <code>git diff --check</code> PASS. Lint có 0 error và giữ nguyên 5 warning
+            pre-existing ngoài scope.
+          </p>
+        </article>
+
+        <article class="rounded-lg border border-slate-800 bg-slate-900/50 p-4 space-y-2">
+          <h3 class="font-medium">0.3a · Retain bounded và reservation sát publish</h3>
+          <p class="text-slate-300">
+            Sau capture/backup và trước publish, WriteAuthority giữ before/after content qua
+            <code>UndoContentPort</code>. Mỗi ref chỉ inline khi không quá 64 KiB và tổng inline của
+            mutation chưa quá 256 KiB; phần vượt trần thành object ref. Before-content lớn được stream
+            từ rollback capture bằng <code>retainFile</code>, không dựng thêm payload lớn từ intent.
+          </p>
+          <p class="text-slate-300">
+            Undo/redo gọi <code>claimHistoryOperation</code> sau retain và ngay trước vòng publish. Claim
+            fail khôi phục capture, abort journal và trả conflict zero-write; publish/rollback fail gọi
+            abort + release; outcome mơ hồ invalidate history project. Emit thành công nhận ownership
+            refs, còn observer reject/throw trả mutation thành công kèm warning
+            <code>history-unavailable</code>, release refs và invalidate.
+          </p>
+          <p class="text-slate-400 text-sm">
+            Focused authority/scene/real-store <strong>63/63</strong>; typecheck, lint 0 error,
+            boundaries và diff-check PASS. Fault test đầu tiên cố ý làm hỏng publish nhưng cũng vô tình
+            làm hỏng rollback nên nhận <code>recovery_required</code>; injector được sửa thành
+            publish-only để kiểm đúng nhánh rollback thành công, không đổi production semantics.
+          </p>
+        </article>
+
+        <article class="rounded-lg border border-slate-800 bg-slate-900/50 p-4 space-y-2">
+          <h3 class="font-medium">0.3b · Receipt sau commit, trước discard</h3>
+          <p class="text-slate-300">
+            Receipt dùng id bền <code>journal:&lt;id&gt;</code>, mang origin, paths thật, read guards,
+            revision và refs theo từng ordinal. Emit chạy ngay sau commit/reconcile-committed và trước
+            <code>discardCaptures</code>; test quan sát rollback capture vẫn còn tại thời điểm callback.
+            Observer success nhận ownership refs. Reject hoặc throw bị cô lập: mutation vẫn thành công,
+            refs được release, project history invalidated và response thêm warning.
+          </p>
+          <p class="text-slate-300">
+            Entity standalone mặc định <code>undoable:false</code>; chỉ Core composite được đặt true.
+            Scene deletion cleanup đã đặt true để sau này đảo cả source + preview settings trong một
+            entry. HTTP preview-settings schema là strict object và test từ chối trường
+            <code>undoable</code> từ transport. Duplicate-id cleanup cụ thể thuộc
+            <code>MutationHistory</code> P3.1c; P0 đã cung cấp ownership/EmitResult seam để implementation
+            đó release đúng một lần.
+          </p>
+          <p class="text-slate-400 text-sm">
+            Focused receipt/authority/entity/transport và real content store <strong>67/67</strong>;
+            typecheck PASS.
+          </p>
+        </article>
+
+        <article class="rounded-lg border border-slate-800 bg-slate-900/50 p-4 space-y-2">
+          <h3 class="font-medium">0.3c · Receipt cho reconcile</h3>
+          <p class="text-slate-300">
+            Nhánh T2 fail nhưng inline reconcile xác nhận committed quay lại cùng
+            <code>deliverReceipt</code>, vì vậy giữ nguyên origin/reservation của process đang chạy và
+            vẫn dùng id <code>journal:&lt;id&gt;</code>. Test giữ origin UI record, label và revision 7.
+          </p>
+          <p class="text-slate-300">
+            Startup roll-forward dựng receipt chỉ từ durable steps/current filesystem, luôn ép origin
+            thành <code>system/ignore</code>, session/label/operation null, read guards rỗng và mọi step
+            non-undoable. Không có history secret mới trong journal và reload không resurrect stack.
+            Clock/observer là dependency seam; startup đã truyền clock, observer production sẽ được
+            nối ở task 0.9 rồi thay no-op bằng singleton thật ở P3.1d.
+          </p>
+          <p class="text-slate-400 text-sm">
+            Same-process + startup real SQLite/temp-fs <strong>42/42</strong>; broader P0 receipt/recovery
+            <strong>77/77</strong>; typecheck, lint 0 error, boundaries và diff-check PASS.
+          </p>
+        </article>
+
+        <article class="rounded-lg border border-slate-800 bg-slate-900/50 p-4 space-y-2">
+          <h3 class="font-medium">0.4 · Event path-exact và invalidation cô lập</h3>
+          <p class="text-slate-300">
+            WriteAuthority dựng event từ validated steps: composite chỉ persist
+            <code>{composite:true, paths, source}</code>; single file/entity cũng mang cùng tập path
+            canonical. Origin UI có session và label riêng tư được dùng trong test nhưng payload SQLite
+            chỉ còn <code>source:"ui"</code>. Startup recovery entity lấy
+            <code>backingPath</code> từ durable entity state thay vì phát mảng path rỗng.
+          </p>
+          <p class="text-slate-300">
+            Journal dùng <code>INSERT … RETURNING seq</code> trong chính terminal transaction và trả
+            <code>WriteEnvelope.changeSeq</code>; mutation composite không đổi trả null và không thêm
+            outbox row. <code>latestProjectSeq</code> dùng <code>MAX(seq)</code> có điều kiện project,
+            test chứng minh project chưa có event trả 0 và event xen kẽ không làm lẫn sequence.
+          </p>
+          <p class="text-slate-300">
+            Một <code>ProjectPathInvalidatorFanout</code> production được dùng chung cho WriteAuthority
+            và WorkspaceWatcher, với ProjectCache là consumer đầu. Mỗi consumer và callback
+            observability đều bị cô lập; lỗi chỉ phát warning/counter đã redact, không làm mutation sau
+            commit thành failure, không giết watcher và không bỏ consumer kế tiếp.
+          </p>
+          <p class="text-slate-400 text-sm">
+            Focused Vitest/Node <strong>4 files/65 tests</strong>; typecheck, lint 0 error, boundaries và
+            diff-check PASS. Lệnh <code>bun test</code> trực tiếp ban đầu gọi Bun runner thiếu
+            <code>node:sqlite</code> nên không được dùng làm evidence; runner repo đúng là
+            <code>bun run test -- …</code>. Năm warning lint pre-existing ngoài scope không đổi.
+          </p>
+        </article>
+
+        <article class="rounded-lg border border-slate-800 bg-slate-900/50 p-4 space-y-2">
+          <h3 class="font-medium">0.5a · Contract và capture cho directory</h3>
+          <p class="text-slate-300">
+            <code>CompositeStep</code> mở đúng hai nhánh Design:
+            <code>mkdir(expectExisting: absent|either)</code> và
+            <code>rmdir(expectEmpty:true)</code>. Workspace port có direct-entry snapshot không follow
+            symlink; metadata phân biệt file, directory, symlink và special. Vì vậy
+            <code>mkdir either</code> chỉ nhận directory thật, tự sinh directory read guard; file và
+            symlink đều conflict trước T1.
+          </p>
+          <p class="text-slate-300">
+            Validation <code>rmdir</code> dùng snapshot hiện tại cộng tập step đã lên kế hoạch: mỗi file
+            con phải có <code>delete</code> đứng trước và mỗi thư mục con phải có <code>rmdir</code> đứng
+            trước. Step nằm sau, entry thừa hoặc sai loại đều trả WriteConflict zero-journal. Capture là
+            union typed: file vẫn dùng rollback slot; directory chỉ ghi <code>existedBefore</code>,
+            <code>rollbackPath:null</code>, <code>capturedHash:null</code>, tuyệt đối không rename hay đọc
+            bytes directory.
+          </p>
+          <p class="text-slate-400 text-sm">
+            Red gate: real-fs test <strong>2/2 fail</strong> vì code cũ rename rồi đọc directory như file.
+            Green: typecheck PASS; focused Core/Adapter <strong>4 files/70 tests</strong>; lint 0 error,
+            boundaries và diff-check PASS. Publish/rollback/journal/reconcile directory được giữ đúng
+            phase cho 0.5b; tracker/watcher terminal state thuộc 0.5c.
+          </p>
+        </article>
+
+        <article class="rounded-lg border border-slate-800 bg-slate-900/50 p-4 space-y-2">
+          <h3 class="font-medium">0.5b · Publish, rollback và recovery directory</h3>
+          <p class="text-slate-300">
+            Adapter publish <code>mkdir</code> non-recursive/no-overwrite và <code>rmdir</code> chỉ khi
+            rỗng; restore dùng <code>existedBefore</code> để chỉ xoá directory do mutation tạo hoặc tạo
+            lại directory mutation đã xoá. Core chặn thứ tự sai trước T1: mkdir nông-trước; mọi delete
+            file và rmdir con phải đứng trước rmdir cha. Race tạo target hoặc thêm entry sau validation
+            trả WriteConflict, giữ nguyên dữ liệu ngoài.
+          </p>
+          <p class="text-slate-300">
+            Gotcha quan trọng: rollback slot đặt cạnh file sẽ tự làm directory sắp xoá thành không rỗng.
+            Capture nay nhận tập directory sẽ bị rmdir và đặt rollback file ra ngoài directory ngoài
+            cùng; fsync cả source/destination parent. Cleanup dùng parent của rollback slot và bỏ qua
+            capture không có slot, nên không cố fsync một parent đã bị rmdir sau commit/abort.
+          </p>
+          <p class="text-slate-300">
+            Drizzle schema lưu <code>mkdir|rmdir + existed_before</code> ở mutation/revision step; migration
+            <code>20260817153223_small_power_pack</code> được sinh bằng <code>bun run db:generate</code>,
+            giữ row cũ/FK và đã thêm vào packaged runtime manifest. Startup reconcile phân loại
+            directory/absent/other, roll-forward hoặc rollback reverse bằng state thật; receipt recovery
+            giữ đúng directory step/path.
+          </p>
+          <p class="text-slate-400 text-sm">
+            Red gate: real SQLite/temp-fs composite fail trước hỗ trợ durable directory. Green:
+            typecheck PASS; focused <strong>8 files/97 tests</strong>; schema drift PASS với 28 migration
+            artifacts; packaged manifest, lint 0 error, boundaries và diff-check PASS.
+          </p>
+        </article>
+
+        <article class="rounded-lg border border-slate-800 bg-slate-900/50 p-4 space-y-2">
+          <h3 class="font-medium">0.5c · Tracker terminal state và watcher containment</h3>
+          <p class="text-slate-300">
+            Tracker nay arm theo <code>journalId</code> ngay trước publish cho mọi path của composite,
+            giữ đủ <code>file(hash) | directory | absent</code> ở before/after và chỉ quyết own echo sau
+            settlement. Commit so after, rollback so before; unknown hoặc state lệch đi external. Nếu
+            một mutation mới được arm trong lúc watcher đang chờ hay đọc state, watcher chờ tiếp rồi
+            resample, không xoá nhầm pending record. Production composition nối cùng một tracker vào
+            <code>WriteAuthority</code> và watcher; composite không ghi thêm legacy hash record sau commit.
+          </p>
+          <p class="text-slate-300">
+            Raw filename chỉ được dùng sau khi <code>WorkspacePort.resolve</code> đã kiểm syntax, purpose,
+            traversal và symlink containment; stat/hash luôn dùng capability <code>ResolvedPath</code>.
+            Một gotcha macOS thật: temp ref có thể mang alias <code>/var</code> trong khi resolver trả
+            canonical <code>/private/var</code>. Vì vậy không được dùng <code>path.relative(ref.root,
+            resolved)</code> để tái phán containment; spelling project-relative đã được resolver duyệt là
+            event/barrier path đúng. Absolute, <code>..</code>, NUL và symlink escape đều bị bỏ trước I/O.
+          </p>
+          <p class="text-slate-300">
+            External file/directory/delete phát đúng <code>file.changed source:external</code>, gọi cả
+            <code>ProjectPathInvalidator</code> và <code>MutationObserverPort.observeExternalChange</code>;
+            own write/delete/mkdir/rmdir không gọi observer. Lỗi từng consumer được cô lập nên không làm
+            watcher chết hoặc mất event đã bền.
+          </p>
+          <p class="text-slate-400 text-sm">
+            Red gate: test contract fail vì tracker cũ không có <code>arm</code>; real watcher fail external
+            file/directory do alias <code>/var</code> ↔ <code>/private/var</code>. Green: typecheck PASS;
+            focused <strong>6 files/92 tests</strong>; lint 0 error với 5 warning baseline ngoài scope;
+            boundaries và diff-check PASS.
+          </p>
+        </article>
+
+        <article class="rounded-lg border border-slate-800 bg-slate-900/50 p-4 space-y-2">
+          <h3 class="font-medium">0.6a · Authored write-staged</h3>
+          <p class="text-slate-300">
+            <code>CompositeStep</code> có cửa hẹp <code>write-staged</code>: source là capability nội bộ
+            gồm path app-data và content hash, không có schema route/MCP nhận source path. Authored
+            <code>write</code> thường vẫn từ chối staged source; derived write cũ không đổi. Cờ
+            <code>undoable</code> do Core use case đặt: false chỉ được create target vắng và receipt bỏ
+            content; true được create/replace có precondition và retain before/after content ref.
+          </p>
+          <p class="text-slate-300">
+            Parent phải là directory contained đang tồn tại hoặc đúng step <code>mkdir</code> đứng trước;
+            staged publish không tự <code>mkdir recursive</code>. Adapter mở source O_NOFOLLOW, đòi regular
+            file, copy + hash verify; publish dùng hard-link no-overwrite. Khi EXDEV, bytes được copy vào
+            temp cùng target directory, fsync rồi hard-link temp tới target nên race không bị overwrite.
+            Replace dùng capture/rollback hiện có và cùng đường publish target-vắng đó.
+          </p>
+          <p class="text-slate-300">
+            Ranh phase được giữ trung thực: 0.6a vẫn dùng pre-image bytes hiện tại khi replace để thỏa
+            invariant journal hiện hữu. Việc bỏ <code>readFile/readBytes</code> cho asset lớn, retain
+            rollback bằng object/file stream và cleanup/hash streaming thuộc task 0.6b ngay sau, chưa
+            được nhận là evidence ở đây.
+          </p>
+          <p class="text-slate-400 text-sm">
+            Red gate: step mới bị code cũ hiểu như delete, trả success với <code>fileHashes:{}</code> và
+            không tạo file. Green: typecheck PASS; focused <strong>6 files/92 tests</strong>; lint 0 error
+            với 5 warning baseline; boundaries và diff-check PASS.
+          </p>
+        </article>
+
+        <article class="rounded-lg border border-slate-800 bg-slate-900/50 p-4 space-y-2">
+          <h3 class="font-medium">0.6b · Streaming hậu kiểm và cleanup</h3>
+          <p class="text-slate-300">
+            <code>WorkspaceFs.readHash</code> nay mở O_NOFOLLOW, xác nhận regular file rồi hash theo
+            buffer cố định 1 MiB. Watcher dùng đúng port này sau khi phân biệt file/directory/absent,
+            nên directory là terminal state chứ không rơi vào retry. Mutation capture/restore cũng hash
+            rollback slot và landed target theo chunk, không đọc toàn asset để kiểm trước rollback.
+          </p>
+          <p class="text-slate-300">
+            <code>AppDataAssetStager.cleanup</code> và startup staged recovery cùng chuyển sang hash
+            chunked/no-follow. Cleanup chỉ xoá target nếu capability vẫn là regular file có đúng hash;
+            symlink được tạo chen sau commit bị từ chối và không bị follow. Post-publish hash của
+            <code>write-staged</code> đi qua WorkspaceFs nên giữ cùng luật.
+          </p>
+          <p class="text-slate-300">
+            <code>LargePreviousContentStore</code> có đường <code>putFile/open</code> no-follow, kiểm
+            inode/size/mtime/ctime và digest; <code>open</code> trả opaque staged capability cho content
+            lớn. API <code>read</code> tương thích cũ vẫn materialize khi caller thật sự yêu cầu bytes,
+            nhưng đọc + verify trong cùng pass chunked, không dùng <code>readFile</code>. Live lease và
+            cleanup content-addressed không đổi.
+          </p>
+          <p class="text-slate-400 text-sm">
+            Red gate: Workspace hash follow symlink; staged cleanup follow symlink race rồi resolve.
+            Green: typecheck PASS; focused <strong>7 files/63 tests</strong>; targeted source search không
+            còn <code>readFile</code>; lint 0 error/5 warning baseline; boundaries và diff-check PASS.
+          </p>
+        </article>
+
+        <article class="rounded-lg border border-slate-800 bg-slate-900/50 p-4 space-y-2">
+          <h3 class="font-medium">0.7 · PendingMountTransition contract và T1 seam</h3>
+          <p class="text-slate-300">
+            Core có model <code>PendingMount</code>, union transition <code>open | close | reopen</code>
+            với <code>operationId</code> top-level, và query/status port không có method open/close.
+            <code>CompositeRequest</code> mang transition nội bộ; <code>WriteAuthority</code> validate dưới
+            project mutex rồi truyền nguyên vẹn vào tham số cuối <code>beginComposite</code>, trước publish.
+          </p>
+          <p class="text-slate-300">
+            Open bắt ULID/project/fingerprint/hash/time/track hợp lệ và phải khớp đúng một
+            <code>write-staged</code> cùng path/hash. Exact active record phải canonical-equal; expired
+            trả NotFound, reuse khác payload trả conflict. Close lookup lại row
+            <code>uploaded_unmounted</code> và so <code>previousFailure</code> server-side; reopen chỉ nhận
+            history action undo với row mounted và đúng expected scene.
+          </p>
+          <p class="text-slate-300">
+            Receipt của close thêm step pending-mount với failure trước và scene sau; mounted revision
+            lấy từ <code>envelope.projectRevision</code> của terminal commit, không nhận từ caller.
+            Ranh phase: 0.7 đóng contract/T1 seam; cột <code>pending_transition</code>, bảng/index và việc
+            apply cùng transaction commit/reconcile chỉ được chứng minh bằng migration + SQLite thật ở
+            0.8, chưa được ghi nhận sớm.
+          </p>
+          <p class="text-slate-400 text-sm">
+            Red contract: typecheck bắt hydrated pending composite thiếu transition required. Green:
+            typecheck PASS; focused <strong>3 files/66 tests</strong>; lint 0 error/5 warning baseline;
+            boundaries và diff-check PASS.
+          </p>
+        </article>
+      </section>
+
+      <section class="space-y-3">
+        <h2 class="text-lg font-semibold text-sky-300">S0.5 — Đồng bộ steering (2026-08-17)</h2>
+
+        <article class="rounded-lg border border-slate-800 bg-slate-900/50 p-4 space-y-2">
+          <h3 class="font-medium">D1 parity, lịch sử UI và approval grant</h3>
+          <p class="text-slate-300">
+            Steering 03/04 vẫn giữ nghiệp vụ ở Core và parity cho operation có input biểu diễn an toàn
+            trên cả HTTP/MCP, đồng thời ghi rõ defer D7 cho phiên studio cục bộ và D9 cho file/blob cục
+            bộ không cho phép route chứa nghiệp vụ hay tool MCP nhận absolute path. Steering 05 giữ
+            audit/precondition cho mọi write nhưng chỉ mutation UI của session hợp lệ mới vào stack
+            undo; MCP/CLI/external không vào stack và không có tool MCP undo/redo. Steering 10 nay kiểm
+            daemon-issued approval grant ở cả hai era; <code>confirm: true</code> và MRTR không còn được
+            coi là bằng chứng duyệt.
+          </p>
+          <p class="text-slate-400 text-sm">
+            Không có lệch Detailed Design. Checklist S0.5 có typo <code>origin.kind:"studio"</code> trong
+            khi Design bản 12 và task P0/P3 khóa enum là <code>"ui" | "mcp" | "cli" | "system"</code>;
+            sửa thành <code>"ui"</code> theo authority mà không đổi AC hay hành vi người dùng.
+          </p>
+          <p class="text-slate-400 text-sm">
+            Test-fail không áp dụng cho task authority-only đã được Approval Gate ratify. Evidence:
+            scoped steering drift search và <code>git diff --check</code> PASS;
+            <code>bun run test:spec-paths</code> PASS 115/115; <code>bun run typecheck</code> PASS;
+            <code>bun x vitest run tests/core/write-authority.test.ts</code> PASS 26/26 dưới
+            <code>environment: node</code>. Main spec đã đồng bộ trạng thái checklist từ Pending sang
+            Approved trước khi đóng phase. Steering 13 còn wording legacy được giữ đúng scope cho
+            task P11.3a, không bị trình bày sai như evidence của S0.
+          </p>
+        </article>
+      </section>
+      <section class="space-y-3">
+        <h2 class="text-lg font-semibold text-sky-300">P0.8 — Pending mount migration (2026-08-17)</h2>
+
+        <article class="rounded-lg border border-slate-800 bg-slate-900/50 p-4 space-y-2">
+          <h3 class="font-medium">Ý định bền và trạng thái sống qua restart</h3>
+          <p class="text-slate-300">
+            Drizzle schema nay có <code>pending_mount</code> với đủ fingerprint, vị trí, failure pair,
+            mounted result và các CHECK shape; <code>mutation_journal.pending_transition</code> giữ JSON
+            canonical từ T1 cùng expression index theo operationId. Journal đọc lại transition đã lưu và
+            áp open/close/reopen trong chính transaction tạo revision, kể cả nhánh reconcile dùng terminal
+            settlement. Adapter query/status được tách thành <code>SqlitePendingMountStore</code> để không
+            trộn với API <code>listPending()</code> của mutation journal.
+          </p>
+          <p class="text-slate-400 text-sm">
+            Migration <code>20260817162114_solid_daredevil</code> chỉ được sinh bởi
+            <code>bun run db:generate</code>; không sửa SQL sinh ra và không đổi
+            <code>workspace_operation</code>. Test đỏ thật thất bại tại T1 vì database cũ chưa có cột mới.
+            Test xanh chứng minh migrate file SQLite thật hai lần, giữ journal row/FK, enforce failure/result
+            shape, open-close-reopen nguyên tử, phân biệt expired với never-seen và đóng đủ packaged runtime
+            manifest/allowlist. Artifact gate lần đầu bắt đúng việc allowlist chưa chứa hai migration P0;
+            sau khi thêm exact path, provenance và staging PASS 62/62.
+          </p>
+          <p class="text-slate-400 text-sm">
+            Gate: focused adapter/manifest PASS 22/22; schema drift PASS; typecheck PASS; import boundaries
+            PASS; lint 0 error và 5 warning baseline; diff-check PASS. Một lệnh kiểm tra gõ sai tên
+            <code>bun run boundaries</code> trả <code>Script not found</code>; lệnh authority đúng
+            <code>bun run test:boundaries</code> đã PASS và lỗi gọi lệnh không bị giấu khỏi Execution Log.
+          </p>
+        </article>
+      </section>
+      <section class="space-y-3">
+        <h2 class="text-lg font-semibold text-sky-300">P0.9 — Contract và production wiring (2026-08-17)</h2>
+
+        <article class="rounded-lg border border-slate-800 bg-slate-900/50 p-4 space-y-2">
+          <h3 class="font-medium">Một vocabulary ở boundary, một wiring ở production</h3>
+          <p class="text-slate-300">
+            <code>packages/contracts/src/editing.ts</code> nay sở hữu operation ULID và schema strict
+            cho pending mount, kể cả invariant giữa state, failure và mounted result. Error vocabulary
+            thêm <code>InvariantViolated</code>/<code>IntegrityMismatch</code> ở HTTP lẫn MCP; middleware
+            trả lần lượt 422, đồng thời <code>PreconditionRequired</code> sửa từ 409 về 400 và giữ
+            <code>TooLarge</code> 413, <code>UnsupportedMedia</code> 415.
+          </p>
+          <p class="text-slate-400 text-sm">
+            Core export <code>NOOP_MUTATION_OBSERVER</code> có tên, không throw, dùng tạm đến P3.1d.
+            Composition root tạo <code>SqlitePendingMountStore</code>, truyền pending store,
+            <code>LargePreviousContentStore</code> và observer vào <code>WriteAuthority</code>; startup
+            reconcile cũng nhận cùng observer và vẫn hoàn tất trước listener. Đây là seam tạm được gọi
+            tên rõ, không giả là history implementation đã tồn tại.
+          </p>
+          <p class="text-slate-400 text-sm">
+            Full MCP gate bắt một lỗ contract có từ P0.4: Core đã có exact <code>changeSeq</code> nhưng
+            projection single-write và <code>WriteEnvelopeSchema</code> làm rơi token, khiến output
+            finalization báo <code>committed_response_error</code> sau khi mutation đã commit. Token nay
+            truyền xuyên projection và bắt buộc là <code>number|null</code>; full MCP contract + stdio
+            E2E PASS 86/86. Các gate còn lại: focused 61/61, catalogue 2/2, typecheck, boundaries,
+            spec-paths và diff-check PASS; lint 0 error/5 warning baseline.
+          </p>
+        </article>
+      </section>
+      <section class="space-y-3">
+        <h2 class="text-lg font-semibold text-sky-300">P0.10a — Unit contract thuần (2026-08-17)</h2>
+
+        <article class="rounded-lg border border-slate-800 bg-slate-900/50 p-4 space-y-2">
+          <h3 class="font-medium">Ownership theo origin và trần bộ nhớ receipt</h3>
+          <p class="text-slate-300">
+            Test đỏ phát hiện mutation có <code>historyAction: ignore</code> vẫn giữ hai inline content refs dù
+            origin đó không được vào history stack. <code>WriteAuthority</code> nay chỉ retain và chuyển quyền
+            content khi authored mutation thực sự bật history; receipt của MCP/CLI/system ignored origin không
+            undoable và không để ref chờ một observer vốn sẽ không nhận chúng.
+          </p>
+          <p class="text-slate-400 text-sm">
+            Unit quota tạo thật 1.024 write step nhỏ và 50 receipt liên tiếp: mỗi receipt giữ tổng inline không
+            quá 256 KiB, toàn bộ 50 receipt không quá 12,5 MiB. Coverage hiện hữu tiếp tục chứng minh release,
+            staged create/replace/undoable/opaque source, mkdir/rmdir precondition và order, file/symlink collision,
+            directory read guard cùng shared HTTP/MCP error map.
+          </p>
+          <p class="text-slate-400 text-sm">
+            Race sau capture được giữ theo mức bằng chứng: thư mục ngoài xuất hiện trước publish không thể chứng
+            minh ownership nên giữ nguyên và trả <code>RecoveryRequired</code>; rmdir gặp file ngoài giữ nguyên
+            file và trả <code>WriteConflict</code>. Gate: focused core 43/43, aggregate unit/contracts/error 75/75,
+            MCP contract + stdio 89/89; typecheck, boundaries, spec-paths và diff-check PASS; lint 0 error/5 warning baseline.
+          </p>
+        </article>
+      </section>
+      <section class="space-y-3">
+        <h2 class="text-lg font-semibold text-sky-300">P0.10b — Persistence và production wiring (2026-08-17)</h2>
+
+        <article class="rounded-lg border border-slate-800 bg-slate-900/50 p-4 space-y-2">
+          <h3 class="font-medium">Receipt sống qua capture cleanup, failure observer không đảo commit</h3>
+          <p class="text-slate-300">
+            Integration dùng SQLite file thật và filesystem tạm thật thay nội dung 2 MiB, buộc cả
+            <code>beforeContent</code>/<code>afterContent</code> thành object refs. Sau khi mutation trả về — tức
+            rollback capture đã discard — hai refs vẫn resolve đúng bytes và đúng SHA-256 từ object store.
+          </p>
+          <p class="text-slate-400 text-sm">
+            Hai nhánh observer throw và explicit reject đều giữ mutation <code>ok</code>, file mới đã landed,
+            thêm diagnostic <code>history-unavailable</code> và invalidate đúng một lần. Lease receipt được release:
+            cleanup xoá đúng object chỉ thuộc receipt, trong khi object được SQLite revision tham chiếu vẫn được
+            protected và resolve được. Test wiring xác nhận <code>createApplication</code> nhận chính cùng journal
+            cho single/composite cùng exact pending mount, content store và observer seam từ infrastructure.
+          </p>
+          <p class="text-slate-400 text-sm">
+            Implementation từ P0.4–0.9 đã đạt AC nên integration mới xanh ngay; ghi <code>RED N/A</code> thay vì
+            tạo failure giả hoặc rewrite production. Aggregate real integration/migration 42/42 PASS; typecheck,
+            boundaries, spec-paths và diff-check PASS; lint 0 error/5 warning baseline.
+          </p>
+        </article>
+      </section>
+      <section class="space-y-3">
+        <h2 class="text-lg font-semibold text-sky-300">P0.10c — Staged write, watcher và invalidator (2026-08-17)</h2>
+
+        <article class="rounded-lg border border-slate-800 bg-slate-900/50 p-4 space-y-2">
+          <h3 class="font-medium">Streaming có identity guard và no-overwrite đa volume</h3>
+          <p class="text-slate-300">
+            Test đỏ chứng minh source có thể đổi identity trong lúc copy nhưng vẫn được nhận nếu temp bytes khớp
+            expected hash. Stager nay so <code>dev/ino/size/mtime/ctime</code> trước-sau, đóng FileHandle rõ ràng,
+            và copy theo vòng positional 1 MiB. Một thử nghiệm trung gian dùng pipeline với handle không auto-close
+            làm hai test timeout; regression đó được giữ trong log và sửa trước khi tiếp tục.
+          </p>
+          <p class="text-slate-400 text-sm">
+            Filesystem operations seam nhỏ cho phép giả lập <code>EXDEV</code> trên mọi OS mà không mock module
+            <code>node:fs</code>. Fallback copy vào temp cùng target directory rồi hard-link no-overwrite; race target
+            ngoài thắng được giữ nguyên. Symlink/non-regular/source mutation đều bị từ chối. Publish + cleanup payload
+            250 MiB PASS với RSS delta dưới gate P5 64 MiB và không materialize payload.
+          </p>
+          <p class="text-slate-400 text-sm">
+            Watcher real-FS được khóa bằng workspace proxy ném nếu gọi <code>readFile</code>; toàn bộ create/delete/hash
+            vẫn PASS qua streaming readHash. Own file/delete/mkdir/rmdir bị suppress, external file/directory/delete và
+            parent rename phát đúng canonical path; <code>assets/a</code> không lẫn <code>assets/ab</code>. Fanout giữ
+            ProjectCache-first và consumer sau khi một consumer ném, không duplicate revision/event. Aggregate 58/58,
+            typecheck/boundaries/spec-paths/diff-check PASS; lint 0 error/5 warning baseline.
+          </p>
+        </article>
+      </section>
+      <section class="space-y-3">
+        <h2 class="text-lg font-semibold text-sky-300">P0.10d — Memory và ref lifecycle của P0 (2026-08-17)</h2>
+
+        <article class="rounded-lg border border-slate-800 bg-slate-900/50 p-4 space-y-2">
+          <h3 class="font-medium">Object lớn không thành heap lớn, cleanup tôn trọng hai nguồn ownership</h3>
+          <p class="text-slate-300">
+            Adapter retain và resolve object 250 MiB hoàn toàn theo stream; 50 live leases cùng object chỉ giữ
+            metadata/ref-count và heap delta dưới 32 MiB. Release 25 lease đầu không cho cleanup xoá object;
+            release phần còn lại cùng large ref mới xoá đúng hai object. Hai lease trùng content hash cũng không
+            bị over-release: bỏ duplicate vẫn giữ original, bỏ original sau cùng mới cho phép cleanup.
+          </p>
+          <p class="text-slate-400 text-sm">
+            Safe compaction dùng hợp của hash durable từ <code>MutationJournal.listPreviousObjectHashes()</code>
+            và live-reference map trong <code>LargePreviousContentStore</code>, nên object journal/revision và object
+            đang thuộc history in-process đều được bảo vệ. Aggregate store/journal/staged/core 68/68 PASS;
+            typecheck, boundaries, spec-paths, diff-check PASS; lint 0 error/5 warning baseline.
+          </p>
+          <p class="text-slate-400 text-sm">
+            Design §5.6 đặt owner thật của item 51, clear session và duplicate receipt ở
+            <code>MutationHistory</code> P3.1c/3.6a. P0 chỉ chứng minh storage/lease contract mà owner đó sẽ dùng;
+            ghi chú này không đóng sớm các task P3 và không giả một test-only history thành production evidence.
+          </p>
+        </article>
+      </section>
+      <section class="space-y-3">
+        <h2 class="text-lg font-semibold text-sky-300">P0.10e — Failure injection và recovery (2026-08-17)</h2>
+
+        <article class="rounded-lg border border-slate-800 bg-slate-900/50 p-4 space-y-2">
+          <h3 class="font-medium">Cleanup sau terminal không được giả thành commit failure</h3>
+          <p class="text-slate-300">
+            Test đỏ bắt nhánh <code>discardCapture</code> ném sau T2 committed: code cũ đi vào catch của commit,
+            trả <code>RecoveryRequired</code> và có nguy cơ emit/invalidate lại. Cleanup capture sau terminal nay
+            best-effort riêng; failure giữ kết quả <code>ok</code>, thêm warning
+            <code>capture-cleanup-unavailable</code>, đúng một receipt/revision/write và không gọi reconcile.
+          </p>
+          <p class="text-slate-400 text-sm">
+            Integration SQLite/file-FS ép trigger T2 sau khi <code>write-staged</code> đã publish. Reconcile dùng
+            cùng <code>journal:1</code>, không đổi mtime/không ghi file lần hai, commit đúng một revision và áp
+            pending transition thành <code>uploaded_unmounted</code> với result/failure null. Coverage recovery
+            hiện hữu tiếp tục khóa T2a/T2b/T2c, partial rollback, orphan và external race.
+          </p>
+          <p class="text-slate-400 text-sm">
+            Tracker test thêm ma trận: chờ terminal settlement trước sample; committed/rolled-back chỉ suppress
+            khi exact state khớp, còn unknown hoặc hash lệch đi external. Aggregate failure/recovery 105/105 PASS;
+            typecheck, boundaries, spec-paths và diff-check PASS; lint 0 error/5 warning baseline.
+          </p>
+        </article>
+      </section>
+      <section class="space-y-3">
+        <h2 class="text-lg font-semibold text-amber-300">P0 phase gate — Chờ quyền xuất bản exact source (2026-08-18)</h2>
+
+        <article class="rounded-lg border border-amber-900/70 bg-amber-950/20 p-4 space-y-2">
+          <h3 class="font-medium">Local gate xanh nhưng chưa đủ bằng chứng CI</h3>
+          <p class="text-slate-300">
+            Full regression và các gate P0 cục bộ đã PASS. Tuy nhiên <code>HEAD</code> và remote
+            <code>feat-editor</code> vẫn cùng baseline <code>57f602f57cefda11a505240a87da641475a00a90</code>,
+            chưa chứa checkpoint S0+P0 đang ở worktree. Workflow dispatch không có patch input, nên chạy lúc này
+            chỉ tạo evidence cho source cũ và không được dùng để đóng phase.
+          </p>
+          <p class="text-slate-400 text-sm">
+            Sau ba lần goal tiếp tục với cùng điều kiện, gate được ghi <code>BLOCKED</code> đúng thực trạng.
+            Không stage, commit hoặc push; không đánh dấu P0 AC/Deliverables; không chuyển P3. Cách resume duy nhất
+            trong phạm vi hiện tại là người dùng cho phép commit toàn bộ checkpoint đã audit và push lên
+            <code>feat-editor</code>, rồi mới dispatch, watch và tải artifact CI ba OS.
+          </p>
+        </article>
+      </section>
+      <section class="space-y-3">
+        <h2 class="text-lg font-semibold text-emerald-300">P0 phase gate — Đã được phép resume (2026-08-18)</h2>
+
+        <article class="rounded-lg border border-emerald-900/70 bg-emerald-950/20 p-4 space-y-2">
+          <h3 class="font-medium">Checkpoint exact-source được phép commit và push</h3>
+          <p class="text-slate-300">
+            Người dùng đã cho phép push toàn bộ checkpoint S0+P0 hiện tại và yêu cầu không dừng hỏi lại cho
+            các checkpoint push/CI tương đương trong cùng goal. Worktree, branch <code>feat-editor</code>, log,
+            notes, GitHub CLI authentication và <code>git diff --check</code> đã được kiểm lại trước khi stage.
+          </p>
+          <p class="text-slate-400 text-sm">
+            Quyền này chỉ mở đường xuất bản exact source và chạy CI; mọi AC, artifact và source-identity gate
+            vẫn giữ nguyên. P0 chỉ được đóng sau khi remote SHA khớp commit và ma trận CI ba OS cùng artifacts
+            có conclusion PASS.
+          </p>
+        </article>
       </section>
     </main>
   </body>

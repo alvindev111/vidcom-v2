@@ -15,6 +15,7 @@ import type {
 } from "@vidcom/contracts";
 
 import type { AbsolutePath, ProjectRef } from "../domain/models";
+import type { MutationOrigin, MutationReadGuard } from "./mutation-observer";
 
 /** Resolved filesystem capability created only by a WorkspacePort implementation. */
 export type ResolvedPath = string & { readonly __brand: "ResolvedPath" };
@@ -29,6 +30,7 @@ export type ReadPurpose = "read-source" | "read-asset";
 
 /** Supported write purposes for project paths. */
 export type WritePurpose =
+  | "authored-write"
   | "write-source"
   | "write-asset"
   | "system-write"
@@ -192,6 +194,41 @@ export interface StagedFileSource {
   contentHash: ContentHash;
 }
 
+export interface PendingMountFailure {
+  code: string;
+  message: string;
+}
+
+export interface PendingMount {
+  operationId: string;
+  projectId: ProjectId;
+  assetPath: RelPath;
+  assetContentHash: ContentHash;
+  uploadFingerprint: ContentHash;
+  atSeconds: number;
+  trackIndex: number;
+  state: "uploaded_unmounted" | "mounted" | "abandoned";
+  lastFailure: PendingMountFailure | null;
+  mountedSceneId: string | null;
+  mountedRevision: number | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type PendingMountOpen = Pick<PendingMount,
+  | "operationId"
+  | "projectId"
+  | "assetPath"
+  | "assetContentHash"
+  | "uploadFingerprint"
+  | "atSeconds"
+  | "trackIndex">;
+
+export type PendingMountTransition =
+  | { kind: "open"; operationId: string; record: PendingMountOpen }
+  | { kind: "close"; operationId: string; sceneId: string; previousFailure: PendingMountFailure | null }
+  | { kind: "reopen"; operationId: string; expectedSceneId: string; restoreFailure: PendingMountFailure | null };
+
 export type CompositeStep =
   | {
       kind: "write";
@@ -205,16 +242,41 @@ export type CompositeStep =
       expectedContentHash: ContentHash;
     }
   | {
+      /** Core-only staged capability; transport schemas must never expose its source path. */
+      kind: "write-staged";
+      path: RelPath;
+      source: StagedFileSource;
+      expectedContentHash: ContentHash | null;
+      undoable: boolean;
+    }
+  | {
       kind: "entity";
       entity: "preview-settings";
       patch: PreviewSettingsPatchDto;
       expectedRevision: number;
+      /** Core-only history policy; transport callers cannot set composite entity steps. */
+      undoable?: boolean;
+    }
+  | {
+      kind: "mkdir";
+      path: RelPath;
+      expectExisting: "absent" | "either";
+    }
+  | {
+      kind: "rmdir";
+      path: RelPath;
+      expectEmpty: true;
     };
 
 /** Complete mutation request held under one project lease and mutex. */
 export interface CompositeRequest {
   ref: ProjectRef;
   steps: CompositeStep[];
+  origin: MutationOrigin;
+  /** Core-only dependency preconditions; transport schemas must never expose this field. */
+  historyReadGuards?: readonly MutationReadGuard[];
+  /** Core-only pending mount state transition persisted by the journal at T1. */
+  pendingMountTransition?: PendingMountTransition;
   toolAudit: PendingToolAudit | null;
   /** See `WriteInvocation.noteUnchanged`; carried so composite callers keep the signal. */
   noteUnchanged?: () => void;
@@ -249,6 +311,13 @@ export type StepIntent = DurableStepState & (
       path: null;
       entity: "preview-settings";
       toHash: ContentHash;
+    }
+  | {
+      kind: "mkdir" | "rmdir";
+      path: RelPath;
+      entity: null;
+      toHash: null;
+      existedBefore: boolean;
     }
 );
 
@@ -286,10 +355,12 @@ export interface PendingCompositeMutation extends CompositeIntent {
   context: PendingMutationContext;
   grantId: string | null;
   backupId: string | null;
+  pendingMountTransition: PendingMountTransition | null;
 }
 
-/** Durable filesystem capture owned by one journal step at the publish boundary. */
-export interface MutationCapture {
+/** File capture retained in a same-filesystem rollback slot. */
+export interface FileMutationCapture {
+  kind?: "file";
   journalId: JournalId | WorkspaceOperationId;
   ordinal: number;
   target: ResolvedPath;
@@ -297,10 +368,51 @@ export interface MutationCapture {
   capturedHash: ContentHash | null;
 }
 
-/** Precondition mismatch observed while atomically capturing the live target. */
-export interface MutationCaptureConflict {
-  actualHash: ContentHash | null;
+/** Directory capture records state only; directory bytes are never moved or read. */
+export interface DirectoryMutationCapture {
+  kind: "directory";
+  journalId: JournalId | WorkspaceOperationId;
+  ordinal: number;
+  target: ResolvedPath;
+  rollbackPath: null;
+  capturedHash: null;
+  existedBefore: boolean;
 }
+
+/** Durable filesystem capture owned by one journal step at the publish boundary. */
+export type MutationCapture = FileMutationCapture | DirectoryMutationCapture;
+
+/** State expected at the exact directory capture boundary. */
+export type DirectoryCaptureExpectation = { kind: "directory"; existedBefore: boolean };
+
+export type MutationCaptureExpectation = ContentHash | null | DirectoryCaptureExpectation;
+
+export interface MutationCaptureOptions {
+  /** Directory targets that will be removed later in this mutation; rollback storage must sit outside all of them. */
+  rollbackOutside?: readonly ResolvedPath[];
+}
+
+export type DirectoryPublishAction = { kind: "directory"; action: "mkdir" | "rmdir" };
+export type MutationPublishContent = string | Uint8Array | null | DirectoryPublishAction;
+export type DirectoryLandedState = { kind: "directory"; exists: boolean };
+export type MutationLandedState = ContentHash | null | DirectoryLandedState;
+
+/** Exact filesystem state used to suppress only a proven own-write watcher echo. */
+export type ProjectPathState =
+  | { kind: "file"; contentHash: ContentHash }
+  | { kind: "directory" }
+  | { kind: "absent" };
+
+export interface TrackedProjectPathState {
+  path: RelPath;
+  before: ProjectPathState;
+  after: ProjectPathState;
+}
+
+/** Precondition mismatch observed while atomically capturing the live target. */
+export type MutationCaptureConflict =
+  | { actualHash: ContentHash | null }
+  | { actualState: "absent" | "file" | "directory" | "other" };
 
 /** Exact durable lease identity that T1 must validate before opening a mutation journal. */
 export interface MutationAuthority {
@@ -376,6 +488,7 @@ export type McpCredentialSummary = Omit<McpCredentialRecord, "secretHash">;
 
 /** Optional SDK-neutral context forwarded from a tool registry into write authority. */
 export interface WriteInvocation {
+  origin: MutationOrigin;
   toolAudit: PendingToolAudit | null;
   /**
    * Called when the request was already satisfied, so no journal was opened.
@@ -395,6 +508,8 @@ export interface WriteEnvelope {
   entityRevision: number | null;
   fileHashes: Record<RelPath, ContentHash>;
   diagnostics: Diagnostic[];
+  /** Exact outbox sequence inserted by the same terminal transaction; null means no event. */
+  changeSeq: number | null;
 }
 
 /** Durable unresolved journal state exposed to readers and the project write gate. */

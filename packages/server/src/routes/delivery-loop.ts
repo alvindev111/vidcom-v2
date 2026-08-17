@@ -48,6 +48,7 @@ import {
 import { Hono, type Context } from "hono";
 
 import { HttpBoundaryError } from "../middleware/error-mapper";
+import { UNTRACKED_UI_INVOCATION } from "./mutation-origin";
 
 type BoundaryError = { code: ErrorCode; message: string; field?: string; details?: Record<string, unknown> };
 
@@ -204,23 +205,25 @@ export function createDeliveryLoopRoutes(dependencies: DeliveryLoopRouteDependen
   routes.post("/v1/projects", async (c) => {
     const input = parse(CreateProjectRequestSchema, await json(c), "project create payload is invalid");
     const preset = valueOf(resolvePlatformPreset(input));
-    return c.json(valueOf(await dependencies.lifecycle.create({ name: input.name, preset, actor: "user" })), 201);
+    return c.json(valueOf(await dependencies.lifecycle.create(
+      { name: input.name, preset, actor: "user" }, UNTRACKED_UI_INVOCATION,
+    )), 201);
   });
   routes.post("/v1/projects/:slug/adopt", async (c) =>
     c.json(valueOf(await dependencies.lifecycle.adopt({
       slug: parse(ProjectSlugParamsSchema, { slug: c.req.param("slug") }, "project slug is invalid").slug,
       actor: "user",
-    }))));
+    }, UNTRACKED_UI_INVOCATION))));
   routes.patch("/v1/projects/:id", async (c) => {
     const input = parse(RenameProjectRequestSchema, await json(c), "project rename payload is invalid");
     return c.json(valueOf(await dependencies.lifecycle.rename(
-      { kind: "project", projectId: projectId(c) }, input.name, "user",
+      { kind: "project", projectId: projectId(c) }, input.name, "user", UNTRACKED_UI_INVOCATION,
     )));
   });
   routes.delete("/v1/projects/:id", async (c) => {
     parse(DeleteProjectRequestSchema, await json(c), "project delete confirmation is invalid");
     return c.json(valueOf(await dependencies.lifecycle.remove(
-      { kind: "project", projectId: projectId(c) }, { actor: "user", confirmed: true },
+      { kind: "project", projectId: projectId(c) }, { actor: "user", confirmed: true }, UNTRACKED_UI_INVOCATION,
     )));
   });
   routes.post("/v1/projects/:id/renders", (c) => enqueueRenderResponse(dependencies, c));
@@ -252,7 +255,7 @@ export function createDeliveryLoopRoutes(dependencies: DeliveryLoopRouteDependen
     const input = parse(CreateSceneInputSchema, candidate, "scene create payload is invalid");
     return c.json(valueOf(await createScene(dependencies.writes, {
       ...input, projectId: input.projectId as ProjectId, expectedContentHash: input.expectedContentHash as ContentHash | null,
-    }, "user")), 201);
+    }, "user", UNTRACKED_UI_INVOCATION)), 201);
   });
   routes.patch("/v1/projects/:id/scenes/:sceneId/timing", async (c) => {
     const params = parse(SceneParamsSchema, c.req.param(), "scene path parameters are invalid");
@@ -261,7 +264,7 @@ export function createDeliveryLoopRoutes(dependencies: DeliveryLoopRouteDependen
       projectId: params.id as ProjectId, sceneId: params.sceneId,
       timing: { start: input.start, duration: input.duration, trackIndex: input.trackIndex },
       ripple: input.ripple, extendRoot: input.extendRoot, expectedContentHash: input.expectedContentHash,
-    }, "user")));
+    }, "user", UNTRACKED_UI_INVOCATION)));
   });
   routes.get("/v1/projects/:id/scenes/:sceneId/narration-cues", async (c) => {
     const params = parse(SceneParamsSchema, c.req.param(), "scene path parameters are invalid");
@@ -275,7 +278,7 @@ export function createDeliveryLoopRoutes(dependencies: DeliveryLoopRouteDependen
     return c.json(valueOf(await replaceNarrationCues(dependencies.writes, {
       projectId: params.id as ProjectId, sceneId: params.sceneId, cues: input.cues,
       expectedContentHash: input.expectedContentHash as ContentHash | null,
-    }, "user")));
+    }, "user", UNTRACKED_UI_INVOCATION)));
   });
   routes.patch("/v1/projects/:id/scenes/:sceneId/narration-cues/:cueId", async (c) => {
     const params = parse(NarrationCueParamsSchema, c.req.param(), "narration cue path parameters are invalid");
@@ -284,7 +287,7 @@ export function createDeliveryLoopRoutes(dependencies: DeliveryLoopRouteDependen
       projectId: params.id as ProjectId, sceneId: params.sceneId, cueId: params.cueId,
       patch: { text: input.text, voice: input.voice, offsetSeconds: input.offsetSeconds },
       expectedContentHash: input.expectedContentHash as ContentHash,
-    }, "user")));
+    }, "user", UNTRACKED_UI_INVOCATION)));
   });
   routes.get("/v1/recovery/entries/:entryId/diagnostics", async (c) => {
     const params = parse(RecoveryEntryParamsSchema, c.req.param(), "recovery entry id is invalid");
@@ -307,14 +310,14 @@ export function createDeliveryLoopRoutes(dependencies: DeliveryLoopRouteDependen
     const params = parse(RecoveryEntryParamsSchema, c.req.param(), "recovery entry id is invalid");
     const input = parse(RenameProjectRequestSchema, await json(c), "recovery rename payload is invalid");
     return c.json(valueOf(await dependencies.lifecycle.rename(
-      { kind: "entry", entryId: params.entryId as EntryId }, input.name, "user",
+      { kind: "entry", entryId: params.entryId as EntryId }, input.name, "user", UNTRACKED_UI_INVOCATION,
     )));
   });
   routes.delete("/v1/recovery/entries/:entryId", async (c) => {
     const params = parse(RecoveryEntryParamsSchema, c.req.param(), "recovery entry id is invalid");
     parse(DeleteProjectRequestSchema, await json(c), "recovery delete confirmation is invalid");
     return c.json(valueOf(await dependencies.lifecycle.remove(
-      { kind: "entry", entryId: params.entryId as EntryId }, { actor: "user", confirmed: true },
+      { kind: "entry", entryId: params.entryId as EntryId }, { actor: "user", confirmed: true }, UNTRACKED_UI_INVOCATION,
     )));
   });
   routes.get("/v1/renders/:jobId/download", async (c) => {

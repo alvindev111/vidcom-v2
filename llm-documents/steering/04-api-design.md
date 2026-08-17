@@ -2,7 +2,10 @@
 
 ## 1. Nguyên tắc
 
-HTTP adapter là **consumer thứ hai** của use case, sau MCP (D1). Nếu một thao tác chỉ làm được qua HTTP mà không qua MCP, thiết kế sai.
+HTTP adapter là **consumer ngang hàng** với MCP của use case Core (D1). Operation có input biểu diễn an
+toàn trên cả hai transport MUST có parity HTTP/MCP và gọi cùng use case. Hai defer tường minh là thao
+tác theo phiên studio cục bộ (D7) và input file/blob cục bộ (D9); dù chỉ expose qua HTTP, nghiệp vụ vẫn
+MUST nằm ở Core và D9 không được biến thành tool MCP nhận absolute path.
 
 Adapter chỉ làm 5 việc: parse & validate input → gọi use case → map `Result` sang HTTP → stream nếu cần → audit. MUST NOT chứa nghiệp vụ.
 

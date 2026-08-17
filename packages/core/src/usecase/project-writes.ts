@@ -15,6 +15,7 @@ import { detectTrackGapsAndOverlaps, planRipple, validateSceneTiming, type Scene
 import { checkPathPurpose, checkPathSyntax } from "../domain/path-policy";
 import { rootCompositionSource } from "../domain/platform-preset";
 import { err, ok, type Result } from "../error/result";
+import { ignoredMutationOriginForActor } from "../port/mutation-observer";
 import type { ClockPort, CompositionPort, MutationJournalPort, WorkspacePort } from "../port/ports";
 import type { CompositeRequest, WriteInvocation } from "../port/types";
 import type { WriteAuthority } from "../service/write-authority";
@@ -65,7 +66,7 @@ export async function saveSourceFile(
   dependencies: ProjectWriteDependencies,
   input: { projectId: ProjectId; path: RelPath; content: string; expectedContentHash: string | null },
   actor: Actor,
-  invocation: WriteInvocation = { toolAudit: null },
+  invocation: WriteInvocation = { origin: ignoredMutationOriginForActor(actor), toolAudit: null },
 ) {
   const ref = await findRef(dependencies, input.projectId);
   if (!ref.ok) return ref;
@@ -90,6 +91,7 @@ export async function saveSourceFile(
           entityRevision: null,
           fileHashes: { [input.path]: written.value.contentHash },
           diagnostics: written.value.diagnostics,
+          changeSeq: written.value.changeSeq ?? null,
         },
       })
     : written;
@@ -99,7 +101,7 @@ export async function patchPreviewSettings(
   dependencies: ProjectWriteDependencies,
   input: { projectId: ProjectId; patch: PreviewSettingsPatchDto; expectedRevision: number },
   actor: Actor,
-  invocation: WriteInvocation = { toolAudit: null },
+  invocation: WriteInvocation = { origin: ignoredMutationOriginForActor(actor), toolAudit: null },
 ) {
   const ref = await findRef(dependencies, input.projectId);
   if (!ref.ok) return ref;
@@ -127,6 +129,7 @@ export async function uploadBgm(
   dependencies: ProjectWriteDependencies,
   input: { projectId: ProjectId; name: string; bytes: Uint8Array; expectedRevision: number },
   actor: Actor,
+  invocation: WriteInvocation = { origin: ignoredMutationOriginForActor(actor), toolAudit: null },
 ) {
   const ref = await findRef(dependencies, input.projectId);
   if (!ref.ok) return ref;
@@ -142,7 +145,7 @@ export async function uploadBgm(
     path,
     bytes: input.bytes,
     expectedRevision: input.expectedRevision,
-  }, actor);
+  }, actor, invocation);
   return written.ok
     ? ok({ previewSettings: written.value.previewSettings!, revision: written.value.revision, diagnostics: written.value.diagnostics })
     : written;
@@ -170,7 +173,7 @@ export async function setSceneTiming(
     extendRoot?: boolean;
   },
   actor: Actor,
-  invocation: WriteInvocation = { toolAudit: null },
+  invocation: WriteInvocation = { origin: ignoredMutationOriginForActor(actor), toolAudit: null },
 ) {
   const ref = await findRef(dependencies, input.projectId);
   if (!ref.ok) return ref;
@@ -287,6 +290,7 @@ export async function setSceneTiming(
       entityRevision: null,
       fileHashes: { [ref.value.entry]: written.value.contentHash },
       diagnostics: [...written.value.diagnostics, ...diagnostics],
+      changeSeq: written.value.changeSeq ?? null,
     },
     affectedTrackIndex: next.trackIndex,
     moved,
@@ -304,7 +308,7 @@ export async function setSceneScript(
     expectedContentHash: string;
   },
   actor: Actor,
-  invocation: WriteInvocation = { toolAudit: null },
+  invocation: WriteInvocation = { origin: ignoredMutationOriginForActor(actor), toolAudit: null },
 ) {
   const ref = await findRef(dependencies, input.projectId);
   if (!ref.ok) return ref;
@@ -482,6 +486,7 @@ export async function regenerateNarration(
     voice?: string;
   },
   actor: Actor,
+  invocation: WriteInvocation = { origin: ignoredMutationOriginForActor(actor), toolAudit: null },
 ): Promise<Result<NarrationRecord, DomainError>> {
   const ref = await findRef(dependencies, input.projectId);
   if (!ref.ok) return ref;
@@ -539,7 +544,7 @@ export async function regenerateNarration(
       narration.updatedAt,
     ),
     expectedContentHash: previous?.contentHash ?? null,
-  }, actor);
+  }, actor, invocation);
   return written.ok ? ok(narration) : written;
 }
 
@@ -573,7 +578,7 @@ export async function createScene(
     expectedContentHash: ContentHash | null;
   },
   actor: Actor,
-  invocation: WriteInvocation = { toolAudit: null },
+  invocation: WriteInvocation = { origin: ignoredMutationOriginForActor(actor), toolAudit: null },
 ) {
   const ref = await findRef(dependencies, input.projectId);
   if (!ref.ok) return ref;
@@ -785,7 +790,7 @@ async function persistNarrationCues(
     expectedContentHash: ContentHash | null;
   },
   actor: Actor,
-  invocation: WriteInvocation = { toolAudit: null },
+  invocation: WriteInvocation = { origin: ignoredMutationOriginForActor(actor), toolAudit: null },
 ) {
   const ref = await findRef(dependencies, input.projectId);
   if (!ref.ok) return ref;
@@ -826,7 +831,7 @@ export function replaceNarrationCues(
     expectedContentHash: ContentHash | null;
   },
   actor: Actor,
-  invocation: WriteInvocation = { toolAudit: null },
+  invocation: WriteInvocation = { origin: ignoredMutationOriginForActor(actor), toolAudit: null },
 ) {
   return persistNarrationCues(dependencies, {
     ...input,
@@ -849,7 +854,7 @@ export async function patchNarrationCue(
     expectedContentHash: ContentHash;
   },
   actor: Actor,
-  invocation: WriteInvocation = { toolAudit: null },
+  invocation: WriteInvocation = { origin: ignoredMutationOriginForActor(actor), toolAudit: null },
 ) {
   const current = await readNarrationCues(dependencies, input);
   if (!current.ok) return current;

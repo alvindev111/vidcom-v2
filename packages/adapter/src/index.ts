@@ -11,6 +11,7 @@ export * from "./db/delivery-loop-migration-rollback";
 export * from "./db/approval-grants";
 export * from "./db/health";
 export * from "./db/journal";
+export * from "./db/pending-mount";
 export * from "./db/job-store";
 export * from "./db/workspace-operation-journal";
 export * from "./db/mcp-credential";

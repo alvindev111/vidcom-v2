@@ -32,11 +32,16 @@ Tiền tố theo hành vi để AI đọc contract là đoán được:
 | Mức | Tool | Chính sách |
 |---|---|---|
 | **read** | `list_projects`, `get_project_context`, `read_composition`, `list_scenes`, `get_diagnostics`, `list_registry_blocks`, `get_job_status` | chạy tự do; audit ở mức nhẹ |
-| **write** | `create_scene`, `duplicate_scene`, `set_scene_timing`, `set_text`, `reorder_scenes`, `save_file`, `upload_asset`, `add_block` | audit đầy đủ; bắt buộc `expectedRevision`/`expectedContentHash`; trả entity + revision mới; undo được qua revision history |
+| **write** | `create_scene`, `duplicate_scene`, `set_scene_timing`, `set_text`, `reorder_scenes`, `save_file`, `upload_asset`, `add_block` | audit đầy đủ; bắt buộc `expectedRevision`/`expectedContentHash`; trả entity + revision mới; không tự đi vào lịch sử undo của UI |
 | **job** | `start_tts`, `start_snapshot`, `start_render`, `cancel_job` | trả `jobId` ngay, không block |
 | **destructive** | `delete_scene`, `delete_file`, `delete_project` | **cần xác nhận** — cơ chế khác nhau theo thế hệ, xem dưới; Core tạo backup trước khi xoá |
 
 MUST khai báo mức trong metadata của tool, không chỉ ghi trong mô tả.
+
+Lịch sử undo là affordance của phiên studio cục bộ: chỉ mutation có `origin.kind: "ui"`, session đã
+attach đúng project và `historyAction: "record"` mới được ghi vào stack đó. Write từ MCP, CLI, watcher
+hay nguồn external vẫn đi qua cùng Core, precondition và audit nhưng không vào stack UI. MUST NOT phát
+tool MCP undo/redo.
 
 ### Xác nhận thao tác destructive — approval grant, không phải cờ
 

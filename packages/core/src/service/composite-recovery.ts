@@ -12,6 +12,7 @@ export interface ObservedCompositeStep {
   step: StepIntent;
   target: ResolvedPath;
   actualHash: ContentHash | null;
+  actualDirectoryState?: "directory" | "absent" | "other";
   classification: CompositeStepClassification;
 }
 
@@ -19,7 +20,16 @@ export interface ObservedCompositeStep {
 export function classifyCompositeStep(
   step: StepIntent,
   actualHash: ContentHash | null,
+  actualDirectoryState?: "directory" | "absent" | "other",
 ): CompositeStepClassification {
+  if (step.kind === "mkdir" || step.kind === "rmdir") {
+    if (actualDirectoryState !== "directory" && actualDirectoryState !== "absent") return "unknown";
+    if (step.kind === "mkdir") {
+      if (step.existedBefore) return actualDirectoryState === "directory" ? "landed" : "unknown";
+      return actualDirectoryState === "directory" ? "landed" : "not_applied";
+    }
+    return actualDirectoryState === "absent" ? "landed" : "not_applied";
+  }
   if (step.kind === "delete") {
     if (actualHash === null) return "landed";
     return actualHash === step.fromHash ? "not_applied" : "unknown";
@@ -51,6 +61,28 @@ export async function rollbackObservedCompositeSteps(
   for (const observation of landed) {
     const { step, target } = observation;
     try {
+      if (step.kind === "mkdir" || step.kind === "rmdir") {
+        if (journalId === undefined) return false;
+        const currentExists = observation.actualDirectoryState === "directory";
+        const captured = await workspace.captureForMutation(
+          target,
+          { kind: "directory", existedBefore: currentExists },
+          journalId,
+          step.ordinal + 1_000_000,
+        );
+        if (!captured.ok) return false;
+        const restored = await workspace.publishCaptured(captured.value, {
+          kind: "directory",
+          action: step.kind === "mkdir" ? "rmdir" : "mkdir",
+        });
+        const state = await workspace.stat(target);
+        if (!restored || (state?.kind === "directory") !== step.existedBefore) {
+          await workspace.restoreCaptured(captured.value, { kind: "directory", exists: currentExists }).catch(() => false);
+          return false;
+        }
+        await workspace.discardCapture(captured.value);
+        continue;
+      }
       if (journalId !== undefined) {
         if (step.fromHash !== null && step.previousContent === null) return false;
         const captured = await workspace.captureForMutation(

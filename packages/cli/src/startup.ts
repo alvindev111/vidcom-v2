@@ -279,6 +279,8 @@ export async function startVidcomFoundation<Listener>(
           workspaceRoot: effectiveConfig.workspaceRoot,
           resolveProjectRef: infrastructure.resolveProjectRef,
           recordFailure: (audit, reason) => infrastructure.toolAudit.recordPendingFailure(audit, reason),
+          observer: infrastructure.mutationObserver,
+          clock: infrastructure.clock,
         });
         await infrastructure.largeContent.cleanupUnreferenced(
           await infrastructure.journal.listPreviousObjectHashes(),

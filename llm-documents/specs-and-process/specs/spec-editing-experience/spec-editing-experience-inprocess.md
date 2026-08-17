@@ -84,8 +84,8 @@ trên timeline, undo/redo, preview không giật khi ghi, quản lý file/asset 
   Audit checklist cuối ghi tường minh steering variance cho raw upload/thumbnail request/session undo,
   sửa path thật của `applyCompositionOps`, và defer MCP blob/file-manager parity R5 thành D9 thay vì
   mở tool nhận absolute path
-- **Implementation Checklist**: **Pending Confirmation** — đồng bộ 2026-08-16 từ Goals bản 7 + toàn
-  bộ contract/failure-cleanup gate của Design bản 12; chưa được thực thi
+- **Implementation Checklist**: **Approved 2026-08-16** — đồng bộ từ Goals bản 7 + toàn bộ
+  contract/failure-cleanup gate của Design bản 12; S0 bắt đầu thực thi sau khi gate được duyệt
 
 ## During Spec
 - **Standups**: 2026-08-16 — S0 chạy: spec chuyển `pending` → `inprocess`, `implementation-notes.html` tạo, baseline ghi vào Execution Log của checklist. Bước kế: P0.1.

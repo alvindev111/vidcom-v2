@@ -103,7 +103,7 @@ describe("advertised payload limits", () => {
 
     for (const revision of [null, ""]) {
       const missing = await request(`/api/v1/projects/${projectId}/assets/bgm`, { method: "POST", body: body(3, revision) });
-      expect(missing.status).toBe(409);
+      expect(missing.status).toBe(400);
       expect(await missing.json()).toMatchObject({ error: { code: "precondition_required" } });
     }
     expect(writes).toHaveLength(1);

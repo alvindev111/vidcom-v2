@@ -12,6 +12,7 @@ import {
   LargePreviousContentStore,
   LegacyHyperframesProjects,
   MutationJournal,
+  SqlitePendingMountStore,
   WorkspaceOperationJournal,
   SqliteJobStore,
   SqliteEventOutbox,
@@ -67,6 +68,8 @@ import {
   WriteAuthority,
   WorkspaceMutationCoordinator,
   ProjectCache,
+  ProjectPathInvalidatorFanout,
+  NOOP_MUTATION_OBSERVER,
   type AbsolutePath,
   type ClockPort,
   type IdPort,
@@ -262,6 +265,7 @@ export function createInfrastructure(config: CompositionRootConfig) {
   const workspace = new WorkspaceFs(config.workspaceRoot);
   const largeContent = new LargePreviousContentStore(config.appDataRoot);
   const journal = new MutationJournal(database, clock, largeContent);
+  const pendingMount = new SqlitePendingMountStore(database, clock);
   const workspaceOperations = new WorkspaceOperationJournal(database, clock, largeContent);
   const lease = new WorkspaceLease(database, clock, ids);
   const jobs = new SqliteJobStore(database, clock);
@@ -298,8 +302,12 @@ export function createInfrastructure(config: CompositionRootConfig) {
   });
   const events = new SqliteEventOutbox(database, clock);
   const cache = new ProjectCache();
+  const pathInvalidator = new ProjectPathInvalidatorFanout([cache], () => {
+    logger.warn("project path invalidator consumer failed");
+    metrics.increment("project_path_invalidator_error");
+  });
   const writtenHashes = new WrittenHashTracker();
-  const watcher = new WorkspaceWatcher(workspace, database, events, cache, writtenHashes, clock);
+  const watcher = new WorkspaceWatcher(workspace, database, events, pathInvalidator, writtenHashes, clock);
   const stagedAssets = new AppDataAssetStager(config.appDataRoot);
   const backups = new AppDataBackupStore(config.appDataRoot, database, clock, ids);
   const composition = new CompositionHf();
@@ -380,6 +388,8 @@ export function createInfrastructure(config: CompositionRootConfig) {
     workspace,
     largeContent,
     journal,
+    pendingMount,
+    mutationObserver: NOOP_MUTATION_OBSERVER,
     workspaceOperations,
     projectDirectories: new FsProjectDirectoryAdapter(config.workspaceRoot),
     lease,
@@ -392,6 +402,7 @@ export function createInfrastructure(config: CompositionRootConfig) {
     renderBinaries,
     events,
     cache,
+    pathInvalidator,
     writtenHashes,
     watcher,
     stagedAssets,
@@ -537,17 +548,25 @@ export function createApplication(
         : Promise.resolve({ ok: true as const, value: undefined });
     },
     invalidate(projectId) { infrastructure.cache.invalidate(projectId); },
+    pathInvalidator: infrastructure.pathInvalidator,
+    writtenStates: infrastructure.writtenHashes,
+    pendingMount: infrastructure.pendingMount,
     recordWrittenHash(projectId, relativePath, hash) {
       infrastructure.writtenHashes.record(projectId, relativePath, hash);
     },
     notifyEvents() {},
+    clock: infrastructure.clock,
     stagedAssets: infrastructure.stagedAssets,
     workspaceCoordinator,
     backups: infrastructure.backups,
+    observer: infrastructure.mutationObserver,
+    undoContent: infrastructure.largeContent,
     reconcileJournal: (journalId) => reconcileCompositeMutation({
       workspace: infrastructure.workspace,
       journal: infrastructure.journal,
       resolveProjectRef: infrastructure.resolveProjectRef,
+      observer: infrastructure.mutationObserver,
+      clock: infrastructure.clock,
     }, journalId),
   });
   recoverImportedProject = async (root, slug) => {

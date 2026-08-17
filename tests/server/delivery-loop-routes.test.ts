@@ -196,13 +196,15 @@ describe("project delivery HTTP routes on real SQLite and filesystem", () => {
     const value = await fixture();
     try {
       const cases = [
-        [ErrorCode.SchemaInvalid, 400], [ErrorCode.PreconditionRequired, 409],
+        [ErrorCode.SchemaInvalid, 400], [ErrorCode.PreconditionRequired, 400],
         [ErrorCode.ProjectInvalid, 409], [ErrorCode.NoComposition, 422],
         [ErrorCode.NoScenes, 422], [ErrorCode.RemoteAssetNotLocal, 422],
         [ErrorCode.AssetNotAllowed, 403], [ErrorCode.PathOutsideProject, 403],
         [ErrorCode.RenderBinaryMissing, 503], [ErrorCode.ProcessTerminationUnverified, 500],
         [ErrorCode.ApprovalRequired, 403], [ErrorCode.ConfirmationRequired, 403],
         [ErrorCode.StorageUnavailable, 500], [ErrorCode.Internal, 500],
+        [ErrorCode.InvariantViolated, 422], [ErrorCode.IntegrityMismatch, 422],
+        [ErrorCode.TooLarge, 413], [ErrorCode.UnsupportedMedia, 415],
       ] as const;
       for (const [code, status] of cases) {
         value.setActivationError(code);

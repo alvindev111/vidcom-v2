@@ -49,6 +49,7 @@ import { ToolRegistry } from "@vidcom/mcp";
 import { createFixedClock, createSequentialIdPort } from "../support/deterministic";
 import { dbAll, dbOne, dbRun } from "../support/database";
 
+const TEST_ORIGIN = { kind: "system", sessionId: null, label: null, historyAction: "ignore", historyOperation: null } as const;
 const now = "2026-08-02T00:00:00.000Z";
 const projectId = "project_destructive_usecases" as ProjectId;
 const hashContent = (content: string | Uint8Array): ContentHash =>
@@ -192,6 +193,7 @@ function authorityWithFailure(options: { writePath?: string; deletePath?: string
     discardCapture: workspace.discardCapture.bind(workspace),
     readTree: workspace.readTree.bind(workspace),
     stat: workspace.stat.bind(workspace),
+    readDirectory: workspace.readDirectory.bind(workspace),
   };
   return new WriteAuthority({
     workspace: proxy,
@@ -239,7 +241,7 @@ describe("Phase J use cases with real SQLite and filesystem", () => {
       projectId,
       title: "Scene two",
       expectedContentHash: hashContent(indexSource),
-    }, "agent", { toolAudit: audit("create_scene", "write") });
+    }, "agent", { origin: TEST_ORIGIN, toolAudit: audit("create_scene", "write") });
     expect(created).toMatchObject({ ok: true, value: { scene: { id: "scene-2" }, envelope: { projectRevision: 1 } } });
     expect(await missing(path.join(projectRoot, "compositions/scene-2.html"))).toBe(false);
     expect(await missing(path.join(projectRoot, "narration/scene-2.json"))).toBe(false);
@@ -253,7 +255,7 @@ describe("Phase J use cases with real SQLite and filesystem", () => {
       path: "notes.txt" as RelPath,
       content: "notes new",
       expectedContentHash: hashContent("notes old"),
-    }, "agent", { toolAudit: audit("save_file", "write") });
+    }, "agent", { origin: TEST_ORIGIN, toolAudit: audit("save_file", "write") });
     expect(saved).toMatchObject({ ok: true, value: { envelope: { projectRevision: 2 } } });
     expect(dbOne(database, `SELECT revision_id AS revisionId FROM audit_entry
       WHERE action = 'tool:save_file'`)).toEqual({ revisionId: 2 });
@@ -491,7 +493,7 @@ describe("Phase J use cases with real SQLite and filesystem", () => {
       projectId,
       title: "Must roll back",
       expectedContentHash: hashContent(indexSource),
-    }, "agent", { toolAudit: audit("create_scene", "write") });
+    }, "agent", { origin: TEST_ORIGIN, toolAudit: audit("create_scene", "write") });
     expect(created).toMatchObject({ ok: false, error: { code: "storage_unavailable" } });
     expect(await missing(path.join(projectRoot, "compositions/scene-2.html"))).toBe(true);
     expect(await readFile(path.join(projectRoot, "index.html"), "utf8")).toBe(indexSource);
@@ -507,7 +509,7 @@ describe("Phase J use cases with real SQLite and filesystem", () => {
       projectId,
       title: "Landed before T2",
       expectedContentHash: hashContent(indexSource),
-    }, "agent", { toolAudit: audit("create_scene", "write") });
+    }, "agent", { origin: TEST_ORIGIN, toolAudit: audit("create_scene", "write") });
     expect(created).toMatchObject({ ok: false, error: { code: "recovery_required" } });
     expect(await missing(path.join(projectRoot, "compositions/scene-2.html"))).toBe(false);
     expect(dbOne(database, "SELECT status FROM mutation_journal WHERE id = 1")).toEqual({ status: "pending" });
@@ -552,7 +554,7 @@ describe("Phase J use cases with real SQLite and filesystem", () => {
       sceneId: "scene-1",
       expectedRevision: 0,
       grantId: "grant_scene_failure",
-    }, "agent", { toolAudit: audit("delete_scene", "destructive") });
+    }, "agent", { origin: TEST_ORIGIN, toolAudit: audit("delete_scene", "destructive") });
 
     expect(deleted).toMatchObject({ ok: false, error: { code: "storage_unavailable" } });
     expect(await readFile(path.join(projectRoot, "index.html"), "utf8")).toBe(indexSource);
@@ -586,7 +588,7 @@ describe("Phase J use cases with real SQLite and filesystem", () => {
       sceneId: "scene-1",
       expectedRevision: 0,
       grantId: "grant_scene_delete",
-    }, "agent", { toolAudit: audit("delete_scene", "destructive") });
+    }, "agent", { origin: TEST_ORIGIN, toolAudit: audit("delete_scene", "destructive") });
     expect(deleted).toMatchObject({
       ok: true,
       value: {
@@ -619,6 +621,7 @@ describe("Phase J use cases with real SQLite and filesystem", () => {
         content: `${afterDelete}\n<!-- later edit -->`,
         expectedContentHash: hashContent(afterDelete),
       }],
+      origin: TEST_ORIGIN,
       toolAudit: null,
       backup: false,
     }, "user");

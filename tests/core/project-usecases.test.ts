@@ -41,6 +41,7 @@ import {
   type WriteInvocation,
 } from "@vidcom/core";
 
+const TEST_ORIGIN = { kind: "system", sessionId: null, label: null, historyAction: "ignore", historyOperation: null } as const;
 const projectId = "project-usecase" as ProjectId;
 const ref: ProjectRef = {
   id: projectId,
@@ -150,6 +151,7 @@ function setup(options: {
         ? { size: 2 * 1024 * 1024 + 1, modifiedAt: new Date(0), kind: "file" as const }
         : null;
     },
+    async readDirectory() { return []; },
   };
   const appliedOps: CompositionOp[][] = [];
   const composition = {
@@ -197,7 +199,7 @@ function setup(options: {
   async function mutateSource(
     request: MutationRequest | CompositeRequest,
     _actor?: string,
-    invocation: WriteInvocation = { toolAudit: null },
+    invocation: WriteInvocation = { origin: TEST_ORIGIN, toolAudit: null },
   ): Promise<Result<WriteResult | WriteEnvelope, DomainError>> {
       if ("steps" in request) {
         mutations.push(request);
@@ -212,7 +214,7 @@ function setup(options: {
             : hash(step.content);
         }
         revision += 1;
-        return ok({ projectRevision: revision, entityRevision: null, fileHashes, diagnostics: [] });
+        return ok({ projectRevision: revision, entityRevision: null, fileHashes, diagnostics: [], changeSeq: revision });
       }
       mutations.push(request);
       invocations.push(invocation);
@@ -503,7 +505,7 @@ describe("project write and legacy use cases without HTTP", () => {
     };
     expect(await setSceneTiming(runtime.deps, {
       projectId, sceneId: "scene-1", timing: { duration: 6 }, expectedContentHash: hash("<main>old</main>"),
-    }, "user", { toolAudit })).toMatchObject({
+    }, "user", { origin: TEST_ORIGIN, toolAudit })).toMatchObject({
       ok: true,
       value: {
         scene: { id: "scene-1", duration: 6 },
@@ -511,7 +513,7 @@ describe("project write and legacy use cases without HTTP", () => {
         envelope: { projectRevision: 3, fileHashes: { "index.html": hash("serialized:setTiming") } },
       },
     });
-    expect(runtime.invocations).toEqual([{ toolAudit }]);
+    expect(runtime.invocations).toEqual([{ origin: TEST_ORIGIN, toolAudit }]);
   });
   it.each([
     [{ duration: 0 }, ErrorCode.TimingInvalid],
@@ -536,7 +538,7 @@ describe("project write and legacy use cases without HTTP", () => {
     };
     expect(await setSceneScript(runtime.deps, {
       projectId, sceneId: "scene-1", file: "index.html" as RelPath, elementId: "hf-title", text: "new", expectedContentHash: hash("<main>old</main>"),
-    }, "user", { toolAudit })).toMatchObject({
+    }, "user", { origin: TEST_ORIGIN, toolAudit })).toMatchObject({
       ok: true,
       value: {
         scene: { id: "scene-1", narrationStale: true },
@@ -601,7 +603,7 @@ describe("project write and legacy use cases without HTTP", () => {
       projectId,
       title: "Next",
       expectedContentHash: hash("<main>old</main>"),
-    }, "user", { toolAudit })).toMatchObject({
+    }, "user", { origin: TEST_ORIGIN, toolAudit })).toMatchObject({
       ok: true,
       value: {
         scene: { id: "scene-2", start: 4, duration: 4, narrationStale: false },

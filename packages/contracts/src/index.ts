@@ -5,6 +5,7 @@ export * from "./color-palettes";
 export * from "./agent-terminal";
 export * from "./domain";
 export * from "./dto";
+export * from "./editing";
 export * from "./delivery-loop-http";
 export * from "./errors";
 export * from "./mcp";

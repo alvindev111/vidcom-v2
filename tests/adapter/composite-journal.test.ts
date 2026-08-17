@@ -18,6 +18,7 @@ import {
   JournalTransactionError,
   LargePreviousContentStore,
   MutationJournal,
+  SqlitePendingMountStore,
   type PreviousContentStore,
 } from "@vidcom/adapter";
 
@@ -200,6 +201,103 @@ describe("MutationJournal composite transaction primitives", () => {
     expect(dbOne(database, "SELECT COUNT(*) AS count FROM revision")).toEqual({ count: 1 });
     expect(dbOne(database, "SELECT COUNT(*) AS count FROM audit_entry")).toEqual({ count: 2 });
     await expect(journal.isJournalOwned("invocation-1")).resolves.toBe(true);
+  });
+
+  it("persists and atomically applies pending-mount open, close and reopen transitions", async () => {
+    const journal = new MutationJournal(database, clock);
+    const operationId = "01K1ABCDEFGHJKMNPQRSTVWXYZ";
+    const transition = {
+      kind: "open" as const,
+      operationId,
+      record: {
+        operationId,
+        projectId,
+        assetPath: "assets/video/upload.mp4" as RelPath,
+        assetContentHash: hash("8"),
+        uploadFingerprint: hash("9"),
+        atSeconds: 1.25,
+        trackIndex: 2,
+      },
+    };
+
+    const id = await journal.beginComposite(
+      { projectId, actor: "agent" },
+      steps,
+      { toolAudit: null },
+      authority,
+      undefined,
+      transition,
+    );
+
+    await expect(journal.readPendingComposite(id)).resolves.toMatchObject({
+      pendingMountTransition: transition,
+    });
+    await journal.commitComposite(id, committedResult());
+    expect(dbOne(database, `SELECT project_id AS projectId, state, asset_path AS assetPath,
+      mounted_scene_id AS mountedSceneId FROM pending_mount WHERE operation_id = ?`, operationId))
+      .toEqual({
+        projectId,
+        state: "uploaded_unmounted",
+        assetPath: "assets/video/upload.mp4",
+        mountedSceneId: null,
+      });
+
+    const pendingMount = new SqlitePendingMountStore(database, clock);
+    await pendingMount.markFailed(projectId, operationId, { code: "interrupted", message: "Mount interrupted" });
+    await expect(pendingMount.lookup(projectId, operationId)).resolves.toMatchObject({
+      state: "active",
+      record: { state: "uploaded_unmounted", lastFailure: { code: "interrupted" } },
+    });
+
+    const closeId = await journal.beginComposite(
+      { projectId, actor: "agent" },
+      steps,
+      { toolAudit: null },
+      authority,
+      undefined,
+      {
+        kind: "close",
+        operationId,
+        sceneId: "scene-mounted",
+        previousFailure: { code: "interrupted", message: "Mount interrupted" },
+      },
+    );
+    const closeEnvelope = await journal.commitComposite(closeId, committedResult());
+    await expect(pendingMount.lookup(projectId, operationId)).resolves.toMatchObject({
+      state: "active",
+      record: {
+        state: "mounted",
+        lastFailure: null,
+        mountedSceneId: "scene-mounted",
+        mountedRevision: closeEnvelope.projectRevision,
+      },
+    });
+
+    const reopenId = await journal.beginComposite(
+      { projectId, actor: "agent" },
+      steps,
+      { toolAudit: null },
+      authority,
+      undefined,
+      {
+        kind: "reopen",
+        operationId,
+        expectedSceneId: "scene-mounted",
+        restoreFailure: { code: "interrupted", message: "Mount interrupted" },
+      },
+    );
+    await journal.commitComposite(reopenId, committedResult());
+    await expect(pendingMount.listPending(projectId)).resolves.toMatchObject([{
+      operationId,
+      state: "uploaded_unmounted",
+      lastFailure: { code: "interrupted", message: "Mount interrupted" },
+      mountedSceneId: null,
+      mountedRevision: null,
+    }]);
+
+    dbRun(database, "DELETE FROM pending_mount WHERE operation_id = ?", operationId);
+    await expect(pendingMount.lookup(projectId, operationId)).resolves.toEqual({ state: "expired" });
+    await expect(pendingMount.lookup(projectId, "01K1NEVERSEEN000000000000")).resolves.toEqual({ state: "never-seen" });
   });
 
   it("deduplicates large rollback bytes outside SQLite and compacts only unreferenced objects", async () => {

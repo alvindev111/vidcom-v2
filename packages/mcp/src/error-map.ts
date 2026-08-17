@@ -94,10 +94,12 @@ function protocolCode(error: DomainError, era: Era): number {
     case ErrorCode.IdempotencyKeyReused:
     case ErrorCode.TimingInvalid:
     case ErrorCode.DurationOverflow:
+    case ErrorCode.InvariantViolated:
     case ErrorCode.SceneNotFound:
     case ErrorCode.SdkRejected:
     case ErrorCode.TooLarge:
     case ErrorCode.UnsupportedMedia:
+    case ErrorCode.IntegrityMismatch:
     case ErrorCode.ApprovalRequired:
     case ErrorCode.ApprovalExpired:
     case ErrorCode.ApprovalInvalid:

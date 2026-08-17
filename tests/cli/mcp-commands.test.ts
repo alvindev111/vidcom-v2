@@ -73,6 +73,7 @@ import {
   runtimeManifest,
 } from "../support/runtime-fixture";
 
+const TEST_ORIGIN = { kind: "system", sessionId: null, label: null, historyAction: "ignore", historyOperation: null } as const;
 const MIGRATIONS_SOURCE = new URL("../../packages/adapter/drizzle/", import.meta.url);
 const SHIPPED_MIGRATIONS = readdirSync(MIGRATIONS_SOURCE, { withFileTypes: true })
   .filter((entry) => entry.isDirectory()
@@ -930,6 +931,7 @@ describe("VidCom CLI dispatch", () => {
           content: "after destructive",
           expectedContentHash: hash("before destructive"),
         }],
+        origin: TEST_ORIGIN,
         toolAudit: {
           schemaVersion: 1,
           invocationId: "invocation-backup-cli",

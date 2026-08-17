@@ -43,6 +43,7 @@ import {
 import { Hono, type Context } from "hono";
 
 import { HttpBoundaryError } from "../middleware/error-mapper";
+import { UNTRACKED_UI_INVOCATION } from "./mutation-origin";
 
 export interface ProjectWriteRouteDependencies extends ProjectWriteDependencies {
   reads: ProjectReadDependencies;
@@ -129,7 +130,7 @@ export function createProjectWriteRoutes(dependencies: ProjectWriteRouteDependen
       path: parsed.data.path as RelPath,
       content: parsed.data.content,
       expectedContentHash: parsed.data.expectedContentHash,
-    }, "user"));
+    }, "user", UNTRACKED_UI_INVOCATION));
     return c.json({
       file: { ...saved.file, content: parsed.data.content },
       revision: saved.envelope.projectRevision,
@@ -141,7 +142,7 @@ export function createProjectWriteRoutes(dependencies: ProjectWriteRouteDependen
     if (!parsed.success) fail({ code: ErrorCode.SchemaInvalid, message: "preview settings payload is invalid" });
     return c.json(valueOf(await patchPreviewSettings(dependencies, {
       projectId: projectId(c), ...parsed.data,
-    }, "user")));
+    }, "user", UNTRACKED_UI_INVOCATION)));
   });
   routes.post("/v1/projects/:id/assets/bgm", async (c) => {
     const form = await c.req.formData().catch(() => null);
@@ -163,7 +164,7 @@ export function createProjectWriteRoutes(dependencies: ProjectWriteRouteDependen
     return c.json(valueOf(await uploadBgm(dependencies, {
       projectId: projectId(c), name: parsed.data.file.name, bytes,
       expectedRevision: parsed.data.expectedRevision,
-    }, "user")));
+    }, "user", UNTRACKED_UI_INVOCATION)));
   });
   // The built-in beds and this machine's library, in one read: a picker needs both
   // and a fresh install has only the first.
@@ -216,7 +217,7 @@ export function createProjectWriteRoutes(dependencies: ProjectWriteRouteDependen
     return c.json(valueOf(await installBgm(dependencies, {
       ...parsed.data,
       projectId: parsed.data.projectId as ProjectId,
-    }, "user")));
+    }, "user", UNTRACKED_UI_INVOCATION)));
   });
   routes.post("/v1/projects/:id/bgm/library", async (c) => {
     const parsed = ImportBgmInputSchema.safeParse({ ...(await json(c) as object), projectId: c.req.param("id") });
@@ -235,7 +236,7 @@ export function createProjectWriteRoutes(dependencies: ProjectWriteRouteDependen
     }
     return c.json(valueOf(await installMotionLibrary(dependencies, {
       projectId: projectId(c), libraryId: parsed.data.libraryId,
-    }, "user")));
+    }, "user", UNTRACKED_UI_INVOCATION)));
   });
   routes.patch("/v1/projects/:id/scenes/:sceneId", async (c) => {
     const parsed = PatchSceneTimingRequestSchema.safeParse(await json(c));
@@ -243,7 +244,7 @@ export function createProjectWriteRoutes(dependencies: ProjectWriteRouteDependen
     const id = projectId(c);
     const timed = valueOf(await setSceneTiming(dependencies, {
       projectId: id, sceneId: c.req.param("sceneId"), ...parsed.data,
-    }, "user"));
+    }, "user", UNTRACKED_UI_INVOCATION));
     const file = valueOf(await readSourceFile(dependencies.reads, id, "index.html" as RelPath));
     return c.json({ file, revision: timed.envelope.projectRevision, diagnostics: timed.envelope.diagnostics });
   });
@@ -253,7 +254,7 @@ export function createProjectWriteRoutes(dependencies: ProjectWriteRouteDependen
     const id = projectId(c);
     const scripted = valueOf(await setSceneScript(dependencies, {
       projectId: id, sceneId: c.req.param("sceneId"), ...parsed.data, file: parsed.data.file as RelPath,
-    }, "user"));
+    }, "user", UNTRACKED_UI_INVOCATION));
     const file = valueOf(await readSourceFile(dependencies.reads, id, parsed.data.file as RelPath));
     return c.json({ file, revision: scripted.envelope.projectRevision, diagnostics: scripted.envelope.diagnostics });
   });
@@ -264,7 +265,7 @@ export function createProjectWriteRoutes(dependencies: ProjectWriteRouteDependen
     if (parsed.data.action === "tts") {
       return c.json({ ok: true, narration: valueOf(await regenerateNarration(dependencies, {
         projectId: id, sceneId: parsed.data.sceneId, text: parsed.data.text,
-      }, "user")) });
+      }, "user", UNTRACKED_UI_INVOCATION)) });
     }
     const prompt = parsed.data.prompt.trim();
     if (!prompt) fail({ code: ErrorCode.SchemaInvalid, message: "prompt is empty", field: "prompt" });
@@ -273,7 +274,7 @@ export function createProjectWriteRoutes(dependencies: ProjectWriteRouteDependen
       projectId: id,
       title: prompt,
       expectedContentHash: entry.contentHash,
-    }, "agent"));
+    }, "agent", UNTRACKED_UI_INVOCATION));
     return c.json({
       ok: true,
       sceneId: result.scene.id,

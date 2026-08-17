@@ -197,6 +197,7 @@ describe("ToolRegistry definitions", () => {
   });
 });
 
+const TEST_ORIGIN = { kind: "system", sessionId: null, label: null, historyAction: "ignore", historyOperation: null } as const;
 const request = {
   era: "modern" as const,
   protocolVersion: "2025-06-18",
@@ -410,7 +411,7 @@ describe("delete_scene approval flow", () => {
     grantId: null,
     credentialId: null,
     invocationId: "invoke-1",
-    writeInvocation: { toolAudit: null },
+    writeInvocation: { origin: TEST_ORIGIN, toolAudit: null },
     requestInput: async (input: ConstructorParameters<typeof InputRequiredSignal>[0]): Promise<never> => {
       throw new InputRequiredSignal(input);
     },

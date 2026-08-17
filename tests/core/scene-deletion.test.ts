@@ -17,6 +17,7 @@ import {
   type ResolvedPath,
 } from "@vidcom/core";
 
+const TEST_ORIGIN = { kind: "system", sessionId: null, label: null, historyAction: "ignore", historyOperation: null } as const;
 const hash = (digit: string): ContentHash => `sha256:${digit.repeat(64)}` as ContentHash;
 
 function scene(id: string, options: { src?: string | null; start?: number; duration?: number } = {}): SceneDto {
@@ -301,6 +302,7 @@ describe("deleteScene", () => {
               entityRevision: 4,
               fileHashes: { "index.html": hash("b"), "preview-settings.json": hash("c") },
               diagnostics: request.diagnostics ?? [],
+              changeSeq: 13,
               backupId: "backup_scene_1",
             },
           };
@@ -311,7 +313,7 @@ describe("deleteScene", () => {
       sceneId: "scene-1",
       expectedRevision: 12,
       grantId: "grant_scene_1",
-    }, "agent", { toolAudit: null });
+    }, "agent", { origin: TEST_ORIGIN, toolAudit: null });
 
     expect(result).toMatchObject({
       ok: true,

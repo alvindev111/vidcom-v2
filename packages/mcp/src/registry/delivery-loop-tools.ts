@@ -130,8 +130,9 @@ export function installAgentKitTool(
       dependencies.workspaceRoot,
       input as CoreInstallAgentKitInput,
       {
-      actor: context.actor,
-      toolAudit: context.writeInvocation.toolAudit,
+        actor: context.actor,
+        origin: context.writeInvocation.origin,
+        toolAudit: context.writeInvocation.toolAudit,
       },
     ),
   };

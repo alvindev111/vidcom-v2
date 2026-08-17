@@ -12,6 +12,8 @@ export const PRODUCT_MIGRATION_PATHS = Object.freeze([
   "drizzle/20260804180557_spotty_catseye/migration.sql",
   "drizzle/20260807144527_amazing_kitty_pryde/migration.sql",
   "drizzle/20260808073614_normal_stature/migration.sql",
+  "drizzle/20260817153223_small_power_pack/migration.sql",
+  "drizzle/20260817162114_solid_daredevil/migration.sql",
 ]);
 
 export function motionRuntimePaths(libraries) {

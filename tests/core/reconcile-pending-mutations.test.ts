@@ -93,6 +93,7 @@ function workspace(actualHashes: Map<string, ContentHash | null>): WorkspacePort
     async discardCapture() {},
     async readTree() { return []; },
     async stat() { return null; },
+    async readDirectory() { return []; },
   };
 }
 

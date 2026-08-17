@@ -17,7 +17,7 @@ import type {
   RelPath,
 } from "@vidcom/contracts";
 
-import type { AbsolutePath, BinaryContent, CompositionModel, CompositionOp, CompositionSource, FileContent, FileNode, FileStat, FontCompatibilityIssue, ProjectRef } from "../domain/models";
+import type { AbsolutePath, BinaryContent, CompositionModel, CompositionOp, CompositionSource, DirectoryEntry, FileContent, FileNode, FileStat, FontCompatibilityIssue, ProjectRef } from "../domain/models";
 import type { MotionLibrary } from "../domain/motion-libraries";
 import type { Result } from "../error/result";
 import type {
@@ -39,11 +39,15 @@ import type {
   PreviewSettings,
   ResolvedPath,
   StoredEvent,
+  TrackedProjectPathState,
   CompositeIntent,
   CompositeResult,
   GrantTransition,
   PendingCompositeMutation,
   PendingMutationContext,
+  PendingMount,
+  PendingMountFailure,
+  PendingMountTransition,
   ProjectRecoveryStatus,
   StepIntent,
   ToolAuditEntry,
@@ -55,6 +59,10 @@ import type {
   GrantBinding,
   McpCredentialRecord,
   MutationCapture,
+  MutationCaptureExpectation,
+  MutationCaptureOptions,
+  MutationLandedState,
+  MutationPublishContent,
   MutationCaptureConflict,
   MutationAuthority,
   PendingWorkspaceOperation,
@@ -274,20 +282,23 @@ export interface WorkspacePort {
   /** Moves the live target into a journal-owned rollback slot and verifies its hash at that exact boundary. */
   captureForMutation(
     path: ResolvedPath,
-    expectedHash: ContentHash | null,
+    expectation: MutationCaptureExpectation,
     journalId: JournalId | WorkspaceOperationId,
     ordinal: number,
+    options?: MutationCaptureOptions,
   ): Promise<Result<MutationCapture, MutationCaptureConflict>>;
   /** Publishes staged bytes without replacing a target created after capture; `null` verifies a delete remains absent. */
-  publishCaptured(capture: MutationCapture, content: string | Uint8Array | null): Promise<boolean>;
+  publishCaptured(capture: MutationCapture, content: MutationPublishContent): Promise<boolean>;
   /** Restores captured bytes only while the live target still matches the supplied landed hash. */
-  restoreCaptured(capture: MutationCapture, landedHash: ContentHash | null): Promise<boolean>;
+  restoreCaptured(capture: MutationCapture, landedState: MutationLandedState): Promise<boolean>;
   /** Removes a terminal mutation's rollback slot after SQLite commit or verified abort. */
   discardCapture(capture: MutationCapture): Promise<void>;
   /** Reads the complete project tree and may be expensive for large projects. */
   readTree(ref: ProjectRef): Promise<FileNode[]>;
   /** Reads metadata for a resolved path; `null` means the path does not exist. */
   stat(path: ResolvedPath): Promise<FileStat | null>;
+  /** Lists direct children without following symlinks; `null` means the directory is absent. */
+  readDirectory(path: ResolvedPath): Promise<DirectoryEntry[] | null>;
   /** Stats one scanner-owned marker without opening a general path-policy bypass. */
   statWorkspaceFile?(root: AbsolutePath, path: "vidcom.json" | "hyperframes.json" | "index.html"):
     Promise<{ size: number; modifiedAtMs: number } | null>;
@@ -321,6 +332,7 @@ export interface StagedAssetPort {
     targetPath: RelPath,
     sourcePath: AbsolutePath,
     expectedHash: ContentHash,
+    options?: { createParent?: boolean },
   ): Promise<StagedAsset>;
 }
 
@@ -399,6 +411,7 @@ export interface CompositeMutationJournalPort extends MutationJournalPort {
     context: PendingMutationContext,
     authority: MutationAuthority,
     grant?: Extract<GrantTransition, { kind: "reserve" }>,
+    pending?: PendingMountTransition,
   ): Promise<JournalId>;
   /** Persists the exact rollback slot and captured hash before a step can publish. */
   markStepCaptured(
@@ -579,6 +592,31 @@ export interface EventOutboxPort {
   readFrom(seq: number, limit: number): Promise<{ events: StoredEvent[]; gap: boolean }>;
   /** Reads the latest durable sequence; zero means no events have been stored. */
   latestSeq(): Promise<number>;
+  /** Latest durable sequence for one project only; zero means that project has no events. */
+  latestProjectSeq(projectId: ProjectId): Promise<number>;
+}
+
+/** Non-throwing project-path invalidation boundary shared by mutations and external watcher events. */
+export interface ProjectPathInvalidator {
+  invalidate(projectId: ProjectId, paths: readonly RelPath[]): void;
+}
+
+/** Journal-correlated own-write state consumed by the filesystem watcher after terminal settlement. */
+export interface WrittenStateTrackerPort {
+  arm(projectId: ProjectId, journalId: JournalId, states: readonly TrackedProjectPathState[]): void;
+  settle(journalId: JournalId, outcome: "committed" | "rolled_back" | "unknown"): void;
+}
+
+/** Query/status boundary; open/close/reopen are owned by the composite journal transaction. */
+export interface PendingMountPort {
+  lookup(projectId: ProjectId, operationId: string): Promise<
+    | { state: "active"; record: PendingMount }
+    | { state: "expired" }
+    | { state: "never-seen" }
+  >;
+  listPending(projectId: ProjectId): Promise<Array<PendingMount & { state: "uploaded_unmounted" }>>;
+  markFailed(projectId: ProjectId, operationId: string, failure: PendingMountFailure): Promise<void>;
+  abandon(projectId: ProjectId, operationId: string, reason: string): Promise<void>;
 }
 
 /** Durable job persistence used by the in-process scheduler. */

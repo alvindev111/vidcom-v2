@@ -70,6 +70,28 @@ describe("classifyCompositeStep", () => {
     expect(classifyCompositeStep(step, digest("other"))).toBe("unknown");
   });
 
+  it("classifies mkdir/rmdir from directory state and durable existedBefore", () => {
+    const mkdir: StepIntent = {
+      ordinal: 0,
+      kind: "mkdir",
+      path: "assets" as RelPath,
+      entity: null,
+      fromHash: null,
+      toHash: null,
+      previousContent: null,
+      existedBefore: false,
+    };
+    expect(classifyCompositeStep(mkdir, null, "directory")).toBe("landed");
+    expect(classifyCompositeStep(mkdir, null, "absent")).toBe("not_applied");
+    expect(classifyCompositeStep(mkdir, null, "other")).toBe("unknown");
+    expect(classifyCompositeStep({ ...mkdir, existedBefore: true }, null, "directory")).toBe("landed");
+    expect(classifyCompositeStep({ ...mkdir, existedBefore: true }, null, "absent")).toBe("unknown");
+
+    const rmdir: StepIntent = { ...mkdir, kind: "rmdir", existedBefore: true };
+    expect(classifyCompositeStep(rmdir, null, "absent")).toBe("landed");
+    expect(classifyCompositeStep(rmdir, null, "directory")).toBe("not_applied");
+  });
+
   it.each([
     [[], "orphan"],
     [["unknown"], "orphan"],
@@ -106,6 +128,7 @@ describe("classifyCompositeStep", () => {
       async discardCapture() {},
       async readTree() { return []; },
       async stat() { return null; },
+      async readDirectory() { return []; },
     };
     const makeStep = (ordinal: number, path: RelPath): StepIntent => ({
       ordinal,
@@ -146,6 +169,7 @@ describe("classifyCompositeStep", () => {
       async discardCapture() {},
       async readTree() { return []; },
       async stat() { return null; },
+      async readDirectory() { return []; },
     };
     const step: StepIntent = {
       ordinal: 0,

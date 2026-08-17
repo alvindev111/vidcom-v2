@@ -73,6 +73,7 @@ export const WriteEnvelopeSchema = z.strictObject({
   entityRevision: z.number().int().nonnegative().nullable(),
   fileHashes: z.record(CanonicalRelativePathSchema, ContentHashSchema),
   diagnostics: z.array(DiagnosticSchema),
+  changeSeq: z.number().int().positive().nullable(),
 });
 
 /** Compact scene state needed by an agent to plan its next mutation. */
@@ -338,11 +339,13 @@ export const MCP_PUBLIC_ERROR_CODES = [
   ErrorCode.WorkspaceLeaseLost,
   ErrorCode.TimingInvalid,
   ErrorCode.DurationOverflow,
+  ErrorCode.InvariantViolated,
   ErrorCode.SceneNotFound,
   ErrorCode.SdkRejected,
   ErrorCode.NoFile,
   ErrorCode.TooLarge,
   ErrorCode.UnsupportedMedia,
+  ErrorCode.IntegrityMismatch,
   ErrorCode.Internal,
   ErrorCode.StorageUnavailable,
   ErrorCode.WorkspaceLeaseDenied,

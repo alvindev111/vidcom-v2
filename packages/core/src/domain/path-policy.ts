@@ -94,6 +94,9 @@ export function checkPathPurpose(path: string, purpose: PathPurpose): PathReject
 
   let allowed = false;
   switch (purpose) {
+    case "authored-write":
+      allowed = true;
+      break;
     case "read-source":
       allowed = SOURCE_EXTENSIONS.has(extension(lower));
       break;

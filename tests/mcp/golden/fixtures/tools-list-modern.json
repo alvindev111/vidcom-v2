@@ -474,13 +474,26 @@
                   ],
                   "additionalProperties": false
                 }
+              },
+              "changeSeq": {
+                "anyOf": [
+                  {
+                    "type": "integer",
+                    "exclusiveMinimum": 0,
+                    "maximum": 9007199254740991
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
               }
             },
             "required": [
               "projectRevision",
               "entityRevision",
               "fileHashes",
-              "diagnostics"
+              "diagnostics",
+              "changeSeq"
             ],
             "additionalProperties": false
           },
@@ -698,13 +711,26 @@
                   ],
                   "additionalProperties": false
                 }
+              },
+              "changeSeq": {
+                "anyOf": [
+                  {
+                    "type": "integer",
+                    "exclusiveMinimum": 0,
+                    "maximum": 9007199254740991
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
               }
             },
             "required": [
               "projectRevision",
               "entityRevision",
               "fileHashes",
-              "diagnostics"
+              "diagnostics",
+              "changeSeq"
             ],
             "additionalProperties": false
           },
@@ -997,13 +1023,26 @@
                   ],
                   "additionalProperties": false
                 }
+              },
+              "changeSeq": {
+                "anyOf": [
+                  {
+                    "type": "integer",
+                    "exclusiveMinimum": 0,
+                    "maximum": 9007199254740991
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
               }
             },
             "required": [
               "projectRevision",
               "entityRevision",
               "fileHashes",
-              "diagnostics"
+              "diagnostics",
+              "changeSeq"
             ],
             "additionalProperties": false
           },
@@ -1148,11 +1187,13 @@
                       "workspace_lease_lost",
                       "timing_invalid",
                       "duration_overflow",
+                      "invariant_violated",
                       "scene_not_found",
                       "sdk_rejected",
                       "no_file",
                       "too_large",
                       "unsupported_media",
+                      "integrity_mismatch",
                       "internal",
                       "storage_unavailable",
                       "workspace_lease_denied",
@@ -5529,13 +5570,26 @@
                   ],
                   "additionalProperties": false
                 }
+              },
+              "changeSeq": {
+                "anyOf": [
+                  {
+                    "type": "integer",
+                    "exclusiveMinimum": 0,
+                    "maximum": 9007199254740991
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
               }
             },
             "required": [
               "projectRevision",
               "entityRevision",
               "fileHashes",
-              "diagnostics"
+              "diagnostics",
+              "changeSeq"
             ],
             "additionalProperties": false
           }
@@ -6841,13 +6895,26 @@
                   ],
                   "additionalProperties": false
                 }
+              },
+              "changeSeq": {
+                "anyOf": [
+                  {
+                    "type": "integer",
+                    "exclusiveMinimum": 0,
+                    "maximum": 9007199254740991
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
               }
             },
             "required": [
               "projectRevision",
               "entityRevision",
               "fileHashes",
-              "diagnostics"
+              "diagnostics",
+              "changeSeq"
             ],
             "additionalProperties": false
           },
@@ -7195,13 +7262,26 @@
                   ],
                   "additionalProperties": false
                 }
+              },
+              "changeSeq": {
+                "anyOf": [
+                  {
+                    "type": "integer",
+                    "exclusiveMinimum": 0,
+                    "maximum": 9007199254740991
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
               }
             },
             "required": [
               "projectRevision",
               "entityRevision",
               "fileHashes",
-              "diagnostics"
+              "diagnostics",
+              "changeSeq"
             ],
             "additionalProperties": false
           },

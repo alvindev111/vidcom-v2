@@ -15,6 +15,8 @@ import {
   LegacyGenerateResponseSchema,
   LegacySceneMutationRequestSchema,
   LegacyTtsResponseSchema,
+  PendingMountSchema,
+  PendingMountOperationIdSchema,
   ListProjectsResponseSchema,
   NoContentResponseSchema,
   PatchPreviewSettingsRequestSchema,
@@ -91,6 +93,27 @@ const previewSettings = {
 };
 
 describe("API request contracts", () => {
+  it("shares strict pending-mount primitives across editing boundaries", () => {
+    const operationId = "01K1ABCDEFGHJKMNPQRSTVWXYZ";
+    expect(PendingMountOperationIdSchema.parse(operationId)).toBe(operationId);
+    expect(PendingMountSchema.parse({
+      operationId,
+      projectId: project.id,
+      assetPath: "assets/video/upload.mp4",
+      assetContentHash: hash,
+      uploadFingerprint: hash,
+      atSeconds: 1.25,
+      trackIndex: 2,
+      state: "uploaded_unmounted",
+      lastFailure: { code: "interrupted", message: "Mount interrupted" },
+      mountedSceneId: null,
+      mountedRevision: null,
+      createdAt: now,
+      updatedAt: now,
+    })).toMatchObject({ operationId, state: "uploaded_unmounted" });
+    expect(PendingMountOperationIdSchema.safeParse("not-a-ulid").success).toBe(false);
+  });
+
   it("accepts one representative request for every §7 input shape", () => {
     const upload = new File([new Uint8Array([0x49, 0x44, 0x33])], "music.mp3", {
       type: "audio/mpeg",
@@ -176,7 +199,9 @@ describe("API response contracts", () => {
       "host_not_allowed",
       "idempotency_key_reused",
       "identity_parse_error",
+      "integrity_mismatch",
       "internal",
+      "invariant_violated",
       "no_composition",
       "no_file",
       "no_scenes",

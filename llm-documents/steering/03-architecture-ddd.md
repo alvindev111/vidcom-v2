@@ -10,10 +10,13 @@ adapter MCP ─────────┘
 
 Hai luật:
 
-1. **HTTP và MCP là hai adapter ngang hàng**, cùng gọi một tập use case. Nghiệp vụ nằm ở Core, không ở adapter.
+1. **HTTP và MCP là hai adapter ngang hàng**, cùng gọi use case Core khi input của operation biểu diễn an toàn trên cả hai transport. Nghiệp vụ luôn nằm ở Core, không ở adapter.
 2. **Core không biết ai gọi nó.** Không `Request`, không `Context` của Hono, không transport MCP, không `process.cwd()`.
 
-Kiểm tra nhanh xem có vi phạm không: *nếu bỏ hoàn toàn tầng HTTP, MCP có làm được mọi việc không?* Nếu không — nghiệp vụ đã rò lên adapter, và D1 chưa đạt.
+Kiểm tra nhanh xem có vi phạm không: *nếu bỏ hoàn toàn tầng HTTP, use case Core có còn gọi được mà
+không cần transport HTTP không?* Nếu không — nghiệp vụ đã rò lên adapter, và D1 chưa đạt. Hai ngoại
+lệ transport được defer tường minh là thao tác theo phiên studio cục bộ (D7) và input file/blob cục bộ
+(D9); chúng không cho phép route tự quyết nghiệp vụ hoặc mở tool MCP nhận absolute path.
 
 ## 2. Tầng
 

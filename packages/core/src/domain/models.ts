@@ -33,7 +33,13 @@ export interface BinaryContent {
 export interface FileStat {
   size: number;
   modifiedAt: Date;
-  kind: "file" | "directory";
+  kind: "file" | "directory" | "symlink" | "other";
+}
+
+/** Direct child metadata read without following symlinks. */
+export interface DirectoryEntry {
+  name: string;
+  kind: "file" | "directory" | "symlink" | "other";
 }
 
 /** One project tree entry returned by the workspace adapter. */

@@ -171,6 +171,7 @@ describe("deleteFile", () => {
               entityRevision: null,
               fileHashes: {},
               diagnostics: [],
+              changeSeq: 5,
               backupId: "backup_file_1",
             },
           };
@@ -182,7 +183,7 @@ describe("deleteFile", () => {
       ok: true,
       value: {
         deleted: "notes.txt",
-        envelope: { projectRevision: 5, entityRevision: null, fileHashes: {}, diagnostics: [] },
+        envelope: { projectRevision: 5, entityRevision: null, fileHashes: {}, diagnostics: [], changeSeq: 5 },
         backupId: "backup_file_1",
       },
     });

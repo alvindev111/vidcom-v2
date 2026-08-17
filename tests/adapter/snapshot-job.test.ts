@@ -43,6 +43,7 @@ import {
 import { createSequentialIdPort } from "../support/deterministic";
 import { dbRun } from "../support/database";
 
+const TEST_ORIGIN = { kind: "system", sessionId: null, label: null, historyAction: "ignore", historyOperation: null } as const;
 const roots: string[] = [];
 const now = "2026-08-04T00:00:00.000Z";
 const clock = { now: () => new Date(now) };
@@ -305,6 +306,7 @@ describe("snapshot job with real SQLite and filesystem", () => {
           content: changed,
           expectedContentHash: hashContent(twoScenes),
         }],
+        origin: TEST_ORIGIN,
         toolAudit: null,
         backup: false,
       }, "system")).resolves.toMatchObject({ ok: true });
@@ -324,6 +326,7 @@ describe("snapshot job with real SQLite and filesystem", () => {
           content: changedAgain,
           expectedContentHash: hashContent(changed),
         }],
+        origin: TEST_ORIGIN,
         toolAudit: null,
         backup: false,
       }, "system")).resolves.toMatchObject({ ok: true });

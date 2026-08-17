@@ -1,8 +1,10 @@
-import { ErrorCode, type DomainEvent, type RelPath } from "@vidcom/contracts";
+import { ErrorCode, type DomainEvent, type PreviewSettingsDto, type RelPath } from "@vidcom/contracts";
 
 import type { ProjectRef } from "../domain/models";
+import { DEFAULT_PREVIEW_SETTINGS, normalizePreviewSettings } from "../domain/preview-settings";
 import { err, ok, type Result } from "../error/result";
-import type { CompositeMutationJournalPort, WorkspacePort } from "../port/ports";
+import type { MutationObserverPort, MutationReceipt, MutationReceiptStep } from "../port/mutation-observer";
+import type { ClockPort, CompositeMutationJournalPort, WorkspacePort } from "../port/ports";
 import type {
   CompositeReconcileOutcome,
   JournalId,
@@ -23,6 +25,8 @@ export interface CompositeReconciliationDependencies {
   journal: CompositeMutationJournalPort;
   resolveProjectRef(projectId: PendingCompositeMutation["projectId"]): Promise<ProjectRef | null>;
   recordFailure?(audit: PendingToolAudit, reason: ErrorCode): Promise<void>;
+  observer?: MutationObserverPort;
+  clock?: ClockPort;
 }
 
 export interface CompositeReconciliationReport {
@@ -33,6 +37,7 @@ export interface CompositeReconciliationReport {
 }
 
 function purposeForStep(step: StepIntent): PathPurpose {
+  if (step.kind === "mkdir" || step.kind === "rmdir") return "authored-write";
   if (step.kind === "entity" || step.path === "preview-settings.json"
     || (step.path?.startsWith("narration/") && step.path.endsWith(".json"))) return "system-write";
   if (step.path && ["assets/", "preview-assets/", "narration/", "snapshots/", "renders/"]
@@ -40,13 +45,120 @@ function purposeForStep(step: StepIntent): PathPurpose {
   return "write-source";
 }
 
-function recoveryEvent(mutation: PendingCompositeMutation): DomainEvent {
+function recoveryEvent(mutation: PendingCompositeMutation, paths: readonly RelPath[]): DomainEvent {
   const single = mutation.steps.length === 1 ? mutation.steps[0] : null;
   if (single?.kind === "entity") {
-    return { type: "project.changed", projectId: mutation.projectId, payload: { entity: single.entity } };
+    return { type: "project.changed", projectId: mutation.projectId, payload: { entity: single.entity, paths, source: "system" } };
   }
-  if (single) return { type: "file.changed", projectId: mutation.projectId, payload: { path: single.path } };
-  return { type: "project.changed", projectId: mutation.projectId, payload: { composite: true } };
+  if (single) return {
+    type: "file.changed",
+    projectId: mutation.projectId,
+    payload: { path: single.path, paths, source: "system" },
+  };
+  return { type: "project.changed", projectId: mutation.projectId, payload: { composite: true, paths, source: "system" } };
+}
+
+async function recoveryPaths(
+  dependencies: CompositeReconciliationDependencies,
+  mutation: PendingCompositeMutation,
+): Promise<RelPath[] | null> {
+  const paths: RelPath[] = [];
+  for (const step of mutation.steps) {
+    if (step.kind !== "entity") {
+      paths.push(step.path);
+      continue;
+    }
+    const state = await dependencies.journal.readEntityState(mutation.projectId, step.entity);
+    if (!state) return null;
+    paths.push(state.backingPath);
+  }
+  return paths;
+}
+
+function previewState(content: string | Uint8Array | null): PreviewSettingsDto | null {
+  if (content === null) return null;
+  try {
+    const text = typeof content === "string" ? content : new TextDecoder().decode(content);
+    return normalizePreviewSettings(JSON.parse(text));
+  } catch {
+    return null;
+  }
+}
+
+async function emitRecoveryReceipt(
+  dependencies: CompositeReconciliationDependencies,
+  mutation: PendingCompositeMutation,
+  observations: readonly ObservedCompositeStep[],
+  envelope: Extract<CompositeReconcileOutcome, { terminal: "committed" }>["envelope"],
+): Promise<void> {
+  if (!dependencies.observer || !dependencies.clock) return;
+  const receiptSteps: MutationReceiptStep[] = [];
+  const paths: RelPath[] = [];
+  for (const observation of observations) {
+    const step = observation.step;
+    if (step.kind === "mkdir" || step.kind === "rmdir") {
+      paths.push(step.path);
+      receiptSteps.push({
+        kind: "directory",
+        undoable: false,
+        op: step.kind,
+        path: step.path,
+        existedBefore: step.existedBefore,
+      });
+      continue;
+    }
+    if (step.kind !== "entity") {
+      paths.push(step.path);
+      receiptSteps.push({
+        kind: "file",
+        undoable: false,
+        path: step.path,
+        fromHash: step.fromHash,
+        toHash: step.toHash,
+        omittedReason: "not-undoable",
+      });
+      continue;
+    }
+    const state = await dependencies.journal.readEntityState(mutation.projectId, step.entity);
+    const current = await dependencies.workspace.readFile(observation.target);
+    const backingPath = state?.backingPath ?? "preview-settings.json" as RelPath;
+    paths.push(backingPath);
+    receiptSteps.push({
+      kind: "entity",
+      undoable: false,
+      entity: step.entity,
+      backingPath,
+      beforeState: previewState(step.previousContent),
+      afterState: previewState(current?.content ?? null) ?? DEFAULT_PREVIEW_SETTINGS,
+      fromRevision: Math.max(0, (state?.revision ?? 1) - 1),
+      toRevision: state?.revision ?? 1,
+      fromHash: step.fromHash,
+      toHash: step.toHash,
+    });
+  }
+  const receipt: MutationReceipt = {
+    id: `journal:${mutation.id}`,
+    projectId: mutation.projectId,
+    origin: {
+      kind: "system",
+      sessionId: null,
+      label: null,
+      historyAction: "ignore",
+      historyOperation: null,
+    },
+    steps: receiptSteps,
+    paths,
+    readGuards: [],
+    projectRevision: envelope.projectRevision,
+    at: dependencies.clock.now().toISOString(),
+    undoable: false,
+  };
+  try {
+    const emitted = dependencies.observer.emit(receipt);
+    if (!emitted.ok) dependencies.observer.invalidateProject(mutation.projectId, "history-desync");
+  } catch {
+    dependencies.observer.invalidateProject(mutation.projectId, "history-desync");
+  }
 }
 
 async function recordFailureBestEffort(
@@ -90,6 +202,20 @@ async function observeSteps(
     if (!path) return null;
     const resolved = await dependencies.workspace.resolve(ref, path, purposeForStep(step));
     if (!resolved.ok) return null;
+    if (step.kind === "mkdir" || step.kind === "rmdir") {
+      const state = await dependencies.workspace.stat(resolved.value);
+      const actualDirectoryState = state === null
+        ? "absent" as const
+        : state.kind === "directory" ? "directory" as const : "other" as const;
+      observations.push({
+        step,
+        target: resolved.value,
+        actualHash: null,
+        actualDirectoryState,
+        classification: classifyCompositeStep(step, null, actualDirectoryState),
+      });
+      continue;
+    }
     const actualHash = await dependencies.workspace.readHash(resolved.value);
     observations.push({ step, target: resolved.value, actualHash, classification: classifyCompositeStep(step, actualHash) });
   }
@@ -104,12 +230,17 @@ async function captureSettlementBoundary(
   for (const observation of observations) {
     const captured = await workspace.captureForMutation(
       observation.target,
-      observation.actualHash,
+      observation.step.kind === "mkdir" || observation.step.kind === "rmdir"
+        ? { kind: "directory", existedBefore: observation.actualDirectoryState === "directory" }
+        : observation.actualHash,
       journalId,
       observation.step.ordinal + 2_000_000,
     );
     if (!captured.ok) return false;
-    if (!(await workspace.restoreCaptured(captured.value, null))) {
+    const settlementState = observation.step.kind === "mkdir" || observation.step.kind === "rmdir"
+      ? { kind: "directory" as const, exists: observation.actualDirectoryState === "directory" }
+      : null;
+    if (!(await workspace.restoreCaptured(captured.value, settlementState))) {
       await workspace.discardCapture(captured.value).catch(() => {});
       return false;
     }
@@ -150,18 +281,21 @@ export async function reconcileCompositeMutation(
   }
   if (decision === "roll_forward") {
     try {
+      const paths = await recoveryPaths(dependencies, mutation);
+      if (!paths) return orphan(dependencies, mutation, "orphaned");
       const envelope = await dependencies.journal.commitComposite(
         mutation.id,
         {
           projectId: mutation.projectId,
           actor: mutation.actor,
           steps: mutation.steps.map((step) => ({ ...step, status: "written" })),
-          event: recoveryEvent(mutation),
+          event: recoveryEvent(mutation, paths),
           diagnostics: [],
           recovered: true,
         },
         mutation.grantId ? { kind: "consume", grantId: mutation.grantId } : undefined,
       );
+      await emitRecoveryReceipt(dependencies, mutation, observations, envelope);
       return ok({ terminal: "committed", envelope });
     } catch {
       return err({ code: ErrorCode.StorageUnavailable, message: "the recovered mutation could not be committed" });

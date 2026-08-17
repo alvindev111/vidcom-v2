@@ -43,6 +43,7 @@ class RecoveryProjectMutex {
 const recoveryMutex = new RecoveryProjectMutex();
 
 function purposeForStep(step: StepIntent): PathPurpose {
+  if (step.kind === "mkdir" || step.kind === "rmdir") return "authored-write";
   if (step.kind === "entity" || step.path === "preview-settings.json"
     || (step.path?.startsWith("narration/") && step.path.endsWith(".json"))) return "system-write";
   if (step.path && ["assets/", "preview-assets/", "narration/", "snapshots/", "renders/"]
@@ -70,11 +71,33 @@ async function resolveSteps(
 
 async function restorePrevious(
   dependencies: ResolveOrphanedMutationDependencies,
+  journalId: JournalId,
   steps: readonly ResolvedOrphanStep[],
 ): Promise<boolean> {
   const descending = [...steps].sort((left, right) => right.step.ordinal - left.step.ordinal);
   for (const { step, target } of descending) {
     try {
+      if (step.kind === "mkdir" || step.kind === "rmdir") {
+        const state = await dependencies.workspace.stat(target);
+        if (state !== null && state.kind !== "directory") return false;
+        const exists = state?.kind === "directory";
+        if (exists === step.existedBefore) continue;
+        const captured = await dependencies.workspace.captureForMutation(
+          target,
+          { kind: "directory", existedBefore: exists },
+          journalId,
+          step.ordinal + 4_000_000,
+        );
+        if (!captured.ok) return false;
+        const restored = await dependencies.workspace.publishCaptured(captured.value, {
+          kind: "directory",
+          action: step.existedBefore ? "mkdir" : "rmdir",
+        });
+        const verified = await dependencies.workspace.stat(target);
+        if (!restored || (verified?.kind === "directory") !== step.existedBefore) return false;
+        await dependencies.workspace.discardCapture(captured.value);
+        continue;
+      }
       if (step.fromHash === null) await dependencies.workspace.deleteAtomic(target);
       else {
         if (step.previousContent === null) return false;
@@ -88,7 +111,19 @@ async function restorePrevious(
   return true;
 }
 
-function acceptedStep(step: StepIntent, actualHash: ContentHash | null): StepResult | null {
+function acceptedStep(
+  step: StepIntent,
+  actualHash: ContentHash | null,
+  actualDirectoryState?: "directory" | "absent" | "other",
+): StepResult | null {
+  if (step.kind === "mkdir" || step.kind === "rmdir") {
+    if (actualDirectoryState !== "directory" && actualDirectoryState !== "absent") return null;
+    return {
+      ...step,
+      kind: actualDirectoryState === "directory" ? "mkdir" : "rmdir",
+      status: "written",
+    };
+  }
   if (actualHash === null) {
     if (step.kind === "entity") return null;
     return { ...step, kind: "delete", toHash: null, status: "written" };
@@ -119,7 +154,17 @@ async function acceptCurrent(
     }
     const accepted: StepResult[] = [];
     for (const { step, target } of steps) {
-      const current = acceptedStep(step, await dependencies.workspace.readHash(target));
+      const metadata = step.kind === "mkdir" || step.kind === "rmdir"
+        ? await dependencies.workspace.stat(target)
+        : null;
+      const directoryState = metadata === null
+        ? "absent" as const
+        : metadata.kind === "directory" ? "directory" as const : "other" as const;
+      const current = acceptedStep(
+        step,
+        step.kind === "mkdir" || step.kind === "rmdir" ? null : await dependencies.workspace.readHash(target),
+        directoryState,
+      );
       if (!current) return err({ code: ErrorCode.SdkRejected, message: "the current entity state is missing" });
       accepted.push(current);
     }
@@ -164,7 +209,7 @@ export async function resolveOrphanedMutation(
     const steps = await resolveSteps(dependencies, ref, current.steps);
     if (!steps) return err({ code: ErrorCode.RecoveryRequired, message: "the orphan targets could not be resolved" });
     if (resolution === "accept-current") return acceptCurrent(dependencies, journalId, ref, actor, steps);
-    if (!(await restorePrevious(dependencies, steps))) {
+    if (!(await restorePrevious(dependencies, journalId, steps))) {
       return err({ code: ErrorCode.RecoveryRequired, message: "the previous state could not be restored and verified" });
     }
     try {

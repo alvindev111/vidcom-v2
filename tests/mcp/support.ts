@@ -340,6 +340,7 @@ export function createContractMatrixRegistry(): ToolRegistry {
         contentHash: matrixNewHash,
         revision: 3,
         diagnostics: [],
+        changeSeq: 3,
       }),
       // install_bgm rides the staged-asset + preview-settings mutation, so the
       // matrix needs that seam too, not only mutateSource.
@@ -348,6 +349,7 @@ export function createContractMatrixRegistry(): ToolRegistry {
         contentHash: matrixNewHash,
         revision: 3,
         diagnostics: [],
+        changeSeq: 3,
         previewSettings: DEFAULT_PREVIEW_SETTINGS,
       }),
       mutateSource: async (request: CompositeRequest | MutationRequest) => {
@@ -372,6 +374,7 @@ export function createContractMatrixRegistry(): ToolRegistry {
           entityRevision: null,
           fileHashes,
           diagnostics: [],
+          changeSeq: 3,
           ...(request.backup ? { backupId: "backup-contract-matrix" } : {}),
         });
       },

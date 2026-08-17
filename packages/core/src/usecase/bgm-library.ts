@@ -19,6 +19,7 @@ import {
 
 import { checkPathPurpose, checkPathSyntax } from "../domain/path-policy";
 import { err, ok, type Result } from "../error/result";
+import { ignoredMutationOriginForActor } from "../port/mutation-observer";
 import type {
   BgmLibraryPort,
   BgmProviderPort,
@@ -134,7 +135,7 @@ export async function installBgm(
   dependencies: BgmDependencies,
   input: InstallBgmInput,
   actor: Actor,
-  invocation: WriteInvocation = { toolAudit: null },
+  invocation: WriteInvocation = { origin: ignoredMutationOriginForActor(actor), toolAudit: null },
 ): Promise<Result<InstallBgmOutput, DomainError>> {
   const chosen = [input.bedId, input.trackId, input.libraryEntryId, input.providerTrack]
     .filter((value) => value !== undefined);

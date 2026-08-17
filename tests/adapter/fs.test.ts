@@ -142,6 +142,16 @@ describe("allowlist and workspace I/O", () => {
     await expect(adapter.deleteAtomic(resolved.value)).resolves.toBeUndefined();
   });
 
+  itWithSymlinks("hashes only a no-follow regular-file capability", async () => {
+    const adapter = new WorkspaceFs(workspace as AbsolutePath);
+    const outside = path.join(temporaryRoot, "outside-hash.bin");
+    const linked = path.join(projectRoot, "linked-hash.bin");
+    await writeFile(outside, "outside");
+    await symlink(outside, linked);
+
+    await expect(adapter.readHash(linked as ResolvedPath)).rejects.toBeDefined();
+  });
+
   it("preserves the old target when the process dies before rename", async () => {
     const target = path.join(projectRoot, "index.html") as ResolvedPath;
     const moduleUrl = pathToFileURL(path.resolve("packages/adapter/src/fs/atomic-write.ts")).href;

@@ -111,4 +111,28 @@ describe("FsRenderProjectAdapter", () => {
     await staged.commit();
     await expect(readFile(targetPath)).resolves.toEqual(bytes);
   });
+
+  it("does not follow a raced target symlink during staged cleanup", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "vidcom-staged-cleanup-"));
+    roots.push(root);
+    const sourcePath = path.join(root, "source.bin");
+    const targetPath = path.join(root, "project", "assets", "target.bin");
+    const outsidePath = path.join(root, "outside.bin");
+    const bytes = Buffer.from("same-content");
+    await Promise.all([writeFile(sourcePath, bytes), writeFile(outsidePath, bytes)]);
+    const source = await new FsRenderProjectAdapter().artifactSource(sourcePath as AbsolutePath);
+    const staged = await new AppDataAssetStager(path.join(root, "app-data")).stageFile(
+      targetPath as ResolvedPath,
+      "assets/target.bin" as RelPath,
+      source.sourcePath,
+      source.contentHash,
+    );
+    await staged.commit();
+    await rm(targetPath);
+    await symlink(outsidePath, targetPath);
+
+    await expect(staged.cleanup()).rejects.toBeDefined();
+    await expect(readFile(outsidePath)).resolves.toEqual(bytes);
+    await expect(access(targetPath)).resolves.toBeUndefined();
+  });
 });

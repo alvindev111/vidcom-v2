@@ -46,6 +46,7 @@ describe("durable SSE", () => {
       async append() { return 42; },
       async readFrom() { return { events: [], gap: true }; },
       async latestSeq() { return 42; },
+      async latestProjectSeq() { return 42; },
     }, { pollMs: 50 }));
     const response = await app.request("http://local/events", { headers: { "Last-Event-ID": "1" } });
     const reader = response.body!.getReader();

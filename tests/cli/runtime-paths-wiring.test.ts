@@ -9,7 +9,7 @@ import {
   RUNTIME_PATH_NAMES,
   VIDCOM_NODE_SENTINEL,
 } from "@vidcom/adapter";
-import { createInfrastructure, withAudioBinaryPaths } from "@vidcom/cli";
+import { createApplication, createInfrastructure, withAudioBinaryPaths } from "@vidcom/cli";
 import type { ProjectId, RelPath } from "@vidcom/contracts";
 import type { AbsolutePath, ProcessPort, ProcessRunInput } from "@vidcom/core";
 import { afterEach, describe, expect, it } from "vitest";
@@ -98,7 +98,25 @@ describe("runtime path wiring", () => {
       motionLibraryRoot: path.resolve("/stale/motion") as AbsolutePath,
     });
     try {
+      const application = createApplication(infrastructure, "lease_p0_wiring");
+      const authorityDependencies = (application.authority as unknown as {
+        dependencies: {
+          journal: unknown;
+          compositeJournal: unknown;
+          pendingMount: unknown;
+          observer: unknown;
+          undoContent: unknown;
+        };
+      }).dependencies;
       expect(infrastructure.renderRoots).toBeDefined();
+      expect(infrastructure.pendingMount).toBeDefined();
+      expect(infrastructure.mutationObserver).toBeDefined();
+      expect(infrastructure.largeContent).toBeDefined();
+      expect(authorityDependencies.journal).toBe(infrastructure.journal);
+      expect(authorityDependencies.compositeJournal).toBe(infrastructure.journal);
+      expect(authorityDependencies.pendingMount).toBe(infrastructure.pendingMount);
+      expect(authorityDependencies.observer).toBe(infrastructure.mutationObserver);
+      expect(authorityDependencies.undoContent).toBe(infrastructure.largeContent);
       expect(paths.nativeDependenciesRoot).toContain(appDataRoot);
     } finally {
       await infrastructure.database.destroy();

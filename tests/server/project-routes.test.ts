@@ -81,6 +81,7 @@ function fixture() {
       async discardCapture() {},
       async readTree() { return [{ path: "index.html" as RelPath, name: "index.html", kind: "file" as const }]; },
       async stat() { return null; },
+      async readDirectory() { return []; },
     },
     composition: {
       async parseProject() {

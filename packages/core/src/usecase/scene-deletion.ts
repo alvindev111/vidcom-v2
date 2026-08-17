@@ -13,6 +13,7 @@ import {
 import type { CompositionModel } from "../domain/models";
 import { normalizePreviewSettings } from "../domain/preview-settings";
 import { err, ok, type Result } from "../error/result";
+import { ignoredMutationOriginForActor } from "../port/mutation-observer";
 import type { ClockPort, CompositionPort, MutationJournalPort, WorkspacePort } from "../port/ports";
 import type { CompositeRequest, CompositeStep, GrantBinding, WriteEnvelope, WriteInvocation } from "../port/types";
 import { canonicalizeJson } from "../service/canonical-json";
@@ -197,7 +198,7 @@ export async function deleteScene(
   dependencies: DeleteSceneDependencies,
   input: { projectId: ProjectId; sceneId: string; expectedRevision: number; grantId: string },
   actor: Actor,
-  invocation: WriteInvocation = { toolAudit: null },
+  invocation: WriteInvocation = { origin: ignoredMutationOriginForActor(actor), toolAudit: null },
 ): Promise<Result<{
   project: CompositionModel["project"];
   envelope: WriteEnvelope;
@@ -244,6 +245,7 @@ export async function deleteScene(
       entity: "preview-settings",
       patch: prepared.value.plan.previewSettingsPatch,
       expectedRevision: state.revision,
+      undoable: true,
     });
   }
 
@@ -265,6 +267,7 @@ export async function deleteScene(
     entityRevision: written.value.entityRevision,
     fileHashes: written.value.fileHashes,
     diagnostics: written.value.diagnostics,
+    changeSeq: written.value.changeSeq,
   };
   return ok({
     project: {

@@ -8,6 +8,7 @@ import {
 
 import type { AbsolutePath } from "../domain/models";
 import { err, ok, type Result } from "../error/result";
+import { ignoredMutationOriginForActor } from "../port/mutation-observer";
 import type { WorkspacePort } from "../port/ports";
 import type { WriteInvocation } from "../port/types";
 import type { WriteAuthority } from "../service/write-authority";
@@ -63,7 +64,10 @@ export class AgentKitInstaller {
   async apply(
     workspaceRoot: AbsolutePath,
     input: InstallAgentKitInput,
-    invocation: WriteInvocation & { actor?: Actor } = { toolAudit: null },
+    invocation: WriteInvocation & { actor?: Actor } = {
+      origin: ignoredMutationOriginForActor(this.dependencies.actor),
+      toolAudit: null,
+    },
   ): Promise<Result<InstallAgentKitOutput, DomainError>> {
     const hosts = input.operation === "link" || input.operation === "replace" ? [input.host] : input.hosts;
     if (hosts.length === 0 || new Set(hosts).size !== hosts.length) {
