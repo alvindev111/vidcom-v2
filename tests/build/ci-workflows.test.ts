@@ -101,4 +101,15 @@ describe("GitHub Actions packaging gates", () => {
       expect(workflow).toContain(evidence);
     }
   });
+  it("repairs the node-pty spawn helper on the only platform that spawns it", async () => {
+    const { ci } = await workflows();
+
+    // macOS is the only platform where node-pty spawns a helper binary rather
+    // than forking, and this runner's install left it without its execute bit —
+    // which failed every pty open with a message naming neither file nor reason.
+    expect(ci).toContain("- name: Normalize the node-pty spawn helper");
+    expect(ci).toContain("run: node scripts/normalize-node-pty-helper.mjs");
+    const step = ci.slice(ci.indexOf("- name: Normalize the node-pty spawn helper"));
+    expect(step.slice(0, step.indexOf("run:"))).toContain("if: runner.os == 'macOS'");
+  });
 });
