@@ -39,7 +39,7 @@ const clock = { now: () => new Date("2026-08-04T18:00:00.000Z") };
 // with process-tree tests that regularly occupy the CPU for 20+ seconds. Keep
 // the budget finite, but large enough that scheduler contention is not reported
 // as a delivery-loop failure.
-const CONTENDED_INTEGRATION_TIMEOUT_MS = 30_000;
+const CONTENDED_INTEGRATION_TIMEOUT_MS = 60_000;
 
 function qualifiedSceneSource(sceneId: string, duration: number): string {
   return `<!doctype html><html><body><template>

@@ -710,6 +710,29 @@
           </p>
         </article>
       </section>
+      <section class="space-y-3">
+        <h2 class="text-lg font-semibold text-rose-300">P0 CI repair — timeout integration macOS (2026-08-18)</h2>
+
+        <article class="rounded-lg border border-rose-900/70 bg-rose-950/20 p-4 space-y-2">
+          <h3 class="font-medium">Giữ gate có giới hạn, không đổi assertion</h3>
+          <p class="text-slate-300">
+            Run <code>32076588983</code> tại exact commit
+            <code>d28dd1f28f4cf0dbd5125a9de035401e6707fc6b</code> đã cho macOS PASS 2.132 test khác,
+            gồm toàn bộ suite no-follow vừa sửa, nhưng test HTTP delivery-loop rộng chạm đúng timeout contention
+            30 giây. Test này ghép lifecycle, scene, narration, job và cài agent-kit trong một fixture thật.
+          </p>
+          <p class="text-slate-400 text-sm">
+            Không sửa production code và không bỏ assertion. Hằng timeout có tên dành riêng cho integration
+            chạy dưới full-suite contention được nâng lên 60 giây; focused run phải ghi thời gian thực tế và
+            CI exact-source mới vẫn phải PASS trước khi đóng P0.
+          </p>
+          <p class="text-slate-400 text-sm">
+            Focused node suite PASS 9/9 trong 6,96 giây, riêng test body 5,91 giây; typecheck và diff-check PASS.
+            Khoảng cách này cho thấy timeout 30 giây đến từ contention của full suite, nhưng kết luận cuối vẫn
+            chờ ma trận CI mới thay vì suy diễn từ máy cục bộ.
+          </p>
+        </article>
+      </section>
     </main>
   </body>
 </html>
