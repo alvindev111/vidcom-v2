@@ -760,6 +760,29 @@
           </p>
         </article>
       </section>
+      <section class="space-y-3">
+        <h2 class="text-lg font-semibold text-sky-300">P3 — MutationHistory 3.1a (2026-08-18)</h2>
+
+        <article class="rounded-lg border border-sky-900/70 bg-sky-950/20 p-4 space-y-2">
+          <h3 class="font-medium">Reservation nằm trong cùng state machine với stack</h3>
+          <p class="text-slate-300">
+            Dịch vụ mới giữ stack theo đúng cặp <code>(studioSessionId, projectId)</code>, tối đa 50 mục.
+            <code>begin</code> chỉ đặt reservation trên top hiện tại; <code>claimHistoryOperation</code>
+            kiểm lại attachment, direction, operation id và target receipt ngay trước publish. Chỉ receipt
+            inverse đã claim mới được chuyển receipt gốc giữa undo/redo; abort không chạm stack.
+          </p>
+          <p class="text-slate-400 text-sm">
+            Clear/dispose không giải phóng receipt khi operation đã ở trạng thái committing mà đánh dấu deferred.
+            Receipt inverse không tự tạo barrier cho stack sở hữu, nhưng vẫn được xem là thay đổi ngoài đối với
+            phiên khác. Record mới cùng phiên dùng LIFO và cắt redo branch. Các chi tiết barrier đầy đủ thuộc 3.1b;
+            lifecycle SSE/attachment generation và kiểm ref-count exhaustive thuộc 3.1c, nên chưa được nhận là đã đóng.
+          </p>
+          <p class="text-slate-400 text-sm">
+            TDD evidence: lần đầu suite không collect vì module chưa tồn tại; sau implementation, 8/8 node tests,
+            typecheck, boundaries và diff-check PASS. Lint còn đúng 5 warning baseline ngoài phạm vi, không có warning mới.
+          </p>
+        </article>
+      </section>
     </main>
   </body>
 </html>
