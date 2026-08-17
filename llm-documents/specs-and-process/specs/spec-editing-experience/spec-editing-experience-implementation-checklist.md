@@ -419,17 +419,21 @@ steering 03/04/05/10 ở đúng các đoạn D1/parity/history/approval đã li�
   - _Requirements: R3.1, R3.5, R5.1–5.3, R11.3b_ — _Design: §5.5, §5.11, §6.5, §11.2_
 
 **Acceptance Criteria**:
-- [ ] Toàn bộ suite hiện có vẫn xanh (`bun run test`) — P0 là thay đổi contract, hồi quy là rủi ro chính
-- [ ] Một mutation composite ba file sinh **một** receipt với ba step
-- [ ] Receipt phát ở cả nhánh commit thường và nhánh reconciled-committed
-- [ ] Không có bảng nào ngoài `pending_mount` được tạo; lịch sử undo **không** chạm SQLite (L7)
-- [ ] Artifact staging fixture/manifest verifier tìm thấy migration mới và startup production test
+- [x] Toàn bộ suite hiện có vẫn xanh (`bun run test`) — P0 là thay đổi contract, hồi quy là rủi ro chính
+- [x] Một mutation composite ba file sinh **một** receipt với ba step
+- [x] Receipt phát ở cả nhánh commit thường và nhánh reconciled-committed
+- [x] Không có bảng nào ngoài `pending_mount` được tạo; lịch sử undo **không** chạm SQLite (L7)
+- [x] Artifact staging fixture/manifest verifier tìm thấy migration mới và startup production test
   reconcile được journal/pending transition; SEA binary thật được đóng ở P11, không chặn P0 vì thiếu runtime input ngoài spec
-- [ ] Own write/delete/mkdir/rmdir không bị watcher gắn nhãn external; file/directory đổi thật bên ngoài vẫn invalidates đúng path
-- [ ] Watcher chỉ phát canonical contained `RelPath`; filename không hợp lệ không được chạm filesystem ngoài project hay history
-- [ ] Receipt undoable lớn giữ content bằng leased object ref, không giữ toàn payload trong heap và không tạo persistence cho stack
+- [x] Own write/delete/mkdir/rmdir không bị watcher gắn nhãn external; file/directory đổi thật bên ngoài vẫn invalidates đúng path
+- [x] Watcher chỉ phát canonical contained `RelPath`; filename không hợp lệ không được chạm filesystem ngoài project hay history
+- [x] Receipt undoable lớn giữ content bằng leased object ref, không giữ toàn payload trong heap và không tạo persistence cho stack
 
-**Deliverables Created / Modified**: (điền khi thực thi)
+**Deliverables Created / Modified**:
+- Core/contract: `packages/core/src/{port/mutation-observer.ts,service/write-authority.ts,service/composite-recovery.ts,usecase/reconcile-composite-mutation.ts,service/project-path-invalidator.ts}`, `packages/contracts/src/{editing.ts,errors.ts,index.ts}`.
+- Adapter/persistence/runtime: `packages/adapter/src/{fs,db,runtime}/**`, migrations `20260817153223_small_power_pack` + `20260817162114_solid_daredevil`, production wiring `packages/cli/src/{composition-root.ts,startup.ts}` và server/MCP error/route call sites.
+- Verification: P0 suites trong `tests/{core,adapter,contracts,server,cli,mcp}/**`, artifact runtime contract, golden MCP fixtures; local full gate 225 files/2.135 tests PASS và focused P0 gates ghi trong Execution Log.
+- Exact-source CI evidence: run `32077416522` tại `6c220acdc1089d3e5b6c3b221149a50cc417d8ed`; 8/8 jobs PASS. Ba artifact `packaged-smoke-{linux-x64,darwin-arm64,win32-x64}` đã tải về `/tmp/vidcom-p0-ci-32077416522.k4UYG1`; mỗi smoke JSON strict có 13/13 required steps PASS, không `evidenceError`, manifest `dirty:false` và commit đúng SHA.
 
 ---
 
@@ -1462,6 +1466,7 @@ caption · D7 tool MCP undo/redo · **D8 PR-11 hot-reload từng sub-composition
 | 2026-08-18 05:33 +07 | P0 Windows CI repair local gate | Cross-platform no-follow primitive and portable conflict fixture | `bunx vitest run` five affected adapter suites with `environment node`: 5 files, 62/62 PASS in 3.65 s; typecheck PASS; lint 0 errors/5 baseline warnings; `git diff --check` PASS | `PASS` | Production reads now reject stable symlinks before open and reject path/handle identity changes after open; no security AC was relaxed. Windows is still the authoritative reproduction environment, so this focused local PASS only authorizes a fresh exact-source CI run | Commit/push repair and dispatch/watch/download fresh `CI` |
 | 2026-08-18 05:43 +07 | P0 macOS CI repair checkpoint | Keep the broad delivery HTTP integration bounded under full-suite runner contention | Exact-source run `32076588983`, commit `d28dd1f28f4cf0dbd5125a9de035401e6707fc6b`: macOS primary job `95531046579` passed 2,132 tests/223 files, then the single broad delivery-loop route test hit its explicit 30,000 ms contended-suite timeout; the affected no-follow suites all passed on macOS | `IN PROGRESS` | No production or assertion change. Raise only the named contended integration bound to 60,000 ms; focused runtime remains measured separately so a real hang is not presented as PASS | Focused node route suite, typecheck/diff-check, commit/push, fresh exact-source `CI` |
 | 2026-08-18 05:45 +07 | P0 macOS timeout repair local gate | Delivery-loop real SQLite/filesystem route integration | `bunx vitest run tests/server/delivery-loop-routes.test.ts --environment node`: 1 file, 9/9 PASS in 6.96 s, test body 5.91 s; typecheck and `git diff --check` PASS | `PASS` | Focused runtime is far below both old and new bounds, supporting runner contention rather than an application hang; exact-source three-OS CI remains mandatory | Commit/push and dispatch fresh `CI` |
+| 2026-08-18 06:29 +07 | P0 phase gate | Full exact-source CI matrix, packaged evidence download and all P0 AC | [Run `32077416522`](https://github.com/alvindev111/vidcom-v2/actions/runs/32077416522), exact commit `6c220acdc1089d3e5b6c3b221149a50cc417d8ed`: primary [Linux](https://github.com/alvindev111/vidcom-v2/actions/runs/32077416522/job/95533530458), [macOS](https://github.com/alvindev111/vidcom-v2/actions/runs/32077416522/job/95533530464), [Windows](https://github.com/alvindev111/vidcom-v2/actions/runs/32077416522/job/95533530440) SUCCESS; browser [Linux](https://github.com/alvindev111/vidcom-v2/actions/runs/32077416522/job/95533530568), [Windows](https://github.com/alvindev111/vidcom-v2/actions/runs/32077416522/job/95533530548) SUCCESS; packaged [Linux](https://github.com/alvindev111/vidcom-v2/actions/runs/32077416522/job/95533530536), [macOS](https://github.com/alvindev111/vidcom-v2/actions/runs/32077416522/job/95533530537), [Windows](https://github.com/alvindev111/vidcom-v2/actions/runs/32077416522/job/95533530516) SUCCESS | `PASS` | Downloaded all three evidence artifacts to `/tmp/vidcom-p0-ci-32077416522.k4UYG1`: each strict smoke has 13/13 required steps PASS, zero non-pass, `evidenceError:null`, two startup checks OK, zero render-cancellation survivors/exhaustive proof; each manifest has exact commit and `dirty:false`. Download bundles intentionally contain evidence/manifest rather than executable, so their `SHA256SUMS` executable entry cannot be re-hashed locally; the workflow's pre-upload “Validate complete release evidence” step passed on every OS. Earlier red runs remain logged and were superseded only after their fixes passed exact-source CI | P0 closed; proceed P3 |
 
 ## Final Authoring-Readiness Audit
 

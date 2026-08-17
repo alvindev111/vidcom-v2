@@ -733,6 +733,33 @@
           </p>
         </article>
       </section>
+      <section class="space-y-3">
+        <h2 class="text-lg font-semibold text-emerald-300">P0 phase gate — PASS (2026-08-18)</h2>
+
+        <article class="rounded-lg border border-emerald-900/70 bg-emerald-950/20 p-4 space-y-2">
+          <h3 class="font-medium">Exact source xanh trên đủ ma trận</h3>
+          <p class="text-slate-300">
+            Workflow <code>CI</code> run <code>32077416522</code> kết thúc SUCCESS trên exact commit
+            <code>6c220acdc1089d3e5b6c3b221149a50cc417d8ed</code>. Ba primary job Linux, macOS, Windows;
+            hai browser-session Linux/Windows; và ba packaged-smoke Linux/macOS/Windows đều PASS.
+            Windows primary xác nhận trực tiếp bốn no-follow regression và fixture rollback đa nền tảng;
+            macOS primary xác nhận integration timeout mới vẫn hoàn tất với mọi assertion.
+          </p>
+          <p class="text-slate-400 text-sm">
+            Ba artifact evidence đã tải về <code>/tmp/vidcom-p0-ci-32077416522.k4UYG1</code>. Mỗi smoke JSON
+            có strict mode, 13/13 required step PASS, không evidence error, startup evaluation đều OK và
+            render cancellation không còn survivor; manifest mang đúng commit, <code>dirty:false</code>.
+            Archive tải về là evidence bundle, không chứa executable mà <code>SHA256SUMS</code> tham chiếu;
+            vì vậy kiểm cục bộ dùng JSON/manifest, còn checksum/executable đã được step validate trước upload
+            của từng runner xác nhận PASS. Không trình bày phép re-hash executable bị thiếu như đã chạy.
+          </p>
+          <p class="text-slate-400 text-sm">
+            Tám Acceptance Criteria P0 và Deliverables đã được đóng. Các thay đổi tiếp theo thuần Execution Log,
+            notes và state của spec thuộc ba file evidence-only được source-identity P11.5a loại khỏi digest;
+            không dùng chúng để thay đổi kết luận CI của production source.
+          </p>
+        </article>
+      </section>
     </main>
   </body>
 </html>
