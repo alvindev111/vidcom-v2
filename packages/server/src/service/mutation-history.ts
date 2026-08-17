@@ -21,6 +21,7 @@ interface HistoryEntry {
   receipt: MutationReceipt;
   undoBlockedReason: BlockReason | null;
   redoBlockedReason: BlockReason | null;
+  refsReleased: boolean;
 }
 
 interface HistoryOperation {
@@ -42,6 +43,10 @@ interface HistoryStack {
 interface Attachment {
   browserSessionId: string;
   projectId: ProjectId;
+  generation: number;
+  eventLeases: number;
+  graceTimer: unknown | null;
+  graceGeneration: number;
 }
 
 export interface MutationHistoryState {
@@ -59,6 +64,8 @@ export interface MutationHistoryState {
 
 export interface MutationHistoryOptions {
   operationId?: () => string;
+  schedule?: (callback: () => void, delayMs: number) => unknown;
+  cancelScheduled?: (timer: unknown) => void;
 }
 
 const MAX_ENTRIES = 50;
@@ -89,7 +96,7 @@ function invalidates(changed: readonly RelPath[], guards: readonly MutationReadG
 }
 
 function entry(receipt: MutationReceipt): HistoryEntry {
-  return { receipt, undoBlockedReason: null, redoBlockedReason: null };
+  return { receipt, undoBlockedReason: null, redoBlockedReason: null, refsReleased: false };
 }
 
 function selected(stack: HistoryStack, direction: Direction): HistoryEntry | undefined {
@@ -115,26 +122,79 @@ export class MutationHistory implements MutationObserverPort {
   private readonly attachments = new Map<string, Attachment>();
   private readonly seenReceiptIds = new Set<string>();
   private readonly createOperationId: () => string;
+  private readonly schedule: (callback: () => void, delayMs: number) => unknown;
+  private readonly cancelScheduled: (timer: unknown) => void;
+  private nextAttachmentGeneration = 0;
 
   constructor(
     private readonly content: UndoContentPort,
     options: MutationHistoryOptions = {},
   ) {
     this.createOperationId = options.operationId ?? randomUUID;
+    this.schedule = options.schedule ?? ((callback, delayMs) => {
+      const timer = setTimeout(callback, delayMs);
+      timer.unref();
+      return timer;
+    });
+    this.cancelScheduled = options.cancelScheduled ?? ((timer) => clearTimeout(timer as ReturnType<typeof setTimeout>));
   }
 
   attach(browserSessionId: string, sessionId: string, projectId: ProjectId): void {
     const current = this.attachments.get(sessionId);
-    if (current) return;
-    this.attachments.set(sessionId, { browserSessionId, projectId });
+    if (current) {
+      if (current.browserSessionId === browserSessionId && current.projectId === projectId) {
+        this.cancelGrace(current);
+      }
+      return;
+    }
+    this.attachments.set(sessionId, {
+      browserSessionId,
+      projectId,
+      generation: ++this.nextAttachmentGeneration,
+      eventLeases: 0,
+      graceTimer: null,
+      graceGeneration: 0,
+    });
     this.getOrCreateStack(sessionId, projectId);
   }
 
   detach(browserSessionId: string, sessionId: string, projectId: ProjectId): void {
     const current = this.attachments.get(sessionId);
     if (!current || current.browserSessionId !== browserSessionId || current.projectId !== projectId) return;
+    this.cancelGrace(current);
     this.attachments.delete(sessionId);
     this.clear(sessionId, projectId);
+  }
+
+  isAttached(browserSessionId: string, sessionId: string, projectId: ProjectId): boolean {
+    const current = this.attachments.get(sessionId);
+    return current?.browserSessionId === browserSessionId && current.projectId === projectId;
+  }
+
+  openEventLease(browserSessionId: string, sessionId: string, projectId: ProjectId): boolean {
+    const current = this.attachments.get(sessionId);
+    if (!current || current.browserSessionId !== browserSessionId || current.projectId !== projectId) return false;
+    this.cancelGrace(current);
+    current.eventLeases += 1;
+    return true;
+  }
+
+  closeEventLease(browserSessionId: string, sessionId: string, projectId: ProjectId): void {
+    const current = this.attachments.get(sessionId);
+    if (!current || current.browserSessionId !== browserSessionId || current.projectId !== projectId
+      || current.eventLeases === 0) return;
+    current.eventLeases -= 1;
+    if (current.eventLeases > 0 || current.graceTimer !== null) return;
+    const generation = current.generation;
+    const graceGeneration = ++current.graceGeneration;
+    current.graceTimer = this.schedule(() => {
+      const latest = this.attachments.get(sessionId);
+      if (latest !== current || latest.generation !== generation
+        || latest.graceGeneration !== graceGeneration || latest.eventLeases > 0) return;
+      latest.graceTimer = null;
+      this.attachments.delete(sessionId);
+      this.clear(sessionId, projectId);
+    }, 30_000);
   }
 
   begin(
@@ -190,7 +250,7 @@ export class MutationHistory implements MutationObserverPort {
 
   abortHistoryOperation(projectId: ProjectId, origin: MutationOrigin): void {
     try {
-      const stack = this.stackForOrigin(projectId, origin);
+      const stack = this.existingStackForOrigin(projectId, origin);
       if (!stack || !this.matchesOperation(stack, origin)) return;
       stack.operation = null;
       if (stack.clearDeferred) this.clearStack(stack);
@@ -200,7 +260,7 @@ export class MutationHistory implements MutationObserverPort {
   blockHistoryOperation(projectId: ProjectId, origin: MutationOrigin, paths: RelPath[]): void {
     try {
       void paths;
-      const stack = this.stackForOrigin(projectId, origin);
+      const stack = this.existingStackForOrigin(projectId, origin);
       if (!stack || !this.matchesOperation(stack, origin)) return;
       const operation = stack.operation!;
       const target = selected(stack, operation.direction);
@@ -215,7 +275,10 @@ export class MutationHistory implements MutationObserverPort {
 
   emit(receipt: MutationReceipt): EmitResult {
     try {
-      if (this.seenReceiptIds.has(receipt.id)) return { ok: true };
+      if (this.seenReceiptIds.has(receipt.id)) {
+        this.releaseReceipt(receipt);
+        return { ok: true };
+      }
 
       if (this.isInverse(receipt.origin)) {
         const result = this.emitInverse(receipt);
@@ -231,12 +294,12 @@ export class MutationHistory implements MutationObserverPort {
         return { ok: true };
       }
 
-      for (const redo of owner.redo) this.releaseReceipt(redo.receipt);
+      for (const redo of owner.redo) this.releaseEntry(redo);
       owner.redo = [];
       owner.undo.push(entry(receipt));
       while (owner.undo.length > MAX_ENTRIES) {
         const evicted = owner.undo.shift();
-        if (evicted) this.releaseReceipt(evicted.receipt);
+        if (evicted) this.releaseEntry(evicted);
       }
       return { ok: true };
     } catch {
@@ -266,9 +329,10 @@ export class MutationHistory implements MutationObserverPort {
         for (const historyEntry of [...stack.undo, ...stack.redo]) {
           historyEntry.undoBlockedReason = "history-desync";
           historyEntry.redoBlockedReason = "history-desync";
+          this.releaseEntry(historyEntry);
         }
-        if (stack.operation?.state === "committing") stack.clearDeferred = true;
-        else stack.operation = null;
+        stack.operation = null;
+        if (stack.clearDeferred) this.clearStack(stack);
       }
     } catch {}
   }
@@ -307,6 +371,7 @@ export class MutationHistory implements MutationObserverPort {
 
   dispose(): void {
     try {
+      for (const attachment of this.attachments.values()) this.cancelGrace(attachment);
       this.attachments.clear();
       for (const stack of this.stacks.values()) {
         if (stack.operation?.state === "committing") stack.clearDeferred = true;
@@ -342,6 +407,11 @@ export class MutationHistory implements MutationObserverPort {
     return this.stackIfAttached(origin.sessionId, projectId);
   }
 
+  private existingStackForOrigin(projectId: ProjectId, origin: MutationOrigin): HistoryStack | null {
+    if (origin.sessionId === null) return null;
+    return this.stacks.get(stackKey(origin.sessionId, projectId)) ?? null;
+  }
+
   private recordOwner(receipt: MutationReceipt): HistoryStack | null {
     if (receipt.origin.historyAction !== "record" || !receipt.undoable) return null;
     return this.stackForOrigin(receipt.projectId, receipt.origin);
@@ -358,7 +428,7 @@ export class MutationHistory implements MutationObserverPort {
   }
 
   private emitInverse(receipt: MutationReceipt): EmitResult {
-    const owner = this.stackForOrigin(receipt.projectId, receipt.origin);
+    const owner = this.existingStackForOrigin(receipt.projectId, receipt.origin);
     if (!owner || !this.matchesOperation(owner, receipt.origin) || owner.operation?.state !== "committing") {
       return { ok: false, reason: "history reservation was not claimed" };
     }
@@ -408,7 +478,7 @@ export class MutationHistory implements MutationObserverPort {
   }
 
   private clearStack(stack: HistoryStack): void {
-    for (const historyEntry of [...stack.undo, ...stack.redo]) this.releaseReceipt(historyEntry.receipt);
+    for (const historyEntry of [...stack.undo, ...stack.redo]) this.releaseEntry(historyEntry);
     stack.undo = [];
     stack.redo = [];
     stack.operation = null;
@@ -422,6 +492,21 @@ export class MutationHistory implements MutationObserverPort {
       if (step.beforeContent) refs.push(step.beforeContent);
       if (step.afterContent) refs.push(step.afterContent);
     }
-    if (refs.length > 0) this.content.release(refs);
+    if (refs.length > 0) {
+      try { this.content.release(refs); } catch {}
+    }
+  }
+
+  private releaseEntry(historyEntry: HistoryEntry): void {
+    if (historyEntry.refsReleased) return;
+    historyEntry.refsReleased = true;
+    this.releaseReceipt(historyEntry.receipt);
+  }
+
+  private cancelGrace(attachment: Attachment): void {
+    if (attachment.graceTimer === null) return;
+    try { this.cancelScheduled(attachment.graceTimer); } catch {}
+    attachment.graceGeneration += 1;
+    attachment.graceTimer = null;
   }
 }

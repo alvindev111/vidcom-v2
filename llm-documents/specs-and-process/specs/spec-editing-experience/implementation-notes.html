@@ -807,6 +807,31 @@
           </p>
         </article>
       </section>
+      <section class="space-y-3">
+        <h2 class="text-lg font-semibold text-sky-300">P3 — Lifecycle và content refs 3.1c (2026-08-18)</h2>
+
+        <article class="rounded-lg border border-sky-900/70 bg-sky-950/20 p-4 space-y-2">
+          <h3 class="font-medium">Detach không được cắt đôi một mutation đang commit</h3>
+          <p class="text-slate-300">
+            Begin/claim vẫn bắt attachment sống và đúng project. Sau claim, emit/abort tra stack hiện hữu thay vì
+            đòi attachment còn tồn tại: explicit detach thu hồi capability ngay, đánh dấu clear deferred, rồi để
+            operation đang committing settle trước khi giải phóng receipt. Audit test ban đầu đã bắt đúng lỗi cũ
+            khi inverse emit trả “reservation was not claimed” sau detach.
+          </p>
+          <p class="text-slate-400 text-sm">
+            Attachment giữ browser auth session, project, generation và số SSE lease. Hai stream overlap không tạo
+            grace khi stream cũ đóng; chỉ lease cuối mở timer 30 giây. Reconnect huỷ timer bằng một grace generation
+            riêng, nên cả callback đã cancel nhưng đến muộn sau một lần reconnect/close mới cũng không xoá phiên mới.
+            DELETE thu hồi attachment ngay; SSE không thể tự resurrect, POST attach mới mở generation rỗng.
+          </p>
+          <p class="text-slate-400 text-sm">
+            Mỗi history entry theo dõi quyền sở hữu ref đã release. Duplicate receipt giải phóng ownership mới được
+            chuyển vào lần phát lặp; eviction mục 51, redo branch-cut, inverse receipt, clear, detach, workspace dispose
+            và history desync đều release đúng một lần. Desync huỷ reservation/busy ngay, giữ metadata bị block để UI
+            buộc tải lại nguồn, và clear sau đó không double-release. Focused node 71/71 cùng typecheck/boundaries PASS.
+          </p>
+        </article>
+      </section>
     </main>
   </body>
 </html>
