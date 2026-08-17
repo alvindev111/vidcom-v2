@@ -4,6 +4,7 @@
 > - [Detailed Goals](./spec-editing-experience-detailed-goal.md)
 > - [Detailed Design](./spec-editing-experience-detailed-design.md)
 > - [Implementation Checklist](./spec-editing-experience-implementation-checklist.md)
+> - [Execution Goal — prompt khởi động cho LLM agent](./spec-editing-experience-execution-goal.md)
 > - [Tham chiếu UX — ảnh chụp editor motionvid.ai](./reference-editor/README.md)
 >
 > **Backlog nguồn**: [15-build-order §Giai đoạn 5](../../../product-features/15-build-order.md) — mục 5.1–5.9.
