@@ -783,6 +783,30 @@
           </p>
         </article>
       </section>
+      <section class="space-y-3">
+        <h2 class="text-lg font-semibold text-sky-300">P3 — Barrier có hướng 3.1b (2026-08-18)</h2>
+
+        <article class="rounded-lg border border-sky-900/70 bg-sky-950/20 p-4 space-y-2">
+          <h3 class="font-medium">Ownership đối xứng, dependency có hướng</h3>
+          <p class="text-slate-300">
+            Barrier không dùng prefix chuỗi thô. So sánh theo segment nên <code>assets/a</code> không giao
+            <code>assets/ab</code>, còn parent/child thật vẫn giao. Dependency giữ hai chiều riêng: thay đổi
+            dependency chỉ chặn redo của entry đã đọc nó; một mutation mới đọc path do entry cũ sở hữu thì
+            chặn undo entry cũ. Child dưới directory guard không làm mất sự tồn tại của directory, parent/equal thì có.
+          </p>
+          <p class="text-slate-400 text-sm">
+            Barrier được lưu trên từng entry. State chỉ phản ánh top, nên entry sạch phía trên vẫn undo được;
+            entry sâu đã block chỉ vô hiệu hoá nút khi nó thật sự lên top. Receipt non-undoable cùng phiên vẫn là
+            thay đổi ngoài đối với stack cũ, đúng ordering của Design.
+          </p>
+          <p class="text-slate-400 text-sm">
+            Bổ sung đường đồng bộ trong Core: nếu inverse mutation lệch step hoặc read guard trước publish,
+            <code>WriteAuthority</code> gọi đúng <code>blockHistoryOperation</code> với path đã qua resolve/validation,
+            settle reservation và đánh dấu đúng direction. Observer lỗi vẫn bị cô lập, không thay đổi kết quả conflict.
+            Focused node 61/61, typecheck/boundaries/diff-check PASS; lint không có warning mới.
+          </p>
+        </article>
+      </section>
     </main>
   </body>
 </html>

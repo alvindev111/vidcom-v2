@@ -424,13 +424,16 @@ class FakeMutationObserver implements MutationObserverPort {
   claims = 0;
   aborts = 0;
   readonly receipts: MutationReceipt[] = [];
+  readonly blocks: Array<{ projectId: ProjectId; origin: MutationReceipt["origin"]; paths: RelPath[] }> = [];
   invalidations = 0;
   emitResult: { ok: true } | { ok: false; reason: string } = { ok: true };
   throwOnEmit = false;
   onEmit: (() => void) | null = null;
   claimHistoryOperation() { this.claims += 1; return this.claimResult; }
   abortHistoryOperation() { this.aborts += 1; }
-  blockHistoryOperation() {}
+  blockHistoryOperation(blockedProjectId: ProjectId, origin: MutationReceipt["origin"], paths: RelPath[]) {
+    this.blocks.push({ projectId: blockedProjectId, origin, paths });
+  }
   emit(receipt: MutationReceipt) {
     this.onEmit?.();
     if (this.throwOnEmit) throw new Error("injected observer failure");
@@ -1034,6 +1037,45 @@ describe("WriteAuthority composite gate", () => {
         },
       },
     }, "agent")).resolves.toMatchObject({ ok: true });
+  });
+
+  it("synchronously blocks an inverse reservation when step or read-guard preconditions diverge", async () => {
+    const inverseOrigin = {
+      kind: "ui",
+      sessionId: "01K1ABCDEFGHJKMNPQRSTVWXYZ",
+      label: "Undo edit",
+      historyAction: "undo",
+      historyOperation: { id: "operation-1", targetReceiptId: "journal:previous" },
+    } as const;
+
+    const stepObserver = new FakeMutationObserver();
+    const step = setup({ observer: stepObserver });
+    step.workspace.files.set("index.html", "current");
+    await expect(step.authority.mutateSource({
+      ref: project,
+      steps: [{ kind: "write", path: "index.html" as RelPath, content: "restored", expectedContentHash: digest("stale") }],
+      origin: inverseOrigin,
+      toolAudit: null,
+      backup: false,
+    }, "user")).resolves.toMatchObject({ ok: false, error: { code: ErrorCode.WriteConflict } });
+    expect(stepObserver.blocks).toEqual([{ projectId, origin: inverseOrigin, paths: ["index.html"] }]);
+
+    const guardObserver = new FakeMutationObserver();
+    const guard = setup({ observer: guardObserver });
+    guard.workspace.files.set("index.html", "current");
+    guard.workspace.files.set("assets/shared.png", "changed");
+    await expect(guard.authority.mutateSource({
+      ref: project,
+      steps: [{ kind: "write", path: "index.html" as RelPath, content: "restored", expectedContentHash: digest("current") }],
+      historyReadGuards: [{
+        path: "assets/shared.png" as RelPath,
+        state: { kind: "file", contentHash: digest("expected") },
+      }],
+      origin: inverseOrigin,
+      toolAudit: null,
+      backup: false,
+    }, "user")).resolves.toMatchObject({ ok: false, error: { code: ErrorCode.WriteConflict } });
+    expect(guardObserver.blocks).toEqual([{ projectId, origin: inverseOrigin, paths: ["assets/shared.png"] }]);
   });
 
   it("caps retained inline content at 64 KiB per ref and 256 KiB per mutation", async () => {

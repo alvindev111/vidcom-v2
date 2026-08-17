@@ -351,11 +351,49 @@ export class WriteAuthority {
         readGuards.value,
         advancesSource,
       );
-      if (!validated.ok) return validated;
+      if (!validated.ok) {
+        this.blockInverseHistoryOnPreconditionConflict(
+          request,
+          prepared.value,
+          readGuards.value,
+          validated.error,
+        );
+        return validated;
+      }
       const pending = await this.validatePendingMountTransition(request, validated.value);
       if (!pending.ok) return pending;
       return this.executeValidatedComposite(request, validated.value, actor, advancesSource);
     });
+  }
+
+  private blockInverseHistoryOnPreconditionConflict(
+    request: CompositeRequest,
+    prepared: PreparedCompositeStep[],
+    readGuards: PreparedHistoryReadGuard[],
+    error: DomainError,
+  ): void {
+    if ((request.origin.historyAction !== "undo" && request.origin.historyAction !== "redo")
+      || error.code !== ErrorCode.WriteConflict) return;
+    const preconditionFields = new Set([
+      "expectedRevision",
+      "expectExisting",
+      "expectEmpty",
+      "path",
+      "expectedContentHash",
+      "historyReadGuards",
+    ]);
+    if (!error.field || !preconditionFields.has(error.field)) return;
+
+    const candidates = error.field === "historyReadGuards"
+      ? readGuards.map(({ guard }) => guard.path)
+      : prepared.map(({ step, entityState }) => step.kind === "entity" ? entityState!.backingPath : step.path);
+    const reportedPath = typeof error.details?.path === "string"
+      ? candidates.find((path) => path === error.details?.path)
+      : undefined;
+    const paths = reportedPath === undefined ? candidates : [reportedPath];
+    try {
+      this.dependencies.observer?.blockHistoryOperation(request.ref.id, request.origin, paths);
+    } catch {}
   }
 
   private async resolveCompositeTargets(
