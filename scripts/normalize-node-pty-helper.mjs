@@ -50,7 +50,11 @@ export function nodePtyRoot(repositoryRoot = REPOSITORY_ROOT) {
  * the ones it needs — so a missing directory is not a failure. A helper that is
  * present and cannot be made executable is.
  */
-export async function normalizeNodePtyHelpers(packageRoot = nodePtyRoot()) {
+export async function normalizeNodePtyHelpers(packageRoot = nodePtyRoot(), platform = process.platform) {
+  // Windows has no POSIX execute bit and no spawn helper — node-pty talks to
+  // ConPTY there. Saying so here rather than at the call site keeps the one
+  // statement of where this requirement exists in one place.
+  if (platform !== "darwin") return [];
   const normalized = [];
   for (const platform of NODE_PTY_HELPER_PLATFORMS) {
     const helper = path.join(packageRoot, "prebuilds", platform, "spawn-helper");
@@ -69,19 +73,18 @@ export async function normalizeNodePtyHelpers(packageRoot = nodePtyRoot()) {
 const invokedAsScript = process.argv[1]
   && path.resolve(process.argv[1]) === path.resolve(fileURLToPath(import.meta.url));
 if (invokedAsScript) {
-  // Only Darwin spawns the helper, so there is nothing to state anywhere else.
-  if (process.platform !== "darwin") {
-    process.stderr.write("normalize-node-pty-helper: not needed off Darwin\n");
-  } else {
-    normalizeNodePtyHelpers()
-      .then((normalized) => {
-        process.stderr.write(normalized.length === 0
-          ? "normalize-node-pty-helper: the spawn helper was already executable\n"
-          : `normalize-node-pty-helper: marked executable ${normalized.join(", ")}\n`);
-      })
-      .catch((error) => {
-        process.stderr.write(`${error instanceof Error ? error.message : String(error)}\n`);
-        process.exitCode = 1;
-      });
-  }
+  normalizeNodePtyHelpers()
+    .then((normalized) => {
+      if (process.platform !== "darwin") {
+        process.stderr.write("normalize-node-pty-helper: not needed off Darwin\n");
+        return;
+      }
+      process.stderr.write(normalized.length === 0
+        ? "normalize-node-pty-helper: the spawn helper was already executable\n"
+        : `normalize-node-pty-helper: marked executable ${normalized.join(", ")}\n`);
+    })
+    .catch((error) => {
+      process.stderr.write(`${error instanceof Error ? error.message : String(error)}\n`);
+      process.exitCode = 1;
+    });
 }
