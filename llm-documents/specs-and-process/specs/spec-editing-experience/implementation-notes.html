@@ -1994,6 +1994,14 @@
             động và parse lỗi đều fail-closed. External/fragment/path thoát project bị loại. Acorn 8.18.0 và acorn-walk
             8.3.5 được khai direct đúng lock sẵn có. Focused 8/8, regression liên quan 28/28 và mọi static gate xanh.
           </p>
+          <p class="text-slate-400 text-sm">
+            P7.1b bắt đầu ở HEAD sạch 34ffe1c. P0 đã có đúng một ProjectPathInvalidatorFanout mà
+            WriteAuthority dùng sau commit và WorkspaceWatcher dùng sau external event; phần thiếu là consumer dependency
+            thật tại composition root. Graph sẽ memo kết quả thành công theo project/scene, giữ source và cả path
+            dependency present/missing là ownership set, rồi xoá selective khi path thay đổi equal/ancestor theo segment ở
+            bất kỳ chiều nào. Prefix chữ giống nhau như media/a và media/ab không được invalidation nhầm;
+            error fail-closed không được cache. Không thêm hook SSE/route hay import Server.
+          </p>
         </article>
       </section>
     </main>
