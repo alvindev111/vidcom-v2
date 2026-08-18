@@ -78,7 +78,6 @@ async function dragTimelineClip(
   await page.mouse.move(x, y);
   await page.mouse.down();
   await page.mouse.move(x + 24, y);
-  await page.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => resolve())));
   const after = await page.$eval(selector, (element) => ({
     left: (element as HTMLElement).style.left,
     width: (element as HTMLElement).style.width,
