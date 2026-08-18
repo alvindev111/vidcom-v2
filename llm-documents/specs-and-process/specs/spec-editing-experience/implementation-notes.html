@@ -2026,6 +2026,14 @@
             fingerprint/atSeconds/profile. Helper sample dùng scene-local, frame grid và last-frame clamp; service tính lại
             identity qua isFingerprintCurrent trước publication. Core 375/375, regression graph/root 10/10 và static gates xanh.
           </p>
+          <p class="text-slate-400 text-sm">
+            P7.2b bắt đầu ở HEAD sạch 28f0b4c. Scheduler là policy Core toàn daemon: 2 active, 8 queued,
+            một queued theo project/scene/profile, supersede promise cũ bằng abort, abort queued giải phóng ngay và capacity
+            trả thumbnail_capacity mà không spawn. Sau render phải kiểm fingerprint; drift chỉ render lại một lần,
+            lần hai trả source_changing. Adapter dùng render root app-data, isolate scene về local zero, một snapshot process
+            cho toàn batch và một FFmpeg sequence process ra WebP; cả hai nhận cùng AbortSignal. Không enqueue job,
+            không ghi project/snapshots/ và không dùng ambient PATH.
+          </p>
         </article>
       </section>
     </main>
