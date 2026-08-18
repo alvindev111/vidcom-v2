@@ -74,6 +74,18 @@ function undoTop(value: MutationHistory, studio = "studio", inversePath = "inver
   }))).toEqual({ ok: true });
 }
 
+function redoTop(value: MutationHistory, studio = "studio", inversePath = "inverse.html" as RelPath): void {
+  const begun = value.begin(studio, projectId, "redo");
+  if (!begun.ok) throw new Error("expected redo reservation");
+  const operation = { id: begun.value.operationId, targetReceiptId: begun.value.receipt.id };
+  const origin = mutationOrigin(studio, "redo", operation);
+  expect(value.claimHistoryOperation(projectId, origin)).toEqual({ ok: true });
+  expect(value.emit(receipt(`inverse-${operation.id}`, studio, [inversePath], {
+    action: "redo",
+    operation,
+  }))).toEqual({ ok: true });
+}
+
 describe("MutationHistory directional barriers", () => {
   it("uses segment-safe ownership overlap", () => {
     const value = history();
@@ -169,6 +181,20 @@ describe("MutationHistory directional barriers", () => {
     expect(value.state("studio", projectId)).toMatchObject({ canUndo: true, undoBlocked: false, nextUndoLabel: "label studio" });
     undoTop(value, "studio", "scenes/top.html" as RelPath);
     expect(value.state("studio", projectId)).toMatchObject({ canUndo: false, undoBlocked: true });
+  });
+
+  it("keeps a blocked deep redo entry hidden until the clean top redo is applied", () => {
+    const value = history();
+    attach(value);
+    value.emit(receipt("redo-deep", "studio", ["scenes/redo-deep.html" as RelPath]));
+    value.emit(receipt("redo-top", "studio", ["scenes/redo-top.html" as RelPath]));
+    undoTop(value, "studio", "scenes/redo-top.html" as RelPath);
+    undoTop(value, "studio", "scenes/redo-deep.html" as RelPath);
+    value.observeExternalChange(projectId, ["scenes/redo-top.html" as RelPath]);
+
+    expect(value.state("studio", projectId)).toMatchObject({ canRedo: true, redoBlocked: false });
+    redoTop(value, "studio", "scenes/redo-deep.html" as RelPath);
+    expect(value.state("studio", projectId)).toMatchObject({ canRedo: false, redoBlocked: true });
   });
 
   it("settles and blocks exactly the reserved direction on a synchronous conflict", () => {

@@ -976,6 +976,23 @@
           </p>
         </article>
       </section>
+      <section class="space-y-3">
+        <h2 class="text-lg font-semibold text-sky-300">P3 — Directional barrier 3.6c (2026-08-18)</h2>
+        <article class="rounded-lg border border-sky-900/70 bg-sky-950/20 p-4 space-y-2">
+          <h3 class="font-medium">Entry sâu đối xứng cho cả undo và redo</h3>
+          <p class="text-slate-300">
+            Bổ sung phía redo còn thiếu: một entry sâu đã bị external block không làm khoá top sạch; redo top xong
+            entry đó mới lộ ra và khoá đúng hướng. History không skip hoặc xoá entry sâu. Ma trận chung tiếp tục chứng
+            minh ownership overlap và read guard là hai phép có hướng, sibling dưới directory guard an toàn còn
+            ancestor/equal change thì không.
+          </p>
+          <p class="text-slate-400 text-sm">
+            Delete scene đã có một composite chứa source, narration và preview cleanup; assertion mới khoá entity
+            cleanup là <code>undoable:true</code> do Core quyết. Inverse planner phục hồi toàn scene map với revision/hash
+            hiện tại. Năm suite 77/77 PASS.
+          </p>
+        </article>
+      </section>
     </main>
   </body>
 </html>

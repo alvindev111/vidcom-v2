@@ -337,7 +337,7 @@ describe("deleteScene", () => {
         { kind: "delete", path: "compositions/scene-1.html", expectedContentHash: hash("2") },
         { kind: "delete", path: "narration/scene-1.json", expectedContentHash: hash("7") },
         { kind: "delete", path: "narration/scene-1.wav", expectedContentHash: hash("8") },
-        { kind: "entity", entity: "preview-settings", expectedRevision: 3 },
+        { kind: "entity", entity: "preview-settings", expectedRevision: 3, undoable: true },
       ],
     }]);
   });
