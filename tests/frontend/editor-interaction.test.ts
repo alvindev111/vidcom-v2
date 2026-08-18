@@ -122,6 +122,7 @@ describe("timeline editor interaction", () => {
     state = selectClip(state, multiTrack, "c", { shift: true });
     expect([...state.selection]).toEqual(["a", "b", "c"]);
     expect(state.anchorSceneId).toBe("a");
+    expect(selectClip(state, multiTrack, "b", {})).toBe(state);
 
     state = selectClip(state, multiTrack, "d", { shift: true });
     expect([...state.selection]).toEqual(["d"]);

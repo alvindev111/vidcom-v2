@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 
 import { startNextHostedRuntime } from "@vidcom/cli";
-import { createScene, getStudioSnapshot } from "@vidcom/core";
+import { createScene, getStudioSnapshot, setSceneTiming } from "@vidcom/core";
 import type { Browser, Page } from "puppeteer-core";
 import { browserAvailability, browserIsRequired, requireBrowser } from "../support/browser-harness";
 import { describe, expect, it } from "vitest";
@@ -79,6 +79,55 @@ async function dragTimelineClip(
   if (finish === "escape") await page.keyboard.press("Escape");
   await page.mouse.up();
   return { beforeLeft: before.left, afterLeft: after.left, beforeWidth: before.width, afterWidth: after.width };
+}
+
+async function dragReorderHandle(page: Page, sourceSelector: string, targetSelector: string): Promise<boolean> {
+  const source = await page.waitForSelector(sourceSelector);
+  const target = await page.waitForSelector(targetSelector);
+  const sourceBox = await source?.boundingBox();
+  const targetBox = await target?.boundingBox();
+  if (!sourceBox || !targetBox) throw new Error("reorder handle has no browser geometry");
+  await page.mouse.move(sourceBox.x + sourceBox.width / 2, sourceBox.y + sourceBox.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(sourceBox.x + sourceBox.width / 2 + 8, sourceBox.y + sourceBox.height / 2, { steps: 3 });
+  await new Promise((resolve) => setTimeout(resolve, 50));
+  await page.mouse.move(targetBox.x + targetBox.width / 2, targetBox.y + targetBox.height / 2, { steps: 12 });
+  const markerHandle = await page.waitForFunction((selector) => {
+    const node = document.querySelector(selector);
+    return node?.closest("[data-reorder-placement]")?.getAttribute("data-reorder-placement") ?? false;
+  }, { timeout: 2_000 }, targetSelector).catch(() => null);
+  const marker = markerHandle ? await markerHandle.jsonValue() : null;
+  await page.mouse.up();
+  return marker === "before" || marker === "after";
+}
+
+async function selectedTimelineScenes(page: Page): Promise<string[]> {
+  return page.$$eval('[data-timeline-scene-id][aria-pressed="true"]', (elements) =>
+    elements.map((element) => (element as HTMLElement).dataset.timelineSceneId ?? "").filter(Boolean));
+}
+
+async function modifierClick(page: Page, selector: string, modifier?: "Shift" | "Control"): Promise<void> {
+  if (modifier) await page.keyboard.down(modifier);
+  await page.click(selector);
+  if (modifier) await page.keyboard.up(modifier);
+}
+
+async function marqueeScenes(page: Page, sceneIds: [string, string]): Promise<void> {
+  const surface = await page.waitForSelector("[data-timeline-marquee-surface]");
+  const first = await page.waitForSelector(`[data-timeline-scene-id="${sceneIds[0]}"]`);
+  const second = await page.waitForSelector(`[data-timeline-scene-id="${sceneIds[1]}"]`);
+  const surfaceBox = await surface?.boundingBox();
+  const firstBox = await first?.boundingBox();
+  const secondBox = await second?.boundingBox();
+  if (!surfaceBox || !firstBox || !secondBox) throw new Error("marquee targets have no browser geometry");
+  const startX = Math.min(surfaceBox.x + surfaceBox.width - 4, Math.max(firstBox.x + firstBox.width, secondBox.x + secondBox.width) + 24);
+  const startY = Math.min(firstBox.y, secondBox.y) + 2;
+  const endX = Math.min(firstBox.x, secondBox.x) + 2;
+  const endY = Math.max(firstBox.y + firstBox.height, secondBox.y + secondBox.height) - 2;
+  await page.mouse.move(startX, startY);
+  await page.mouse.down();
+  await page.mouse.move(endX, endY, { steps: 10 });
+  await page.mouse.up();
 }
 
 async function waitForEmptyHistory(page: Page): Promise<void> {
@@ -274,13 +323,28 @@ describe("browser session harness", () => {
         created.projectId,
       );
       if (!emptySnapshot.ok) throw new Error(`browser snapshot failed: ${JSON.stringify(emptySnapshot.error)}`);
-      const seeded = await createScene(runtime.foundation.application.writeDependencies, {
+      const sceneIds: string[] = [];
+      let seedSnapshot = emptySnapshot.value;
+      for (const title of ["Browser one", "Browser two", "Browser three", "Browser four", "Browser other track"]) {
+        const seeded = await createScene(runtime.foundation.application.writeDependencies, {
+          projectId: created.projectId,
+          title,
+          duration: 4,
+          expectedContentHash: seedSnapshot.fileHashes[seedSnapshot.entryFile.path] ?? null,
+        }, "system");
+        if (!seeded.ok) throw new Error(`browser scene seed failed: ${JSON.stringify(seeded.error)}`);
+        sceneIds.push(seeded.value.scene.id);
+        const refreshed = await getStudioSnapshot(runtime.foundation.application.readDependencies, created.projectId);
+        if (!refreshed.ok) throw new Error(`browser seed refresh failed: ${JSON.stringify(refreshed.error)}`);
+        seedSnapshot = refreshed.value;
+      }
+      const movedTrack = await setSceneTiming(runtime.foundation.application.writeDependencies, {
         projectId: created.projectId,
-        title: "Browser timing",
-        duration: 4,
-        expectedContentHash: emptySnapshot.value.fileHashes[emptySnapshot.value.entryFile.path] ?? null,
+        sceneId: sceneIds[4]!,
+        timing: { start: 1, trackIndex: 2 },
+        expectedContentHash: seedSnapshot.fileHashes[seedSnapshot.entryFile.path]!,
       }, "system");
-      if (!seeded.ok) throw new Error(`browser scene seed failed: ${JSON.stringify(seeded.error)}`);
+      if (!movedTrack.ok) throw new Error(`browser track seed failed: ${JSON.stringify(movedTrack.error)}`);
 
       // One real source write proves the server-owned label reaches the rendered
       // timeline, then a second tab proves its stack and ULID are independent.
@@ -289,6 +353,117 @@ describe("browser session harness", () => {
       // history harness follows that canonical route after preserving the redirect assertion.
       await page.goto(`${baseUrl}/projects/${encodeURIComponent(created.projectId)}`, { waitUntil: "domcontentloaded" });
       await page.waitForSelector('[data-timeline-scene-id]');
+
+      const orderWrites: Array<Record<string, unknown>> = [];
+      page.on("request", (request) => {
+        if (request.method() !== "PATCH" || !new URL(request.url()).pathname.endsWith("/scenes/order")) return;
+        if (request.postData()) orderWrites.push(JSON.parse(request.postData()!) as Record<string, unknown>);
+      });
+      await clickText(page, "button", "Video Scene");
+      await page.waitForSelector(`[data-storyboard-scene-id="${sceneIds[0]}"]`);
+
+      const storyboardOrder = page.waitForResponse((response) =>
+        response.request().method() === "PATCH" && new URL(response.url()).pathname.endsWith("/scenes/order"),
+      { timeout: 10_000 }).catch((cause) => { throw new Error("storyboard reorder response timed out", { cause }); });
+      expect(await dragReorderHandle(
+        page,
+        `[data-storyboard-scene-id="${sceneIds[0]}"]`,
+        `[data-storyboard-scene-id="${sceneIds[2]}"]`,
+      )).toBe(true);
+      await new Promise((resolve) => setTimeout(resolve, 250));
+      expect(orderWrites, "storyboard drop must emit one reorder request").toHaveLength(1);
+      expect((await storyboardOrder).ok()).toBe(true);
+      await new Promise((resolve) => setTimeout(resolve, 250));
+
+      const keyboardButton = `[data-storyboard-scene-id="${sceneIds[0]}"] button`;
+      await page.focus(keyboardButton);
+      expect(await page.$eval(keyboardButton, (node) => document.activeElement === node)).toBe(true);
+      const beforeKeyboard = orderWrites.length;
+      const keyboardOrder = page.waitForResponse((response) =>
+        response.request().method() === "PATCH" && new URL(response.url()).pathname.endsWith("/scenes/order"),
+      { timeout: 10_000 }).catch((cause) => { throw new Error("keyboard reorder response timed out", { cause }); });
+      await page.keyboard.down("Alt");
+      await page.keyboard.press("ArrowRight");
+      await page.keyboard.up("Alt");
+      await new Promise((resolve) => setTimeout(resolve, 250));
+      expect(orderWrites, "Alt+ArrowRight must emit one reorder request").toHaveLength(beforeKeyboard + 1);
+      expect((await keyboardOrder).ok()).toBe(true);
+      await new Promise((resolve) => setTimeout(resolve, 250));
+      await page.waitForFunction((sceneId) => document.activeElement?.closest(`[data-storyboard-scene-id="${sceneId}"]`) !== null, {}, sceneIds[0]);
+      await page.waitForFunction((sceneId) => document.body.textContent?.includes(`Moved ${sceneId} to position`) === true, {}, sceneIds[0]);
+      const beforeBoundary = orderWrites.length;
+      await page.focus(`[data-storyboard-scene-id="${sceneIds[4]}"] button`);
+      await page.keyboard.down("Alt");
+      await page.keyboard.press("ArrowRight");
+      await page.keyboard.up("Alt");
+      await new Promise((resolve) => setTimeout(resolve, 250));
+      expect(orderWrites).toHaveLength(beforeBoundary);
+
+      const timelineOrder = page.waitForResponse((response) =>
+        response.request().method() === "PATCH" && new URL(response.url()).pathname.endsWith("/scenes/order"),
+      { timeout: 10_000 }).catch((cause) => { throw new Error("timeline reorder response timed out", { cause }); });
+      expect(await dragReorderHandle(
+        page,
+        `[data-timeline-reorder-id="${sceneIds[1]}"]`,
+        `[data-timeline-reorder-id="${sceneIds[2]}"]`,
+      )).toBe(true);
+      expect((await timelineOrder).ok()).toBe(true);
+      expect(orderWrites).toHaveLength(beforeBoundary + 1);
+
+      await modifierClick(page, `[data-timeline-scene-id="${sceneIds[1]}"]`);
+      await modifierClick(page, `[data-timeline-scene-id="${sceneIds[2]}"]`, "Shift");
+      expect(new Set(await selectedTimelineScenes(page))).toEqual(new Set([sceneIds[1], sceneIds[2]]));
+      await modifierClick(page, `[data-timeline-scene-id="${sceneIds[2]}"]`, "Control");
+      expect(await selectedTimelineScenes(page)).toEqual([sceneIds[1]]);
+      await modifierClick(page, `[data-timeline-scene-id="${sceneIds[4]}"]`, "Shift");
+      expect(await selectedTimelineScenes(page)).toEqual([sceneIds[4]]);
+
+      await page.keyboard.press("Escape");
+      const sameTrackByDom = await page.$$eval('[data-timeline-scene-id]', (elements, otherTrack) =>
+        elements.map((element) => (element as HTMLElement).dataset.timelineSceneId ?? "")
+          .filter((sceneId) => sceneId && sceneId !== otherTrack).slice(0, 2), sceneIds[4]);
+      expect(sameTrackByDom).toHaveLength(2);
+      await marqueeScenes(page, sameTrackByDom as [string, string]);
+      const marqueeSelection = await selectedTimelineScenes(page);
+      expect(marqueeSelection.length).toBeGreaterThanOrEqual(2);
+      expect(marqueeSelection).toEqual(expect.arrayContaining(sameTrackByDom));
+
+      const moveBodies: Array<Record<string, unknown>> = [];
+      page.on("request", (request) => {
+        if (request.method() !== "POST" || !new URL(request.url()).pathname.endsWith("/scenes/move")) return;
+        if (request.postData()) moveBodies.push(JSON.parse(request.postData()!) as Record<string, unknown>);
+      });
+      const moveResponse = page.waitForResponse((response) =>
+        response.request().method() === "POST" && new URL(response.url()).pathname.endsWith("/scenes/move"),
+      { timeout: 10_000 }).catch((cause) => { throw new Error("group move response timed out", { cause }); });
+      await dragTimelineClip(page, "body", "drop");
+      expect((await moveResponse).ok()).toBe(true);
+      expect(moveBodies).toHaveLength(1);
+      expect(new Set(moveBodies[0]?.sceneIds as string[])).toEqual(new Set(marqueeSelection));
+      expect(moveBodies[0]).not.toHaveProperty("ripple");
+
+      const deletionBodies: Array<{ path: string; body: Record<string, unknown> }> = [];
+      page.on("request", (request) => {
+        const pathname = new URL(request.url()).pathname;
+        if (request.method() !== "POST" || !pathname.includes("/scenes/deletions")) return;
+        deletionBodies.push({ path: pathname, body: JSON.parse(request.postData() ?? "{}") as Record<string, unknown> });
+      });
+      const prepareDeletion = page.waitForResponse((response) =>
+        response.request().method() === "POST" && /\/scenes\/deletions$/u.test(new URL(response.url()).pathname),
+      { timeout: 10_000 }).catch((cause) => { throw new Error("delete prepare response timed out", { cause }); });
+      await clickText(page, "button", "Delete");
+      expect((await prepareDeletion).ok()).toBe(true);
+      await page.waitForFunction(() => document.body.textContent?.includes("selected scenes") === true);
+      const executeDeletion = page.waitForResponse((response) =>
+        response.request().method() === "POST" && /\/scenes\/deletions\/[^/]+$/u.test(new URL(response.url()).pathname),
+      { timeout: 10_000 }).catch((cause) => { throw new Error("delete execute response timed out", { cause }); });
+      await clickText(page, "button", "Confirm delete");
+      expect((await executeDeletion).ok()).toBe(true);
+      expect(deletionBodies).toHaveLength(2);
+      expect(deletionBodies[1]?.body).toEqual(deletionBodies[0]?.body);
+      await page.waitForFunction((deleted) => deleted.every((sceneId) =>
+        document.querySelector(`[data-timeline-scene-id="${sceneId}"]`) === null), {}, marqueeSelection);
+
       await clickText(page, "button", "Snap");
       const timingWrites: Array<{ timing?: Record<string, number> }> = [];
       page.on("request", (request) => {

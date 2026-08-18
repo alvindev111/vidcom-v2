@@ -50,7 +50,7 @@ export function SceneStoryboard({
   const studio = useStudioSession();
   const { interaction, interactionRef, applyInteraction } = useEditorInteraction();
   const [showLayers, setShowLayers] = React.useState(false);
-  const [draggedId, setDraggedId] = React.useState<string | null>(null);
+  const draggedId = React.useRef<string | null>(null);
   const [drop, setDrop] = React.useState<{ sceneId: string; placement: "before" | "after" } | null>(null);
   const [issue, setIssue] = React.useState<string | null>(null);
   const [announcement, setAnnouncement] = React.useState("");
@@ -131,21 +131,21 @@ export function SceneStoryboard({
       onSelect={select}
       dropPlacement={drop?.sceneId === scene.id ? drop.placement : null}
       onDragStart={(dragged) => {
-        setDraggedId(dragged.id);
+        draggedId.current = dragged.id;
         setIssue(null);
       }}
       onDragOver={(target, placement) => setDrop({ sceneId: target.id, placement })}
       onDrop={(target, placement) => {
-        if (draggedId) {
-          const intent = reorderDropIntent(scenes, draggedId, target.id, placement);
+        if (draggedId.current) {
+          const intent = reorderDropIntent(scenes, draggedId.current, target.id, placement);
           if (intent.kind === "ready") void saveIntent(intent);
           else if (intent.kind === "rejected") setIssue(intent.message);
         }
-        setDraggedId(null);
+        draggedId.current = null;
         setDrop(null);
       }}
       onDragEnd={() => {
-        setDraggedId(null);
+        draggedId.current = null;
         setDrop(null);
       }}
       onReorderKeyDown={reorderByKeyboard}

@@ -149,6 +149,8 @@ export const TimelineLane = React.memo(function TimelineLane({
 
   return (
     <div
+      data-timeline-row={scene.id}
+      data-reorder-placement={reorderPlacement ?? undefined}
       data-selected={selected || undefined}
       className={cn(
         "data-selected:bg-studio-accent/5 flex h-10 shrink-0 border-b",
@@ -186,6 +188,7 @@ export const TimelineLane = React.memo(function TimelineLane({
         <button
           type="button"
           draggable
+          data-timeline-reorder-id={scene.id}
           onClick={(event) => onSelect(scene, {
             shift: event.shiftKey,
             additive: event.metaKey || event.ctrlKey,
@@ -234,6 +237,7 @@ export const TimelineLane = React.memo(function TimelineLane({
         <button
           type="button"
           data-timeline-scene-id={scene.id}
+          aria-pressed={selected}
           onClick={(event) => {
             if (event.detail === 0) onSelect(scene, {});
           }}

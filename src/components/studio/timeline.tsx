@@ -145,7 +145,7 @@ export function Timeline({
     reorder?: Extract<ReturnType<typeof reorderDropIntent>, { kind: "ready" }>;
   } | null>(null);
   const entryHashRef = React.useRef(entryContentHash);
-  const [reorderDragId, setReorderDragId] = React.useState<string | null>(null);
+  const reorderDragId = React.useRef<string | null>(null);
   const [reorderDrop, setReorderDrop] = React.useState<{
     sceneId: string;
     placement: "before" | "after";
@@ -312,12 +312,12 @@ export function Timeline({
   }, [onProjectChanged, pendingTiming, projectId, sendSceneOrder]);
 
   const dropReorder = React.useCallback((target: Scene, placement: "before" | "after") => {
-    if (reorderDragId) {
-      const intent = reorderDropIntent(scenes, reorderDragId, target.id, placement, { allowCrossTrack: true });
+    if (reorderDragId.current) {
+      const intent = reorderDropIntent(scenes, reorderDragId.current, target.id, placement, { allowCrossTrack: true });
       if (intent.kind === "ready") void saveReorder(intent);
       else if (intent.kind === "rejected") setTimingIssue({ kind: "failed", message: intent.message });
     }
-    setReorderDragId(null);
+    reorderDragId.current = null;
     setReorderDrop(null);
   }, [reorderDragId, saveReorder, scenes]);
 
@@ -500,6 +500,7 @@ export function Timeline({
 
           <div
             ref={marqueeSurface}
+            data-timeline-marquee-surface
             className="relative"
             onPointerDown={beginMarquee}
             onPointerMove={moveMarquee}
@@ -552,13 +553,13 @@ export function Timeline({
                   onDragCancel={cancelCurrentDrag}
                   reorderPlacement={reorderDrop?.sceneId === scene.id ? reorderDrop.placement : null}
                   onReorderDragStart={(dragged) => {
-                    setReorderDragId(dragged.id);
+                    reorderDragId.current = dragged.id;
                     setTimingIssue(null);
                   }}
                   onReorderDragOver={(target, placement) => setReorderDrop({ sceneId: target.id, placement })}
                   onReorderDrop={dropReorder}
                   onReorderDragEnd={() => {
-                    setReorderDragId(null);
+                    reorderDragId.current = null;
                     setReorderDrop(null);
                   }}
                   onReorderKeyDown={keyboardReorder}

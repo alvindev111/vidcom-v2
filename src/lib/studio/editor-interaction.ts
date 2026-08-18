@@ -116,6 +116,11 @@ export function selectClip(
 ): EditorInteractionState {
   const clicked = clips.find((clip) => clip.sceneId === sceneId);
   if (!clicked) return state;
+  // Pointer-down on a member of an existing group starts a group drag. A plain
+  // click outside the selection still replaces it, and modifier clicks retain
+  // their range/toggle semantics below.
+  if (!modifiers.shift && !modifiers.additive
+    && state.selection.size > 1 && state.selection.has(sceneId)) return state;
   if (modifiers.additive) {
     const selection = new Set(state.selection);
     if (selection.has(sceneId)) selection.delete(sceneId);

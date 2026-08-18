@@ -1387,6 +1387,29 @@
           </p>
         </article>
       </section>
+      <section class="space-y-3">
+        <h2 class="text-lg font-semibold text-sky-300">P2 — Browser closeout 2.5b, local gate (2026-08-18)</h2>
+        <article class="rounded-lg border border-sky-900/70 bg-sky-950/20 p-4 space-y-2">
+          <h3 class="font-medium">Browser thật bắt được focus và group drag sai</h3>
+          <p class="text-slate-300">
+            Harness production static bundle được mở rộng bằng năm scene tạo qua Core, một scene ở track khác. Chrome
+            kéo native trên storyboard và gutter, kiểm marker trước khi thả, đếm request, dùng Shift/Ctrl, marquee,
+            kéo nhóm, prepare-confirm-execute xoá nhóm và phím Alt/Option. Selector mới chỉ là data/ARIA semantic,
+            không chứa logic nghiệp vụ.
+          </p>
+          <p class="text-slate-300">
+            RED phát hiện button card dùng display:contents nên Chrome không thể giữ focus, và pointer-down trên một
+            thành viên vùng chọn làm selection sập còn một clip trước beginDrag. Button trở lại box focus được; luật
+            “bấm thường vào thành viên của nhóm đang chọn thì giữ nhóm để bắt đầu drag” được chuyển vào reducer thuần
+            và có node test. Drag id dùng ref để native dragstart/drop không phụ thuộc render closure.
+          </p>
+          <p class="text-slate-400 text-sm">
+            Required local Browser session 4 file/12 test PASS; P2 node aggregate 9 file/62 test, production build,
+            typecheck, boundaries và diff-check PASS; lint còn đúng 5 warning baseline. Linux/Windows CI đang chờ
+            commit/push exact source nên task vẫn in progress.
+          </p>
+        </article>
+      </section>
     </main>
   </body>
 </html>

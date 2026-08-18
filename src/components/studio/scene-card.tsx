@@ -71,6 +71,8 @@ export const SceneCard = React.memo(function SceneCard({
         onDrop(scene, event.clientX < bounds.left + bounds.width / 2 ? "before" : "after");
       }}
       onDragEnd={onDragEnd}
+      data-storyboard-scene-id={scene.id}
+      data-reorder-placement={dropPlacement ?? undefined}
       data-selected={selected || undefined}
       className={cn(
         "group/card relative flex flex-col overflow-hidden rounded-md border text-left transition-colors",
@@ -91,7 +93,7 @@ export const SceneCard = React.memo(function SceneCard({
           event.preventDefault();
           onReorderKeyDown(scene, event.key === "ArrowLeft" ? -1 : 1);
         }}
-        className="contents"
+        className="flex w-full flex-col text-left"
         aria-label={`Select ${scene.id}; drag or press Alt+Arrow to reorder`}
       >
       <span
