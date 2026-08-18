@@ -17,6 +17,7 @@ const ERROR_STATUS = {
   [ErrorCode.ProjectInvalid]: 409,
   [ErrorCode.IdentityParseError]: 422,
   [ErrorCode.CompositionParseError]: 422,
+  [ErrorCode.DependencyGraphUnavailable]: 422,
   [ErrorCode.NoComposition]: 422,
   [ErrorCode.NoScenes]: 422,
   [ErrorCode.SubTimelineReadinessTimeout]: 422,

@@ -17,6 +17,7 @@ export enum ErrorCode {
   ProjectInvalid = "project_invalid",
   IdentityParseError = "identity_parse_error",
   CompositionParseError = "composition_parse_error",
+  DependencyGraphUnavailable = "dependency_graph_unavailable",
   NoComposition = "no_composition",
   NoScenes = "no_scenes",
   NotFound = "not_found",

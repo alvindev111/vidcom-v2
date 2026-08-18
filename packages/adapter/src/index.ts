@@ -64,6 +64,7 @@ export * from "./tts/vieneu-sidecar-path";
 export * from "./fs/watcher";
 export * from "./fs/staged-asset";
 export * from "./hyperframes/document";
+export * from "./hyperframes/dependency-graph";
 export * from "./hyperframes/binary-probe";
 export * from "./hyperframes/compiler-guard";
 export * from "./hyperframes/version-skew";

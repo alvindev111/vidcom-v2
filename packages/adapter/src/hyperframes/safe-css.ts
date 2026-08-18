@@ -29,6 +29,66 @@ function localFragment(value: string): boolean {
   return true;
 }
 
+export interface CssValueReferences {
+  urls: string[];
+  hasDynamicReference: boolean;
+}
+
+/** Tokenizes CSS values without mistaking strings or comments for URL-bearing functions. */
+export function readCssValueReferences(value: string): CssValueReferences | null {
+  const urls: string[] = [];
+  let hasDynamicReference = false;
+  let index = 0;
+  while (index < value.length) {
+    if (value[index] === "/" && value[index + 1] === "*") {
+      const end = value.indexOf("*/", index + 2);
+      if (end < 0) return null;
+      index = end + 2;
+      continue;
+    }
+    if (value[index] === '"' || value[index] === "'") {
+      const quote = value[index++];
+      let closed = false;
+      while (index < value.length) {
+        if (value[index] === "\\") index += 2;
+        else if (value[index++] === quote) { closed = true; break; }
+      }
+      if (!closed) return null;
+      continue;
+    }
+    if (!identifierCharacter(value[index]!, true)) { index += 1; continue; }
+    const start = index;
+    while (index < value.length && identifierCharacter(value[index]!, false)) index += 1;
+    const identifier = value.slice(start, index).toLowerCase();
+    while (index < value.length && whitespace(value[index]!)) index += 1;
+    if (value[index] !== "(") continue;
+    if (identifier === "var") hasDynamicReference = true;
+    if (identifier !== "url") { index += 1; continue; }
+
+    const argumentStart = ++index;
+    let quote: string | null = null;
+    while (index < value.length) {
+      const character = value[index]!;
+      if (quote) {
+        if (character === "\\") index += 2;
+        else { index += 1; if (character === quote) quote = null; }
+      } else if (character === '"' || character === "'") { quote = character; index += 1; }
+      else if (character === ")") break;
+      else index += 1;
+    }
+    if (index >= value.length || quote) return null;
+    let reference = value.slice(argumentStart, index).trim();
+    if ((reference.startsWith('"') && reference.endsWith('"'))
+      || (reference.startsWith("'") && reference.endsWith("'"))) {
+      reference = reference.slice(1, -1).trim();
+    }
+    if (!reference || reference.includes("\\")) return null;
+    urls.push(reference);
+    index += 1;
+  }
+  return { urls, hasDynamicReference };
+}
+
 /** CSS value scanner that understands strings/comments/functions well enough to inspect every URL token. */
 export function hasOnlyLocalCssUrls(value: string): boolean {
   let index = 0;

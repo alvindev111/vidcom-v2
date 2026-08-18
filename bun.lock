@@ -67,6 +67,8 @@
         "@hyperframes/studio-server": "0.7.86",
         "@vidcom/contracts": "workspace:*",
         "@vidcom/core": "workspace:*",
+        "acorn": "8.18.0",
+        "acorn-walk": "8.3.5",
         "animejs": "^4.5.0",
         "drizzle-orm": "1.0.0-rc.4",
         "fontkit": "2.0.4",

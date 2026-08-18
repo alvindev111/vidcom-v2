@@ -429,6 +429,20 @@ export interface CompositionPort {
   validateSource?(file: RelPath, content: string): Promise<Result<void, DomainError>>;
 }
 
+export interface CompositionDependency {
+  path: RelPath;
+  state: "present" | "missing";
+  contentHash: ContentHash | null;
+}
+
+/** Reads the complete local render dependency set for one scene without mutating the project. */
+export interface CompositionDependencyPort {
+  dependenciesOf(
+    ref: ProjectRef,
+    sceneId: string,
+  ): Promise<Result<CompositionDependency[], DomainError>>;
+}
+
 /** Durable unit of work joining mutation, revision, audit, entity and event records. */
 export interface MutationJournalPort {
   /**
