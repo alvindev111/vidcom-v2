@@ -1507,6 +1507,12 @@
             giả thuyết cũ sau khi có evidence cancellation đầy đủ. Focused Chrome 1/1, editor/snap node 12/12, full
             Browser session 12/12, typecheck và diff-check PASS local.
           </p>
+          <p class="text-slate-400 text-sm">
+            Linux run 32099626274 vẫn có cùng capture/move/cancel và drag owner rỗng, nên primary-anchor sync chưa đủ.
+            Node clip hiện được đánh dấu tạm khi React onPointerDown/onPointerMove thật sự chạy; failure diagnostic đọc
+            hai dấu này từ node hiện tại. Vì React không quản lý các attribute tạm, evidence kế sẽ phân biệt handler
+            không nhận event với captured node bị thay thế, không thay timing hay mutation behavior.
+          </p>
         </article>
       </section>
     </main>

@@ -243,6 +243,7 @@ export const TimelineLane = React.memo(function TimelineLane({
           }}
           onPointerDown={(event) => {
             if (event.button !== 0) return;
+            event.currentTarget.dataset.pointerDownHandled = "true";
             const bounds = event.currentTarget.getBoundingClientRect();
             onSelect(scene, {
               shift: event.shiftKey,
@@ -256,6 +257,7 @@ export const TimelineLane = React.memo(function TimelineLane({
             }
           }}
           onPointerMove={(event) => {
+            event.currentTarget.dataset.pointerMoveHandled = "true";
             onDragMove(scene, event.clientX);
           }}
           onPointerUp={(event) => {

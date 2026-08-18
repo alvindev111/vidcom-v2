@@ -124,6 +124,10 @@ async function dragTimelineClip(
           pending: surface.dataset.timelinePending,
           pixelsPerSecond: surface.dataset.timelinePixelsPerSecond,
         } : null,
+        reactHandlers: element ? {
+          pointerDown: element.dataset.pointerDownHandled,
+          pointerMove: element.dataset.pointerMoveHandled,
+        } : null,
         trace: tracedWindow.__timelineDragTrace ?? [],
       };
     }, selector, x, y);
