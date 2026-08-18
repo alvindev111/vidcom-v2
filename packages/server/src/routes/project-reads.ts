@@ -95,6 +95,14 @@ function assetResponse(c: Context, bytes: Uint8Array, contentHash: string, mime:
   });
 }
 
+function previewHeaders(preview: { projectRevision: number; changeSeq: number }) {
+  return {
+    "Cache-Control": "no-store",
+    "X-Vidcom-Project-Revision": String(preview.projectRevision),
+    "X-Vidcom-Change-Seq": String(preview.changeSeq),
+  };
+}
+
 async function legacyId(dependencies: ProjectReadDependencies, slug: string): Promise<ProjectId> {
   const parsed = ProjectParamsSchema.safeParse({ id: slug });
   if (!parsed.success) fail({ code: ErrorCode.SchemaInvalid, message: "project slug is invalid", field: "slug" });
@@ -159,7 +167,7 @@ export function createProjectReadRoutes(dependencies: ProjectReadRouteDependenci
       runtimeUrl: "/api/v1/runtime",
       fileBaseUrl: `/api/v1/projects/${id}/assets/`,
     }));
-    return c.html(preview.html, 200, { "Cache-Control": "no-store" });
+    return c.html(preview.html, 200, previewHeaders(preview));
   });
   routes.get("/hf/:slug/preview", async (c) => {
     const slug = c.req.param("slug");
@@ -168,7 +176,7 @@ export function createProjectReadRoutes(dependencies: ProjectReadRouteDependenci
       runtimeUrl: "/api/hf/runtime",
       fileBaseUrl: `/api/hf/${slug}/files/`,
     }));
-    return c.html(preview.html, 200, { "Cache-Control": "no-store" });
+    return c.html(preview.html, 200, previewHeaders(preview));
   });
 
   routes.get("/v1/projects/:id/assets/:path{.+}", async (c) => {

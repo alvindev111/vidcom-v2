@@ -311,7 +311,7 @@ export async function getProjectPreview(
   dependencies: ProjectReadDependencies & { events: Pick<EventOutboxPort, "latestProjectSeq"> },
   projectId: ProjectId,
   options: { runtimeUrl: string; fileBaseUrl: string },
-): Promise<Result<{ html: string }, DomainError>> {
+): Promise<Result<{ html: string; projectRevision: number; changeSeq: number }, DomainError>> {
   try {
     const found = await projectRef(dependencies, projectId);
     if (!found.ok) return found;
@@ -326,7 +326,7 @@ export async function getProjectPreview(
       settings.value.previewSettings,
       { mode: "preview", root: true, projectRevision: projectRevision ?? 0, changeSeq, ...options },
     );
-    return ok({ html });
+    return ok({ html, projectRevision: projectRevision ?? 0, changeSeq });
   } catch {
     return storageError("project preview could not be built");
   }

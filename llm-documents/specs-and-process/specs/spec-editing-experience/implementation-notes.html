@@ -1043,6 +1043,19 @@
           </p>
         </article>
       </section>
+      <section class="space-y-3">
+        <h2 class="text-lg font-semibold text-sky-300">P4 — Preview response identity 4.2 (2026-08-18)</h2>
+        <article class="rounded-lg border border-sky-900/70 bg-sky-950/20 p-4 space-y-2">
+          <h3 class="font-medium">Collector và HTTP header dùng cùng một snapshot</h3>
+          <p class="text-slate-300">
+            <code>getProjectPreview</code> trả HTML cùng revision/sequence đã lấy trước build. Route v1 và legacy
+            dùng đúng hai giá trị đó cho <code>X-Vidcom-Project-Revision</code> và
+            <code>X-Vidcom-Change-Seq</code>, đồng thời giữ <code>Cache-Control: no-store</code>. Không đọc lại sau
+            build, tránh trường hợp collector và header mô tả hai thời điểm khác nhau.
+          </p>
+          <p class="text-slate-400 text-sm">Focused Server/Core 46/46 PASS; typecheck, boundaries và diff-check PASS.</p>
+        </article>
+      </section>
     </main>
   </body>
 </html>

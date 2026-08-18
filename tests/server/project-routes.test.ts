@@ -192,6 +192,10 @@ describe("project read routing contracts", () => {
       .toContain('data-mode="preview" data-revision="3" data-seq="8"');
     expect(await legacy.text()).toContain("/api/hf/alpha/files/");
     expect(current.headers.get("cache-control")).toBe("no-store");
+    expect(current.headers.get("x-vidcom-project-revision")).toBe("3");
+    expect(current.headers.get("x-vidcom-change-seq")).toBe("8");
+    expect(legacy.headers.get("x-vidcom-project-revision")).toBe("3");
+    expect(legacy.headers.get("x-vidcom-change-seq")).toBe("8");
     expect(legacy.status).toBe(200);
   });
 
