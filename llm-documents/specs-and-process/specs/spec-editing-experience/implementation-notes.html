@@ -1470,6 +1470,14 @@
             hữu drag; pointerup release capture nếu có nhưng luôn qua end handler có state guard. Focused Chrome 1/1,
             editor/snap node 12/12, full Browser session 12/12, typecheck và diff-check PASS local.
           </p>
+          <p class="text-slate-400 text-sm">
+            Linux run 32098460111 vẫn giao trusted move +24 đúng clip nhưng preview ở 0px, nên đổi guard từ capture
+            sang buttons cũng bị bác bỏ. Guard DOM này không cần thiết: continueDrag đã tự yêu cầu interaction drag
+            đang tồn tại và thuộc đúng scene trước khi tạo preview hay commit. Timeline nay chuyển mọi pointermove vào
+            state machine đó; pointerup vẫn chỉ release capture khi có và end handler vẫn state-guarded. Focused Chrome
+            1/1, editor/snap node 12/12, full Browser session 12/12, typecheck và diff-check PASS local. Nếu CI tiếp tục
+            đỏ, bước kế tiếp là quan sát trực tiếp interaction drag state thay vì thêm giả thuyết hành vi.
+          </p>
         </article>
       </section>
     </main>
