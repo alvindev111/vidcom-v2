@@ -35,6 +35,8 @@ describe("production dependency invalidation wiring", () => {
       entry: "index.html" as RelPath,
     };
 
+    expect(infrastructure.thumbnailScheduler.status).toEqual({ active: 0, queued: 0 });
+
     const first = await infrastructure.dependencyGraph.dependenciesOf(ref, "scene-a");
     expect(first.ok && first.value[0]?.contentHash).toBeTruthy();
     await writeFile(path.join(projectRoot, "media/poster.png"), "second");

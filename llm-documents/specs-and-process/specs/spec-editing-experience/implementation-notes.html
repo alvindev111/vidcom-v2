@@ -2034,6 +2034,15 @@
             cho toàn batch và một FFmpeg sequence process ra WebP; cả hai nhận cùng AbortSignal. Không enqueue job,
             không ghi project/snapshots/ và không dùng ambient PATH.
           </p>
+          <p class="text-slate-400 text-sm">
+            P7.2b PASS. Scheduler RED 4/4 và renderer RED 2/2 đúng do module chưa tồn tại. Bản xanh giữ
+            rõ 2 active/8 queued, capacity không gọi renderer, supersede chỉ queued cùng project/scene/profile và abort
+            queued giải phóng slot ngay. Source drift thử lại đúng một lần; generation ổn định chỉ trả bytes
+            mới, drift lần hai trả source_changing. Adapter isolate scene start 6 s về local 0, một snapshot process
+            nhận cả batch, một FFmpeg process từ path đã resolve đổi sequence sang WebP, và dùng cùng signal.
+            Runtime guard/render root được đóng trong finally; test chứng minh project không có snapshots/ và staging
+            mất sau success/abort. Regression 50/50, typecheck, boundaries, build, lint và diff-check xanh.
+          </p>
         </article>
       </section>
     </main>

@@ -88,6 +88,8 @@ function protocolCode(error: DomainError, era: Era): number {
     case ErrorCode.IdentityParseError:
     case ErrorCode.CompositionParseError:
     case ErrorCode.DependencyGraphUnavailable:
+    case ErrorCode.ThumbnailCapacity:
+    case ErrorCode.SourceChanging:
     case ErrorCode.NoComposition:
     case ErrorCode.NoScenes:
     case ErrorCode.SubTimelineReadinessTimeout:

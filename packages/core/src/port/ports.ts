@@ -460,13 +460,18 @@ export interface ThumbnailKey {
   profile: ResolvedThumbnailProfile;
 }
 
+export interface ThumbnailRenderResult {
+  key: ThumbnailKey;
+  result: Result<Uint8Array, DomainError>;
+}
+
 /** Infrastructure batch renderer; one call maps to one abortable snapshot process. */
 export interface ThumbnailPort {
   renderBatch(
     ref: ProjectRef,
     keys: readonly ThumbnailKey[],
     signal: AbortSignal,
-  ): Promise<readonly { key: ThumbnailKey; result: Result<Uint8Array, DomainError> }[]>;
+  ): Promise<readonly ThumbnailRenderResult[]>;
 }
 
 /** Durable unit of work joining mutation, revision, audit, entity and event records. */

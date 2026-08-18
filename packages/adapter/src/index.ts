@@ -87,4 +87,5 @@ export * from "./hyperframes/runtime";
 export * from "./hyperframes/safe-css";
 export * from "./hyperframes/svg-sanitizer";
 export * from "./hyperframes/sdk-ops";
+export * from "./hyperframes/snapshot-thumbnail";
 export * from "./hyperframes/types";

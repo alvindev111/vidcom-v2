@@ -9,7 +9,9 @@ import type {
   CompositionPort,
   ResolvedThumbnailProfile,
   ThumbnailKey,
+  ThumbnailPort,
   ThumbnailProfileName,
+  ThumbnailRenderResult,
   WorkspacePort,
 } from "../port/ports";
 
@@ -173,5 +175,144 @@ export class ThumbnailService {
         message: error instanceof Error ? error.message : "thumbnail identity is unavailable",
       });
     }
+  }
+}
+
+type ThumbnailRequest = { sceneId: string; atSeconds: readonly number[]; profile: ThumbnailProfileName };
+type ThumbnailPlanner = Pick<ThumbnailService, "plan" | "isFingerprintCurrent">;
+
+interface ScheduledBatch {
+  ref: ProjectRef;
+  input: ThumbnailRequest;
+  signal: AbortSignal;
+  plan: ThumbnailPlan;
+  queueKey: string;
+  state: "queued" | "active" | "settled";
+  resolve(value: readonly ThumbnailRenderResult[]): void;
+  reject(reason: unknown): void;
+  queuedAbort(): void;
+}
+
+function abortError(message: string): DOMException {
+  return new DOMException(message, "AbortError");
+}
+
+function failures(keys: readonly ThumbnailKey[], code: ErrorCode, message: string): ThumbnailRenderResult[] {
+  return keys.map((key) => ({ key, result: err({ code, message }) }));
+}
+
+/** Process-wide bounded policy for interactive batches; the renderer remains an infrastructure port. */
+export class ThumbnailBatchScheduler {
+  private readonly activeLimit: number;
+  private readonly queueLimit: number;
+  private active = 0;
+  private readonly queue: ScheduledBatch[] = [];
+
+  constructor(
+    private readonly planner: ThumbnailPlanner,
+    private readonly renderer: ThumbnailPort,
+    limits: { activeLimit?: number; queueLimit?: number } = {},
+  ) {
+    this.activeLimit = limits.activeLimit ?? 2;
+    this.queueLimit = limits.queueLimit ?? 8;
+    if (!Number.isInteger(this.activeLimit) || this.activeLimit < 1
+      || !Number.isInteger(this.queueLimit) || this.queueLimit < 0) {
+      throw new TypeError("thumbnail scheduler limits are invalid");
+    }
+  }
+
+  get status(): { active: number; queued: number } {
+    return { active: this.active, queued: this.queue.length };
+  }
+
+  async request(
+    ref: ProjectRef,
+    input: ThumbnailRequest,
+    signal: AbortSignal,
+  ): Promise<readonly ThumbnailRenderResult[]> {
+    if (signal.aborted) throw abortError("thumbnail request was aborted");
+    const planned = await this.planner.plan(ref, input);
+    if (!planned.ok) throw planned.error;
+    if (signal.aborted) throw abortError("thumbnail request was aborted");
+    const queueKey = canonicalizeJson({
+      projectId: ref.id,
+      sceneId: input.sceneId,
+      profile: planned.value.profile,
+    });
+    return new Promise((resolve, reject) => {
+      const entry: ScheduledBatch = {
+        ref,
+        input,
+        signal,
+        plan: planned.value,
+        queueKey,
+        state: "queued",
+        resolve,
+        reject,
+        queuedAbort: () => {
+          if (entry.state !== "queued") return;
+          const index = this.queue.indexOf(entry);
+          if (index >= 0) this.queue.splice(index, 1);
+          entry.state = "settled";
+          reject(abortError("thumbnail request was aborted"));
+        },
+      };
+      if (this.active < this.activeLimit) {
+        this.start(entry);
+        return;
+      }
+      const superseded = this.queue.findIndex((candidate) => candidate.queueKey === queueKey);
+      if (superseded >= 0) {
+        const [older] = this.queue.splice(superseded, 1);
+        if (older) {
+          older.signal.removeEventListener("abort", older.queuedAbort);
+          older.state = "settled";
+          older.reject(abortError("thumbnail request was superseded"));
+        }
+      } else if (this.queue.length >= this.queueLimit) {
+        entry.state = "settled";
+        resolve(failures(planned.value.keys, ErrorCode.ThumbnailCapacity, "thumbnail scheduler is at capacity"));
+        return;
+      }
+      this.queue.push(entry);
+      signal.addEventListener("abort", entry.queuedAbort, { once: true });
+    });
+  }
+
+  private start(entry: ScheduledBatch): void {
+    entry.signal.removeEventListener("abort", entry.queuedAbort);
+    entry.state = "active";
+    this.active += 1;
+    void this.execute(entry).then(entry.resolve, entry.reject).finally(() => {
+      entry.state = "settled";
+      this.active -= 1;
+      this.drain();
+    });
+  }
+
+  private drain(): void {
+    while (this.active < this.activeLimit && this.queue.length > 0) {
+      const entry = this.queue.shift()!;
+      this.start(entry);
+    }
+  }
+
+  private async execute(entry: ScheduledBatch): Promise<readonly ThumbnailRenderResult[]> {
+    let plan = entry.plan;
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      const rendered = await this.renderer.renderBatch(entry.ref, plan.keys, entry.signal);
+      if (entry.signal.aborted) throw abortError("thumbnail request was aborted");
+      if (!rendered.some((item) => item.result.ok)) return rendered;
+      const current = await this.planner.isFingerprintCurrent(entry.ref, entry.input.sceneId, plan.fingerprint);
+      if (!current.ok) return failures(plan.keys, current.error.code, current.error.message);
+      if (current.value) return rendered;
+      if (attempt === 1) {
+        return failures(plan.keys, ErrorCode.SourceChanging, "thumbnail source kept changing");
+      }
+      const replanned = await this.planner.plan(entry.ref, entry.input);
+      if (!replanned.ok) return failures(plan.keys, replanned.error.code, replanned.error.message);
+      plan = replanned.value;
+    }
+    return failures(plan.keys, ErrorCode.SourceChanging, "thumbnail source kept changing");
   }
 }

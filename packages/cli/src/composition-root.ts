@@ -39,6 +39,7 @@ import {
   FsAssetStaging,
   DomSvgSanitizer,
   HyperframesCompositionDependencyGraph,
+  HyperframesThumbnailRenderer,
   NodeAssetProbe,
   BgmLibraryStore,
   BgmProviderRegistry,
@@ -67,6 +68,10 @@ import {
   DiagnosticsService,
   FontCompatibilityService,
   ThumbnailResolver,
+  ThumbnailBatchScheduler,
+  ThumbnailService,
+  getPreviewSettings,
+  HYPERFRAMES_EXPECTED_VERSION,
   ProjectStateStore,
   scanWorkspace,
   WriteAuthority,
@@ -330,6 +335,36 @@ export function createInfrastructure(config: CompositionRootConfig) {
   const stagedAssets = new AppDataAssetStager(config.appDataRoot);
   const backups = new AppDataBackupStore(config.appDataRoot, database, clock, ids);
   const composition = new CompositionHf();
+  const thumbnailRuntimeSource = hyperframesRuntimeSource();
+  const thumbnailService = new ThumbnailService({
+    workspace,
+    composition,
+    dependencies: dependencyGraph,
+    hashContent,
+    runtimeDigest: hashContent(thumbnailRuntimeSource),
+    rendererVersion: HYPERFRAMES_EXPECTED_VERSION,
+  });
+  const thumbnailRenderer = new HyperframesThumbnailRenderer({
+    process: renderProcess,
+    roots: renderRoots,
+    renderProjects,
+    binaries: renderBinaries,
+    guard: renderGuard,
+    ids,
+    runtimeSource: () => thumbnailRuntimeSource,
+    injectGuard: injectRuntimeAssetGuardDocument,
+    async buildDocument(ref) {
+      const settingsResult = await getPreviewSettings({ workspace, composition, journal }, ref.id);
+      if (!settingsResult.ok) throw new Error(settingsResult.error.message);
+      return composition.buildDocument(ref, settingsResult.value.previewSettings, {
+        mode: "render",
+        root: true,
+        runtimeUrl: "./.vidcom-runtime.js",
+        fileBaseUrl: "./",
+      });
+    },
+  });
+  const thumbnailScheduler = new ThumbnailBatchScheduler(thumbnailService, thumbnailRenderer);
   const grants = new SqliteApprovalGrantStore(database);
   const approvals = new ApprovalService({
     grants,
@@ -428,6 +463,9 @@ export function createInfrastructure(config: CompositionRootConfig) {
     stagedAssets,
     backups,
     composition,
+    thumbnailService,
+    thumbnailRenderer,
+    thumbnailScheduler,
     grants,
     credentialStore,
     credentials,
