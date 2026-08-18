@@ -12,7 +12,13 @@ import {
 import { normalizePreviewSettings } from "../domain/preview-settings";
 import type { CompositionModel, FileNode, ProjectRef } from "../domain/models";
 import { err, ok, type Result } from "../error/result";
-import type { CompositeMutationJournalPort, CompositionPort, MutationJournalPort, WorkspacePort } from "../port/ports";
+import type {
+  CompositeMutationJournalPort,
+  CompositionPort,
+  EventOutboxPort,
+  MutationJournalPort,
+  WorkspacePort,
+} from "../port/ports";
 import type { PreviewSettings } from "../port/types";
 import type { ProjectCache } from "../service/project-cache";
 
@@ -302,19 +308,23 @@ export async function resolveProjectIdBySlug(
 }
 
 export async function getProjectPreview(
-  dependencies: ProjectReadDependencies,
+  dependencies: ProjectReadDependencies & { events: Pick<EventOutboxPort, "latestProjectSeq"> },
   projectId: ProjectId,
   options: { runtimeUrl: string; fileBaseUrl: string },
 ): Promise<Result<{ html: string }, DomainError>> {
   try {
     const found = await projectRef(dependencies, projectId);
     if (!found.ok) return found;
-    const settings = await getPreviewSettings(dependencies, projectId);
+    const [settings, projectRevision, changeSeq] = await Promise.all([
+      getPreviewSettings(dependencies, projectId),
+      dependencies.journal.latestRevision(projectId),
+      dependencies.events.latestProjectSeq(projectId),
+    ]);
     if (!settings.ok) return settings;
     const html = await dependencies.composition.buildDocument(
       found.value,
       settings.value.previewSettings,
-      { root: true, ...options },
+      { mode: "preview", root: true, projectRevision: projectRevision ?? 0, changeSeq, ...options },
     );
     return ok({ html });
   } catch {

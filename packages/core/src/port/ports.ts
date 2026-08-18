@@ -336,6 +336,15 @@ export interface StagedAssetPort {
   ): Promise<StagedAsset>;
 }
 
+export type CompositionDocumentOptions = {
+  root: boolean;
+  runtimeUrl?: string;
+  fileBaseUrl?: string;
+} & (
+  | { mode: "preview"; projectRevision: number; changeSeq: number }
+  | { mode: "render"; projectRevision?: never; changeSeq?: never }
+);
+
 /** HyperFrames parsing and mutation operations; parsing and document builds are expensive. */
 export interface CompositionPort {
   /** Parses one project into the shared composition model and performs adapter I/O. */
@@ -344,7 +353,7 @@ export interface CompositionPort {
   buildDocument(
     ref: ProjectRef,
     settings: PreviewSettings,
-    options: { root: boolean; runtimeUrl?: string; fileBaseUrl?: string },
+    options: CompositionDocumentOptions,
   ): Promise<string>;
   /** Applies SDK operations in memory without writing the resulting HTML to disk. */
   applyOps(ref: ProjectRef, file: RelPath, ops: CompositionOp[]): Promise<Result<string, DomainError>>;

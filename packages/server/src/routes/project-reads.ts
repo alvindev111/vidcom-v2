@@ -14,6 +14,7 @@ import {
   readAsset,
   readSourceFile,
   resolveProjectIdBySlug,
+  type EventOutboxPort,
   type ProjectReadDependencies,
 } from "@vidcom/core";
 import { Hono, type Context } from "hono";
@@ -21,6 +22,7 @@ import { Hono, type Context } from "hono";
 import { HttpBoundaryError } from "../middleware/error-mapper";
 
 export interface ProjectReadRouteDependencies extends ProjectReadDependencies {
+  events: Pick<EventOutboxPort, "latestProjectSeq">;
   runtimeSource(): string;
   mimeFromPath(path: string): string | null;
 }

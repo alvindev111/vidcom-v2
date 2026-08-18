@@ -14,6 +14,7 @@ import {
   DEFAULT_PREVIEW_SETTINGS,
   ok,
   type AbsolutePath,
+  type CompositionDocumentOptions,
   type ProjectRef,
   type ResolvedPath,
 } from "@vidcom/core";
@@ -101,9 +102,9 @@ function fixture() {
       async buildDocument(
         _ref: ProjectRef,
         _settings: typeof DEFAULT_PREVIEW_SETTINGS,
-        options: { root: boolean; runtimeUrl?: string; fileBaseUrl?: string },
+        options: CompositionDocumentOptions,
       ) {
-        return `<html data-runtime="${options.runtimeUrl}" data-files="${options.fileBaseUrl}"></html>`;
+        return `<html data-mode="${options.mode}" data-revision="${options.mode === "preview" ? options.projectRevision : ""}" data-seq="${options.mode === "preview" ? options.changeSeq : ""}" data-runtime="${options.runtimeUrl}" data-files="${options.fileBaseUrl}"></html>`;
       },
       async applyOps() { return ok("unused"); },
     },
@@ -120,6 +121,7 @@ function fixture() {
       async beginBootstrap() { return 1 as never; }, async recover() { return 1; }, async orphan() {},
       async readProjectRecoveryStatus() { return { writeStatus: "ready" as const, unresolved: [] }; },
     },
+    events: { async latestProjectSeq() { return 8; } },
     runtimeSource: () => "globalThis.Hyperframes = {};",
     mimeFromPath,
   };
@@ -186,6 +188,8 @@ describe("project read routing contracts", () => {
     const current = await request(`/api/v1/projects/${id}/preview`, { headers: { Cookie: cookie } });
     const legacy = await request("/api/hf/alpha/preview", { headers: { Cookie: cookie } });
     expect(await current.text()).toContain(`/api/v1/projects/${id}/assets/`);
+    expect(await (await request(`/api/v1/projects/${id}/preview`, { headers: { Cookie: cookie } })).text())
+      .toContain('data-mode="preview" data-revision="3" data-seq="8"');
     expect(await legacy.text()).toContain("/api/hf/alpha/files/");
     expect(current.headers.get("cache-control")).toBe("no-store");
     expect(legacy.status).toBe(200);

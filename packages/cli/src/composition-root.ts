@@ -601,6 +601,7 @@ export function createApplication(
     workspace: infrastructure.workspace,
     composition: infrastructure.composition,
     journal: infrastructure.journal,
+    events: infrastructure.events,
     cache: infrastructure.cache,
   };
   const identity = new ProjectIdentityService({

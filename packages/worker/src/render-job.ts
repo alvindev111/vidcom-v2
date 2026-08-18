@@ -179,7 +179,7 @@ export async function preflightRenderDocument(
     const document = await dependencies.composition.buildDocument(
       prepared.ref,
       prepared.previewSettings,
-      { root: true, runtimeUrl: "./.vidcom-runtime.js", fileBaseUrl: "./" },
+      { mode: "render", root: true, runtimeUrl: "./.vidcom-runtime.js", fileBaseUrl: "./" },
     );
     const stylesheets = await localStylesheets(dependencies, prepared.ref, document);
     const violations = scanRemoteMedia([{ path: prepared.ref.entry, html: document }], stylesheets);

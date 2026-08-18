@@ -1025,6 +1025,24 @@
           </p>
         </article>
       </section>
+      <section class="space-y-3">
+        <h2 class="text-lg font-semibold text-sky-300">P4 — Document identity và health collector 4.1 (2026-08-18)</h2>
+        <article class="rounded-lg border border-sky-900/70 bg-sky-950/20 p-4 space-y-2">
+          <h3 class="font-medium">Preview và render không còn dùng options mơ hồ</h3>
+          <p class="text-slate-300">
+            Core port sở hữu discriminated union duy nhất: preview bắt buộc <code>projectRevision</code> và
+            <code>changeSeq</code>, còn render cấm hai trường này. Preview lấy revision từ journal và sequence
+            project-local từ outbox; preflight render chọn nhánh render tường minh. Compile-only assertions khóa
+            cả hai chiều để call site mới không thể dựa vào default ngầm.
+          </p>
+          <p class="text-slate-400 text-sm">
+            Collector được tiêm ngay sau thẻ <code>&lt;head&gt;</code>, trước base/runtime và script tác giả, chỉ ở
+            preview. Nó giữ ba counter script error, unhandled rejection và resource error capture-phase.
+            Render vẫn dùng runtime asset guard riêng. Focused matrix 34/34 PASS; typecheck, boundaries và
+            diff-check PASS, lint 0 error/5 warning baseline.
+          </p>
+        </article>
+      </section>
     </main>
   </body>
 </html>
