@@ -1333,6 +1333,11 @@
             history, write-cutover và foundation; production Next build, typecheck, boundaries, diff-check sạch;
             lint còn đúng 5 warning baseline.
           </p>
+          <p class="text-slate-400 text-sm">
+            Audit trước UI phát hiện grant mới chỉ ở trạng thái requested. Execute nay kiểm schema và studio attachment
+            trước, issue đúng request với approver ui, rồi mới gọi deleteScenes để journal reserve và so binding.
+            Test đỏ/green 3/3 xác nhận bước issue tồn tại mà prepare không tự duyệt.
+          </p>
         </article>
       </section>
     </main>

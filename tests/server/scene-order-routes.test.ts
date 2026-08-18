@@ -63,6 +63,7 @@ function fixture() {
   const files = new Map<string, string>([["index.html", entry], ["preview-settings.json", settings]]);
   const requests: CompositeRequest[] = [];
   const approvals: Array<{ binding: unknown; summary: string }> = [];
+  const approvalsIssued: string[] = [];
   const workspace = {
     async readProjectRef(id: ProjectId) { return id === projectId ? ref : null; },
     async resolve(_ref: ProjectRef, path: RelPath) { return ok(path as unknown as ResolvedPath); },
@@ -134,6 +135,10 @@ function fixture() {
         approvals.push({ binding, summary });
         return "grant_group";
       },
+      async issue(grantId: string) {
+        approvalsIssued.push(grantId);
+        return ok(grantId);
+      },
     },
     hashContent: hash,
   };
@@ -156,7 +161,7 @@ function fixture() {
     method: "POST",
     headers: { "x-vidcom-studio-session": studioId },
   });
-  return { request, attach, requests, approvals };
+  return { request, attach, requests, approvals, approvalsIssued };
 }
 
 const jsonHeaders = {
@@ -262,6 +267,7 @@ describe("scene order and group deletion routes", () => {
       backupId: "backup_group",
     });
     expect(runtime.requests).toHaveLength(1);
+    expect(runtime.approvalsIssued).toEqual(["grant_group"]);
     expect(runtime.requests[0]).toMatchObject({
       backup: true,
       grant: { id: "grant_group", binding: { target: '["a","c"]' } },

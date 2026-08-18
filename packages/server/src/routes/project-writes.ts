@@ -27,6 +27,7 @@ import {
   IdentifierSchema,
   UploadBgmRequestSchema,
   type ProjectId,
+  type DomainError,
   type RelPath,
 } from "@vidcom/contracts";
 import {
@@ -55,6 +56,7 @@ import {
   type MotionLibraryInstallDependencies,
   type ProjectReadDependencies,
   type ProjectWriteDependencies,
+  type Result,
 } from "@vidcom/core";
 import { Hono, type Context } from "hono";
 
@@ -69,7 +71,10 @@ export interface ProjectWriteRouteDependencies extends ProjectWriteDependencies 
   bgmLibrary: BgmDependencies["bgmLibrary"];
   bgmProviders?: BgmDependencies["bgmProviders"];
   hashContent: BgmDependencies["hashContent"];
-  approvals: { request(binding: GrantBinding, summary: string): Promise<string> };
+  approvals: {
+    request(binding: GrantBinding, summary: string): Promise<string>;
+    issue(requestId: string, approver: "ui"): Promise<Result<string, DomainError>>;
+  };
   mimeFromPath(path: string): string | null;
 }
 
@@ -343,12 +348,14 @@ export function createProjectWriteRoutes(
     const grant = IdentifierSchema.safeParse(c.req.param("grantId"));
     if (!grant.success) fail({ code: ErrorCode.SchemaInvalid, message: "deletion grant id is invalid", field: "grantId" });
     const id = projectId(c);
+    const invocation = studioWriteInvocation(studio, c, id, `Delete ${parsed.data.sceneIds.length} scenes`);
+    const issuedGrantId = valueOf(await dependencies.approvals.issue(grant.data, "ui"));
     const deleted = valueOf(await deleteScenes(dependencies, {
       projectId: id,
       sceneIds: parsed.data.sceneIds,
       expectedRevision: parsed.data.expectedRevision,
-      grantId: grant.data,
-    }, "user", studioWriteInvocation(studio, c, id, `Delete ${parsed.data.sceneIds.length} scenes`)));
+      grantId: issuedGrantId,
+    }, "user", invocation));
     return c.json(DeleteScenesResponseSchema.parse({
       project: deleted.project,
       revision: deleted.envelope.projectRevision,

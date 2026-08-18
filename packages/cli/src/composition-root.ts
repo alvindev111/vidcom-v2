@@ -431,7 +431,10 @@ export function createInfrastructure(config: CompositionRootConfig) {
     toolAudit,
     logger,
     metrics,
-    approvalRequests: { request: approvals.request.bind(approvals) },
+    approvalRequests: {
+      request: approvals.request.bind(approvals),
+      issue: approvals.issue.bind(approvals),
+    },
     approvalAdmin: {
       issue: approvals.issue.bind(approvals),
       revoke: approvals.revoke.bind(approvals),
