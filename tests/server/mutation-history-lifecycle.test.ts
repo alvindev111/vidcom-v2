@@ -190,16 +190,17 @@ describe("MutationHistory lifecycle and ref ownership", () => {
     const owned = objectRef("lease-owned");
     history.emit(receipt("owned", "studio", owned));
 
-    expect(history.openEventLease("browser-studio", "studio", projectId)).toBe(true);
-    expect(history.openEventLease("browser-studio", "studio", projectId)).toBe(true);
-    history.closeEventLease("browser-studio", "studio", projectId);
+    const generation = history.openEventLease("browser-studio", "studio", projectId);
+    expect(generation).not.toBeNull();
+    expect(history.openEventLease("browser-studio", "studio", projectId)).toBe(generation);
+    history.closeEventLease("browser-studio", "studio", projectId, generation!);
     expect(timers).toHaveLength(0);
-    history.closeEventLease("browser-studio", "studio", projectId);
+    history.closeEventLease("browser-studio", "studio", projectId, generation!);
     expect(timers.at(-1)).toMatchObject({ delay: 30_000, cancelled: false });
 
-    expect(history.openEventLease("browser-studio", "studio", projectId)).toBe(true);
+    expect(history.openEventLease("browser-studio", "studio", projectId)).toBe(generation);
     expect(timers.at(-1)?.cancelled).toBe(true);
-    history.closeEventLease("browser-studio", "studio", projectId);
+    history.closeEventLease("browser-studio", "studio", projectId, generation!);
     const finalTimer = timers.at(-1)!;
     timers[0]!.callback();
     expect(history.isAttached("browser-studio", "studio", projectId)).toBe(true);
@@ -217,9 +218,9 @@ describe("MutationHistory lifecycle and ref ownership", () => {
 
     history.detach("browser-studio", "studio", projectId);
 
-    expect(history.openEventLease("browser-studio", "studio", projectId)).toBe(false);
+    expect(history.openEventLease("browser-studio", "studio", projectId)).toBeNull();
     history.attach("browser-studio", "studio", projectId);
-    expect(history.openEventLease("browser-studio", "studio", projectId)).toBe(true);
+    expect(history.openEventLease("browser-studio", "studio", projectId)).not.toBeNull();
     expect(history.state("studio", projectId)).toMatchObject({ depth: 0 });
   });
 
@@ -233,14 +234,42 @@ describe("MutationHistory lifecycle and ref ownership", () => {
       cancelScheduled() {},
     });
     attach(history);
-    history.openEventLease("browser-studio", "studio", projectId);
-    history.closeEventLease("browser-studio", "studio", projectId);
+    const generation = history.openEventLease("browser-studio", "studio", projectId);
+    history.closeEventLease("browser-studio", "studio", projectId, generation!);
     history.detach("browser-studio", "studio", projectId);
     history.attach("browser-studio", "studio", projectId);
 
     callbacks[0]!();
 
     expect(history.isAttached("browser-studio", "studio", projectId)).toBe(true);
+  });
+
+  it("ignores a stale SSE close from the attachment generation before explicit detach", () => {
+    type Timer = { callback: () => void; delay: number };
+    const timers: Timer[] = [];
+    const { history } = fixture({
+      schedule: (callback, delay) => {
+        const timer = { callback, delay };
+        timers.push(timer);
+        return timer;
+      },
+    });
+    attach(history);
+    const oldGeneration = history.openEventLease("browser-studio", "studio", projectId);
+    expect(oldGeneration).not.toBeNull();
+
+    history.detach("browser-studio", "studio", projectId);
+    history.attach("browser-studio", "studio", projectId);
+    const newGeneration = history.openEventLease("browser-studio", "studio", projectId);
+    expect(newGeneration).not.toBe(oldGeneration);
+
+    history.closeEventLease("browser-studio", "studio", projectId, oldGeneration!);
+    expect(timers).toHaveLength(0);
+    expect(history.isAttached("browser-studio", "studio", projectId)).toBe(true);
+
+    history.closeEventLease("browser-studio", "studio", projectId, newGeneration!);
+    expect(timers).toHaveLength(1);
+    expect(timers[0]).toMatchObject({ delay: 30_000 });
   });
 
   it("settles every reservation, blocks the project and releases refs on history desync", () => {

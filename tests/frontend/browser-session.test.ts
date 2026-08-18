@@ -35,10 +35,59 @@ async function clickText(page: Page, selector: string, text: string): Promise<vo
   throw new Error(`${selector} containing ${text} was not found`);
 }
 
+async function appendSourceAndSave(page: Page, marker: string): Promise<void> {
+  try {
+    await page.waitForSelector(".cm-content", { timeout: 10_000 });
+  } catch (cause) {
+    const state = await page.evaluate(() => ({ url: location.href, text: document.body.innerText.slice(0, 1_000) }));
+    throw new Error(`source editor did not mount: ${JSON.stringify(state)}`, { cause });
+  }
+  const current = await page.$eval(".cm-content", (element) => element.textContent ?? "");
+  await page.locator(".cm-content").fill(`${current}\n<!-- ${marker} -->`);
+  await page.waitForFunction(() => [...document.querySelectorAll("button")]
+    .some((button) => button.textContent?.includes("Save") && !button.hasAttribute("disabled")));
+  await clickText(page, "button", "Save");
+  await page.waitForFunction(() => {
+    const button = document.querySelector('button[aria-label="Undo Edit source"]');
+    return button instanceof HTMLButtonElement && !button.disabled;
+  });
+}
+
+async function waitForEmptyHistory(page: Page): Promise<void> {
+  await page.waitForFunction(() => {
+    const undo = document.querySelector('button[aria-label="Undo"]');
+    const redo = document.querySelector('button[aria-label="Redo"]');
+    return undo instanceof HTMLButtonElement && undo.disabled
+      && redo instanceof HTMLButtonElement && redo.disabled;
+  });
+}
+
+async function waitForBlockedHistory(page: Page): Promise<void> {
+  await page.waitForFunction(() => document.body.textContent?.includes("Source changed outside this studio.") === true);
+  await page.waitForFunction(() => ["Reload source", "Keep current"].every((label) =>
+    [...document.querySelectorAll("button")].some((button) => button.textContent?.includes(label))));
+}
+
 async function writeResponse(response: ServerResponse, value: Response): Promise<void> {
   response.statusCode = value.status;
   value.headers.forEach((header, name) => response.setHeader(name, header));
-  response.end(Buffer.from(await value.arrayBuffer()));
+  if (!value.body) {
+    response.end();
+    return;
+  }
+  const reader = value.body.getReader();
+  const cancel = () => void reader.cancel().catch(() => undefined);
+  response.once("close", cancel);
+  try {
+    while (true) {
+      const chunk = await reader.read();
+      if (chunk.done) break;
+      response.write(Buffer.from(chunk.value));
+    }
+    response.end();
+  } finally {
+    response.removeListener("close", cancel);
+  }
 }
 
 /**
@@ -171,6 +220,14 @@ describe("browser session harness", () => {
         args: ["--no-sandbox", "--disable-dev-shm-usage"],
       });
       const page = await browser.newPage();
+      const attachments: Array<{ page: string; projectId: string; studioId: string }> = [];
+      const captureStudio = (current: Page, name: string) => current.on("request", (request) => {
+        if (request.method() !== "POST") return;
+        const match = /^\/api\/v1\/projects\/([^/]+)\/history\/session$/u.exec(new URL(request.url()).pathname);
+        const studioId = request.headers()["x-vidcom-studio-session"];
+        if (match?.[1] && studioId) attachments.push({ page: name, projectId: match[1], studioId });
+      });
+      captureStudio(page, "a");
       await page.goto(`${baseUrl}/?t=${encodeURIComponent(nonce)}`, { waitUntil: "networkidle0" });
       await page.waitForFunction(() => document.body.textContent?.includes("Projects") === true);
       expect(new URL(page.url()).searchParams.has("t")).toBe(false);
@@ -179,6 +236,80 @@ describe("browser session harness", () => {
       await page.locator('[role="dialog"] input').fill("Browser Video");
       await clickText(page, '[role="dialog"] button', "Create video");
       await page.waitForFunction(() => location.pathname === "/projects/browser-video");
+      const created = (await runtime.foundation.application.scanWorkspace())
+        .find((entry) => entry.kind === "project" && entry.slug === "browser-video");
+      if (!created || created.kind !== "project" || !created.projectId) {
+        throw new Error("browser-created project was not discoverable by immutable id");
+      }
+
+      // One real source write proves the server-owned label reaches the rendered
+      // timeline, then a second tab proves its stack and ULID are independent.
+      // The create-card's slug redirect has its own pre-existing regression;
+      // project cards and the studio API use the immutable id, so this focused
+      // history harness follows that canonical route after preserving the redirect assertion.
+      await page.goto(`${baseUrl}/projects/${encodeURIComponent(created.projectId)}`, { waitUntil: "domcontentloaded" });
+      await appendSourceAndSave(page, "history-a-1");
+      const projectUrl = page.url();
+      const pageB = await browser.newPage();
+      captureStudio(pageB, "b");
+      await pageB.goto(projectUrl, { waitUntil: "domcontentloaded" });
+      await waitForEmptyHistory(pageB);
+      await appendSourceAndSave(pageB, "history-b-1");
+      await waitForBlockedHistory(page);
+
+      const firstA = attachments.find((entry) => entry.page === "a");
+      const firstB = attachments.find((entry) => entry.page === "b");
+      expect(firstA?.projectId).toBe(firstB?.projectId);
+      expect(firstA?.studioId).toMatch(/^[0-9A-HJKMNP-TV-Z]{26}$/u);
+      expect(firstB?.studioId).toMatch(/^[0-9A-HJKMNP-TV-Z]{26}$/u);
+      expect(firstA?.studioId).not.toBe(firstB?.studioId);
+
+      // Both visible escape paths are actionable. Keep current clears only the
+      // history; a page reload then gets a fresh ephemeral ULID and cannot
+      // reconstruct the previous stack.
+      await clickText(page, "button", "Keep current");
+      await waitForEmptyHistory(page);
+      await page.reload({ waitUntil: "domcontentloaded" });
+      await waitForEmptyHistory(page);
+      const aIdsAfterReload = attachments.filter((entry) => entry.page === "a").map((entry) => entry.studioId);
+      expect(new Set(aIdsAfterReload).size).toBeGreaterThanOrEqual(2);
+      expect(aIdsAfterReload.at(-1)).not.toBe(firstA?.studioId);
+
+      // A fresh conflict exercises Reload source as well: after it clears the
+      // stack, the editor is remounted from the other tab's committed bytes.
+      await appendSourceAndSave(page, "history-a-2");
+      await pageB.reload({ waitUntil: "domcontentloaded" });
+      await waitForEmptyHistory(pageB);
+      await appendSourceAndSave(pageB, "history-b-2");
+      await waitForBlockedHistory(page);
+      await clickText(page, "button", "Reload source");
+      await waitForEmptyHistory(page);
+      await page.waitForFunction(() => document.querySelector(".cm-content")?.textContent?.includes("history-b-2") === true);
+
+      // A different authenticated browser context cannot steal tab A's studio
+      // id; the same id is also rejected when paired with another project.
+      const secondNonce = Buffer.alloc(32, 23).toString("base64url");
+      runtime.nonces.register(secondNonce);
+      const isolated = await browser.createBrowserContext();
+      const pageC = await isolated.newPage();
+      await pageC.goto(`${projectUrl}?t=${encodeURIComponent(secondNonce)}`, { waitUntil: "domcontentloaded" });
+      await waitForEmptyHistory(pageC);
+      const stolenStatus = await pageC.evaluate(async ({ projectId, studioId }) => {
+        const response = await fetch(`/api/v1/projects/${encodeURIComponent(projectId)}/history/session`, {
+          method: "POST",
+          headers: { "x-vidcom-studio-session": studioId },
+        });
+        return response.status;
+      }, { projectId: firstA!.projectId, studioId: aIdsAfterReload.at(-1)! });
+      expect(stolenStatus).toBe(400);
+      const wrongProjectStatus = await page.evaluate(async (studioId) => {
+        const response = await fetch("/api/v1/projects/project_other/history", {
+          headers: { "x-vidcom-studio-session": studioId },
+        });
+        return response.status;
+      }, aIdsAfterReload.at(-1)!);
+      expect(wrongProjectStatus).toBe(400);
+      await isolated.close();
 
       await page.goto(`${baseUrl}/`, { waitUntil: "networkidle0" });
       await clickText(page, "button", "New video");
@@ -240,5 +371,5 @@ describe("browser session harness", () => {
       else process.env.VIDCOM_SETTINGS = prior.settings;
       await rm(root, { recursive: true, force: true });
     }
-  }, 30_000);
+  }, 60_000);
 });

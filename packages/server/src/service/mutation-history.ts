@@ -171,25 +171,30 @@ export class MutationHistory implements MutationObserverPort {
     return current?.browserSessionId === browserSessionId && current.projectId === projectId;
   }
 
-  openEventLease(browserSessionId: string, sessionId: string, projectId: ProjectId): boolean {
+  openEventLease(browserSessionId: string, sessionId: string, projectId: ProjectId): number | null {
     const current = this.attachments.get(sessionId);
-    if (!current || current.browserSessionId !== browserSessionId || current.projectId !== projectId) return false;
+    if (!current || current.browserSessionId !== browserSessionId || current.projectId !== projectId) return null;
     this.cancelGrace(current);
     current.eventLeases += 1;
-    return true;
+    return current.generation;
   }
 
-  closeEventLease(browserSessionId: string, sessionId: string, projectId: ProjectId): void {
+  closeEventLease(
+    browserSessionId: string,
+    sessionId: string,
+    projectId: ProjectId,
+    generation: number,
+  ): void {
     const current = this.attachments.get(sessionId);
     if (!current || current.browserSessionId !== browserSessionId || current.projectId !== projectId
-      || current.eventLeases === 0) return;
+      || current.generation !== generation || current.eventLeases === 0) return;
     current.eventLeases -= 1;
     if (current.eventLeases > 0 || current.graceTimer !== null) return;
-    const generation = current.generation;
+    const scheduledGeneration = current.generation;
     const graceGeneration = ++current.graceGeneration;
     current.graceTimer = this.schedule(() => {
       const latest = this.attachments.get(sessionId);
-      if (latest !== current || latest.generation !== generation
+      if (latest !== current || latest.generation !== scheduledGeneration
         || latest.graceGeneration !== graceGeneration || latest.eventLeases > 0) return;
       latest.graceTimer = null;
       this.attachments.delete(sessionId);

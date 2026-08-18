@@ -43,7 +43,7 @@ afterEach(async () => {
 describe("durable SSE", () => {
   it("leases an attached studio session for the lifetime of its SSE stream", async () => {
     const isAttached = vi.fn(() => true);
-    const openEventLease = vi.fn(() => true);
+    const openEventLease = vi.fn(() => 7);
     const closeEventLease = vi.fn();
     const app = new Hono().route("/", createEventRoutes({
       async append() { return 0; },
@@ -61,7 +61,12 @@ describe("durable SSE", () => {
     expect(isAttached).toHaveBeenCalledWith("browser-events", "01K1ABCDEFGHJKMNPQRSTVWXYZ", projectId);
     expect(openEventLease).toHaveBeenCalledTimes(1);
     await response.body!.cancel();
-    expect(closeEventLease).toHaveBeenCalledTimes(1);
+    expect(closeEventLease).toHaveBeenCalledWith(
+      "browser-events",
+      "01K1ABCDEFGHJKMNPQRSTVWXYZ",
+      projectId,
+      7,
+    );
   });
 
   it("emits resync instead of replaying across a retention gap", async () => {

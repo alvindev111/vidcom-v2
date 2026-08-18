@@ -32,17 +32,23 @@ export function createEventRoutes(
         message: "studio session and projectId are required together",
       });
     }
-    let leased: { browserSessionId: string; studioSessionId: string; projectId: ProjectId } | undefined;
+    let leased: {
+      browserSessionId: string;
+      studioSessionId: string;
+      projectId: ProjectId;
+      generation: number;
+    } | undefined;
     if (requestedStudio !== undefined) {
       if (!studio) throw new HttpBoundaryError({ code: ErrorCode.SchemaInvalid, message: "studio history is unavailable" });
       const project = ProjectParamsSchema.safeParse({ id: requestedProject });
       if (!project.success) throw new HttpBoundaryError({ code: ErrorCode.SchemaInvalid, message: "project id is invalid" });
       const id = project.data.id as ProjectId;
       const attached = requireAttachedStudio(studio, c, id);
-      if (!studio.history.openEventLease(attached.browserSessionId, attached.studioSessionId, id)) {
+      const generation = studio.history.openEventLease(attached.browserSessionId, attached.studioSessionId, id);
+      if (generation === null) {
         throw new HttpBoundaryError({ code: ErrorCode.SchemaInvalid, message: "studio event lease could not be opened" });
       }
-      leased = { ...attached, projectId: id };
+      leased = { ...attached, projectId: id, generation };
     }
     const encoder = new TextEncoder();
     const pollMs = options.pollMs ?? 250;
@@ -55,7 +61,12 @@ export function createEventRoutes(
     const closeLease = () => {
       if (leaseClosed || !leased || !studio) return;
       leaseClosed = true;
-      studio.history.closeEventLease(leased.browserSessionId, leased.studioSessionId, leased.projectId);
+      studio.history.closeEventLease(
+        leased.browserSessionId,
+        leased.studioSessionId,
+        leased.projectId,
+        leased.generation,
+      );
       c.req.raw.signal.removeEventListener("abort", closeLease);
     };
     c.req.raw.signal.addEventListener("abort", closeLease, { once: true });
