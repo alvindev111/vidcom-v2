@@ -252,12 +252,13 @@ export const TimelineLane = React.memo(function TimelineLane({
             onDragStart(scene, hitZone(event.clientX - bounds.left, bounds.width), event.clientX);
           }}
           onPointerMove={(event) => {
-            if (!event.currentTarget.hasPointerCapture(event.pointerId)) return;
+            if ((event.buttons & 1) === 0) return;
             onDragMove(scene, event.clientX);
           }}
           onPointerUp={(event) => {
-            if (!event.currentTarget.hasPointerCapture(event.pointerId)) return;
-            event.currentTarget.releasePointerCapture(event.pointerId);
+            if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+              event.currentTarget.releasePointerCapture(event.pointerId);
+            }
             onDragEnd(scene, event.clientX);
           }}
           onPointerCancel={onDragCancel}

@@ -1463,6 +1463,13 @@
             đồng thời giữ preview wait và diagnostic. Focused Chrome 1/1, full Browser session 12/12, typecheck và
             diff-check PASS local.
           </p>
+          <p class="text-slate-400 text-sm">
+            Run 32098259359 giao đủ pointermove +24 đúng scene-2 với buttons=1 nhưng preview vẫn không đổi. Call path
+            chỉ còn guard hasPointerCapture trước onDragMove; Chrome headless đa OS báo false dù event vẫn target clip.
+            Timeline nay dùng bit nút trái cho pointermove, sau đó interaction state hiện hữu vẫn xác minh scene đang sở
+            hữu drag; pointerup release capture nếu có nhưng luôn qua end handler có state guard. Focused Chrome 1/1,
+            editor/snap node 12/12, full Browser session 12/12, typecheck và diff-check PASS local.
+          </p>
         </article>
       </section>
     </main>
