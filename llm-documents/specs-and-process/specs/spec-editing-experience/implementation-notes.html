@@ -1437,6 +1437,13 @@
             hơn 20px; nếu geometry không hợp lệ, CI sẽ fail ngay với số px thay vì timeout network. Đây là điều kiện
             test ổn định, không chuyển quyết định timing khỏi Core. Focused Chrome 1/1, typecheck và diff-check PASS.
           </p>
+          <p class="text-slate-400 text-sm">
+            Linux run 32097416882 vượt guard width nhưng preview vẫn được đọc trước khi React commit, nên viewport không
+            phải nguyên nhân và thay đổi đó được hoàn tác. Race thật thuộc harness: CDP mouse.move, đọc style và mouse.up
+            nối liền mà không có điều kiện đồng bộ renderer. Helper nay chờ tối đa 5 giây cho đúng thuộc tính UI left
+            hoặc width đổi rồi mới thả chuột; không thêm sleep và không tăng timeout backend. Focused Chrome 1/1, full
+            Browser session 12/12, typecheck và diff-check PASS local.
+          </p>
         </article>
       </section>
     </main>

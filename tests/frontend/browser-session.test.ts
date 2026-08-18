@@ -67,7 +67,6 @@ async function dragTimelineClip(
   if (!clip) throw new Error("timeline clip did not mount");
   const box = await clip.boundingBox();
   if (!box) throw new Error("timeline clip has no browser geometry");
-  if (box.width <= 20) throw new Error(`timeline clip body is not draggable at ${box.width}px`);
   const before = await clip.evaluate((element) => ({
     left: (element as HTMLElement).style.left,
     width: (element as HTMLElement).style.width,
@@ -77,6 +76,10 @@ async function dragTimelineClip(
   await page.mouse.move(x, y);
   await page.mouse.down();
   await page.mouse.move(x + 24, y, { steps: 3 });
+  await page.waitForFunction((target, dragZone, left, width) => {
+    const element = document.querySelector<HTMLElement>(target);
+    return dragZone === "body" ? element?.style.left !== left : element?.style.width !== width;
+  }, { timeout: 5_000 }, selector, zone, before.left, before.width);
   const after = await page.$eval(selector, (element) => ({
     left: (element as HTMLElement).style.left,
     width: (element as HTMLElement).style.width,
@@ -302,7 +305,6 @@ describe("browser session harness", () => {
         args: ["--no-sandbox", "--disable-dev-shm-usage"],
       });
       const page = await browser.newPage();
-      await page.setViewport({ width: 1_440, height: 1_000, deviceScaleFactor: 1 });
       const attachments: Array<{ page: string; projectId: string; studioId: string }> = [];
       const captureStudio = (current: Page, name: string) => current.on("request", (request) => {
         if (request.method() !== "POST") return;
