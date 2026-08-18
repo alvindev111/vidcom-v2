@@ -1073,6 +1073,25 @@
           </p>
         </article>
       </section>
+      <section class="space-y-3">
+        <h2 class="text-lg font-semibold text-sky-300">P4 — PlayerHost và DOM adapter 4.3b (2026-08-18)</h2>
+        <article class="rounded-lg border border-sky-900/70 bg-sky-950/20 p-4 space-y-2">
+          <h3 class="font-medium">Host ổn định, engine là chi tiết thay thế được</h3>
+          <p class="text-slate-300">
+            Một <code>PlayerHost</code> theo project giờ sở hữu transport và id gắn trên stage; React effect chỉ phụ
+            thuộc project, không phụ thuộc URL preview. URL đổi vẫn đi qua coordinator, nên engine đệm thay thế bên
+            trong mà host không remount. Đổi project hoặc unmount abort health wait và dọn candidate cùng engine đang
+            hiện đúng một lần.
+          </p>
+          <p class="text-slate-400 text-sm">
+            Adapter thật đọc <code>window.__vidcomHealth</code> và identity từ script collector qua
+            <code>iframeElement</code> cùng-origin, đợi signal timeline <code>scenes</code> và mọi layer
+            <code>data-composition-src</code> có child. Candidate stale retry đúng một lần trong cùng generation;
+            stale lần hai hoặc unhealthy giữ nguyên frame/transport cũ và trả kèm health. Focused 11/11, toàn
+            frontend node 82/82 PASS; typecheck, boundaries, diff-check PASS; lint 0 error/5 warning baseline.
+          </p>
+        </article>
+      </section>
     </main>
   </body>
 </html>

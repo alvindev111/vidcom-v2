@@ -10,6 +10,7 @@ export interface PreflightHealthSnapshot {
   scriptErrors: number;
   rejections: number;
   resourceErrors: number;
+  revision: number;
   changeSeq: number;
 }
 
@@ -106,7 +107,11 @@ export interface PreviewBufferEnvironment<Engine extends PreviewBufferEngine> {
 export type PreviewReloadResult =
   | { kind: "swapped"; visibleChangeSeq: number }
   | { kind: "coalesced"; visibleChangeSeq: number }
-  | { kind: "rejected"; reason: "preview_unhealthy" | "preview_stale" }
+  | {
+      kind: "rejected";
+      reason: "preview_unhealthy" | "preview_stale";
+      health: PreflightHealthResult;
+    }
   | { kind: "superseded" }
   | { kind: "disposed" };
 
@@ -121,6 +126,7 @@ export class PreviewBufferCoordinator<Engine extends PreviewBufferEngine> {
   private visible: Engine | null;
   private readonly environment: PreviewBufferEnvironment<Engine>;
   private readonly projectToken: string;
+  private readonly staleRetries: number;
   private readonly disposedEngines = new Set<Engine>();
   private candidate: Candidate<Engine> | null = null;
   private generation = 0;
@@ -134,12 +140,14 @@ export class PreviewBufferCoordinator<Engine extends PreviewBufferEngine> {
     visible: Engine;
     visibleChangeSeq: number;
     environment: PreviewBufferEnvironment<Engine>;
+    staleRetries?: number;
   }) {
     this.projectToken = input.projectToken;
     this.visible = input.visible;
     this.visibleChangeSeq = input.visibleChangeSeq;
     this.desiredChangeSeq = input.visibleChangeSeq;
     this.environment = input.environment;
+    this.staleRetries = input.staleRetries ?? 0;
   }
 
   snapshot() {
@@ -167,80 +175,85 @@ export class PreviewBufferCoordinator<Engine extends PreviewBufferEngine> {
     this.error = null;
     this.dropCandidate();
     const generation = ++this.generation;
-    const controller = new AbortController();
-    const engine = this.environment.createCandidate({ url: input.url, generation, signal: controller.signal });
-    const candidate = { engine, generation, controller };
-    this.candidate = candidate;
+    for (let attempt = 0; attempt <= this.staleRetries; attempt += 1) {
+      const controller = new AbortController();
+      const engine = this.environment.createCandidate({ url: input.url, generation, signal: controller.signal });
+      const candidate = { engine, generation, controller };
+      this.candidate = candidate;
 
-    let health: PreflightHealthResult;
-    try {
-      health = await this.environment.waitForHealth(engine, controller.signal);
-    } catch {
-      health = {
-        ok: false,
-        reason: controller.signal.aborted ? "cancelled" : "reported-error",
-        waitedMs: 0,
-        health: {
-          ready: false,
-          timeline: false,
-          scenesLoaded: false,
-          collectorSeen: false,
-          scriptErrors: controller.signal.aborted ? 0 : 1,
-          rejections: 0,
-          resourceErrors: 0,
-          changeSeq: 0,
-        },
+      let health: PreflightHealthResult;
+      try {
+        health = await this.environment.waitForHealth(engine, controller.signal);
+      } catch {
+        health = {
+          ok: false,
+          reason: controller.signal.aborted ? "cancelled" : "reported-error",
+          waitedMs: 0,
+          health: {
+            ready: false,
+            timeline: false,
+            scenesLoaded: false,
+            collectorSeen: false,
+            scriptErrors: controller.signal.aborted ? 0 : 1,
+            rejections: 0,
+            resourceErrors: 0,
+            revision: 0,
+            changeSeq: 0,
+          },
+        };
+      }
+
+      if (this.disposed) {
+        this.disposeOnce(engine);
+        return { kind: "disposed" };
+      }
+      if (generation !== this.generation || this.candidate !== candidate) {
+        this.disposeOnce(engine);
+        return { kind: "superseded" };
+      }
+      if (!health.ok || !structurallyReady(health.health) || reportedFailure(health.health)) {
+        this.candidate = null;
+        this.disposeOnce(engine);
+        this.error = "preview_unhealthy";
+        return { kind: "rejected", reason: this.error, health };
+      }
+      if (health.health.changeSeq < input.targetChangeSeq) {
+        this.candidate = null;
+        this.disposeOnce(engine);
+        if (attempt < this.staleRetries) continue;
+        this.error = "preview_stale";
+        return { kind: "rejected", reason: this.error, health };
+      }
+
+      const live = this.visible;
+      if (!live) {
+        this.candidate = null;
+        this.disposeOnce(engine);
+        return { kind: "disposed" };
+      }
+      // Sample only after health settles: a playing engine advances during preflight.
+      const transport = {
+        time: live.currentTime,
+        paused: live.paused,
+        rate: live.playbackRate,
+        muted: live.muted,
       };
-    }
+      engine.seek(Math.min(transport.time, Math.max(0, engine.duration)));
+      engine.playbackRate = transport.rate;
+      engine.muted = transport.muted;
+      if (transport.paused) engine.pause();
+      else engine.play();
 
-    if (this.disposed) {
-      this.disposeOnce(engine);
-      return { kind: "disposed" };
-    }
-    if (generation !== this.generation || this.candidate !== candidate) {
-      this.disposeOnce(engine);
-      return { kind: "superseded" };
-    }
-    if (!health.ok || !structurallyReady(health.health) || reportedFailure(health.health)) {
       this.candidate = null;
-      this.disposeOnce(engine);
-      this.error = "preview_unhealthy";
-      return { kind: "rejected", reason: this.error };
+      this.environment.show(engine);
+      this.visible = engine;
+      this.disposeOnce(live);
+      this.visibleChangeSeq = Math.max(input.targetChangeSeq, health.health.changeSeq);
+      this.desiredChangeSeq = Math.max(this.desiredChangeSeq, this.visibleChangeSeq);
+      this.error = null;
+      return { kind: "swapped", visibleChangeSeq: this.visibleChangeSeq };
     }
-    if (health.health.changeSeq < input.targetChangeSeq) {
-      this.candidate = null;
-      this.disposeOnce(engine);
-      this.error = "preview_stale";
-      return { kind: "rejected", reason: this.error };
-    }
-
-    const live = this.visible;
-    if (!live) {
-      this.candidate = null;
-      this.disposeOnce(engine);
-      return { kind: "disposed" };
-    }
-    // Sample only after health settles: a playing engine advances during preflight.
-    const transport = {
-      time: live.currentTime,
-      paused: live.paused,
-      rate: live.playbackRate,
-      muted: live.muted,
-    };
-    engine.seek(Math.min(transport.time, Math.max(0, engine.duration)));
-    engine.playbackRate = transport.rate;
-    engine.muted = transport.muted;
-    if (transport.paused) engine.pause();
-    else engine.play();
-
-    this.candidate = null;
-    this.environment.show(engine);
-    this.visible = engine;
-    this.disposeOnce(live);
-    this.visibleChangeSeq = Math.max(input.targetChangeSeq, health.health.changeSeq);
-    this.desiredChangeSeq = Math.max(this.desiredChangeSeq, this.visibleChangeSeq);
-    this.error = null;
-    return { kind: "swapped", visibleChangeSeq: this.visibleChangeSeq };
+    throw new Error("preview reload retry loop exited without a result");
   }
 
   dispose(): void {

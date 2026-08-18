@@ -50,6 +50,7 @@ export function StudioShell({
   // The player lives here, not in the preview pane: the Scene tab on the left
   // seeks it too, and both sides need the same currentTime.
   const { containerRef, state, controls, timeStore } = useHyperframesPlayer(
+    projectId,
     revision === 0 ? previewUrl : `${previewUrl}?r=${revision}`,
   );
   const duration = state.duration || authoredDuration || 0;

@@ -22,6 +22,7 @@ const healthy = (changeSeq: number): PreflightHealthResult => ({
     scriptErrors: 0,
     rejections: 0,
     resourceErrors: 0,
+    revision: changeSeq,
     changeSeq,
   },
 });
@@ -101,6 +102,7 @@ describe("preview preflight health", () => {
       scriptErrors: 0,
       rejections: 0,
       resourceErrors: 0,
+      revision: 9,
       changeSeq: 9,
     });
     const result = await waitForPreflightHealth(snapshot, {
