@@ -489,7 +489,7 @@ steering 03/04/05/10 ở đúng các đoạn D1/parity/history/approval đã li�
   - Tách insertion/shift/root-duration logic từ `createScene`; `createScene`, catalog new-scene và
     mount asset dùng chung planner rồi tự ghép đúng một composite, không gọi use case commit lồng nhau.
   - _Requirements: R2.2, R2.3, R2.7, R7.3, R11.1, R12.4_ — _Design: §5.3_
-- [ ] 2.2 Use case `reorderScenes`, `compactTrack` (route riêng, **không** phải cờ), `moveScenes`, `deleteScenes`
+- [x] 2.2 Use case `reorderScenes`, `compactTrack` (route riêng, **không** phải cờ), `moveScenes`, `deleteScenes`
   - `deleteScenes` dùng `prepare → grant → execute` và `backup: true`; execute nhận lại
     `{sceneIds,expectedRevision,grantId}`, re-plan + reserve như `deleteScene` hiện có; xoá cả file scene + sidecar
   - `sceneIds` bắt buộc non-empty/unique; duplicate ⇒ `DuplicateMutationTarget`, zero plan/write.
@@ -506,11 +506,15 @@ steering 03/04/05/10 ở đúng các đoạn D1/parity/history/approval đã li�
   - _Requirements: R2, R12_ — _Design: §5.1, §5.4, §11, §17_
 
 **Acceptance Criteria**:
-- [ ] Thứ tự sau khi thả trùng thứ tự cũ ⇒ không ghi
+- [x] Thứ tự sau khi thả trùng thứ tự cũ ⇒ không ghi
 - [ ] Storyboard và timeline đánh số từ **cùng** `splitScenes`
-- [ ] Chồng lấn trong track là **diagnostic**, không phải lỗi chặn
+- [x] Chồng lấn trong track là **diagnostic**, không phải lỗi chặn
 
-**Deliverables Created / Modified**: (điền đường dẫn thật, test và browser evidence khi thực thi)
+**Deliverables Created / Modified**: `packages/core/src/domain/plan-scene-order.ts`,
+`packages/core/src/usecase/{scene-order-write,reorder-scenes,compact-track,move-scenes,delete-scenes}.ts`,
+`packages/core/src/{index.ts,usecase/project-writes.ts}`,
+`tests/core/{plan-scene-order,scene-order-usecases,scene-deletion}.test.ts`,
+`tests/adapter/project-destructive-usecases.test.ts` (2.1–2.2; route/UI/browser evidence bổ sung ở 2.3–2.5b)
 
 ---
 
@@ -1531,6 +1535,8 @@ caption · D7 tool MCP undo/redo · **D8 PR-11 hot-reload từng sub-composition
 | 2026-08-18 09:31 +07 | Phase P1 gate | All P1 tasks, both AC and deliverables | Full `bun run test`: 242 files PASS + 1 intentional VieNeu-real skip, 2.219 tests PASS + 5 intentional skips. Focused node 13/13, required local Browser session 12/12, production build/typecheck/boundaries/diff-check and exact-SHA Browser session Linux/Windows PASS; lint 0 errors/5 baseline warnings | `PASS` | No P1 blocker remains. Mouse dragging is additive to the numeric form; timing/candidate/request logic remains outside components; Core remains authoritative for committed ripple/root/runtime decisions; every successful write flows through the existing route, session header, expected hash and exact change sequence | P2.1 |
 | 2026-08-18 09:34 +07 | 2.1 checkpoint | Pure scene order/compact/group-shift/insertion planners | Baseline HEAD/remote `e5d237d`; worktree clean. Planned red/green: `tests/core/plan-scene-order.test.ts` under Vitest node, then Core regression/typecheck/boundaries | `IN PROGRESS` | Bun skill and all P2 Read-first sources loaded. Design §5.3 received a no-AC-change erratum before code: gap means leading/inter-slot gaps within `{track,group}`; cross-track leaves source clips unmoved, retains target gaps and inserts one zero boundary; planners return minimal timing changes/root/noOp, insertion also returns `beforeSceneId`. Core owns `groupOf`; UI does not supply a classification decision | Add failing gap/group/all-or-nothing/insertion tests, then implement the pure planner and extract createScene planning without changing its composite boundary |
 | 2026-08-18 09:38 +07 | 2.1 | Pure reorder/compact/group-shift/insertion planners and createScene extraction | Red: focused suite failed collection because `plan-scene-order.ts` did not exist. Green: planner 7/7; joined planner/createScene/Core integration 53/53; typecheck, boundaries and diff-check PASS; lint 0 errors/5 baseline warnings | `PASS` | Core `groupOf` matches transition/provenance/overlay-id classification. Same-track reorder preserves leading/inter-slot gaps inside one group; cross-track leaves source clips in place, keeps target gaps and adds one zero boundary. Compact is explicit, group shift validates the entire set before returning any change, overlap gaps remain valid diagnostics, and insertion returns timing/tail shifts/root/beforeSceneId only. `createScene` now consumes that planner and still publishes one three-file composite; future catalog/asset callers can compose the same pure plan without nesting a committing use case | Commit/push checkpoint, then 2.2 use cases |
+| 2026-08-18 09:40 +07 | 2.2 checkpoint | Reorder/compact/move mutations and exact-intent bulk scene deletion | Baseline HEAD/remote `0824718`; worktree clean. Planned red/green: new Core use-case tests with captured CompositeRequest plus existing real adapter destructive/history integration, then typecheck/boundaries | `IN PROGRESS` | Timing use cases share one Core apply/write helper, return changed=false with zero write for no-op, enforce root/runtime before apply, and emit overlap diagnostics rather than reject. Bulk deletion cannot loop `deleteScene`: it must plan shared-source ownership, sidecars, settings cleanup and root once; prepare binds canonical ordered sceneIds/revision/plan/hash set, execute re-plans and sends one backup composite/grant so history receives one receipt | Add failing no-op/one-composite/all-or-nothing/exact-intent tests, then implement without route work (owned by 2.3) |
+| 2026-08-18 09:49 +07 | 2.2 | Core order mutations and exact-intent bulk scene deletion | Red: new focused suite ran 5/5 failures because all four use cases were absent. Green: planner/order/deletion plus real SQLite/filesystem destructive integration 38/38 PASS; typecheck, boundaries and `git diff --check` PASS; lint 0 errors/5 baseline warnings | `PASS` | `reorderScenes`, separate `compactTrack`, and `moveScenes` load and validate the current entry hash, then share one Core executor. No-op calls `noteUnchanged` with zero apply/write; root/runtime overflow fail before apply; gaps/overlaps remain diagnostics. `prepareDeleteScenes` rejects empty/duplicate targets before project I/O, canonicalizes the set, plans shared-source ownership plus all narration/settings cleanup, and binds revision/digest/target hashes. `deleteScenes` re-plans and submits one grant-bound `backup:true` composite. The real adapter test proves two scenes produce one revision, one verified backup and one history receipt | Commit/push checkpoint, then 2.3 routes |
 
 ## Final Authoring-Readiness Audit
 

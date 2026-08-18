@@ -1290,6 +1290,29 @@
           </p>
         </article>
       </section>
+      <section class="space-y-3">
+        <h2 class="text-lg font-semibold text-sky-300">P2 — Use case thứ tự và xoá nhóm 2.2 (2026-08-18)</h2>
+        <article class="rounded-lg border border-sky-900/70 bg-sky-950/20 p-4 space-y-2">
+          <h3 class="font-medium">Một intent, một composite, không ghi khi không đổi</h3>
+          <p class="text-slate-300">
+            Reorder, compact riêng và dịch nhóm cùng dùng một executor Core: đọc hash entry hiện tại, kiểm tra
+            root/runtime trước khi apply, tạo các setTiming tối thiểu rồi gửi đúng một CompositeRequest qua
+            WriteAuthority. Kế hoạch no-op trả envelope null, báo noteUnchanged và không gọi applyOps hay authority.
+            Gap hoặc overlap sau phép đổi vẫn là diagnostic; overlap không bị biến thành validation chặn.
+          </p>
+          <p class="text-slate-300">
+            Xoá nhóm có planner và prepare riêng, không lặp deleteScene. sceneIds được chuẩn hoá theo thứ tự ổn định;
+            rỗng hoặc trùng bị từ chối trước mọi project I/O. Plan tính quyền sở hữu source trên toàn nhóm, giữ file
+            còn scene khác tham chiếu, gom toàn bộ JSON/WAV, settings và root một lần, rồi bind revision, digest và
+            target hash vào grant. Execute re-plan đúng intent và gửi một composite backup:true duy nhất.
+          </p>
+          <p class="text-slate-400 text-sm">
+            Red 5/5 do use case chưa tồn tại; green 38/38 cho planner/Core/delete/adapter. SQLite và filesystem thật
+            xác nhận xoá hai scene chỉ tạo một revision, một backup đã verify và một history receipt. Typecheck,
+            boundaries, diff-check sạch; lint còn đúng 5 warning baseline.
+          </p>
+        </article>
+      </section>
     </main>
   </body>
 </html>

@@ -154,16 +154,8 @@ export function planGroupShift(
   sceneIds: readonly string[],
   deltaSeconds: number,
 ): Result<ReorderPlan, DomainError> {
-  if (sceneIds.length === 0) {
-    return err({ code: ErrorCode.SchemaInvalid, message: "sceneIds must not be empty", field: "sceneIds" });
-  }
-  if (new Set(sceneIds).size !== sceneIds.length) {
-    return err({
-      code: ErrorCode.DuplicateMutationTarget,
-      message: "sceneIds must be unique",
-      field: "sceneIds",
-    });
-  }
+  const selection = validateSceneSelection(sceneIds);
+  if (!selection.ok) return selection;
   if (!Number.isFinite(deltaSeconds)) {
     return err({ code: ErrorCode.TimingInvalid, message: "deltaSeconds must be finite", field: "deltaSeconds" });
   }
@@ -185,6 +177,20 @@ export function planGroupShift(
     ? []
     : selected.map((clip) => ({ sceneId: clip.sceneId, start: clip.start + deltaSeconds }));
   return ok({ changes, rootDuration: rootDuration(clips, changes), noOp: changes.length === 0 });
+}
+
+export function validateSceneSelection(sceneIds: readonly string[]): Result<void, DomainError> {
+  if (sceneIds.length === 0) {
+    return err({ code: ErrorCode.SchemaInvalid, message: "sceneIds must not be empty", field: "sceneIds" });
+  }
+  if (new Set(sceneIds).size !== sceneIds.length) {
+    return err({
+      code: ErrorCode.DuplicateMutationTarget,
+      message: "sceneIds must be unique",
+      field: "sceneIds",
+    });
+  }
+  return ok(undefined);
 }
 
 export function planSceneInsertion(

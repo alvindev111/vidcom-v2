@@ -18,7 +18,9 @@ import {
   createScene,
   DEFAULT_PREVIEW_SETTINGS,
   deleteScene,
+  deleteScenes,
   prepareFileDeletion,
+  prepareDeleteScenes,
   prepareSceneDeletion,
   ProjectIdentityService,
   reconcileCompositeMutation,
@@ -32,6 +34,7 @@ import {
   type AbsolutePath,
   type PendingToolAudit,
   type ProjectRef,
+  type MutationReceipt,
   type WorkspacePort,
 } from "@vidcom/core";
 import {
@@ -631,5 +634,97 @@ describe("Phase J use cases with real SQLite and filesystem", () => {
       backupId: "backup_scene_delete",
     }, "cli-external")).resolves.toMatchObject({ ok: false, error: { code: "write_conflict" } });
     expect(dbAll(database, "PRAGMA foreign_key_check")).toEqual([]);
+  });
+
+  it("deletes multiple scenes through one revision, backup and history receipt", async () => {
+    const twoScenes = `<!doctype html><html><body>
+<main data-hf-id="root" data-composition-id="root" data-width="1920" data-height="1080" data-duration="8">
+  <div data-hf-id="scene-1-host" data-composition-id="scene-1" data-composition-src="compositions/scene-1.html" data-start="0" data-duration="4" data-track-index="1"></div>
+  <div data-hf-id="scene-2-host" data-composition-id="scene-2" data-composition-src="compositions/scene-2.html" data-start="4" data-duration="4" data-track-index="1"></div>
+</main></body></html>`;
+    await writeFile(path.join(projectRoot, "index.html"), twoScenes);
+    await writeFile(path.join(projectRoot, "compositions/scene-2.html"), sceneSource.replaceAll("scene-1", "scene-2"));
+    await writeFile(path.join(projectRoot, "narration/scene-2.json"), `${JSON.stringify({
+      sceneId: "scene-2", text: "Scene two", voice: "af_heart", status: "generated",
+      audioPath: "narration/scene-2.wav", command: "tts", revision: 1, updatedAt: now, staleSince: null,
+    }, null, 2)}\n`);
+    await writeFile(path.join(projectRoot, "narration/scene-2.wav"), new Uint8Array([82, 73, 70, 70, 2]));
+    const settings = serializePreviewSettings({
+      ...DEFAULT_PREVIEW_SETTINGS,
+      scenes: {
+        "scene-1": { transitionSound: "minimal", revealSound: "ping", hidden: false },
+        "scene-2": { transitionSound: "gong", revealSound: "pop", hidden: false },
+      },
+    });
+    await writeFile(path.join(projectRoot, "preview-settings.json"), settings);
+    dbRun(database, `UPDATE entity_state SET content_hash = ?
+      WHERE project_id = ? AND entity = 'preview-settings'`, hashContent(settings), projectId);
+
+    const prepared = await prepareDeleteScenes({ workspace, composition, journal, hashContent }, {
+      projectId,
+      sceneIds: ["scene-2", "scene-1"],
+      expectedRevision: 0,
+    });
+    if (!prepared.ok) throw new Error(prepared.error.message);
+    const approvals = new ApprovalService({
+      grants: new SqliteApprovalGrantStore(database),
+      clock,
+      ids: { newId: () => "grant_scenes_delete" },
+    });
+    await approvals.request(prepared.value.binding, "Delete scene group");
+    await expect(approvals.issue("grant_scenes_delete", "cli")).resolves.toMatchObject({ ok: true });
+
+    const receipts: MutationReceipt[] = [];
+    const observedAuthority = new WriteAuthority({
+      workspace,
+      journal,
+      compositeJournal: journal,
+      lease,
+      leaseId,
+      hashContent,
+      invalidate() {},
+      notifyEvents() {},
+      backups,
+      clock,
+      observer: {
+        claimHistoryOperation: () => ({ ok: true }),
+        abortHistoryOperation() {},
+        blockHistoryOperation() {},
+        emit(receipt) { receipts.push(receipt); return { ok: true }; },
+        observeExternalChange() {},
+        invalidateProject() {},
+      },
+    });
+    const deleted = await deleteScenes({
+      workspace,
+      composition,
+      journal,
+      authority: observedAuthority,
+      clock,
+      hashContent,
+    }, {
+      projectId,
+      sceneIds: ["scene-2", "scene-1"],
+      expectedRevision: 0,
+      grantId: "grant_scenes_delete",
+    }, "user", {
+      origin: { kind: "ui", sessionId: "studio-group", label: "Delete 2 scenes", historyAction: "record", historyOperation: null },
+      toolAudit: null,
+    });
+
+    expect(deleted).toMatchObject({
+      ok: true,
+      value: { project: { duration: 0, sceneCount: 0, revision: 1 }, backupId: "backup_scene_delete" },
+    });
+    expect(dbOne(database, "SELECT COUNT(*) AS count FROM revision")).toEqual({ count: 1 });
+    expect(receipts).toHaveLength(1);
+    expect(receipts[0]).toMatchObject({
+      id: "journal:1",
+      projectRevision: 1,
+      origin: { sessionId: "studio-group", label: "Delete 2 scenes" },
+    });
+    expect(await missing(path.join(projectRoot, "compositions/scene-1.html"))).toBe(true);
+    expect(await missing(path.join(projectRoot, "compositions/scene-2.html"))).toBe(true);
+    expect(await backups.verify("backup_scene_delete")).toBe(true);
   });
 });
