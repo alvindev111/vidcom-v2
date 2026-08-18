@@ -35,6 +35,7 @@ import {
   type PreparedSceneDeletion,
 } from "@/lib/studio/scene-order-mutation";
 import type { RootTrack, Scene } from "@/lib/studio/types";
+import type { TimelineThumbnailViewport } from "@/lib/studio/timeline-thumbnail-layout";
 import { cn } from "@/lib/utils";
 import { Playhead, useLiveScenes, useTimeStore } from "./player-time";
 import { TIMELINE_GUTTER_PX, ZOOM_LEVELS } from "./timeline-constants";
@@ -89,7 +90,12 @@ export function Timeline({
   const timeStore = useTimeStore();
   const [zoom, setZoom] = React.useState(1);
   const [laneWidth, setLaneWidth] = React.useState(0);
+  const [thumbnailViewport, setThumbnailViewport] = React.useState<TimelineThumbnailViewport>({
+    startPx: 0,
+    widthPx: 0,
+  });
   const viewport = React.useRef<HTMLDivElement>(null);
+  const viewportFrame = React.useRef<number | null>(null);
   const marqueeSurface = React.useRef<HTMLDivElement>(null);
 
   // Collapsed by default so the timeline still reads as a list of beats, with
@@ -115,12 +121,30 @@ export function Timeline({
     const element = viewport.current;
     if (!element) return;
 
-    const measure = () => setLaneWidth(element.clientWidth - TIMELINE_GUTTER_PX);
+    const measure = () => {
+      const widthPx = Math.max(0, element.clientWidth - TIMELINE_GUTTER_PX);
+      setLaneWidth(widthPx);
+      setThumbnailViewport((current) => current.startPx === element.scrollLeft && current.widthPx === widthPx
+        ? current
+        : { startPx: element.scrollLeft, widthPx });
+    };
+    const scheduleMeasure = () => {
+      if (viewportFrame.current !== null) return;
+      viewportFrame.current = requestAnimationFrame(() => {
+        viewportFrame.current = null;
+        measure();
+      });
+    };
     measure();
 
-    const observer = new ResizeObserver(measure);
+    element.addEventListener("scroll", scheduleMeasure, { passive: true });
+    const observer = new ResizeObserver(scheduleMeasure);
     observer.observe(element);
-    return () => observer.disconnect();
+    return () => {
+      observer.disconnect();
+      element.removeEventListener("scroll", scheduleMeasure);
+      if (viewportFrame.current !== null) cancelAnimationFrame(viewportFrame.current);
+    };
   }, []);
 
   const ordered = React.useMemo(() => orderedScenes(scenes), [scenes]);
@@ -571,9 +595,11 @@ export function Timeline({
               return (
               <React.Fragment key={scene.id}>
                 <TimelineLane
+                  projectId={projectId}
                   scene={displayScene}
                   index={index}
                   pixelsPerSecond={pixelsPerSecond}
+                  thumbnailViewport={thumbnailViewport}
                   selected={isSelected}
                   live={liveScenes.has(scene.id)}
                   hidden={sceneSettings(settings, scene.id).hidden}

@@ -2084,6 +2084,15 @@
             và drag hiện có. Mỗi batch visible có AbortController riêng, nên scroll, zoom hoặc unmount đều hủy request cũ;
             zoom sinh mốc mới thay vì scale bitmap.
           </p>
+          <p class="text-slate-400 text-sm">
+            P7.4 PASS. Helper thuần áp đúng ceil(width/80), mốc tâm local và chỉ chọn cell giao cửa sổ
+            viewport mở rộng một viewport mỗi phía; fixture clip 8.000 px render 31 thay vì 100 cell. Strip memoized
+            giữ placeholder có hình học ổn định, chỉ thay cell ready bằng WebP immutable và chia batch hiếm khi quá rộng
+            theo giới hạn 256 của route. Scroll/resize passive được throttle bằng requestAnimationFrame; thay tập mốc,
+            zoom hoặc unmount abort batch cũ. Thumbnail là lớp pointer-events-none trong đúng clip button cũ nên input số,
+            chọn, trim và drag không bị thay thế. RED thiếu module; focused 4/4 và toàn frontend node 118/118 xanh;
+            typecheck, boundaries, build, lint 0 lỗi/5 warning baseline và diff-check đều PASS.
+          </p>
         </article>
       </section>
     </main>

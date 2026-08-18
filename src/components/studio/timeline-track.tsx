@@ -14,8 +14,10 @@ import type { DragZone } from "@/lib/studio/editor-interaction";
 import { hitZone } from "@/lib/studio/snap";
 import { groupOf } from "@/lib/studio/snapshots";
 import type { RootTrack, Scene } from "@/lib/studio/types";
+import type { TimelineThumbnailViewport } from "@/lib/studio/timeline-thumbnail-layout";
 import { cn } from "@/lib/utils";
 import { TIMELINE_GUTTER_STYLE } from "./timeline-constants";
+import { TimelineThumbnailStrip } from "./timeline-thumbnails";
 
 const GROUP_STYLE: Record<string, string> = {
   scene: "bg-studio-accent/25 border-studio-accent/50",
@@ -98,9 +100,11 @@ export const TimelineRootLane = React.memo(function TimelineRootLane({
  * of all of them.
  */
 export const TimelineLane = React.memo(function TimelineLane({
+  projectId,
   scene,
   index,
   pixelsPerSecond,
+  thumbnailViewport,
   selected,
   live,
   hidden,
@@ -119,10 +123,12 @@ export const TimelineLane = React.memo(function TimelineLane({
   onReorderDragEnd,
   onReorderKeyDown,
 }: {
+  projectId: string;
   scene: Scene;
   /** Position in the storyboard, 1-based. */
   index: number;
   pixelsPerSecond: number;
+  thumbnailViewport: TimelineThumbnailViewport;
   selected: boolean;
   live: boolean;
   hidden: boolean;
@@ -271,7 +277,13 @@ export const TimelineLane = React.memo(function TimelineLane({
             width: Math.max(scene.duration * pixelsPerSecond, 6),
           }}
         >
-          <span className="text-foreground/85 truncate font-mono text-[10px]">
+          <TimelineThumbnailStrip
+            projectId={projectId}
+            scene={scene}
+            pixelsPerSecond={pixelsPerSecond}
+            viewport={thumbnailViewport}
+          />
+          <span className="text-foreground/85 relative z-10 truncate rounded-sm bg-black/35 px-1 font-mono text-[10px]">
             {scene.duration}s
           </span>
         </button>
