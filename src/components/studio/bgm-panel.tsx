@@ -24,6 +24,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { apiUrl, fetchApi } from "@/lib/api/services";
+import { mutationChangeSeq, type ProjectChanged } from "@/lib/studio/preview-reload";
 import type { FileNode } from "@/lib/studio/types";
 import { useStudioSession } from "./studio-session-context";
 
@@ -329,7 +330,7 @@ export function BgmPanel({
   revision: number;
   /** The project file tree, so an importable audio file is picked rather than typed. */
   tree: FileNode[];
-  onProjectChanged: () => void;
+  onProjectChanged: ProjectChanged;
 }) {
   const studio = useStudioSession();
   const [sources, setSources] = React.useState<BgmSources | null>(null);
@@ -452,11 +453,15 @@ export function BgmPanel({
         headers: { "content-type": "application/json" },
         body: JSON.stringify(body),
       }));
+      const payload = (await response.json().catch(() => null)) as {
+        changeSeq?: number | null;
+        error?: { message?: string } | string;
+      } | null;
       if (!response.ok) {
-        setError(errorMessage(await response.json().catch(() => null), response.status));
+        setError(errorMessage(payload, response.status));
         return;
       }
-      onProjectChanged();
+      onProjectChanged(mutationChangeSeq(payload));
       await load();
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "install failed");

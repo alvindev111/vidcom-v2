@@ -47,6 +47,8 @@ function fixture() {
   const assets = new Map<string, Uint8Array>([
     ["assets/pixel.png", new Uint8Array([1, 2, 3, 4])],
   ]);
+  let projectRevision = 3;
+  let changeSeq = 8;
   const project = {
     id,
     slug: "alpha",
@@ -104,13 +106,13 @@ function fixture() {
         _settings: typeof DEFAULT_PREVIEW_SETTINGS,
         options: CompositionDocumentOptions,
       ) {
-        return `<html data-mode="${options.mode}" data-revision="${options.mode === "preview" ? options.projectRevision : ""}" data-seq="${options.mode === "preview" ? options.changeSeq : ""}" data-runtime="${options.runtimeUrl}" data-files="${options.fileBaseUrl}"></html>`;
+        return `<html data-mode="${options.mode}" data-revision="${options.mode === "preview" ? options.projectRevision : ""}" data-seq="${options.mode === "preview" ? options.changeSeq : ""}" data-runtime="${options.runtimeUrl}" data-files="${options.fileBaseUrl}">${files.get("index.html")}</html>`;
       },
       async applyOps() { return ok("unused"); },
     },
     journal: {
       async begin() { return 1 as never; }, async commit() { return 1; }, async abort() {},
-      async listPending() { return []; }, async latestRevision() { return 3; }, async latestSourceRevision() { return 3; },
+      async listPending() { return []; }, async latestRevision() { return projectRevision; }, async latestSourceRevision() { return projectRevision; },
       async readRevisionRollbackPayload() {
         return { ok: false as const, error: { code: ErrorCode.NotFound, message: "unused" } };
       },
@@ -121,7 +123,7 @@ function fixture() {
       async beginBootstrap() { return 1 as never; }, async recover() { return 1; }, async orphan() {},
       async readProjectRecoveryStatus() { return { writeStatus: "ready" as const, unresolved: [] }; },
     },
-    events: { async latestProjectSeq() { return 8; } },
+    events: { async latestProjectSeq() { return changeSeq; } },
     runtimeSource: () => "globalThis.Hyperframes = {};",
     mimeFromPath,
   };
@@ -146,7 +148,12 @@ function fixture() {
     });
     return response.headers.get("set-cookie")!.split(";", 1)[0]!;
   };
-  return { request, authenticate };
+  const mutatePreview = (content: string, revision: number, sequence: number) => {
+    files.set("index.html", content);
+    projectRevision = revision;
+    changeSeq = sequence;
+  };
+  return { request, authenticate, mutatePreview };
 }
 
 describe("project read routing contracts", () => {
@@ -197,6 +204,24 @@ describe("project read routing contracts", () => {
     expect(legacy.headers.get("x-vidcom-project-revision")).toBe("3");
     expect(legacy.headers.get("x-vidcom-change-seq")).toBe("8");
     expect(legacy.status).toBe(200);
+  });
+
+  it("returns fresh content and identity for the identical no-store preview URL", async () => {
+    const { request, authenticate, mutatePreview } = fixture();
+    const cookie = await authenticate();
+    const url = `/api/v1/projects/${id}/preview`;
+    const first = await request(url, { headers: { Cookie: cookie } });
+    const firstBody = await first.text();
+
+    mutatePreview('<main data-composition-id="root" data-duration="4">new body</main>', 4, 9);
+    const second = await request(url, { headers: { Cookie: cookie } });
+    const secondBody = await second.text();
+
+    expect(secondBody).not.toBe(firstBody);
+    expect(secondBody).toContain("new body");
+    expect(secondBody).toContain('data-revision="4" data-seq="9"');
+    expect(second.headers.get("cache-control")).toBe("no-store");
+    expect(second.headers.get("x-vidcom-change-seq")).toBe("9");
   });
 
   it("locks asset MIME, bytes, cache and legacy range behavior", async () => {

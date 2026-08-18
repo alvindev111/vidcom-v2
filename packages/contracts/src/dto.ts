@@ -511,6 +511,7 @@ export const PutProjectFileResponseSchema = z.strictObject({
   file: ProjectFileSchema,
   revision: z.number().int().nonnegative(),
   diagnostics: z.array(DiagnosticSchema),
+  changeSeq: z.number().int().nonnegative().nullable(),
 });
 
 export const WriteConflictResponseSchema = ErrorResponseSchema.extend({
@@ -529,6 +530,7 @@ export const PatchPreviewSettingsResponseSchema = z.strictObject({
   previewSettings: PreviewSettingsSchema,
   revision: z.number().int().nonnegative(),
   diagnostics: z.array(DiagnosticSchema),
+  changeSeq: z.number().int().nonnegative().nullable(),
 });
 
 /** Job states after which no further handler execution may settle the job. */
@@ -614,10 +616,12 @@ export const LegacySceneMutationRequestSchema = z.discriminatedUnion("action", [
 export const LegacyTtsResponseSchema = z.strictObject({
   ok: z.literal(true),
   narration: SceneSchema.shape.narration.unwrap(),
+  changeSeq: z.number().int().nonnegative().nullable(),
 });
 export const LegacyGenerateResponseSchema = z.strictObject({
   ok: z.literal(true),
   sceneId: identifierSchema,
+  changeSeq: z.number().int().nonnegative().nullable(),
   transcript: z.array(
     z.strictObject({
       kind: z.enum(["command", "output", "muted", "accent"]),

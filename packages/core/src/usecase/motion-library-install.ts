@@ -44,6 +44,7 @@ export interface MotionLibraryInstallOutput {
   };
   files: Array<{ path: RelPath; contentHash: ContentHash | null }>;
   revision: number | null;
+  changeSeq: number | null;
 }
 
 interface VendoredFile {
@@ -124,6 +125,7 @@ export async function installMotionLibrary(
       library: describe(library),
       files: vendored.map(({ path, currentHash }) => ({ path, contentHash: currentHash })),
       revision: null,
+      changeSeq: null,
     });
   }
 
@@ -142,5 +144,6 @@ export async function installMotionLibrary(
       contentHash: written.value.fileHashes[path] ?? currentHash,
     })),
     revision: written.value.projectRevision,
+    changeSeq: written.value.changeSeq,
   });
 }

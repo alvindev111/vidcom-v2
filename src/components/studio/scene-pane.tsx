@@ -12,6 +12,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { fetchApi } from "@/lib/api/services";
 import { sceneSettings } from "@/lib/studio/preview-settings";
+import { mutationChangeSeq, type ProjectChanged } from "@/lib/studio/preview-reload";
 import type { FileNode, Scene, SceneScriptLine, SourceFile } from "@/lib/studio/types";
 import { MotionLibraryPanel } from "./motion-library-panel";
 import { BgmPanel } from "./bgm-panel";
@@ -62,7 +63,7 @@ export function ScenePane({
   onSeek: (seconds: number) => void;
   onSelectScene: (scene: Scene) => void;
   /** Called after a successful write so the page re-reads the project. */
-  onProjectChanged: () => void;
+  onProjectChanged: ProjectChanged;
 }) {
   const studio = useStudioSession();
   const [pending, setPending] = React.useState(false);
@@ -101,6 +102,7 @@ export function ScenePane({
       }));
       const payload = (await response.json().catch(() => null)) as {
         file?: { path: string; contentHash: string };
+        changeSeq?: number | null;
         error?: { message?: string } | string;
       } | null;
       if (!response.ok) {
@@ -108,7 +110,7 @@ export function ScenePane({
         return;
       }
       if (payload?.file) hashes.current.set(payload.file.path, payload.file.contentHash);
-      onProjectChanged();
+      onProjectChanged(mutationChangeSeq(payload));
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "save failed");
     } finally {

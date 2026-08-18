@@ -225,12 +225,19 @@ function setup(options: {
         const content = `${JSON.stringify(settings, null, 2)}\n`;
         files.set("preview-settings.json", content);
         entityState = { ...entityState, revision: entityState.revision + 1, contentHash: hash(content) };
-        return ok({ path: null, contentHash: hash(content), revision: entityState.revision, diagnostics: [], previewSettings: settings });
+        return ok({
+          path: null,
+          contentHash: hash(content),
+          revision: entityState.revision,
+          diagnostics: [],
+          changeSeq: revision,
+          previewSettings: settings,
+        });
       }
       const content = request.content;
       if (typeof content === "string") files.set(request.path, content);
       else binaries.set(request.path, content);
-      return ok({ path: request.path, contentHash: hash(content), revision, diagnostics: [] });
+      return ok({ path: request.path, contentHash: hash(content), revision, diagnostics: [], changeSeq: revision });
   }
   const authority = {
     mutateSource,
@@ -239,7 +246,14 @@ function setup(options: {
       const settings = mergePreviewSettings(DEFAULT_PREVIEW_SETTINGS, {
         bgm: { enabled: true, track: { name: request.name, path: request.path } },
       });
-      return ok({ path: null, contentHash: hash(JSON.stringify(settings)), revision: 2, diagnostics: [], previewSettings: settings });
+      return ok({
+        path: null,
+        contentHash: hash(JSON.stringify(settings)),
+        revision: 2,
+        diagnostics: [],
+        changeSeq: 2,
+        previewSettings: settings,
+      });
     },
   };
   const deps: ProjectReadDependencies & ProjectWriteDependencies = {
@@ -484,13 +498,16 @@ describe("project write and legacy use cases without HTTP", () => {
   it("patches preview settings through the authority", async () => {
     expect(await patchPreviewSettings(setup().deps, {
       projectId, patch: { bgm: { volume: 0.7 } }, expectedRevision: 1,
-    }, "user")).toMatchObject({ ok: true, value: { previewSettings: { bgm: { volume: 0.7 } } } });
+    }, "user")).toMatchObject({
+      ok: true,
+      value: { previewSettings: { bgm: { volume: 0.7 } }, changeSeq: 3 },
+    });
   });
   it("uploads BGM before pointing settings at it", async () => {
     const runtime = setup();
     expect(await uploadBgm(runtime.deps, {
       projectId, name: "track one.mp3", bytes: new Uint8Array([9]), expectedRevision: 1,
-    }, "user")).toMatchObject({ ok: true });
+    }, "user")).toMatchObject({ ok: true, value: { changeSeq: 2 } });
     expect(runtime.mutations).toMatchObject([
       { kind: "composite", path: "preview-assets/bgm/track-one.mp3" },
     ]);
@@ -581,7 +598,14 @@ describe("project write and legacy use cases without HTTP", () => {
   });
   it("regenerates the legacy mock narration through authority", async () => {
     expect(await regenerateNarration(setup().deps, { projectId, sceneId: "scene-1", text: "Hello" }, "user")).toMatchObject({
-      ok: true, value: { status: "mock", revision: 1, updatedAt: "2026-08-01T00:00:00.000Z", staleSince: null },
+      ok: true,
+      value: {
+        status: "mock",
+        revision: 1,
+        updatedAt: "2026-08-01T00:00:00.000Z",
+        staleSince: null,
+        changeSeq: 3,
+      },
     });
   });
   it("creates a scene, entry mount and narration sidecar in one composite", async () => {

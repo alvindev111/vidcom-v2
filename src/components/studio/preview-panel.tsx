@@ -8,6 +8,7 @@ import {
   ResizablePanelGroup,
 } from "@/components/ui/resizable";
 import type { PreviewSettings } from "@/lib/studio/preview-settings";
+import type { ProjectChanged } from "@/lib/studio/preview-reload";
 import type { RootTrack, Scene } from "@/lib/studio/types";
 import { PlaybackBar } from "./playback-bar";
 import { PreviewCanvas } from "./preview-canvas";
@@ -41,7 +42,7 @@ export function PreviewPanel({
   selectedId: string;
   onSelectScene: (scene: Scene) => void;
   onToggleHidden: (scene: Scene) => void;
-  onProjectChanged: () => void;
+  onProjectChanged: ProjectChanged;
 }) {
   return (
     <ResizablePanelGroup orientation="vertical">

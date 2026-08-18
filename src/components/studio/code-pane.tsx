@@ -6,6 +6,7 @@ import {
   ResizablePanelGroup,
 } from "@/components/ui/resizable";
 import type { FileNode, SourceFile } from "@/lib/studio/types";
+import type { ProjectChanged } from "@/lib/studio/preview-reload";
 import { EditorPanel } from "./editor-panel";
 import { FileExplorer } from "./file-explorer";
 import { useSourceFiles } from "./use-source-files";
@@ -24,7 +25,7 @@ export function CodePane({
   /** Files shipped with the page — the entry composition. */
   files: SourceFile[];
   /** Called after a save so the preview rebuilds against the new source. */
-  onProjectChanged: () => void;
+  onProjectChanged: ProjectChanged;
 }) {
   const source = useSourceFiles(projectId, projectSlug, files);
 

@@ -166,6 +166,7 @@ describe("installMotionLibrary", () => {
     if (!result.ok) return;
     expect(result.value.status).toBe("installed");
     expect(result.value.revision).toBe(7);
+    expect(result.value.changeSeq).toBe(1);
     expect(result.value.library.loader).toBe("module");
     expect(result.value.files.map(({ contentHash }) => contentHash)).toEqual([writtenHash, writtenHash]);
     expect(requests).toHaveLength(1);
@@ -193,6 +194,7 @@ describe("installMotionLibrary", () => {
     if (!result.ok) return;
     expect(result.value.status).toBe("already_installed");
     expect(result.value.revision).toBeNull();
+    expect(result.value.changeSeq).toBeNull();
     expect(result.value.files).toEqual([{ path: gsap.entry, contentHash: existingHash }]);
     expect(requests).toHaveLength(0);
     expect(unchanged).toBe(1);

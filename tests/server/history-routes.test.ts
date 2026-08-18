@@ -233,6 +233,7 @@ describe("browser history routes", () => {
     expect(await response.json()).toMatchObject({
       applied: "undo",
       revision: 2,
+      changeSeq: 2,
       state: { canUndo: false, canRedo: true, busy: false, nextRedoLabel: "Edit source" },
     });
     expect(runtime.writes).toHaveLength(1);

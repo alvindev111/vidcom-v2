@@ -7,6 +7,7 @@ import {
   sceneSettings,
   type PreviewSettings,
 } from "@/lib/studio/preview-settings";
+import type { ProjectChanged } from "@/lib/studio/preview-reload";
 import type { RootTrack, Scene } from "@/lib/studio/types";
 import { cn } from "@/lib/utils";
 import { Playhead, useLiveScenes } from "./player-time";
@@ -46,7 +47,7 @@ export function Timeline({
   onScrub: (seconds: number) => void;
   onSelect: (scene: Scene) => void;
   onToggleHidden: (scene: Scene) => void;
-  onProjectChanged: () => void;
+  onProjectChanged: ProjectChanged;
 }) {
   const history = useMutationHistory(projectId, onProjectChanged);
   const [zoom, setZoom] = React.useState(1);

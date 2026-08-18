@@ -3,6 +3,7 @@
 import * as React from "react";
 
 import { fetchApi } from "@/lib/api/services";
+import { mutationChangeSeq, type ProjectChanged } from "@/lib/studio/preview-reload";
 import type { SourceFile } from "@/lib/studio/types";
 import { useStudioSession } from "./studio-session-context";
 
@@ -113,7 +114,7 @@ export function useSourceFiles(projectId: string, _projectSlug: string, seed: So
   }, []);
 
   const save = React.useCallback(
-    async (path: string, onSaved?: () => void) => {
+    async (path: string, onSaved?: ProjectChanged) => {
       const entry = open[path];
       if (!entry || entry.draft === entry.file.code) return;
 
@@ -136,6 +137,7 @@ export function useSourceFiles(projectId: string, _projectSlug: string, seed: So
         }));
         const payload = (await response.json().catch(() => null)) as {
           file?: { path: string; content: string; contentHash: string };
+          changeSeq?: number | null;
           error?: { message?: string };
         } | null;
 
@@ -169,7 +171,7 @@ export function useSourceFiles(projectId: string, _projectSlug: string, seed: So
           ...current,
           [path]: { file: saved, draft: saved.code, saving: false, error: null },
         }));
-        onSaved?.();
+        onSaved?.(mutationChangeSeq(payload));
       } catch (cause) {
         setOpen((current) => {
           const item = current[path];

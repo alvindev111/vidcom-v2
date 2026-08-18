@@ -139,6 +139,7 @@ export function createProjectWriteRoutes(
       file: { ...saved.file, content: parsed.data.content },
       revision: saved.envelope.projectRevision,
       diagnostics: saved.envelope.diagnostics,
+      changeSeq: saved.envelope.changeSeq,
     });
   });
   routes.patch("/v1/projects/:id/preview-settings", async (c) => {
@@ -254,7 +255,12 @@ export function createProjectWriteRoutes(
       projectId: id, sceneId: c.req.param("sceneId"), ...parsed.data,
     }, "user", studioWriteInvocation(studio, c, id, "Edit scene timing")));
     const file = valueOf(await readSourceFile(dependencies.reads, id, "index.html" as RelPath));
-    return c.json({ file, revision: timed.envelope.projectRevision, diagnostics: timed.envelope.diagnostics });
+    return c.json({
+      file,
+      revision: timed.envelope.projectRevision,
+      diagnostics: timed.envelope.diagnostics,
+      changeSeq: timed.envelope.changeSeq,
+    });
   });
   routes.patch("/v1/projects/:id/scenes/:sceneId/script", async (c) => {
     const parsed = PatchSceneScriptRequestSchema.safeParse(await json(c));
@@ -264,16 +270,23 @@ export function createProjectWriteRoutes(
       projectId: id, sceneId: c.req.param("sceneId"), ...parsed.data, file: parsed.data.file as RelPath,
     }, "user", studioWriteInvocation(studio, c, id, "Edit scene script")));
     const file = valueOf(await readSourceFile(dependencies.reads, id, parsed.data.file as RelPath));
-    return c.json({ file, revision: scripted.envelope.projectRevision, diagnostics: scripted.envelope.diagnostics });
+    return c.json({
+      file,
+      revision: scripted.envelope.projectRevision,
+      diagnostics: scripted.envelope.diagnostics,
+      changeSeq: scripted.envelope.changeSeq,
+    });
   });
   routes.patch("/hf/:slug/scene", async (c) => {
     const parsed = LegacySceneMutationRequestSchema.safeParse(await json(c));
     if (!parsed.success) fail({ code: ErrorCode.SchemaInvalid, message: "legacy scene payload is invalid" });
     const id = valueOf(await resolveProjectIdBySlug(dependencies.reads, c.req.param("slug")));
     if (parsed.data.action === "tts") {
-      return c.json({ ok: true, narration: valueOf(await regenerateNarration(dependencies, {
+      const narration = valueOf(await regenerateNarration(dependencies, {
         projectId: id, sceneId: parsed.data.sceneId, text: parsed.data.text,
-      }, "user", studioWriteInvocation(studio, c, id, "Regenerate narration"))) });
+      }, "user", studioWriteInvocation(studio, c, id, "Regenerate narration")));
+      const { changeSeq, ...record } = narration;
+      return c.json({ ok: true, narration: record, changeSeq });
     }
     const prompt = parsed.data.prompt.trim();
     if (!prompt) fail({ code: ErrorCode.SchemaInvalid, message: "prompt is empty", field: "prompt" });
@@ -286,6 +299,7 @@ export function createProjectWriteRoutes(
     return c.json({
       ok: true,
       sceneId: result.scene.id,
+      changeSeq: result.envelope.changeSeq,
       transcript: transcript(c.req.param("slug"), prompt, {
         sceneId: result.scene.id,
         start: result.scene.start,

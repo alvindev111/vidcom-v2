@@ -119,6 +119,7 @@ export async function patchPreviewSettings(
         previewSettings: written.value.previewSettings!,
         revision: written.value.revision,
         diagnostics: written.value.diagnostics,
+        changeSeq: written.value.changeSeq ?? null,
       })
     : written;
 }
@@ -149,7 +150,12 @@ export async function uploadBgm(
     expectedRevision: input.expectedRevision,
   }, actor, invocation);
   return written.ok
-    ? ok({ previewSettings: written.value.previewSettings!, revision: written.value.revision, diagnostics: written.value.diagnostics })
+    ? ok({
+        previewSettings: written.value.previewSettings!,
+        revision: written.value.revision,
+        diagnostics: written.value.diagnostics,
+        changeSeq: written.value.changeSeq ?? null,
+      })
     : written;
 }
 
@@ -410,6 +416,7 @@ export interface NarrationRecord {
   revision: number;
   updatedAt: string;
   staleSince: string | null;
+  changeSeq: number | null;
 }
 
 interface NarrationSidecarV2 {
@@ -524,7 +531,7 @@ export async function regenerateNarration(
   const nextCues = current
     ? cues.map((candidate) => candidate.cueId === cueId ? cue : candidate)
     : [...cues, cue];
-  const narration: NarrationRecord = {
+  const narration: Omit<NarrationRecord, "changeSeq"> = {
     sceneId: input.sceneId,
     text: input.text,
     voice,
@@ -547,7 +554,7 @@ export async function regenerateNarration(
     ),
     expectedContentHash: previous?.contentHash ?? null,
   }, actor, invocation);
-  return written.ok ? ok(narration) : written;
+  return written.ok ? ok({ ...narration, changeSeq: written.value.changeSeq ?? null }) : written;
 }
 
 function sceneSource(

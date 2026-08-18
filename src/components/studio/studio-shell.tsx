@@ -8,6 +8,7 @@ import {
   ResizablePanelGroup,
 } from "@/components/ui/resizable";
 import { sceneSettings, type PreviewSettings } from "@/lib/studio/preview-settings";
+import { previewReloadRequest, type ProjectChanged } from "@/lib/studio/preview-reload";
 import { orderedScenes } from "@/lib/studio/scene-order";
 import type { FileNode, RootTrack, Scene, SourceFile } from "@/lib/studio/types";
 import { PlayerTimeProvider } from "./player-time";
@@ -43,31 +44,29 @@ export function StudioShell({
   previewSettingsRevision: number;
   onRefresh: () => Promise<void>;
 }) {
-  // Bumped after a scene edit: it changes the player's src, which remounts the
-  // player against the rewritten composition instead of the stale iframe.
-  const [revision, setRevision] = React.useState(0);
-
   // The player lives here, not in the preview pane: the Scene tab on the left
   // seeks it too, and both sides need the same currentTime.
-  const { containerRef, state, controls, timeStore } = useHyperframesPlayer(
+  const { containerRef, state, controls, timeStore, requestReload } = useHyperframesPlayer(
     projectId,
-    revision === 0 ? previewUrl : `${previewUrl}?r=${revision}`,
+    previewUrl,
   );
   const duration = state.duration || authoredDuration || 0;
 
   // A source edit changes what the scenes *are*, so the page has to be re-read.
-  const handleProjectChanged = React.useCallback(() => {
-    setRevision((current) => current + 1);
+  const handleProjectChanged = React.useCallback<ProjectChanged>((changeSeq) => {
+    const reload = previewReloadRequest(previewUrl, changeSeq);
+    if (reload) void requestReload(reload);
     void onRefresh();
-  }, [onRefresh]);
+  }, [onRefresh, previewUrl, requestReload]);
 
   // A preview-settings edit does not: the values are baked into the preview
   // document, so the player has to reload, but the scenes, the file tree and
   // the root track on the server are untouched. Refreshing them too meant a
   // full re-parse of the project behind every colour change.
-  const rebuildPreview = React.useCallback(() => {
-    setRevision((current) => current + 1);
-  }, []);
+  const rebuildPreview = React.useCallback<ProjectChanged>((changeSeq) => {
+    const reload = previewReloadRequest(previewUrl, changeSeq);
+    if (reload) void requestReload(reload);
+  }, [previewUrl, requestReload]);
 
   const preview = usePreviewSettings(
     projectId,

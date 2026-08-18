@@ -6,7 +6,7 @@ import {
   createHyperframesPlayerEnvironment,
   type HyperframesPlayerElement,
 } from "./hyperframes-player-environment";
-import { PlayerHost } from "./player-host";
+import { PlayerHost, type PlayerHostMountResult } from "./player-host";
 import { createTimeStore, type TimeStore } from "./player-time";
 import type { PreviewReloadResult } from "./preview-buffer";
 
@@ -42,6 +42,7 @@ const INITIAL: PlayerState = {
 export function useHyperframesPlayer(projectId: string, previewUrl: string) {
   const containerRef = React.useRef<HTMLDivElement | null>(null);
   const hostRef = React.useRef<PlayerHost<HyperframesPlayerElement> | null>(null);
+  const mountPromiseRef = React.useRef<Promise<PlayerHostMountResult> | null>(null);
   const mountedUrlRef = React.useRef<string | null>(null);
   const visibleChangeSeqRef = React.useRef(0);
   const desiredChangeSeqRef = React.useRef(0);
@@ -60,6 +61,11 @@ export function useHyperframesPlayer(projectId: string, previewUrl: string) {
     const host = hostRef.current;
     if (!host) return { kind: "disposed" };
     desiredChangeSeqRef.current = Math.max(desiredChangeSeqRef.current, input.targetChangeSeq);
+    const mounting = mountPromiseRef.current;
+    if (mounting) {
+      const mounted = await mounting;
+      if (hostRef.current !== host || mounted.kind !== "mounted") return { kind: "disposed" };
+    }
     const result = await host.requestReload(input);
     if (hostRef.current !== host) return { kind: "disposed" };
     if (result.kind === "swapped") {
@@ -115,7 +121,9 @@ export function useHyperframesPlayer(projectId: string, previewUrl: string) {
       hostRef.current = host;
       container.dataset.playerHostId = host.id;
       const mountedUrl = previewUrlRef.current;
-      const result = await host.mount(mountedUrl);
+      const mountPromise = host.mount(mountedUrl);
+      mountPromiseRef.current = mountPromise;
+      const result = await mountPromise;
       if (disposed || hostRef.current !== host) return;
       if (result.kind === "rejected") {
         setState((current) => ({ ...current, ready: false, error: result.reason }));
@@ -125,13 +133,6 @@ export function useHyperframesPlayer(projectId: string, previewUrl: string) {
       mountedUrlRef.current = mountedUrl;
       visibleChangeSeqRef.current = result.visibleChangeSeq;
       desiredChangeSeqRef.current = result.visibleChangeSeq;
-
-      // A new URL may arrive while the initial engine is still preflighting.
-      if (previewUrlRef.current !== mountedUrl) {
-        const targetChangeSeq = desiredChangeSeqRef.current + 1;
-        desiredChangeSeqRef.current = targetChangeSeq;
-        await requestReload({ url: previewUrlRef.current, targetChangeSeq });
-      }
     };
 
     void mount();
@@ -139,23 +140,13 @@ export function useHyperframesPlayer(projectId: string, previewUrl: string) {
       disposed = true;
       host?.dispose();
       if (hostRef.current === host) hostRef.current = null;
+      if (hostRef.current === null) mountPromiseRef.current = null;
       if (hostContainer && host && hostContainer.dataset.playerHostId === host.id) {
         delete hostContainer.dataset.playerHostId;
       }
       mountedUrlRef.current = null;
     };
   }, [projectId, requestReload, timeStore]);
-
-  // Compatibility bridge until 4.4 supplies exact mutation changeSeq values:
-  // URL changes still use the same host and go through latest-wins buffering.
-  React.useEffect(() => {
-    if (!hostRef.current || mountedUrlRef.current === null || mountedUrlRef.current === previewUrl) return;
-    const targetChangeSeq = Math.max(
-      desiredChangeSeqRef.current,
-      visibleChangeSeqRef.current,
-    ) + 1;
-    void requestReload({ url: previewUrl, targetChangeSeq });
-  }, [previewUrl, requestReload]);
 
   const controls = React.useMemo<PlayerControls>(
     () => ({

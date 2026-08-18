@@ -18,6 +18,7 @@ import {
   writeAgentTerminal,
   type StartedAgentTerminal,
 } from "@/lib/studio/agent-terminal-client";
+import { mutationChangeSeq, type ProjectChanged } from "@/lib/studio/preview-reload";
 import type { AgentId, TerminalLine } from "@/lib/studio/types";
 import { useStudioSession } from "./studio-session-context";
 
@@ -46,7 +47,7 @@ export function AiComposerPanel({
 }: {
   projectId: string;
   projectSlug: string;
-  onProjectChanged: () => void;
+  onProjectChanged: ProjectChanged;
 }) {
   const studio = useStudioSession();
   const [agent, setAgent] = React.useState<AgentId>("codex");
@@ -192,6 +193,7 @@ export function AiComposerPanel({
       }));
       const payload = (await response.json().catch(() => null)) as {
         transcript?: TerminalLine[];
+        changeSeq?: number | null;
         error?: string;
       } | null;
 
@@ -203,7 +205,7 @@ export function AiComposerPanel({
         terminal.current?.write(`\x1b[90m${line.text}\x1b[0m\r\n`);
       }
       setPrompt("");
-      onProjectChanged();
+      onProjectChanged(mutationChangeSeq(payload));
     } finally {
       setPending(false);
     }

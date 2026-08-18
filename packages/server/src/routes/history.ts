@@ -71,6 +71,7 @@ export function createHistoryRoutes(
       return c.json({
         applied: direction,
         revision: applied.value.envelope.projectRevision,
+        changeSeq: applied.value.envelope.changeSeq,
         state: dependencies.history.state(attached.studioSessionId, id),
       });
     } finally {

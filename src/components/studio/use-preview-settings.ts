@@ -10,6 +10,7 @@ import {
   type PreviewSettingsPatch,
   type SceneSettings,
 } from "@/lib/studio/preview-settings";
+import { mutationChangeSeq, type ProjectChanged } from "@/lib/studio/preview-reload";
 import { useStudioSession } from "./studio-session-context";
 
 /**
@@ -24,7 +25,7 @@ export function usePreviewSettings(
   projectId: string,
   initial: PreviewSettings,
   initialRevision: number,
-  onSaved: () => void,
+  onSaved: ProjectChanged,
 ) {
   const studio = useStudioSession();
   const [settings, setSettings] = React.useState(initial);
@@ -78,6 +79,7 @@ export function usePreviewSettings(
           error?: { message?: string };
           previewSettings?: PreviewSettings;
           revision?: number;
+          changeSeq?: number | null;
         } | null;
 
         if (!response.ok) {
@@ -88,7 +90,7 @@ export function usePreviewSettings(
         if (payload?.revision !== undefined) revision.current = payload.revision;
         // The preview document is built with these values baked in, so it has
         // to be rebuilt for the change to show.
-        onSaved();
+        onSaved(mutationChangeSeq(payload));
       } catch (cause) {
         setError(cause instanceof Error ? cause.message : "save failed");
       } finally {

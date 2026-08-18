@@ -5,6 +5,7 @@ import * as React from "react";
 import { fetchApi } from "@/lib/api/services";
 import type { BrowserHistoryState, HistoryDirection } from "@/lib/studio/history-controls";
 import { historyPath } from "@/lib/studio/studio-session";
+import { mutationChangeSeq, type ProjectChanged } from "@/lib/studio/preview-reload";
 import { useStudioSession } from "./studio-session-context";
 
 const EMPTY_HISTORY: BrowserHistoryState = {
@@ -28,7 +29,7 @@ async function payload<Value>(response: Response): Promise<Value> {
   return body as Value;
 }
 
-export function useMutationHistory(projectId: string, onProjectChanged: () => void) {
+export function useMutationHistory(projectId: string, onProjectChanged: ProjectChanged) {
   const studio = useStudioSession();
   const [state, setState] = React.useState<BrowserHistoryState>(EMPTY_HISTORY);
   const [error, setError] = React.useState<string | null>(null);
@@ -56,9 +57,9 @@ export function useMutationHistory(projectId: string, onProjectChanged: () => vo
         historyPath(projectId, direction),
         studio.request({ method: "POST" }),
       );
-      const result = await payload<{ state: BrowserHistoryState }>(response);
+      const result = await payload<{ state: BrowserHistoryState; changeSeq: number | null }>(response);
       setState(result.state);
-      onProjectChanged();
+      onProjectChanged(mutationChangeSeq(result));
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : `Could not ${direction}.`);
       await load().catch(() => setState((current) => ({ ...current, busy: false })));

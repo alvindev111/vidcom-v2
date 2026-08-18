@@ -250,7 +250,7 @@ describe("API response contracts", () => {
   });
 
   it("locks every JSON success response shape", () => {
-    const mutation = { previewSettings, revision: 4, diagnostics };
+    const mutation = { previewSettings, revision: 4, diagnostics, changeSeq: 9 };
     const narration = {
       sceneId: "scene-1",
       text: "Hello",
@@ -282,13 +282,14 @@ describe("API response contracts", () => {
       }),
     ).toMatchObject({ project, revision: 3, diagnostics });
     expect(ReadProjectFileResponseSchema.parse({ file })).toEqual({ file });
-    expect(PutProjectFileResponseSchema.parse({ file, revision: 4, diagnostics })).toEqual({
+    expect(PutProjectFileResponseSchema.parse({ file, revision: 4, diagnostics, changeSeq: 9 })).toEqual({
       file,
       revision: 4,
       diagnostics,
+      changeSeq: 9,
     });
-    expect(PatchSceneTimingResponseSchema.parse({ file, revision: 4, diagnostics })).toMatchObject({ file });
-    expect(PatchSceneScriptResponseSchema.parse({ file, revision: 4, diagnostics })).toMatchObject({ file });
+    expect(PatchSceneTimingResponseSchema.parse({ file, revision: 4, diagnostics, changeSeq: 9 })).toMatchObject({ file });
+    expect(PatchSceneScriptResponseSchema.parse({ file, revision: 4, diagnostics, changeSeq: 9 })).toMatchObject({ file });
     expect(PatchPreviewSettingsResponseSchema.parse(mutation)).toEqual(mutation);
     expect(UploadBgmResponseSchema.parse(mutation)).toEqual(mutation);
     expect(
@@ -329,11 +330,13 @@ describe("API response contracts", () => {
       finishedAt: now,
     }).warnings).toEqual(warnings);
     expect(TERMINAL_JOB_STATUSES).toEqual(["succeeded", "partial", "failed", "cancelled"]);
-    expect(LegacyTtsResponseSchema.parse({ ok: true, narration })).toEqual({ ok: true, narration });
+    expect(LegacyTtsResponseSchema.parse({ ok: true, narration, changeSeq: 9 }))
+      .toEqual({ ok: true, narration, changeSeq: 9 });
     expect(
       LegacyGenerateResponseSchema.parse({
         ok: true,
         sceneId: "scene-2",
+        changeSeq: 10,
         transcript: [{ kind: "command", text: "generate" }],
       }),
     ).toMatchObject({ ok: true, sceneId: "scene-2" });

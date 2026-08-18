@@ -12,6 +12,7 @@ import {
 import { ModeToggle } from "@/components/mode-toggle";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import type { ProjectChanged } from "@/lib/studio/preview-reload";
 import type { FileNode, Scene, SourceFile } from "@/lib/studio/types";
 import { AiComposerPanel } from "./ai-composer-panel";
 import { CodePane } from "./code-pane";
@@ -45,7 +46,7 @@ export function SourcePane({
   selectedId: string;
   onSeek: (seconds: number) => void;
   onSelectScene: (scene: Scene) => void;
-  onProjectChanged: () => void;
+  onProjectChanged: ProjectChanged;
 }) {
   const [tab, setTab] = React.useState("code");
 

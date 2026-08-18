@@ -1092,6 +1092,25 @@
           </p>
         </article>
       </section>
+      <section class="space-y-3">
+        <h2 class="text-lg font-semibold text-sky-300">P4 — Same URL và exact changeSeq 4.4 (2026-08-18)</h2>
+        <article class="rounded-lg border border-sky-900/70 bg-sky-950/20 p-4 space-y-2">
+          <h3 class="font-medium">Không còn cache-busting revision tự đoán</h3>
+          <p class="text-slate-300">
+            Studio đã bỏ local revision và mọi hậu tố <code>?r=</code>. File save, preview settings/BGM upload,
+            timing/script/TTS, motion/BGM install, AI generate và undo/redo đều đọc đúng
+            <code>changeSeq</code> từ response của chính write; token <code>null</code> nghĩa là không có durable
+            event nên không dựng candidate. Tất cả reload dùng nguyên một <code>previewUrl</code>.
+          </p>
+          <p class="text-slate-400 text-sm">
+            Việc thêm field làm server regression và MCP matrix đỏ vì schema Zod strict chưa biết field mới; sửa bằng
+            field nullable bắt buộc ở đúng HTTP/MCP output schema, không dùng passthrough. Probe gọi cùng URL trước và
+            sau snapshot mới thấy body/revision/seq mới cùng <code>Cache-Control: no-store</code>. Focused 14/14,
+            frontend 85/85, server 176/176, Core 325/325, MCP contract 92/92 và API contract 7/7 PASS; static gate sạch,
+            lint còn 5 warning baseline.
+          </p>
+        </article>
+      </section>
     </main>
   </body>
 </html>

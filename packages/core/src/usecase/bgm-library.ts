@@ -121,6 +121,7 @@ export interface InstallBgmOutput {
   volume: number;
   loop: boolean;
   revision: number;
+  changeSeq: number | null;
 }
 
 /**
@@ -272,6 +273,7 @@ export async function installBgm(
     volume,
     loop,
     revision: written.value.revision,
+    changeSeq: written.value.changeSeq ?? null,
   });
 }
 

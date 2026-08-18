@@ -251,6 +251,7 @@ export const InstallMotionLibraryOutputSchema = z.strictObject({
     contentHash: ContentHashSchema.nullable(),
   })),
   revision: z.number().int().nullable(),
+  changeSeq: z.number().int().nonnegative().nullable(),
 });
 
 /** Input for `delete_file`. */
@@ -486,6 +487,7 @@ export const SetPreviewSettingsOutputSchema = z.strictObject({
   previewSettings: PreviewSettingsSchema,
   revision: z.number().int().nonnegative(),
   diagnostics: z.array(DiagnosticSchema),
+  changeSeq: z.number().int().nonnegative().nullable(),
 });
 
 /** Authored and synthesis state of one narration cue, without engine word timings. */

@@ -35,7 +35,7 @@ describe("remote BGM installation", () => {
       authority: {
         async uploadBgm(request: unknown) {
           uploaded = request;
-          return ok({ path: null, contentHash: hash, revision: 7, diagnostics: [] });
+          return ok({ path: null, contentHash: hash, revision: 7, diagnostics: [], changeSeq: 13 });
         },
       },
       bgmSynth: { render() { throw new Error("synth must not run"); } },
@@ -88,6 +88,7 @@ describe("remote BGM installation", () => {
       value: {
         track: { name: "bgm_remote.mp3", path: "preview-assets/bgm/bgm_remote.mp3", durationSeconds: 89.5 },
         revision: 7,
+        changeSeq: 13,
       },
     });
     expect(cached).toMatchObject({
