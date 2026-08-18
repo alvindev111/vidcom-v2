@@ -1559,6 +1559,13 @@
             đồng thời cho phép kéo ra ngoài clip. Marquee vẫn dùng surface capture riêng; Core vẫn quyết timing/group.
             Focused Chrome 1/1, editor/snap node 12/12, full Browser session 12/12, typecheck và diff-check PASS local.
           </p>
+          <p class="text-slate-400 text-sm">
+            Run 32101325705 đỏ trên cả Linux và Windows: window pointerup vẫn không xuất hiện sau synthetic mouse
+            pointercancel đã được trace ở các run trước. Fallback hẹp nay giữ semantics theo loại pointer: touch/pen
+            cancel vẫn hủy, còn mouse chờ capture-phase mouseup tương ứng để kết thúc drag. Pointerup chuẩn vẫn là
+            đường chính; interaction state guard khiến fallback không thể ghi lần hai. Production build mới, Browser
+            session 12/12, editor/snap node 12/12, typecheck, lint không lỗi, boundaries và diff-check PASS local.
+          </p>
         </article>
       </section>
     </main>

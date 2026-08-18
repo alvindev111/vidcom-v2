@@ -280,15 +280,24 @@ export function Timeline({
       const scene = draggedScene();
       if (scene) endDrag(scene, event.clientX);
     };
-    const cancel = () => {
+    const endMouse = (event: MouseEvent) => {
+      const scene = draggedScene();
+      if (scene) endDrag(scene, event.clientX);
+    };
+    const cancel = (event: PointerEvent) => {
+      // Chromium headless can cancel a synthetic mouse pointer between CDP
+      // move/up tasks. The matching mouseup still completes that gesture.
+      if (event.pointerType === "mouse") return;
       if (interactionRef.current.drag) cancelCurrentDrag();
     };
     window.addEventListener("pointermove", move, true);
     window.addEventListener("pointerup", end, true);
+    window.addEventListener("mouseup", endMouse, true);
     window.addEventListener("pointercancel", cancel, true);
     return () => {
       window.removeEventListener("pointermove", move, true);
       window.removeEventListener("pointerup", end, true);
+      window.removeEventListener("mouseup", endMouse, true);
       window.removeEventListener("pointercancel", cancel, true);
     };
   }, [cancelCurrentDrag, continueDrag, endDrag, interactionRef, scenes]);
