@@ -1268,6 +1268,28 @@
           </p>
         </article>
       </section>
+      <section class="space-y-3">
+        <h2 class="text-lg font-semibold text-sky-300">P2 — Planner thứ tự scene 2.1 (2026-08-18)</h2>
+        <article class="rounded-lg border border-sky-900/70 bg-sky-950/20 p-4 space-y-2">
+          <h3 class="font-medium">Gap là dữ liệu của slot, compact là hành động riêng</h3>
+          <p class="text-slate-300">
+            Design được làm rõ trước code: reorder cùng track giữ leading gap và từng inter-slot gap trong đúng
+            nhóm scene; duration mới được đặt vào các slot đó. Chuyển track không compact source, target giữ gap cũ
+            và ranh giới mới dùng gap 0. Overlap âm vẫn được planner chấp nhận nếu start cuối hợp lệ, vì overlap là
+            diagnostic chứ không phải validation.
+          </p>
+          <p class="text-slate-300">
+            Core nay sở hữu groupOf, planReorder, planCompact, planGroupShift và planSceneInsertion. Dịch nhóm kiểm
+            tra đủ set trước khi trả thay đổi; insertion trả beforeSceneId, tail shifts và root duration nhưng không
+            ghi. createScene bỏ phần tính insertion riêng, gọi planner rồi vẫn ghép root/source/narration trong một
+            CompositeRequest duy nhất.
+          </p>
+          <p class="text-slate-400 text-sm">
+            Planner 7/7 và aggregate planner/createScene/Core 53/53 PASS; typecheck, boundaries, diff-check sạch;
+            lint còn đúng 5 warning baseline.
+          </p>
+        </article>
+      </section>
     </main>
   </body>
 </html>

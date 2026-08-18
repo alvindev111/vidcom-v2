@@ -1,4 +1,5 @@
 export * from "./domain/invariants";
+export * from "./domain/plan-scene-order";
 export * from "./domain/models";
 export * from "./domain/color-palettes";
 export * from "./domain/motion-libraries";

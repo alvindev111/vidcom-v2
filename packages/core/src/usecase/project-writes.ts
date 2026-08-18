@@ -12,6 +12,7 @@ import {
 
 import type { ProjectRef } from "../domain/models";
 import { detectTrackGapsAndOverlaps, planRipple, validateSceneTiming, type SceneClip } from "../domain/invariants";
+import { planSceneInsertion } from "../domain/plan-scene-order";
 import { checkPathPurpose, checkPathSyntax } from "../domain/path-policy";
 import { rootCompositionSource } from "../domain/platform-preset";
 import { err, ok, type Result } from "../error/result";
@@ -671,50 +672,45 @@ export async function createScene(
     ? model.scenes[model.scenes.length - 1] ?? null
     : model.scenes[input.index] ?? null;
   const trackIndex = input.trackIndex ?? reference?.trackIndex ?? 0;
-  const track = scenes.filter((scene) => scene.trackIndex === trackIndex)
-    .sort((left, right) => left.start - right.start || left.id.localeCompare(right.id));
-  const index = input.index ?? track.length;
-  if (!Number.isInteger(index) || index < 0 || index > track.length) {
-    return err({ code: ErrorCode.SchemaInvalid, message: "scene index is outside the target track", field: "index" });
-  }
-  const start = index === 0 ? 0 : track[index - 1]!.start + track[index - 1]!.duration;
-  const shifted = track.slice(index).map((scene) => ({
-    sceneId: scene.id, fromStart: scene.start, toStart: scene.start + duration,
-  }));
-  const timingError = validateSceneTiming({
-    start,
-    duration,
-    trackIndex,
-    rootDuration: Number.MAX_VALUE,
-  });
-  if (timingError) return err(timingError);
-  const projectDuration = Math.max(
-    start + duration,
-    ...scenes.map((scene) => (shifted.find(({ sceneId: id }) => id === scene.id)?.toStart ?? scene.start) + scene.duration),
+  const scenePath = `compositions/${sceneId}.html` as RelPath;
+  const insertion = planSceneInsertion(
+    scenes.map((scene) => ({
+      sceneId: scene.id,
+      start: scene.start,
+      duration: scene.duration,
+      trackIndex: scene.trackIndex,
+    })),
+    {
+      sceneId,
+      scenePath,
+      duration,
+      toIndex: input.index ?? scenes.filter((scene) => scene.trackIndex === trackIndex).length,
+      trackIndex,
+      rootDuration: model.project.duration,
+    },
   );
-  if (projectDuration > MAX_PROJECT_DURATION_SECONDS) return err({
+  if (!insertion.ok) return insertion;
+  if (insertion.value.rootDuration > MAX_PROJECT_DURATION_SECONDS) return err({
     code: ErrorCode.DurationOverflow,
     message: "project duration exceeds the VidCom runtime guard",
     field: "duration",
     details: {
-      limitKind: "runtime", actualSeconds: projectDuration,
+      limitKind: "runtime", actualSeconds: insertion.value.rootDuration,
       maxSeconds: MAX_PROJECT_DURATION_SECONDS, extendRootAllowed: false,
     },
   });
-  const scenePath = `compositions/${sceneId}.html` as RelPath;
   const dimensions = { width: model.project.width, height: model.project.height };
-  const html = sceneMount(sceneId, scenePath, { start, duration, trackIndex }, dimensions);
-  const insertionReference = track[index];
-  const documentIndex = insertionReference
-    ? model.scenes.findIndex((scene) => scene.id === insertionReference.id)
+  const html = sceneMount(sceneId, scenePath, insertion.value.scene, dimensions);
+  const documentIndex = insertion.value.beforeSceneId
+    ? model.scenes.findIndex((scene) => scene.id === insertion.value.beforeSceneId)
     : -1;
   const applied = await dependencies.composition.applyOps(ref.value, ref.value.entry, [
     { kind: "addElement", target: "@root", value: { index: documentIndex, html } },
-    ...shifted.map((item) => ({
-      kind: "setTiming" as const, target: item.sceneId, value: { start: item.toStart },
+    ...insertion.value.changes.map((item) => ({
+      kind: "setTiming" as const, target: item.sceneId, value: { start: item.start },
     })),
-    ...projectDuration !== model.project.duration
-      ? [{ kind: "setTiming" as const, target: "@root", value: { duration: projectDuration } }]
+    ...insertion.value.rootDuration !== model.project.duration
+      ? [{ kind: "setTiming" as const, target: "@root", value: { duration: insertion.value.rootDuration } }]
       : [],
   ]);
   if (!applied.ok) return applied;
@@ -750,7 +746,7 @@ export async function createScene(
     scene: {
       id: sceneId,
       src: scenePath,
-      start,
+      start: insertion.value.scene.start,
       duration,
       trackIndex,
       isTransition: false,
@@ -761,14 +757,17 @@ export async function createScene(
     project: {
       ...model.project,
       id: input.projectId,
-      duration: projectDuration,
+      duration: insertion.value.rootDuration,
       updatedAt: dependencies.clock.now().toISOString(),
       sceneCount: model.project.sceneCount + 1,
       revision: written.value.projectRevision,
     },
     envelope: written.value,
     affectedTrackIndex: trackIndex,
-    moved: shifted,
+    moved: insertion.value.changes.map((change) => {
+      const previous = scenes.find((scene) => scene.id === change.sceneId)!;
+      return { sceneId: change.sceneId, fromStart: previous.start, toStart: change.start! };
+    }),
   });
 }
 

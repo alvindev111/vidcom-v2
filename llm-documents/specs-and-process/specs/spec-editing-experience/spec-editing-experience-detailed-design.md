@@ -375,6 +375,14 @@ export function planSceneInsertion(clips, req: {
   `planSceneInsertion`; caller ghép scene/source/sidecar/provenance vào **một** CompositeRequest rồi
   mới mutate. Không caller nào gọi lồng `createScene()` (nó tự commit) hoặc copy thuật toán shift/root.
 
+**Implementation erratum — gap slots và output planner (2026-08-18, không đổi AC):** gap được bảo toàn
+theo slot thứ tự trong đúng `{track,group}`: giữ leading gap trước clip đầu và từng inter-slot gap, rồi
+đặt lại duration của clip mới vào các slot đó. Reorder cùng track không đụng group khác. Chuyển track giữ
+mọi clip source tại chỗ (không compact ngầm); target giữ các gap slot cũ và ranh giới tăng thêm do clip
+mới dùng gap `0`. Mọi planner trả danh sách timing đổi tối thiểu, `rootDuration` và `noOp`; insertion trả
+thêm `beforeSceneId` để caller dựng đúng một `addElement` trong composite. Overlap sau plan vẫn chỉ là
+diagnostic; giới hạn root/runtime được use case áp sau khi nhận plan.
+
 ### 5.4 Use case timing & thứ tự (R1, R2, R12)
 ```ts
 setSceneTiming(...)            // đã có
