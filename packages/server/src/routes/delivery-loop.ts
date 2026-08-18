@@ -25,6 +25,7 @@ import {
 } from "@vidcom/contracts";
 import {
   createScene,
+  ignoredMutationOriginForActor,
   patchNarrationCue,
   readNarrationCues,
   readAsset,
@@ -48,7 +49,7 @@ import {
 import { Hono, type Context } from "hono";
 
 import { HttpBoundaryError } from "../middleware/error-mapper";
-import { UNTRACKED_UI_INVOCATION } from "./mutation-origin";
+import { studioWriteInvocation, type StudioRouteDependencies } from "./studio-session";
 
 type BoundaryError = { code: ErrorCode; message: string; field?: string; details?: Record<string, unknown> };
 
@@ -160,8 +161,12 @@ function bytesResponse(c: Context, bytes: Uint8Array, hash: string, mime: string
 }
 
 /** Phase-O HTTP surface: transport validation only; every operation delegates to an application use case. */
-export function createDeliveryLoopRoutes(dependencies: DeliveryLoopRouteDependencies): Hono {
+export function createDeliveryLoopRoutes(
+  dependencies: DeliveryLoopRouteDependencies,
+  studio?: StudioRouteDependencies,
+): Hono {
   const routes = new Hono();
+  const lifecycleInvocation = { origin: ignoredMutationOriginForActor("user"), toolAudit: null };
   routes.get("/v1/workspace", async (c) => c.json(await dependencies.workspaceOverview()));
   routes.put("/v1/workspace/active", async (c) => {
     const input = parse(ActivateWorkspaceRequestSchema, await json(c), "workspace activation payload is invalid");
@@ -206,24 +211,26 @@ export function createDeliveryLoopRoutes(dependencies: DeliveryLoopRouteDependen
     const input = parse(CreateProjectRequestSchema, await json(c), "project create payload is invalid");
     const preset = valueOf(resolvePlatformPreset(input));
     return c.json(valueOf(await dependencies.lifecycle.create(
-      { name: input.name, preset, actor: "user" }, UNTRACKED_UI_INVOCATION,
+      { name: input.name, preset, actor: "user" }, lifecycleInvocation,
     )), 201);
   });
   routes.post("/v1/projects/:slug/adopt", async (c) =>
     c.json(valueOf(await dependencies.lifecycle.adopt({
       slug: parse(ProjectSlugParamsSchema, { slug: c.req.param("slug") }, "project slug is invalid").slug,
       actor: "user",
-    }, UNTRACKED_UI_INVOCATION))));
+    }, lifecycleInvocation))));
   routes.patch("/v1/projects/:id", async (c) => {
     const input = parse(RenameProjectRequestSchema, await json(c), "project rename payload is invalid");
+    const id = projectId(c);
     return c.json(valueOf(await dependencies.lifecycle.rename(
-      { kind: "project", projectId: projectId(c) }, input.name, "user", UNTRACKED_UI_INVOCATION,
+      { kind: "project", projectId: id }, input.name, "user", studioWriteInvocation(studio, c, id, "Rename project"),
     )));
   });
   routes.delete("/v1/projects/:id", async (c) => {
     parse(DeleteProjectRequestSchema, await json(c), "project delete confirmation is invalid");
+    const id = projectId(c);
     return c.json(valueOf(await dependencies.lifecycle.remove(
-      { kind: "project", projectId: projectId(c) }, { actor: "user", confirmed: true }, UNTRACKED_UI_INVOCATION,
+      { kind: "project", projectId: id }, { actor: "user", confirmed: true }, studioWriteInvocation(studio, c, id, "Delete project"),
     )));
   });
   routes.post("/v1/projects/:id/renders", (c) => enqueueRenderResponse(dependencies, c));
@@ -253,9 +260,10 @@ export function createDeliveryLoopRoutes(dependencies: DeliveryLoopRouteDependen
       ? { ...raw, projectId: c.req.param("id") }
       : { projectId: c.req.param("id") };
     const input = parse(CreateSceneInputSchema, candidate, "scene create payload is invalid");
+    const id = input.projectId as ProjectId;
     return c.json(valueOf(await createScene(dependencies.writes, {
       ...input, projectId: input.projectId as ProjectId, expectedContentHash: input.expectedContentHash as ContentHash | null,
-    }, "user", UNTRACKED_UI_INVOCATION)), 201);
+    }, "user", studioWriteInvocation(studio, c, id, "Create scene"))), 201);
   });
   routes.patch("/v1/projects/:id/scenes/:sceneId/timing", async (c) => {
     const params = parse(SceneParamsSchema, c.req.param(), "scene path parameters are invalid");
@@ -264,7 +272,7 @@ export function createDeliveryLoopRoutes(dependencies: DeliveryLoopRouteDependen
       projectId: params.id as ProjectId, sceneId: params.sceneId,
       timing: { start: input.start, duration: input.duration, trackIndex: input.trackIndex },
       ripple: input.ripple, extendRoot: input.extendRoot, expectedContentHash: input.expectedContentHash,
-    }, "user", UNTRACKED_UI_INVOCATION)));
+    }, "user", studioWriteInvocation(studio, c, params.id as ProjectId, "Edit scene timing"))));
   });
   routes.get("/v1/projects/:id/scenes/:sceneId/narration-cues", async (c) => {
     const params = parse(SceneParamsSchema, c.req.param(), "scene path parameters are invalid");
@@ -278,7 +286,7 @@ export function createDeliveryLoopRoutes(dependencies: DeliveryLoopRouteDependen
     return c.json(valueOf(await replaceNarrationCues(dependencies.writes, {
       projectId: params.id as ProjectId, sceneId: params.sceneId, cues: input.cues,
       expectedContentHash: input.expectedContentHash as ContentHash | null,
-    }, "user", UNTRACKED_UI_INVOCATION)));
+    }, "user", studioWriteInvocation(studio, c, params.id as ProjectId, "Replace narration cues"))));
   });
   routes.patch("/v1/projects/:id/scenes/:sceneId/narration-cues/:cueId", async (c) => {
     const params = parse(NarrationCueParamsSchema, c.req.param(), "narration cue path parameters are invalid");
@@ -287,7 +295,7 @@ export function createDeliveryLoopRoutes(dependencies: DeliveryLoopRouteDependen
       projectId: params.id as ProjectId, sceneId: params.sceneId, cueId: params.cueId,
       patch: { text: input.text, voice: input.voice, offsetSeconds: input.offsetSeconds },
       expectedContentHash: input.expectedContentHash as ContentHash,
-    }, "user", UNTRACKED_UI_INVOCATION)));
+    }, "user", studioWriteInvocation(studio, c, params.id as ProjectId, "Edit narration cue"))));
   });
   routes.get("/v1/recovery/entries/:entryId/diagnostics", async (c) => {
     const params = parse(RecoveryEntryParamsSchema, c.req.param(), "recovery entry id is invalid");
@@ -310,14 +318,14 @@ export function createDeliveryLoopRoutes(dependencies: DeliveryLoopRouteDependen
     const params = parse(RecoveryEntryParamsSchema, c.req.param(), "recovery entry id is invalid");
     const input = parse(RenameProjectRequestSchema, await json(c), "recovery rename payload is invalid");
     return c.json(valueOf(await dependencies.lifecycle.rename(
-      { kind: "entry", entryId: params.entryId as EntryId }, input.name, "user", UNTRACKED_UI_INVOCATION,
+      { kind: "entry", entryId: params.entryId as EntryId }, input.name, "user", lifecycleInvocation,
     )));
   });
   routes.delete("/v1/recovery/entries/:entryId", async (c) => {
     const params = parse(RecoveryEntryParamsSchema, c.req.param(), "recovery entry id is invalid");
     parse(DeleteProjectRequestSchema, await json(c), "recovery delete confirmation is invalid");
     return c.json(valueOf(await dependencies.lifecycle.remove(
-      { kind: "entry", entryId: params.entryId as EntryId }, { actor: "user", confirmed: true }, UNTRACKED_UI_INVOCATION,
+      { kind: "entry", entryId: params.entryId as EntryId }, { actor: "user", confirmed: true }, lifecycleInvocation,
     )));
   });
   routes.get("/v1/renders/:jobId/download", async (c) => {

@@ -9,7 +9,7 @@ import type { ContentHash, ProjectId } from "@vidcom/contracts";
 import { canonicalizeJobInput, jobExecutionOutcome, JobScheduler, type JobId } from "@vidcom/core";
 import { createEventRoutes, createServerApp, InMemoryNonceStore, InMemorySessionStore } from "@vidcom/server";
 import { Hono } from "hono";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { createSequentialIdPort } from "../support/deterministic";
 import { dbAll, dbRun } from "../support/database";
@@ -41,6 +41,29 @@ afterEach(async () => {
 });
 
 describe("durable SSE", () => {
+  it("leases an attached studio session for the lifetime of its SSE stream", async () => {
+    const isAttached = vi.fn(() => true);
+    const openEventLease = vi.fn(() => true);
+    const closeEventLease = vi.fn();
+    const app = new Hono().route("/", createEventRoutes({
+      async append() { return 0; },
+      async readFrom() { return { events: [], gap: false }; },
+      async latestSeq() { return 0; },
+      async latestProjectSeq() { return 0; },
+    }, { pollMs: 50 }, {
+      history: { isAttached, openEventLease, closeEventLease } as never,
+      browserSessionId: () => "browser-events",
+    }));
+    const response = await app.request(`http://local/events?projectId=${projectId}`, {
+      headers: { "x-vidcom-studio-session": "01K1ABCDEFGHJKMNPQRSTVWXYZ" },
+    });
+    expect(response.status).toBe(200);
+    expect(isAttached).toHaveBeenCalledWith("browser-events", "01K1ABCDEFGHJKMNPQRSTVWXYZ", projectId);
+    expect(openEventLease).toHaveBeenCalledTimes(1);
+    await response.body!.cancel();
+    expect(closeEventLease).toHaveBeenCalledTimes(1);
+  });
+
   it("emits resync instead of replaying across a retention gap", async () => {
     const app = new Hono().route("/", createEventRoutes({
       async append() { return 42; },

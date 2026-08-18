@@ -881,6 +881,30 @@
           </p>
         </article>
       </section>
+      <section class="space-y-3">
+        <h2 class="text-lg font-semibold text-sky-300">P3 — History HTTP và studio binding 3.3 (2026-08-18)</h2>
+
+        <article class="rounded-lg border border-sky-900/70 bg-sky-950/20 p-4 space-y-2">
+          <h3 class="font-medium">Một capability phiên cho toàn bộ browser mutation</h3>
+          <p class="text-slate-300">
+            Server nhận <code>x-vidcom-studio-session</code> theo validator ULID dùng chung, nhưng chỉ chấp nhận sau
+            khi POST attach đã buộc ID đó với fingerprint của cookie đăng nhập và đúng project. Mọi route ghi project
+            dùng cùng helper trước use case; origin, history action và nhãn undo đều do server đặt, payload không thể
+            chọn. Bridge tạm <code>UNTRACKED_UI_*</code> của P0 đã bị xoá.
+          </p>
+          <p class="text-slate-400 text-sm">
+            Undo/redo gọi <code>begin</code> trước mọi await, chuyển operation vào Core inverse, và luôn
+            <code>cancel</code> trong finally nếu mutation chưa claim/commit. Vì vậy hai request đồng thời trả 409 với
+            đúng một write; không còn cửa sổ peek rồi commit ở route. History response lấy trực tiếp top barrier của
+            stack, còn unknown hoặc cross-project session trả 400 trước authority.
+          </p>
+          <p class="text-slate-400 text-sm">
+            SSE dùng cùng studio/project binding, tăng lease khi mở và giảm đúng một lần khi stream cancel/abort/error;
+            grace và chống resurrect vẫn thuộc singleton history. Focused 28/28, toàn bộ Server 171/171, typecheck và
+            boundaries PASS; lint không có lỗi và giữ nguyên 5 warning baseline.
+          </p>
+        </article>
+      </section>
     </main>
   </body>
 </html>

@@ -1,8 +1,9 @@
-import { ErrorCode, EventsHeadersSchema } from "@vidcom/contracts";
+import { ErrorCode, EventsHeadersSchema, ProjectParamsSchema, type ProjectId } from "@vidcom/contracts";
 import type { EventOutboxPort, StoredEvent } from "@vidcom/core";
 import { Hono } from "hono";
 
 import { HttpBoundaryError } from "../middleware/error-mapper";
+import { requireAttachedStudio, STUDIO_SESSION_HEADER, type StudioRouteDependencies } from "./studio-session";
 
 function frame(event: StoredEvent): string {
   const data = { id: event.seq, type: event.type, projectId: event.projectId, payload: event.payload };
@@ -13,6 +14,7 @@ function frame(event: StoredEvent): string {
 export function createEventRoutes(
   outbox: EventOutboxPort,
   options: { pollMs?: number; heartbeatMs?: number } = {},
+  studio?: StudioRouteDependencies,
 ): Hono {
   const routes = new Hono();
   routes.get("/events", (c) => {
@@ -22,6 +24,26 @@ export function createEventRoutes(
         code: ErrorCode.SchemaInvalid, message: "Last-Event-ID is invalid", field: "Last-Event-ID",
       });
     }
+    const requestedStudio = c.req.header(STUDIO_SESSION_HEADER);
+    const requestedProject = c.req.query("projectId");
+    if ((requestedStudio === undefined) !== (requestedProject === undefined)) {
+      throw new HttpBoundaryError({
+        code: ErrorCode.PreconditionRequired,
+        message: "studio session and projectId are required together",
+      });
+    }
+    let leased: { browserSessionId: string; studioSessionId: string; projectId: ProjectId } | undefined;
+    if (requestedStudio !== undefined) {
+      if (!studio) throw new HttpBoundaryError({ code: ErrorCode.SchemaInvalid, message: "studio history is unavailable" });
+      const project = ProjectParamsSchema.safeParse({ id: requestedProject });
+      if (!project.success) throw new HttpBoundaryError({ code: ErrorCode.SchemaInvalid, message: "project id is invalid" });
+      const id = project.data.id as ProjectId;
+      const attached = requireAttachedStudio(studio, c, id);
+      if (!studio.history.openEventLease(attached.browserSessionId, attached.studioSessionId, id)) {
+        throw new HttpBoundaryError({ code: ErrorCode.SchemaInvalid, message: "studio event lease could not be opened" });
+      }
+      leased = { ...attached, projectId: id };
+    }
     const encoder = new TextEncoder();
     const pollMs = options.pollMs ?? 250;
     const heartbeatMs = options.heartbeatMs ?? 15_000;
@@ -29,6 +51,14 @@ export function createEventRoutes(
     let stopped = false;
     let timer: ReturnType<typeof setTimeout> | undefined;
     let lastWrite = Date.now();
+    let leaseClosed = false;
+    const closeLease = () => {
+      if (leaseClosed || !leased || !studio) return;
+      leaseClosed = true;
+      studio.history.closeEventLease(leased.browserSessionId, leased.studioSessionId, leased.projectId);
+      c.req.raw.signal.removeEventListener("abort", closeLease);
+    };
+    c.req.raw.signal.addEventListener("abort", closeLease, { once: true });
     const body = new ReadableStream<Uint8Array>({
       async start(controller) {
         const pump = async () => {
@@ -55,6 +85,7 @@ export function createEventRoutes(
             }
             timer = setTimeout(() => void pump(), pollMs);
           } catch (error) {
+            closeLease();
             controller.error(error);
           }
         };
@@ -63,6 +94,7 @@ export function createEventRoutes(
       cancel() {
         stopped = true;
         if (timer) clearTimeout(timer);
+        closeLease();
       },
     });
     return new Response(body, {

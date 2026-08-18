@@ -28,6 +28,8 @@ import { createMcpRoutes, type McpRouteDependencies } from "./routes/mcp";
 import { createSystemRoutes, type SystemRouteDependencies } from "./routes/system";
 import { createDeliveryLoopRoutes, type DeliveryLoopRouteDependencies } from "./routes/delivery-loop";
 import type { MutationHistory } from "./service/mutation-history";
+import { createHistoryRoutes } from "./routes/history";
+import type { StudioRouteDependencies } from "./routes/studio-session";
 import { ActivateWorkspaceRequestSchema, ErrorCode, MAX_BGM_BYTES, MAX_SOURCE_BYTES } from "@vidcom/contracts";
 
 export interface ServerAppDependencies {
@@ -46,6 +48,8 @@ export interface ServerAppDependencies {
   events?: EventOutboxPort;
   /** Workspace-foundation singleton consumed by the browser history routes added in P3.3. */
   history?: MutationHistory;
+  /** Resolves the authenticated cookie to a non-secret browser binding. */
+  browserSessionId?(request: Request): string | undefined;
   projectWrites?: ProjectWriteRouteDependencies;
   narration?: NarrationRouteDependencies;
   deliveryLoop?: DeliveryLoopRouteDependencies;
@@ -117,10 +121,14 @@ export function createServerApp(deps: ServerAppDependencies) {
   if (deps.system) app.route("/v1/system", createSystemRoutes(deps.system));
   if (deps.projectReads) app.route("/", createProjectReadRoutes(deps.projectReads));
   if (deps.jobs) app.route("/v1", createJobRoutes(deps.jobs));
-  if (deps.events) app.route("/v1", createEventRoutes(deps.events));
-  if (deps.projectWrites) app.route("/", createProjectWriteRoutes(deps.projectWrites));
+  const studio: StudioRouteDependencies | undefined = deps.history && deps.browserSessionId
+    ? { history: deps.history, browserSessionId: deps.browserSessionId }
+    : undefined;
+  if (deps.events) app.route("/v1", createEventRoutes(deps.events, {}, studio));
+  if (deps.projectWrites) app.route("/", createProjectWriteRoutes(deps.projectWrites, studio));
+  if (deps.projectWrites && studio) app.route("/", createHistoryRoutes({ ...studio, writes: deps.projectWrites }));
   if (deps.narration) app.route("/", createNarrationRoutes(deps.narration));
-  if (deps.deliveryLoop) app.route("/", createDeliveryLoopRoutes(deps.deliveryLoop));
+  if (deps.deliveryLoop) app.route("/", createDeliveryLoopRoutes(deps.deliveryLoop, studio));
   if (deps.agentTerminal) app.route("/", createAgentTerminalRoutes(deps.agentTerminal));
   if (deps.workspaceActivation) app.put("/v1/workspace/active", async (c) => {
     const parsed = ActivateWorkspaceRequestSchema.safeParse(await c.req.json().catch(() => null));

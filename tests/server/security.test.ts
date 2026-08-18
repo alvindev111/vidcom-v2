@@ -131,7 +131,7 @@ describe("Hono security perimeter", () => {
     expect(response.headers.get("access-control-allow-methods"))
       .toBe("GET, HEAD, POST, PUT, PATCH, DELETE, OPTIONS");
     expect(response.headers.get("access-control-allow-headers"))
-      .toBe("Authorization, Content-Type, MCP-Protocol-Version, Mcp-Method, Mcp-Name");
+      .toBe("Authorization, Content-Type, MCP-Protocol-Version, Mcp-Method, Mcp-Name, X-Vidcom-Studio-Session");
     expect(response.headers.get("vary"))
       .toBe("Origin, Access-Control-Request-Method, Access-Control-Request-Headers");
   });

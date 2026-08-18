@@ -2,8 +2,14 @@ import { z } from "zod";
 
 import { ContentHashSchema, IdentifierSchema, RelativePathSchema } from "./dto";
 
+/** One canonical ULID contract for browser-owned ephemeral identities. */
+export const UlidSchema = z.string().regex(/^[0-9A-HJKMNP-TV-Z]{26}$/u);
+
 /** Browser-generated operation identity shared by upload, mount, HTTP and MCP retry contracts. */
-export const PendingMountOperationIdSchema = z.string().regex(/^[0-9A-HJKMNP-TV-Z]{26}$/u);
+export const PendingMountOperationIdSchema = UlidSchema;
+
+/** Browser-generated identity for one mounted editor history stack. */
+export const StudioSessionIdSchema = UlidSchema;
 
 export const PendingMountFailureSchema = z.strictObject({
   code: z.string().min(1).max(255),

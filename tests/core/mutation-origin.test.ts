@@ -7,9 +7,8 @@ import {
   type ProjectId,
 } from "@vidcom/contracts";
 import { ignoredMutationOriginForActor, NOOP_MUTATION_OBSERVER } from "@vidcom/core";
-import { UNTRACKED_UI_ORIGIN } from "../../packages/server/src/routes/mutation-origin";
 
-describe("mutation origin bridge", () => {
+describe("mutation origin", () => {
   it("provides one named, non-throwing observer bridge for pre-history wiring", () => {
     const origin = ignoredMutationOriginForActor("agent");
     const projectId = "project-1" as ProjectId;
@@ -31,16 +30,6 @@ describe("mutation origin bridge", () => {
       NOOP_MUTATION_OBSERVER.observeExternalChange(projectId, []);
       NOOP_MUTATION_OBSERVER.invalidateProject(projectId, "history-desync");
     }).not.toThrow();
-  });
-
-  it("uses the named P0 browser bridge without recording history", () => {
-    expect(UNTRACKED_UI_ORIGIN).toEqual({
-      kind: "ui",
-      sessionId: null,
-      label: null,
-      historyAction: "ignore",
-      historyOperation: null,
-    });
   });
 
   it("maps every existing actor to one redacted, non-history origin", () => {

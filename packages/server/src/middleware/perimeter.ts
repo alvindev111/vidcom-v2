@@ -18,7 +18,9 @@ export type McpAuthEnv = {
 };
 
 const CORS_METHODS = ["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"] as const;
-const CORS_HEADERS = ["Authorization", "Content-Type", "MCP-Protocol-Version", "Mcp-Method", "Mcp-Name"] as const;
+const CORS_HEADERS = [
+  "Authorization", "Content-Type", "MCP-Protocol-Version", "Mcp-Method", "Mcp-Name", "X-Vidcom-Studio-Session",
+] as const;
 const CORS_HEADER_NAMES = new Set(CORS_HEADERS.map((header) => header.toLowerCase()));
 
 function reject(code: ErrorCode, message: string): never {

@@ -20,5 +20,7 @@ export {
 } from "./routes/bridge";
 export * from "./routes/mcp";
 export * from "./routes/events";
+export * from "./routes/history";
+export * from "./routes/studio-session";
 export * from "./routes/project-writes";
 export * from "./routes/narration";

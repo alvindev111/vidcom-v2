@@ -545,6 +545,7 @@ export async function startNextHostedRuntime(
       jobs: foundation.infrastructure.jobs,
       events: foundation.infrastructure.events,
       history: foundation.infrastructure.mutationObserver,
+      browserSessionId: (request) => browserSessionId(sessions, request),
       system: {
         browser,
         sessionId: (request) => browserSessionId(sessions, request),
