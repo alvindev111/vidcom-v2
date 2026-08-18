@@ -1605,6 +1605,20 @@
             giới hạn theo byte thật và backpressure. Bypass limiter chung chỉ hợp lệ khi Core lẫn staging cùng đếm và
             không được nới route khác. Spec-path gate xác minh 115 path, diff-check xanh; chưa có code route nào đổi.
           </p>
+          <p class="text-slate-400 text-sm">
+            P5.1 bắt đầu tại HEAD sạch 722961b. CodeGraph xác nhận StagedFileSource/no-follow seam và bảng extension
+            hiện hữu. Core sẽ chỉ chứa policy bốn kind; port nhận staged capability. Linkedom, PostCSS 8.5.25 và đọc
+            file nằm ở Adapter. SVG transform dùng DOM + parser/tokenizer CSS, reject doctype/entity/malformed/non-svg,
+            bỏ node active, on* và URL ngoài fragment, đồng thời sanitize lần hai phải byte-identical. Upload/staging
+            route chưa thuộc task này.
+          </p>
+          <p class="text-slate-400 text-sm">
+            P5.1 PASS. Red thiếu cả module Core lẫn constructor sanitizer; green focused 9/9 và regression Core/Adapter
+            49/49. Core giữ allowlist/limit, magic signature, NFC filename và collision suffix; port chỉ nhận staged
+            capability. Adapter no-follow xác minh size/hash/UTF-8/XML, dùng linkedom + PostCSS/value scanner để bỏ node
+            active, event/xml-base và URL ngoài fragment; lần sanitize hai byte-identical. PostCSS pin direct 8.5.25,
+            typecheck/boundaries/diff xanh, lint không lỗi với năm warning nền.
+          </p>
         </article>
       </section>
     </main>

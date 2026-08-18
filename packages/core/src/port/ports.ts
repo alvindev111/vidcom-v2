@@ -192,6 +192,11 @@ export interface FontCompatibilityPort {
   inspect(ref: ProjectRef, sources: readonly CompositionSource[]): Promise<FontCompatibilityIssue[]>;
 }
 
+/** Sanitizes an opaque, bounded staged SVG without exposing its path outside infrastructure. */
+export interface SvgSanitizerPort {
+  sanitize(source: StagedFileSource): Promise<Result<string, DomainError>>;
+}
+
 /** Reads a pinned motion library's source from wherever the adapter installs it. */
 export interface MotionLibraryFilesPort {
   read(library: MotionLibrary): Promise<Result<Array<{ projectPath: RelPath; content: string }>, DomainError>>;

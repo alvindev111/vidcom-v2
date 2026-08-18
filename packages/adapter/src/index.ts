@@ -80,5 +80,7 @@ export * from "./hyperframes/narration-clips";
 export * from "./hyperframes/parse";
 export * from "./hyperframes/preview-style";
 export * from "./hyperframes/runtime";
+export * from "./hyperframes/safe-css";
+export * from "./hyperframes/svg-sanitizer";
 export * from "./hyperframes/sdk-ops";
 export * from "./hyperframes/types";
