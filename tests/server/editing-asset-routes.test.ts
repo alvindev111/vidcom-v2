@@ -18,6 +18,7 @@ const ref: ProjectRef = {
 function fixture() {
   const fontPaths: string[] = [];
   const writes: unknown[] = [];
+  const issued: string[] = [];
   const common = {
     workspace: {
       async readProjectRef(id: ProjectId) { return id === projectId ? ref : null; },
@@ -59,7 +60,12 @@ function fixture() {
           });
         },
       },
-      approvals: {},
+      approvals: {
+        async request() { return "grant_entry"; },
+        async issue(grantId: string) { issued.push(grantId); return ok(grantId); },
+      },
+      probe,
+      styles: { async apply(source: string) { return ok(source); } },
       hashContent: () => `sha256:${"0".repeat(64)}`,
       mimeFromPath: () => null,
     } as never,
@@ -70,7 +76,7 @@ function fixture() {
     headers.set("Cookie", `${SESSION_COOKIE}=test-session`);
     return app.request(`http://127.0.0.1:${port}${pathname}`, { ...init, headers });
   };
-  return { request, fontPaths, writes };
+  return { request, fontPaths, writes, issued };
 }
 
 describe("editing asset routes", () => {
@@ -123,5 +129,41 @@ describe("editing asset routes", () => {
     });
     expect(undeclared.status).toBe(400);
     expect(runtime.writes).toHaveLength(1);
+  });
+
+  it("rejects traversal and absolute paths on every new entry, metadata and font route", async () => {
+    const runtime = fixture();
+    const hash = `sha256:${"a".repeat(64)}`;
+    const json = { "Content-Type": "application/json" };
+    const cases: Array<[string, RequestInit]> = [
+      [`/api/v1/projects/${projectId}/entries`, {
+        method: "POST", headers: json, body: JSON.stringify({ path: "../escape", kind: "file", expectedRevision: 0 }),
+      }],
+      [`/api/v1/projects/${projectId}/entries`, {
+        method: "PATCH", headers: json,
+        body: JSON.stringify({ from: "/tmp/source", to: "assets/target", expectedRevision: 0, expectedContentHash: hash }),
+      }],
+      [`/api/v1/projects/${projectId}/entries/deletions`, {
+        method: "POST", headers: json, body: JSON.stringify({ path: "assets/../../escape", recursive: true, expectedRevision: 0 }),
+      }],
+      [`/api/v1/projects/${projectId}/entries/deletions/grant_entry`, {
+        method: "POST", headers: json, body: JSON.stringify({ path: "/tmp/escape", recursive: true, expectedRevision: 0 }),
+      }],
+      [`/api/v1/projects/${projectId}/fonts/apply`, {
+        method: "POST", headers: json, body: JSON.stringify({
+          fontPath: "../font.woff2", fontContentHash: hash, scope: { kind: "project" }, expectedContentHash: hash,
+        }),
+      }],
+    ];
+    for (const [pathname, init] of cases) {
+      const response = await runtime.request(pathname, init);
+      expect([400, 422], pathname).toContain(response.status);
+    }
+    const metadata = await runtime.request(
+      `/api/v1/projects/${projectId}/assets/${encodeURIComponent("../font.woff2")}/metadata`,
+    );
+    expect([400, 403, 422]).toContain(metadata.status);
+    expect(runtime.writes).toHaveLength(0);
+    expect(runtime.fontPaths).toHaveLength(0);
   });
 });

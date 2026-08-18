@@ -1,4 +1,4 @@
-import { access, copyFile, mkdir, mkdtemp, realpath, rm, writeFile } from "node:fs/promises";
+import { access, copyFile, mkdir, mkdtemp, realpath, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
@@ -104,6 +104,25 @@ describe("NodeAssetProbe", () => {
       ok: true,
       value: { status: "unknown", byteSize: 17, reason: "ffprobe could not read asset metadata" },
     });
+  });
+
+  it("rejects a project-local symlink before media or font inspection", async () => {
+    const value = await fixture();
+    await writeFile(path.join(value.root, "assets", "real.mp4"), new Uint8Array(17));
+    await symlink("real.mp4", path.join(value.root, "assets", "linked.mp4"));
+    const calls: ProcessRunInput[] = [];
+    const probe = new NodeAssetProbe({
+      async run(input) {
+        calls.push(input);
+        return { exitCode: 0, stdout: "{}", stderr: "", timedOut: false };
+      },
+    }, path.resolve("/verified/ffprobe") as AbsolutePath);
+
+    await expect(probe.probeMedia(value.ref, "assets/linked.mp4" as RelPath)).resolves.toMatchObject({
+      ok: false,
+      error: { code: "not_found" },
+    });
+    expect(calls).toHaveLength(0);
   });
 
   it("reads family and style from a real project-local font", async (context) => {

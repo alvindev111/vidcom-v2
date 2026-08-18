@@ -1732,6 +1732,21 @@
             project bằng font/entry hash server cấp. Toàn frontend + Core expectation + HTTP route 128/128, production
             build/typecheck/boundaries/diff xanh; lint không lỗi với năm warning nền.
           </p>
+          <p class="text-slate-400 text-sm">
+            P5.7a bắt đầu tại HEAD sạch 02a70fe. Audit giữ nguyên các test đã phủ magic/extension/limit/collision,
+            raw-vs-sanitized fingerprint; SVG active node, URL scheme, fragment, DOCTYPE/entity, malformed, UTF-8,
+            idempotence; và font payload độc/parse một font-face + một local URL. Phần thiếu là ma trận HTTP containment
+            cho create/rename/delete, metadata/font cùng bằng chứng upload chỉ dùng basename an toàn. Sẽ bổ sung test
+            table-driven và kiểm zero mutation, không viết lại coverage đã xanh.
+          </p>
+          <p class="text-slate-400 text-sm">
+            P5.7a PASS. Ma trận HTTP traversal/absolute phủ create, rename, hai pha delete, metadata và font với zero
+            mutation/probe. Test filesystem riêng phát hiện NodeAssetProbe từng chấp nhận symlink nội bộ vì realpath
+            vẫn nằm trong root; adapter nay lstat và từ chối symlink trước ffprobe/fontkit. Coverage SVG/font/magic/name/
+            collision/fingerprint/body-limit sẵn có được giữ nguyên; Entry CRUD đã reject symlink/special và staging/
+            sanitizer vẫn dùng capability no-follow do adapter sở hữu. Security slice 47/47, typecheck/boundaries/diff
+            xanh; lint không lỗi với năm warning nền.
+          </p>
         </article>
       </section>
     </main>

@@ -1,4 +1,4 @@
-import { readFile, realpath, stat } from "node:fs/promises";
+import { lstat, readFile, realpath, stat } from "node:fs/promises";
 import path from "node:path";
 
 import * as fontkit from "fontkit";
@@ -40,6 +40,8 @@ async function containedRegularFile(
   const lexical = path.relative(ref.root, candidate);
   if (!lexical || lexical === ".." || lexical.startsWith(`..${path.sep}`) || path.isAbsolute(lexical)) return null;
   try {
+    const link = await lstat(candidate);
+    if (!link.isFile() || link.isSymbolicLink()) return null;
     const [root, target] = await Promise.all([realpath(ref.root), realpath(candidate)]);
     const relative = path.relative(root, target);
     if (!relative || relative === ".." || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative)) return null;
