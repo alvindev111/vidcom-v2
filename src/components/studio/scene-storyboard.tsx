@@ -8,10 +8,18 @@ import {
   type PreviewSettings,
 } from "@/lib/studio/preview-settings";
 import { splitScenes, type OrderedScene } from "@/lib/studio/scene-order";
+import { keyboardReorderIntent, reorderDropIntent } from "@/lib/studio/scene-order";
+import { saveSceneReorder } from "@/lib/studio/scene-order-mutation";
+import { selectClip } from "@/lib/studio/editor-interaction";
+import { fetchApi } from "@/lib/api/services";
+import type { ProjectChanged } from "@/lib/studio/preview-reload";
+import { mutationChangeSeq } from "@/lib/studio/preview-reload";
 import type { FileNode, Scene } from "@/lib/studio/types";
 import { collectFrames, frameForScene } from "@/lib/studio/snapshots";
 import { useLiveScenes } from "./player-time";
 import { SceneCard } from "./scene-card";
+import { useEditorInteraction } from "./editor-interaction-context";
+import { useStudioSession } from "./studio-session-context";
 
 /**
  * Storyboard of the composition: content scenes in playback order, with the
@@ -19,29 +27,96 @@ import { SceneCard } from "./scene-card";
  * beats rather than as a list of every composition host.
  */
 export function SceneStoryboard({
+  projectId,
   projectSlug,
   scenes,
   tree,
   settings,
   selectedId,
   onSelect,
+  entryContentHash,
+  onProjectChanged,
 }: {
+  projectId: string;
   projectSlug: string;
   scenes: Scene[];
   tree: FileNode[];
   settings: PreviewSettings;
   selectedId: string;
   onSelect: (scene: Scene) => void;
+  entryContentHash: string | null;
+  onProjectChanged: ProjectChanged;
 }) {
+  const studio = useStudioSession();
+  const { interaction, interactionRef, applyInteraction } = useEditorInteraction();
   const [showLayers, setShowLayers] = React.useState(false);
+  const [draggedId, setDraggedId] = React.useState<string | null>(null);
+  const [drop, setDrop] = React.useState<{ sceneId: string; placement: "before" | "after" } | null>(null);
+  const [issue, setIssue] = React.useState<string | null>(null);
+  const [announcement, setAnnouncement] = React.useState("");
+  const [pending, setPending] = React.useState(false);
+  const entryHashRef = React.useRef(entryContentHash);
   const frames = React.useMemo(() => collectFrames(tree), [tree]);
   const liveScenes = useLiveScenes(scenes);
+
+  React.useEffect(() => {
+    if (entryContentHash !== null) entryHashRef.current = entryContentHash;
+  }, [entryContentHash]);
 
   // Shared with the timeline so a card and a lane carry the same number.
   const { content: contentScenes, layers } = splitScenes(scenes);
   const missingFrames = contentScenes.filter(
     ({ scene }) => frameForScene(frames, scene) === null,
   ).length;
+
+  const clips = React.useMemo(() => scenes.map((scene) => ({
+    sceneId: scene.id,
+    start: scene.start,
+    duration: scene.duration,
+    trackIndex: scene.trackIndex,
+  })), [scenes]);
+
+  const select = React.useCallback((scene: Scene, modifiers: { shift?: boolean; additive?: boolean }) => {
+    applyInteraction(selectClip(interactionRef.current, clips, scene.id, modifiers));
+    onSelect(scene);
+  }, [applyInteraction, clips, interactionRef, onSelect]);
+
+  const saveIntent = React.useCallback(async (intent: ReturnType<typeof reorderDropIntent>) => {
+    const expectedContentHash = entryHashRef.current;
+    if (intent.kind !== "ready" || !expectedContentHash || pending) return;
+    setPending(true);
+    setIssue(null);
+    try {
+      const result = await saveSceneReorder({
+        projectId,
+        expectedContentHash,
+        sceneId: intent.sceneId,
+        toIndex: intent.toIndex,
+        ...(intent.toTrackIndex === undefined ? {} : { toTrackIndex: intent.toTrackIndex }),
+        send: ({ path, method, body }) => fetchApi(path, studio.request({
+          method,
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify(body),
+        })),
+      });
+      if (result.kind === "saved") {
+        entryHashRef.current = result.file.contentHash;
+        setAnnouncement(`Moved ${intent.sceneId} to position ${intent.toIndex + 1}.`);
+        onProjectChanged(mutationChangeSeq(result));
+      } else setIssue(result.message);
+    } catch (cause) {
+      setIssue(cause instanceof Error ? cause.message : "Scene reorder failed.");
+    } finally {
+      setPending(false);
+    }
+  }, [onProjectChanged, pending, projectId, studio]);
+
+  const reorderByKeyboard = React.useCallback((scene: Scene, direction: -1 | 1) => {
+    const intent = keyboardReorderIntent(scenes, scene.id, direction);
+    if (intent.kind === "ready") void saveIntent(intent);
+    else if (intent.kind === "boundary") setAnnouncement(`${scene.id} is already at the boundary.`);
+    else setIssue(intent.message);
+  }, [saveIntent, scenes]);
 
   const card = ({ scene, index }: OrderedScene) => (
     <SceneCard
@@ -50,10 +125,30 @@ export function SceneStoryboard({
       index={index}
       frame={frameForScene(frames, scene)}
       projectSlug={projectSlug}
-      selected={scene.id === selectedId}
+      selected={interaction.selection.size > 0 ? interaction.selection.has(scene.id) : scene.id === selectedId}
       live={liveScenes.has(scene.id)}
       hidden={sceneSettings(settings, scene.id).hidden}
-      onSelect={onSelect}
+      onSelect={select}
+      dropPlacement={drop?.sceneId === scene.id ? drop.placement : null}
+      onDragStart={(dragged) => {
+        setDraggedId(dragged.id);
+        setIssue(null);
+      }}
+      onDragOver={(target, placement) => setDrop({ sceneId: target.id, placement })}
+      onDrop={(target, placement) => {
+        if (draggedId) {
+          const intent = reorderDropIntent(scenes, draggedId, target.id, placement);
+          if (intent.kind === "ready") void saveIntent(intent);
+          else if (intent.kind === "rejected") setIssue(intent.message);
+        }
+        setDraggedId(null);
+        setDrop(null);
+      }}
+      onDragEnd={() => {
+        setDraggedId(null);
+        setDrop(null);
+      }}
+      onReorderKeyDown={reorderByKeyboard}
     />
   );
 
@@ -71,6 +166,9 @@ export function SceneStoryboard({
           </span>
         ) : null}
       </header>
+
+      <span className="sr-only" aria-live="polite">{announcement}</span>
+      {issue ? <p className="text-destructive text-[10px]" role="alert">{issue}</p> : null}
 
       <div className="grid grid-cols-2 gap-2 xl:grid-cols-3">
         {contentScenes.map(card)}

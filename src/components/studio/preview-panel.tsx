@@ -22,6 +22,7 @@ export function PreviewPanel({
   duration,
   frameRate,
   entryContentHash,
+  projectRevision,
   state,
   controls,
   scenes,
@@ -38,6 +39,7 @@ export function PreviewPanel({
   duration: number;
   frameRate: number;
   entryContentHash: string | null;
+  projectRevision: number;
   state: PlayerState;
   controls: PlayerControls;
   scenes: Scene[];
@@ -83,6 +85,7 @@ export function PreviewPanel({
           duration={duration}
           frameRate={frameRate}
           entryContentHash={entryContentHash}
+          projectRevision={projectRevision}
           selectedId={selectedId}
           onScrub={controls.seek}
           onSelect={onSelectScene}

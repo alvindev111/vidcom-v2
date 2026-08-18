@@ -112,6 +112,12 @@ export const TimelineLane = React.memo(function TimelineLane({
   onDragMove,
   onDragEnd,
   onDragCancel,
+  reorderPlacement,
+  onReorderDragStart,
+  onReorderDragOver,
+  onReorderDrop,
+  onReorderDragEnd,
+  onReorderKeyDown,
 }: {
   scene: Scene;
   /** Position in the storyboard, 1-based. */
@@ -121,13 +127,19 @@ export const TimelineLane = React.memo(function TimelineLane({
   live: boolean;
   hidden: boolean;
   expanded: boolean;
-  onSelect: (scene: Scene) => void;
+  onSelect: (scene: Scene, modifiers: { shift?: boolean; additive?: boolean }) => void;
   onToggleHidden: (scene: Scene) => void;
   onToggleExpanded: (sceneId: string, expanded: boolean) => void;
   onDragStart: (scene: Scene, zone: DragZone, pointerX: number) => void;
   onDragMove: (scene: Scene, pointerX: number) => void;
   onDragEnd: (scene: Scene, pointerX: number) => void;
   onDragCancel: () => void;
+  reorderPlacement: "before" | "after" | null;
+  onReorderDragStart: (scene: Scene) => void;
+  onReorderDragOver: (scene: Scene, placement: "before" | "after") => void;
+  onReorderDrop: (scene: Scene, placement: "before" | "after") => void;
+  onReorderDragEnd: () => void;
+  onReorderKeyDown: (scene: Scene, direction: -1 | 1) => void;
 }) {
   const Icon = hidden ? EyeOffIcon : EyeIcon;
   const Chevron = expanded ? ChevronDownIcon : ChevronRightIcon;
@@ -138,7 +150,11 @@ export const TimelineLane = React.memo(function TimelineLane({
   return (
     <div
       data-selected={selected || undefined}
-      className="data-selected:bg-studio-accent/5 flex h-10 shrink-0 border-b"
+      className={cn(
+        "data-selected:bg-studio-accent/5 flex h-10 shrink-0 border-b",
+        reorderPlacement === "before" && "border-t-2 border-t-sky-400",
+        reorderPlacement === "after" && "border-b-2 border-b-violet-400",
+      )}
     >
       <div
         style={TIMELINE_GUTTER_STYLE}
@@ -169,7 +185,31 @@ export const TimelineLane = React.memo(function TimelineLane({
         </span>
         <button
           type="button"
-          onClick={() => onSelect(scene)}
+          draggable
+          onClick={(event) => onSelect(scene, {
+            shift: event.shiftKey,
+            additive: event.metaKey || event.ctrlKey,
+          })}
+          onKeyDown={(event) => {
+            if (!event.altKey || (event.key !== "ArrowUp" && event.key !== "ArrowDown")) return;
+            event.preventDefault();
+            onReorderKeyDown(scene, event.key === "ArrowUp" ? -1 : 1);
+          }}
+          onDragStart={(event) => {
+            event.dataTransfer.effectAllowed = "move";
+            onReorderDragStart(scene);
+          }}
+          onDragOver={(event) => {
+            event.preventDefault();
+            const bounds = event.currentTarget.getBoundingClientRect();
+            onReorderDragOver(scene, event.clientY < bounds.top + bounds.height / 2 ? "before" : "after");
+          }}
+          onDrop={(event) => {
+            event.preventDefault();
+            const bounds = event.currentTarget.getBoundingClientRect();
+            onReorderDrop(scene, event.clientY < bounds.top + bounds.height / 2 ? "before" : "after");
+          }}
+          onDragEnd={onReorderDragEnd}
           title={`${scene.id} · ${scene.src ?? "index.html"}`}
           className={cn(
             "min-w-0 grow truncate text-left text-[11px]",
@@ -194,12 +234,17 @@ export const TimelineLane = React.memo(function TimelineLane({
         <button
           type="button"
           data-timeline-scene-id={scene.id}
-          onClick={() => onSelect(scene)}
+          onClick={(event) => {
+            if (event.detail === 0) onSelect(scene, {});
+          }}
           onPointerDown={(event) => {
             if (event.button !== 0) return;
             const bounds = event.currentTarget.getBoundingClientRect();
             event.currentTarget.setPointerCapture(event.pointerId);
-            onSelect(scene);
+            onSelect(scene, {
+              shift: event.shiftKey,
+              additive: event.metaKey || event.ctrlKey,
+            });
             onDragStart(scene, hitZone(event.clientX - bounds.left, bounds.width), event.clientX);
           }}
           onPointerMove={(event) => {

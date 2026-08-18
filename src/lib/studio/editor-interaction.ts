@@ -23,6 +23,8 @@ export interface DragSession {
   preview: TimelineClip;
   snappedTo: SnapCandidate | null;
   rippleSceneCount: number;
+  groupSceneIds: readonly string[];
+  groupPreview: readonly TimelineClip[];
   moved: boolean;
 }
 
@@ -42,6 +44,26 @@ export interface TimingCommit {
   ripple: boolean;
 }
 
+export interface GroupMoveCommit {
+  sceneIds: string[];
+  deltaSeconds: number;
+}
+
+export type EditorCommit = TimingCommit | GroupMoveCommit;
+
+export interface Point {
+  x: number;
+  y: number;
+}
+
+export interface ClipBounds {
+  sceneId: string;
+  left: number;
+  top: number;
+  right: number;
+  bottom: number;
+}
+
 export type InteractionEvent =
   | { type: "begin-drag"; input: BeginDragInput }
   | { type: "move-drag"; input: MoveDragInput }
@@ -53,6 +75,7 @@ export interface BeginDragInput {
   zone: DragZone;
   pointerX: number;
   ripple: boolean;
+  selectedSceneIds?: ReadonlySet<string>;
 }
 
 export interface MoveDragInput {
@@ -66,10 +89,13 @@ export function timelineSnapCandidates(input: {
   clips: readonly TimelineClip[];
   playhead: number;
   duration: number;
+  excludedSceneIds?: ReadonlySet<string>;
 }): SnapCandidate[] {
   const candidates: SnapCandidate[] = [];
   for (const clip of input.clips) {
-    if (clip.sceneId === input.clip.sceneId || clip.trackIndex !== input.clip.trackIndex) continue;
+    if (clip.sceneId === input.clip.sceneId
+      || input.excludedSceneIds?.has(clip.sceneId)
+      || clip.trackIndex !== input.clip.trackIndex) continue;
     candidates.push(
       { time: clip.start, kind: "clip-edge", id: `${clip.sceneId}:start` },
       { time: clip.start + clip.duration, kind: "clip-edge", id: `${clip.sceneId}:end` },
@@ -80,6 +106,80 @@ export function timelineSnapCandidates(input: {
     candidates.push({ time: second, kind: "ruler", id: `second-${second}` });
   }
   return candidates;
+}
+
+export function selectClip(
+  state: EditorInteractionState,
+  clips: readonly TimelineClip[],
+  sceneId: string,
+  modifiers: { shift?: boolean; additive?: boolean },
+): EditorInteractionState {
+  const clicked = clips.find((clip) => clip.sceneId === sceneId);
+  if (!clicked) return state;
+  if (modifiers.additive) {
+    const selection = new Set(state.selection);
+    if (selection.has(sceneId)) selection.delete(sceneId);
+    else selection.add(sceneId);
+    return {
+      ...state,
+      selection,
+      anchorSceneId: selection.has(sceneId) ? sceneId : selection.values().next().value ?? null,
+    };
+  }
+  if (modifiers.shift && state.anchorSceneId) {
+    const anchor = clips.find((clip) => clip.sceneId === state.anchorSceneId);
+    if (!anchor || anchor.trackIndex !== clicked.trackIndex) {
+      return { ...state, selection: new Set([sceneId]), anchorSceneId: sceneId };
+    }
+    const track = clips
+      .filter((clip) => clip.trackIndex === clicked.trackIndex)
+      .sort((left, right) => left.start - right.start || left.sceneId.localeCompare(right.sceneId));
+    const anchorIndex = track.findIndex((clip) => clip.sceneId === anchor.sceneId);
+    const clickedIndex = track.findIndex((clip) => clip.sceneId === sceneId);
+    const from = Math.min(anchorIndex, clickedIndex);
+    const to = Math.max(anchorIndex, clickedIndex);
+    return {
+      ...state,
+      selection: new Set(track.slice(from, to + 1).map((clip) => clip.sceneId)),
+    };
+  }
+  return { ...state, selection: new Set([sceneId]), anchorSceneId: sceneId };
+}
+
+export function clearSelection(state: EditorInteractionState): EditorInteractionState {
+  return state.selection.size === 0 && state.anchorSceneId === null && state.marquee === null
+    ? state
+    : { ...state, selection: new Set(), anchorSceneId: null, marquee: null };
+}
+
+export function startMarquee(state: EditorInteractionState, point: Point): EditorInteractionState {
+  return { ...state, marquee: { fromX: point.x, fromY: point.y, toX: point.x, toY: point.y } };
+}
+
+export function updateMarquee(state: EditorInteractionState, point: Point): EditorInteractionState {
+  return state.marquee
+    ? { ...state, marquee: { ...state.marquee, toX: point.x, toY: point.y } }
+    : state;
+}
+
+export function finishMarquee(
+  state: EditorInteractionState,
+  clips: readonly ClipBounds[],
+): EditorInteractionState {
+  const marquee = state.marquee;
+  if (!marquee) return state;
+  const left = Math.min(marquee.fromX, marquee.toX);
+  const right = Math.max(marquee.fromX, marquee.toX);
+  const top = Math.min(marquee.fromY, marquee.toY);
+  const bottom = Math.max(marquee.fromY, marquee.toY);
+  const selected = clips.filter((clip) => clip.right >= left && clip.left <= right
+    && clip.bottom >= top && clip.top <= bottom).map((clip) => clip.sceneId);
+  return {
+    ...state,
+    selection: new Set(selected),
+    anchorSceneId: selected[0] ?? null,
+    marquee: null,
+  };
 }
 
 export function createEditorInteractionState(input: {
@@ -101,6 +201,10 @@ export function beginDrag(
   state: EditorInteractionState,
   input: BeginDragInput,
 ): EditorInteractionState {
+  const groupSceneIds = input.zone === "body" && input.selectedSceneIds?.has(input.clip.sceneId)
+    && input.selectedSceneIds.size > 1
+    ? input.clips.filter((clip) => input.selectedSceneIds!.has(clip.sceneId)).map((clip) => clip.sceneId)
+    : [];
   return {
     ...state,
     drag: {
@@ -112,6 +216,10 @@ export function beginDrag(
       preview: input.clip,
       snappedTo: null,
       rippleSceneCount: 0,
+      groupSceneIds,
+      groupPreview: groupSceneIds.length > 1
+        ? input.clips.filter((clip) => groupSceneIds.includes(clip.sceneId))
+        : [],
       moved: false,
     },
   };
@@ -194,14 +302,25 @@ export function moveDrag(
   }
 
   const preview = { ...drag.clip, start, duration };
+  let groupPreview = drag.groupPreview;
+  if (drag.groupSceneIds.length > 1 && drag.zone === "body") {
+    let delta = start - drag.clip.start;
+    const minimumStart = Math.min(...groupPreview.map((clip) => clip.start));
+    if (minimumStart + delta < 0) delta = -minimumStart;
+    groupPreview = groupPreview.map((clip) => ({ ...clip, start: clip.start + delta }));
+    start = drag.clip.start + delta;
+  }
   const changed = start !== drag.clip.start || duration !== drag.clip.duration;
   return {
     ...state,
     drag: {
       ...drag,
-      preview,
+      preview: { ...preview, start },
       snappedTo,
-      rippleSceneCount: drag.ripple && changed ? rippleSceneCount(drag.clips, preview) : 0,
+      rippleSceneCount: drag.groupSceneIds.length > 1
+        ? 0
+        : drag.ripple && changed ? rippleSceneCount(drag.clips, preview) : 0,
+      groupPreview,
       moved: changed,
     },
   };
@@ -211,9 +330,15 @@ export function cancelDrag(state: EditorInteractionState): EditorInteractionStat
   return state.drag ? { ...state, drag: null } : state;
 }
 
-export function commitDrag(state: EditorInteractionState): TimingCommit | null {
+export function commitDrag(state: EditorInteractionState): EditorCommit | null {
   const drag = state.drag;
   if (!drag?.moved) return null;
+  if (drag.groupSceneIds.length > 1 && drag.zone === "body") {
+    return {
+      sceneIds: [...drag.groupSceneIds],
+      deltaSeconds: drag.preview.start - drag.clip.start,
+    };
+  }
   const timing = drag.zone === "body"
     ? { start: drag.preview.start }
     : drag.zone === "trim-start"
@@ -228,5 +353,5 @@ export function reduceInteraction(
 ): EditorInteractionState {
   if (event.type === "begin-drag") return beginDrag(state, event.input);
   if (event.type === "move-drag") return moveDrag(state, event.input);
-  return cancelDrag(state);
+  return clearSelection(cancelDrag(state));
 }

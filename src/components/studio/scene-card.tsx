@@ -26,6 +26,12 @@ export const SceneCard = React.memo(function SceneCard({
   live,
   hidden,
   onSelect,
+  dropPlacement,
+  onDragStart,
+  onDragOver,
+  onDrop,
+  onDragEnd,
+  onReorderKeyDown,
 }: {
   scene: Scene;
   /** Position in the storyboard, 1-based. */
@@ -36,22 +42,58 @@ export const SceneCard = React.memo(function SceneCard({
   live: boolean;
   /** Hidden from the preview by the scene's preview settings. */
   hidden: boolean;
-  onSelect: (scene: Scene) => void;
+  onSelect: (scene: Scene, modifiers: { shift?: boolean; additive?: boolean }) => void;
+  dropPlacement: "before" | "after" | null;
+  onDragStart: (scene: Scene) => void;
+  onDragOver: (scene: Scene, placement: "before" | "after") => void;
+  onDrop: (scene: Scene, placement: "before" | "after") => void;
+  onDragEnd: () => void;
+  onReorderKeyDown: (scene: Scene, direction: -1 | 1) => void;
 }) {
   const end = scene.start + scene.duration;
   const group = groupOf(scene);
 
   return (
-    <button
-      type="button"
-      onClick={() => onSelect(scene)}
+    <div
+      draggable
+      onDragStart={(event) => {
+        event.dataTransfer.effectAllowed = "move";
+        onDragStart(scene);
+      }}
+      onDragOver={(event) => {
+        event.preventDefault();
+        const bounds = event.currentTarget.getBoundingClientRect();
+        onDragOver(scene, event.clientX < bounds.left + bounds.width / 2 ? "before" : "after");
+      }}
+      onDrop={(event) => {
+        event.preventDefault();
+        const bounds = event.currentTarget.getBoundingClientRect();
+        onDrop(scene, event.clientX < bounds.left + bounds.width / 2 ? "before" : "after");
+      }}
+      onDragEnd={onDragEnd}
       data-selected={selected || undefined}
       className={cn(
-        "group/card flex flex-col overflow-hidden rounded-md border text-left transition-colors",
+        "group/card relative flex flex-col overflow-hidden rounded-md border text-left transition-colors",
         "hover:border-studio-accent/60",
         "data-selected:border-studio-accent data-selected:ring-studio-accent/30 data-selected:ring-2",
+        dropPlacement === "before" && "ring-2 ring-sky-400 ring-offset-1",
+        dropPlacement === "after" && "ring-2 ring-violet-400 ring-offset-1",
       )}
     >
+      <button
+        type="button"
+        onClick={(event) => onSelect(scene, {
+          shift: event.shiftKey,
+          additive: event.metaKey || event.ctrlKey,
+        })}
+        onKeyDown={(event) => {
+          if (!event.altKey || (event.key !== "ArrowLeft" && event.key !== "ArrowRight")) return;
+          event.preventDefault();
+          onReorderKeyDown(scene, event.key === "ArrowLeft" ? -1 : 1);
+        }}
+        className="contents"
+        aria-label={`Select ${scene.id}; drag or press Alt+Arrow to reorder`}
+      >
       <span
         className={cn(
           "relative block aspect-video overflow-hidden bg-black",
@@ -100,6 +142,7 @@ export const SceneCard = React.memo(function SceneCard({
           {scene.duration}s
         </span>
       </span>
-    </button>
+      </button>
+    </div>
   );
 });

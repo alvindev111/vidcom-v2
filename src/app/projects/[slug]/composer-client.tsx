@@ -187,6 +187,7 @@ function MountedStudio({
         rootTrack={snapshot.rootTrack as RootTrack | null}
         previewSettings={snapshot.previewSettings as PreviewSettings}
         previewSettingsRevision={snapshot.previewSettingsRevision}
+        projectRevision={snapshot.project.revision}
         externalChangeSeq={externalChangeSeq}
         onRefresh={loadSnapshot}
       />

@@ -1340,6 +1340,33 @@
           </p>
         </article>
       </section>
+      <section class="space-y-3">
+        <h2 class="text-lg font-semibold text-sky-300">P2 — Tương tác storyboard và timeline 2.4 (2026-08-18)</h2>
+        <article class="rounded-lg border border-sky-900/70 bg-sky-950/20 p-4 space-y-2">
+          <h3 class="font-medium">Một vùng chọn, hai bề mặt, hai loại kéo tách biệt</h3>
+          <p class="text-slate-300">
+            Storyboard và timeline nay dùng chung EditorInteractionState. Shift chọn dải trong một track, Shift sang
+            track khác đặt anchor mới, Cmd/Ctrl thêm-bớt, marquee lấy giao hình học, còn Esc xoá vùng chọn. Các phép
+            này chỉ đổi state trình bày và không tạo history. Số clip chọn được hiện ngay trên toolbar.
+          </p>
+          <p class="text-slate-300">
+            Kéo thân clip vẫn chỉ sửa timing. Khi kéo một clip thuộc vùng chọn, clip đó là anchor duy nhất để snap,
+            toàn bộ clip đã chọn bị loại khỏi snap candidates và nhận cùng một delta; request nhóm không mang ripple
+            hay trackIndex mới. Kéo tên scene ở gutter và kéo thẻ storyboard là affordance reorder riêng, có marker
+            trước/sau và gọi cùng route group-relative; Core vẫn là nơi quyết group, gap, timing và giới hạn.
+          </p>
+          <p class="text-slate-300">
+            Alt/Option + mũi tên gọi đúng mutation reorder, DOM keyed giữ focus trên scene và live region thông báo vị
+            trí mới; tại ranh giới thì không gửi request và không báo lỗi. Xoá nhiều scene đi qua prepare, hiển thị
+            xác nhận scene set, rồi execute đúng grant/revision/intent; chỉ xoá selection sau khi server thành công.
+          </p>
+          <p class="text-slate-400 text-sm">
+            Red ở ba seam thuần: selection/group drag, reorder intent và request prepare/execute. Green focused 13/13,
+            frontend liên quan 32/32, full regression 247 file và 2.247 test PASS (ngoài VieNeu-real skip có chủ ý);
+            production build, typecheck, boundaries và diff-check PASS; lint còn đúng 5 warning baseline.
+          </p>
+        </article>
+      </section>
     </main>
   </body>
 </html>

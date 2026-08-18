@@ -1,6 +1,6 @@
 "use client";
 
-import { MagnetIcon, Redo2Icon, Undo2Icon, ZoomInIcon, ZoomOutIcon } from "lucide-react";
+import { MagnetIcon, Redo2Icon, Trash2Icon, Undo2Icon, ZoomInIcon, ZoomOutIcon } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { historyDirectionView } from "@/lib/studio/history-controls";
@@ -14,6 +14,7 @@ export function TimelineToolbar({
   canZoomOut,
   sceneCount,
   selectedLabel,
+  selectedCount,
   snapEnabled,
   rippleEnabled,
   pendingTiming,
@@ -22,6 +23,7 @@ export function TimelineToolbar({
   onFit,
   onZoomIn,
   onZoomOut,
+  onDeleteSelection,
 }: {
   history: ReturnType<typeof useMutationHistory>;
   /** Multiplier over the width that fits the whole composition. */
@@ -31,6 +33,7 @@ export function TimelineToolbar({
   sceneCount: number;
   /** Scene under the playhead, echoed so the two panes read as one selection. */
   selectedLabel: string | null;
+  selectedCount: number;
   snapEnabled: boolean;
   rippleEnabled: boolean;
   pendingTiming: boolean;
@@ -39,6 +42,7 @@ export function TimelineToolbar({
   onFit: () => void;
   onZoomIn: () => void;
   onZoomOut: () => void;
+  onDeleteSelection: () => void;
 }) {
   const undo = historyDirectionView(history.state, "undo");
   const redo = historyDirectionView(history.state, "redo");
@@ -55,6 +59,23 @@ export function TimelineToolbar({
           {selectedLabel}
         </span>
       ) : null}
+
+      {selectedCount > 1 ? (
+        <span className="text-studio-accent shrink-0 text-[10px]" aria-live="polite">
+          {selectedCount} selected
+        </span>
+      ) : null}
+
+      <Button
+        variant="ghost"
+        size="sm"
+        className="h-6 shrink-0 gap-1 px-2 text-[10px]"
+        disabled={selectedCount === 0 || pendingTiming}
+        onClick={onDeleteSelection}
+      >
+        <Trash2Icon className="size-3" />
+        Delete
+      </Button>
 
       <Button
         variant="ghost"

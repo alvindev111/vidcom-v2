@@ -131,14 +131,17 @@ export function ScenePane({
       <ResizablePanel defaultSize="52" minSize="25">
         <ScrollArea className="bg-sidebar h-full">
           <SceneStoryboard
+            projectId={projectId}
             projectSlug={projectSlug}
             scenes={scenes}
             tree={tree}
             settings={preview.settings}
             selectedId={selected?.id ?? ""}
+            entryContentHash={files.find((file) => file.path === "index.html")?.version ?? null}
             // Selecting a card moves the preview to that beat — the point of a
             // storyboard is to jump around by looking, not by scrubbing.
             onSelect={onSelectScene}
+            onProjectChanged={onProjectChanged}
           />
         </ScrollArea>
       </ResizablePanel>

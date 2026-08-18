@@ -12,6 +12,7 @@ import { previewReloadRequest, type ProjectChanged } from "@/lib/studio/preview-
 import { orderedScenes } from "@/lib/studio/scene-order";
 import type { FileNode, RootTrack, Scene, SourceFile } from "@/lib/studio/types";
 import { PlayerTimeProvider } from "./player-time";
+import { EditorInteractionProvider } from "./editor-interaction-context";
 import { PreviewPanel } from "./preview-panel";
 import { SourcePane } from "./source-pane";
 import { useHyperframesPlayer } from "./use-hyperframes-player";
@@ -30,6 +31,7 @@ export function StudioShell({
   rootTrack,
   previewSettings,
   previewSettingsRevision,
+  projectRevision,
   externalChangeSeq,
   onRefresh,
 }: {
@@ -45,6 +47,7 @@ export function StudioShell({
   rootTrack: RootTrack | null;
   previewSettings: PreviewSettings;
   previewSettingsRevision: number;
+  projectRevision: number;
   externalChangeSeq: number | null;
   onRefresh: () => Promise<void>;
 }) {
@@ -117,7 +120,8 @@ export function StudioShell({
 
   return (
     <PlayerTimeProvider store={timeStore}>
-      <ResizablePanelGroup orientation="horizontal" className="min-h-0 flex-1">
+      <EditorInteractionProvider>
+        <ResizablePanelGroup orientation="horizontal" className="min-h-0 flex-1">
         <ResizablePanel defaultSize="38" minSize="20">
           <SourcePane
             projectId={projectId}
@@ -143,6 +147,7 @@ export function StudioShell({
             duration={duration}
             frameRate={frameRate}
             entryContentHash={files.find((file) => file.path === "index.html")?.version ?? null}
+            projectRevision={projectRevision}
             state={state}
             controls={controls}
             scenes={scenes}
@@ -154,7 +159,8 @@ export function StudioShell({
             onProjectChanged={handleProjectChanged}
           />
         </ResizablePanel>
-      </ResizablePanelGroup>
+        </ResizablePanelGroup>
+      </EditorInteractionProvider>
     </PlayerTimeProvider>
   );
 }
