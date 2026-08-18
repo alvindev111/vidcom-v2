@@ -13,8 +13,10 @@ import type { PreviewSettings } from "@/lib/studio/preview-settings";
 import {
   consumeStudioEvents,
   historyPath,
+  latestStudioChangeSeq,
   studioEventPath,
   studioRequestInit,
+  type StudioEvent,
 } from "@/lib/studio/studio-session";
 import type { RootTrack, Scene, SourceFile } from "@/lib/studio/types";
 
@@ -53,6 +55,7 @@ function MountedStudio({
   const [attached, setAttached] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
   const [eventRevision, setEventRevision] = React.useState(0);
+  const [externalChangeSeq, setExternalChangeSeq] = React.useState<number | null>(null);
   const [shellGeneration, setShellGeneration] = React.useState(0);
 
   const studioInit = React.useCallback(
@@ -92,14 +95,21 @@ function MountedStudio({
     if (!attached) return;
     const controller = new AbortController();
     let queued: ReturnType<typeof setTimeout> | null = null;
+    let queuedChangeSeq: number | null = null;
     let lastEventId: string | undefined;
-    const refresh = (data: string) => {
+    const refresh = (event: StudioEvent) => {
       try {
-        const payload = JSON.parse(data) as { projectId?: string };
+        const payload = JSON.parse(event.data) as { projectId?: string };
         if (payload.projectId && payload.projectId !== projectId) return;
       } catch { /* resync remains a refresh signal */ }
+      queuedChangeSeq = latestStudioChangeSeq(queuedChangeSeq, event, projectId);
       if (queued) clearTimeout(queued);
       queued = setTimeout(() => {
+        if (queuedChangeSeq !== null) {
+          const latest = queuedChangeSeq;
+          queuedChangeSeq = null;
+          setExternalChangeSeq((current) => current === null ? latest : Math.max(current, latest));
+        }
         setEventRevision((current) => current + 1);
         void loadSnapshot().catch(() => undefined);
       }, 75);
@@ -120,7 +130,7 @@ function MountedStudio({
           await requireOk(response);
           const consumed = await consumeStudioEvents(response, (event) => {
             if (event.id !== null) lastEventId = event.id;
-            refresh(event.data);
+            refresh(event);
           });
           if (consumed !== null) lastEventId = consumed;
         } catch {
@@ -176,6 +186,7 @@ function MountedStudio({
         rootTrack={snapshot.rootTrack as RootTrack | null}
         previewSettings={snapshot.previewSettings as PreviewSettings}
         previewSettingsRevision={snapshot.previewSettingsRevision}
+        externalChangeSeq={externalChangeSeq}
         onRefresh={loadSnapshot}
       />
     </StudioSessionProvider>

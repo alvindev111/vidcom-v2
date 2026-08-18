@@ -1111,6 +1111,24 @@
           </p>
         </article>
       </section>
+      <section class="space-y-3">
+        <h2 class="text-lg font-semibold text-sky-300">P4 — SSE cùng đường buffer 4.5 (2026-08-18)</h2>
+        <article class="rounded-lg border border-sky-900/70 bg-sky-950/20 p-4 space-y-2">
+          <h3 class="font-medium">External write không cần tăng project revision</h3>
+          <p class="text-slate-300">
+            Debounce SSE giữ sequence hợp lệ lớn nhất và truyền nó vào cùng
+            <code>previewReloadRequest</code>/<code>PlayerHost.requestReload</code> mà response HTTP dùng. Vì vậy
+            cùng sequence từ HTTP rồi SSE tự coalesce; file do editor ngoài sửa, kể cả
+            <code>preview-settings.json</code>, vẫn reload nhờ outbox sequence dù project revision không đổi.
+          </p>
+          <p class="text-slate-400 text-sm">
+            Chỉ event có data ghi tường minh đúng project đang mount mới được dùng làm target. Event host global,
+            project khác, id sai và id resync global vẫn có thể yêu cầu snapshot refresh nhưng không thể làm candidate
+            stale bằng sequence của project khác. Focused 9/9, frontend 86/86 và event/watcher 12/12 PASS; typecheck,
+            boundaries, diff-check sạch; lint 0 error/5 warning baseline.
+          </p>
+        </article>
+      </section>
     </main>
   </body>
 </html>

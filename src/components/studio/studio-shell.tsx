@@ -29,6 +29,7 @@ export function StudioShell({
   rootTrack,
   previewSettings,
   previewSettingsRevision,
+  externalChangeSeq,
   onRefresh,
 }: {
   projectId: string;
@@ -42,6 +43,7 @@ export function StudioShell({
   rootTrack: RootTrack | null;
   previewSettings: PreviewSettings;
   previewSettingsRevision: number;
+  externalChangeSeq: number | null;
   onRefresh: () => Promise<void>;
 }) {
   // The player lives here, not in the preview pane: the Scene tab on the left
@@ -51,6 +53,11 @@ export function StudioShell({
     previewUrl,
   );
   const duration = state.duration || authoredDuration || 0;
+
+  React.useEffect(() => {
+    const reload = previewReloadRequest(previewUrl, externalChangeSeq);
+    if (reload) void requestReload(reload);
+  }, [externalChangeSeq, previewUrl, requestReload]);
 
   // A source edit changes what the scenes *are*, so the page has to be re-read.
   const handleProjectChanged = React.useCallback<ProjectChanged>((changeSeq) => {

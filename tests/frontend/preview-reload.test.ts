@@ -48,5 +48,13 @@ describe("preview reload contract", () => {
     ]) {
       expect(source(name), name).toContain("mutationChangeSeq");
     }
+
+    const composer = readFileSync(
+      new URL("../../src/app/projects/[slug]/composer-client.tsx", import.meta.url),
+      "utf8",
+    );
+    expect(composer).toContain("latestStudioChangeSeq(queuedChangeSeq, event, projectId)");
+    expect(composer).toContain("externalChangeSeq={externalChangeSeq}");
+    expect(shell).toContain("previewReloadRequest(previewUrl, externalChangeSeq)");
   });
 });

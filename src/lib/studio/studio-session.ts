@@ -31,6 +31,29 @@ export interface StudioEvent {
   data: string;
 }
 
+/** Returns a durable token only for an event explicitly scoped to this project. */
+export function studioEventChangeSeq(event: StudioEvent, projectId: string): number | null {
+  if (event.id === null || !/^[1-9]\d*$/u.test(event.id)) return null;
+  try {
+    const payload = JSON.parse(event.data) as { projectId?: unknown };
+    if (payload.projectId !== projectId) return null;
+  } catch {
+    return null;
+  }
+  const value = Number(event.id);
+  return Number.isSafeInteger(value) ? value : null;
+}
+
+export function latestStudioChangeSeq(
+  current: number | null,
+  event: StudioEvent,
+  projectId: string,
+): number | null {
+  const next = studioEventChangeSeq(event, projectId);
+  if (next === null) return current;
+  return current === null ? next : Math.max(current, next);
+}
+
 /** Incrementally decodes SSE frames from a fetch response without DOM globals. */
 export async function consumeStudioEvents(
   response: Response,

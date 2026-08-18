@@ -4,6 +4,8 @@ import { createUlid } from "../../src/lib/studio/ids";
 import {
   consumeStudioEvents,
   historyPath,
+  latestStudioChangeSeq,
+  studioEventChangeSeq,
   studioRequestInit,
 } from "../../src/lib/studio/studio-session";
 
@@ -53,5 +55,21 @@ describe("studio session identity", () => {
       type: "file.changed",
       data: '{"projectId":"project-1"}',
     }]);
+  });
+
+  it("accepts only a canonical durable SSE sequence", () => {
+    const data = JSON.stringify({ projectId: "project-1" });
+    expect(studioEventChangeSeq({ id: "42", type: "file.changed", data }, "project-1")).toBe(42);
+    expect(studioEventChangeSeq({ id: "42", type: "file.changed", data }, "project-2")).toBeNull();
+    expect(studioEventChangeSeq({ id: "-1", type: "file.changed", data }, "project-1")).toBeNull();
+    expect(studioEventChangeSeq({ id: "1.5", type: "file.changed", data }, "project-1")).toBeNull();
+    expect(studioEventChangeSeq({ id: "99", type: "resync", data: "{}" }, "project-1")).toBeNull();
+    expect(latestStudioChangeSeq(42, { id: "41", type: "file.changed", data }, "project-1")).toBe(42);
+    expect(latestStudioChangeSeq(42, { id: "43", type: "file.changed", data }, "project-1")).toBe(43);
+    expect(studioEventChangeSeq({
+      id: "44",
+      type: "file.changed",
+      data: JSON.stringify({ projectId: "project-1", payload: { path: "preview-settings.json" } }),
+    }, "project-1")).toBe(44);
   });
 });
