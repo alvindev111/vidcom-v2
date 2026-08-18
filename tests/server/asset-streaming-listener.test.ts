@@ -1,6 +1,7 @@
 // @vitest-environment node
 
 import { spawn } from "node:child_process";
+import { fileURLToPath } from "node:url";
 
 import { expect, it } from "vitest";
 
@@ -35,8 +36,8 @@ it("streams assets through a real HTTP/1.1 listener with bounded memory and exac
   const { stdout } = await run(process.execPath, [
     "--expose-gc",
     "--experimental-transform-types",
-    "--experimental-loader", new URL("workspace-typescript-loader.mjs", support).pathname,
-    new URL("asset-streaming-listener-worker.ts", support).pathname,
+    "--experimental-loader", fileURLToPath(new URL("workspace-typescript-loader.mjs", support)),
+    fileURLToPath(new URL("asset-streaming-listener-worker.ts", support)),
   ]);
   const marker = "VIDCOM_ASSET_STREAM_RESULT=";
   const line = stdout.split("\n").find((value) => value.startsWith(marker));
