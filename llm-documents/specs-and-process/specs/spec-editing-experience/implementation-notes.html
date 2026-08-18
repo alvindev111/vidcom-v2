@@ -1959,6 +1959,14 @@
             trong chuỗi caption không serialize lại source. Golden và caption xanh 8/8; typecheck, boundaries, lint (năm
             warning nền) và diff-check xanh. Cần full CI mới trên exact fix trước khi đóng phase.
           </p>
+          <p class="text-slate-400 text-sm">
+            Phase P6 PASS. Full CI run 32171277150 tại exact SHA 9533acd xanh đủ tám job: main ba OS, packaged smoke ba
+            OS và Browser Linux/Windows. Main Linux/macOS xanh 267 file và 2.319 test, Windows 266 file và 2.280 test;
+            MCP, golden 11/11 file, schema drift, spec paths, build và daemon/SSE smoke đều xanh. Ba artifact tải về
+            /tmp/vidcom-p6-ci-32171277150.9K5lvQ đều strict, 13/13 bước, không evidenceError và có đủ doctor, ffprobe,
+            lease-loss, render-cancellation, startup, TTS. VieNeu real-engine run 32170350667 cũng xanh; WAV thật PCM
+            s16le mono 44,1 kHz dài 3,733651 giây, 329.386 byte. P7 nay được phép bắt đầu.
+          </p>
         </article>
       </section>
     </main>
