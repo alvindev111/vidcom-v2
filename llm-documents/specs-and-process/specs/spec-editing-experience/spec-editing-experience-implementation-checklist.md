@@ -900,12 +900,12 @@ font hỏng và replay-revision assertions.)
     node/attribute thực thi; timing NaN/Infinity bị từ chối trước serialize. `p.textContent` khớp cue
     text, có khoảng trắng giữa từ và không sinh khoảng trắng sai quanh punctuation attached.
   - _Requirements: R6.14_ — _Design: §5.13–§5.15, §11, §17_
-- [/] 6.6b Browser: highlight khi phát/seek/đổi tốc độ và scene `start ≠ 0`; chuẩn bị fixture parity preview ↔ render ba mốc cho P11.2
+- [x] 6.6b Browser: highlight khi phát/seek/đổi tốc độ và scene `start ≠ 0`; chuẩn bị fixture parity preview ↔ render ba mốc cho P11.2
   - _Requirements: R6.8, R6.14_ — _Design: §5.14, §11, §17_
 
 **Acceptance Criteria**:
-- [ ] Sinh lại caption không để sót cue cũ
-- [ ] Preview và render cho cùng nhịp highlight
+- [x] Sinh lại caption không để sót cue cũ
+- [x] Preview và render cho cùng nhịp highlight
 
 **Deliverables Created / Modified**: P6.1 `packages/core/src/domain/plan-caption-cues.ts`, Core barrel,
 `tests/core/plan-caption-cues.test.ts`. P6.2 `packages/core/src/{domain/models,usecase/generate-captions}.ts`,
@@ -915,6 +915,8 @@ P6.4 `packages/adapter/src/hyperframes/{preview-style,document}.ts`,
 P6.5 `src/components/studio/scene-narration.tsx`,
 `tests/{frontend/scene-narration-stale,core/project-usecases}.test.ts`.
 P6.6a hardened `tests/adapter/caption-ops.test.ts` hostile-text and non-finite timing matrix.
+P6.6b `tests/frontend/{caption-runtime-browser.test.ts,fixtures/caption-runtime-browser.ts}`,
+browser-session script/workflow ownership assertion.
 
 ---
 
@@ -1661,6 +1663,7 @@ caption · D7 tool MCP undo/redo · **D8 PR-11 hot-reload từng sub-composition
 | 2026-08-19 01:07 +07 | 6.6a | Caption unit/integration hardening | RED N/A: this task adds missing assertions to production already implemented and verified in 6.1–6.5; first new focused run passed 6/6, so no failure was fabricated and no production code was rewritten. Full P6 unit/integration 56/56; typecheck, boundaries, lint and diff-check PASS | `PASS` | Hostile `</span><script>`, entity text, bidi isolates and a control byte round-trip as four text spans with canonical U+0020 separators; parse creates no script/event/src node and source bytes remain untouched. A four-case matrix rejects NaN/±Infinity in cue or word bounds as `sdk_rejected` before serialization. Existing suites jointly cover all remaining 6.6a clauses | P6.6b |
 | 2026-08-19 01:08 +07 | 6.6b checkpoint | Real-browser caption transport | Baseline HEAD/remote `79fe7dc6928d081340b0a290d11bda1154185c2b`; worktree clean. Planned RED: `bunx vitest run tests/build/ci-workflows.test.ts --environment node` after asserting the required caption browser suite is wired, before `test:browser-session` contains it | `IN PROGRESS` | Playwright skill prerequisite `npx` is available; repository-standard real-browser harness is Puppeteer under Vitest and is already the required Linux/Windows workflow, so this explicit test task extends that harness rather than introducing a second runner. Fixture will execute the production `buildCaptionRuntimeScript`, use rational 30000/1001 fps and a layer at 6 s, exercise frame messages representing play/seek/rate, and expose the same three deterministic frame probes for preview/render parity work in P11.2 | Add the failing CI ownership assertion, build the reusable browser fixture/test, wire it into `test:browser-session`, run local real browser or record the explicit skip reason, then require exact CI on both OS before closing P6 |
 | 2026-08-19 01:10 +07 | 6.6b local | Real-browser caption transport | RED 1/7: CI ownership assertion showed `test:browser-session` omitted the caption suite. GREEN local real Chrome: focused + workflow contract 8/8; full browser-session 13/13 with no skip; typecheck, boundaries, lint and diff-check PASS | `IN PROGRESS` | Production script ran in actual Chrome against rational fps and non-zero layer offset. Preview and render fixture documents produced the same active word and `rgb(18, 171, 52)` at all three reusable probes (`play`, `seek`, `rate-2x`). `package.json` now makes the suite mandatory in the existing Linux/Windows Browser session workflow | Commit/push the exact implementation SHA, dispatch `Browser session`, watch both OS jobs and record URLs/conclusions before marking 6.6b complete |
+| 2026-08-19 01:15 +07 | 6.6b CI | [Browser session run 32169638381](https://github.com/alvindev111/vidcom-v2/actions/runs/32169638381) on exact `8f14459df6a4b449bbd2a6094183f47cd35c7849` | Linux x64 [job 95817423552](https://github.com/alvindev111/vidcom-v2/actions/runs/32169638381/job/95817423552) `success`; Windows x64 [job 95817423454](https://github.com/alvindev111/vidcom-v2/actions/runs/32169638381/job/95817423454) `success` | `PASS` | Both required jobs installed Chrome, built the static frontend, and ran the mandatory browser-session script with skips forbidden. Together with the local result, this closes play/seek/rate, rational fps, scene `start ≠ 0`, activeColor and three-point preview/render fixture evidence | P6 phase gate: dispatch full `CI` and `VieNeu real engine`; P7 remains prohibited until both are terminal PASS |
 
 ## Final Authoring-Readiness Audit
 

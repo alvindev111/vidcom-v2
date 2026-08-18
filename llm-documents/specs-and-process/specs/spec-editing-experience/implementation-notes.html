@@ -1942,6 +1942,12 @@
             lượt một/hai/ba cho play, seek và rate-2x; document preview/render giống active word lẫn màu rgb(18,171,52)
             ở cả ba mốc. Typecheck, boundaries, lint (năm warning nền), diff-check xanh; còn chờ CI Linux+Windows exact SHA.
           </p>
+          <p class="text-slate-400 text-sm">
+            P6.6b PASS trên exact SHA 8f14459, Browser session run 32169638381. Linux job 95817423552 và Windows job
+            95817423454 đều success sau khi cài Chrome, build frontend và chạy browser suite bắt buộc với skip bị cấm.
+            Hai AC caption cũng kín: Adapter thay toàn bộ block cũ trong một mutation, còn preview/render fixture cho cùng
+            active word và activeColor ở ba mốc. Phase P6 vẫn chưa đóng cho tới full CI và VieNeu real engine cùng xanh.
+          </p>
         </article>
       </section>
     </main>
