@@ -1430,6 +1430,13 @@
             thuần đã quyết, để layout ổn định trước lần kéo kế tiếp. Focused Chrome 1/1, interaction node 8/8,
             typecheck và diff-check PASS local; vẫn cần CI hai OS xác nhận.
           </p>
+          <p class="text-slate-400 text-sm">
+            Linux của run 32097226007 vẫn giữ preview ở 0px, nên thay đổi primary theo marquee cũng không phải nguyên
+            nhân và được hoàn tác. Harness chưa từng cố định viewport dù hit-zone và fit scale phụ thuộc pixel. Browser
+            session nay đặt viewport desktop 1440×1000 trước navigation và guard clip seed 4 giây phải có body rộng
+            hơn 20px; nếu geometry không hợp lệ, CI sẽ fail ngay với số px thay vì timeout network. Đây là điều kiện
+            test ổn định, không chuyển quyết định timing khỏi Core. Focused Chrome 1/1, typecheck và diff-check PASS.
+          </p>
         </article>
       </section>
     </main>
