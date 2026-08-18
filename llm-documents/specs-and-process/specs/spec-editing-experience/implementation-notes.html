@@ -1904,6 +1904,12 @@
             với fps 30000/1001 xanh 2/2; regression document/golden 11/11, typecheck, boundaries và diff-check xanh. Golden
             60 tổ hợp được cập nhật vì thay đổi document contract là có chủ ý.
           </p>
+          <p class="text-slate-400 text-sm">
+            P6.5 bắt đầu ở HEAD sạch 41d68c4. Audit xác nhận setSceneScript đã ghi source và narration sidecar trong cùng
+            một mutateSource, đặt staleSince trên cue tương ứng, không gọi TTS và không xóa khối caption; parser đọc lại
+            staleSince từ sidecar nên reload/SSE không phụ thuộc React state. Phần còn thiếu là cảnh báo UI rõ rằng nhịp
+            narration/caption có thể sai, cùng test khóa nguồn cảnh báo persisted này và việc caption vẫn còn hiển thị.
+          </p>
         </article>
       </section>
     </main>
