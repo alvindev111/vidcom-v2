@@ -1409,7 +1409,10 @@
             f9a8afe đỏ trên cả Linux và Windows: helper test luôn kéo clip đầu DOM, nhưng thứ tự layout đa OS không bảo
             đảm clip đó thuộc marquee selection, nên không có request group move. Đây là lỗi harness, không phải logic
             production. Helper nay nhận sceneId rõ ràng và neo vào chính thành viên marquee; focused Chrome 1/1, toàn
-            Browser session 12/12, typecheck và git diff --check đều PASS. Task vẫn in progress tới khi CI rerun xanh cả OS.
+            Browser session 12/12, typecheck và git diff --check đều PASS. Rerun exact SHA 186f2cd vẫn đỏ cả hai OS,
+            chứng minh chọn anchor rõ ràng chưa đủ: 24 px có thể bị snap về đúng start theo fit scale, làm commitDrag
+            trả null đúng thiết kế. Case browser nay tắt Snap qua nút toolbar thật và kiểm aria-pressed=false trước khi
+            kéo anchor; số học anchor-snap vẫn do node suite kiểm. Task vẫn in progress tới khi CI rerun xanh cả OS.
           </p>
         </article>
       </section>

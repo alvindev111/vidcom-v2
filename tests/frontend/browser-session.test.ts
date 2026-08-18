@@ -432,6 +432,12 @@ describe("browser session harness", () => {
       expect(marqueeSelection.length).toBeGreaterThanOrEqual(2);
       expect(marqueeSelection).toEqual(expect.arrayContaining(sameTrackByDom));
 
+      const snapToggle = 'button[aria-label="Toggle timeline snap"]';
+      expect(await page.$eval(snapToggle, (button) => button.getAttribute("aria-pressed"))).toBe("true");
+      await page.click(snapToggle);
+      await page.waitForFunction((selector) =>
+        document.querySelector(selector)?.getAttribute("aria-pressed") === "false", {}, snapToggle);
+
       const moveBodies: Array<Record<string, unknown>> = [];
       page.on("request", (request) => {
         if (request.method() !== "POST" || !new URL(request.url()).pathname.endsWith("/scenes/move")) return;
