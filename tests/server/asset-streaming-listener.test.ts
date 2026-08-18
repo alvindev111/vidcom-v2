@@ -37,7 +37,8 @@ it("streams assets through a real HTTP/1.1 listener with bounded memory and exac
     "--expose-gc",
     "--experimental-transform-types",
     "--experimental-loader", fileURLToPath(new URL("workspace-typescript-loader.mjs", support)),
-    fileURLToPath(new URL("asset-streaming-listener-worker.ts", support)),
+    "--eval", "import(process.argv[1])",
+    new URL("asset-streaming-listener-worker.ts", support).href,
   ]);
   const marker = "VIDCOM_ASSET_STREAM_RESULT=";
   const line = stdout.split("\n").find((value) => value.startsWith(marker));

@@ -1796,6 +1796,14 @@
             theo platform; không sửa listener hay nới AC. Focused real-listener 1/1, typecheck và diff-check xanh cục bộ.
             Run CI này vẫn được ghi FAIL/partial và phải rerun exact SHA mới trước khi đóng P5.
           </p>
+          <p class="text-slate-400 text-sm">
+            Rerun kế tiếp đã PASS mọi job trừ main Windows. Lần này packaged smoke Windows cũng PASS, nhưng rename RSS
+            đo đúng 67.108.864 byte nên vẫn không đạt điều kiện nhỏ hơn 64 MiB; buffer copy/hash backup giảm từ 1 MiB
+            xuống 64 KiB thay vì nới assertion. Loader path đã đúng, còn worker raw drive path bị ESM coi là scheme d:;
+            invocation cuối giữ loader bằng filesystem path và dùng eval import với file URL cho worker. Thử all-URL cục bộ
+            đã đỏ vì Node CLI coi URL POSIX là path, sau đó split invocation cùng CRUD integration xanh 5/5; typecheck và
+            diff-check xanh. Vẫn phải rerun đủ matrix exact SHA mới.
+          </p>
         </article>
       </section>
     </main>

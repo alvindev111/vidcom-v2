@@ -23,6 +23,8 @@ import { openRegularFileNoFollow } from "./regular-file";
 
 import type { VidcomDatabase } from "../db/client";
 
+const BACKUP_STREAM_BUFFER_BYTES = 64 * 1024;
+
 interface StoredBackup {
   id: string;
   projectId: string | null;
@@ -104,7 +106,7 @@ async function copySourceSynced(sourcePath: string, destinationPath: string): Pr
   const source = await openRegularFileNoFollow(sourcePath, "backup source is not a regular file");
   const destination = await open(destinationPath, "wx", 0o600);
   const digest = createHash("sha256");
-  const buffer = Buffer.allocUnsafe(1024 * 1024);
+  const buffer = Buffer.allocUnsafe(BACKUP_STREAM_BUFFER_BYTES);
   let position = 0;
   let failed = false;
   try {
@@ -140,7 +142,7 @@ async function copySourceSynced(sourcePath: string, destinationPath: string): Pr
 async function hashRegularFile(filename: string): Promise<{ contentHash: ContentHash; byteSize: number }> {
   const handle = await openRegularFileNoFollow(filename, "backup payload is not a regular file");
   const digest = createHash("sha256");
-  const buffer = Buffer.allocUnsafe(1024 * 1024);
+  const buffer = Buffer.allocUnsafe(BACKUP_STREAM_BUFFER_BYTES);
   let position = 0;
   try {
     const metadata = await handle.stat();
