@@ -5,6 +5,7 @@ import type { CompositionDocumentOptions, PreviewSettings, ProjectRef } from "@v
 import { readNarrationClips, type NarrationClip } from "./narration-clips";
 import {
   buildBgmHtml,
+  buildCaptionRuntimeScript,
   buildFxPauseScript,
   buildNarrationHtml,
   buildPreviewCss,
@@ -70,6 +71,7 @@ export function injectPreviewSettingsDocument(
     const body = buildToneOverlayHtml(settings)
       + buildBgmHtml(settings, options.fileBaseUrl)
       + buildNarrationHtml(options.narration ?? [], options.fileBaseUrl)
+      + buildCaptionRuntimeScript()
       + buildFxPauseScript(settings);
     output = output.includes("</body>") ? output.replace("</body>", `${body}\n</body>`) : output + body;
   }

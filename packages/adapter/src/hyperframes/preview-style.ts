@@ -200,6 +200,65 @@ export function buildFxPauseScript(settings: RenderablePreviewSettings): string 
 })();</script>`;
 }
 
+/** Drives per-word caption state from the HyperFrames transport clock. */
+export function buildCaptionRuntimeScript(): string {
+  return `<script id="vidcom-caption-runtime">(function(){
+  var state = { fps: 30, frame: 0 };
+  function roots() {
+    var list = [document];
+    var frames = document.querySelectorAll("iframe");
+    for (var index = 0; index < frames.length; index += 1) {
+      try { if (frames[index].contentDocument) list.push(frames[index].contentDocument); } catch (_) {}
+    }
+    return list;
+  }
+  function words() {
+    var list = [];
+    var documents = roots();
+    for (var rootIndex = 0; rootIndex < documents.length; rootIndex += 1) {
+      var matches = documents[rootIndex].querySelectorAll(".caption .w");
+      for (var wordIndex = 0; wordIndex < matches.length; wordIndex += 1) list.push(matches[wordIndex]);
+    }
+    return list;
+  }
+  function paint() {
+    var rootTime = state.frame / state.fps;
+    var matches = words();
+    for (var index = 0; index < matches.length; index += 1) {
+      var span = matches[index];
+      var layer = span.closest("[data-composition-src]");
+      var layerStart = layer ? Number(layer.getAttribute("data-start") || 0) : 0;
+      var sceneTime = rootTime - (Number.isFinite(layerStart) ? layerStart : 0);
+      var start = Number(span.getAttribute("data-start"));
+      var end = Number(span.getAttribute("data-end"));
+      span.classList.toggle("active", Number.isFinite(start) && Number.isFinite(end)
+        && sceneTime >= start && sceneTime < end);
+    }
+  }
+  var originalPost = window.parent.postMessage.bind(window.parent);
+  window.parent.postMessage = function(message) {
+    try {
+      if (message && message.source === "hf-preview") {
+        if (message.type === "timeline") {
+          var fps = message.fps;
+          if (fps && typeof fps === "object") {
+            var numerator = Number(fps.numerator);
+            var denominator = Number(fps.denominator);
+            if (Number.isFinite(numerator) && numerator > 0
+              && Number.isFinite(denominator) && denominator > 0) state.fps = numerator / denominator;
+          }
+        } else if (message.type === "state") {
+          var frame = Number(message.frame);
+          if (Number.isFinite(frame)) { state.frame = frame; paint(); }
+        }
+      }
+    } catch (_) {}
+    return originalPost.apply(null, arguments);
+  };
+  paint();
+})();</script>`;
+}
+
 /**
  * Narration `<audio class="clip">` elements for the root document.
  *

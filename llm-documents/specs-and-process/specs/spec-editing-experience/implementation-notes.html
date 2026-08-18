@@ -1897,6 +1897,13 @@
             data-composition-src gần nhất. Script được tiêm trong injectPreviewSettingsDocument dùng chung preview/render,
             không tạo requestAnimationFrame hay đồng hồ riêng; màu active tiếp tục đến từ subtitles.activeColor qua CSS.
           </p>
+          <p class="text-slate-400 text-sm">
+            P6.4 PASS. Red đầu tiên thiếu cả export runtime lẫn root injection. Bản xanh tiêm đúng một script ở root cho
+            cả document preview/render, giữ fps mặc định 30 chỉ trước timeline hợp lệ, sau đó dùng numerator/denominator,
+            state.frame finite và sceneTime = frame/fps - layerStart để toggle class active. Test node tại scene start 6 s
+            với fps 30000/1001 xanh 2/2; regression document/golden 11/11, typecheck, boundaries và diff-check xanh. Golden
+            60 tổ hợp được cập nhật vì thay đổi document contract là có chủ ý.
+          </p>
         </article>
       </section>
     </main>

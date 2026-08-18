@@ -889,7 +889,7 @@ font hỏng và replay-revision assertions.)
   - _Requirements: R6.1, R6.10, R6.13_ — _Design: §5.15_
 - [x] 6.3 Markup: `<span class="w" data-start data-end>` với mốc **tuyệt đối theo scene**; `data-caption-timing="engine|estimated"`
   - _Requirements: R6.6, R6.7_ — _Design: §5.14_
-- [/] 6.4 `buildCaptionRuntimeScript()` — đọc `{source:"hf-preview", type:"state", frame}`, `fps` **hữu tỉ** `{numerator, denominator}`, và trừ `data-start` của layer chứa span
+- [x] 6.4 `buildCaptionRuntimeScript()` — đọc `{source:"hf-preview", type:"state", frame}`, `fps` **hữu tỉ** `{numerator, denominator}`, và trừ `data-start` của layer chứa span
   - `subtitles.activeColor` từ preview settings
   - _Requirements: R6.8_ — _Design: §5.14_
 - [ ] 6.5 Stale: sửa script ⇒ đánh dấu stale, **không** tự chạy TTS; UI cảnh báo nhịp có thể sai
@@ -910,6 +910,8 @@ font hỏng và replay-revision assertions.)
 **Deliverables Created / Modified**: P6.1 `packages/core/src/domain/plan-caption-cues.ts`, Core barrel,
 `tests/core/plan-caption-cues.test.ts`. P6.2 `packages/core/src/{domain/models,usecase/generate-captions}.ts`,
 `packages/adapter/src/hyperframes/sdk-ops.ts`, `tests/{core/generate-captions,adapter/caption-ops}.test.ts`.
+P6.4 `packages/adapter/src/hyperframes/{preview-style,document}.ts`,
+`tests/adapter/caption-runtime.test.ts`, `fixtures/preview/preview-matrix-expected.json`.
 
 ---
 
@@ -1649,6 +1651,7 @@ caption · D7 tool MCP undo/redo · **D8 PR-11 hot-reload từng sub-composition
 | 2026-08-19 00:58 +07 | 6.3 checkpoint | Exact caption markup contract | Baseline HEAD/remote `9340ef1a569f00feb77e2ad0b209e61f1d272901`; worktree clean. Focused command: `bunx vitest run tests/adapter/caption-ops.test.ts --environment node` | `IN PROGRESS` | Analyze confirms task 6.2 necessarily implemented the production markup seam required by 6.3. Its red run already failed before the op/DOM branch existed; do not manufacture a second failure or rewrite passing code. Extend the same adapter test to assert `caption clip`, absolute cue/word data attributes, estimated marker and exact U+0020 textContent, then rerun focused/regression gates | Add only missing assertions/estimated fixture; close 6.3 if current structured DOM implementation satisfies them |
 | 2026-08-19 00:59 +07 | 6.3 | Exact caption markup contract | Prior 6.2 adapter red covered the absent production branch. Added assertions pass 1/1; typecheck and diff-check PASS | `PASS` | Serialized track carries `data-caption-timing="engine|estimated"`; each cue is `p.caption.clip` with absolute scene `data-start` and derived duration; every `span.w` carries absolute `data-start/data-end`. Explicit text nodes contain exactly one U+0020 between spans, so parsed `p.textContent` equals canonical cue text while punctuation remains attached. Source file remains byte-identical because Adapter only returns serialization | P6.4 |
 | 2026-08-19 00:59 +07 | 6.4 checkpoint | Runtime-clock caption highlight | Baseline HEAD/remote `9fa17672484cbf334284cd3678248ccc63c26894`; worktree clean. Planned red: `bunx vitest run tests/adapter/caption-runtime.test.ts --environment node` before `buildCaptionRuntimeScript` exists | `IN PROGRESS` | Runtime script will share `injectPreviewSettingsDocument` for preview and render, observe HyperFrames' own `window.parent.postMessage` timeline/state messages, divide rational fps, and subtract the nearest `[data-composition-src]` layer start. It will not introduce RAF/wall-clock timing. Active styling remains sourced from `subtitles.activeColor` through the existing preview CSS variable | Add a node runtime-contract suite, capture the expected missing export/injection failure, then implement and rerun focused + document parity regression |
+| 2026-08-19 01:01 +07 | 6.4 | Runtime-clock caption highlight | RED 2/2: `buildCaptionRuntimeScript is not a function` and root injection absent. GREEN focused 2/2; document/golden regression 11/11; typecheck, boundaries and diff-check PASS | `PASS` | Root document now receives one shared caption runtime in the same injection path used by preview and render. The runtime observes rational timeline fps and finite state frames, subtracts the closest composition layer start, and toggles only `.caption .w.active`; it has no RAF or wall clock. Golden matrix was deliberately refreshed for all 60 root-document combinations, and custom `subtitles.activeColor` remains in the injected CSS variable | P6.5 |
 
 ## Final Authoring-Readiness Audit
 
