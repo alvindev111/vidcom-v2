@@ -222,6 +222,18 @@ export interface MediaProbePort {
   probeFont(ref: ProjectRef, path: RelPath): Promise<Result<FontAssetMetadata | UnknownAssetMetadata, DomainError>>;
 }
 
+export interface FontStyleRequest {
+  family: string;
+  style: string;
+  fontPath: RelPath;
+  target: { kind: "document" } | { kind: "composition"; id: string };
+}
+
+/** Serializes one Core-approved project-local font reference into authored HTML. */
+export interface FontStylePort {
+  apply(source: string, request: FontStyleRequest): Promise<Result<string, DomainError>>;
+}
+
 /** Reads a pinned motion library's source from wherever the adapter installs it. */
 export interface MotionLibraryFilesPort {
   read(library: MotionLibrary): Promise<Result<Array<{ projectPath: RelPath; content: string }>, DomainError>>;

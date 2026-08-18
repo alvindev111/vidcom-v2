@@ -1682,6 +1682,22 @@
             1.292/1.292 xanh; một file VieNeu-real skip chủ đích. Typecheck/schema-drift/boundaries/diff xanh, lint không lỗi
             với năm warning nền.
           </p>
+          <p class="text-slate-400 text-sm">
+            P5.4 bắt đầu tại HEAD sạch bd2ffad. Core sẽ tự xác minh hash font, gọi probe font và quyết định file/target
+            theo project scope hoặc scene scope; transport không được gửi family/style. Adapter chỉ nhận model có cấu
+            trúc để normalize/validate/escape CSS, percent-encode từng segment và thay đúng một style block sở hữu bởi
+            VidCom trong HTML parse được. Mutation ghi một source write cùng history read guard hash của font để undo gỡ
+            reference vẫn được, còn redo bắt buộc kiểm lại file font dưới mutex. Route và UI vẫn thuộc 5.5/5.6.
+          </p>
+          <p class="text-slate-400 text-sm">
+            P5.4 PASS. Red Core 3/3 vì applyFont chưa tồn tại và Adapter chưa có serializer. Core xác minh hash font trước
+            probe, chỉ apply mới từ chối metadata unknown, NFC/giới hạn family-style và tự chọn entry, scene document hoặc
+            inline host. Adapter suy ra face traits, encode từng segment path, escape CSS string/selector và thay idempotent
+            đúng một style block sở hữu; payload quote, backslash, brace và url text không sinh thêm rule/declaration/URL.
+            Mutation là một source write có font hash read guard, nên undo vẫn gỡ reference còn redo kiểm dependency dưới
+            mutex. Focused 5/5, joined font/preview/history 61/61 và toàn Core+Adapter 1.297/1.297 xanh; VieNeu-real skip chủ
+            đích. Typecheck/boundaries/diff xanh, lint không lỗi với năm warning nền.
+          </p>
         </article>
       </section>
     </main>

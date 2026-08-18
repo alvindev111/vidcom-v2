@@ -58,6 +58,7 @@ export * from "./usecase/move-scenes";
 export * from "./usecase/file-deletion";
 export * from "./usecase/ingest-asset";
 export * from "./usecase/entry-crud";
+export * from "./usecase/apply-font";
 export * from "./usecase/list-tts-voices";
 export * from "./usecase/motion-library-install";
 export * from "./usecase/narration-cues";
