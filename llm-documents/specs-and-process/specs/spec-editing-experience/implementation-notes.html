@@ -1566,6 +1566,13 @@
             đường chính; interaction state guard khiến fallback không thể ghi lần hai. Production build mới, Browser
             session 12/12, editor/snap node 12/12, typecheck, lint không lỗi, boundaries và diff-check PASS local.
           </p>
+          <p class="text-slate-400 text-sm">
+            Linux run 32101678774 tiếp tục thiếu group request, nên fallback mouseup chưa giải quyết boundary thật.
+            Không đổi hành vi thêm ở checkpoint này. Surface trace tạm ghi chính xác pointer end/cancel cùng pointer
+            type, kết quả commitDrag và preview start, rồi trạng thái entry hash/pending ngay tại saveCommit; failure
+            message mang toàn bộ trace. Build mới, browser focused 5/5, typecheck và diff-check PASS local. Hook tạm sẽ
+            bị gỡ ngay sau khi run đa OS chỉ ra boundary cuối.
+          </p>
         </article>
       </section>
     </main>

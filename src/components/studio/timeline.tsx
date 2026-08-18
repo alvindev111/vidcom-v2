@@ -154,12 +154,18 @@ export function Timeline({
   const [deletionPending, setDeletionPending] = React.useState(false);
   const [announcement, setAnnouncement] = React.useState("");
 
+  const traceDrag = React.useCallback((value: string) => {
+    const surface = marqueeSurface.current;
+    if (surface) surface.dataset.dragTrace = `${surface.dataset.dragTrace ?? ""}|${value}`;
+  }, []);
+
   React.useEffect(() => {
     if (entryContentHash !== null) entryHashRef.current = entryContentHash;
   }, [entryContentHash]);
 
   const saveCommit = React.useCallback(async (commit: EditorCommit, extendRoot = false) => {
     const expectedContentHash = entryHashRef.current;
+    traceDrag(`save:${"sceneIds" in commit ? "group" : "timing"}:${expectedContentHash ? "hash" : "no-hash"}:${pendingTiming ? "pending" : "ready"}`);
     if (!expectedContentHash || pendingTiming) return;
     setPendingTiming(true);
     setTimingIssue(null);
@@ -208,7 +214,7 @@ export function Timeline({
     } finally {
       setPendingTiming(false);
     }
-  }, [onProjectChanged, pendingTiming, projectId, studio]);
+  }, [onProjectChanged, pendingTiming, projectId, studio, traceDrag]);
 
   const selectScene = React.useCallback((scene: Scene, modifiers: { shift?: boolean; additive?: boolean }) => {
     applyInteraction(selectClip(interactionRef.current, clips, scene.id, modifiers));
@@ -259,9 +265,10 @@ export function Timeline({
       candidates: candidatesFor(scene),
     });
     const commit = commitDrag(moved);
+    traceDrag(`end:${commit ? ("sceneIds" in commit ? "group" : "timing") : "none"}:${moved.drag?.preview.start ?? "no-preview"}`);
     applyInteraction(cancelDrag(moved));
     if (commit) void saveCommit(commit);
-  }, [applyInteraction, candidatesFor, frameRate, interactionRef, saveCommit]);
+  }, [applyInteraction, candidatesFor, frameRate, interactionRef, saveCommit, traceDrag]);
 
   const cancelCurrentDrag = React.useCallback(() => {
     applyInteraction(cancelDrag(interactionRef.current));
@@ -277,14 +284,17 @@ export function Timeline({
       if (scene && (event.buttons & 1) !== 0) continueDrag(scene, event.clientX);
     };
     const end = (event: PointerEvent) => {
+      traceDrag(`pointerup:${event.pointerType || "empty"}`);
       const scene = draggedScene();
       if (scene) endDrag(scene, event.clientX);
     };
     const endMouse = (event: MouseEvent) => {
+      traceDrag("mouseup");
       const scene = draggedScene();
       if (scene) endDrag(scene, event.clientX);
     };
     const cancel = (event: PointerEvent) => {
+      traceDrag(`cancel:${event.pointerType || "empty"}`);
       // Chromium headless can cancel a synthetic mouse pointer between CDP
       // move/up tasks. The matching mouseup still completes that gesture.
       if (event.pointerType === "mouse") return;
@@ -300,7 +310,7 @@ export function Timeline({
       window.removeEventListener("mouseup", endMouse, true);
       window.removeEventListener("pointercancel", cancel, true);
     };
-  }, [cancelCurrentDrag, continueDrag, endDrag, interactionRef, scenes]);
+  }, [cancelCurrentDrag, continueDrag, endDrag, interactionRef, scenes, traceDrag]);
 
   const sendSceneOrder = React.useCallback(
     ({ path, method, body }: { path: `/api/${string}`; method: "PATCH" | "POST"; body: Record<string, unknown> }) =>
