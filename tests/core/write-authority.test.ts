@@ -560,8 +560,8 @@ describe("WriteAuthority composite gate", () => {
       expect(result.ok, result.ok ? "" : JSON.stringify(result.error)).toBe(true);
       if (!result.ok) continue;
       expect(observer.receipts[0]?.steps[0]).toMatchObject({ kind: "file", undoable });
-      expect(undoContent.fileSources).toHaveLength(undoable ? 1 : 0);
-      expect(undoContent.byteStorages).toHaveLength(undoable ? 1 : 0);
+      expect(undoContent.fileSources).toHaveLength(undoable ? 2 : 0);
+      expect(undoContent.byteStorages).toHaveLength(0);
     }
   });
 

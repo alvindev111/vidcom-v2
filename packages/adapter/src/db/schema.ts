@@ -251,7 +251,7 @@ export const mutationStep = sqliteTable("mutation_step", {
   check("ck_step_status", sql`${table.status} IN ('pending', 'written', 'rolled_back')`),
   check("ck_step_previous_size", sql`${table.previousByteSize} >= 0`),
   check("ck_step_capture_state", sql`${table.captureState} IN ('pending', 'captured')`),
-  check("ck_step_capture_shape", sql`(${table.captureState} = 'pending' OR ((${table.previousContent} IS NULL AND ${table.previousObjectHash} IS NULL AND ${table.capturedHash} IS NULL) OR ((${table.previousContent} IS NOT NULL OR ${table.previousObjectHash} IS NOT NULL) AND ${table.capturedHash} IS ${table.fromHash})))`),
+  check("ck_step_capture_shape", sql`(${table.captureState} = 'pending' OR ${table.capturedHash} IS ${table.fromHash})`),
   check("ck_step_shape", sql`((${table.kind} = 'entity' AND ${table.path} IS NULL AND ${table.entity} IS NOT NULL AND ${table.existedBefore} IS NULL) OR (${table.kind} IN ('write', 'delete') AND ${table.path} IS NOT NULL AND ${table.entity} IS NULL AND ${table.existedBefore} IS NULL) OR (${table.kind} IN ('mkdir', 'rmdir') AND ${table.path} IS NOT NULL AND ${table.entity} IS NULL AND ${table.fromHash} IS NULL AND ${table.toHash} IS NULL AND ${table.existedBefore} IS NOT NULL))`),
 ]);
 

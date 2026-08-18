@@ -301,6 +301,8 @@ export interface WorkspacePort {
   readBytes(path: ResolvedPath): Promise<BinaryContent | null>;
   /** Hashes one resolved file; `null` means the file does not exist and hashing performs I/O. */
   readHash(path: ResolvedPath): Promise<ContentHash | null>;
+  /** Opens a Core-only, no-follow staged capability for bounded-memory rename/move. */
+  openStagedSource?(ref: ProjectRef, path: RelPath, expectedHash: ContentHash): Promise<StagedSourceHandle>;
   /** Atomically writes a resolved path; no precondition is checked by this method. */
   writeAtomic(path: ResolvedPath, content: string | Uint8Array): Promise<void>;
   /** Appends one already-serialized line durably without creating a project revision. */
@@ -344,6 +346,11 @@ export interface WorkspacePort {
   listBackupSources?(ref: ProjectRef): Promise<BackupSource[]>;
   /** Same closed read capability for a session-scoped recovery root that has no ProjectId. */
   listBackupSourcesAt?(root: AbsolutePath): Promise<BackupSource[]>;
+}
+
+export interface StagedSourceHandle {
+  source: StagedFileSource;
+  discard(): Promise<void>;
 }
 
 export interface StagedAsset {

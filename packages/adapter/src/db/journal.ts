@@ -373,8 +373,7 @@ export class MutationJournal implements MutationJournalPort, CompositeMutationJo
       UPDATE mutation_step
       SET rollback_path = ${rollbackPath}, captured_hash = ${capturedHash}, capture_state = 'captured'
       WHERE journal_id = ${id} AND ordinal = ${ordinal} AND capture_state = 'pending'
-        AND ((previous_content IS NULL AND previous_object_hash IS NULL AND ${capturedHash} IS NULL)
-          OR ((previous_content IS NOT NULL OR previous_object_hash IS NOT NULL) AND from_hash IS ${capturedHash}))
+        AND from_hash IS ${capturedHash}
         AND EXISTS (
           SELECT 1 FROM mutation_journal
           WHERE mutation_journal.id = mutation_step.journal_id

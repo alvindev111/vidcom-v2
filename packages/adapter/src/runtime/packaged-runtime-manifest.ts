@@ -30,6 +30,7 @@ export const PACKAGED_RUNTIME_MIGRATION_ENTRIES = [
   "drizzle/20260808073614_normal_stature/migration.sql",
   "drizzle/20260817153223_small_power_pack/migration.sql",
   "drizzle/20260817162114_solid_daredevil/migration.sql",
+  "drizzle/20260818060948_loose_kabuki/migration.sql",
 ] as const;
 const PACKAGED_RUNTIME_MIGRATION_ENTRY_SET = new Set<string>(PACKAGED_RUNTIME_MIGRATION_ENTRIES);
 

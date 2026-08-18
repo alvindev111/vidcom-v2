@@ -1,6 +1,6 @@
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { constants } from "node:fs";
-import { lstat, mkdir, open, readFile, readdir, realpath, stat } from "node:fs/promises";
+import { link, lstat, mkdir, open, readFile, readdir, realpath, rm, stat } from "node:fs/promises";
 import path from "node:path";
 
 import type { ContentHash, ProjectId, RelPath } from "@vidcom/contracts";
@@ -18,6 +18,7 @@ import {
   type ProjectRef,
   type ResolvedPath,
   type Result,
+  type StagedSourceHandle,
   type WorkspacePort,
   type ProjectCandidate,
   type ProjectRegistration,
@@ -252,6 +253,51 @@ export class WorkspaceFs implements WorkspacePort {
       if ((error as NodeJS.ErrnoException).code === "ENOENT") return null;
       throw error;
     }
+  }
+
+  async openStagedSource(
+    ref: ProjectRef,
+    sourcePath: RelPath,
+    expectedHash: ContentHash,
+  ): Promise<StagedSourceHandle> {
+    const project = await this.directProjectRoot(ref.root);
+    const resolved = await this.resolve(ref, sourcePath, "authored-write");
+    if (!resolved.ok) throw new TypeError("staged source path is not allowed");
+    const sourceMetadata = await lstat(resolved.value);
+    if (!sourceMetadata.isFile() || sourceMetadata.isSymbolicLink()) {
+      throw new TypeError("staged source is not a regular file");
+    }
+    const stateRoot = path.join(project, ".vidcom");
+    const temporaryRoot = path.join(stateRoot, "tmp");
+    for (const directory of [stateRoot, temporaryRoot]) {
+      try { await mkdir(directory, { mode: 0o700 }); }
+      catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+      }
+      const metadata = await lstat(directory);
+      if (!metadata.isDirectory() || metadata.isSymbolicLink()) {
+        throw new TypeError("staged source directory is unsafe");
+      }
+    }
+    const temporary = path.join(temporaryRoot, `entry-${randomUUID()}.tmp`) as AbsolutePath;
+    await link(resolved.value, temporary);
+    let discarded = false;
+    try {
+      if (await hashRegularFile(temporary) !== expectedHash) throw new TypeError("staged source hash changed");
+      await syncDirectory(temporaryRoot);
+    } catch (error) {
+      await rm(temporary, { force: true });
+      throw error;
+    }
+    return {
+      source: { sourcePath: temporary, contentHash: expectedHash },
+      async discard() {
+        if (discarded) return;
+        await rm(temporary, { force: true });
+        await syncDirectory(temporaryRoot);
+        discarded = true;
+      },
+    };
   }
 
   /** Atomically replaces one resolved target without checking a write precondition. */

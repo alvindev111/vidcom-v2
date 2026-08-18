@@ -1664,6 +1664,24 @@
             HyperFrames mới; containment được đổi sang Node thuần, audit+focused 14/14 và broad Adapter+CLI cuối cùng
             1.237/1.237 xanh, chỉ VieNeu-real skip chủ đích. Typecheck/boundaries/diff xanh; lint năm warning nền.
           </p>
+          <p class="text-slate-400 text-sm">
+            P5.3 bắt đầu tại HEAD sạch b55b69a. CRUD thủ công bị ép history ignore theo Goals nhưng vẫn journal; rename
+            và delete có backup. Core chỉ scan subtree được yêu cầu qua resolve/stat/readDirectory/readHash, tính tree
+            digest canonical, reject symlink/special và quan hệ path nguy hiểm, giới hạn hash/capability concurrency 8.
+            Adapter sẽ tạo staged-source hard-link no-follow/hash-verified dưới .vidcom/tmp và use case luôn discard.
+            Rename là mkdir target nông-trước, toàn bộ staged write, rồi delete/rmdir source sâu-trước. WriteAuthority
+            phải dùng streamed hash/capture rollback cho staged/delete để asset lớn không bị đọc toàn bộ vào heap.
+          </p>
+          <p class="text-slate-400 text-sm">
+            P5.3 PASS. Red 6/6 vì CRUD/capability chưa tồn tại. Core giữ path policy, tree digest canonical,
+            prepare/re-plan/grant binding và một composite có thứ tự; thao tác thủ công history-ignore nhưng vẫn journal,
+            rename/delete có backup. Adapter mở hard-link capability no-follow/hash-verified dưới temp dự án và luôn dọn.
+            Regression đầu phát hiện constraint SQLite cũ bắt buộc previous bytes nằm trong DB, trái với streaming file lớn;
+            migration mới ràng buộc capture bằng captured_hash đúng from_hash, đồng thời cập nhật cả hai runtime migration
+            allowlist. Focused 100/100, migration/runtime 74/74, artifact provenance 37/37 và toàn Core+Adapter
+            1.292/1.292 xanh; một file VieNeu-real skip chủ đích. Typecheck/schema-drift/boundaries/diff xanh, lint không lỗi
+            với năm warning nền.
+          </p>
         </article>
       </section>
     </main>

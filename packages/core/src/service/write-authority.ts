@@ -647,8 +647,11 @@ export class WriteAuthority {
           }
         }
       }
-      const current = await this.dependencies.workspace.readBytes(item.target);
-      const currentHash = current?.contentHash ?? null;
+      const streamedPrecondition = step.kind === "write-staged" || step.kind === "delete";
+      const current = streamedPrecondition ? null : await this.dependencies.workspace.readBytes(item.target);
+      const currentHash = streamedPrecondition
+        ? await this.dependencies.workspace.readHash(item.target)
+        : current?.contentHash ?? null;
       if ((step.kind === "write" || step.kind === "write-staged")
         && currentHash !== null && step.expectedContentHash === null) {
         return err({
@@ -658,7 +661,7 @@ export class WriteAuthority {
         });
       }
       if (currentHash !== step.expectedContentHash) {
-        const currentFile = await this.dependencies.workspace.readFile(item.target);
+        const currentFile = streamedPrecondition ? null : await this.dependencies.workspace.readFile(item.target);
         return err(conflict({
           path: step.path,
           current: currentFile
@@ -667,10 +670,13 @@ export class WriteAuthority {
                 contentHash: currentFile.contentHash,
                 revision: (await this.dependencies.journal.latestRevision(request.ref.id)) ?? 0,
               }
-            : null,
+            : currentHash === null ? null : {
+                contentHash: currentHash,
+                revision: (await this.dependencies.journal.latestRevision(request.ref.id)) ?? 0,
+              },
         }, "expectedContentHash"));
       }
-      if (step.kind === "delete" && current === null) {
+      if (step.kind === "delete" && currentHash === null) {
         return err({ code: ErrorCode.NotFound, message: "the deletion target was not found" });
       }
       if (currentHash !== null) observedHashes[step.path] = currentHash;
@@ -693,7 +699,7 @@ export class WriteAuthority {
                 : isStagedFileSource(step.content)
                   ? step.content.contentHash
                   : this.dependencies.hashContent(step.content),
-              previousContent: current?.bytes ?? null,
+              previousContent: streamedPrecondition ? null : current?.bytes ?? null,
             }
           : {
               ordinal,
@@ -702,7 +708,7 @@ export class WriteAuthority {
               entity: null,
               fromHash: currentHash,
               toHash: null,
-              previousContent: current?.bytes ?? null,
+              previousContent: streamedPrecondition ? null : current?.bytes ?? null,
             },
       });
     }
@@ -1052,7 +1058,7 @@ export class WriteAuthority {
           item.target,
           item.intent.kind === "mkdir" || item.intent.kind === "rmdir"
             ? { kind: "directory", existedBefore: item.intent.existedBefore }
-            : item.step.kind === "write-staged"
+            : item.step.kind === "write-staged" || item.step.kind === "delete"
               ? item.intent.fromHash
               : item.intent.previousContent === null ? null : item.intent.fromHash,
           journalId,
