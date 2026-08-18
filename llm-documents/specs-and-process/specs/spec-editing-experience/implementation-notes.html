@@ -1493,6 +1493,12 @@
             geometry. Run kế sẽ phân biệt rõ beginDrag chưa tồn tại, state bị ghi đè sau đó, hay scale không hợp lệ.
             Focused Chrome 1/1, typecheck và diff-check PASS local; các hook tạm sẽ được bỏ sau khi xác định boundary.
           </p>
+          <p class="text-slate-400 text-sm">
+            Trace state Linux run 32099202071 cho thấy pixels-per-second 19,9375, không pending nhưng dragScene rỗng.
+            Vì vậy gate scale và save concurrency đã được loại trừ; beginDrag hoặc không sống qua pointerdown, hoặc bị
+            cancel ngay khi primary row đổi expansion. Diagnostic kế tiếp bổ sung pointercancel, gotpointercapture và
+            lostpointercapture để xác định đúng transition native; checkpoint này không đổi hành vi production.
+          </p>
         </article>
       </section>
     </main>

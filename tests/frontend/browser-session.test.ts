@@ -77,7 +77,10 @@ async function dragTimelineClip(
     tracedWindow.__timelineDragAbort?.abort();
     tracedWindow.__timelineDragAbort = new AbortController();
     tracedWindow.__timelineDragTrace = [];
-    for (const type of ["mousedown", "mousemove", "mouseup", "pointerdown", "pointermove", "pointerup"] as const) {
+    for (const type of [
+      "mousedown", "mousemove", "mouseup", "pointerdown", "pointermove", "pointerup",
+      "pointercancel", "gotpointercapture", "lostpointercapture",
+    ] as const) {
       document.addEventListener(type, (event) => {
         const mouse = event as MouseEvent;
         const target = event.target instanceof Element
