@@ -465,6 +465,12 @@ export interface ThumbnailRenderResult {
   result: Result<Uint8Array, DomainError>;
 }
 
+/** Project-namespaced derived thumbnail storage; implementations must treat misses as harmless. */
+export interface ThumbnailCachePort {
+  get(projectId: ProjectId, renderKey: string): Promise<Uint8Array | null>;
+  put(projectId: ProjectId, renderKey: string, bytes: Uint8Array): Promise<void>;
+}
+
 /** Infrastructure batch renderer; one call maps to one abortable snapshot process. */
 export interface ThumbnailPort {
   renderBatch(

@@ -2050,6 +2050,14 @@
             không có khoảng route ghi stale sau check; hit bỏ hẳn process. File fingerprint cũ trở nên unreachable khi
             dependency graph invalidated và được global LRU dọn, không flush nhầm thumbnail scene/project khác.
           </p>
+          <p class="text-slate-400 text-sm">
+            P7.2c PASS. RED 5/10 gồm bốn ca filesystem chưa có adapter và scheduler chưa get/put. Bản xanh
+            chỉ nhận key lowercase 64 hex trước I/O, hash projectId thành namespace, đọc no-follow và trả bản sao
+            byte; put dùng sibling tmp, fsync và rename. Memory LRU 128 ảnh và disk LRU 512 MB đều tính chung
+            toàn daemon; fixture limit nhỏ chứng minh eviction xuyên project mà không đọc chéo namespace. Scheduler
+            nay giữ thứ tự get → render → current-check → put; lần kế hit và không gọi renderer. Core/thumbnail
+            regression 397/397, typecheck, boundaries, build, lint và diff-check xanh.
+          </p>
         </article>
       </section>
     </main>

@@ -9,6 +9,7 @@ import type {
   CompositionPort,
   ResolvedThumbnailProfile,
   ThumbnailKey,
+  ThumbnailCachePort,
   ThumbnailPort,
   ThumbnailProfileName,
   ThumbnailRenderResult,
@@ -133,6 +134,10 @@ export class ThumbnailService {
     return identity.ok ? ok(identity.value.fingerprint === expected) : identity;
   }
 
+  renderKey(key: ThumbnailKey): string {
+    return thumbnailRenderKey(key, this.dependencies.hashContent);
+  }
+
   private async identity(ref: ProjectRef, sceneId: string): Promise<Result<{
     fingerprint: ContentHash;
     profile: ResolvedThumbnailProfile;
@@ -179,7 +184,8 @@ export class ThumbnailService {
 }
 
 type ThumbnailRequest = { sceneId: string; atSeconds: readonly number[]; profile: ThumbnailProfileName };
-type ThumbnailPlanner = Pick<ThumbnailService, "plan" | "isFingerprintCurrent">;
+type ThumbnailPlanner = Pick<ThumbnailService, "plan" | "isFingerprintCurrent"> &
+  Partial<Pick<ThumbnailService, "renderKey">>;
 
 interface ScheduledBatch {
   ref: ProjectRef;
@@ -205,16 +211,18 @@ function failures(keys: readonly ThumbnailKey[], code: ErrorCode, message: strin
 export class ThumbnailBatchScheduler {
   private readonly activeLimit: number;
   private readonly queueLimit: number;
+  private readonly cache: ThumbnailCachePort | undefined;
   private active = 0;
   private readonly queue: ScheduledBatch[] = [];
 
   constructor(
     private readonly planner: ThumbnailPlanner,
     private readonly renderer: ThumbnailPort,
-    limits: { activeLimit?: number; queueLimit?: number } = {},
+    limits: { activeLimit?: number; queueLimit?: number; cache?: ThumbnailCachePort } = {},
   ) {
     this.activeLimit = limits.activeLimit ?? 2;
     this.queueLimit = limits.queueLimit ?? 8;
+    this.cache = limits.cache;
     if (!Number.isInteger(this.activeLimit) || this.activeLimit < 1
       || !Number.isInteger(this.queueLimit) || this.queueLimit < 0) {
       throw new TypeError("thumbnail scheduler limits are invalid");
@@ -300,12 +308,51 @@ export class ThumbnailBatchScheduler {
   private async execute(entry: ScheduledBatch): Promise<readonly ThumbnailRenderResult[]> {
     let plan = entry.plan;
     for (let attempt = 0; attempt < 2; attempt += 1) {
-      const rendered = await this.renderer.renderBatch(entry.ref, plan.keys, entry.signal);
+      const cached = new Map<number, Uint8Array>();
+      let renderKeys = plan.keys;
+      if (this.cache) {
+        if (!this.planner.renderKey) throw new TypeError("thumbnail cache requires render key planning");
+        try {
+          for (const key of plan.keys) {
+            const bytes = await this.cache.get(entry.ref.id, this.planner.renderKey(key));
+            if (bytes) cached.set(key.atSeconds, bytes);
+          }
+        } catch (error) {
+          return failures(plan.keys, ErrorCode.StorageUnavailable,
+            error instanceof Error ? error.message : "thumbnail cache read failed");
+        }
+        renderKeys = plan.keys.filter((key) => !cached.has(key.atSeconds));
+        if (renderKeys.length === 0) {
+          return plan.keys.map((key) => ({ key, result: ok(cached.get(key.atSeconds)!) }));
+        }
+      }
+      const rendered = await this.renderer.renderBatch(entry.ref, renderKeys, entry.signal);
       if (entry.signal.aborted) throw abortError("thumbnail request was aborted");
-      if (!rendered.some((item) => item.result.ok)) return rendered;
+      const combined = () => plan.keys.map((key) => {
+        const bytes = cached.get(key.atSeconds);
+        return bytes
+          ? { key, result: ok(bytes) }
+          : rendered.find((item) => item.key.atSeconds === key.atSeconds)
+            ?? { key, result: err({ code: ErrorCode.Internal, message: "thumbnail renderer omitted a key" }) };
+      });
+      if (!rendered.some((item) => item.result.ok)) return combined();
       const current = await this.planner.isFingerprintCurrent(entry.ref, entry.input.sceneId, plan.fingerprint);
       if (!current.ok) return failures(plan.keys, current.error.code, current.error.message);
-      if (current.value) return rendered;
+      if (current.value) {
+        if (this.cache) {
+          try {
+            for (const item of rendered) {
+              if (item.result.ok) {
+                await this.cache.put(entry.ref.id, this.planner.renderKey!(item.key), item.result.value);
+              }
+            }
+          } catch (error) {
+            return failures(plan.keys, ErrorCode.StorageUnavailable,
+              error instanceof Error ? error.message : "thumbnail cache publication failed");
+          }
+        }
+        return combined();
+      }
       if (attempt === 1) {
         return failures(plan.keys, ErrorCode.SourceChanging, "thumbnail source kept changing");
       }

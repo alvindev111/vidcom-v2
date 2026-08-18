@@ -7,6 +7,7 @@ import {
   type AbsolutePath,
   type ProjectRef,
   type ThumbnailKey,
+  type ThumbnailCachePort,
   type ThumbnailPlan,
   type ThumbnailPort,
   type ThumbnailProfileName,
@@ -189,5 +190,37 @@ describe("ThumbnailBatchScheduler", () => {
     expect(result).toMatchObject([{ result: { ok: true, value: new Uint8Array([2]) } }]);
     expect(result[0]!.key.fingerprint).toBe(fingerprint("2"));
     expect(generation).toBe(2);
+  });
+
+  it("publishes only after the current-fingerprint check and serves the next request without rendering", async () => {
+    const events: string[] = [];
+    const stored = new Map<string, Uint8Array>();
+    const cache: ThumbnailCachePort = {
+      async get(_projectId, renderKey) { events.push("get"); return stored.get(renderKey) ?? null; },
+      async put(_projectId, renderKey, bytes) { events.push("put"); stored.set(renderKey, bytes); },
+    };
+    const planner = {
+      async plan(_ref: ProjectRef, input: ReturnType<typeof request>) { return ok(plan(input.sceneId, input.atSeconds)); },
+      async isFingerprintCurrent() { events.push("current"); return ok(true); },
+      renderKey(key: ThumbnailKey) { return String(key.atSeconds).padEnd(64, "0"); },
+    };
+    let renders = 0;
+    const renderer: ThumbnailPort = {
+      async renderBatch(_ref, renderedKeys) {
+        events.push("render");
+        renders += 1;
+        return renderedKeys.map((renderedKey) => ({ key: renderedKey, result: ok(new Uint8Array([7])) }));
+      },
+    };
+    const scheduler = new ThumbnailBatchScheduler(planner, renderer, { cache });
+
+    await expect(scheduler.request(ref, request("cached"), new AbortController().signal))
+      .resolves.toMatchObject([{ result: { ok: true, value: new Uint8Array([7]) } }]);
+    expect(events).toEqual(["get", "render", "current", "put"]);
+    events.length = 0;
+    await expect(scheduler.request(ref, request("cached"), new AbortController().signal))
+      .resolves.toMatchObject([{ result: { ok: true, value: new Uint8Array([7]) } }]);
+    expect(events).toEqual(["get"]);
+    expect(renders).toBe(1);
   });
 });

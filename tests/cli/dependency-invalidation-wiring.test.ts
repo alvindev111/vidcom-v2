@@ -36,6 +36,7 @@ describe("production dependency invalidation wiring", () => {
     };
 
     expect(infrastructure.thumbnailScheduler.status).toEqual({ active: 0, queued: 0 });
+    expect(infrastructure.thumbnailCache).toBeDefined();
 
     const first = await infrastructure.dependencyGraph.dependenciesOf(ref, "scene-a");
     expect(first.ok && first.value[0]?.contentHash).toBeTruthy();

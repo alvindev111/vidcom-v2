@@ -40,6 +40,7 @@ import {
   DomSvgSanitizer,
   HyperframesCompositionDependencyGraph,
   HyperframesThumbnailRenderer,
+  ThumbnailCacheAdapter,
   NodeAssetProbe,
   BgmLibraryStore,
   BgmProviderRegistry,
@@ -344,6 +345,7 @@ export function createInfrastructure(config: CompositionRootConfig) {
     runtimeDigest: hashContent(thumbnailRuntimeSource),
     rendererVersion: HYPERFRAMES_EXPECTED_VERSION,
   });
+  const thumbnailCache = new ThumbnailCacheAdapter(config.appDataRoot);
   const thumbnailRenderer = new HyperframesThumbnailRenderer({
     process: renderProcess,
     roots: renderRoots,
@@ -364,7 +366,9 @@ export function createInfrastructure(config: CompositionRootConfig) {
       });
     },
   });
-  const thumbnailScheduler = new ThumbnailBatchScheduler(thumbnailService, thumbnailRenderer);
+  const thumbnailScheduler = new ThumbnailBatchScheduler(thumbnailService, thumbnailRenderer, {
+    cache: thumbnailCache,
+  });
   const grants = new SqliteApprovalGrantStore(database);
   const approvals = new ApprovalService({
     grants,
@@ -464,6 +468,7 @@ export function createInfrastructure(config: CompositionRootConfig) {
     backups,
     composition,
     thumbnailService,
+    thumbnailCache,
     thumbnailRenderer,
     thumbnailScheduler,
     grants,
