@@ -1450,6 +1450,12 @@
             Helper nay scroll anchor rõ ràng vào giữa viewport, chờ một animation frame rồi mới đo và kéo; điều kiện
             preview vẫn giữ để chứng minh handler thực sự chạy. Focused Chrome 1/1, typecheck và diff-check PASS local.
           </p>
+          <p class="text-slate-400 text-sm">
+            Linux run 32097851057 vẫn timeout sau scroll, nên bước kế không tiếp tục đoán. Harness chẩn đoán ghi tối đa
+            30 mouse/pointer event trusted tại document capture, rect target, viewport và elementFromPoint ở tọa độ nhấn;
+            khi preview không đổi, CI in toàn bộ dữ liệu an toàn này. Focused Chrome 1/1, full Browser session 12/12,
+            typecheck và diff-check PASS local.
+          </p>
         </article>
       </section>
     </main>

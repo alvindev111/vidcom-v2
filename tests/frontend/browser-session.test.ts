@@ -69,6 +69,26 @@ async function dragTimelineClip(
   await page.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => resolve())));
   const box = await clip.boundingBox();
   if (!box) throw new Error("timeline clip has no browser geometry");
+  await page.evaluate(() => {
+    const tracedWindow = window as Window & {
+      __timelineDragAbort?: AbortController;
+      __timelineDragTrace?: Array<Record<string, unknown>>;
+    };
+    tracedWindow.__timelineDragAbort?.abort();
+    tracedWindow.__timelineDragAbort = new AbortController();
+    tracedWindow.__timelineDragTrace = [];
+    for (const type of ["mousedown", "mousemove", "mouseup", "pointerdown", "pointermove", "pointerup"] as const) {
+      document.addEventListener(type, (event) => {
+        const mouse = event as MouseEvent;
+        const target = event.target instanceof Element
+          ? event.target.closest<HTMLElement>("[data-timeline-scene-id]")?.dataset.timelineSceneId ?? event.target.tagName
+          : null;
+        if ((tracedWindow.__timelineDragTrace?.length ?? 0) < 30) {
+          tracedWindow.__timelineDragTrace?.push({ type, target, x: mouse.clientX, y: mouse.clientY, buttons: mouse.buttons });
+        }
+      }, { capture: true, signal: tracedWindow.__timelineDragAbort.signal });
+    }
+  });
   const before = await clip.evaluate((element) => ({
     left: (element as HTMLElement).style.left,
     width: (element as HTMLElement).style.width,
@@ -78,10 +98,28 @@ async function dragTimelineClip(
   await page.mouse.move(x, y);
   await page.mouse.down();
   await page.mouse.move(x + 24, y, { steps: 3 });
-  await page.waitForFunction((target, dragZone, left, width) => {
-    const element = document.querySelector<HTMLElement>(target);
-    return dragZone === "body" ? element?.style.left !== left : element?.style.width !== width;
-  }, { timeout: 5_000 }, selector, zone, before.left, before.width);
+  try {
+    await page.waitForFunction((target, dragZone, left, width) => {
+      const element = document.querySelector<HTMLElement>(target);
+      return dragZone === "body" ? element?.style.left !== left : element?.style.width !== width;
+    }, { timeout: 5_000 }, selector, zone, before.left, before.width);
+  } catch (cause) {
+    const diagnostic = await page.evaluate((target, x, y) => {
+      const tracedWindow = window as Window & { __timelineDragTrace?: Array<Record<string, unknown>> };
+      const element = document.querySelector<HTMLElement>(target);
+      const rect = element?.getBoundingClientRect();
+      const hit = document.elementFromPoint(x, y);
+      return {
+        rect: rect ? { x: rect.x, y: rect.y, width: rect.width, height: rect.height } : null,
+        viewport: { width: innerWidth, height: innerHeight },
+        hit: hit instanceof Element
+          ? hit.closest<HTMLElement>("[data-timeline-scene-id]")?.dataset.timelineSceneId ?? hit.tagName
+          : null,
+        trace: tracedWindow.__timelineDragTrace ?? [],
+      };
+    }, selector, x, y);
+    throw new Error(`timeline drag preview did not change: ${JSON.stringify(diagnostic)}`, { cause });
+  }
   const after = await page.$eval(selector, (element) => ({
     left: (element as HTMLElement).style.left,
     width: (element as HTMLElement).style.width,
