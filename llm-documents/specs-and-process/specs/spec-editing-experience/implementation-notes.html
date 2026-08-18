@@ -1486,6 +1486,13 @@
             không còn quyền chặn state machine. Pointerup đã capture-optional và continue/end vẫn xác minh đúng scene.
             Focused Chrome 1/1, editor/snap node 12/12, full Browser session 12/12, typecheck và diff-check PASS local.
           </p>
+          <p class="text-slate-400 text-sm">
+            Linux run 32098975939 vẫn không tạo preview sau khi drag state được khởi tạo trước capture, nên giả thuyết
+            exception ordering chưa đủ. Không đổi thêm hành vi: timeline surface tạm công khai drag owner thật,
+            pending flag và pixels-per-second qua data attribute; failure diagnostic ghép state này với native trace và
+            geometry. Run kế sẽ phân biệt rõ beginDrag chưa tồn tại, state bị ghi đè sau đó, hay scale không hợp lệ.
+            Focused Chrome 1/1, typecheck và diff-check PASS local; các hook tạm sẽ được bỏ sau khi xác định boundary.
+          </p>
         </article>
       </section>
     </main>

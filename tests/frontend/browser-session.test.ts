@@ -107,6 +107,7 @@ async function dragTimelineClip(
     const diagnostic = await page.evaluate((target, x, y) => {
       const tracedWindow = window as Window & { __timelineDragTrace?: Array<Record<string, unknown>> };
       const element = document.querySelector<HTMLElement>(target);
+      const surface = document.querySelector<HTMLElement>("[data-timeline-marquee-surface]");
       const rect = element?.getBoundingClientRect();
       const hit = document.elementFromPoint(x, y);
       return {
@@ -115,6 +116,11 @@ async function dragTimelineClip(
         hit: hit instanceof Element
           ? hit.closest<HTMLElement>("[data-timeline-scene-id]")?.dataset.timelineSceneId ?? hit.tagName
           : null,
+        interaction: surface ? {
+          dragScene: surface.dataset.timelineDragScene,
+          pending: surface.dataset.timelinePending,
+          pixelsPerSecond: surface.dataset.timelinePixelsPerSecond,
+        } : null,
         trace: tracedWindow.__timelineDragTrace ?? [],
       };
     }, selector, x, y);

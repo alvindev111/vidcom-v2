@@ -501,6 +501,9 @@ export function Timeline({
           <div
             ref={marqueeSurface}
             data-timeline-marquee-surface
+            data-timeline-drag-scene={interaction.drag?.clip.sceneId ?? ""}
+            data-timeline-pending={pendingTiming || undefined}
+            data-timeline-pixels-per-second={pixelsPerSecond}
             className="relative"
             onPointerDown={beginMarquee}
             onPointerMove={moveMarquee}
