@@ -14,6 +14,7 @@ import {
   ok,
   type CompositionDependency,
   type CompositionDependencyPort,
+  type ProjectPathInvalidator,
   type ProjectRef,
   type Result,
 } from "@vidcom/core";
@@ -225,8 +226,38 @@ function sceneSource(ref: ProjectRef, entry: string, sceneId: string): RelPath |
   return source ? canonicalReference(ref.entry, source) : ref.entry;
 }
 
-export class HyperframesCompositionDependencyGraph implements CompositionDependencyPort {
+interface DependencyMemo {
+  projectId: ProjectRef["id"];
+  ownedPaths: ReadonlySet<RelPath>;
+  result: Result<CompositionDependency[], DomainError>;
+}
+
+function normalizedRelativePath(value: RelPath): string {
+  return path.posix.normalize(value.split("\\").join("/")).replace(/^\.\//u, "").replace(/\/$/u, "");
+}
+
+function pathsOverlap(left: RelPath, right: RelPath): boolean {
+  const a = normalizedRelativePath(left);
+  const b = normalizedRelativePath(right);
+  return a === b || a.startsWith(`${b}/`) || b.startsWith(`${a}/`);
+}
+
+export class HyperframesCompositionDependencyGraph implements CompositionDependencyPort, ProjectPathInvalidator {
+  private readonly memo = new Map<string, DependencyMemo>();
+
+  invalidate(projectId: ProjectRef["id"], changedPaths: readonly RelPath[]): void {
+    for (const [key, entry] of this.memo) {
+      if (entry.projectId !== projectId) continue;
+      if ([...entry.ownedPaths].some((owned) => changedPaths.some((changed) => pathsOverlap(owned, changed)))) {
+        this.memo.delete(key);
+      }
+    }
+  }
+
   async dependenciesOf(ref: ProjectRef, sceneId: string): Promise<Result<CompositionDependency[], DomainError>> {
+    const memoKey = `${ref.id}\u0000${sceneId}`;
+    const memoized = this.memo.get(memoKey);
+    if (memoized) return memoized.result;
     try {
       const entryFilename = resolveWithinProject(ref.root, ref.entry);
       if (!entryFilename || !existsSync(entryFilename)) {
@@ -261,7 +292,13 @@ export class HyperframesCompositionDependencyGraph implements CompositionDepende
         else if (kind === "css") pending.push(...cssReferences(bytes.toString("utf8"), next.path));
         else if (kind === "javascript") pending.push(...javascriptReferences(bytes.toString("utf8"), next.path));
       }
-      return ok([...dependencies.values()].sort((left, right) => left.path.localeCompare(right.path, "en")));
+      const result = ok([...dependencies.values()].sort((left, right) => left.path.localeCompare(right.path, "en")));
+      this.memo.set(memoKey, {
+        projectId: ref.id,
+        ownedPaths: new Set<RelPath>([ref.entry, ...visited]),
+        result,
+      });
+      return result;
     } catch (error) {
       return err({
         code: ErrorCode.DependencyGraphUnavailable,

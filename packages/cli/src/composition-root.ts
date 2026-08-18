@@ -38,6 +38,7 @@ import {
   FontkitCompatibilityInspector,
   FsAssetStaging,
   DomSvgSanitizer,
+  HyperframesCompositionDependencyGraph,
   NodeAssetProbe,
   BgmLibraryStore,
   BgmProviderRegistry,
@@ -309,7 +310,8 @@ export function createInfrastructure(config: CompositionRootConfig) {
   });
   const events = new SqliteEventOutbox(database, clock);
   const cache = new ProjectCache();
-  const pathInvalidator = new ProjectPathInvalidatorFanout([cache], () => {
+  const dependencyGraph = new HyperframesCompositionDependencyGraph();
+  const pathInvalidator = new ProjectPathInvalidatorFanout([cache, dependencyGraph], () => {
     logger.warn("project path invalidator consumer failed");
     metrics.increment("project_path_invalidator_error");
   });
@@ -419,6 +421,7 @@ export function createInfrastructure(config: CompositionRootConfig) {
     renderBinaries,
     events,
     cache,
+    dependencyGraph,
     pathInvalidator,
     writtenHashes,
     watcher,

@@ -2002,6 +2002,14 @@
             bất kỳ chiều nào. Prefix chữ giống nhau như media/a và media/ab không được invalidation nhầm;
             error fail-closed không được cache. Không thêm hook SSE/route hay import Server.
           </p>
+          <p class="text-slate-400 text-sm">
+            P7.1b PASS. Test đỏ 3/10 chứng minh graph chưa có invalidate/memo và composition root chưa nối
+            instance sống. Bản xanh memo chỉ kết quả thành công theo project/scene, sở hữu root entry, scene source
+            và mọi dependency present/missing. Equal hoặc ancestor theo segment ở hai chiều xoá đúng scene; prefix
+            media/ab không đụng media/a. Composition root đưa graph và ProjectCache vào chính fan-out mà
+            WriteAuthority và WorkspaceWatcher đã dùng. Focused graph/root 10/10, tích hợp watcher/authority 45/45,
+            typecheck, boundaries, lint và diff-check đều xanh; không instrument route/SSE.
+          </p>
         </article>
       </section>
     </main>

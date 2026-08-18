@@ -71,7 +71,7 @@ describe("HyperframesCompositionDependencyGraph", () => {
       .toBe(digest("poster"));
   });
 
-  it("changes a referenced missing path to present without memoized fallback", async () => {
+  it("refreshes a referenced missing path after exact invalidation", async () => {
     const ref = await project({
       "index.html": `<main data-composition-id="main"><div data-composition-id="scene-a" data-composition-src="scene.html"></div></main>`,
       "scene.html": `<template><section data-composition-id="scene-a"><img src="media/later.png"></section></template>`,
@@ -83,10 +83,36 @@ describe("HyperframesCompositionDependencyGraph", () => {
 
     await mkdir(path.join(ref.root, "media"), { recursive: true });
     await writeFile(path.join(ref.root, "media/later.png"), "later", "utf8");
+    graph.invalidate(ref.id, ["media/later.png" as RelPath]);
     const present = await graph.dependenciesOf(ref, "scene-a");
     expect(present).toMatchObject({
       ok: true,
       value: [{ path: "media/later.png", state: "present", contentHash: digest("later") }],
+    });
+  });
+
+  it("invalidates memoized scenes for equal or ancestor path segments only", async () => {
+    const ref = await project({
+      "index.html": `<main data-composition-id="main"><div data-composition-id="scene-a" data-composition-src="scene.html"></div></main>`,
+      "scene.html": `<template><section data-composition-id="scene-a"><img src="media/a/poster.png"></section></template>`,
+      "media/a/poster.png": "first",
+    });
+    const graph = new HyperframesCompositionDependencyGraph();
+
+    const first = await graph.dependenciesOf(ref, "scene-a");
+    expect(first).toMatchObject({ ok: true, value: [{ contentHash: digest("first") }] });
+    await writeFile(path.join(ref.root, "media/a/poster.png"), "second", "utf8");
+
+    graph.invalidate(ref.id, ["media/ab" as RelPath]);
+    await expect(graph.dependenciesOf(ref, "scene-a")).resolves.toMatchObject({
+      ok: true,
+      value: [{ contentHash: digest("first") }],
+    });
+
+    graph.invalidate(ref.id, ["media/a" as RelPath]);
+    await expect(graph.dependenciesOf(ref, "scene-a")).resolves.toMatchObject({
+      ok: true,
+      value: [{ contentHash: digest("second") }],
     });
   });
 
