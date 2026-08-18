@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 
 import { startNextHostedRuntime } from "@vidcom/cli";
+import { createScene, getStudioSnapshot } from "@vidcom/core";
 import type { Browser, Page } from "puppeteer-core";
 import { browserAvailability, browserIsRequired, requireBrowser } from "../support/browser-harness";
 import { describe, expect, it } from "vitest";
@@ -51,6 +52,33 @@ async function appendSourceAndSave(page: Page, marker: string): Promise<void> {
     const button = document.querySelector('button[aria-label="Undo Edit source"]');
     return button instanceof HTMLButtonElement && !button.disabled;
   });
+}
+
+async function dragTimelineClip(
+  page: Page,
+  zone: "body" | "trim-end",
+  finish: "drop" | "escape",
+): Promise<{ beforeLeft: string; afterLeft: string; beforeWidth: string; afterWidth: string }> {
+  const clip = await page.waitForSelector("[data-timeline-scene-id]");
+  if (!clip) throw new Error("timeline clip did not mount");
+  const box = await clip.boundingBox();
+  if (!box) throw new Error("timeline clip has no browser geometry");
+  const before = await clip.evaluate((element) => ({
+    left: (element as HTMLElement).style.left,
+    width: (element as HTMLElement).style.width,
+  }));
+  const x = zone === "body" ? box.x + box.width / 2 : box.x + box.width - 2;
+  const y = box.y + box.height / 2;
+  await page.mouse.move(x, y);
+  await page.mouse.down();
+  await page.mouse.move(x + 24, y, { steps: 3 });
+  const after = await page.$eval("[data-timeline-scene-id]", (element) => ({
+    left: (element as HTMLElement).style.left,
+    width: (element as HTMLElement).style.width,
+  }));
+  if (finish === "escape") await page.keyboard.press("Escape");
+  await page.mouse.up();
+  return { beforeLeft: before.left, afterLeft: after.left, beforeWidth: before.width, afterWidth: after.width };
 }
 
 async function waitForEmptyHistory(page: Page): Promise<void> {
@@ -241,6 +269,18 @@ describe("browser session harness", () => {
       if (!created || created.kind !== "project" || !created.projectId) {
         throw new Error("browser-created project was not discoverable by immutable id");
       }
+      const emptySnapshot = await getStudioSnapshot(
+        runtime.foundation.application.readDependencies,
+        created.projectId,
+      );
+      if (!emptySnapshot.ok) throw new Error(`browser snapshot failed: ${JSON.stringify(emptySnapshot.error)}`);
+      const seeded = await createScene(runtime.foundation.application.writeDependencies, {
+        projectId: created.projectId,
+        title: "Browser timing",
+        duration: 4,
+        expectedContentHash: emptySnapshot.value.fileHashes[emptySnapshot.value.entryFile.path] ?? null,
+      }, "system");
+      if (!seeded.ok) throw new Error(`browser scene seed failed: ${JSON.stringify(seeded.error)}`);
 
       // One real source write proves the server-owned label reaches the rendered
       // timeline, then a second tab proves its stack and ULID are independent.
@@ -248,6 +288,54 @@ describe("browser session harness", () => {
       // project cards and the studio API use the immutable id, so this focused
       // history harness follows that canonical route after preserving the redirect assertion.
       await page.goto(`${baseUrl}/projects/${encodeURIComponent(created.projectId)}`, { waitUntil: "domcontentloaded" });
+      await page.waitForSelector('[data-timeline-scene-id]');
+      await clickText(page, "button", "Snap");
+      const timingWrites: Array<{ timing?: Record<string, number> }> = [];
+      page.on("request", (request) => {
+        if (request.method() !== "PATCH") return;
+        const pathname = new URL(request.url()).pathname;
+        if (!/^\/api\/v1\/projects\/[^/]+\/scenes\/[^/]+$/u.test(pathname)) return;
+        const body = request.postData();
+        if (body) timingWrites.push(JSON.parse(body) as { timing?: Record<string, number> });
+      });
+
+      const bodyRequest = page.waitForRequest((request) =>
+        request.method() === "PATCH"
+        && /^\/api\/v1\/projects\/[^/]+\/scenes\/[^/]+$/u.test(new URL(request.url()).pathname),
+      { timeout: 10_000 });
+      const bodyResponse = page.waitForResponse((response) =>
+        response.request().method() === "PATCH"
+        && /^\/api\/v1\/projects\/[^/]+\/scenes\/[^/]+$/u.test(new URL(response.url()).pathname),
+      { timeout: 10_000 });
+      const bodyGesture = await dragTimelineClip(page, "body", "drop");
+      await Promise.all([bodyRequest, bodyResponse]);
+      expect(bodyGesture.afterLeft).not.toBe(bodyGesture.beforeLeft);
+      expect(timingWrites).toHaveLength(1);
+      expect(timingWrites[0]).toMatchObject({ timing: { start: expect.any(Number) } });
+
+      const edgeRequest = page.waitForRequest((request) =>
+        request.method() === "PATCH"
+        && /^\/api\/v1\/projects\/[^/]+\/scenes\/[^/]+$/u.test(new URL(request.url()).pathname),
+      { timeout: 10_000 });
+      const edgeResponse = page.waitForResponse((response) =>
+        response.request().method() === "PATCH"
+        && /^\/api\/v1\/projects\/[^/]+\/scenes\/[^/]+$/u.test(new URL(response.url()).pathname),
+      { timeout: 10_000 });
+      const edgeGesture = await dragTimelineClip(page, "trim-end", "drop");
+      await Promise.all([edgeRequest, edgeResponse]);
+      expect(edgeGesture.afterWidth).not.toBe(edgeGesture.beforeWidth);
+      expect(timingWrites).toHaveLength(2);
+      expect(timingWrites[1]).toMatchObject({ timing: { duration: expect.any(Number) } });
+
+      await dragTimelineClip(page, "body", "escape");
+      await new Promise((resolve) => setTimeout(resolve, 250));
+      expect(timingWrites).toHaveLength(2);
+
+      // Timing writes belong to the first ephemeral studio session. Reloading
+      // keeps the source changes while giving the history assertions below a
+      // clean independent baseline.
+      await page.reload({ waitUntil: "domcontentloaded" });
+      await waitForEmptyHistory(page);
       await appendSourceAndSave(page, "history-a-1");
       const projectUrl = page.url();
       const pageB = await browser.newPage();

@@ -193,6 +193,7 @@ export const TimelineLane = React.memo(function TimelineLane({
       <div className="relative grow">
         <button
           type="button"
+          data-timeline-scene-id={scene.id}
           onClick={() => onSelect(scene)}
           onPointerDown={(event) => {
             if (event.button !== 0) return;
