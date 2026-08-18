@@ -230,29 +230,24 @@ export function Timeline({
   const startDrag = React.useCallback((scene: Scene, zone: DragZone, pointerX: number) => {
     if (pendingTiming || pixelsPerSecond <= 0) return;
     const base = { ...interactionRef.current, pixelsPerSecond };
-    const started = beginDrag(base, {
+    applyInteraction(beginDrag(base, {
       clip: { sceneId: scene.id, start: scene.start, duration: scene.duration, trackIndex: scene.trackIndex },
       clips,
       zone,
       pointerX,
       ripple: rippleEnabled,
       selectedSceneIds: interactionRef.current.selection,
-    });
-    if (marqueeSurface.current) marqueeSurface.current.dataset.timelineStartResult = started.drag?.clip.sceneId ?? "";
-    applyInteraction(started);
+    }));
   }, [applyInteraction, clips, interactionRef, pendingTiming, pixelsPerSecond, rippleEnabled]);
 
   const continueDrag = React.useCallback((scene: Scene, pointerX: number) => {
     const current = interactionRef.current;
-    if (marqueeSurface.current) marqueeSurface.current.dataset.timelineMoveOwner = current.drag?.clip.sceneId ?? "";
     if (current.drag?.clip.sceneId !== scene.id) return;
-    const moved = moveDrag(current, {
+    applyInteraction(moveDrag(current, {
       pointerX,
       fps: frameRate,
       candidates: candidatesFor(scene),
-    });
-    if (marqueeSurface.current) marqueeSurface.current.dataset.timelineMovePreview = String(moved.drag?.preview.start ?? "");
-    applyInteraction(moved);
+    }));
   }, [applyInteraction, candidatesFor, frameRate, interactionRef]);
 
   const endDrag = React.useCallback((scene: Scene, pointerX: number) => {
@@ -381,38 +376,18 @@ export function Timeline({
   }, []);
 
   const beginMarquee = React.useCallback((event: React.PointerEvent<HTMLDivElement>) => {
-    if (event.button !== 0) return;
-    if (interactionRef.current.drag) {
-      event.currentTarget.setPointerCapture(event.pointerId);
-      return;
-    }
-    if (event.clientX - event.currentTarget.getBoundingClientRect().left < TIMELINE_GUTTER_PX
+    if (event.button !== 0 || event.clientX - event.currentTarget.getBoundingClientRect().left < TIMELINE_GUTTER_PX
       || (event.target as HTMLElement).closest("button")) return;
     event.currentTarget.setPointerCapture(event.pointerId);
     applyInteraction(startMarquee(interactionRef.current, marqueePoint(event)));
   }, [applyInteraction, interactionRef, marqueePoint]);
 
   const moveMarquee = React.useCallback((event: React.PointerEvent<HTMLDivElement>) => {
-    const dragSceneId = interactionRef.current.drag?.clip.sceneId;
-    if (dragSceneId) {
-      const scene = scenes.find((candidate) => candidate.id === dragSceneId);
-      if (scene) continueDrag(scene, event.clientX);
-      return;
-    }
     if (!event.currentTarget.hasPointerCapture(event.pointerId) || !interactionRef.current.marquee) return;
     applyInteraction(updateMarquee(interactionRef.current, marqueePoint(event)));
-  }, [applyInteraction, continueDrag, interactionRef, marqueePoint, scenes]);
+  }, [applyInteraction, interactionRef, marqueePoint]);
 
   const endMarquee = React.useCallback((event: React.PointerEvent<HTMLDivElement>) => {
-    const dragSceneId = interactionRef.current.drag?.clip.sceneId;
-    if (dragSceneId) {
-      if (event.currentTarget.hasPointerCapture(event.pointerId)) {
-        event.currentTarget.releasePointerCapture(event.pointerId);
-      }
-      const scene = scenes.find((candidate) => candidate.id === dragSceneId);
-      if (scene) endDrag(scene, event.clientX);
-      return;
-    }
     if (!event.currentTarget.hasPointerCapture(event.pointerId) || !interactionRef.current.marquee) return;
     event.currentTarget.releasePointerCapture(event.pointerId);
     const surface = event.currentTarget.getBoundingClientRect();
@@ -427,22 +402,8 @@ export function Timeline({
           bottom: rect.bottom - surface.top,
         };
       });
-    const finished = finishMarquee(interactionRef.current, bounds);
-    applyInteraction(finished);
-    const anchor = scenes.find((scene) => scene.id === finished.anchorSceneId);
-    if (anchor) onSelect(anchor);
-  }, [applyInteraction, endDrag, interactionRef, onSelect, scenes]);
-
-  const cancelPointer = React.useCallback((event: React.PointerEvent<HTMLDivElement>) => {
-    if (interactionRef.current.drag) {
-      if (event.currentTarget.hasPointerCapture(event.pointerId)) {
-        event.currentTarget.releasePointerCapture(event.pointerId);
-      }
-      cancelCurrentDrag();
-      return;
-    }
-    endMarquee(event);
-  }, [cancelCurrentDrag, endMarquee, interactionRef]);
+    applyInteraction(finishMarquee(interactionRef.current, bounds));
+  }, [applyInteraction, interactionRef]);
 
   React.useEffect(() => {
     const escape = (event: KeyboardEvent) => {
@@ -540,14 +501,11 @@ export function Timeline({
           <div
             ref={marqueeSurface}
             data-timeline-marquee-surface
-            data-timeline-drag-scene={interaction.drag?.clip.sceneId ?? ""}
-            data-timeline-pending={pendingTiming || undefined}
-            data-timeline-pixels-per-second={pixelsPerSecond}
             className="relative"
             onPointerDown={beginMarquee}
             onPointerMove={moveMarquee}
             onPointerUp={endMarquee}
-            onPointerCancel={cancelPointer}
+            onPointerCancel={endMarquee}
           >
             {rootTrack ? (
               <>
