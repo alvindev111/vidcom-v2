@@ -1499,6 +1499,14 @@
             cancel ngay khi primary row đổi expansion. Diagnostic kế tiếp bổ sung pointercancel, gotpointercapture và
             lostpointercapture để xác định đúng transition native; checkpoint này không đổi hành vi production.
           </p>
+          <p class="text-slate-400 text-sm">
+            Trace Linux run 32099392481 đã chốt thứ tự gotpointercapture, trusted pointermove, pointercancel rồi
+            lostpointercapture; drag owner cuối cùng rỗng. Marquee chọn scene-2 nhưng primary expanded row còn scene-5,
+            nên pointerdown đổi primary và thay row đang capture giữa gesture. Marquee completion nay chuyển reducer-owned
+            anchor qua callback primary hiện hữu trước gesture kế tiếp, giữ identity/layout ổn định. Đây là việc khôi phục
+            giả thuyết cũ sau khi có evidence cancellation đầy đủ. Focused Chrome 1/1, editor/snap node 12/12, full
+            Browser session 12/12, typecheck và diff-check PASS local.
+          </p>
         </article>
       </section>
     </main>
