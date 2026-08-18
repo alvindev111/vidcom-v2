@@ -930,6 +930,18 @@
           </p>
         </article>
       </section>
+      <section class="space-y-3">
+        <h2 class="text-lg font-semibold text-sky-300">P3 — Giữ undo/redo ngoài MCP 3.5 (2026-08-18)</h2>
+        <article class="rounded-lg border border-sky-900/70 bg-sky-950/20 p-4 space-y-2">
+          <h3 class="font-medium">Không thêm code khi registry đã đúng</h3>
+          <p class="text-slate-300">
+            Undo/redo là capability gắn browser auth session và studio attachment, nên không được chiếu thành MCP tool.
+            Catalogue schema, registry server và bridge parity hiện đã không có tên <code>undo</code>, <code>redo</code>
+            hay <code>history</code>. Ba suite 8/8 PASS và audit exact key sạch; vì hành vi đã đạt AC, task chỉ ghi evidence,
+            không tạo schema hoặc handler giả.
+          </p>
+        </article>
+      </section>
     </main>
   </body>
 </html>
