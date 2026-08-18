@@ -629,7 +629,7 @@ steering 03/04/05/10 ở đúng các đoạn D1/parity/history/approval đã li�
   - Undo/redo một entry không tự đánh dấu barrier cho phần stack cùng session vừa được khôi phục, nhưng
     inverse receipt vẫn đánh dấu entry giao path của session khác.
   - _Requirements: R3_ — _Design: §5.6, §5.7, §11, §17_
-- [/] 3.6d Browser: undo/redo labels và blocked escape paths; hai tab tách session; reload trang ⇒ lịch sử rỗng
+- [x] 3.6d Browser: undo/redo labels và blocked escape paths; hai tab tách session; reload trang ⇒ lịch sử rỗng
   - Chứng minh reload/unmount release refs stack cũ sau detach/grace; transient SSE reconnect <30 s
     giữ stack; hai SSE stream overlap thì stream cũ đóng không clear stream mới; spoof ID từ auth
     session/project khác bị từ chối. Sau explicit detach + POST attach lại cùng ID, close event từ
@@ -637,13 +637,16 @@ steering 03/04/05/10 ở đúng các đoạn D1/parity/history/approval đã li�
   - _Requirements: R3_ — _Design: §5.6, §7.5, §7.6, §11, §17_
 
 **Acceptance Criteria**:
-- [ ] Undo một mutation composite hoàn tác **mọi** file của nó, không hoàn tác một phần
-- [ ] Undo bị chặn ⇒ **không ghi gì** và stack giữ nguyên
-- [ ] Production không còn dùng no-op observer; một receipt phát trong `WriteAuthority` nhìn thấy ngay ở `/history` của đúng session
-- [ ] Production không còn `UNTRACKED_UI_ORIGIN`; mọi browser mutation thiếu/sai session header trả 400 trước khi ghi
-- [ ] Mục 51/clear/reload/duplicate receipt giải phóng content refs; reload không thể dựng lại stack từ object store
+- [x] Undo một mutation composite hoàn tác **mọi** file của nó, không hoàn tác một phần
+- [x] Undo bị chặn ⇒ **không ghi gì** và stack giữ nguyên
+- [x] Production không còn dùng no-op observer; một receipt phát trong `WriteAuthority` nhìn thấy ngay ở `/history` của đúng session
+- [x] Production không còn `UNTRACKED_UI_ORIGIN`; mọi browser mutation thiếu/sai session header trả 400 trước khi ghi
+- [x] Mục 51/clear/reload/duplicate receipt giải phóng content refs; reload không thể dựng lại stack từ object store
 
-**Deliverables Created / Modified**: (điền đường dẫn thật, focused test và integration evidence khi thực thi)
+**Deliverables Created / Modified**:
+- Core/history runtime: `packages/core/src/usecase/apply-mutation-inverse.ts`, `packages/server/src/service/mutation-history.ts`, `packages/server/src/routes/{history,studio-session,events}.ts`, `packages/cli/src/{composition-root,next-host}.ts`
+- Browser contract/UI: `packages/contracts/src/editing.ts`, `src/lib/studio/{ids,studio-session,history-controls}.ts`, `src/app/projects/[slug]/composer-client.tsx`, `src/components/studio/{studio-session-context,use-mutation-history,timeline-toolbar}.tsx`
+- Evidence: `tests/{core/apply-mutation-inverse,server/history-routes,server/mutation-history,server/mutation-history-barriers,server/mutation-history-lifecycle,frontend/history-controls,frontend/browser-session}.test.ts`; Browser session run `32085708059` at exact SHA `5cdc21a0ba18b37efdbcab56c3185e23beb9b44d` (Linux x64 + Windows x64 PASS; workflow publishes no artifacts)
 
 ---
 
@@ -1490,6 +1493,8 @@ caption · D7 tool MCP undo/redo · **D8 PR-11 hot-reload từng sub-composition
 | 2026-08-18 07:31 +07 | 3.6c checkpoint | Complete symmetric directional/deep-entry matrix and composite scene-delete entity evidence | Baseline HEAD/remote `aca14d6fa1899c4b6c4a6f9d62d7670ab6ce5a54`; worktree clean. Planned gate: `bunx vitest run tests/server/mutation-history-barriers.test.ts tests/server/mutation-history.test.ts tests/core/scene-deletion.test.ts tests/core/apply-mutation-inverse.test.ts tests/core/write-authority.test.ts --environment node` | `IN PROGRESS` | Existing barriers cover same-session non-undoable ownership, dependency edit undo-safe/redo-blocked, incoming consumer undo-block, directory sibling/ancestor behavior and deep undo. Scene deletion already plans source+narration+preview cleanup in one composite; inverse planner already restores entity state. Missing explicit symmetry is a blocked deep redo entry revealed only after a clean redo, plus a joined assertion that scene cleanup entity is Core-owned undoable and inverse restores the full scene map | Add only those assertions, then run the full matrix |
 | 2026-08-18 07:32 +07 | 3.6c | Symmetric directional barrier/deep-entry and scene cleanup entity matrix | Five node suites 77/77 PASS; typecheck, boundaries and diff-check PASS; lint 0 errors/5 baseline warnings | `PASS` | Added the missing redo-depth mirror: after two undos, an externally blocked lower redo stays hidden while the clean top applies, then becomes the blocked top without skip/clear. Scene deletion assertion now proves its preview-settings cleanup step is Core-owned `undoable:true` inside the same backed-up composite; inverse coverage restores the full scene map with current monotonic revision/hash. Joined existing tests cover non-undoable same-session barrier, ownership-vs-guard direction, sibling directory safety, ancestor invalidation and cross-session inverse barrier | Commit/push checkpoint, then P3 phase gate |
 | 2026-08-18 07:34 +07 | 3.6d checkpoint | Real-browser history controls, isolated tab sessions, reload/detach/SSE lifecycle and spoof rejection | Baseline HEAD/remote `936439a8f42da3135fa090673c3584e0d0a46209`; worktree clean. Planned red/green: `bun run test:browser-session`, joined lifecycle route tests under node, then exact-head `Browser session` workflow on Linux x64 + Windows x64 | `IN PROGRESS` | Repo's Puppeteer/Chrome harness is the required browser runner. Browser evidence must exercise rendered labels/escape actions and distinct tab-owned ULIDs; node integration remains the deterministic owner for 30 s grace, overlapping-stream generation and auth/project spoof races that cannot be safely time-travelled in a page | Add failing browser scenario and only the minimum test seam if needed |
+| 2026-08-18 07:50 +07 | 3.6d | Real Chrome history UX/session isolation plus generation-safe SSE lifecycle | Red: deterministic lifecycle test exposed stale old-generation SSE close decrementing a newly attached lease; initial browser run also exposed the harness buffering SSE instead of streaming it. Green: local Browser session 11/11; joined route/events/lifecycle/UI 25/25; typecheck, boundaries, diff-check PASS; lint 0 errors/5 baseline warnings. Exact SHA `5cdc21a0ba18b37efdbcab56c3185e23beb9b44d`: [run 32085708059](https://github.com/alvindev111/vidcom-v2/actions/runs/32085708059), Linux x64 `success` (job 95557685599), Windows x64 `success` (job 95557685413). `gh run download` returned `no valid artifacts found` because this workflow has no upload step | `PASS` | Event leases now carry attachment generation internally; an old stream close is ignored after explicit detach/reattach. Browser drives server label, both blocked escapes, same-auth tab ULID isolation, reload-empty history, fresh source reload, different-auth stolen-ID rejection and wrong-project rejection. Harness streams/cancels SSE instead of materializing an infinite response. Existing create-card slug redirect remains an unrelated pre-existing regression; the focused history path uses the immutable project id already used by project cards/API | Phase P3 gate |
+| 2026-08-18 07:50 +07 | Phase P3 gate | All P3 tasks, five AC and deliverables | Full `bun run test`: 234 files PASS + 1 intentional skip, 2185 tests PASS + 5 intentional skips; production build PASS locally and in both Browser session jobs; typecheck PASS; lint 0 errors/5 baseline warnings; boundaries and diff-check PASS; exact-head Browser session Linux/Windows PASS | `PASS` | No open P3 blocker. Server generation token is internal and leaves HTTP/contracts unchanged; D7 remains deferred with no MCP undo/redo tool | P4.1 |
 
 ## Final Authoring-Readiness Audit
 

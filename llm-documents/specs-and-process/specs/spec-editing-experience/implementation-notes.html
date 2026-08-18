@@ -993,6 +993,38 @@
           </p>
         </article>
       </section>
+      <section class="space-y-3">
+        <h2 class="text-lg font-semibold text-sky-300">P3 — Browser và SSE generation 3.6d (2026-08-18)</h2>
+        <article class="rounded-lg border border-sky-900/70 bg-sky-950/20 p-4 space-y-2">
+          <h3 class="font-medium">Close event cũ không còn chạm attachment mới</h3>
+          <p class="text-slate-300">
+            Test đỏ chỉ ra một race thật: sau explicit detach rồi attach lại cùng ULID, callback đóng của SSE cũ
+            có thể trừ lease của generation mới vì API nội bộ chỉ nhận session/project. Lease giờ trả generation
+            token; close sai generation bị bỏ qua, còn overlapping stream cùng generation vẫn đếm và chỉ stream
+            cuối mới bắt đầu grace 30 giây. HTTP contract không đổi.
+          </p>
+          <p class="text-slate-400 text-sm">
+            Browser harness trước đó materialize mọi response bằng <code>arrayBuffer()</code>, nên không thể chuyển
+            SSE vô hạn tới Chrome. Helper test đã đổi sang stream từng chunk và propagate cancel; nhờ vậy label và
+            barrier refresh được kiểm bằng event thật thay vì polling giả.
+          </p>
+        </article>
+        <article class="rounded-lg border border-emerald-900/70 bg-emerald-950/20 p-4 space-y-2">
+          <h3 class="font-medium">P3 PASS trên local, Linux và Windows</h3>
+          <p class="text-slate-300">
+            Chrome thật đã chạy hai tab cùng auth với hai ULID riêng, label <code>Undo Edit source</code>, cả
+            <code>Keep current</code> và <code>Reload source</code>, reload sang session rỗng, auth context khác
+            không cướp được ID đang attach và project khác bị từ chối. Workflow Browser session
+            <a class="text-sky-300 underline" href="https://github.com/alvindev111/vidcom-v2/actions/runs/32085708059">run 32085708059</a>
+            PASS ở Linux x64 và Windows x64 trên SHA <code>5cdc21a0ba18b37efdbcab56c3185e23beb9b44d</code>.
+            Workflow này không publish artifact; lệnh download trả đúng <code>no valid artifacts found</code>.
+          </p>
+          <p class="text-slate-400 text-sm">
+            Full phase regression: 234 test files PASS, 2185 tests PASS, 5 intentional skips; typecheck, build,
+            boundaries và diff-check PASS; lint không có error và còn 5 warning baseline ngoài scope.
+          </p>
+        </article>
+      </section>
     </main>
   </body>
 </html>
