@@ -1861,6 +1861,13 @@
             tồn tại tại đây. Use case sau này map sidecar `offsetSeconds` sang `start`, không đẩy persistence vào domain.
             Test đỏ sẽ khóa code-point 84, 7 giây, silence 0,6 giây, sàn gộp→kéo dài→kẹp, ranh giới câu/cue và rebase.
           </p>
+          <p class="text-slate-400 text-sm">
+            P6.1 PASS. Test đỏ ban đầu không resolve được module planner. Bản xanh gom tham lam trong đúng câu/cue tới
+            giới hạn, cắt ở từ làm vượt 84 code point hoặc 7 giây, dấu kết câu hay khoảng im lặng từ 0,6 giây; sau đó mới
+            kéo display end tới sàn 1,2 giây trong chỗ trống và kẹp ở cue kế/scene end. Text luôn join một U+0020, timing
+            rebase đúng một lần và input không finite/chồng bị từ chối. Focused 6/6, ghép word timing 22/22; typecheck,
+            boundaries và diff-check xanh.
+          </p>
         </article>
       </section>
     </main>
