@@ -15,7 +15,7 @@ function ascii(bytes: Uint8Array, offset: number, length: number): string {
   return String.fromCharCode(...bytes.subarray(offset, offset + length));
 }
 
-function looksLikeSvg(head: Uint8Array): boolean {
+export function isSvgContent(head: Uint8Array): boolean {
   let source: string;
   try {
     source = new TextDecoder("utf-8", { fatal: true }).decode(head);
@@ -44,7 +44,7 @@ export function detectAssetKind(head: Uint8Array): AssetKind | null {
     || ascii(head, 0, 6) === "GIF87a"
     || ascii(head, 0, 6) === "GIF89a"
     || (ascii(head, 0, 4) === "RIFF" && ascii(head, 8, 4) === "WEBP")
-    || looksLikeSvg(head)) return "image";
+    || isSvgContent(head)) return "image";
 
   if (has(head, 0, [0x1a, 0x45, 0xdf, 0xa3])) return "video";
   if (ascii(head, 4, 4) === "ftyp") {

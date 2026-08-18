@@ -197,6 +197,31 @@ export interface SvgSanitizerPort {
   sanitize(source: StagedFileSource): Promise<Result<string, DomainError>>;
 }
 
+export type UnknownAssetMetadata = { status: "unknown"; reason: string };
+export type MediaAssetMetadata = {
+  status: "ok";
+  kind: "media";
+  byteSize: number;
+  durationSeconds: number | null;
+  width: number | null;
+  height: number | null;
+  codec: string | null;
+};
+export type FontAssetMetadata = {
+  status: "ok";
+  kind: "font";
+  byteSize: number;
+  family: string;
+  style: string;
+};
+export type AssetProbeMetadata = MediaAssetMetadata | FontAssetMetadata | UnknownAssetMetadata;
+
+/** Best-effort inspection of an asset only after its project mutation has committed. */
+export interface MediaProbePort {
+  probeMedia(ref: ProjectRef, path: RelPath): Promise<Result<MediaAssetMetadata | UnknownAssetMetadata, DomainError>>;
+  probeFont(ref: ProjectRef, path: RelPath): Promise<Result<FontAssetMetadata | UnknownAssetMetadata, DomainError>>;
+}
+
 /** Reads a pinned motion library's source from wherever the adapter installs it. */
 export interface MotionLibraryFilesPort {
   read(library: MotionLibrary): Promise<Result<Array<{ projectPath: RelPath; content: string }>, DomainError>>;

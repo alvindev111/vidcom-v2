@@ -1632,6 +1632,22 @@
             discard. Finalize/discard lặp an toàn; scavenger chỉ xoá asset temp hết hạn. Focused+regression 8/8,
             typecheck/boundaries/diff xanh, lint không lỗi với năm warning nền.
           </p>
+          <p class="text-slate-400 text-sm">
+            P5.2b bắt đầu tại HEAD sạch 1bd803d. Core sẽ giữ toàn bộ quyết định upload: revision, allowlist/magic,
+            tên NFC và collision, fingerprint từ hash body gốc, exact replay và pending-mount open. Chỉ
+            WriteAuthority được publish; assets thiếu được biểu diễn bằng mkdir either trong cùng composite và upload
+            là non-undoable. SVG đi qua writer sạch thứ hai, raw source không được move. Probe chỉ chạy best-effort sau
+            mutation thành công; adapter ffprobe/font cụ thể vẫn thuộc 5.2c.
+          </p>
+          <p class="text-slate-400 text-sm">
+            P5.2b PASS. Red 5/5 vì ingestAsset chưa tồn tại; green focused 55/55 và toàn Core 352/352. Use case đếm
+            byte riêng, giữ head magic 4 KiB, kiểm revision trước stream và lại ngay trước mutation mới, sanitize SVG
+            qua source staged thứ hai, resolve collision hiển thị được và chỉ publish bằng một composite
+            WriteAuthority non-undoable. Fingerprint lấy hash body raw; exact replay đối chiếu trước sanitize rồi dọn
+            temp/trả asset cũ, không move hay tăng revision; input khác 409, id retention-expired 404. Abort, quá cỡ
+            và mọi lỗi đều dọn staging. Probe chỉ chạy sau commit và lỗi được trả metadata unknown. Typecheck,
+            boundaries/diff xanh; lint không lỗi với năm warning nền.
+          </p>
         </article>
       </section>
     </main>
