@@ -1593,6 +1593,18 @@
             diff-check đều xanh; lint không lỗi với năm warning nền. Toàn bộ task 2.1–2.5b, ba AC và deliverables đã
             đóng. Task kế tiếp theo dependency order là P5.1.
           </p>
+          <p class="text-slate-400 text-sm">
+            P5.0 bắt đầu tại HEAD sạch b39e4db. Bun/Hono skill, Read first, README và bốn rail reference đã được đọc.
+            Design v12 §5.10/§7.7 chốt XHR raw File application/octet-stream, metadata query, giới hạn byte ở Core và
+            staging cùng backpressure; steering 04 §4 hiện chỉ cho multipart nên là xung đột duy nhất. Task này chỉ
+            sửa steering tối thiểu trước mọi upload route/code và sẽ dùng assertion văn bản đỏ→xanh cùng spec-path gate.
+          </p>
+          <p class="text-slate-400 text-sm">
+            P5.0 PASS. Assertion đầu tiên exit 1 vì steering chỉ ghi multipart; sau sửa, §4 cho phép multipart hoặc
+            raw binary stream có điều kiện, bắt application/octet-stream, metadata qua schema/auth trước khi đọc body,
+            giới hạn theo byte thật và backpressure. Bypass limiter chung chỉ hợp lệ khi Core lẫn staging cùng đếm và
+            không được nới route khác. Spec-path gate xác minh 115 path, diff-check xanh; chưa có code route nào đổi.
+          </p>
         </article>
       </section>
     </main>

@@ -107,7 +107,13 @@ Bản mock chỉ bảo "reload before saving" — người dùng mất toàn b�
 
 ## 4. Input
 
-- Body JSON, `content-type: application/json`, trừ upload (multipart).
+- Body JSON, `content-type: application/json`, trừ upload. Upload có thể dùng multipart hoặc raw binary stream
+  khi contract cần progress/cancel và payload lớn.
+- Upload raw MUST dùng `content-type: application/octet-stream`; metadata vẫn MUST đi qua schema contract
+  (query/header theo route), auth và validation trước khi đọc body. Media type này không phải bằng chứng loại file.
+- Mọi upload MUST có giới hạn theo số byte thật và giữ backpressure. Route được bỏ qua body-limit middleware
+  chung chỉ khi Core cùng staging adapter tự đếm byte; ngoại lệ đó MUST NOT biến thành body không giới hạn hoặc
+  nới giới hạn của route khác.
 - MUST validate bằng schema từ `contracts` (xem [06-validation](06-validation.md)).
 - Path param, query param cũng phải validate — không tin `c.req.param()`.
 - MUST đặt giới hạn kích thước tường minh cho mọi endpoint nhận body.
