@@ -446,7 +446,8 @@ describe("browser session harness", () => {
       const moveResponse = page.waitForResponse((response) =>
         response.request().method() === "POST" && new URL(response.url()).pathname.endsWith("/scenes/move"),
       { timeout: 10_000 }).catch((cause) => { throw new Error("group move response timed out", { cause }); });
-      await dragTimelineClip(page, "body", "drop", marqueeSelection[0]);
+      const groupGesture = await dragTimelineClip(page, "body", "drop", marqueeSelection[0]);
+      expect(groupGesture.afterLeft).not.toBe(groupGesture.beforeLeft);
       expect((await moveResponse).ok()).toBe(true);
       expect(moveBodies).toHaveLength(1);
       expect(new Set(moveBodies[0]?.sceneIds as string[])).toEqual(new Set(marqueeSelection));

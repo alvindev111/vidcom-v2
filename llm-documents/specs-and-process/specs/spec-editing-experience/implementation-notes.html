@@ -1414,6 +1414,14 @@
             trả null đúng thiết kế. Case browser nay tắt Snap qua nút toolbar thật và kiểm aria-pressed=false trước khi
             kéo anchor; số học anchor-snap vẫn do node suite kiểm. Task vẫn in progress tới khi CI rerun xanh cả OS.
           </p>
+          <p class="text-slate-400 text-sm">
+            Run 32096629592 vẫn timeout trên Linux dù Snap đã tắt, nên giả thuyết snap bị bác bỏ. Seam thật nằm ở
+            pointer capture: sau preview rerender, Chrome headless đa OS có thể không còn báo capture ở pointerup; code
+            cũ return trước khi hỏi interaction state đang sở hữu drag. Handler nay chỉ release khi capture còn tồn tại
+            nhưng luôn gọi endDrag; chính endDrag vẫn chặn scene khác và no-op. Browser test tách thêm assertion preview
+            left đã đổi trước network. Focused Chrome 1/1, interaction node 8/8, full Browser session 12/12, typecheck và
+            diff-check PASS local; cần rerun CI để xác nhận chẩn đoán.
+          </p>
         </article>
       </section>
     </main>
