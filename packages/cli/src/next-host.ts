@@ -551,6 +551,12 @@ export async function startNextHostedRuntime(
         ids: foundation.infrastructure.ids,
         hashContent,
       },
+      thumbnails: {
+        workspace: foundation.infrastructure.workspace,
+        service: foundation.infrastructure.thumbnailService,
+        scheduler: foundation.infrastructure.thumbnailScheduler,
+        cache: foundation.infrastructure.thumbnailCache,
+      },
       jobs: foundation.infrastructure.jobs,
       events: foundation.infrastructure.events,
       history: foundation.infrastructure.mutationObserver,

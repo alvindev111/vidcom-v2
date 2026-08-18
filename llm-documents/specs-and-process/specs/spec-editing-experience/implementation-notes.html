@@ -2065,6 +2065,17 @@
             Prepared plan đi thẳng vào scheduler với Request.signal, không parse lại. GET key chỉ lowercase 64 hex,
             tra cache bằng projectId trong path và trả WebP immutable hoặc 404; không base64/ghép raw path.
           </p>
+          <p class="text-slate-400 text-sm">
+            P7.3 PASS. RED có 6/14 lỗi vì contract và route chưa tồn tại. Bản xanh preflight project,
+            scene, profile và duration trước khi mở stream; dependency graph fail-closed vẫn trả đúng một placeholder
+            mỗi mốc. Kết quả ready, thumbnail_capacity và source_changing giữ nguyên thứ tự request. GET chỉ nhận key
+            lowercase 64 hex và luôn truyền cặp projectId/key vào cache, nên cùng key ở namespace khác là 404.
+            AbortController của route nối cả request abort lẫn huỷ response body tới scheduler; renderer hiện có tiếp tục
+            dùng signal đó cho snapshot và FFmpeg, còn cache chỉ publish sau fingerprint check. Focused 28/28,
+            HTTP/security 33/33, typecheck, boundaries, build và diff-check xanh; lint 0 lỗi/5 warning baseline.
+            Full server chạy song song có đúng một phép đo RSS đỏ do delta 90.4 MiB vượt 64 MiB; chạy riêng đúng test
+            streaming đó PASS 10.33 giây, nên evidence được ghi nguyên trạng thay vì gọi lần parallel là PASS.
+          </p>
         </article>
       </section>
     </main>

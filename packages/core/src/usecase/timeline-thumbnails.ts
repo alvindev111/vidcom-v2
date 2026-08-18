@@ -242,17 +242,27 @@ export class ThumbnailBatchScheduler {
     const planned = await this.planner.plan(ref, input);
     if (!planned.ok) throw planned.error;
     if (signal.aborted) throw abortError("thumbnail request was aborted");
+    return this.requestPlanned(ref, input, planned.value, signal);
+  }
+
+  requestPlanned(
+    ref: ProjectRef,
+    input: ThumbnailRequest,
+    plan: ThumbnailPlan,
+    signal: AbortSignal,
+  ): Promise<readonly ThumbnailRenderResult[]> {
+    if (signal.aborted) return Promise.reject(abortError("thumbnail request was aborted"));
     const queueKey = canonicalizeJson({
       projectId: ref.id,
       sceneId: input.sceneId,
-      profile: planned.value.profile,
+      profile: plan.profile,
     });
     return new Promise((resolve, reject) => {
       const entry: ScheduledBatch = {
         ref,
         input,
         signal,
-        plan: planned.value,
+        plan,
         queueKey,
         state: "queued",
         resolve,
@@ -279,7 +289,7 @@ export class ThumbnailBatchScheduler {
         }
       } else if (this.queue.length >= this.queueLimit) {
         entry.state = "settled";
-        resolve(failures(planned.value.keys, ErrorCode.ThumbnailCapacity, "thumbnail scheduler is at capacity"));
+        resolve(failures(plan.keys, ErrorCode.ThumbnailCapacity, "thumbnail scheduler is at capacity"));
         return;
       }
       this.queue.push(entry);

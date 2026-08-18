@@ -17,6 +17,30 @@ export const RelativePathSchema = relativePathSchema;
 /** Shared canonical SHA-256 schema for HTTP and MCP contracts. */
 export const ContentHashSchema = contentHashSchema;
 
+export const TimelineThumbnailRequestSchema = z.strictObject({
+  sceneId: identifierSchema,
+  atSeconds: z.array(z.number().finite().nonnegative()).min(1).max(256)
+    .refine((values) => new Set(values).size === values.length, "thumbnail marks must be unique"),
+  profile: z.literal("timeline-v1"),
+});
+
+export const ThumbnailImageParamsSchema = z.strictObject({
+  id: identifierSchema,
+  key: z.string().regex(/^[0-9a-f]{64}$/),
+});
+
+export const TimelineThumbnailLineSchema = z.discriminatedUnion("status", [
+  z.strictObject({ atSeconds: z.number().finite().nonnegative(), status: z.literal("ready"), url: z.string().min(1) }),
+  z.strictObject({
+    atSeconds: z.number().finite().nonnegative(),
+    status: z.literal("placeholder"),
+    reason: z.enum(ErrorCode),
+  }),
+]);
+
+export type TimelineThumbnailRequest = z.infer<typeof TimelineThumbnailRequestSchema>;
+export type TimelineThumbnailLine = z.infer<typeof TimelineThumbnailLineSchema>;
+
 /** Project write-gate state shared by HTTP snapshots and MCP project reads. */
 export const ProjectRecoveryStatusSchema = z.strictObject({
   writeStatus: z.enum(["ready", "recovery_required"]),

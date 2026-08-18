@@ -37,6 +37,8 @@ import {
   StudioSnapshotResponseSchema,
   MoveScenesRequestSchema,
   TERMINAL_JOB_STATUSES,
+  TimelineThumbnailRequestSchema,
+  ThumbnailImageParamsSchema,
   UploadBgmRequestSchema,
   UploadBgmResponseSchema,
   WriteConflictResponseSchema,
@@ -98,6 +100,32 @@ const previewSettings = {
 };
 
 describe("API request contracts", () => {
+  it("keeps timeline thumbnail requests single-scene, bounded and strict", () => {
+    expect(TimelineThumbnailRequestSchema.parse({
+      sceneId: "scene-1", atSeconds: [0, 1.5], profile: "timeline-v1",
+    })).toEqual({ sceneId: "scene-1", atSeconds: [0, 1.5], profile: "timeline-v1" });
+    expect(TimelineThumbnailRequestSchema.safeParse({
+      sceneId: "scene-1", atSeconds: [0, 0], profile: "timeline-v1",
+    }).success).toBe(false);
+    expect(TimelineThumbnailRequestSchema.safeParse({
+      sceneId: "scene-1", atSeconds: Array.from({ length: 257 }, (_, index) => index), profile: "timeline-v1",
+    }).success).toBe(false);
+    for (const invalid of [-1, Number.NaN, Number.POSITIVE_INFINITY]) {
+      expect(TimelineThumbnailRequestSchema.safeParse({
+        sceneId: "scene-1", atSeconds: [invalid], profile: "timeline-v1",
+      }).success).toBe(false);
+    }
+    expect(TimelineThumbnailRequestSchema.safeParse({
+      sceneId: "scene-1", atSeconds: [0], profile: { name: "timeline-v1" },
+    }).success).toBe(false);
+    expect(TimelineThumbnailRequestSchema.safeParse({
+      sceneId: "scene-1", atSeconds: [0], profile: "timeline-v1", width: 160,
+    }).success).toBe(false);
+    expect(ThumbnailImageParamsSchema.safeParse({ id: project.id, key: "A".repeat(64) }).success).toBe(false);
+    expect(ThumbnailImageParamsSchema.parse({ id: project.id, key: "a".repeat(64) }))
+      .toEqual({ id: project.id, key: "a".repeat(64) });
+  });
+
   it("shares strict pending-mount primitives across editing boundaries", () => {
     const operationId = "01K1ABCDEFGHJKMNPQRSTVWXYZ";
     expect(PendingMountOperationIdSchema.parse(operationId)).toBe(operationId);

@@ -24,3 +24,4 @@ export * from "./routes/history";
 export * from "./routes/studio-session";
 export * from "./routes/project-writes";
 export * from "./routes/narration";
+export * from "./routes/thumbnails";
