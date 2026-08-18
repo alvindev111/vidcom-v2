@@ -1917,6 +1917,12 @@
             cường xác nhận staleSince được persist mà words và wordTimingSource engine không mất. Focused 42/42, parser và
             contract reload 29/29, typecheck, boundaries, lint (năm warning nền) và diff-check xanh.
           </p>
+          <p class="text-slate-400 text-sm">
+            P6.6a bắt đầu ở HEAD sạch 5630e73. Audit không lặp lại coverage đã kín từ 6.1–6.5: bốn ngưỡng planner,
+            clamp/đa cue/rebase, một structured replacement + một mutation, xóa mọi block cũ, U+0020/punctuation và stale
+            persistence đều đã có. Khoảng trống thật là payload đóng tag/script, entity, bidi/control phải round-trip như
+            text không thực thi, cùng NaN/Infinity phải bị từ chối trước serialize; chỉ hai nhóm test này được bổ sung.
+          </p>
         </article>
       </section>
     </main>
