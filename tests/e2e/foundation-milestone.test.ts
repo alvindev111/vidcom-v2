@@ -70,6 +70,7 @@ describe("Phase O foundation milestone", () => {
         reads: foundation.application.readDependencies,
         bgmSynth: foundation.infrastructure.bgmSynth,
         bgmLibrary: foundation.infrastructure.bgmLibrary,
+        approvals: foundation.infrastructure.approvalRequests,
         hashContent,
         mimeFromPath: foundation.infrastructure.mimeFromPath,
       },

@@ -5,6 +5,8 @@ import {
   AssetResponseSchema,
   AuthExchangeRequestSchema,
   CancelJobResponseSchema,
+  CompactTrackRequestSchema,
+  DeleteScenesRequestSchema,
   DomainEventSchema,
   ErrorCode,
   ErrorResponseSchema,
@@ -25,12 +27,15 @@ import {
   PatchSceneScriptResponseSchema,
   PatchSceneTimingRequestSchema,
   PatchSceneTimingResponseSchema,
+  PrepareDeleteScenesRequestSchema,
   ProjectParamsSchema,
   PutProjectFileRequestSchema,
   PutProjectFileResponseSchema,
+  ReorderScenesRequestSchema,
   ReadProjectFileQuerySchema,
   ReadProjectFileResponseSchema,
   StudioSnapshotResponseSchema,
+  MoveScenesRequestSchema,
   TERMINAL_JOB_STATUSES,
   UploadBgmRequestSchema,
   UploadBgmResponseSchema,
@@ -112,6 +117,29 @@ describe("API request contracts", () => {
       updatedAt: now,
     })).toMatchObject({ operationId, state: "uploaded_unmounted" });
     expect(PendingMountOperationIdSchema.safeParse("not-a-ulid").success).toBe(false);
+  });
+
+  it("shares strict scene order and bulk deletion request contracts", () => {
+    expect(ReorderScenesRequestSchema.parse({
+      sceneId: "scene-1", toIndex: 1, toTrackIndex: 2, extendRoot: true, expectedContentHash: hash,
+    })).toMatchObject({ sceneId: "scene-1", toIndex: 1, toTrackIndex: 2 });
+    expect(CompactTrackRequestSchema.parse({ expectedContentHash: hash })).toEqual({ expectedContentHash: hash });
+    expect(MoveScenesRequestSchema.parse({
+      sceneIds: ["scene-1", "scene-2"], deltaSeconds: -1.5, expectedContentHash: hash,
+    })).toMatchObject({ sceneIds: ["scene-1", "scene-2"], deltaSeconds: -1.5 });
+    expect(PrepareDeleteScenesRequestSchema.parse({ sceneIds: ["scene-1"], expectedRevision: 3 }))
+      .toEqual({ sceneIds: ["scene-1"], expectedRevision: 3 });
+    expect(DeleteScenesRequestSchema.parse({ sceneIds: ["scene-1"], expectedRevision: 3 }))
+      .toEqual({ sceneIds: ["scene-1"], expectedRevision: 3 });
+    expect(ReorderScenesRequestSchema.safeParse({
+      sceneId: "scene-1", toIndex: 1, expectedContentHash: hash, compact: true,
+    }).success).toBe(false);
+    expect(MoveScenesRequestSchema.safeParse({
+      sceneIds: [], deltaSeconds: 1, expectedContentHash: hash,
+    }).success).toBe(false);
+    expect(DeleteScenesRequestSchema.safeParse({
+      sceneIds: ["scene-1", "scene-1"], expectedRevision: 3,
+    }).success).toBe(false);
   });
 
   it("accepts one representative request for every §7 input shape", () => {

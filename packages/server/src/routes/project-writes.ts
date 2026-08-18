@@ -1,5 +1,8 @@
 import {
   BgmLicenseSchema,
+  CompactTrackRequestSchema,
+  DeleteScenesRequestSchema,
+  DeleteScenesResponseSchema,
   ErrorCode,
   findShippedBgmTrack,
   ImportBgmInputSchema,
@@ -8,34 +11,47 @@ import {
   MAX_BGM_BYTES,
   MAX_SOURCE_BYTES,
   LegacySceneMutationRequestSchema,
+  MoveScenesRequestSchema,
   PatchPreviewSettingsRequestSchema,
   PatchSceneScriptRequestSchema,
   PatchSceneTimingRequestSchema,
   ProjectParamsSchema,
+  PrepareDeleteScenesRequestSchema,
+  PrepareDeleteScenesResponseSchema,
   PutProjectFileRequestSchema,
+  ReorderScenesRequestSchema,
   SearchBgmInputSchema,
   SearchBgmOutputSchema,
+  SceneOrderMutationResponseSchema,
+  TrackIndexParamsSchema,
+  IdentifierSchema,
   UploadBgmRequestSchema,
   type ProjectId,
   type RelPath,
 } from "@vidcom/contracts";
 import {
   createScene,
+  compactTrack,
+  deleteScenes,
   importBgm,
   installBgm,
   installMotionLibrary,
   listBgmSources,
   patchPreviewSettings,
+  prepareDeleteScenes,
   recordShippedBgmLicense,
   regenerateNarration,
   readSourceFile,
+  reorderScenes,
   resolveProjectIdBySlug,
   saveSourceFile,
   searchBgmSources,
   setSceneScript,
   setSceneTiming,
+  moveScenes,
   uploadBgm,
   type BgmDependencies,
+  type GrantBinding,
   type MotionLibraryInstallDependencies,
   type ProjectReadDependencies,
   type ProjectWriteDependencies,
@@ -53,6 +69,7 @@ export interface ProjectWriteRouteDependencies extends ProjectWriteDependencies 
   bgmLibrary: BgmDependencies["bgmLibrary"];
   bgmProviders?: BgmDependencies["bgmProviders"];
   hashContent: BgmDependencies["hashContent"];
+  approvals: { request(binding: GrantBinding, summary: string): Promise<string> };
   mimeFromPath(path: string): string | null;
 }
 
@@ -246,6 +263,101 @@ export function createProjectWriteRoutes(
     return c.json(valueOf(await installMotionLibrary(dependencies, {
       projectId: id, libraryId: parsed.data.libraryId,
     }, "user", studioWriteInvocation(studio, c, id, "Install motion library"))));
+  });
+  routes.patch("/v1/projects/:id/scenes/order", async (c) => {
+    const parsed = ReorderScenesRequestSchema.safeParse(await json(c));
+    if (!parsed.success) fail({ code: ErrorCode.SchemaInvalid, message: "scene order payload is invalid" });
+    const id = projectId(c);
+    const ordered = valueOf(await reorderScenes(dependencies, {
+      projectId: id,
+      ...parsed.data,
+    }, "user", studioWriteInvocation(studio, c, id, "Reorder scene")));
+    const file = valueOf(await readSourceFile(dependencies.reads, id, "index.html" as RelPath));
+    return c.json(SceneOrderMutationResponseSchema.parse({
+      changed: ordered.changed,
+      changes: ordered.changes,
+      file,
+      revision: ordered.envelope?.projectRevision ?? ordered.project.revision,
+      diagnostics: ordered.diagnostics,
+      changeSeq: ordered.envelope?.changeSeq ?? null,
+    }));
+  });
+  routes.post("/v1/projects/:id/tracks/:trackIndex/compact", async (c) => {
+    const params = TrackIndexParamsSchema.safeParse({ id: c.req.param("id"), trackIndex: c.req.param("trackIndex") });
+    if (!params.success) fail({ code: ErrorCode.SchemaInvalid, message: "track index is invalid", field: "trackIndex" });
+    const parsed = CompactTrackRequestSchema.safeParse(await json(c));
+    if (!parsed.success) fail({ code: ErrorCode.SchemaInvalid, message: "track compact payload is invalid" });
+    const id = params.data.id as ProjectId;
+    const compacted = valueOf(await compactTrack(dependencies, {
+      projectId: id,
+      trackIndex: params.data.trackIndex,
+      ...parsed.data,
+    }, "user", studioWriteInvocation(studio, c, id, "Compact track")));
+    const file = valueOf(await readSourceFile(dependencies.reads, id, "index.html" as RelPath));
+    return c.json(SceneOrderMutationResponseSchema.parse({
+      changed: compacted.changed,
+      changes: compacted.changes,
+      file,
+      revision: compacted.envelope?.projectRevision ?? compacted.project.revision,
+      diagnostics: compacted.diagnostics,
+      changeSeq: compacted.envelope?.changeSeq ?? null,
+    }));
+  });
+  routes.post("/v1/projects/:id/scenes/move", async (c) => {
+    const parsed = MoveScenesRequestSchema.safeParse(await json(c));
+    if (!parsed.success) fail({ code: ErrorCode.SchemaInvalid, message: "scene move payload is invalid" });
+    const id = projectId(c);
+    const moved = valueOf(await moveScenes(dependencies, {
+      projectId: id,
+      ...parsed.data,
+    }, "user", studioWriteInvocation(studio, c, id, `Move ${parsed.data.sceneIds.length} scenes`)));
+    const file = valueOf(await readSourceFile(dependencies.reads, id, "index.html" as RelPath));
+    return c.json(SceneOrderMutationResponseSchema.parse({
+      changed: moved.changed,
+      changes: moved.changes,
+      file,
+      revision: moved.envelope?.projectRevision ?? moved.project.revision,
+      diagnostics: moved.diagnostics,
+      changeSeq: moved.envelope?.changeSeq ?? null,
+    }));
+  });
+  routes.post("/v1/projects/:id/scenes/deletions", async (c) => {
+    const parsed = PrepareDeleteScenesRequestSchema.safeParse(await json(c));
+    if (!parsed.success) fail({ code: ErrorCode.SchemaInvalid, message: "scene deletion plan payload is invalid" });
+    const id = projectId(c);
+    studioWriteInvocation(studio, c, id, `Delete ${parsed.data.sceneIds.length} scenes`);
+    const prepared = valueOf(await prepareDeleteScenes(dependencies, {
+      projectId: id,
+      sceneIds: parsed.data.sceneIds,
+      expectedRevision: parsed.data.expectedRevision,
+    }));
+    const grantId = await dependencies.approvals.request(
+      prepared.binding,
+      `Delete ${prepared.plan.sceneIds.length} scenes`,
+    );
+    return c.json(PrepareDeleteScenesResponseSchema.parse({ plan: prepared.plan, grantId }));
+  });
+  routes.post("/v1/projects/:id/scenes/deletions/:grantId", async (c) => {
+    const parsed = DeleteScenesRequestSchema.safeParse(await json(c));
+    if (!parsed.success) fail({ code: ErrorCode.SchemaInvalid, message: "scene deletion payload is invalid" });
+    const grant = IdentifierSchema.safeParse(c.req.param("grantId"));
+    if (!grant.success) fail({ code: ErrorCode.SchemaInvalid, message: "deletion grant id is invalid", field: "grantId" });
+    const id = projectId(c);
+    const deleted = valueOf(await deleteScenes(dependencies, {
+      projectId: id,
+      sceneIds: parsed.data.sceneIds,
+      expectedRevision: parsed.data.expectedRevision,
+      grantId: grant.data,
+    }, "user", studioWriteInvocation(studio, c, id, `Delete ${parsed.data.sceneIds.length} scenes`)));
+    return c.json(DeleteScenesResponseSchema.parse({
+      project: deleted.project,
+      revision: deleted.envelope.projectRevision,
+      diagnostics: deleted.envelope.diagnostics,
+      changeSeq: deleted.envelope.changeSeq,
+      backupId: deleted.backupId,
+      deletedFiles: deleted.deletedFiles,
+      keptFiles: deleted.keptFiles,
+    }));
   });
   routes.patch("/v1/projects/:id/scenes/:sceneId", async (c) => {
     const parsed = PatchSceneTimingRequestSchema.safeParse(await json(c));

@@ -1313,6 +1313,28 @@
           </p>
         </article>
       </section>
+      <section class="space-y-3">
+        <h2 class="text-lg font-semibold text-sky-300">P2 — HTTP thứ tự và xoá nhóm 2.3 (2026-08-18)</h2>
+        <article class="rounded-lg border border-sky-900/70 bg-sky-950/20 p-4 space-y-2">
+          <h3 class="font-medium">Route tĩnh đứng trước scene động, schema dùng chung</h3>
+          <p class="text-slate-300">
+            Test đỏ phát hiện /scenes/order bị route /scenes/:sceneId hiện hữu bắt trước và trả lỗi timing 400. Năm
+            endpoint 7.2–7.4b nay được đăng ký trước route động, dùng schema strict chung trong package contracts;
+            reorder không nhận cờ compact, còn compact có path track riêng. Response order luôn trả file hiện tại,
+            changed, changes, revision, diagnostics và changeSeq, kể cả no-op không có envelope.
+          </p>
+          <p class="text-slate-300">
+            Mọi route commit lấy origin và nhãn do server tạo từ studio session đã attach. Prepare xoá nhóm cũng kiểm
+            tra attachment trước khi ghi approval request; execute buộc body lặp sceneIds và revision, còn grantId chỉ
+            lấy từ path. Next-host dùng approval requester đã có trong composition root, không thêm lifecycle song song.
+          </p>
+          <p class="text-slate-400 text-sm">
+            Contract đỏ vì schema chưa tồn tại; route đỏ vì 400/404. Green aggregate 20/20 cho contract, routes,
+            history, write-cutover và foundation; production Next build, typecheck, boundaries, diff-check sạch;
+            lint còn đúng 5 warning baseline.
+          </p>
+        </article>
+      </section>
     </main>
   </body>
 </html>

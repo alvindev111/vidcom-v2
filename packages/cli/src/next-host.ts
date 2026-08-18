@@ -277,6 +277,7 @@ export async function startNextHostedRuntime(
     bgmSynth: foundation.infrastructure.bgmSynth,
     bgmLibrary: foundation.infrastructure.bgmLibrary,
     bgmProviders: foundation.infrastructure.bgmProviders,
+    approvals: foundation.infrastructure.approvalRequests,
     hashContent,
     mimeFromPath: foundation.infrastructure.mimeFromPath,
   };
