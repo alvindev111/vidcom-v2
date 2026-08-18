@@ -1580,6 +1580,19 @@
             không thể ghi; pointerup chuẩn vẫn là đường chính. Toàn bộ trace tạm và fallback mouseup bị gỡ. Build mới,
             Browser session 12/12, editor/snap node 12/12, typecheck, lint không lỗi, boundaries và diff-check PASS.
           </p>
+          <p class="text-slate-400 text-sm">
+            Run 32102189242 tại exact SHA f069f9b PASS cả Linux x64 và Windows x64. Browser production chứng minh đủ
+            reorder hai bề mặt, boundary no-op, focus/announcement, selection/marquee, group move một request không
+            ripple, group delete exact-intent, timing/Escape cùng các probe history/cookie/SSE/preview. Workflow này
+            không publish artifact nên gh run download trả no valid artifacts. Task 2.5b được đóng; P2 chỉ PASS sau
+            full phase gate.
+          </p>
+          <p class="text-slate-400 text-sm">
+            Phase P2 gate PASS: 247 test files xanh và một VieNeu-real skip có chủ đích, 2.247 test xanh và năm skip;
+            build production, typecheck, boundaries, Browser session local 12/12, Browser session exact-SHA hai OS và
+            diff-check đều xanh; lint không lỗi với năm warning nền. Toàn bộ task 2.1–2.5b, ba AC và deliverables đã
+            đóng. Task kế tiếp theo dependency order là P5.1.
+          </p>
         </article>
       </section>
     </main>
