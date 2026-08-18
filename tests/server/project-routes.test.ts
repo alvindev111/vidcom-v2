@@ -35,7 +35,7 @@ const ref: ProjectRef = {
 const contentHash = (value: string | Uint8Array): ContentHash =>
   `sha256:${createHash("sha256").update(value).digest("hex")}` as ContentHash;
 
-function fixture() {
+function fixture(initialProjectChangeSeq = 8) {
   const port = 43210;
   const clock = { now: () => new Date("2026-08-01T00:00:00.000Z") };
   const nonces = new InMemoryNonceStore(clock);
@@ -48,7 +48,7 @@ function fixture() {
     ["assets/pixel.png", new Uint8Array([1, 2, 3, 4])],
   ]);
   let projectRevision = 3;
-  let changeSeq = 8;
+  const projectChangeSequences = new Map<ProjectId, number>([[id, initialProjectChangeSeq]]);
   const project = {
     id,
     slug: "alpha",
@@ -123,7 +123,7 @@ function fixture() {
       async beginBootstrap() { return 1 as never; }, async recover() { return 1; }, async orphan() {},
       async readProjectRecoveryStatus() { return { writeStatus: "ready" as const, unresolved: [] }; },
     },
-    events: { async latestProjectSeq() { return changeSeq; } },
+    events: { async latestProjectSeq(projectId: ProjectId) { return projectChangeSequences.get(projectId) ?? 0; } },
     runtimeSource: () => "globalThis.Hyperframes = {};",
     mimeFromPath,
   };
@@ -151,9 +151,12 @@ function fixture() {
   const mutatePreview = (content: string, revision: number, sequence: number) => {
     files.set("index.html", content);
     projectRevision = revision;
-    changeSeq = sequence;
+    projectChangeSequences.set(id, sequence);
   };
-  return { request, authenticate, mutatePreview };
+  const setProjectChangeSeq = (projectId: ProjectId, sequence: number) => {
+    projectChangeSequences.set(projectId, sequence);
+  };
+  return { request, authenticate, mutatePreview, setProjectChangeSeq };
 }
 
 describe("project read routing contracts", () => {
@@ -222,6 +225,18 @@ describe("project read routing contracts", () => {
     expect(secondBody).toContain('data-revision="4" data-seq="9"');
     expect(second.headers.get("cache-control")).toBe("no-store");
     expect(second.headers.get("x-vidcom-change-seq")).toBe("9");
+  });
+
+  it("keeps a project without events at sequence zero when another project advances", async () => {
+    const { request, authenticate, setProjectChangeSeq } = fixture(0);
+    const cookie = await authenticate();
+
+    setProjectChangeSeq("project-beta" as ProjectId, 99);
+    const response = await request(`/api/v1/projects/${id}/preview`, { headers: { Cookie: cookie } });
+    const body = await response.text();
+
+    expect(body).toContain('data-seq="0"');
+    expect(response.headers.get("x-vidcom-change-seq")).toBe("0");
   });
 
   it("locks asset MIME, bytes, cache and legacy range behavior", async () => {

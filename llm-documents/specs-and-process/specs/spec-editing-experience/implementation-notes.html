@@ -1129,6 +1129,22 @@
           </p>
         </article>
       </section>
+      <section class="space-y-3">
+        <h2 class="text-lg font-semibold text-sky-300">P4 — Document-mode integration 4.6a (2026-08-18)</h2>
+        <article class="rounded-lg border border-sky-900/70 bg-sky-950/20 p-4 space-y-2">
+          <h3 class="font-medium">Sequence của preview được cô lập theo project</h3>
+          <p class="text-slate-300">
+            Không viết lại các test đã đạt AC cho collector đứng trước script tác giả, render không có collector và
+            cùng URL <code>no-store</code> trả tài liệu mới. Fixture route chỉ được sửa từ một scalar global sang map
+            theo <code>ProjectId</code>, đúng contract <code>latestProjectSeq(projectId)</code> của production.
+          </p>
+          <p class="text-slate-400 text-sm">
+            Test đỏ ban đầu thiếu control project-scoped; sau sửa, project Alpha chưa có event vẫn inject và trả
+            header sequence 0 dù project Beta đã lên 99. Matrix adapter/Core/server 55/55 PASS; typecheck, import
+            boundaries và diff-check sạch; lint 0 error/5 warning baseline.
+          </p>
+        </article>
+      </section>
     </main>
   </body>
 </html>
