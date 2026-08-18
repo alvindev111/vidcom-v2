@@ -1182,6 +1182,25 @@
           </p>
         </article>
       </section>
+      <section class="space-y-3">
+        <h2 class="text-lg font-semibold text-sky-300">P1 — Reducer kéo timeline 1.2 (2026-08-18)</h2>
+        <article class="rounded-lg border border-sky-900/70 bg-sky-950/20 p-4 space-y-2">
+          <h3 class="font-medium">Preview tương tác không phải một đường ghi thứ hai</h3>
+          <p class="text-slate-300">
+            Reducer thuần giữ timing gốc, pointer gốc, timing xem trước, mốc snap và số scene ripple. Di chuyển chuột
+            chỉ đổi state; <code>commitDrag</code> mới chiếu ra các field timing tối thiểu, còn thả về vị trí cũ hoặc
+            nhấn Esc trả <code>null</code> nên không thể phát request.
+          </p>
+          <p class="text-slate-300">
+            Lint boundary đã chặn import Core trực tiếp từ frontend. Module dùng shape clip cấu trúc và chỉ tính số
+            lượng ripple để hiển thị; kế hoạch nội dung cuối cùng vẫn do use case Core quyết khi commit.
+          </p>
+          <p class="text-slate-400 text-sm">
+            Focused 4/4 và toàn frontend node 95/95 PASS; typecheck, boundaries, diff-check sạch; lint 0 error/5
+            warning baseline.
+          </p>
+        </article>
+      </section>
     </main>
   </body>
 </html>

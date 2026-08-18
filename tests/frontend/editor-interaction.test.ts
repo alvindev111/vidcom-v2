@@ -1,0 +1,98 @@
+// @vitest-environment node
+
+import { describe, expect, it } from "vitest";
+
+import {
+  beginDrag,
+  cancelDrag,
+  commitDrag,
+  createEditorInteractionState,
+  moveDrag,
+  reduceInteraction,
+  type TimelineClip,
+} from "../../src/lib/studio/editor-interaction";
+
+const clips: TimelineClip[] = [
+  { sceneId: "a", start: 0, duration: 2, trackIndex: 1 },
+  { sceneId: "b", start: 2, duration: 2, trackIndex: 1 },
+  { sceneId: "c", start: 4, duration: 1, trackIndex: 1 },
+];
+
+describe("timeline editor interaction", () => {
+  it("previews a snapped body drag and emits timing only at commit", () => {
+    const initial = createEditorInteractionState({ pixelsPerSecond: 100, snapEnabled: true });
+    const dragging = beginDrag(initial, {
+      clip: { sceneId: "a", start: 1, duration: 2, trackIndex: 1 },
+      clips,
+      zone: "body",
+      pointerX: 100,
+      ripple: false,
+    });
+    expect(commitDrag(dragging)).toBeNull();
+
+    const moved = moveDrag(dragging, {
+      pointerX: 250,
+      fps: 30,
+      candidates: [{ time: 2.55, kind: "playhead", id: "playhead" }],
+    });
+    expect(moved.drag).toMatchObject({
+      preview: { start: 2.55, duration: 2 },
+      snappedTo: { id: "playhead" },
+      rippleSceneCount: 0,
+    });
+    expect(commitDrag(moved)).toEqual({
+      sceneId: "a",
+      timing: { start: 2.55 },
+      ripple: false,
+    });
+  });
+
+  it("keeps the opposite edge fixed while trimming left or right", () => {
+    const initial = createEditorInteractionState({ pixelsPerSecond: 100, snapEnabled: false });
+    const clip = { sceneId: "a", start: 1, duration: 2, trackIndex: 1 };
+    const left = moveDrag(beginDrag(initial, {
+      clip, clips, zone: "trim-start", pointerX: 100, ripple: false,
+    }), { pointerX: 150, fps: 10, candidates: [] });
+    expect(left.drag?.preview).toMatchObject({ start: 1.5, duration: 1.5 });
+    expect(commitDrag(left)?.timing).toEqual({ start: 1.5, duration: 1.5 });
+
+    const right = moveDrag(beginDrag(initial, {
+      clip, clips, zone: "trim-end", pointerX: 100, ripple: false,
+    }), { pointerX: 200, fps: 10, candidates: [] });
+    expect(right.drag?.preview).toMatchObject({ start: 1, duration: 3 });
+    expect(commitDrag(right)?.timing).toEqual({ duration: 3 });
+  });
+
+  it("uses Core ripple planning to expose the moved-scene count", () => {
+    const initial = createEditorInteractionState({ pixelsPerSecond: 100, snapEnabled: false });
+    const moved = moveDrag(beginDrag(initial, {
+      clip: clips[0]!, clips, zone: "trim-end", pointerX: 200, ripple: true,
+    }), { pointerX: 300, fps: 30, candidates: [] });
+
+    expect(moved.drag).toMatchObject({
+      preview: { start: 0, duration: 3 },
+      rippleSceneCount: 2,
+    });
+    expect(commitDrag(moved)).toEqual({
+      sceneId: "a",
+      timing: { duration: 3 },
+      ripple: true,
+    });
+  });
+
+  it("rounds free motion to frames and cancels or no-ops without a commit", () => {
+    const initial = createEditorInteractionState({ pixelsPerSecond: 100, snapEnabled: false });
+    const dragging = beginDrag(initial, {
+      clip: clips[0]!, clips, zone: "body", pointerX: 0, ripple: false,
+    });
+    const unchanged = moveDrag(dragging, { pointerX: 0, fps: 30, candidates: [] });
+    expect(commitDrag(unchanged)).toBeNull();
+
+    const framed = moveDrag(dragging, { pointerX: 1.7, fps: 30, candidates: [] });
+    expect(framed.drag?.preview.start).toBeCloseTo(1 / 30);
+    expect(cancelDrag(framed)).toMatchObject({ drag: null });
+    const escaped = reduceInteraction(framed, { type: "escape" });
+    expect(escaped).toMatchObject({ drag: null });
+    expect(commitDrag(escaped)).toBeNull();
+  });
+});
