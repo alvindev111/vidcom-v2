@@ -10,6 +10,8 @@ import {
 } from "lucide-react";
 
 import { formatTimecode } from "@/lib/studio/format";
+import type { DragZone } from "@/lib/studio/editor-interaction";
+import { hitZone } from "@/lib/studio/snap";
 import { groupOf } from "@/lib/studio/snapshots";
 import type { RootTrack, Scene } from "@/lib/studio/types";
 import { cn } from "@/lib/utils";
@@ -106,6 +108,10 @@ export const TimelineLane = React.memo(function TimelineLane({
   onSelect,
   onToggleHidden,
   onToggleExpanded,
+  onDragStart,
+  onDragMove,
+  onDragEnd,
+  onDragCancel,
 }: {
   scene: Scene;
   /** Position in the storyboard, 1-based. */
@@ -118,6 +124,10 @@ export const TimelineLane = React.memo(function TimelineLane({
   onSelect: (scene: Scene) => void;
   onToggleHidden: (scene: Scene) => void;
   onToggleExpanded: (sceneId: string, expanded: boolean) => void;
+  onDragStart: (scene: Scene, zone: DragZone, pointerX: number) => void;
+  onDragMove: (scene: Scene, pointerX: number) => void;
+  onDragEnd: (scene: Scene, pointerX: number) => void;
+  onDragCancel: () => void;
 }) {
   const Icon = hidden ? EyeOffIcon : EyeIcon;
   const Chevron = expanded ? ChevronDownIcon : ChevronRightIcon;
@@ -184,9 +194,26 @@ export const TimelineLane = React.memo(function TimelineLane({
         <button
           type="button"
           onClick={() => onSelect(scene)}
+          onPointerDown={(event) => {
+            if (event.button !== 0) return;
+            const bounds = event.currentTarget.getBoundingClientRect();
+            event.currentTarget.setPointerCapture(event.pointerId);
+            onSelect(scene);
+            onDragStart(scene, hitZone(event.clientX - bounds.left, bounds.width), event.clientX);
+          }}
+          onPointerMove={(event) => {
+            if (!event.currentTarget.hasPointerCapture(event.pointerId)) return;
+            onDragMove(scene, event.clientX);
+          }}
+          onPointerUp={(event) => {
+            if (!event.currentTarget.hasPointerCapture(event.pointerId)) return;
+            event.currentTarget.releasePointerCapture(event.pointerId);
+            onDragEnd(scene, event.clientX);
+          }}
+          onPointerCancel={onDragCancel}
           title={`${formatTimecode(scene.start)} → ${formatTimecode(end)}`}
           className={cn(
-            "absolute inset-y-1.5 flex items-center overflow-hidden rounded-sm border px-1.5 transition-colors",
+            "absolute inset-y-1.5 flex touch-none items-center overflow-hidden rounded-sm border px-1.5 transition-colors",
             GROUP_STYLE[group] ?? GROUP_STYLE.scene,
             selected && "ring-studio-accent ring-2",
             live && !selected && "border-studio-accent",

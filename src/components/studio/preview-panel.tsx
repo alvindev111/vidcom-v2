@@ -20,6 +20,8 @@ export function PreviewPanel({
   containerRef,
   aspectRatio,
   duration,
+  frameRate,
+  entryContentHash,
   state,
   controls,
   scenes,
@@ -34,6 +36,8 @@ export function PreviewPanel({
   containerRef: React.Ref<HTMLDivElement>;
   aspectRatio: number;
   duration: number;
+  frameRate: number;
+  entryContentHash: string | null;
   state: PlayerState;
   controls: PlayerControls;
   scenes: Scene[];
@@ -77,6 +81,8 @@ export function PreviewPanel({
           rootTrack={rootTrack}
           settings={settings}
           duration={duration}
+          frameRate={frameRate}
+          entryContentHash={entryContentHash}
           selectedId={selectedId}
           onScrub={controls.seek}
           onSelect={onSelectScene}

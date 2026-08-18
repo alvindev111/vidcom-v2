@@ -1,6 +1,6 @@
 "use client";
 
-import { Redo2Icon, Undo2Icon, ZoomInIcon, ZoomOutIcon } from "lucide-react";
+import { MagnetIcon, Redo2Icon, Undo2Icon, ZoomInIcon, ZoomOutIcon } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { historyDirectionView } from "@/lib/studio/history-controls";
@@ -14,6 +14,11 @@ export function TimelineToolbar({
   canZoomOut,
   sceneCount,
   selectedLabel,
+  snapEnabled,
+  rippleEnabled,
+  pendingTiming,
+  onToggleSnap,
+  onToggleRipple,
   onFit,
   onZoomIn,
   onZoomOut,
@@ -26,6 +31,11 @@ export function TimelineToolbar({
   sceneCount: number;
   /** Scene under the playhead, echoed so the two panes read as one selection. */
   selectedLabel: string | null;
+  snapEnabled: boolean;
+  rippleEnabled: boolean;
+  pendingTiming: boolean;
+  onToggleSnap: () => void;
+  onToggleRipple: () => void;
   onFit: () => void;
   onZoomIn: () => void;
   onZoomOut: () => void;
@@ -69,6 +79,30 @@ export function TimelineToolbar({
       >
         <Redo2Icon className="size-3" />
         <span className="truncate">{redo.label}</span>
+      </Button>
+
+      <Button
+        variant={snapEnabled ? "secondary" : "ghost"}
+        size="sm"
+        className="h-6 shrink-0 gap-1 px-2 text-[10px]"
+        aria-label="Toggle timeline snap"
+        aria-pressed={snapEnabled}
+        disabled={pendingTiming}
+        onClick={onToggleSnap}
+      >
+        <MagnetIcon className="size-3" />
+        Snap
+      </Button>
+      <Button
+        variant={rippleEnabled ? "secondary" : "ghost"}
+        size="sm"
+        className="h-6 shrink-0 px-2 text-[10px]"
+        aria-label="Toggle ripple timing"
+        aria-pressed={rippleEnabled}
+        disabled={pendingTiming}
+        onClick={onToggleRipple}
+      >
+        Ripple
       </Button>
 
       <TimeReadout className="text-muted-foreground ml-auto shrink-0 font-mono text-[10px]" />

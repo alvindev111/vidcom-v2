@@ -485,6 +485,7 @@ export const ProjectFileSchema = z.strictObject({
 
 export const StudioSnapshotResponseSchema = z.strictObject({
   project: ProjectSummarySchema,
+  frameRate: z.number().finite().positive(),
   entryFile: ProjectFileSchema,
   tree: z.array(FileNodeSchema),
   scenes: z.array(SceneSchema),

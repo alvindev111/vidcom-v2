@@ -180,6 +180,7 @@ function MountedStudio({
         previewUrl={apiUrl(`/api/v1/projects/${encodeURIComponent(snapshot.project.id)}/preview`)}
         aspectRatio={snapshot.project.width / snapshot.project.height}
         authoredDuration={snapshot.project.duration}
+        frameRate={snapshot.frameRate}
         tree={snapshot.tree}
         files={[sourceFile(snapshot)]}
         scenes={snapshot.scenes as Scene[]}

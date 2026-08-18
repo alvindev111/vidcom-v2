@@ -9,6 +9,7 @@ import {
   createEditorInteractionState,
   moveDrag,
   reduceInteraction,
+  timelineSnapCandidates,
   type TimelineClip,
 } from "../../src/lib/studio/editor-interaction";
 
@@ -94,5 +95,15 @@ describe("timeline editor interaction", () => {
     const escaped = reduceInteraction(framed, { type: "escape" });
     expect(escaped).toMatchObject({ drag: null });
     expect(commitDrag(escaped)).toBeNull();
+  });
+
+  it("builds snap markers from same-track edges, playhead and ruler seconds", () => {
+    const candidates = timelineSnapCandidates({
+      clip: clips[0]!, clips, playhead: 1.25, duration: 5,
+    });
+    expect(candidates).toContainEqual({ time: 2, kind: "clip-edge", id: "b:start" });
+    expect(candidates).toContainEqual({ time: 1.25, kind: "playhead", id: "playhead" });
+    expect(candidates).toContainEqual({ time: 5, kind: "ruler", id: "second-5" });
+    expect(candidates.some(({ id }) => id.startsWith("a:"))).toBe(false);
   });
 });

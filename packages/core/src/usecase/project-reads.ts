@@ -334,6 +334,7 @@ export async function getProjectPreview(
 
 export interface StudioSnapshot {
   project: CompositionModel["project"];
+  frameRate: number;
   entryFile: { path: RelPath; content: string; contentHash: string };
   tree: FileNode[];
   scenes: CompositionModel["scenes"];
@@ -369,6 +370,7 @@ export async function getStudioSnapshot(
     const fileHashes = Object.fromEntries(model.sources.map((source) => [source.path, source.contentHash]));
     return ok({
       project: { ...model.project, revision },
+      frameRate: model.frameRate ?? 30,
       entryFile: entry.value,
       tree,
       scenes: model.scenes,

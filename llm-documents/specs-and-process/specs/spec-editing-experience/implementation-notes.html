@@ -1201,6 +1201,33 @@
           </p>
         </article>
       </section>
+      <section class="space-y-3">
+        <h2 class="text-lg font-semibold text-sky-300">P1 — Nối kéo timing vào route 1.3 (2026-08-18)</h2>
+        <article class="rounded-lg border border-sky-900/70 bg-sky-950/20 p-4 space-y-2">
+          <h3 class="font-medium">Con trỏ xem trước tại UI, quyết định ghi vẫn đi qua Core</h3>
+          <p class="text-slate-300">
+            Timeline dùng pointer capture cho thân và hai mép clip. Mọi lần di chuyển chỉ cập nhật reducer thuần;
+            lúc thả mới lấy mẫu cuối, chiếu thành timing tối thiểu và gửi đúng một PATCH kèm hash hiện tại của file
+            entry. Thả không đổi hoặc nhấn Esc không tạo request. Snap lấy mép clip cùng track, playhead và vạch
+            giây; nút Snap và Ripple luôn nhìn thấy nhưng form số vẫn được giữ nguyên cho task kế tiếp.
+          </p>
+          <p class="text-slate-300">
+            Snapshot Studio được bổ sung frame rate tác giả để lượng tử theo đúng composition; file cũ thiếu giá trị
+            dùng fallback HyperFrames 30 fps. Đây là erratum không đổi AC, ghi vào Design trước khi sửa code. Hash
+            thành công được cập nhật tại chỗ và change sequence thật đi vào preview buffer.
+          </p>
+          <p class="text-slate-300">
+            Xung đột 409 bỏ preview lạc quan, giữ nội dung tác giả và đưa hành động tải lại. Vượt root 422 mới có
+            lựa chọn Extend root; vượt giới hạn runtime không có đường nới. Transport production trả raw Response,
+            nên phân loại này dùng trực tiếp status và details thật của Core.
+          </p>
+          <p class="text-slate-400 text-sm">
+            Test đỏ đầu tiên thiếu module mutation; contract strict sau đó bắt fixture snapshot thiếu frameRate.
+            Focused frontend/server/contracts 23/23 và toàn frontend node 99/99 PASS; production build, typecheck,
+            boundaries, diff-check sạch; lint còn đúng 5 warning baseline.
+          </p>
+        </article>
+      </section>
     </main>
   </body>
 </html>

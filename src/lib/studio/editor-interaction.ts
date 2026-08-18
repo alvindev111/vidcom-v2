@@ -61,6 +61,27 @@ export interface MoveDragInput {
   candidates: readonly SnapCandidate[];
 }
 
+export function timelineSnapCandidates(input: {
+  clip: TimelineClip;
+  clips: readonly TimelineClip[];
+  playhead: number;
+  duration: number;
+}): SnapCandidate[] {
+  const candidates: SnapCandidate[] = [];
+  for (const clip of input.clips) {
+    if (clip.sceneId === input.clip.sceneId || clip.trackIndex !== input.clip.trackIndex) continue;
+    candidates.push(
+      { time: clip.start, kind: "clip-edge", id: `${clip.sceneId}:start` },
+      { time: clip.start + clip.duration, kind: "clip-edge", id: `${clip.sceneId}:end` },
+    );
+  }
+  candidates.push({ time: input.playhead, kind: "playhead", id: "playhead" });
+  for (let second = 0; second <= Math.floor(input.duration); second += 1) {
+    candidates.push({ time: second, kind: "ruler", id: `second-${second}` });
+  }
+  return candidates;
+}
+
 export function createEditorInteractionState(input: {
   pixelsPerSecond: number;
   snapEnabled: boolean;

@@ -23,6 +23,7 @@ export function StudioShell({
   previewUrl,
   aspectRatio,
   authoredDuration,
+  frameRate,
   tree,
   files,
   scenes,
@@ -37,6 +38,7 @@ export function StudioShell({
   previewUrl: string;
   aspectRatio: number;
   authoredDuration: number | null;
+  frameRate: number;
   tree: FileNode[];
   files: SourceFile[];
   scenes: Scene[];
@@ -139,6 +141,8 @@ export function StudioShell({
             containerRef={containerRef}
             aspectRatio={aspectRatio}
             duration={duration}
+            frameRate={frameRate}
+            entryContentHash={files.find((file) => file.path === "index.html")?.version ?? null}
             state={state}
             controls={controls}
             scenes={scenes}

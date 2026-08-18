@@ -178,6 +178,7 @@ describe("project read routing contracts", () => {
     const snapshot = await request(`/api/v1/projects/${id}/studio-snapshot`, { headers: { Cookie: cookie } });
     expect(StudioSnapshotResponseSchema.parse(await snapshot.json())).toMatchObject({
       project: { id, slug: "alpha" },
+      frameRate: 30,
       entryFile: { path: "index.html" },
       revision: 3,
     });

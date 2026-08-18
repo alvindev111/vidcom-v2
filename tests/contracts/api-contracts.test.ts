@@ -271,6 +271,7 @@ describe("API response contracts", () => {
         tree: [{ path: "index.html", name: "index.html", kind: "file" }],
         scenes: [],
         rootTrack: null,
+        frameRate: 30,
         previewSettings,
         previewSettingsRevision: 2,
         revision: 3,

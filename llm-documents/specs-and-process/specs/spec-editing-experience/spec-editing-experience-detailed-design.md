@@ -324,6 +324,10 @@ stateDiagram-v2
 ## 5. Components and Interfaces
 
 ### 5.1 `src/lib/studio/editor-interaction.ts` — trạng thái tương tác (R1, R12)
+- **Implementation erratum 2026-08-18 (không đổi AC)**: `StudioSnapshotResponse` phải mang
+  `frameRate` top-level lấy từ composition model (fallback HyperFrames 30 fps). Không được dùng hằng 30
+  trong timeline, vì `roundToFrame` và clamp một-frame của §5.2 phải theo fps authored. Đây là read
+  metadata, không phải client tự quyết timing.
 - **Purpose**: một nguồn sự thật cho *mọi* trạng thái tương tác timeline: mode con trỏ, snap bật/tắt, zoom, vùng chọn, phiên kéo. Bản 1 chỉ có drag; ảnh reference cho thấy bốn thứ này luôn đi cùng nhau.
 - **Public interface**:
   ```ts
