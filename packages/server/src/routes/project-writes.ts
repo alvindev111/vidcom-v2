@@ -278,7 +278,7 @@ export function createProjectWriteRoutes(
     if (!dependencies.probe || !dependencies.styles) {
       fail({ code: ErrorCode.StorageUnavailable, message: "font application services are unavailable" });
     }
-    const applied = valueOf(await applyFont({
+    const appliedResult = await applyFont({
       ...dependencies,
       probe: dependencies.probe,
       styles: dependencies.styles,
@@ -288,7 +288,14 @@ export function createProjectWriteRoutes(
       fontPath: parsed.data.fontPath as RelPath,
       fontContentHash: parsed.data.fontContentHash as Parameters<typeof applyFont>[1]["fontContentHash"],
       expectedContentHash: parsed.data.expectedContentHash as Parameters<typeof applyFont>[1]["expectedContentHash"],
-    }, "user", studioWriteInvocation(studio, c, id, "Apply font")));
+    }, "user", studioWriteInvocation(studio, c, id, "Apply font"));
+    if (!appliedResult.ok) {
+      throw new HttpBoundaryError(
+        appliedResult.error,
+        appliedResult.error.code === ErrorCode.AssetNotAllowed ? 422 : undefined,
+      );
+    }
+    const applied = appliedResult.value;
     return c.json(ApplyFontResponseSchema.parse({
       path: applied.path,
       family: applied.family,

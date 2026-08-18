@@ -87,7 +87,7 @@ const ERROR_STATUS = {
 } as const satisfies Record<ErrorCode, number>;
 
 export class HttpBoundaryError extends Error {
-  constructor(readonly detail: ErrorDetail) {
+  constructor(readonly detail: ErrorDetail, readonly status?: number) {
     super(detail.message);
     this.name = "HttpBoundaryError";
   }
@@ -103,5 +103,8 @@ export function mapHttpError(error: unknown, c: Context): Response {
     ? error.detail
     : { code: ErrorCode.Internal, message: "internal server error" };
   const current = detail.code === ErrorCode.WriteConflict ? detail.details?.current : undefined;
-  return c.json(current === undefined ? { error: detail } : { error: detail, current }, errorStatus(detail.code) as 400);
+  const status = error instanceof HttpBoundaryError && error.status !== undefined
+    ? error.status
+    : errorStatus(detail.code);
+  return c.json(current === undefined ? { error: detail } : { error: detail, current }, status as 400);
 }

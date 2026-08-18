@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process";
-import { mkdir, mkdtemp, readdir, rm, stat } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, readdir, rm, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
@@ -17,7 +17,7 @@ const OPERATION_ID = "01K30Y8Z7K0000000000000001";
 
 interface UploadInput {
   origin: string; cookie: string; projectId: string; filename: string;
-  kind?: "image" | "video" | "audio"; bytes: number; expectedRevision: number;
+  kind?: "image" | "video" | "audio" | "font"; bytes: number; expectedRevision: number;
   contentLength: boolean; operationId?: string; atSeconds?: number; trackIndex?: number;
   abortAfter?: number; validMagic?: boolean;
 }
@@ -49,6 +49,7 @@ function uploadGenerated(input: UploadInput): Promise<{ status: number; body: st
       if (input.validMagic !== false) {
         if (input.kind === "image") Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]).copy(chunk);
         else if (input.kind === "audio") Buffer.from("ID3").copy(chunk);
+        else if (input.kind === "font") Buffer.from([0x00, 0x01, 0x00, 0x00]).copy(chunk);
         else Buffer.from("ftyp").copy(chunk, 4);
       }
       let sent = 0;
@@ -95,7 +96,7 @@ async function main(): Promise<void> {
   const nonces = new InMemoryNonceStore(clock);
   const sessions = new InMemorySessionStore(clock);
   const listener = await bindLoopback((port) => createServerApp({
-    port, uiOrigins: [], nonces, sessions,
+    port, uiOrigins: [`http://127.0.0.1:${port}`], nonces, sessions,
     projectReads: {
       ...foundation.application.readDependencies,
       runtimeSource: foundation.infrastructure.runtimeSource,
@@ -166,13 +167,13 @@ async function main(): Promise<void> {
       contentLength: false, operationId: OPERATION_ID, atSeconds: 1.25, trackIndex: 0,
     } as const;
     const first = await uploadGenerated(replayInput);
-    const firstBody = JSON.parse(first.body) as { path: string; projectRevision: number; replayed: boolean };
+    const firstBody = JSON.parse(first.body) as { path: string; revision: number; replayed: boolean };
     const target = path.join(project.root, firstBody.path);
     const firstStat = await stat(target, { bigint: true });
     const journalCountBeforeReplay = foundation.infrastructure.database.$client
       .prepare("SELECT COUNT(*) AS count FROM mutation_journal").get() as { count: number };
     const replay = await uploadGenerated(replayInput);
-    const replayBody = JSON.parse(replay.body) as { projectRevision: number; replayed: boolean };
+    const replayBody = JSON.parse(replay.body) as { revision: number; replayed: boolean };
     const replayStat = await stat(target, { bigint: true });
     const journalCountAfterReplay = foundation.infrastructure.database.$client
       .prepare("SELECT COUNT(*) AS count FROM mutation_journal").get() as { count: number };
@@ -187,14 +188,35 @@ async function main(): Promise<void> {
     foundation.infrastructure.database.$client
       .prepare("DELETE FROM pending_mount WHERE operation_id = ? AND project_id = ?").run(OPERATION_ID, projectId);
     const expired = await uploadGenerated(replayInput);
+    const brokenFont = await uploadGenerated({
+      ...common, filename: "broken.ttf", kind: "font", bytes: CHUNK_BYTES,
+      expectedRevision: firstBody.revision, contentLength: true,
+    });
+    const brokenFontBody = JSON.parse(brokenFont.body) as {
+      path: string; assetContentHash: string; metadata: { status: string }; revision: number;
+    };
+    const entryContent = await readFile(path.join(project.root, "index.html"));
+    const brokenApply = await fetch(`${origin}/api/v1/projects/${projectId}/fonts/apply`, {
+      method: "POST",
+      headers: { Cookie: cookie, "Content-Type": "application/json", Origin: origin },
+      body: JSON.stringify({
+        fontPath: brokenFontBody.path,
+        fontContentHash: brokenFontBody.assetContentHash,
+        scope: { kind: "project" },
+        expectedContentHash: hashContent(entryContent),
+      }),
+    });
+    const brokenApplyBody = await brokenApply.text();
     process.stdout.write(`\nVIDCOM_ASSET_STREAM_RESULT=${JSON.stringify({
       warmupStatus: warmup.status, exactStatus: exact.status, rssDeltaBytes: peakRss - baselineRss,
       baselineRss, baselineMemory, peakRss, peakMemory, oneOverStatus: oneOver.status, oversizedStatus: oversized.status,
       tempAfterAbort, firstStatus: first.status, replayStatus: replay.status, replayed: replayBody.replayed,
-      replayRevisionStable: replayBody.projectRevision === firstBody.projectRevision,
+      replayRevisionStable: replayBody.revision === firstBody.revision,
       replayWriteStable: replayStat.mtimeNs === firstStat.mtimeNs && replayStat.size === firstStat.size,
       replayJournalStable: journalCountAfterReplay.count === journalCountBeforeReplay.count,
       changedStatuses: changed.map(({ status }) => status), expiredStatus: expired.status,
+      brokenFontStatus: brokenFont.status, brokenFontMetadata: brokenFontBody.metadata.status,
+      brokenFontApplyStatus: brokenApply.status, brokenFontApplyBody: brokenApplyBody,
     })}\n`);
   } finally {
     await listener.close();

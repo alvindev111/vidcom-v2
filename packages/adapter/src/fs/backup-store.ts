@@ -19,6 +19,7 @@ import {
 } from "@vidcom/core";
 
 import { syncDirectory } from "./durability";
+import { openRegularFileNoFollow } from "./regular-file";
 
 import type { VidcomDatabase } from "../db/client";
 
@@ -84,6 +85,73 @@ async function writeSynced(filename: string, bytes: string | Uint8Array): Promis
   try {
     await handle.writeFile(bytes);
     await handle.sync();
+  } finally {
+    await handle.close();
+  }
+}
+
+function sameSourceState(before: import("node:fs").Stats, after: import("node:fs").Stats): boolean {
+  return before.isFile() && after.isFile()
+    && before.dev === after.dev && before.ino === after.ino && before.size === after.size
+    && before.mtimeMs === after.mtimeMs && before.ctimeMs === after.ctimeMs;
+}
+
+async function copySourceSynced(sourcePath: string, destinationPath: string): Promise<{
+  contentHash: ContentHash;
+  byteSize: number;
+}> {
+  await mkdir(path.dirname(destinationPath), { recursive: true });
+  const source = await openRegularFileNoFollow(sourcePath, "backup source is not a regular file");
+  const destination = await open(destinationPath, "wx", 0o600);
+  const digest = createHash("sha256");
+  const buffer = Buffer.allocUnsafe(1024 * 1024);
+  let position = 0;
+  let failed = false;
+  try {
+    const before = await source.stat();
+    if (!before.isFile()) throw new TypeError("backup source is not a regular file");
+    while (true) {
+      const { bytesRead } = await source.read(buffer, 0, buffer.byteLength, position);
+      if (bytesRead === 0) break;
+      digest.update(buffer.subarray(0, bytesRead));
+      let written = 0;
+      while (written < bytesRead) {
+        const result = await destination.write(buffer, written, bytesRead - written, position + written);
+        if (result.bytesWritten <= 0) throw new Error("backup payload write made no progress");
+        written += result.bytesWritten;
+      }
+      position += bytesRead;
+    }
+    await destination.sync();
+    if (!sameSourceState(before, await source.stat())) throw new Error("backup source changed during copy");
+    return { contentHash: `sha256:${digest.digest("hex")}` as ContentHash, byteSize: position };
+  } catch (error) {
+    failed = true;
+    throw error;
+  } finally {
+    const closed = await Promise.allSettled([source.close(), destination.close()]);
+    if (!failed) {
+      const closeFailure = closed.find((result) => result.status === "rejected");
+      if (closeFailure?.status === "rejected") throw closeFailure.reason;
+    }
+  }
+}
+
+async function hashRegularFile(filename: string): Promise<{ contentHash: ContentHash; byteSize: number }> {
+  const handle = await openRegularFileNoFollow(filename, "backup payload is not a regular file");
+  const digest = createHash("sha256");
+  const buffer = Buffer.allocUnsafe(1024 * 1024);
+  let position = 0;
+  try {
+    const metadata = await handle.stat();
+    if (!metadata.isFile()) throw new TypeError("backup payload is not a regular file");
+    while (true) {
+      const { bytesRead } = await handle.read(buffer, 0, buffer.byteLength, position);
+      if (bytesRead === 0) break;
+      digest.update(buffer.subarray(0, bytesRead));
+      position += bytesRead;
+    }
+    return { contentHash: `sha256:${digest.digest("hex")}` as ContentHash, byteSize: position };
   } finally {
     await handle.close();
   }
@@ -160,10 +228,11 @@ export class AppDataBackupStore implements BackupPort {
         const relative = safeRelativePath(source.path);
         if (seen.has(relative)) throw new TypeError("backup source path is duplicated");
         seen.add(relative);
-        const bytes = await readFile(source.resolved);
-        const contentHash = digest(bytes);
-        await writeSynced(path.join(temporaryDirectory, "payload", relative), bytes);
-        entries.push({ path: source.path, contentHash, byteSize: bytes.byteLength });
+        const copied = await copySourceSynced(
+          source.resolved,
+          path.join(temporaryDirectory, "payload", relative),
+        );
+        entries.push({ path: source.path, ...copied });
       }
       const core = { id, ...owner, createdAt, reason, entries };
       const manifest: BackupManifest = {
@@ -276,8 +345,8 @@ export class AppDataBackupStore implements BackupPort {
       };
       if (manifest.manifestHash !== manifestDigest(core)) return false;
       for (const entry of manifest.entries) {
-        const bytes = await readFile(path.join(directory, "payload", safeRelativePath(entry.path)));
-        if (digest(bytes) !== entry.contentHash || bytes.byteLength !== entry.byteSize) return false;
+        const payload = await hashRegularFile(path.join(directory, "payload", safeRelativePath(entry.path)));
+        if (payload.contentHash !== entry.contentHash || payload.byteSize !== entry.byteSize) return false;
       }
       return true;
     } catch {

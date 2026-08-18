@@ -829,7 +829,7 @@ PASS [Linux x64](https://github.com/alvindev111/vidcom-v2/actions/runs/321021892
   - Replay cùng operation với bytes/metadata giống ⇒ không ghi lần hai; đổi một trong filename/kind/
     at/track/bytes ⇒ 409 sau khi dọn temp. Row đã xoá do retention nhưng journal còn dấu ⇒ 404 và zero write.
   - _Requirements: R5.4–5.5b_ — _Design: §5.10, §9.1, §11.2_
-- [/] 5.7c Filesystem/font integration: đổi tên cây 200 file ⇒ một revision; ép lỗi file 100 ⇒ rollback; font probe/apply thật; composition-root wiring
+- [x] 5.7c Filesystem/font integration: đổi tên cây 200 file ⇒ một revision; ép lỗi file 100 ⇒ rollback; font probe/apply thật; composition-root wiring
   - Dùng SQLite file thật + temp fs thật, không mock `node:fs`; cây có asset lớn và test RSS chứng
     minh rename/delete/rollback không giữ tổng bytes trong heap, target/source không cùng tồn tại dở dang sau settle.
   - Tree digest stale, target xuất hiện giữa plan/mutex, rename vào descendant, symlink/special entry
@@ -837,8 +837,8 @@ PASS [Linux x64](https://github.com/alvindev111/vidcom-v2/actions/runs/321021892
   - _Requirements: R5_ — _Design: §9.1, §11.2, §17_
 
 **Acceptance Criteria**:
-- [ ] Không lúc nào tồn tại file dở dang ở vị trí đích
-- [ ] Font hỏng ⇒ upload vẫn 201; chỉ `applyFont` mới 422
+- [x] Không lúc nào tồn tại file dở dang ở vị trí đích
+- [x] Font hỏng ⇒ upload vẫn 201; chỉ `applyFont` mới 422
 
 **Deliverables Created / Modified**: P5.0 `llm-documents/steering/04-api-design.md`; P5.1
 `packages/core/src/domain/{magic-bytes,asset-names}.ts`, `packages/core/src/port/ports.ts`,
@@ -861,7 +861,9 @@ production staging/sanitizer/pending/probe/style wiring; contract/server tests.)
 CRUD/detail/font affordances, Core entry-expectation read seam và node tests.)
 (P5.7b: native HTTP/1.1 upload seam trong `packages/server/src/{listener,request-stream}.ts`;
 dedicated Node listener/RSS/replay worker và integration test; source/file/BGM + startup-cleanup regressions.)
-(Bổ sung integration evidence ở các task P5.7 tiếp theo.)
+(P5.7c: backup publish/verify streaming trong `packages/adapter/src/fs/backup-store.ts`;
+route-local apply-font 422 mapping; `tests/adapter/entry-crud-integration.test.ts`; listener worker
+font hỏng và replay-revision assertions.)
 
 ---
 
@@ -1626,6 +1628,7 @@ caption · D7 tool MCP undo/redo · **D8 PR-11 hot-reload từng sub-composition
 | 2026-08-18 13:48 +07 | 5.7b checkpoint | Real HTTP/1.1 streaming, exact size/RSS/cancel/replay evidence | Baseline HEAD/remote `f5c25f0`; worktree clean. Planned red/green: reuse `bindLoopback`, real SQLite/temp workspace and a generated chunk stream, then exercise content-length and chunked requests at 500 MB/500 MB+1/512 MB plus socket abort | `IN PROGRESS` | The test must not allocate the payload as one buffer or use `app.request()`: chunk generation and a real loopback socket are required so RSS <64 MB is meaningful. It will observe staging temp cleanup, early byte-limit rejection, exact replay/changed metadata/expired state and retain source/file/BGM legacy limit regressions. Browser XHR construction is already node-tested in 5.6; this task proves its HTTP/1.1 server path through the real listener | Build the smallest real foundation fixture and first make the exact 500 MB listener request fail for the missing integration harness |
 | 2026-08-18 19:21 +07 | 5.7b | Native real-listener upload stream, bounded RSS, abort cleanup and durable replay matrix | Red: fresh listener/Vitest and bundled-worker measurements exceeded the 64 MiB RSS gate (up to ~100 MiB); a first native-stream attempt also raced Hono's pre-attached Web consumer, and fixed 50 ms abort checking exposed a cleanup race. Green: dedicated source-module Node worker on real SQLite/temp fs and `bindLoopback` accepted 500 MiB, rejected chunked 500 MiB+1 and Content-Length 512 MiB with 413, cleaned abort temp, replayed identically without file/journal/revision change, returned five 409 variants and expired 404. Three consecutive focused runs PASS; recorded steady-state RSS delta 6,569,984 bytes after a disclosed 64 MiB route warm-up. Full Server 186/186; joined XHR/payload/startup/stager gate 17/17; typecheck, boundaries and diff-check PASS; lint 0 errors/5 baseline warnings | `PASS` | Exact upload POST alone is dispatched through the native HTTP/1.1 `IncomingMessage` after the same app perimeter and Core route; every other request stays on the standard Hono adapter. This removes Web-stream double queueing without `arrayBuffer`, retains backpressure/AbortSignal and keeps raw transport out of Core. RSS evidence is explicitly steady-state (not cold-JIT evidence); the warm-up uses the same accepted streaming route. Source/file/BGM limits, 24-hour startup cleanup and XHR progress/cancel construction remain green | Commit/push checkpoint, then 5.7c filesystem/font integration |
 | 2026-08-18 19:23 +07 | 5.7c checkpoint | Real filesystem tree rename/rollback/RSS and production font wiring closeout | Baseline HEAD/remote `5f0526c`; worktree clean. Planned red/green: `bunx vitest run tests/adapter/entry-crud-integration.test.ts --environment node`, followed by Core CRUD, composite authority, media/font and CLI wiring regressions | `IN PROGRESS` | Audit found unit coverage for stale digest, descendant, symlink/special, ordering and composition-root probe identity, but no joined real SQLite/temp-fs proof for 200-file one-revision rename, deterministic failure at file 100 with full rollback, large-asset RSS, mkdir race semantics or a real font probe flowing through Core apply. The integration may inject the documented staged-asset operation seam to fail one publish while all reads/writes remain real filesystem operations; it must not mock `node:fs` | Write failing integration assertions first, then change production only for demonstrated gaps |
+| 2026-08-18 19:43 +07 | 5.7c | Real filesystem tree CRUD, streaming backup, broken-font boundary and production font application | Red: the new integration file was absent; after adding it, a 96 MiB tree drove RSS to 221,609,984 bytes because backup publish/verify used whole-file `readFile`; the broken-font listener case uploaded 201/unknown but apply returned the global 403 mapping. Green: rename 200 files in one revision, injected publish 100 rollback, and granted delete all PASS on real SQLite/temp fs with RSS deltas 22,249,472 / 20,267,008 / 5,160,960 bytes; real platform font probes and applies through production Core wiring. Listener now proves broken font upload 201/unknown then apply 422 and, after correcting the evidence parser from nonexistent `projectRevision` to response `revision`, proves actual replay revision stability. Focused joined listener+integration 2 files/4 tests; related backup/CRUD/font/wiring 7 files/57 tests; broad Core+Adapter+Server+CLI 153 files PASS + 1 intentional VieNeu-real skip, 1,491 tests PASS + 5 intentional skips. Typecheck, boundaries and diff-check PASS; lint 0 errors/5 baseline warnings | `PASS` | Backup copying and verification now use no-follow 1 MiB streaming hashes, fsync and source identity/stability checks; no large payload is retained in heap. Failed rename leaves the complete source, no target, unchanged revision, one terminal aborted journal row and no pending/orphaned row. Apply-font alone overrides `AssetNotAllowed` to 422; the global 403 security mapping remains unchanged. Existing Core/composite cases retain zero-write stale digest, descendant, symlink/special, target-race and `mkdir absent`/`either` semantics | Commit/push P5.7c, then run exact-source CI and Browser session before declaring the P5 phase gate PASS |
 
 ## Final Authoring-Readiness Audit
 

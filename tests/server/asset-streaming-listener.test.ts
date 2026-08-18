@@ -11,6 +11,7 @@ interface Evidence {
   firstStatus: number; replayStatus: number; replayed: boolean;
   replayRevisionStable: boolean; replayWriteStable: boolean; replayJournalStable: boolean;
   changedStatuses: number[]; expiredStatus: number;
+  brokenFontStatus: number; brokenFontMetadata: string; brokenFontApplyStatus: number; brokenFontApplyBody: string;
 }
 
 function run(command: string, args: string[]): Promise<{ stdout: string; stderr: string }> {
@@ -55,6 +56,9 @@ it("streams assets through a real HTTP/1.1 listener with bounded memory and exac
     replayJournalStable: true,
     changedStatuses: [409, 409, 409, 409, 409],
     expiredStatus: 404,
+    brokenFontStatus: 201,
+    brokenFontMetadata: "unknown",
+    brokenFontApplyStatus: 422,
   });
   expect(evidence.rssDeltaBytes, JSON.stringify({
     baselineRss: evidence.baselineRss, baselineMemory: evidence.baselineMemory,
