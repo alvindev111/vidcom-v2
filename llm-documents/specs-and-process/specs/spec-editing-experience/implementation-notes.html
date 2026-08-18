@@ -1478,6 +1478,14 @@
             1/1, editor/snap node 12/12, full Browser session 12/12, typecheck và diff-check PASS local. Nếu CI tiếp tục
             đỏ, bước kế tiếp là quan sát trực tiếp interaction drag state thay vì thêm giả thuyết hành vi.
           </p>
+          <p class="text-slate-400 text-sm">
+            Linux run 32098744061 vẫn đỏ sau khi bỏ toàn bộ move guard. Dọc call path, thao tác duy nhất chạy trước
+            beginDrag là setPointerCapture; nếu API này ném lỗi theo platform thì selection và drag state đều không
+            được tạo, trong khi native pointer events vẫn tiếp tục đúng như trace. Thứ tự nay được sửa để selection và
+            state-owned beginDrag hoàn tất trước, rồi mới thử pointer capture như progressive enhancement; capture lỗi
+            không còn quyền chặn state machine. Pointerup đã capture-optional và continue/end vẫn xác minh đúng scene.
+            Focused Chrome 1/1, editor/snap node 12/12, full Browser session 12/12, typecheck và diff-check PASS local.
+          </p>
         </article>
       </section>
     </main>

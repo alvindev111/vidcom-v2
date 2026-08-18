@@ -244,12 +244,16 @@ export const TimelineLane = React.memo(function TimelineLane({
           onPointerDown={(event) => {
             if (event.button !== 0) return;
             const bounds = event.currentTarget.getBoundingClientRect();
-            event.currentTarget.setPointerCapture(event.pointerId);
             onSelect(scene, {
               shift: event.shiftKey,
               additive: event.metaKey || event.ctrlKey,
             });
             onDragStart(scene, hitZone(event.clientX - bounds.left, bounds.width), event.clientX);
+            try {
+              event.currentTarget.setPointerCapture(event.pointerId);
+            } catch {
+              // Headless/platform capture can be unavailable; interaction state still owns the drag.
+            }
           }}
           onPointerMove={(event) => {
             onDragMove(scene, event.clientX);
