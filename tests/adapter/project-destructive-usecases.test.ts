@@ -34,13 +34,13 @@ import {
   type AbsolutePath,
   type PendingToolAudit,
   type ProjectRef,
-  type MutationReceipt,
   type WorkspacePort,
 } from "@vidcom/core";
 import {
   AppDataBackupStore,
   CompositionHf,
   initializeDatabase,
+  LargePreviousContentStore,
   MutationJournal,
   SqliteApprovalGrantStore,
   SqliteToolAuditRepository,
@@ -48,6 +48,7 @@ import {
   WorkspaceLease,
 } from "@vidcom/adapter";
 import { ToolRegistry } from "@vidcom/mcp";
+import { MutationHistory } from "../../packages/server/src/service/mutation-history";
 
 import { createFixedClock, createSequentialIdPort } from "../support/deterministic";
 import { dbAll, dbOne, dbRun } from "../support/database";
@@ -636,7 +637,10 @@ describe("Phase J use cases with real SQLite and filesystem", () => {
     expect(dbAll(database, "PRAGMA foreign_key_check")).toEqual([]);
   });
 
-  it("deletes multiple scenes through one revision, backup and history receipt", async () => {
+  it("deletes multiple scenes through one revision, backup and undo item", async () => {
+    const undoContent = new LargePreviousContentStore(appData);
+    const history = new MutationHistory(undoContent);
+    history.attach("browser-group", "studio-group", projectId);
     const twoScenes = `<!doctype html><html><body>
 <main data-hf-id="root" data-composition-id="root" data-width="1920" data-height="1080" data-duration="8">
   <div data-hf-id="scene-1-host" data-composition-id="scene-1" data-composition-src="compositions/scene-1.html" data-start="0" data-duration="4" data-track-index="1"></div>
@@ -674,7 +678,6 @@ describe("Phase J use cases with real SQLite and filesystem", () => {
     await approvals.request(prepared.value.binding, "Delete scene group");
     await expect(approvals.issue("grant_scenes_delete", "cli")).resolves.toMatchObject({ ok: true });
 
-    const receipts: MutationReceipt[] = [];
     const observedAuthority = new WriteAuthority({
       workspace,
       journal,
@@ -686,14 +689,8 @@ describe("Phase J use cases with real SQLite and filesystem", () => {
       notifyEvents() {},
       backups,
       clock,
-      observer: {
-        claimHistoryOperation: () => ({ ok: true }),
-        abortHistoryOperation() {},
-        blockHistoryOperation() {},
-        emit(receipt) { receipts.push(receipt); return { ok: true }; },
-        observeExternalChange() {},
-        invalidateProject() {},
-      },
+      observer: history,
+      undoContent,
     });
     const deleted = await deleteScenes({
       workspace,
@@ -717,11 +714,20 @@ describe("Phase J use cases with real SQLite and filesystem", () => {
       value: { project: { duration: 0, sceneCount: 0, revision: 1 }, backupId: "backup_scene_delete" },
     });
     expect(dbOne(database, "SELECT COUNT(*) AS count FROM revision")).toEqual({ count: 1 });
-    expect(receipts).toHaveLength(1);
-    expect(receipts[0]).toMatchObject({
-      id: "journal:1",
-      projectRevision: 1,
-      origin: { sessionId: "studio-group", label: "Delete 2 scenes" },
+    expect(history.state("studio-group", projectId)).toMatchObject({
+      depth: 1,
+      canUndo: true,
+      nextUndoLabel: "Delete 2 scenes",
+    });
+    expect(history.begin("studio-group", projectId, "undo")).toMatchObject({
+      ok: true,
+      value: {
+        receipt: {
+          id: "journal:1",
+          projectRevision: 1,
+          origin: { sessionId: "studio-group", label: "Delete 2 scenes" },
+        },
+      },
     });
     expect(await missing(path.join(projectRoot, "compositions/scene-1.html"))).toBe(true);
     expect(await missing(path.join(projectRoot, "compositions/scene-2.html"))).toBe(true);

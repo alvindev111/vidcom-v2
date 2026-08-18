@@ -1367,6 +1367,26 @@
           </p>
         </article>
       </section>
+      <section class="space-y-3">
+        <h2 class="text-lg font-semibold text-sky-300">P2 — Chốt unit/integration 2.5a (2026-08-18)</h2>
+        <article class="rounded-lg border border-sky-900/70 bg-sky-950/20 p-4 space-y-2">
+          <h3 class="font-medium">Receipt thật phải đi hết tới đúng một mục undo</h3>
+          <p class="text-slate-300">
+            Planner gap, ranh giới nhóm, overlay không bị đụng, cross-track, no-op, compact và dịch nhóm
+            all-or-nothing đã có assertion chính xác nên không được viết lại. Khoảng trống evidence duy nhất là test
+            xoá nhóm trước đây chỉ đếm receipt bằng observer giả, chưa chứng minh MutationHistory nhận nó.
+          </p>
+          <p class="text-slate-300">
+            Integration nay dùng đúng LargePreviousContentStore và MutationHistory đã attach như production. Một lần
+            xoá hai scene tạo đúng một revision, một backup verify được và history depth 1; top undo giữ nhãn
+            “Delete 2 scenes”, journal id 1 và project revision 1. Không có production code nào đổi ở task này.
+          </p>
+          <p class="text-slate-400 text-sm">
+            Red: history depth 0 khi receipt chỉ tới observer giả. Green focused 1/1, aggregate P2 9 file/62 test,
+            typecheck, boundaries và diff-check PASS; lint còn đúng 5 warning baseline.
+          </p>
+        </article>
+      </section>
     </main>
   </body>
 </html>
