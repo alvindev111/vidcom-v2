@@ -895,7 +895,7 @@ font hỏng và replay-revision assertions.)
 - [x] 6.5 Stale: sửa script ⇒ đánh dấu stale, **không** tự chạy TTS; UI cảnh báo nhịp có thể sai
   - Đường đánh dấu nằm trong use case ghi narration/source và sidecar caption, không dựa riêng vào component state; reload/SSE vẫn đọc được stale từ source.
   - _Requirements: R6.11, R6.12_ — _Design: §5.13, §5.15_
-- [/] 6.6a Unit/integration: planner bốn ngưỡng, kẹp, đa cue, rebase; generate thay trọn block và stale persistence
+- [x] 6.6a Unit/integration: planner bốn ngưỡng, kẹp, đa cue, rebase; generate thay trọn block và stale persistence
   - Payload độc hại `</span><script>`, entity, bidi/control vẫn round-trip thành text và không tạo
     node/attribute thực thi; timing NaN/Infinity bị từ chối trước serialize. `p.textContent` khớp cue
     text, có khoảng trắng giữa từ và không sinh khoảng trắng sai quanh punctuation attached.
@@ -914,6 +914,7 @@ P6.4 `packages/adapter/src/hyperframes/{preview-style,document}.ts`,
 `tests/adapter/caption-runtime.test.ts`, `fixtures/preview/preview-matrix-expected.json`.
 P6.5 `src/components/studio/scene-narration.tsx`,
 `tests/{frontend/scene-narration-stale,core/project-usecases}.test.ts`.
+P6.6a hardened `tests/adapter/caption-ops.test.ts` hostile-text and non-finite timing matrix.
 
 ---
 
@@ -1657,6 +1658,7 @@ caption · D7 tool MCP undo/redo · **D8 PR-11 hot-reload từng sub-composition
 | 2026-08-19 01:03 +07 | 6.5 checkpoint | Persisted narration/caption staleness | Baseline HEAD/remote `41d68c44cb00084f728f2dd738a5384864775aad`; worktree clean. Planned red: `bunx vitest run tests/frontend/scene-narration-stale.test.ts tests/core/project-usecases.test.ts --environment node` before the UI warning contract exists | `IN PROGRESS` | Core already writes source plus the narration timing sidecar atomically through `WriteAuthority.mutateSource`, sets cue `staleSince`, leaves generated caption markup in source, and never invokes TTS. Adapter reload maps that persisted field into `scene.narration.staleSince`; the missing AC is a testable UI warning that caption rhythm may be wrong, derived from this source-backed field rather than component state | Add a pure warning contract and strengthen the existing Core test to prove caption markup survives, no job/TTS path is called, and the persisted sidecar is what drives reload-visible stale state |
 | 2026-08-19 01:05 +07 | 6.5 | Persisted narration/caption staleness | RED: stale server-rendered SceneNarration lacked `role=alert` and timing warning; current case remained green. GREEN focused 42/42; reload/parser + HTTP/MCP contract regression 29/29; typecheck, boundaries, lint and diff-check PASS | `PASS` | UI derives the stale badge and warning only from persisted `narration.staleSince`, tells the author caption timing may no longer match, and keeps explicit TTS regeneration manual. Existing Core source mutation remains one atomic source+sidecar write with no TTS dependency; strengthened coverage proves engine word timings survive sidecar serialization while staleSince is set. Adapter parser continues to surface that field after reload/SSE refresh | P6.6a |
 | 2026-08-19 01:05 +07 | 6.6a checkpoint | Caption unit/integration hardening | Baseline HEAD/remote `5630e73b44845f3261474ed63e22684f812e7ed3`; worktree clean. Planned command: `bunx vitest run tests/core/plan-caption-cues.test.ts tests/core/generate-captions.test.ts tests/adapter/caption-ops.test.ts tests/core/project-usecases.test.ts tests/frontend/scene-narration-stale.test.ts --environment node` | `IN PROGRESS` | Existing suites already cover 84 code points, 7 seconds, 0.6-second silence, 1.2-second extend/clamp, narration boundaries/rebase, one structured replacement/mutation, old-block removal, exact U+0020 and stale persistence. Missing explicit AC coverage is hostile text/entity/bidi/control round-trip and rejecting NaN/Infinity before serialization; task is test-hardening first, with production edits only if a real red exposes a gap | Add hostile serializer and non-finite model cases, run RED/GREEN honestly, then rerun the complete P6 unit/integration set plus type/boundary/lint gates |
+| 2026-08-19 01:07 +07 | 6.6a | Caption unit/integration hardening | RED N/A: this task adds missing assertions to production already implemented and verified in 6.1–6.5; first new focused run passed 6/6, so no failure was fabricated and no production code was rewritten. Full P6 unit/integration 56/56; typecheck, boundaries, lint and diff-check PASS | `PASS` | Hostile `</span><script>`, entity text, bidi isolates and a control byte round-trip as four text spans with canonical U+0020 separators; parse creates no script/event/src node and source bytes remain untouched. A four-case matrix rejects NaN/±Infinity in cue or word bounds as `sdk_rejected` before serialization. Existing suites jointly cover all remaining 6.6a clauses | P6.6b |
 
 ## Final Authoring-Readiness Audit
 

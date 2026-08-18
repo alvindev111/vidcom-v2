@@ -1923,6 +1923,13 @@
             persistence đều đã có. Khoảng trống thật là payload đóng tag/script, entity, bidi/control phải round-trip như
             text không thực thi, cùng NaN/Infinity phải bị từ chối trước serialize; chỉ hai nhóm test này được bổ sung.
           </p>
+          <p class="text-slate-400 text-sm">
+            P6.6a PASS không có red production: đây là task hardening test cho behavior đã hiện hữu, lượt mới đầu tiên đã
+            xanh 6/6 nên không tạo lỗi giả và không rewrite code. Payload đóng span/script, entity, bidi isolate và control
+            byte round-trip đúng bốn text span, không sinh script/handler/src; ma trận NaN/±Infinity ở cue/word đều bị
+            sdk_rejected trước serialize, file nguồn bất biến. Toàn bộ P6 unit/integration xanh 56/56; typecheck,
+            boundaries, lint (năm warning nền) và diff-check xanh.
+          </p>
         </article>
       </section>
     </main>

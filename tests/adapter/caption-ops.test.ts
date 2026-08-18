@@ -87,4 +87,78 @@ describe("caption composition operations", () => {
     }
     expect(await readFile(path.join(root, "scene.html"), "utf8")).toBe(source);
   });
+
+  it("round-trips hostile caption text without creating executable markup", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "vidcom-caption-hostile-"));
+    roots.push(root);
+    const source = '<html><body><main data-composition-id="scene-1" data-duration="5"></main></body></html>';
+    await writeFile(path.join(root, "scene.html"), source);
+    const ref: ProjectRef = {
+      id: "project_caption_hostile" as ProjectId,
+      slug: "caption-hostile",
+      root: root as AbsolutePath,
+      entry: "scene.html" as RelPath,
+    };
+    const tokens = [
+      "</span><script>globalThis.__captionPwned=1</script>",
+      "&amp;",
+      "\u202eRTL\u2066",
+      "control\u0007cue",
+    ];
+    const text = tokens.join(" ");
+    const words = tokens.map((token, index) => ({ text: token, start: index, end: index + 0.5 }));
+
+    const result = await applyCompositionOps(ref, "scene.html" as RelPath, [{
+      kind: "replaceCaptions",
+      target: "scene-1",
+      value: { timingSource: "engine", cues: [{ start: 0, end: 4, text, words }] },
+    }]);
+
+    expect(result).toMatchObject({ ok: true });
+    if (!result.ok) return;
+    const { document } = parseHTML(result.value);
+    expect(document.querySelectorAll("script")).toHaveLength(0);
+    expect(document.querySelector(".caption")?.textContent).toBe(text);
+    expect([...document.querySelectorAll(".caption .w")].map((span) => span.textContent)).toEqual(tokens);
+    expect(document.querySelector("[onerror], [onclick], [src]")).toBeNull();
+    expect(await readFile(path.join(root, "scene.html"), "utf8")).toBe(source);
+  });
+
+  it.each([
+    [Number.NaN, 1],
+    [0, Number.POSITIVE_INFINITY],
+    [0, 1, Number.NEGATIVE_INFINITY, 0.5],
+    [0, 1, 0, Number.NaN],
+  ])("rejects non-finite cue/word timing before serialization", async (
+    cueStart,
+    cueEnd,
+    wordStart = 0,
+    wordEnd = 0.5,
+  ) => {
+    const root = await mkdtemp(path.join(tmpdir(), "vidcom-caption-nonfinite-"));
+    roots.push(root);
+    const source = '<html><body><main data-composition-id="scene-1"></main></body></html>';
+    await writeFile(path.join(root, "scene.html"), source);
+    const ref: ProjectRef = {
+      id: "project_caption_nonfinite" as ProjectId,
+      slug: "caption-nonfinite",
+      root: root as AbsolutePath,
+      entry: "scene.html" as RelPath,
+    };
+
+    await expect(applyCompositionOps(ref, "scene.html" as RelPath, [{
+      kind: "replaceCaptions",
+      target: "scene-1",
+      value: {
+        timingSource: "engine",
+        cues: [{
+          start: cueStart,
+          end: cueEnd,
+          text: "word",
+          words: [{ text: "word", start: wordStart, end: wordEnd }],
+        }],
+      },
+    }])).resolves.toMatchObject({ ok: false, error: { code: "sdk_rejected" } });
+    expect(await readFile(path.join(root, "scene.html"), "utf8")).toBe(source);
+  });
 });
