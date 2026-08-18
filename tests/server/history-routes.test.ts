@@ -82,6 +82,7 @@ function fixture() {
   const writes: Array<{ request: CompositeRequest | { path: RelPath; content: string }; invocation?: WriteInvocation }> = [];
   let releaseInverse = () => {};
   let holdInverse = false;
+  let blockInverse = false;
   const inverseHeld = new Promise<void>((resolve) => { releaseInverse = resolve; });
   let markStarted = () => {};
   const inverseStarted = new Promise<void>((resolve) => { markStarted = resolve; });
@@ -96,6 +97,10 @@ function fixture() {
         return ok({ path: request.path, contentHash, revision: 2, diagnostics: [] });
       }
       writes.push({ request, invocation });
+      if (blockInverse) {
+        history.blockHistoryOperation(projectId, request.origin, ["index.html" as RelPath]);
+        return { ok: false as const, error: { code: ErrorCode.WriteConflict, message: "source changed" } };
+      }
       const claimed = history.claimHistoryOperation(projectId, request.origin);
       if (!claimed.ok) return { ok: false as const, error: { code: ErrorCode.WriteConflict, message: claimed.reason } };
       markStarted();
@@ -143,6 +148,7 @@ function fixture() {
     writes,
     request,
     hold() { holdInverse = true; },
+    block() { blockInverse = true; },
     release() { releaseInverse(); },
     started() { return inverseStarted; },
   };
@@ -252,6 +258,28 @@ describe("browser history routes", () => {
     expect(runtime.writes).toHaveLength(1);
     runtime.release();
     expect((await first).status).toBe(200);
+  });
+
+  it("settles a synchronous precondition conflict, blocks the top and rejects retry before authority", async () => {
+    const runtime = fixture();
+    await runtime.request(`/api/v1/projects/${projectId}/history/session`, { method: "POST", headers: sessionHeaders });
+    runtime.history.emit(historyReceipt("receipt-original"));
+    runtime.block();
+
+    const conflicted = await runtime.request(`/api/v1/projects/${projectId}/undo`, { method: "POST", headers: sessionHeaders });
+    expect(conflicted.status).toBe(409);
+    expect(runtime.history.state(studioId, projectId)).toMatchObject({
+      canUndo: false,
+      busy: false,
+      depth: 1,
+      undoBlocked: true,
+      undoBlockedReason: "source-changed-externally",
+    });
+    expect(runtime.writes).toHaveLength(1);
+
+    const retry = await runtime.request(`/api/v1/projects/${projectId}/undo`, { method: "POST", headers: sessionHeaders });
+    expect(retry.status).toBe(409);
+    expect(runtime.writes).toHaveLength(1);
   });
 
   it("explicit detach clears history and prevents SSE-only resurrection", async () => {

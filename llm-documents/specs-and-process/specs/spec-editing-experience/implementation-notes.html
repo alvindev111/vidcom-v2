@@ -960,6 +960,22 @@
           </p>
         </article>
       </section>
+      <section class="space-y-3">
+        <h2 class="text-lg font-semibold text-sky-300">P3 — Synchronous block 3.6b (2026-08-18)</h2>
+        <article class="rounded-lg border border-sky-900/70 bg-sky-950/20 p-4 space-y-2">
+          <h3 class="font-medium">409 đầu tiên phải biến thành trạng thái hành động được</h3>
+          <p class="text-slate-300">
+            Route integration ép precondition lệch trước watcher: Core block đúng reservation, response trả 409,
+            top vẫn ở depth cũ nhưng <code>busy=false</code> và chỉ hướng undo mang reason
+            <code>source-changed-externally</code>. Lần bấm lại bị <code>begin</code> từ chối trước authority, nên không
+            có vòng 409 lặp bằng write mới; UI đã khoá nút và hiện hai escape path.
+          </p>
+          <p class="text-slate-400 text-sm">
+            Ma trận ghép thêm failure sau commit: mutation vẫn thành công kèm warning, desync project-wide settle mọi
+            reservation và release ref đúng một lần. Bốn suite 65/65 PASS.
+          </p>
+        </article>
+      </section>
     </main>
   </body>
 </html>
