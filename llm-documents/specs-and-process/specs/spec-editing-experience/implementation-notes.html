@@ -1936,6 +1936,12 @@
             harness này thay vì thêm runner cạnh tranh. Fixture chạy production caption script, fps 30000/1001, layer start
             6 giây, ba frame probe dùng lại cho parity P11.2; CI ownership được làm red trước khi nối suite vào script.
           </p>
+          <p class="text-slate-400 text-sm">
+            P6.6b local xanh. Red 1/7 chứng minh browser script chưa sở hữu suite mới; sau khi nối, Chrome thật local chạy
+            toàn bộ browser-session 13/13 không skip. Production runtime tại fps 30000/1001 và layer start 6 giây tô lần
+            lượt một/hai/ba cho play, seek và rate-2x; document preview/render giống active word lẫn màu rgb(18,171,52)
+            ở cả ba mốc. Typecheck, boundaries, lint (năm warning nền), diff-check xanh; còn chờ CI Linux+Windows exact SHA.
+          </p>
         </article>
       </section>
     </main>

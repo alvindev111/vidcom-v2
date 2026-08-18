@@ -28,7 +28,7 @@
     "test:vieneu-real": "vitest run tests/adapter/tts-vieneu.integration.test.ts",
     "db:generate": "drizzle-kit generate",
     "typecheck": "tsc --noEmit",
-    "test:browser-session": "vitest run tests/frontend/browser-session.test.ts tests/frontend/preview-buffer-browser.test.ts tests/frontend/cookie-matrix.test.ts tests/adapter/remote-asset-browser.test.ts",
+    "test:browser-session": "vitest run tests/frontend/browser-session.test.ts tests/frontend/preview-buffer-browser.test.ts tests/frontend/caption-runtime-browser.test.ts tests/frontend/cookie-matrix.test.ts tests/adapter/remote-asset-browser.test.ts",
     "build:artifact": "node scripts/build-artifact.mjs",
     "build:release-media": "node scripts/build-release-media.mjs",
     "test:packaged-smoke": "node scripts/packaged-smoke/run.mjs"

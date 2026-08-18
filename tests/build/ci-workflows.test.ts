@@ -43,11 +43,17 @@ describe("GitHub Actions packaging gates", () => {
 
   it("keeps browser-only coverage runnable for every pull request", async () => {
     const { ci, browser } = await workflows();
+    const manifest = JSON.parse(await readFile("package.json", "utf8")) as {
+      scripts: Record<string, string>;
+    };
 
     expect(browser).toContain("pull_request:");
     expect(browser).not.toContain("github.head_ref");
     expect(browser).toContain("npm run test:browser-session");
     expect(browser).toContain('VIDCOM_REQUIRE_BROWSER: "1"');
+    expect(manifest.scripts["test:browser-session"]).toContain(
+      "tests/frontend/caption-runtime-browser.test.ts",
+    );
     expect(ci).toContain(
       "npm run test -- --exclude tests/adapter/remote-asset-browser.test.ts",
     );
