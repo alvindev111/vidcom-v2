@@ -33,12 +33,12 @@ function run(command: string, args: string[]): Promise<{ stdout: string; stderr:
 
 it("streams assets through a real HTTP/1.1 listener with bounded memory and exact replay", { timeout: 420_000 }, async () => {
   const support = new URL("./support/", import.meta.url);
+  const worker = new URL("asset-streaming-listener-worker.ts", support);
   const { stdout } = await run(process.execPath, [
     "--expose-gc",
     "--experimental-transform-types",
     "--experimental-loader", fileURLToPath(new URL("workspace-typescript-loader.mjs", support)),
-    "--eval", "import(process.argv[1])",
-    new URL("asset-streaming-listener-worker.ts", support).href,
+    "--eval", `import(${JSON.stringify(worker.href)})`,
   ]);
   const marker = "VIDCOM_ASSET_STREAM_RESULT=";
   const line = stdout.split("\n").find((value) => value.startsWith(marker));

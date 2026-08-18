@@ -1804,6 +1804,17 @@
             đã đỏ vì Node CLI coi URL POSIX là path, sau đó split invocation cùng CRUD integration xanh 5/5; typecheck và
             diff-check xanh. Vẫn phải rerun đủ matrix exact SHA mới.
           </p>
+          <p class="text-slate-400 text-sm">
+            CI exact SHA 2248601 tiếp theo đã xanh main Linux/macOS, Browser Linux/Windows và packaged Linux, nhưng
+            packaged macOS đỏ đúng statistical startup gate: coldServe 8.351 ms vượt limit 7.092 ms và warmServe
+            7.508 ms vượt limit 7.291 ms. Mọi bước chức năng sau identify vẫn xanh, gồm UI/import, bridge và 35/35 MCP,
+            VieNeu render, upload, cancel, offline render, lease-loss và provenance. Run ngay trước trên cùng runner class
+            đo 6.089/4.258 ms; mẫu mới vẫn dưới hard ceiling 120.000/8.000 ms. Không sửa baseline/threshold theo một mẫu
+            runner chậm. Main Windows sau đó vẫn đỏ hai harness test: rename RSS 72.708.096 byte và eval/argv vẫn đưa
+            worker vào ESM dưới raw drive scheme d:. Worker URL nay được nhúng trực tiếp dạng JSON vào eval, không qua
+            argv; Vitest worker expose GC và collect trước RSS baseline để loại garbage từ suite trước, nhưng vẫn đo peak
+            của đúng rename 96 MiB và giữ nguyên ngưỡng nhỏ hơn 64 MiB. Phải rerun đủ matrix; run này vẫn là FAIL.
+          </p>
         </article>
       </section>
     </main>
