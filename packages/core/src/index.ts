@@ -66,6 +66,7 @@ export * from "./usecase/motion-library-install";
 export * from "./usecase/narration-cues";
 export * from "./usecase/diagnostics";
 export * from "./usecase/thumbnail";
+export * from "./usecase/timeline-thumbnails";
 export * from "./usecase/diagnostics";
 export * from "./usecase/thumbnail";
 export * from "./usecase/plan-narration-synthesis";

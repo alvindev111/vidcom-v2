@@ -2018,6 +2018,14 @@
             hợp lệ cuối. Service sẽ có seam tính lại fingerprint trước publication; scheduler/process/cache disk
             chưa thuộc task này.
           </p>
+          <p class="text-slate-400 text-sm">
+            P7.2a PASS. Test đỏ 5/5 vì service/helper/port chưa tồn tại. Core nay có một renderBatch abortable,
+            profile/key typed và ThumbnailService nhận đúng atSeconds[] của route, không phát minh API count phía server.
+            Profile portrait là 90×160, landscape 160×90 trong fixture; fps/runtime/renderer đều server-owned. Fingerprint
+            canonical bao gồm scene hash, dependency present/missing đã sort và profile; render key là 64 hex từ canonical
+            fingerprint/atSeconds/profile. Helper sample dùng scene-local, frame grid và last-frame clamp; service tính lại
+            identity qua isFingerprintCurrent trước publication. Core 375/375, regression graph/root 10/10 và static gates xanh.
+          </p>
         </article>
       </section>
     </main>

@@ -443,6 +443,32 @@ export interface CompositionDependencyPort {
   ): Promise<Result<CompositionDependency[], DomainError>>;
 }
 
+export type ThumbnailProfileName = "timeline-v1";
+
+export interface ResolvedThumbnailProfile {
+  width: number;
+  height: number;
+  fps: number;
+  runtimeDigest: string;
+  rendererVersion: string;
+}
+
+export interface ThumbnailKey {
+  sceneId: string;
+  fingerprint: ContentHash;
+  atSeconds: number;
+  profile: ResolvedThumbnailProfile;
+}
+
+/** Infrastructure batch renderer; one call maps to one abortable snapshot process. */
+export interface ThumbnailPort {
+  renderBatch(
+    ref: ProjectRef,
+    keys: readonly ThumbnailKey[],
+    signal: AbortSignal,
+  ): Promise<readonly { key: ThumbnailKey; result: Result<Uint8Array, DomainError> }[]>;
+}
+
 /** Durable unit of work joining mutation, revision, audit, entity and event records. */
 export interface MutationJournalPort {
   /**
