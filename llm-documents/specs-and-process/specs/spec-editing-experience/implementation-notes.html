@@ -1815,6 +1815,13 @@
             argv; Vitest worker expose GC và collect trước RSS baseline để loại garbage từ suite trước, nhưng vẫn đo peak
             của đúng rename 96 MiB và giữ nguyên ngưỡng nhỏ hơn 64 MiB. Phải rerun đủ matrix; run này vẫn là FAIL.
           </p>
+          <p class="text-slate-400 text-sm">
+            Run 32148019390 chứng minh embedded file URL đã sửa listener trên Linux, nhưng rename vẫn tăng RSS
+            75.694.080 byte dù đã expose/collect GC. Root cause nằm trong production WorkspaceFs: mỗi lần hash một file
+            cấp buffer 1 MiB mới, nên cây 200 file tạo hàng trăm backing store trước khi V8 thu hồi. Buffer hash workspace
+            giảm xuống 64 KiB như backup streaming; bỏ toàn bộ global expose-GC/test-GC vì đó chỉ che triệu chứng và đã
+            được CI chứng minh không hiệu quả. Asset 96 MiB cùng ngưỡng nhỏ hơn 64 MiB giữ nguyên.
+          </p>
         </article>
       </section>
     </main>

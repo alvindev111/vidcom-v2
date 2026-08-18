@@ -45,10 +45,6 @@ export default defineConfig({
   },
   test: {
     environment: "node",
-    // Memory acceptance tests compare an operation peak against a collected
-    // baseline. Exposing GC lets those tests discard prior-suite garbage before
-    // the baseline instead of counting unrelated allocator drift on Windows.
-    execArgv: ["--expose-gc"],
     include: ["tests/**/*.test.ts"],
     testTimeout,
     hookTimeout,

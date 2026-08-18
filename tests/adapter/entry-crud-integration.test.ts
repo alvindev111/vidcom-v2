@@ -81,7 +81,6 @@ async function latestRevision(value: Awaited<ReturnType<typeof fixture>>): Promi
 }
 
 async function measureRss<Value>(action: () => Promise<Value>): Promise<{ value: Value; delta: number }> {
-  globalThis.gc?.();
   const baseline = process.memoryUsage().rss;
   let peak = baseline;
   const sampler = setInterval(() => { peak = Math.max(peak, process.memoryUsage().rss); }, 5);

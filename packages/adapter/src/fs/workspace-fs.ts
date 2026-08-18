@@ -71,7 +71,10 @@ async function hashRegularFile(pathname: string): Promise<ContentHash> {
     const metadata = await handle.stat();
     if (!metadata.isFile()) throw new TypeError("hash target is not a regular file");
     const digest = createHash("sha256");
-    const buffer = Buffer.allocUnsafe(1024 * 1024);
+    // Tree mutations may hash hundreds of small files before V8 collects their
+    // backing stores. Keep each streaming allocation bounded so file count does
+    // not become an RSS multiplier while large files still use one fixed buffer.
+    const buffer = Buffer.allocUnsafe(64 * 1024);
     let position = 0;
     while (true) {
       const { bytesRead } = await handle.read(buffer, 0, buffer.byteLength, position);
