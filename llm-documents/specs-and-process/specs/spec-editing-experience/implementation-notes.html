@@ -1910,6 +1910,13 @@
             staleSince từ sidecar nên reload/SSE không phụ thuộc React state. Phần còn thiếu là cảnh báo UI rõ rằng nhịp
             narration/caption có thể sai, cùng test khóa nguồn cảnh báo persisted này và việc caption vẫn còn hiển thị.
           </p>
+          <p class="text-slate-400 text-sm">
+            P6.5 PASS. Red server-render chứng minh UI chưa có alert dù staleSince đã tồn tại. UI nay đổi badge thành stale
+            timing và cảnh báo caption có thể lệch script, nhưng chỉ hướng dẫn người dùng bấm sinh TTS rồi sinh caption —
+            không tự chạy job. Core giữ nguyên đường đúng đã có: một composite mutateSource ghi source + sidecar; test tăng
+            cường xác nhận staleSince được persist mà words và wordTimingSource engine không mất. Focused 42/42, parser và
+            contract reload 29/29, typecheck, boundaries, lint (năm warning nền) và diff-check xanh.
+          </p>
         </article>
       </section>
     </main>

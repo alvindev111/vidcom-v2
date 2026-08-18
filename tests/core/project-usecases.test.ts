@@ -78,6 +78,8 @@ function setup(options: {
     revision: 1,
     updatedAt: "2026-07-31T00:00:00.000Z",
     staleSince: null,
+    words: [{ text: "Title", startSeconds: 0, endSeconds: 0.6 }],
+    wordTimingSource: "engine" as const,
   };
   if (options.withNarration) files.set("narration/scene-1.json", `${JSON.stringify(narration, null, 2)}\n`);
   let revision = 2;
@@ -572,7 +574,12 @@ describe("project write and legacy use cases without HTTP", () => {
       ],
     }]);
     expect(JSON.parse(runtime.files.get("narration/scene-1.json") ?? "null"))
-      .toMatchObject({ staleSince: "2026-08-01T00:00:00.000Z", status: "generated" });
+      .toMatchObject({
+        staleSince: "2026-08-01T00:00:00.000Z",
+        status: "generated",
+        wordTimingSource: "engine",
+        words: [{ text: "Title", startSeconds: 0, endSeconds: 0.6 }],
+      });
   });
   it("returns narrationStale false and writes no sidecar when narration is absent", async () => {
     const runtime = setup();

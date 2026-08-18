@@ -1,6 +1,6 @@
 "use client";
 
-import { AudioWaveformIcon, RefreshCwIcon } from "lucide-react";
+import { AlertTriangleIcon, AudioWaveformIcon, RefreshCwIcon } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import type { Narration } from "@/lib/studio/types";
@@ -23,6 +23,7 @@ export function SceneNarration({
   onRegenerate: (text: string) => void;
 }) {
   const text = narration?.text ?? scriptText;
+  const stale = narration?.staleSince !== null && narration?.staleSince !== undefined;
 
   if (!text) {
     return (
@@ -39,18 +40,31 @@ export function SceneNarration({
         <span className="grow truncate text-xs">{text}</span>
         <span
           className={
-            narration?.status === "generated"
+            stale
+              ? "bg-amber-500/15 text-amber-700 dark:text-amber-300 rounded-full px-2 py-0.5 text-[10px] font-medium"
+              : narration?.status === "generated"
               ? "bg-studio-accent/15 text-studio-accent rounded-full px-2 py-0.5 text-[10px] font-medium"
               : "bg-muted text-muted-foreground rounded-full px-2 py-0.5 text-[10px] font-medium"
           }
         >
-          {narration
+          {stale
+            ? "stale timing"
+            : narration
             ? narration.status === "generated"
               ? "audio ready"
               : "mock · no audio"
             : "not generated"}
         </span>
       </div>
+
+      {stale ? (
+        <p className="flex items-start gap-1.5 text-xs text-amber-700 dark:text-amber-300" role="alert">
+          <AlertTriangleIcon className="mt-0.5 size-3.5 shrink-0" />
+          <span>
+            Caption timing may no longer match the script. Regenerate TTS, then generate captions again.
+          </span>
+        </p>
+      ) : null}
 
       {narration ? (
         <dl className="text-muted-foreground grid grid-cols-[auto_1fr] gap-x-3 gap-y-0.5 font-mono text-[10px]">

@@ -892,7 +892,7 @@ font hỏng và replay-revision assertions.)
 - [x] 6.4 `buildCaptionRuntimeScript()` — đọc `{source:"hf-preview", type:"state", frame}`, `fps` **hữu tỉ** `{numerator, denominator}`, và trừ `data-start` của layer chứa span
   - `subtitles.activeColor` từ preview settings
   - _Requirements: R6.8_ — _Design: §5.14_
-- [/] 6.5 Stale: sửa script ⇒ đánh dấu stale, **không** tự chạy TTS; UI cảnh báo nhịp có thể sai
+- [x] 6.5 Stale: sửa script ⇒ đánh dấu stale, **không** tự chạy TTS; UI cảnh báo nhịp có thể sai
   - Đường đánh dấu nằm trong use case ghi narration/source và sidecar caption, không dựa riêng vào component state; reload/SSE vẫn đọc được stale từ source.
   - _Requirements: R6.11, R6.12_ — _Design: §5.13, §5.15_
 - [ ] 6.6a Unit/integration: planner bốn ngưỡng, kẹp, đa cue, rebase; generate thay trọn block và stale persistence
@@ -912,6 +912,8 @@ font hỏng và replay-revision assertions.)
 `packages/adapter/src/hyperframes/sdk-ops.ts`, `tests/{core/generate-captions,adapter/caption-ops}.test.ts`.
 P6.4 `packages/adapter/src/hyperframes/{preview-style,document}.ts`,
 `tests/adapter/caption-runtime.test.ts`, `fixtures/preview/preview-matrix-expected.json`.
+P6.5 `src/components/studio/scene-narration.tsx`,
+`tests/{frontend/scene-narration-stale,core/project-usecases}.test.ts`.
 
 ---
 
@@ -1653,6 +1655,7 @@ caption · D7 tool MCP undo/redo · **D8 PR-11 hot-reload từng sub-composition
 | 2026-08-19 00:59 +07 | 6.4 checkpoint | Runtime-clock caption highlight | Baseline HEAD/remote `9fa17672484cbf334284cd3678248ccc63c26894`; worktree clean. Planned red: `bunx vitest run tests/adapter/caption-runtime.test.ts --environment node` before `buildCaptionRuntimeScript` exists | `IN PROGRESS` | Runtime script will share `injectPreviewSettingsDocument` for preview and render, observe HyperFrames' own `window.parent.postMessage` timeline/state messages, divide rational fps, and subtract the nearest `[data-composition-src]` layer start. It will not introduce RAF/wall-clock timing. Active styling remains sourced from `subtitles.activeColor` through the existing preview CSS variable | Add a node runtime-contract suite, capture the expected missing export/injection failure, then implement and rerun focused + document parity regression |
 | 2026-08-19 01:01 +07 | 6.4 | Runtime-clock caption highlight | RED 2/2: `buildCaptionRuntimeScript is not a function` and root injection absent. GREEN focused 2/2; document/golden regression 11/11; typecheck, boundaries and diff-check PASS | `PASS` | Root document now receives one shared caption runtime in the same injection path used by preview and render. The runtime observes rational timeline fps and finite state frames, subtracts the closest composition layer start, and toggles only `.caption .w.active`; it has no RAF or wall clock. Golden matrix was deliberately refreshed for all 60 root-document combinations, and custom `subtitles.activeColor` remains in the injected CSS variable | P6.5 |
 | 2026-08-19 01:03 +07 | 6.5 checkpoint | Persisted narration/caption staleness | Baseline HEAD/remote `41d68c44cb00084f728f2dd738a5384864775aad`; worktree clean. Planned red: `bunx vitest run tests/frontend/scene-narration-stale.test.ts tests/core/project-usecases.test.ts --environment node` before the UI warning contract exists | `IN PROGRESS` | Core already writes source plus the narration timing sidecar atomically through `WriteAuthority.mutateSource`, sets cue `staleSince`, leaves generated caption markup in source, and never invokes TTS. Adapter reload maps that persisted field into `scene.narration.staleSince`; the missing AC is a testable UI warning that caption rhythm may be wrong, derived from this source-backed field rather than component state | Add a pure warning contract and strengthen the existing Core test to prove caption markup survives, no job/TTS path is called, and the persisted sidecar is what drives reload-visible stale state |
+| 2026-08-19 01:05 +07 | 6.5 | Persisted narration/caption staleness | RED: stale server-rendered SceneNarration lacked `role=alert` and timing warning; current case remained green. GREEN focused 42/42; reload/parser + HTTP/MCP contract regression 29/29; typecheck, boundaries, lint and diff-check PASS | `PASS` | UI derives the stale badge and warning only from persisted `narration.staleSince`, tells the author caption timing may no longer match, and keeps explicit TTS regeneration manual. Existing Core source mutation remains one atomic source+sidecar write with no TTS dependency; strengthened coverage proves engine word timings survive sidecar serialization while staleSince is set. Adapter parser continues to surface that field after reload/SSE refresh | P6.6a |
 
 ## Final Authoring-Readiness Audit
 
