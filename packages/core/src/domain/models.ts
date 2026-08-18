@@ -7,6 +7,9 @@ import type {
   SceneDto,
 } from "@vidcom/contracts";
 
+import type { CaptionCue } from "./plan-caption-cues";
+import type { WordTimingSource } from "./word-timings";
+
 /** Absolute workspace path derived by the composition root, never by Core. */
 export type AbsolutePath = string & { readonly __brand: "AbsolutePath" };
 
@@ -107,4 +110,9 @@ export type CompositionOp =
   | {
       kind: "removeElement";
       target: string;
+    }
+  | {
+      kind: "replaceCaptions";
+      target: string;
+      value: { cues: CaptionCue[]; timingSource: WordTimingSource };
     };

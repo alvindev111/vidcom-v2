@@ -1874,6 +1874,13 @@
             hoặc entry cho scene inline, và WriteAuthority nhận đúng một mutation cùng expected hash. Không có narration
             hoặc timing sinh được trả InvariantViolated (mapper hiện hữu là 422), không dùng SchemaInvalid và không ghi.
           </p>
+          <p class="text-slate-400 text-sm">
+            P6.2 PASS. Red chứng minh generateCaptions chưa tồn tại và replaceCaptions rơi thành undefined SDK op. Core
+            nay đọc sidecar multi-cue, lập cue, chọn estimated nếu có bất kỳ cue ước lượng và truyền đúng một structured
+            op; thiếu narration/timing trả InvariantViolated. Adapter kiểm model, xoá toàn bộ block cũ dưới scene rồi dựng
+            đúng một container bằng DOM APIs, không ghi file. Core mới gọi một mutateSource trên source sở hữu scene với
+            expected hash. Focused 3/3; regression planner/project/composition 56/56; typecheck/boundaries/diff xanh.
+          </p>
         </article>
       </section>
     </main>
