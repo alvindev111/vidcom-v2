@@ -1247,6 +1247,27 @@
           </p>
         </article>
       </section>
+      <section class="space-y-3">
+        <h2 class="text-lg font-semibold text-sky-300">P1 — Browser gate và đóng phase 1.5 (2026-08-18)</h2>
+        <article class="rounded-lg border border-sky-900/70 bg-sky-950/20 p-4 space-y-2">
+          <h3 class="font-medium">Chuột thật trên static bundle, không mô phỏng DOM</h3>
+          <p class="text-slate-300">
+            Browser harness tạo một project rỗng qua UI rồi seed scene bằng use case Core production. Chrome kéo thân
+            clip và thấy inline left đổi trước khi thả; sau đó chỉ có một PATCH chứa start. Kéo mép phải làm width
+            đổi và chỉ có một PATCH chứa duration. Lần kéo thứ ba nhấn Esc trước mouse-up không tạo request mới.
+          </p>
+          <p class="text-slate-300">
+            Test đỏ ban đầu tìm đúng hai thiếu sót của harness: project New video không tự bịa scene và selector từng
+            bị gắn nhầm vào tên scene ở gutter. Selector cuối cùng nằm trên clip timing thật; fixture không chèn DOM
+            giả. Node vẫn sở hữu ca clip 20 px, hai cận zoom, lượng tử frame, snap, ripple và no-op commit.
+          </p>
+          <p class="text-slate-400 text-sm">
+            Local Browser session 12/12 PASS. GitHub run 32091740200 tại SHA 43db9b1 PASS Linux x64 và Windows x64;
+            workflow không phát artifact. Full regression đạt 242 file và 2.219 test PASS, ngoài một file/5 test
+            VieNeu-real skip có chủ ý. P1 đóng với toàn bộ task, AC và deliverables đã hoàn tất.
+          </p>
+        </article>
+      </section>
     </main>
   </body>
 </html>
