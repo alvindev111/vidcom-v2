@@ -1519,6 +1519,14 @@
             beginDrag trả về, owner continueDrag quan sát và preview start vừa tính. Bốn giá trị này khép kín state
             boundary còn lại; checkpoint không đổi mutation behavior và các hook tạm sẽ được gỡ cùng targeted fix.
           </p>
+          <p class="text-slate-400 text-sm">
+            Linux run 32100000814 chứng minh toàn bộ state boundary đều đúng trước cancellation: beginDrag trả scene-2,
+            dragged move có buttons=1, continueDrag thấy scene-2 và tính preview start 1,2. Boundary lỗi duy nhất là
+            capture trên clip bị cancel trước khi render commit. Capture cùng move/up/cancel nay thuộc timeline surface
+            ổn định và route theo scene id do interaction state sở hữu; nhánh marquee nền trống giữ nguyên. Core vẫn
+            quyết preview/commit. Focused Chrome 1/1, editor/snap node 12/12, full Browser session 12/12, typecheck và
+            diff-check PASS local.
+          </p>
         </article>
       </section>
     </main>
