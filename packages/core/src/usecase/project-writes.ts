@@ -15,7 +15,7 @@ import { detectTrackGapsAndOverlaps, planRipple, validateSceneTiming, type Scene
 import { checkPathPurpose, checkPathSyntax } from "../domain/path-policy";
 import { rootCompositionSource } from "../domain/platform-preset";
 import { err, ok, type Result } from "../error/result";
-import { ignoredMutationOriginForActor } from "../port/mutation-observer";
+import { ignoredMutationOriginForActor, type UndoContentPort } from "../port/mutation-observer";
 import type { ClockPort, CompositionPort, MutationJournalPort, WorkspacePort } from "../port/ports";
 import type { CompositeRequest, WriteInvocation } from "../port/types";
 import type { WriteAuthority } from "../service/write-authority";
@@ -28,6 +28,8 @@ export interface ProjectWriteDependencies {
   journal: MutationJournalPort;
   authority: Pick<WriteAuthority, "mutateSource"> & Partial<Pick<WriteAuthority, "uploadBgm">>;
   clock: ClockPort;
+  /** Live content resolver required only by applyMutationInverse. */
+  undoContent?: UndoContentPort;
   identity?: Pick<ProjectIdentityService, "read">;
 }
 

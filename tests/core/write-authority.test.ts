@@ -1057,7 +1057,10 @@ describe("WriteAuthority composite gate", () => {
       origin: inverseOrigin,
       toolAudit: null,
       backup: false,
-    }, "user")).resolves.toMatchObject({ ok: false, error: { code: ErrorCode.WriteConflict } });
+    }, "user")).resolves.toMatchObject({
+      ok: false,
+      error: { code: ErrorCode.WriteConflict, details: { blockedBy: ["index.html"] } },
+    });
     expect(stepObserver.blocks).toEqual([{ projectId, origin: inverseOrigin, paths: ["index.html"] }]);
 
     const guardObserver = new FakeMutationObserver();
@@ -1074,8 +1077,79 @@ describe("WriteAuthority composite gate", () => {
       origin: inverseOrigin,
       toolAudit: null,
       backup: false,
-    }, "user")).resolves.toMatchObject({ ok: false, error: { code: ErrorCode.WriteConflict } });
+    }, "user")).resolves.toMatchObject({
+      ok: false,
+      error: { code: ErrorCode.WriteConflict, details: { blockedBy: ["assets/shared.png"] } },
+    });
     expect(guardObserver.blocks).toEqual([{ projectId, origin: inverseOrigin, paths: ["assets/shared.png"] }]);
+
+    const entityObserver = new FakeMutationObserver();
+    const entity = setup({ observer: entityObserver });
+    const entityContent = serializePreviewSettings(DEFAULT_PREVIEW_SETTINGS);
+    entity.workspace.files.set("preview-settings.json", entityContent);
+    entity.journal.entityState = {
+      revision: 12,
+      contentHash: digest(entityContent),
+      backingPath: "preview-settings.json" as RelPath,
+    };
+    await expect(entity.authority.mutateSource({
+      ref: project,
+      steps: [{
+        kind: "entity",
+        entity: "preview-settings",
+        patch: { bgm: { volume: 0.5 } },
+        expectedRevision: 12,
+        expectedContentHash: digest("wrong-direction"),
+        undoable: true,
+      }],
+      origin: inverseOrigin,
+      toolAudit: null,
+      backup: false,
+    }, "user")).resolves.toMatchObject({
+      ok: false,
+      error: {
+        code: ErrorCode.WriteConflict,
+        details: { blockedBy: ["preview-settings.json"] },
+      },
+    });
+    expect(entityObserver.blocks).toEqual([{
+      projectId,
+      origin: inverseOrigin,
+      paths: ["preview-settings.json"],
+    }]);
+  });
+
+  it("returns the exact inverse receipt already delivered to the observer", async () => {
+    const content = new FakeUndoContent();
+    const observer = new FakeMutationObserver();
+    const runtime = setup({ undoContent: content, observer });
+    runtime.workspace.files.set("index.html", "before-undo");
+    const inverseOrigin = {
+      kind: "ui",
+      sessionId: "01K1ABCDEFGHJKMNPQRSTVWXYZ",
+      label: "Undo edit",
+      historyAction: "undo",
+      historyOperation: { id: "operation-return", targetReceiptId: "journal:prior" },
+    } as const;
+
+    const result = await runtime.authority.mutateSource({
+      ref: project,
+      steps: [{
+        kind: "write",
+        path: "index.html" as RelPath,
+        content: "after-undo",
+        expectedContentHash: digest("before-undo"),
+      }],
+      origin: inverseOrigin,
+      toolAudit: null,
+      backup: false,
+    }, "user");
+
+    expect(result).toMatchObject({
+      ok: true,
+      value: { inverseReceipt: { origin: inverseOrigin, paths: ["index.html"] } },
+    });
+    expect(result.ok && result.value.inverseReceipt).toBe(observer.receipts[0]);
   });
 
   it("caps retained inline content at 64 KiB per ref and 256 KiB per mutation", async () => {

@@ -856,6 +856,31 @@
           </p>
         </article>
       </section>
+      <section class="space-y-3">
+        <h2 class="text-lg font-semibold text-sky-300">P3 — Core inverse 3.2 (2026-08-18)</h2>
+
+        <article class="rounded-lg border border-sky-900/70 bg-sky-950/20 p-4 space-y-2">
+          <h3 class="font-medium">Một receipt đi thành đúng một composite nghịch đảo</h3>
+          <p class="text-slate-300">
+            Undo duyệt receipt theo thứ tự ngược và resolve <code>beforeContent</code>; redo giữ thứ tự gốc,
+            resolve <code>afterContent</code> và truyền lại read guards. Inline UTF-8 trở lại chuỗi để validator
+            composition vẫn chạy; object ref trở thành capability <code>write-staged</code>, không đọc payload lớn vào heap.
+            Tất cả resolve hoàn tất trước một lần gọi <code>WriteAuthority.mutateSource</code>.
+          </p>
+          <p class="text-slate-400 text-sm">
+            Directory dùng precondition theo hướng và bỏ đúng no-op <code>mkdir existedBefore</code>. Entity dựng patch
+            toàn trạng thái, gồm danh sách scene phải xoá, dùng revision hiện tại đơn điệu nhưng bắt buộc content hash
+            của đúng phía receipt. Pending mount reopen/close nằm trong cùng composite để row không trỏ scene đã undo.
+            Mutation có delete ở lượt gốc hoặc lượt inverse luôn bật backup.
+          </p>
+          <p class="text-slate-400 text-sm">
+            Để giữ return contract §5.7 mà không phát receipt lần hai, <code>WriteAuthority</code> gắn receipt inverse
+            đã chuyển cho observer vào envelope chỉ cho undo/redo; không persist và không đi qua schema HTTP thường.
+            Mismatch step/read guard/entity trả 409 kèm <code>details.blockedBy</code>, đồng thời settle reservation qua
+            Core observer trước khi ghi. Planner/authority 50/50 và regression liên quan 97/97 PASS.
+          </p>
+        </article>
+      </section>
     </main>
   </body>
 </html>

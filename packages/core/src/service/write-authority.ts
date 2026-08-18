@@ -352,13 +352,18 @@ export class WriteAuthority {
         advancesSource,
       );
       if (!validated.ok) {
-        this.blockInverseHistoryOnPreconditionConflict(
+        const blockedBy = this.blockInverseHistoryOnPreconditionConflict(
           request,
           prepared.value,
           readGuards.value,
           validated.error,
         );
-        return validated;
+        return blockedBy === null
+          ? validated
+          : err({
+              ...validated.error,
+              details: { ...validated.error.details, blockedBy },
+            });
       }
       const pending = await this.validatePendingMountTransition(request, validated.value);
       if (!pending.ok) return pending;
@@ -371,9 +376,9 @@ export class WriteAuthority {
     prepared: PreparedCompositeStep[],
     readGuards: PreparedHistoryReadGuard[],
     error: DomainError,
-  ): void {
+  ): RelPath[] | null {
     if ((request.origin.historyAction !== "undo" && request.origin.historyAction !== "redo")
-      || error.code !== ErrorCode.WriteConflict) return;
+      || error.code !== ErrorCode.WriteConflict) return null;
     const preconditionFields = new Set([
       "expectedRevision",
       "expectExisting",
@@ -382,7 +387,7 @@ export class WriteAuthority {
       "expectedContentHash",
       "historyReadGuards",
     ]);
-    if (!error.field || !preconditionFields.has(error.field)) return;
+    if (!error.field || !preconditionFields.has(error.field)) return null;
 
     const candidates = error.field === "historyReadGuards"
       ? readGuards.map(({ guard }) => guard.path)
@@ -394,6 +399,7 @@ export class WriteAuthority {
     try {
       this.dependencies.observer?.blockHistoryOperation(request.ref.id, request.origin, paths);
     } catch {}
+    return paths;
   }
 
   private async resolveCompositeTargets(
@@ -502,10 +508,22 @@ export class WriteAuthority {
           try { raw = JSON.parse(current.content); } catch { raw = DEFAULT_PREVIEW_SETTINGS; }
         }
         const currentSettings = normalizePreviewSettings(raw);
-        if (step.expectedRevision !== state.revision || physicalHash !== state.contentHash) {
+        const expectedHashInvalid = step.expectedContentHash !== undefined
+          && !/^sha256:[0-9a-f]{64}$/u.test(step.expectedContentHash);
+        if (expectedHashInvalid) {
+          return err({
+            code: ErrorCode.SchemaInvalid,
+            message: "entity expectedContentHash must be a sha256 content hash",
+            field: "expectedContentHash",
+          });
+        }
+        if (step.expectedRevision !== state.revision || physicalHash !== state.contentHash
+          || (step.expectedContentHash !== undefined && physicalHash !== step.expectedContentHash)) {
           return err(conflict({
             current: { previewSettings: currentSettings, contentHash: physicalHash, revision: state.revision },
-          }, "expectedRevision"));
+          }, step.expectedContentHash !== undefined && physicalHash !== step.expectedContentHash
+            ? "expectedContentHash"
+            : "expectedRevision"));
         }
         const previewSettings = mergePreviewSettings(currentSettings, step.patch);
         const content = serializePreviewSettings(previewSettings);
@@ -645,6 +663,7 @@ export class WriteAuthority {
       if (currentHash !== step.expectedContentHash) {
         const currentFile = await this.dependencies.workspace.readFile(item.target);
         return err(conflict({
+          path: step.path,
           current: currentFile
             ? {
                 content: currentFile.content,
@@ -964,11 +983,14 @@ export class WriteAuthority {
     } catch {
       emitted = { ok: false, reason: "history observer threw" };
     }
-    if (emitted.ok) return envelope;
+    const completedEnvelope = request.origin.historyAction === "undo" || request.origin.historyAction === "redo"
+      ? { ...envelope, inverseReceipt: receipt }
+      : envelope;
+    if (emitted.ok) return completedEnvelope;
     this.dependencies.undoContent?.release(retained.refs);
     observer.invalidateProject(request.ref.id, "history-desync");
     return {
-      ...envelope,
+      ...completedEnvelope,
       diagnostics: [...envelope.diagnostics, {
         severity: "warning",
         code: "history-unavailable",

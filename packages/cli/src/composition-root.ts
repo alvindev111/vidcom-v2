@@ -613,6 +613,7 @@ export function createApplication(
     ...readDependencies,
     authority,
     clock: infrastructure.clock,
+    undoContent: infrastructure.largeContent,
     identity,
     motionLibraries: infrastructure.motionLibraries,
   };

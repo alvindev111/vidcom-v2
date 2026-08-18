@@ -15,7 +15,7 @@ import type {
 } from "@vidcom/contracts";
 
 import type { AbsolutePath, ProjectRef } from "../domain/models";
-import type { MutationOrigin, MutationReadGuard } from "./mutation-observer";
+import type { MutationOrigin, MutationReadGuard, MutationReceipt } from "./mutation-observer";
 
 /** Resolved filesystem capability created only by a WorkspacePort implementation. */
 export type ResolvedPath = string & { readonly __brand: "ResolvedPath" };
@@ -254,6 +254,8 @@ export type CompositeStep =
       entity: "preview-settings";
       patch: PreviewSettingsPatchDto;
       expectedRevision: number;
+      /** Internal inverse guard; browser transports never construct entity composite steps. */
+      expectedContentHash?: ContentHash;
       /** Core-only history policy; transport callers cannot set composite entity steps. */
       undoable?: boolean;
     }
@@ -510,6 +512,8 @@ export interface WriteEnvelope {
   diagnostics: Diagnostic[];
   /** Exact outbox sequence inserted by the same terminal transaction; null means no event. */
   changeSeq: number | null;
+  /** Present only for an applied undo/redo; consumed by the history route, never persisted. */
+  inverseReceipt?: MutationReceipt;
 }
 
 /** Durable unresolved journal state exposed to readers and the project write gate. */
