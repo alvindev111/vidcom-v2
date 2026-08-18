@@ -52,6 +52,33 @@ export interface DeleteEntryPlan {
   planDigest: ContentHash;
 }
 
+export type EntryExpectation =
+  | { path: RelPath; kind: "file"; expectedContentHash: ContentHash }
+  | { path: RelPath; kind: "folder"; expectedTreeDigest: ContentHash };
+
+/** Reads the exact optimistic precondition needed by the existing entry mutation routes. */
+export async function getEntryExpectation(
+  dependencies: Pick<EntryCrudDependencies, "workspace" | "hashContent">,
+  input: { projectId: ProjectId; path: RelPath },
+): Promise<Result<EntryExpectation, DomainError>> {
+  if (!validPath(input.path)) return err({ code: ErrorCode.PathInvalid, message: "entry path is not allowed" });
+  const project = await dependencies.workspace.readProjectRef(input.projectId);
+  if (!project) return err({ code: ErrorCode.ProjectNotFound, message: "project was not found" });
+  const scanned = await scanEntry(dependencies as EntryCrudDependencies, project, input.path);
+  if (!scanned.ok) return scanned;
+  if (scanned.value.rootKind === "file") {
+    const contentHash = scanned.value.entries[0]?.contentHash;
+    return contentHash
+      ? ok({ path: input.path, kind: "file", expectedContentHash: contentHash })
+      : err({ code: ErrorCode.NotFound, message: "entry file was not found" });
+  }
+  return ok({
+    path: input.path,
+    kind: "folder",
+    expectedTreeDigest: entryTreeDigest(scanned.value.entries, dependencies.hashContent),
+  });
+}
+
 class Semaphore {
   private active = 0;
   private readonly waiting: Array<() => void> = [];

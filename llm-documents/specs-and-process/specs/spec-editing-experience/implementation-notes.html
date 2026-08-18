@@ -1715,6 +1715,23 @@
             serializer; replay trả revision journal thực. Focused 24/24, broad slice 233/233, build/typecheck/boundaries/
             diff xanh; lint không lỗi với năm warning nền.
           </p>
+          <p class="text-slate-400 text-sm">
+            P5.6 bắt đầu tại HEAD sạch 2f3b0d1. Giữ rail Files gọn và empty state hiện hữu, bổ sung action/dropzone
+            inline thay vì sao chép pixel từ reference. Logic request, phân loại asset và vòng đời XHR nằm ngoài JSX;
+            XHR gửi raw File có cookie/header phiên, progress byte 0–90 %, chờ server finalize/probe ở 90–100 % và
+            abort request thật. CRUD refresh snapshot chỉ sau success. Metadata unknown giữ nguyên lý do; font picker
+            chỉ gửi path/hash/scope, không tự quyết family/style. Seam read expectation file/folder còn thiếu sẽ được
+            đóng trong route GET files hiện hữu, không tạo endpoint ngoài Design.
+          </p>
+          <p class="text-slate-400 text-sm">
+            P5.6 PASS. Rail Files giữ hierarchy gọn/empty rows và có create, rename, delete, selected detail cùng
+            dropzone. Helper thuần giữ allowlist/request/XHR; hook riêng giữ progress, lỗi và metadata nên JSX không tự
+            hash hay quyết timing. XHR gửi raw File có credential/header phiên, ánh xạ byte 0–90 %, dành 90–100 % cho
+            finalize/probe và abort request thật. GET files hiện hữu trả hash file hoặc tree digest canonical do Core
+            tính để rename; UI không tính digest. Metadata unknown hiện lý do; font hợp lệ hiện family/style và apply
+            project bằng font/entry hash server cấp. Toàn frontend + Core expectation + HTTP route 128/128, production
+            build/typecheck/boundaries/diff xanh; lint không lỗi với năm warning nền.
+          </p>
         </article>
       </section>
     </main>

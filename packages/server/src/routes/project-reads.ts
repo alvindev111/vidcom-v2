@@ -11,6 +11,7 @@ import {
   getPreviewSettings,
   getProjectPreview,
   getProjectAssetMetadata,
+  getEntryExpectation,
   getStudioSnapshot,
   listProjects,
   readAsset,
@@ -19,6 +20,7 @@ import {
   type EventOutboxPort,
   type ProjectReadDependencies,
   type MediaProbePort,
+  type EntryCrudDependencies,
 } from "@vidcom/core";
 import { Hono, type Context } from "hono";
 
@@ -27,6 +29,7 @@ import { HttpBoundaryError } from "../middleware/error-mapper";
 export interface ProjectReadRouteDependencies extends ProjectReadDependencies {
   events: Pick<EventOutboxPort, "latestProjectSeq">;
   probe?: MediaProbePort;
+  hashContent?(content: string | Uint8Array): import("@vidcom/contracts").ContentHash;
   runtimeSource(): string;
   mimeFromPath(path: string): string | null;
 }
@@ -133,7 +136,19 @@ export function createProjectReadRoutes(dependencies: ProjectReadRouteDependenci
     if (!path) fail({ code: ErrorCode.PathRequired, message: "path is required", field: "path" });
     const parsed = ReadProjectFileQuerySchema.safeParse({ path });
     if (!parsed.success) fail({ code: ErrorCode.SchemaInvalid, message: "file path is invalid", field: "path" });
-    return c.json({ file: valueOf(await readSourceFile(dependencies, projectId(c), parsed.data.path as RelPath)) });
+    const id = projectId(c);
+    const source = await readSourceFile(dependencies, id, parsed.data.path as RelPath);
+    if (source.ok) {
+      return c.json({
+        file: source.value,
+        entry: { path: source.value.path, kind: "file", expectedContentHash: source.value.contentHash },
+      });
+    }
+    if (!dependencies.hashContent) fail(source.error);
+    return c.json({ entry: valueOf(await getEntryExpectation({
+      workspace: dependencies.workspace as EntryCrudDependencies["workspace"],
+      hashContent: dependencies.hashContent,
+    }, { projectId: id, path: parsed.data.path as RelPath })) });
   });
   routes.get("/v1/projects/:id/preview-settings", async (c) =>
     c.json(valueOf(await getPreviewSettings(dependencies, projectId(c)))));

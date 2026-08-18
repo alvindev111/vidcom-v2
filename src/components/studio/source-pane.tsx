@@ -36,6 +36,7 @@ export function SourcePane({
   onSeek,
   onSelectScene,
   onProjectChanged,
+  projectRevision,
 }: {
   projectId: string;
   projectSlug: string;
@@ -47,6 +48,7 @@ export function SourcePane({
   onSeek: (seconds: number) => void;
   onSelectScene: (scene: Scene) => void;
   onProjectChanged: ProjectChanged;
+  projectRevision: number;
 }) {
   const [tab, setTab] = React.useState("code");
 
@@ -99,6 +101,7 @@ export function SourcePane({
           tree={tree}
           files={files}
           onProjectChanged={onProjectChanged}
+          projectRevision={projectRevision}
         />
       </TabsContent>
       <TabsContent value="scene" className="min-h-0 flex-1 border-t">

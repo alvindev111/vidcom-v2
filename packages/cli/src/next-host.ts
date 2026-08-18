@@ -272,6 +272,7 @@ export async function startNextHostedRuntime(
     runtimeSource: foundation.infrastructure.runtimeSource,
     mimeFromPath: foundation.infrastructure.mimeFromPath,
     probe: foundation.infrastructure.assetProbe,
+    hashContent,
   };
   const projectWrites: NonNullable<ServerAppDependencies["projectWrites"]> = {
     ...foundation.application.writeDependencies,

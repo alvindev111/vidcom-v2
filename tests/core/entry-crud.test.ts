@@ -7,6 +7,7 @@ import {
   canonicalizeJson,
   createEntry,
   executeDeleteEntry,
+  getEntryExpectation,
   prepareDeleteEntry,
   renameEntry,
   type AbsolutePath,
@@ -96,6 +97,20 @@ function folderDigest(): ContentHash {
 }
 
 describe("entry CRUD", () => {
+  it("returns server-owned file hashes and canonical folder digests for UI preconditions", async () => {
+    const value = setup();
+    expect(await getEntryExpectation(value.dependencies, {
+      projectId, path: "assets/source/a.txt" as RelPath,
+    })).toEqual({ ok: true, value: {
+      path: "assets/source/a.txt", kind: "file", expectedContentHash: digest("a"),
+    } });
+    expect(await getEntryExpectation(value.dependencies, {
+      projectId, path: "assets/source" as RelPath,
+    })).toEqual({ ok: true, value: {
+      path: "assets/source", kind: "folder", expectedTreeDigest: folderDigest(),
+    } });
+  });
+
   it("creates an empty file or an absent directory through one history-ignored composite", async () => {
     for (const kind of ["file", "folder"] as const) {
       const value = setup();

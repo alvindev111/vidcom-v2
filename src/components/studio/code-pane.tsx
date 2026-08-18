@@ -18,6 +18,7 @@ export function CodePane({
   tree,
   files,
   onProjectChanged,
+  projectRevision,
 }: {
   projectId: string;
   projectSlug: string;
@@ -26,6 +27,7 @@ export function CodePane({
   files: SourceFile[];
   /** Called after a save so the preview rebuilds against the new source. */
   onProjectChanged: ProjectChanged;
+  projectRevision: number;
 }) {
   const source = useSourceFiles(projectId, projectSlug, files);
 
@@ -37,6 +39,10 @@ export function CodePane({
           selectedPath={source.activePath}
           dirtyPaths={source.dirtyPaths}
           onSelect={(path) => void source.openPath(path)}
+          projectId={projectId}
+          projectRevision={projectRevision}
+          entryContentHash={files.find((file) => file.path === "index.html")?.version ?? null}
+          onProjectChanged={onProjectChanged}
         />
       </ResizablePanel>
 

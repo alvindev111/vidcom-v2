@@ -14,6 +14,7 @@ export function FileTreeItem({
   expanded,
   onSelect,
   onToggle,
+  onManage,
 }: {
   node: FileNode;
   depth?: number;
@@ -23,6 +24,7 @@ export function FileTreeItem({
   expanded: boolean;
   onSelect: (path: string) => void;
   onToggle: (path: string) => void;
+  onManage?: (path: string) => void;
 }) {
   const isFolder = node.kind === "folder";
   const Chevron = expanded ? ChevronDownIcon : ChevronRightIcon;
@@ -30,7 +32,10 @@ export function FileTreeItem({
   return (
     <button
       type="button"
-      onClick={() => (isFolder ? onToggle(node.path) : onSelect(node.path))}
+      onClick={() => {
+        onManage?.(node.path);
+        if (isFolder) onToggle(node.path); else onSelect(node.path);
+      }}
       aria-expanded={isFolder ? expanded : undefined}
       data-selected={selected || undefined}
       className={cn(

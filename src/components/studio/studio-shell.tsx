@@ -134,6 +134,7 @@ export function StudioShell({
             onSeek={controls.seek}
             onSelectScene={selectScene}
             onProjectChanged={handleProjectChanged}
+            projectRevision={projectRevision}
           />
         </ResizablePanel>
 
