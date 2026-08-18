@@ -1547,6 +1547,11 @@
             cancel capture ngay trong frame đó. Interaction ref cập nhật đồng bộ trong move handler nên không cần paint
             trước commit. Helper nay gửi trusted move rồi pointerup liên tiếp; stable-surface ownership giữ nguyên.
           </p>
+          <p class="text-slate-400 text-sm">
+            Linux run 32100899445 lộ một round-trip ẩn: helper vẫn đọc style bằng $eval sau move rồi mới up. Các giá trị
+            đó không còn phục vụ AC hay assertion nên được xóa cùng return payload. Normal gesture nay không có protocol
+            round-trip nào giữa trusted move và pointerup.
+          </p>
         </article>
       </section>
     </main>

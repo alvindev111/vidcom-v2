@@ -59,7 +59,7 @@ async function dragTimelineClip(
   zone: "body" | "trim-end",
   finish: "drop" | "escape",
   sceneId?: string,
-): Promise<{ beforeLeft: string; afterLeft: string; beforeWidth: string; afterWidth: string }> {
+): Promise<void> {
   const selector = sceneId
     ? `[data-timeline-scene-id="${sceneId}"]`
     : "[data-timeline-scene-id]";
@@ -69,22 +69,13 @@ async function dragTimelineClip(
   await page.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => resolve())));
   const box = await clip.boundingBox();
   if (!box) throw new Error("timeline clip has no browser geometry");
-  const before = await clip.evaluate((element) => ({
-    left: (element as HTMLElement).style.left,
-    width: (element as HTMLElement).style.width,
-  }));
   const x = zone === "body" ? box.x + box.width / 2 : box.x + box.width - 2;
   const y = box.y + box.height / 2;
   await page.mouse.move(x, y);
   await page.mouse.down();
   await page.mouse.move(x + 24, y);
-  const after = await page.$eval(selector, (element) => ({
-    left: (element as HTMLElement).style.left,
-    width: (element as HTMLElement).style.width,
-  }));
   if (finish === "escape") await page.keyboard.press("Escape");
   await page.mouse.up();
-  return { beforeLeft: before.left, afterLeft: after.left, beforeWidth: before.width, afterWidth: after.width };
 }
 
 async function dragReorderHandle(page: Page, sourceSelector: string, targetSelector: string): Promise<boolean> {
