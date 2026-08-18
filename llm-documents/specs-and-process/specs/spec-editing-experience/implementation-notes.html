@@ -1930,6 +1930,12 @@
             sdk_rejected trước serialize, file nguồn bất biến. Toàn bộ P6 unit/integration xanh 56/56; typecheck,
             boundaries, lint (năm warning nền) và diff-check xanh.
           </p>
+          <p class="text-slate-400 text-sm">
+            P6.6b bắt đầu ở HEAD sạch 79fe7dc. Playwright skill đã kiểm prerequisite npx; repo đã chuẩn hóa browser gate
+            bằng Puppeteer/Vitest trong workflow Browser session Linux+Windows, nên task test được yêu cầu sẽ mở rộng đúng
+            harness này thay vì thêm runner cạnh tranh. Fixture chạy production caption script, fps 30000/1001, layer start
+            6 giây, ba frame probe dùng lại cho parity P11.2; CI ownership được làm red trước khi nối suite vào script.
+          </p>
         </article>
       </section>
     </main>
