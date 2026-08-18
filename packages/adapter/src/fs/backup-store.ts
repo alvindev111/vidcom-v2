@@ -23,7 +23,7 @@ import { openRegularFileNoFollow } from "./regular-file";
 
 import type { VidcomDatabase } from "../db/client";
 
-const BACKUP_STREAM_BUFFER_BYTES = 64 * 1024;
+const BACKUP_STREAM_BUFFER_BYTES = 16 * 1024;
 
 interface StoredBackup {
   id: string;

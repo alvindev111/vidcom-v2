@@ -15,7 +15,7 @@ export interface StagedAssetOperations {
   copyFile: typeof copyFile;
 }
 
-const STAGED_STREAM_BUFFER_BYTES = 64 * 1024;
+const STAGED_STREAM_BUFFER_BYTES = 16 * 1024;
 
 const DEFAULT_OPERATIONS: StagedAssetOperations = Object.freeze({
   async copySource(source: FileHandle, destination: FileHandle) {

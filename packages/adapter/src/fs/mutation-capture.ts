@@ -19,7 +19,7 @@ import type {
 
 import { syncDirectory } from "./durability";
 
-const CAPTURE_HASH_BUFFER_BYTES = 64 * 1024;
+const CAPTURE_HASH_BUFFER_BYTES = 16 * 1024;
 
 async function hashRegularFile(pathname: string): Promise<ContentHash> {
   const handle = await open(pathname, constants.O_RDONLY | constants.O_NOFOLLOW);

@@ -1840,6 +1840,14 @@
             canceled” lúc 16:26:34Z. Đây là FAIL hạ tầng thật, không được dùng 7/8 job để đóng phase và không có lý do
             nới test, security hoặc threshold. Evidence được checkpoint rồi rerun toàn matrix trên exact SHA mới.
           </p>
+          <p class="text-slate-400 text-sm">
+            Run 32160442986 đã PASS 7/8 job, gồm main Linux/Windows, Browser hai OS và packaged cả ba OS. Main macOS
+            một mình đỏ sau 2.299 test xanh vì rename 200 file/asset 96 MiB tăng RSS 69.271.552 byte, hơn ngưỡng nghiêm
+            ngặt 67.108.864 byte. Không thêm GC và không nới gate. Bốn vị trí stream/hash tuần tự theo file — workspace,
+            staged copy/verify, capture và backup copy/verify — giảm buffer từ 64 KiB xuống 16 KiB để backing store chưa
+            được V8 thu hồi không nhân theo 200 file; hash, fsync, no-follow và streaming giữ nguyên. Ba lượt CRUD+listener
+            đều xanh 5/5; backup/staging/capture 18/18, typecheck, boundaries, diff và lint cũng xanh (năm warning nền).
+          </p>
         </article>
       </section>
     </main>
