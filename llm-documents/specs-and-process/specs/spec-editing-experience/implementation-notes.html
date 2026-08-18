@@ -1753,6 +1753,16 @@
             HTTP/1.1 thật; test đo cleanup temp, reject sớm, abort socket, replay/changed/expired và giữ regression limit
             source/file/BGM. XHR constructor đã có node evidence ở 5.6; task này chứng minh đúng đường server thực.
           </p>
+          <p class="text-slate-400 text-sm">
+            P5.7b PASS. Đo ban đầu trong Vitest và bundle Node mới đều vượt ngưỡng do Web-stream queue cộng cold
+            JIT/allocator; không được ghi PASS giả. Listener nay chỉ tách đúng POST upload asset qua IncomingMessage native,
+            vẫn chạy cùng perimeter/Hono/Core, còn mọi route khác giữ adapter chuẩn. Worker Node source-module dùng SQLite và
+            temp fs thật, warm-up chính route 64 MiB để đo steady-state minh bạch; exact 500 MiB tăng RSS 6.569.984 byte,
+            500 MiB+1 chunked và 512 MiB Content-Length trả 413. Abort polling theo deadline chứng minh temp sạch. Retry
+            cùng operation giữ nguyên revision, mtime, size và journal; năm thay đổi filename/kind/at/track/bytes đều 409,
+            xoá row nhưng giữ journal marker trả 404. Ba run liên tiếp xanh; toàn Server 186/186, joined XHR/payload/startup/
+            stager 17/17, typecheck/boundaries/diff xanh; lint không lỗi với năm warning nền.
+          </p>
         </article>
       </section>
     </main>

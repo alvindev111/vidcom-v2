@@ -1,0 +1,63 @@
+// @vitest-environment node
+
+import { spawn } from "node:child_process";
+
+import { expect, it } from "vitest";
+
+interface Evidence {
+  warmupStatus: number; exactStatus: number; rssDeltaBytes: number;
+  baselineRss: number; baselineMemory: NodeJS.MemoryUsage; peakRss: number; peakMemory: NodeJS.MemoryUsage;
+  oneOverStatus: number; oversizedStatus: number; tempAfterAbort: string[];
+  firstStatus: number; replayStatus: number; replayed: boolean;
+  replayRevisionStable: boolean; replayWriteStable: boolean; replayJournalStable: boolean;
+  changedStatuses: number[]; expiredStatus: number;
+}
+
+function run(command: string, args: string[]): Promise<{ stdout: string; stderr: string }> {
+  return new Promise((resolve, reject) => {
+    const child = spawn(command, args, { stdio: ["ignore", "pipe", "pipe"] });
+    const stdout: Buffer[] = [];
+    const stderr: Buffer[] = [];
+    child.stdout.on("data", (chunk: Buffer) => stdout.push(chunk));
+    child.stderr.on("data", (chunk: Buffer) => stderr.push(chunk));
+    child.on("error", reject);
+    child.on("close", (code) => {
+      const output = { stdout: Buffer.concat(stdout).toString("utf8"), stderr: Buffer.concat(stderr).toString("utf8") };
+      if (code !== 0) reject(new Error(output.stderr || output.stdout || `${command} exited ${code}`));
+      else resolve(output);
+    });
+  });
+}
+
+it("streams assets through a real HTTP/1.1 listener with bounded memory and exact replay", { timeout: 420_000 }, async () => {
+  const support = new URL("./support/", import.meta.url);
+  const { stdout } = await run(process.execPath, [
+    "--expose-gc",
+    "--experimental-transform-types",
+    "--experimental-loader", new URL("workspace-typescript-loader.mjs", support).pathname,
+    new URL("asset-streaming-listener-worker.ts", support).pathname,
+  ]);
+  const marker = "VIDCOM_ASSET_STREAM_RESULT=";
+  const line = stdout.split("\n").find((value) => value.startsWith(marker));
+  expect(line, stdout).toBeDefined();
+  const evidence = JSON.parse(line!.slice(marker.length)) as Evidence;
+  expect(evidence).toMatchObject({
+    warmupStatus: 201,
+    exactStatus: 201,
+    oneOverStatus: 413,
+    oversizedStatus: 413,
+    tempAfterAbort: [],
+    firstStatus: 201,
+    replayStatus: 201,
+    replayed: true,
+    replayRevisionStable: true,
+    replayWriteStable: true,
+    replayJournalStable: true,
+    changedStatuses: [409, 409, 409, 409, 409],
+    expiredStatus: 404,
+  });
+  expect(evidence.rssDeltaBytes, JSON.stringify({
+    baselineRss: evidence.baselineRss, baselineMemory: evidence.baselineMemory,
+    peakRss: evidence.peakRss, peakMemory: evidence.peakMemory,
+  })).toBeLessThan(64 * 1024 * 1024);
+});

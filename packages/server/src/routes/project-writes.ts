@@ -81,6 +81,7 @@ import {
 import { Hono, type Context } from "hono";
 
 import { HttpBoundaryError } from "../middleware/error-mapper";
+import { requestBodyChunks } from "../request-stream";
 import { studioWriteInvocation, type StudioRouteDependencies } from "./studio-session";
 
 export interface ProjectWriteRouteDependencies extends ProjectWriteDependencies {
@@ -133,19 +134,6 @@ function projectId(c: Context): ProjectId {
 async function json(c: Context): Promise<unknown> {
   try { return await c.req.json(); }
   catch { return fail({ code: ErrorCode.SchemaInvalid, message: "request body is not valid JSON" }); }
-}
-
-async function* requestChunks(body: ReadableStream<Uint8Array>): AsyncIterable<Uint8Array> {
-  const reader = body.getReader();
-  try {
-    while (true) {
-      const next = await reader.read();
-      if (next.done) return;
-      if (next.value.byteLength > 0) yield next.value;
-    }
-  } finally {
-    reader.releaseLock();
-  }
 }
 
 function audioMagic(bytes: Uint8Array): boolean {
@@ -204,7 +192,7 @@ export function createProjectWriteRoutes(
       kind: parsed.data.kind,
       filename: parsed.data.filename,
       expectedRevision: parsed.data.expectedRevision,
-      stream: requestChunks(body),
+      stream: requestBodyChunks(c.req.raw),
       signal: c.req.raw.signal,
       ...(parsed.data.operationId === undefined ? {} : {
         pendingMount: {
