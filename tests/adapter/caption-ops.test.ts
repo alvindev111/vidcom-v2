@@ -57,7 +57,34 @@ describe("caption composition operations", () => {
     const { document } = parseHTML(result.value);
     expect(document.querySelectorAll('[data-composition-id="scene-1"] .captions')).toHaveLength(1);
     expect(document.querySelector(".captions")?.getAttribute("data-caption-timing")).toBe("engine");
-    expect(document.querySelector(".caption")?.textContent).toBe("Xin chào.");
+    const paragraph = document.querySelector(".caption");
+    expect(paragraph?.classList.contains("clip")).toBe(true);
+    expect(paragraph?.getAttribute("data-start")).toBe("0.25");
+    expect(paragraph?.getAttribute("data-duration")).toBe("1.2");
+    expect(paragraph?.textContent).toBe("Xin chào.");
+    expect([...document.querySelectorAll(".caption .w")].map((span) => ({
+      text: span.textContent,
+      start: span.getAttribute("data-start"),
+      end: span.getAttribute("data-end"),
+    }))).toEqual([
+      { text: "Xin", start: "0.25", end: "0.6" },
+      { text: "chào.", start: "0.6", end: "1.1" },
+    ]);
+    expect([...paragraph!.childNodes].map((node) => node.textContent)).toEqual(["Xin", " ", "chào."]);
+
+    const estimated = await applyCompositionOps(ref, "scene.html" as RelPath, [{
+      kind: "replaceCaptions",
+      target: "scene-1",
+      value: {
+        timingSource: "estimated",
+        cues: [{ start: 2, end: 3.2, text: "Ước lượng", words: [{ text: "Ước", start: 2, end: 2.4 }, { text: "lượng", start: 2.4, end: 3 }] }],
+      },
+    }]);
+    expect(estimated).toMatchObject({ ok: true });
+    if (estimated.ok) {
+      expect(parseHTML(estimated.value).document.querySelector(".captions")?.getAttribute("data-caption-timing"))
+        .toBe("estimated");
+    }
     expect(await readFile(path.join(root, "scene.html"), "utf8")).toBe(source);
   });
 });
