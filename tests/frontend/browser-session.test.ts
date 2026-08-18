@@ -438,11 +438,7 @@ describe("browser session harness", () => {
       });
       const moveResponse = page.waitForResponse((response) =>
         response.request().method() === "POST" && new URL(response.url()).pathname.endsWith("/scenes/move"),
-      { timeout: 10_000 }).catch(async (cause) => {
-        const trace = await page.$eval("[data-timeline-marquee-surface]", (surface) =>
-          (surface as HTMLElement).dataset.dragTrace ?? "missing");
-        throw new Error(`group move response timed out; trace=${trace}`, { cause });
-      });
+      { timeout: 10_000 }).catch((cause) => { throw new Error("group move response timed out", { cause }); });
       await dragTimelineClip(page, "body", "drop", marqueeSelection[0]);
       expect((await moveResponse).ok()).toBe(true);
       expect(moveBodies).toHaveLength(1);
