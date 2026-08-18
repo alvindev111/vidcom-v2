@@ -2043,6 +2043,13 @@
             Runtime guard/render root được đóng trong finally; test chứng minh project không có snapshots/ và staging
             mất sau success/abort. Regression 50/50, typecheck, boundaries, build, lint và diff-check xanh.
           </p>
+          <p class="text-slate-400 text-sm">
+            P7.2c bắt đầu ở HEAD sạch ad821cd. Cache adapter sẽ chỉ nhận projectId và key 64 hex,
+            namespace bằng sha256(projectId), ghi sibling tmp + fsync + rename, giữ 128 ảnh memory và 512 MB disk LRU
+            tính chung mọi namespace. Scheduler phải sở hữu thứ tự miss → render → kiểm fingerprint → put để
+            không có khoảng route ghi stale sau check; hit bỏ hẳn process. File fingerprint cũ trở nên unreachable khi
+            dependency graph invalidated và được global LRU dọn, không flush nhầm thumbnail scene/project khác.
+          </p>
         </article>
       </section>
     </main>
