@@ -1827,6 +1827,12 @@
             worker argv. Harness bỏ loader CLI hoàn toàn: eval chạy ESM, đăng ký chính loader đó qua node:module.register
             bằng canonical file URL rồi import worker file URL. Không còn module specifier nào đi qua Windows path parser.
           </p>
+          <p class="text-slate-400 text-sm">
+            Run 32152360426 đã PASS listener Windows, nhưng rename còn tăng RSS 121.868.288 byte. Workspace hash 64 KiB
+            đủ đóng Linux, song audit tìm thấy ba allocation 1 MiB cho mỗi file còn lại trong production: staged copy,
+            staged verify hash và mutation-capture hash. Cả ba giảm xuống 64 KiB; semantics stream/hash/fsync/no-follow và
+            ngưỡng nhỏ hơn 64 MiB không đổi.
+          </p>
         </article>
       </section>
     </main>

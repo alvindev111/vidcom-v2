@@ -19,13 +19,15 @@ import type {
 
 import { syncDirectory } from "./durability";
 
+const CAPTURE_HASH_BUFFER_BYTES = 64 * 1024;
+
 async function hashRegularFile(pathname: string): Promise<ContentHash> {
   const handle = await open(pathname, constants.O_RDONLY | constants.O_NOFOLLOW);
   try {
     const metadata = await handle.stat();
     if (!metadata.isFile()) throw new TypeError("mutation target is not a regular file");
     const digest = createHash("sha256");
-    const buffer = Buffer.allocUnsafe(1024 * 1024);
+    const buffer = Buffer.allocUnsafe(CAPTURE_HASH_BUFFER_BYTES);
     let position = 0;
     while (true) {
       const { bytesRead } = await handle.read(buffer, 0, buffer.byteLength, position);

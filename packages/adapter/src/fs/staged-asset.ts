@@ -15,9 +15,11 @@ export interface StagedAssetOperations {
   copyFile: typeof copyFile;
 }
 
+const STAGED_STREAM_BUFFER_BYTES = 64 * 1024;
+
 const DEFAULT_OPERATIONS: StagedAssetOperations = Object.freeze({
   async copySource(source: FileHandle, destination: FileHandle) {
-    const buffer = Buffer.allocUnsafe(1024 * 1024);
+    const buffer = Buffer.allocUnsafe(STAGED_STREAM_BUFFER_BYTES);
     let position = 0;
     while (true) {
       const { bytesRead } = await source.read(buffer, 0, buffer.byteLength, position);
@@ -165,7 +167,7 @@ async function hashFile(pathname: string): Promise<ContentHash> {
   try {
     const metadata = await handle.stat();
     if (!metadata.isFile()) throw new TypeError("staged target is not a regular file");
-    const buffer = Buffer.allocUnsafe(1024 * 1024);
+    const buffer = Buffer.allocUnsafe(STAGED_STREAM_BUFFER_BYTES);
     let position = 0;
     while (true) {
       const { bytesRead } = await handle.read(buffer, 0, buffer.byteLength, position);
