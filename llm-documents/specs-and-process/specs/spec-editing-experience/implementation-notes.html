@@ -1167,6 +1167,21 @@
           </p>
         </article>
       </section>
+      <section class="space-y-3">
+        <h2 class="text-lg font-semibold text-sky-300">P1 — Hình học snap 1.1 (2026-08-18)</h2>
+        <article class="rounded-lg border border-sky-900/70 bg-sky-950/20 p-4 space-y-2">
+          <h3 class="font-medium">Tám pixel là cảm giác con trỏ, không phải thời gian cố định</h3>
+          <p class="text-slate-300">
+            Module thuần quy đổi 8 px theo zoom rồi kẹp từ một frame tới 0,5 giây. Candidate gần nhất giữ nguyên
+            identity để UI về sau vẽ đúng mốc đang bám; khi tắt snap, thời gian được lượng tử về frame gần nhất.
+          </p>
+          <p class="text-slate-400 text-sm">
+            Vùng mép dùng min(8 px, 40% chiều rộng), nên clip 20 px và cả clip 10 px vẫn còn vùng thân kéo được.
+            Focused 4/4 và toàn frontend node 91/91 PASS; typecheck, boundaries, diff-check sạch; lint còn đúng 5
+            warning baseline.
+          </p>
+        </article>
+      </section>
     </main>
   </body>
 </html>
