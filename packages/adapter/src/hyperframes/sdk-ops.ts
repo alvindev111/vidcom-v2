@@ -120,7 +120,6 @@ function replaceCaptions(
 }
 
 async function applySdkOps(raw: string, operations: SdkCompositionOp[]): Promise<Result<string, DomainError>> {
-  if (operations.length === 0) return ok(raw);
   const composition = await openComposition(raw);
   try {
     for (const operation of operations) {
@@ -154,12 +153,14 @@ export async function applyCompositionOps(
   let raw = readFileSync(filename, "utf8");
   let sdkOperations: SdkCompositionOp[] = [];
   const flushSdkOperations = async (): Promise<Result<void, DomainError>> => {
+    if (sdkOperations.length === 0) return ok(undefined);
     const applied = await applySdkOps(raw, sdkOperations);
     sdkOperations = [];
     if (!applied.ok) return applied;
     raw = applied.value;
     return ok(undefined);
   };
+  if (operations.length === 0) return applySdkOps(raw, []);
   for (const operation of operations) {
     if (operation.kind !== "replaceCaptions") {
       sdkOperations.push(operation);

@@ -1954,6 +1954,11 @@
             cho cả flush trung gian caption lẫn API applyCompositionOps với danh sách rỗng; trường hợp thứ hai phải tiếp tục
             round-trip qua HyperFrames SDK. P6 chưa PASS; sửa tối thiểu sẽ tách hai semantics này rồi chạy lại full CI.
           </p>
+          <p class="text-slate-400 text-sm">
+            Remediation local PASS: applyCompositionOps với ops rỗng lại round-trip qua SDK, còn flush trung gian rỗng
+            trong chuỗi caption không serialize lại source. Golden và caption xanh 8/8; typecheck, boundaries, lint (năm
+            warning nền) và diff-check xanh. Cần full CI mới trên exact fix trước khi đóng phase.
+          </p>
         </article>
       </section>
     </main>
