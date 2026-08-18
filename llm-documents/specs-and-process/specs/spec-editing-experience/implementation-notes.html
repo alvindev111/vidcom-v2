@@ -1763,6 +1763,13 @@
             xoá row nhưng giữ journal marker trả 404. Ba run liên tiếp xanh; toàn Server 186/186, joined XHR/payload/startup/
             stager 17/17, typecheck/boundaries/diff xanh; lint không lỗi với năm warning nền.
           </p>
+          <p class="text-slate-400 text-sm">
+            P5.7c bắt đầu tại HEAD sạch 5f0526c. Unit hiện có đã phủ digest stale, move descendant, symlink/special,
+            thứ tự composite và identity probe ở composition root, nhưng chưa có bằng chứng ghép SQLite/temp fs thật cho
+            rename 200 file một revision, lỗi publish file 100 rollback toàn bộ, asset lớn/RSS, race mkdir và font thật đi
+            qua Core apply. Test mới chỉ dùng seam operation đã có để chèn một lỗi publish xác định; mọi filesystem và DB
+            vẫn là thật, không mock node:fs. Chỉ sửa production nếu red chứng minh gap.
+          </p>
         </article>
       </section>
     </main>
