@@ -3079,13 +3079,26 @@
             "type": "integer",
             "minimum": 0,
             "maximum": 9007199254740991
+          },
+          "changeSeq": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "required": [
           "track",
           "volume",
           "loop",
-          "revision"
+          "revision",
+          "changeSeq"
         ],
         "additionalProperties": false
       }
@@ -3240,13 +3253,26 @@
                 "type": "null"
               }
             ]
+          },
+          "changeSeq": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "required": [
           "status",
           "library",
           "files",
-          "revision"
+          "revision",
+          "changeSeq"
         ],
         "additionalProperties": false
       }
@@ -6583,12 +6609,25 @@
               ],
               "additionalProperties": false
             }
+          },
+          "changeSeq": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "required": [
           "previewSettings",
           "revision",
-          "diagnostics"
+          "diagnostics",
+          "changeSeq"
         ],
         "additionalProperties": false
       }

@@ -1145,6 +1145,28 @@
           </p>
         </article>
       </section>
+      <section class="space-y-3">
+        <h2 class="text-lg font-semibold text-sky-300">P4 — Browser probes và phase gate 4.6b (2026-08-18)</h2>
+        <article class="rounded-lg border border-sky-900/70 bg-sky-950/20 p-4 space-y-2">
+          <h3 class="font-medium">Đo module production trong Chrome thật</h3>
+          <p class="text-slate-300">
+            Browser fixture bundle trực tiếp <code>PlayerHost</code> và DOM adapter production, rồi nạp các tài liệu
+            iframe same-origin có collector thật. Probe giữ khung 0, rate và mute; clamp thời gian khi duration ngắn
+            hơn; từ chối scene chưa mount, exception tác giả và tài nguyên 404 mà không gỡ khung đang hiện.
+          </p>
+          <p class="text-slate-300">
+            Race A/B/C, duplicate B, collector D mới hơn target C và dispose giữa health wait đều chạy trong browser.
+            Kết quả chỉ swap bản mới nhất, tối đa hai player DOM (một live + một candidate), host id không đổi và
+            teardown không để late swap hoặc engine rò rỉ.
+          </p>
+          <p class="text-slate-400 text-sm">
+            Local Browser session 4 file/12 test PASS. GitHub run 32089458505 ở SHA 41db326 PASS Linux x64 và
+            Windows x64; workflow không phát artifact. Full phase gate lần đầu tìm thấy hai golden MCP cũ chưa có
+            changeSeq từ 4.4; cập nhật đúng snapshot legacy/modern rồi full regression đạt 238 file, 2.206 test PASS
+            cùng 1 file/5 test VieNeu-real skip có chủ ý.
+          </p>
+        </article>
+      </section>
     </main>
   </body>
 </html>
