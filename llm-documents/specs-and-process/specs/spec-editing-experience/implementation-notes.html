@@ -1848,6 +1848,13 @@
             được V8 thu hồi không nhân theo 200 file; hash, fsync, no-follow và streaming giữ nguyên. Ba lượt CRUD+listener
             đều xanh 5/5; backup/staging/capture 18/18, typecheck, boundaries, diff và lint cũng xanh (năm warning nền).
           </p>
+          <p class="text-slate-400 text-sm">
+            Gate P5 PASS trên exact SHA 712fbb4, run 32163481118: đủ 8/8 job xanh — main macOS/Linux/Windows, Browser
+            Linux/Windows và packaged smoke cả ba OS. Main macOS/Linux có 261 test file xanh, Windows 260; mọi job main
+            còn qua typecheck, lint, boundaries, MCP, golden, schema drift, 115 spec path, build và daemon/SSE smoke.
+            Artifact đã tải về `/tmp/vidcom-p5-ci-32163481118.MtjCvH`: ba thư mục packaged theo OS, mỗi JSON strict có
+            13 step, không evidenceError/failed step, kèm doctor/ffprobe/platform và VieNeu thật. P5 không còn blocker.
+          </p>
         </article>
       </section>
     </main>
