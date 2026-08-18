@@ -11,6 +11,7 @@ import {
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { fetchApi } from "@/lib/api/services";
+import { fileVersionMap } from "@/lib/studio/file-version-cache";
 import { sceneSettings } from "@/lib/studio/preview-settings";
 import { mutationChangeSeq, type ProjectChanged } from "@/lib/studio/preview-reload";
 import type { FileNode, Scene, SceneScriptLine, SourceFile } from "@/lib/studio/types";
@@ -68,7 +69,11 @@ export function ScenePane({
   const studio = useStudioSession();
   const [pending, setPending] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
-  const hashes = React.useRef(new Map(files.map((file) => [file.path, file.version])));
+  const hashes = React.useRef(fileVersionMap(files));
+
+  React.useEffect(() => {
+    hashes.current = fileVersionMap(files);
+  }, [files]);
 
   const selected =
     scenes.find((scene) => scene.id === selectedId) ?? scenes[0] ?? null;

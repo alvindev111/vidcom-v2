@@ -1228,6 +1228,25 @@
           </p>
         </article>
       </section>
+      <section class="space-y-3">
+        <h2 class="text-lg font-semibold text-sky-300">P1 — Form timing số song song 1.4 (2026-08-18)</h2>
+        <article class="rounded-lg border border-sky-900/70 bg-sky-950/20 p-4 space-y-2">
+          <h3 class="font-medium">Giữ affordance cũ, chỉ sửa vòng đời hash</h3>
+          <p class="text-slate-300">
+            Form start, duration và track hiện hữu vẫn ở nguyên vị trí, giữ validation và đường PATCH cũ. Audit sau
+            khi thêm kéo chuột phát hiện map hash của ScenePane chỉ được khởi tạo một lần: timeline ghi xong làm
+            snapshot đổi nhưng form có thể tiếp tục gửi hash cũ và gặp 409.
+          </p>
+          <p class="text-slate-300">
+            Một mapper thuần nay dựng map đúng từ mỗi snapshot; effect thay cache khi prop files đổi và loại bỏ path
+            không còn tồn tại. Không đổi route, session header, pending/error hay change sequence của form.
+          </p>
+          <p class="text-slate-400 text-sm">
+            Focused timing/cache 4/4 và toàn frontend node 100/100 PASS; typecheck, boundaries, diff-check sạch;
+            lint còn đúng 5 warning baseline.
+          </p>
+        </article>
+      </section>
     </main>
   </body>
 </html>
