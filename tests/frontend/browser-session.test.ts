@@ -123,6 +123,9 @@ async function dragTimelineClip(
           dragScene: surface.dataset.timelineDragScene,
           pending: surface.dataset.timelinePending,
           pixelsPerSecond: surface.dataset.timelinePixelsPerSecond,
+          startResult: surface.dataset.timelineStartResult,
+          moveOwner: surface.dataset.timelineMoveOwner,
+          movePreview: surface.dataset.timelineMovePreview,
         } : null,
         reactHandlers: element ? {
           pointerDown: element.dataset.pointerDownHandled,

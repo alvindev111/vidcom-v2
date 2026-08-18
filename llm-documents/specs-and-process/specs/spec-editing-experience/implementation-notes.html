@@ -1513,6 +1513,12 @@
             hai dấu này từ node hiện tại. Vì React không quản lý các attribute tạm, evidence kế sẽ phân biệt handler
             không nhận event với captured node bị thay thế, không thay timing hay mutation behavior.
           </p>
+          <p class="text-slate-400 text-sm">
+            Linux run 32099826313 cho thấy node hiện tại có cả hai dấu React handler, nhưng dấu move có thể đến từ hover
+            trước pointerdown. Diagnostic cuối xóa dấu đó tại pointerdown, ghi buttons của dragged move, owner do
+            beginDrag trả về, owner continueDrag quan sát và preview start vừa tính. Bốn giá trị này khép kín state
+            boundary còn lại; checkpoint không đổi mutation behavior và các hook tạm sẽ được gỡ cùng targeted fix.
+          </p>
         </article>
       </section>
     </main>

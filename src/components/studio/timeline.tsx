@@ -230,24 +230,29 @@ export function Timeline({
   const startDrag = React.useCallback((scene: Scene, zone: DragZone, pointerX: number) => {
     if (pendingTiming || pixelsPerSecond <= 0) return;
     const base = { ...interactionRef.current, pixelsPerSecond };
-    applyInteraction(beginDrag(base, {
+    const started = beginDrag(base, {
       clip: { sceneId: scene.id, start: scene.start, duration: scene.duration, trackIndex: scene.trackIndex },
       clips,
       zone,
       pointerX,
       ripple: rippleEnabled,
       selectedSceneIds: interactionRef.current.selection,
-    }));
+    });
+    if (marqueeSurface.current) marqueeSurface.current.dataset.timelineStartResult = started.drag?.clip.sceneId ?? "";
+    applyInteraction(started);
   }, [applyInteraction, clips, interactionRef, pendingTiming, pixelsPerSecond, rippleEnabled]);
 
   const continueDrag = React.useCallback((scene: Scene, pointerX: number) => {
     const current = interactionRef.current;
+    if (marqueeSurface.current) marqueeSurface.current.dataset.timelineMoveOwner = current.drag?.clip.sceneId ?? "";
     if (current.drag?.clip.sceneId !== scene.id) return;
-    applyInteraction(moveDrag(current, {
+    const moved = moveDrag(current, {
       pointerX,
       fps: frameRate,
       candidates: candidatesFor(scene),
-    }));
+    });
+    if (marqueeSurface.current) marqueeSurface.current.dataset.timelineMovePreview = String(moved.drag?.preview.start ?? "");
+    applyInteraction(moved);
   }, [applyInteraction, candidatesFor, frameRate, interactionRef]);
 
   const endDrag = React.useCallback((scene: Scene, pointerX: number) => {
