@@ -9,6 +9,7 @@ import {
 } from "@vidcom/server";
 import {
   AppSettingsStore,
+  applyFontStyle,
   NodePtyAgentTerminals,
   WorkerFilesystemBrowser,
   ensureVidcomSettingsFile,
@@ -270,6 +271,7 @@ export async function startNextHostedRuntime(
     ...foundation.application.readDependencies,
     runtimeSource: foundation.infrastructure.runtimeSource,
     mimeFromPath: foundation.infrastructure.mimeFromPath,
+    probe: foundation.infrastructure.assetProbe,
   };
   const projectWrites: NonNullable<ServerAppDependencies["projectWrites"]> = {
     ...foundation.application.writeDependencies,
@@ -280,6 +282,11 @@ export async function startNextHostedRuntime(
     approvals: foundation.infrastructure.approvalRequests,
     hashContent,
     mimeFromPath: foundation.infrastructure.mimeFromPath,
+    staging: foundation.infrastructure.assetStaging,
+    sanitizer: foundation.infrastructure.assetSanitizer,
+    pendingMount: foundation.infrastructure.pendingMount,
+    probe: foundation.infrastructure.assetProbe,
+    styles: { apply: applyFontStyle },
   };
   const registry = createMcpRegistry(foundation.infrastructure, foundation.application);
   const mcp = createMcpHttpHandlers(registry);

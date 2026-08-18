@@ -10,7 +10,7 @@ import {
 import { checkPathPurpose, checkPathSyntax } from "../domain/path-policy";
 import type { FileNode } from "../domain/models";
 import { err, ok, type Result } from "../error/result";
-import type { JobStorePort } from "../port/ports";
+import type { AssetProbeMetadata, JobStorePort, MediaProbePort, WorkspacePort } from "../port/ports";
 import type { JobId } from "../port/types";
 import { getPreviewSettings, type ProjectReadDependencies } from "./project-reads";
 
@@ -39,6 +39,24 @@ export function assetExtension(path: string): string {
   const name = path.slice(path.lastIndexOf("/") + 1);
   const index = name.lastIndexOf(".");
   return index < 0 ? "" : name.slice(index + 1).toLowerCase();
+}
+
+/** Probes one contained project asset; Core owns the font/media dispatch decision. */
+export async function getProjectAssetMetadata(
+  dependencies: {
+    workspace: Pick<WorkspacePort, "readProjectRef">;
+    probe: MediaProbePort;
+  },
+  input: { projectId: ProjectId; path: RelPath },
+): Promise<Result<AssetProbeMetadata, DomainError>> {
+  if (checkPathSyntax(input.path) || checkPathPurpose(input.path, "read-asset")) {
+    return err({ code: ErrorCode.AssetNotAllowed, message: "asset path is not allowed", field: "path" });
+  }
+  const ref = await dependencies.workspace.readProjectRef(input.projectId);
+  if (!ref) return err({ code: ErrorCode.ProjectNotFound, message: "project was not found" });
+  return KINDS.find(([kind, extensions]) => kind === "font" && extensions.has(assetExtension(input.path)))
+    ? dependencies.probe.probeFont(ref, input.path)
+    : dependencies.probe.probeMedia(ref, input.path);
 }
 
 function assetKind(path: string): ProjectAssetKind {

@@ -64,4 +64,19 @@ describe("upload surface", () => {
       expect(limit, route).toBeLessThanOrEqual(20 * 1024 * 1024);
     }
   });
+
+  it("bypasses collection only for the authenticated raw asset stream", async () => {
+    const app = await readFile(path.resolve("packages/server/src/app.ts"), "utf8");
+    const routes = await readFile(path.resolve("packages/server/src/routes/project-writes.ts"), "utf8");
+
+    expect(app).toContain('c.req.method === "POST"');
+    expect(app).toContain('/\\/v1\\/projects\\/[^/]+\\/assets$/');
+    expect(routes).toContain('routes.post("/v1/projects/:id/assets"');
+    const start = routes.indexOf('routes.post("/v1/projects/:id/assets"');
+    const end = routes.indexOf("\n  routes.", start + 1);
+    const rawRoute = routes.slice(start, end);
+    expect(rawRoute).toContain("c.req.raw.body");
+    expect(rawRoute).not.toContain("arrayBuffer()");
+    expect(rawRoute).not.toContain("formData()");
+  });
 });

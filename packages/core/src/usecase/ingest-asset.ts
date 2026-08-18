@@ -48,6 +48,7 @@ export interface IngestAssetOutput {
   assetContentHash: ContentHash;
   metadata: AssetProbeMetadata;
   replayed: boolean;
+  revision: number;
   envelope: WriteEnvelope | null;
 }
 
@@ -213,6 +214,7 @@ export async function ingestAsset(
           assetContentHash: prior.record.assetContentHash,
           metadata: await probeAsset(dependencies.probe, ref, prior.record.assetPath, input.kind),
           replayed: true,
+          revision: currentRevision,
           envelope: null,
         });
       }
@@ -279,6 +281,7 @@ export async function ingestAsset(
       assetContentHash: publishSource.contentHash,
       metadata: await probeAsset(dependencies.probe, ref, path, input.kind),
       replayed: false,
+      revision: written.value.projectRevision,
       envelope: written.value,
     });
   } catch (error) {

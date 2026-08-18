@@ -143,3 +143,109 @@ export const PendingMountSchema = z.strictObject({
 });
 
 export type PendingMountDto = z.infer<typeof PendingMountSchema>;
+
+const queryInteger = z.preprocess(
+  (value) => typeof value === "string" && value.trim() !== "" ? Number(value) : value,
+  z.number().int().nonnegative(),
+);
+const queryNumber = z.preprocess(
+  (value) => typeof value === "string" && value.trim() !== "" ? Number(value) : value,
+  z.number().finite().nonnegative(),
+);
+
+export const UploadAssetQuerySchema = z.strictObject({
+  kind: z.enum(["image", "video", "audio", "font"]),
+  filename: z.string().min(1).max(255),
+  expectedRevision: queryInteger,
+  operationId: PendingMountOperationIdSchema.optional(),
+  atSeconds: queryNumber.optional(),
+  trackIndex: queryInteger.optional(),
+}).superRefine((value, context) => {
+  const pending = [value.operationId, value.atSeconds, value.trackIndex];
+  if (pending.some((item) => item !== undefined) && pending.some((item) => item === undefined)) {
+    context.addIssue({ code: "custom", message: "pending mount metadata must be supplied together" });
+  }
+});
+
+export const CreateEntryRequestSchema = z.strictObject({
+  path: RelativePathSchema,
+  kind: z.enum(["file", "folder"]),
+  expectedRevision: z.number().int().nonnegative(),
+});
+
+const renameEntryBase = {
+  from: RelativePathSchema,
+  to: RelativePathSchema,
+  expectedRevision: z.number().int().nonnegative(),
+} as const;
+
+export const RenameEntryRequestSchema = z.union([
+  z.strictObject({ ...renameEntryBase, expectedContentHash: ContentHashSchema }),
+  z.strictObject({ ...renameEntryBase, expectedTreeDigest: ContentHashSchema }),
+]);
+
+export const DeleteEntryRequestSchema = z.strictObject({
+  path: RelativePathSchema,
+  recursive: z.boolean(),
+  expectedRevision: z.number().int().nonnegative(),
+});
+
+export const ApplyFontRequestSchema = z.strictObject({
+  fontPath: RelativePathSchema,
+  fontContentHash: ContentHashSchema,
+  scope: z.discriminatedUnion("kind", [
+    z.strictObject({ kind: z.literal("project") }),
+    z.strictObject({ kind: z.literal("scene"), sceneId: IdentifierSchema }),
+  ]),
+  expectedContentHash: ContentHashSchema,
+});
+
+export const AssetMetadataSchema = z.union([
+  z.strictObject({ status: z.literal("unknown"), byteSize: z.number().int().nonnegative().nullable(), reason: z.string() }),
+  z.strictObject({
+    status: z.literal("ok"), kind: z.literal("media"), byteSize: z.number().int().nonnegative(),
+    durationSeconds: z.number().finite().nonnegative().nullable(), width: z.number().int().positive().nullable(),
+    height: z.number().int().positive().nullable(), codec: z.string().nullable(),
+  }),
+  z.strictObject({
+    status: z.literal("ok"), kind: z.literal("font"), byteSize: z.number().int().nonnegative(),
+    family: z.string(), style: z.string(),
+  }),
+]);
+
+const mutationEnvelope = {
+  revision: z.number().int().nonnegative(),
+  diagnostics: z.array(DiagnosticSchema),
+  changeSeq: z.number().int().nonnegative().nullable(),
+} as const;
+
+export const UploadAssetResponseSchema = z.strictObject({
+  path: RelativePathSchema, renamedFrom: z.string().nullable(), assetContentHash: ContentHashSchema,
+  metadata: AssetMetadataSchema, replayed: z.boolean(), revision: z.number().int().nonnegative(),
+  changeSeq: z.number().int().nonnegative().nullable(),
+});
+
+export const CreateEntryResponseSchema = z.strictObject({
+  path: RelativePathSchema, kind: z.enum(["file", "folder"]), ...mutationEnvelope,
+});
+
+export const RenameEntryResponseSchema = z.strictObject({
+  from: RelativePathSchema, to: RelativePathSchema, backupId: IdentifierSchema, ...mutationEnvelope,
+});
+
+export const DeleteEntryPlanSchema = z.strictObject({
+  path: RelativePathSchema, recursive: z.boolean(), expectedRevision: z.number().int().nonnegative(),
+  rootKind: z.enum(["file", "folder"]),
+  entries: z.array(z.strictObject({
+    path: RelativePathSchema, kind: z.enum(["file", "folder"]), contentHash: ContentHashSchema.nullable(),
+  })),
+  targetHashes: z.record(z.string(), ContentHashSchema), planDigest: ContentHashSchema,
+});
+
+export const PrepareDeleteEntryResponseSchema = z.strictObject({ plan: DeleteEntryPlanSchema, grantId: IdentifierSchema });
+export const DeleteEntryResponseSchema = z.strictObject({
+  deleted: RelativePathSchema, backupId: IdentifierSchema, ...mutationEnvelope,
+});
+export const ApplyFontResponseSchema = z.strictObject({
+  path: RelativePathSchema, family: z.string(), style: z.string(), ...mutationEnvelope,
+});

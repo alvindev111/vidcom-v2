@@ -1,5 +1,11 @@
 import {
   BgmLicenseSchema,
+  ApplyFontRequestSchema,
+  ApplyFontResponseSchema,
+  CreateEntryRequestSchema,
+  CreateEntryResponseSchema,
+  DeleteEntryRequestSchema,
+  DeleteEntryResponseSchema,
   CompactTrackRequestSchema,
   DeleteScenesRequestSchema,
   DeleteScenesResponseSchema,
@@ -12,12 +18,15 @@ import {
   MAX_SOURCE_BYTES,
   LegacySceneMutationRequestSchema,
   MoveScenesRequestSchema,
+  RenameEntryRequestSchema,
+  RenameEntryResponseSchema,
   PatchPreviewSettingsRequestSchema,
   PatchSceneScriptRequestSchema,
   PatchSceneTimingRequestSchema,
   ProjectParamsSchema,
   PrepareDeleteScenesRequestSchema,
   PrepareDeleteScenesResponseSchema,
+  PrepareDeleteEntryResponseSchema,
   PutProjectFileRequestSchema,
   ReorderScenesRequestSchema,
   SearchBgmInputSchema,
@@ -26,24 +35,31 @@ import {
   TrackIndexParamsSchema,
   IdentifierSchema,
   UploadBgmRequestSchema,
+  UploadAssetQuerySchema,
+  UploadAssetResponseSchema,
   type ProjectId,
   type DomainError,
   type RelPath,
 } from "@vidcom/contracts";
 import {
   createScene,
+  applyFont,
+  createEntry,
   compactTrack,
   deleteScenes,
+  executeDeleteEntry,
   importBgm,
   installBgm,
   installMotionLibrary,
   listBgmSources,
   patchPreviewSettings,
   prepareDeleteScenes,
+  prepareDeleteEntry,
   recordShippedBgmLicense,
   regenerateNarration,
   readSourceFile,
   reorderScenes,
+  renameEntry,
   resolveProjectIdBySlug,
   saveSourceFile,
   searchBgmSources,
@@ -51,8 +67,12 @@ import {
   setSceneTiming,
   moveScenes,
   uploadBgm,
+  ingestAsset,
+  type ApplyFontDependencies,
   type BgmDependencies,
   type GrantBinding,
+  type IngestAssetDependencies,
+  type EntryCrudDependencies,
   type MotionLibraryInstallDependencies,
   type ProjectReadDependencies,
   type ProjectWriteDependencies,
@@ -76,6 +96,11 @@ export interface ProjectWriteRouteDependencies extends ProjectWriteDependencies 
     issue(requestId: string, approver: "ui"): Promise<Result<string, DomainError>>;
   };
   mimeFromPath(path: string): string | null;
+  staging?: IngestAssetDependencies["staging"];
+  sanitizer?: IngestAssetDependencies["sanitizer"];
+  pendingMount?: IngestAssetDependencies["pendingMount"];
+  probe?: IngestAssetDependencies["probe"];
+  styles?: ApplyFontDependencies["styles"];
 }
 
 /** Immutable audio: content-addressed on this install, so it can be cached hard. */
@@ -110,6 +135,19 @@ async function json(c: Context): Promise<unknown> {
   catch { return fail({ code: ErrorCode.SchemaInvalid, message: "request body is not valid JSON" }); }
 }
 
+async function* requestChunks(body: ReadableStream<Uint8Array>): AsyncIterable<Uint8Array> {
+  const reader = body.getReader();
+  try {
+    while (true) {
+      const next = await reader.read();
+      if (next.done) return;
+      if (next.value.byteLength > 0) yield next.value;
+    }
+  } finally {
+    reader.releaseLock();
+  }
+}
+
 function audioMagic(bytes: Uint8Array): boolean {
   const ascii = (start: number, end: number) => new TextDecoder().decode(bytes.slice(start, end));
   return ascii(0, 3) === "ID3"
@@ -141,6 +179,137 @@ export function createProjectWriteRoutes(
   studio?: StudioRouteDependencies,
 ): Hono {
   const routes = new Hono();
+  routes.post("/v1/projects/:id/assets", async (c) => {
+    const query = Object.fromEntries(new URL(c.req.url).searchParams);
+    const parsed = UploadAssetQuerySchema.safeParse(query);
+    if (!parsed.success) fail({ code: ErrorCode.SchemaInvalid, message: "asset upload query is invalid" });
+    if (c.req.header("Content-Type")?.split(";", 1)[0]?.trim().toLowerCase() !== "application/octet-stream") {
+      fail({ code: ErrorCode.UnsupportedMedia, message: "asset upload must use application/octet-stream" });
+    }
+    const body = c.req.raw.body;
+    if (!body) fail({ code: ErrorCode.SchemaInvalid, message: "asset upload body is required" });
+    const id = projectId(c);
+    const invocation = studioWriteInvocation(studio, c, id, "Upload asset");
+    if (!dependencies.staging || !dependencies.sanitizer || !dependencies.pendingMount || !dependencies.probe) {
+      fail({ code: ErrorCode.StorageUnavailable, message: "asset upload services are unavailable" });
+    }
+    const uploaded = valueOf(await ingestAsset({
+      ...dependencies,
+      staging: dependencies.staging,
+      sanitizer: dependencies.sanitizer,
+      pendingMount: dependencies.pendingMount,
+      probe: dependencies.probe,
+    }, {
+      projectId: id,
+      kind: parsed.data.kind,
+      filename: parsed.data.filename,
+      expectedRevision: parsed.data.expectedRevision,
+      stream: requestChunks(body),
+      signal: c.req.raw.signal,
+      ...(parsed.data.operationId === undefined ? {} : {
+        pendingMount: {
+          operationId: parsed.data.operationId,
+          atSeconds: parsed.data.atSeconds!,
+          trackIndex: parsed.data.trackIndex!,
+        },
+      }),
+    }, "user", invocation.origin));
+    return c.json(UploadAssetResponseSchema.parse({
+      path: uploaded.path,
+      renamedFrom: uploaded.renamedFrom,
+      assetContentHash: uploaded.assetContentHash,
+      metadata: uploaded.metadata,
+      replayed: uploaded.replayed,
+      revision: uploaded.revision,
+      changeSeq: uploaded.envelope?.changeSeq ?? null,
+    }), 201);
+  });
+  routes.post("/v1/projects/:id/entries", async (c) => {
+    const parsed = CreateEntryRequestSchema.safeParse(await json(c));
+    if (!parsed.success) fail({ code: ErrorCode.SchemaInvalid, message: "entry creation payload is invalid" });
+    const id = projectId(c);
+    const created = valueOf(await createEntry(dependencies as EntryCrudDependencies, {
+      projectId: id, ...parsed.data, path: parsed.data.path as RelPath,
+    }, "user", studioWriteInvocation(studio, c, id, "Create entry")));
+    return c.json(CreateEntryResponseSchema.parse({
+      path: created.path, kind: created.kind, revision: created.envelope.projectRevision,
+      diagnostics: created.envelope.diagnostics, changeSeq: created.envelope.changeSeq,
+    }), 201);
+  });
+  routes.patch("/v1/projects/:id/entries", async (c) => {
+    const parsed = RenameEntryRequestSchema.safeParse(await json(c));
+    if (!parsed.success) fail({ code: ErrorCode.SchemaInvalid, message: "entry rename payload is invalid" });
+    const id = projectId(c);
+    const expected = "expectedContentHash" in parsed.data
+      ? { kind: "file" as const, contentHash: parsed.data.expectedContentHash }
+      : { kind: "folder" as const, treeDigest: parsed.data.expectedTreeDigest };
+    const renamed = valueOf(await renameEntry(dependencies as EntryCrudDependencies, {
+      projectId: id,
+      from: parsed.data.from as RelPath,
+      to: parsed.data.to as RelPath,
+      expectedRevision: parsed.data.expectedRevision,
+      expected: expected as Parameters<typeof renameEntry>[1]["expected"],
+    }, "user", studioWriteInvocation(studio, c, id, "Rename entry")));
+    return c.json(RenameEntryResponseSchema.parse({
+      from: renamed.from, to: renamed.to, backupId: renamed.backupId,
+      revision: renamed.envelope.projectRevision, diagnostics: renamed.envelope.diagnostics,
+      changeSeq: renamed.envelope.changeSeq,
+    }));
+  });
+  routes.post("/v1/projects/:id/entries/deletions", async (c) => {
+    const parsed = DeleteEntryRequestSchema.safeParse(await json(c));
+    if (!parsed.success) fail({ code: ErrorCode.SchemaInvalid, message: "entry deletion plan payload is invalid" });
+    const id = projectId(c);
+    studioWriteInvocation(studio, c, id, "Delete entry");
+    const prepared = valueOf(await prepareDeleteEntry(dependencies as EntryCrudDependencies, {
+      projectId: id, ...parsed.data, path: parsed.data.path as RelPath,
+    }));
+    const grantId = await dependencies.approvals.request(prepared.binding, `Delete ${prepared.plan.path}`);
+    return c.json(PrepareDeleteEntryResponseSchema.parse({ plan: prepared.plan, grantId }));
+  });
+  routes.post("/v1/projects/:id/entries/deletions/:grantId", async (c) => {
+    const parsed = DeleteEntryRequestSchema.safeParse(await json(c));
+    if (!parsed.success) fail({ code: ErrorCode.SchemaInvalid, message: "entry deletion payload is invalid" });
+    const grant = IdentifierSchema.safeParse(c.req.param("grantId"));
+    if (!grant.success) fail({ code: ErrorCode.SchemaInvalid, message: "deletion grant id is invalid", field: "grantId" });
+    const id = projectId(c);
+    const invocation = studioWriteInvocation(studio, c, id, "Delete entry");
+    const grantId = valueOf(await dependencies.approvals.issue(grant.data, "ui"));
+    const deleted = valueOf(await executeDeleteEntry(dependencies as EntryCrudDependencies, {
+      projectId: id, ...parsed.data, path: parsed.data.path as RelPath, grantId,
+    }, "user", invocation));
+    return c.json(DeleteEntryResponseSchema.parse({
+      deleted: deleted.deleted, backupId: deleted.backupId, revision: deleted.envelope.projectRevision,
+      diagnostics: deleted.envelope.diagnostics, changeSeq: deleted.envelope.changeSeq,
+    }));
+  });
+  routes.post("/v1/projects/:id/fonts/apply", async (c) => {
+    const parsed = ApplyFontRequestSchema.safeParse(await json(c));
+    if (!parsed.success) fail({ code: ErrorCode.SchemaInvalid, message: "font application payload is invalid" });
+    const id = projectId(c);
+    if (!dependencies.probe || !dependencies.styles) {
+      fail({ code: ErrorCode.StorageUnavailable, message: "font application services are unavailable" });
+    }
+    const applied = valueOf(await applyFont({
+      ...dependencies,
+      probe: dependencies.probe,
+      styles: dependencies.styles,
+    }, {
+      projectId: id,
+      ...parsed.data,
+      fontPath: parsed.data.fontPath as RelPath,
+      fontContentHash: parsed.data.fontContentHash as Parameters<typeof applyFont>[1]["fontContentHash"],
+      expectedContentHash: parsed.data.expectedContentHash as Parameters<typeof applyFont>[1]["expectedContentHash"],
+    }, "user", studioWriteInvocation(studio, c, id, "Apply font")));
+    return c.json(ApplyFontResponseSchema.parse({
+      path: applied.path,
+      family: applied.family,
+      style: applied.style,
+      revision: applied.envelope.projectRevision,
+      diagnostics: applied.envelope.diagnostics,
+      changeSeq: applied.envelope.changeSeq,
+    }));
+  });
   routes.put("/v1/projects/:id/files", async (c) => {
     const parsed = PutProjectFileRequestSchema.safeParse(await json(c));
     if (!parsed.success) {

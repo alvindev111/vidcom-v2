@@ -1698,6 +1698,23 @@
             mutex. Focused 5/5, joined font/preview/history 61/61 và toàn Core+Adapter 1.297/1.297 xanh; VieNeu-real skip chủ
             đích. Typecheck/boundaries/diff xanh, lint không lỗi với năm warning nền.
           </p>
+          <p class="text-slate-400 text-sm">
+            P5.5 bắt đầu tại HEAD sạch 1818275. Query upload phải validate toàn bộ trước khi chạm body; chỉ nhận
+            application/octet-stream và chuyển ReadableStream thành AsyncIterable, không arrayBuffer/text. Chuỗi perimeter
+            hiện hữu vẫn chạy trước body dispatch; chỉ exact POST asset bypass generic Hono collector, còn Core và staging
+            vẫn đếm độc lập. CRUD, metadata và apply-font dùng contract chung/Core use case; prepare xin grant, execute chỉ
+            issue sau khi exact intent lặp lại hợp lệ. XHR/progress/cancel UI vẫn thuộc 5.6.
+          </p>
+          <p class="text-slate-400 text-sm">
+            P5.5 PASS. Contract request/response chung và strict đã được thêm cho upload, CRUD, metadata và font.
+            Chỉ exact POST asset đi qua seam streaming sau perimeter auth; query được kiểm trước body, content type
+            bắt buộc octet-stream, ReadableStream được chuyển theo backpressure cùng AbortSignal mà không buffer bằng
+            arrayBuffer/text. CRUD/font gọi Core với invocation do server sở hữu; delete prepare xin grant còn execute
+            issue đúng grant sau khi validate intent lặp lại. Metadata để Core quyết định probe font/media và được đăng
+            ký trước wildcard asset. Next-host production inject staging, SVG sanitizer, pending-mount, probe và font
+            serializer; replay trả revision journal thực. Focused 24/24, broad slice 233/233, build/typecheck/boundaries/
+            diff xanh; lint không lỗi với năm warning nền.
+          </p>
         </article>
       </section>
     </main>

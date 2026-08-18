@@ -98,6 +98,7 @@ export function createServerApp(deps: ServerAppDependencies) {
   };
   app.use("*", observed("bodyLimit", async (c, next) => {
     const pathname = c.req.path;
+    if (c.req.method === "POST" && /\/v1\/projects\/[^/]+\/assets$/.test(pathname)) return next();
     const limiter = /\/v1\/projects\/[^/]+\/files$/.test(pathname)
       ? limits.source
       : /\/v1\/projects\/[^/]+\/assets\/bgm$/.test(pathname)

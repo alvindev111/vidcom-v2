@@ -1,5 +1,6 @@
 import {
   AssetParamsSchema,
+  AssetMetadataSchema,
   ErrorCode,
   ProjectParamsSchema,
   ReadProjectFileQuerySchema,
@@ -9,6 +10,7 @@ import {
 import {
   getPreviewSettings,
   getProjectPreview,
+  getProjectAssetMetadata,
   getStudioSnapshot,
   listProjects,
   readAsset,
@@ -16,6 +18,7 @@ import {
   resolveProjectIdBySlug,
   type EventOutboxPort,
   type ProjectReadDependencies,
+  type MediaProbePort,
 } from "@vidcom/core";
 import { Hono, type Context } from "hono";
 
@@ -23,6 +26,7 @@ import { HttpBoundaryError } from "../middleware/error-mapper";
 
 export interface ProjectReadRouteDependencies extends ProjectReadDependencies {
   events: Pick<EventOutboxPort, "latestProjectSeq">;
+  probe?: MediaProbePort;
   runtimeSource(): string;
   mimeFromPath(path: string): string | null;
 }
@@ -179,6 +183,14 @@ export function createProjectReadRoutes(dependencies: ProjectReadRouteDependenci
     return c.html(preview.html, 200, previewHeaders(preview));
   });
 
+  routes.get("/v1/projects/:id/assets/:path{.+}/metadata", async (c) => {
+    const id = projectId(c);
+    if (!dependencies.probe) fail({ code: ErrorCode.StorageUnavailable, message: "asset metadata probe is unavailable" });
+    return c.json(AssetMetadataSchema.parse(valueOf(await getProjectAssetMetadata(
+      { workspace: dependencies.workspace, probe: dependencies.probe },
+      { projectId: id, path: assetPath(c) },
+    ))));
+  });
   routes.get("/v1/projects/:id/assets/:path{.+}", async (c) => {
     const path = assetPath(c);
     const mime = dependencies.mimeFromPath(path);
