@@ -1781,6 +1781,14 @@
             xác nhận revision ổn định. Focused ghép 4/4, regression liên quan 57/57, broad Core+Adapter+Server+CLI
             1.491/1.491 xanh; VieNeu-real skip chủ đích. Typecheck/boundaries/diff xanh, lint không lỗi với năm warning nền.
           </p>
+          <p class="text-slate-400 text-sm">
+            Gate P5 CI đầu tiên đỏ thật ở packaged-smoke macOS: media pipeline tạo scene mà chưa attach/gửi
+            x-vidcom-studio-session theo contract P3, nên server trả 400 precondition_required. Không hạ bảo mật ở server.
+            Harness packaged nay sở hữu một studio id hợp lệ, attach lại cho project trên mỗi daemon và gửi cùng header
+            cho mọi write scene, motion library, file, TTS, snapshot và render. Focused packaged-smoke 38/38 cùng
+            typecheck/diff/lint xanh. Việc dispatch CI và Browser session đồng thời còn làm reusable browser jobs trong CI
+            bị concurrency scheduler huỷ; rerun sẽ tuần tự để từng workflow có kết luận thật, không dùng run này làm PASS.
+          </p>
         </article>
       </section>
     </main>

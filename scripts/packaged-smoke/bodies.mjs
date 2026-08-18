@@ -17,6 +17,16 @@ import {
 } from "../measure-startup.mjs";
 import { withRunnerNetworkCut } from "./network-cut.mjs";
 
+export const PACKAGED_STUDIO_SESSION_ID = "01K30Y8Z7K0000000000000002";
+
+export function packagedStudioHeaders(serving, headers = {}) {
+  return {
+    Cookie: serving.cookie,
+    "x-vidcom-studio-session": serving.studioSessionId,
+    ...headers,
+  };
+}
+
 /**
  * Runs the packaged executable once and returns everything it said.
  *
@@ -436,7 +446,17 @@ export async function startServingWithSession(context) {
     await stopServing(serving);
     throw new Error("nonce exchange omitted the session cookie");
   }
-  return { ...serving, cookie };
+  return { ...serving, cookie, studioSessionId: PACKAGED_STUDIO_SESSION_ID };
+}
+
+export async function attachPackagedStudioSession(serving, projectId, request = fetch) {
+  const response = await request(`${serving.baseUrl}/api/v1/projects/${projectId}/history/session`, {
+    method: "POST",
+    headers: packagedStudioHeaders(serving),
+  });
+  if (response.status !== 204) {
+    throw new Error(`studio session attach returned ${String(response.status)}`);
+  }
 }
 
 /** A RIFF/WAVE file of the requested size, so the upload is a real audio file. */
@@ -824,7 +844,10 @@ window.__timelines["scene-1"] = tl;
 }
 
 async function ensureMediaProject(context, serving) {
-  if (context.media) return context.media;
+  if (context.media) {
+    await attachPackagedStudioSession(serving, context.media.projectId);
+    return context.media;
+  }
   const projectRoot = path.join(context.workspace, "smoke-media");
   let projectId;
   let sceneContentHash = null;
@@ -838,6 +861,7 @@ async function ensureMediaProject(context, serving) {
     }));
     projectId = created.projectId;
   }
+  await attachPackagedStudioSession(serving, projectId);
   try {
     const existingScene = await readFile(path.join(projectRoot, "compositions", "scene-1.html"), "utf8");
     sceneContentHash = contentHash(existingScene);
@@ -847,7 +871,7 @@ async function ensureMediaProject(context, serving) {
       `${serving.baseUrl}/api/v1/projects/${projectId}/scenes`,
       {
         method: "POST",
-        headers: { Cookie: serving.cookie, "content-type": "application/json" },
+        headers: packagedStudioHeaders(serving, { "content-type": "application/json" }),
         body: JSON.stringify({
           title: "VidCom motion proof",
           duration: 8,
@@ -865,7 +889,7 @@ async function ensureMediaProject(context, serving) {
     `${serving.baseUrl}/api/v1/projects/${projectId}/motion-libraries`,
     {
       method: "POST",
-      headers: { Cookie: serving.cookie, "content-type": "application/json" },
+      headers: packagedStudioHeaders(serving, { "content-type": "application/json" }),
       body: JSON.stringify({ libraryId: "gsap" }),
     },
   ));
@@ -876,7 +900,7 @@ async function ensureMediaProject(context, serving) {
     `${serving.baseUrl}/api/v1/projects/${projectId}/files`,
     {
       method: "PUT",
-      headers: { Cookie: serving.cookie, "content-type": "application/json" },
+      headers: packagedStudioHeaders(serving, { "content-type": "application/json" }),
       body: JSON.stringify({
         path: "compositions/scene-1.html",
         content: mediaSceneSource(installed.library.entry),
@@ -924,7 +948,7 @@ async function runMediaPipeline(context, options = {}) {
       {
         method: "POST",
         headers: {
-          Cookie: serving.cookie,
+          ...packagedStudioHeaders(serving),
           "content-type": "application/json",
           "Idempotency-Key": `smoke-tts-${randomUUID()}`,
         },
@@ -948,7 +972,7 @@ async function runMediaPipeline(context, options = {}) {
         `${serving.baseUrl}/api/v1/projects/${media.projectId}/snapshots`,
         {
           method: "POST",
-          headers: { Cookie: serving.cookie, "content-type": "application/json" },
+          headers: packagedStudioHeaders(serving, { "content-type": "application/json" }),
           body: JSON.stringify({ idempotencyKey: `smoke-snapshot-${randomUUID()}` }),
         },
       ));
@@ -962,7 +986,7 @@ async function runMediaPipeline(context, options = {}) {
       `${serving.baseUrl}/api/v1/projects/${media.projectId}/renders`,
       {
         method: "POST",
-        headers: { Cookie: serving.cookie, "content-type": "application/json" },
+        headers: packagedStudioHeaders(serving, { "content-type": "application/json" }),
         body: JSON.stringify({ idempotencyKey: `smoke-render-${randomUUID()}` }),
       },
     ));

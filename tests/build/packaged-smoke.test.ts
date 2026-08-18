@@ -28,13 +28,16 @@ import {
   DETACHED_RENDER_SMOKE_TIMEOUT_MS,
   DETACHED_RENDER_STAGE_TIMEOUT_MS,
   EXPECTED_DOCTOR_ITEM_IDS,
+  PACKAGED_STUDIO_SESSION_ID,
   PRIVATE_PATH_FORBIDDEN_TOOLS,
+  attachPackagedStudioSession,
   assertRuntimeHealthy,
   browsePathSegments,
   browseSegmentMatches,
   cleanupDetachedRenderFailure,
   exercisePackagedMcpStdioPair,
   mediaSceneSource,
+  packagedStudioHeaders,
   readLatestRenderJobSince,
   readJsonWithTransportRetry,
   runDetachedRenderWithDiagnostics,
@@ -58,6 +61,29 @@ function results(entries: Array<Partial<StepResult> & { id: string }>): StepResu
 }
 
 describe("packaged smoke steps", () => {
+  it("attaches a packaged studio session and reuses its header for project writes", async () => {
+    const serving = {
+      baseUrl: "http://127.0.0.1:4567",
+      cookie: "vidcom_session=smoke",
+      studioSessionId: PACKAGED_STUDIO_SESSION_ID,
+    };
+    const requests: Array<{ url: string; init: RequestInit }> = [];
+    await attachPackagedStudioSession(serving, "project_smoke", async (url, init) => {
+      requests.push({ url: String(url), init: init ?? {} });
+      return new Response(null, { status: 204 });
+    });
+
+    expect(requests).toEqual([{
+      url: "http://127.0.0.1:4567/api/v1/projects/project_smoke/history/session",
+      init: { method: "POST", headers: packagedStudioHeaders(serving) },
+    }]);
+    expect(packagedStudioHeaders(serving, { "content-type": "application/json" })).toEqual({
+      Cookie: "vidcom_session=smoke",
+      "x-vidcom-studio-session": PACKAGED_STUDIO_SESSION_ID,
+      "content-type": "application/json",
+    });
+  });
+
   it("keeps both packaged MCP eras connected and permits diagnostic stderr", async () => {
     const events: string[] = [];
     const closed: string[] = [];
