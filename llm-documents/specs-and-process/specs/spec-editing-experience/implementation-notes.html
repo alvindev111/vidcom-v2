@@ -1891,6 +1891,12 @@
             span.w start/end tuyệt đối và đúng một text node U+0020 giữa hai span; parse lại cho textContent canonical và
             source trên đĩa vẫn byte-identical. Focused 1/1, typecheck và diff-check xanh.
           </p>
+          <p class="text-slate-400 text-sm">
+            P6.4 bắt đầu ở HEAD sạch 9fa1767. Runtime caption sẽ dùng đúng clock HyperFrames đã đo trong spike: quan sát
+            message timeline/state mà runtime gửi qua parent.postMessage, chia fps hữu tỉ và trừ data-start của layer
+            data-composition-src gần nhất. Script được tiêm trong injectPreviewSettingsDocument dùng chung preview/render,
+            không tạo requestAnimationFrame hay đồng hồ riêng; màu active tiếp tục đến từ subtitles.activeColor qua CSS.
+          </p>
         </article>
       </section>
     </main>
