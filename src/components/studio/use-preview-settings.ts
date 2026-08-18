@@ -10,6 +10,7 @@ import {
   type PreviewSettingsPatch,
   type SceneSettings,
 } from "@/lib/studio/preview-settings";
+import { useStudioSession } from "./studio-session-context";
 
 /**
  * Owns the project's preview settings for the whole studio.
@@ -25,6 +26,7 @@ export function usePreviewSettings(
   initialRevision: number,
   onSaved: () => void,
 ) {
+  const studio = useStudioSession();
   const [settings, setSettings] = React.useState(initial);
   const [pending, setPending] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
@@ -104,14 +106,14 @@ export function usePreviewSettings(
     (value: PreviewSettingsPatch) => {
       apply(mergePreviewSettings(latest.current, value));
       void save(() =>
-        fetchApi(`/api/v1/projects/${encodeURIComponent(projectId)}/preview-settings`, {
+        fetchApi(`/api/v1/projects/${encodeURIComponent(projectId)}/preview-settings`, studio.request({
           method: "PATCH",
           headers: { "content-type": "application/json" },
           body: JSON.stringify({ patch: value, expectedRevision: revision.current }),
-        }),
+        })),
       );
     },
-    [apply, projectId, save],
+    [apply, projectId, save, studio],
   );
 
   const patchScene = React.useCallback(
@@ -123,14 +125,14 @@ export function usePreviewSettings(
       };
       apply(mergePreviewSettings(latest.current, merged));
       void save(() =>
-        fetchApi(`/api/v1/projects/${encodeURIComponent(projectId)}/preview-settings`, {
+        fetchApi(`/api/v1/projects/${encodeURIComponent(projectId)}/preview-settings`, studio.request({
           method: "PATCH",
           headers: { "content-type": "application/json" },
           body: JSON.stringify({ patch: merged, expectedRevision: revision.current }),
-        }),
+        })),
       );
     },
-    [apply, projectId, save],
+    [apply, projectId, save, studio],
   );
 
   const uploadBgm = React.useCallback(
@@ -139,13 +141,13 @@ export function usePreviewSettings(
       body.append("file", file);
       body.append("expectedRevision", String(revision.current));
       void save(() =>
-        fetchApi(`/api/v1/projects/${encodeURIComponent(projectId)}/assets/bgm`, {
+        fetchApi(`/api/v1/projects/${encodeURIComponent(projectId)}/assets/bgm`, studio.request({
           method: "POST",
           body,
-        }),
+        })),
       );
     },
-    [projectId, save],
+    [projectId, save, studio],
   );
 
   /**

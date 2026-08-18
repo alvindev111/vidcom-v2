@@ -25,6 +25,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { apiUrl, fetchApi } from "@/lib/api/services";
 import type { FileNode } from "@/lib/studio/types";
+import { useStudioSession } from "./studio-session-context";
 
 interface ShippedTrack {
   id: string;
@@ -330,6 +331,7 @@ export function BgmPanel({
   tree: FileNode[];
   onProjectChanged: () => void;
 }) {
+  const studio = useStudioSession();
   const [sources, setSources] = React.useState<BgmSources | null>(null);
   const [error, setError] = React.useState<string | null>(null);
   const [pending, setPending] = React.useState<string | null>(null);
@@ -445,11 +447,11 @@ export function BgmPanel({
       if (choice.kind === "bed") body.bedId = choice.id;
       if (choice.kind === "track") body.trackId = choice.id;
       if (choice.kind === "library") body.libraryEntryId = choice.id;
-      const response = await fetchApi(`/api/v1/projects/${projectId}/bgm`, {
+      const response = await fetchApi(`/api/v1/projects/${projectId}/bgm`, studio.request({
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify(body),
-      });
+      }));
       if (!response.ok) {
         setError(errorMessage(await response.json().catch(() => null), response.status));
         return;
@@ -490,11 +492,11 @@ export function BgmPanel({
     setPending("import");
     setError(null);
     try {
-      const response = await fetchApi(`/api/v1/projects/${projectId}/bgm/library`, {
+      const response = await fetchApi(`/api/v1/projects/${projectId}/bgm/library`, studio.request({
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ path: importPath, license: draft }),
-      });
+      }));
       if (!response.ok) {
         setError(errorMessage(await response.json().catch(() => null), response.status));
         return;

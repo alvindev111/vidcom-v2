@@ -4,6 +4,7 @@ import * as React from "react";
 
 import { fetchApi } from "@/lib/api/services";
 import type { SourceFile } from "@/lib/studio/types";
+import { useStudioSession } from "./studio-session-context";
 
 export interface OpenFile {
   /** The file as last read from disk. */
@@ -23,6 +24,7 @@ export interface OpenFile {
  * files, so a manual edit should land only when the user asks for it.
  */
 export function useSourceFiles(projectId: string, _projectSlug: string, seed: SourceFile[]) {
+  const studio = useStudioSession();
   const [open, setOpen] = React.useState<Record<string, OpenFile>>(() =>
     Object.fromEntries(
       seed.map((file) => [
@@ -123,7 +125,7 @@ export function useSourceFiles(projectId: string, _projectSlug: string, seed: So
       });
 
       try {
-        const response = await fetchApi(`/api/v1/projects/${encodeURIComponent(projectId)}/files`, {
+        const response = await fetchApi(`/api/v1/projects/${encodeURIComponent(projectId)}/files`, studio.request({
           method: "PUT",
           headers: { "content-type": "application/json" },
           body: JSON.stringify({
@@ -131,7 +133,7 @@ export function useSourceFiles(projectId: string, _projectSlug: string, seed: So
             content: entry.draft,
             expectedContentHash: entry.file.version,
           }),
-        });
+        }));
         const payload = (await response.json().catch(() => null)) as {
           file?: { path: string; content: string; contentHash: string };
           error?: { message?: string };
@@ -184,7 +186,7 @@ export function useSourceFiles(projectId: string, _projectSlug: string, seed: So
         });
       }
     },
-    [open, projectId],
+    [open, projectId, studio],
   );
 
   /** Discard unsaved edits and go back to what is on disk. */

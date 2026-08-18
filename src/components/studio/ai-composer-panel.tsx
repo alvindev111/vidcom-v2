@@ -19,6 +19,7 @@ import {
   type StartedAgentTerminal,
 } from "@/lib/studio/agent-terminal-client";
 import type { AgentId, TerminalLine } from "@/lib/studio/types";
+import { useStudioSession } from "./studio-session-context";
 
 const AGENTS: AgentId[] = ["claude", "codex"];
 
@@ -47,6 +48,7 @@ export function AiComposerPanel({
   projectSlug: string;
   onProjectChanged: () => void;
 }) {
+  const studio = useStudioSession();
   const [agent, setAgent] = React.useState<AgentId>("codex");
   const [prompt, setPrompt] = React.useState("");
   const [pending, setPending] = React.useState(false);
@@ -183,11 +185,11 @@ export function AiComposerPanel({
 
     setPending(true);
     try {
-      const response = await fetchApi(`/api/hf/${projectSlug}/scene`, {
+      const response = await fetchApi(`/api/hf/${projectSlug}/scene`, studio.request({
         method: "PATCH",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ action: "generate", prompt: text }),
-      });
+      }));
       const payload = (await response.json().catch(() => null)) as {
         transcript?: TerminalLine[];
         error?: string;

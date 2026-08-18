@@ -905,6 +905,31 @@
           </p>
         </article>
       </section>
+      <section class="space-y-3">
+        <h2 class="text-lg font-semibold text-sky-300">P3 — Studio session và history UI 3.4 (2026-08-18)</h2>
+
+        <article class="rounded-lg border border-sky-900/70 bg-sky-950/20 p-4 space-y-2">
+          <h3 class="font-medium">Attach xong mới mở bề mặt ghi</h3>
+          <p class="text-slate-300">
+            Mỗi composer/project mount sinh đúng một ULID Crockford bằng Web Crypto và giữ trong
+            <code>useRef</code>; ID không vào local/session storage. Child được key theo project, POST attach phải thành
+            công rồi mới render StudioShell. Unmount/pagehide gửi DELETE best-effort. Các writer hiện hữu lấy request
+            helper từ context nên cookie, studio header và header riêng của payload luôn đi cùng nhau.
+          </p>
+          <p class="text-slate-400 text-sm">
+            EventSource không thể đặt studio header, nên event feed chuyển sang fetch stream có parser SSE thuần TS.
+            Stream gửi project query, credentials, header phiên và Last-Event-ID; abort/reconnect dùng lại chính ID đó.
+            Sự kiện tăng một revision nhỏ để history state reload, đồng thời debounce snapshot như trước. Validator
+            ULID có một regex duy nhất ở Contracts; Core pending-mount import lại validator thay vì copy regex.
+          </p>
+          <p class="text-slate-400 text-sm">
+            Theo ảnh timeline tham chiếu, undo/redo nằm trong action bar nhỏ gọn và hiển thị nhãn do server trả về.
+            Busy hoặc barrier khoá đúng hướng. Barrier hiện lý do cùng hai quyết định: Reload source xoá history rồi
+            remount dữ liệu nguồn; Keep current xoá history nhưng giữ UI hiện tại. Logic ULID, request, SSE decoder và
+            view-model chạy node; frontend 71/71 và Next production build PASS.
+          </p>
+        </article>
+      </section>
     </main>
   </body>
 </html>

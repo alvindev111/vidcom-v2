@@ -15,6 +15,7 @@ import { Timeline } from "./timeline";
 import type { PlayerControls, PlayerState } from "./use-hyperframes-player";
 
 export function PreviewPanel({
+  projectId,
   containerRef,
   aspectRatio,
   duration,
@@ -26,7 +27,9 @@ export function PreviewPanel({
   selectedId,
   onSelectScene,
   onToggleHidden,
+  onProjectChanged,
 }: {
+  projectId: string;
   containerRef: React.Ref<HTMLDivElement>;
   aspectRatio: number;
   duration: number;
@@ -38,6 +41,7 @@ export function PreviewPanel({
   selectedId: string;
   onSelectScene: (scene: Scene) => void;
   onToggleHidden: (scene: Scene) => void;
+  onProjectChanged: () => void;
 }) {
   return (
     <ResizablePanelGroup orientation="vertical">
@@ -67,6 +71,7 @@ export function PreviewPanel({
 
       <ResizablePanel defaultSize="38" minSize="15">
         <Timeline
+          projectId={projectId}
           scenes={scenes}
           rootTrack={rootTrack}
           settings={settings}
@@ -75,6 +80,7 @@ export function PreviewPanel({
           onScrub={controls.seek}
           onSelect={onSelectScene}
           onToggleHidden={onToggleHidden}
+          onProjectChanged={onProjectChanged}
         />
       </ResizablePanel>
     </ResizablePanelGroup>

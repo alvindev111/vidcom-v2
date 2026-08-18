@@ -19,6 +19,7 @@ import { PreviewEditor } from "./preview-editor";
 import { SceneDetail } from "./scene-detail";
 import { SceneStoryboard } from "./scene-storyboard";
 import type { usePreviewSettings } from "./use-preview-settings";
+import { useStudioSession } from "./studio-session-context";
 
 type Edit =
   | {
@@ -63,6 +64,7 @@ export function ScenePane({
   /** Called after a successful write so the page re-reads the project. */
   onProjectChanged: () => void;
 }) {
+  const studio = useStudioSession();
   const [pending, setPending] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
   const hashes = React.useRef(new Map(files.map((file) => [file.path, file.version])));
@@ -84,11 +86,11 @@ export function ScenePane({
         expectedContentHash = currentBody.file?.contentHash;
         if (expectedContentHash) hashes.current.set(file, expectedContentHash);
       }
-      const response = await fetch(isV1
+      const response = await fetchApi((isV1
         ? edit.action === "timing"
           ? `/api/v1/projects/${projectId}/scenes/${edit.sceneId}`
           : `/api/v1/projects/${projectId}/scenes/${edit.sceneId}/script`
-        : `/api/hf/${projectSlug}/scene`, {
+        : `/api/hf/${projectSlug}/scene`) as `/api/${string}`, studio.request({
         method: "PATCH",
         headers: { "content-type": "application/json" },
         body: JSON.stringify(edit.action === "timing"
@@ -96,7 +98,7 @@ export function ScenePane({
           : edit.action === "script"
             ? { file: edit.file, elementId: edit.elementId, text: edit.text, expectedContentHash }
             : edit),
-      });
+      }));
       const payload = (await response.json().catch(() => null)) as {
         file?: { path: string; contentHash: string };
         error?: { message?: string } | string;

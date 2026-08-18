@@ -1,5 +1,6 @@
 import {
   ErrorCode,
+  PendingMountOperationIdSchema,
   type Actor,
   type ContentHash,
   type Diagnostic,
@@ -234,10 +235,6 @@ function validateDirectoryOrder(steps: readonly CompositeStep[]): DomainError | 
     }
   }
   return null;
-}
-
-function validOperationId(value: string): boolean {
-  return /^[0-9A-HJKMNP-TV-Z]{26}$/u.test(value);
 }
 
 function validContentHash(value: string): boolean {
@@ -752,7 +749,7 @@ export class WriteAuthority {
   ): Promise<Result<void, DomainError>> {
     const transition = request.pendingMountTransition;
     if (!transition) return ok(undefined);
-    if (!validOperationId(transition.operationId)) {
+    if (!PendingMountOperationIdSchema.safeParse(transition.operationId).success) {
       return err({ code: ErrorCode.SchemaInvalid, message: "pending mount operationId must be a ULID", field: "operationId" });
     }
     const pending = this.dependencies.pendingMount;

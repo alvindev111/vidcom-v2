@@ -15,6 +15,7 @@ import { TimelineElementRows, TimelineRootRows } from "./timeline-elements";
 import { TimelineRuler } from "./timeline-ruler";
 import { TimelineToolbar } from "./timeline-toolbar";
 import { TimelineLane, TimelineRootLane } from "./timeline-track";
+import { useMutationHistory } from "./use-mutation-history";
 
 /**
  * The composition on a time axis, built from the same `Scene[]` the storyboard
@@ -24,6 +25,7 @@ import { TimelineLane, TimelineRootLane } from "./timeline-track";
  * tied a row to a card.
  */
 export function Timeline({
+  projectId,
   scenes,
   rootTrack,
   settings,
@@ -32,7 +34,9 @@ export function Timeline({
   onScrub,
   onSelect,
   onToggleHidden,
+  onProjectChanged,
 }: {
+  projectId: string;
   scenes: Scene[];
   /** The entry document's own media and motion, when it has any. */
   rootTrack: RootTrack | null;
@@ -42,7 +46,9 @@ export function Timeline({
   onScrub: (seconds: number) => void;
   onSelect: (scene: Scene) => void;
   onToggleHidden: (scene: Scene) => void;
+  onProjectChanged: () => void;
 }) {
+  const history = useMutationHistory(projectId, onProjectChanged);
   const [zoom, setZoom] = React.useState(1);
   const [laneWidth, setLaneWidth] = React.useState(0);
   const viewport = React.useRef<HTMLDivElement>(null);
@@ -89,6 +95,7 @@ export function Timeline({
   return (
     <div className="bg-sidebar flex h-full flex-col">
       <TimelineToolbar
+        history={history}
         zoom={zoom}
         canZoomIn={zoomIndex < ZOOM_LEVELS.length - 1}
         canZoomOut={zoomIndex > 0}

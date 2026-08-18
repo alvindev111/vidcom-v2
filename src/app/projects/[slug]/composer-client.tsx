@@ -5,9 +5,17 @@ import { usePathname } from "next/navigation";
 import type { StudioSnapshotResponse } from "@vidcom/contracts";
 
 import { StudioShell } from "@/components/studio/studio-shell";
+import { StudioSessionProvider } from "@/components/studio/studio-session-context";
 import { apiError, ensureBrowserSession } from "@/lib/api/browser-session";
-import { apiUrl, fetchApi, openApiEventSource } from "@/lib/api/services";
+import { apiUrl, fetchApi } from "@/lib/api/services";
+import { createUlid } from "@/lib/studio/ids";
 import type { PreviewSettings } from "@/lib/studio/preview-settings";
+import {
+  consumeStudioEvents,
+  historyPath,
+  studioEventPath,
+  studioRequestInit,
+} from "@/lib/studio/studio-session";
 import type { RootTrack, Scene, SourceFile } from "@/lib/studio/types";
 
 import { SHELL_SENTINEL } from "./shell-sentinel";
@@ -27,6 +35,151 @@ function sourceFile(snapshot: StudioSnapshotResponse): SourceFile {
     saved: true,
     version: snapshot.entryFile.contentHash,
   };
+}
+
+async function requireOk(response: Response): Promise<void> {
+  if (!response.ok) throw new Error(await apiError(response));
+}
+
+function MountedStudio({
+  snapshot,
+  loadSnapshot,
+}: {
+  snapshot: StudioSnapshotResponse;
+  loadSnapshot: () => Promise<void>;
+}) {
+  const studioSessionId = React.useRef(createUlid());
+  const projectId = snapshot.project.id;
+  const [attached, setAttached] = React.useState(false);
+  const [error, setError] = React.useState<string | null>(null);
+  const [eventRevision, setEventRevision] = React.useState(0);
+  const [shellGeneration, setShellGeneration] = React.useState(0);
+
+  const studioInit = React.useCallback(
+    (init = {}) => studioRequestInit(studioSessionId.current, init),
+    [],
+  );
+  const sessionRequest = React.useCallback(
+    (method: "POST" | "DELETE", keepalive = false) => fetchApi(
+      historyPath(projectId, "session"),
+      studioInit({ method, keepalive }),
+    ),
+    [projectId, studioInit],
+  );
+
+  React.useEffect(() => {
+    let active = true;
+    const detach = () => void sessionRequest("DELETE", true).catch(() => undefined);
+    const pagehide = () => detach();
+    window.addEventListener("pagehide", pagehide);
+    void sessionRequest("POST")
+      .then(requireOk)
+      .then(() => {
+        if (active) setAttached(true);
+        else detach();
+      })
+      .catch((cause) => {
+        if (active) setError(cause instanceof Error ? cause.message : "Could not attach studio history.");
+      });
+    return () => {
+      active = false;
+      window.removeEventListener("pagehide", pagehide);
+      detach();
+    };
+  }, [sessionRequest]);
+
+  React.useEffect(() => {
+    if (!attached) return;
+    const controller = new AbortController();
+    let queued: ReturnType<typeof setTimeout> | null = null;
+    let lastEventId: string | undefined;
+    const refresh = (data: string) => {
+      try {
+        const payload = JSON.parse(data) as { projectId?: string };
+        if (payload.projectId && payload.projectId !== projectId) return;
+      } catch { /* resync remains a refresh signal */ }
+      if (queued) clearTimeout(queued);
+      queued = setTimeout(() => {
+        setEventRevision((current) => current + 1);
+        void loadSnapshot().catch(() => undefined);
+      }, 75);
+    };
+    const reconnect = async () => {
+      while (!controller.signal.aborted) {
+        try {
+          const response = await fetchApi(
+            studioEventPath(projectId),
+            studioInit({
+              signal: controller.signal,
+              headers: {
+                Accept: "text/event-stream",
+                ...(lastEventId === undefined ? {} : { "Last-Event-ID": lastEventId }),
+              },
+            }),
+          );
+          await requireOk(response);
+          const consumed = await consumeStudioEvents(response, (event) => {
+            if (event.id !== null) lastEventId = event.id;
+            refresh(event.data);
+          });
+          if (consumed !== null) lastEventId = consumed;
+        } catch {
+          if (controller.signal.aborted) return;
+        }
+        await new Promise<void>((resolve) => {
+          const timer = window.setTimeout(resolve, 250);
+          controller.signal.addEventListener("abort", () => {
+            window.clearTimeout(timer);
+            resolve();
+          }, { once: true });
+        });
+      }
+    };
+    void reconnect();
+    return () => {
+      controller.abort();
+      if (queued) clearTimeout(queued);
+    };
+  }, [attached, loadSnapshot, projectId, studioInit]);
+
+  const resetHistory = React.useCallback(async (reloadSource: boolean) => {
+    setAttached(false);
+    await requireOk(await sessionRequest("DELETE"));
+    await requireOk(await sessionRequest("POST"));
+    if (reloadSource) {
+      await loadSnapshot();
+      setShellGeneration((current) => current + 1);
+    }
+    setEventRevision((current) => current + 1);
+    setAttached(true);
+  }, [loadSnapshot, sessionRequest]);
+
+  if (error) return <div className="text-destructive p-6 text-sm">{error}</div>;
+  if (!attached) return <div className="text-muted-foreground p-6 text-sm">Attaching studio history…</div>;
+
+  return (
+    <StudioSessionProvider
+      eventRevision={eventRevision}
+      request={studioInit}
+      resetHistory={resetHistory}
+    >
+      <StudioShell
+        key={shellGeneration}
+        projectId={snapshot.project.id}
+        projectSlug={snapshot.project.slug}
+        previewUrl={apiUrl(`/api/v1/projects/${encodeURIComponent(snapshot.project.id)}/preview`)}
+        aspectRatio={snapshot.project.width / snapshot.project.height}
+        authoredDuration={snapshot.project.duration}
+        tree={snapshot.tree}
+        files={[sourceFile(snapshot)]}
+        scenes={snapshot.scenes as Scene[]}
+        rootTrack={snapshot.rootTrack as RootTrack | null}
+        previewSettings={snapshot.previewSettings as PreviewSettings}
+        previewSettingsRevision={snapshot.previewSettingsRevision}
+        onRefresh={loadSnapshot}
+      />
+    </StudioSessionProvider>
+  );
 }
 
 /**
@@ -80,45 +233,12 @@ export default function ComposerClient() {
     return () => { active = false; window.clearTimeout(timer); };
   }, [loadSnapshot]);
 
-  const activeProjectId = snapshot?.project.id;
-  React.useEffect(() => {
-    if (!activeProjectId) return;
-    const events = openApiEventSource("/api/v1/events");
-    let queued: ReturnType<typeof setTimeout> | null = null;
-    const refresh = (event: MessageEvent) => {
-      try {
-        const payload = JSON.parse(event.data) as { projectId?: string };
-        if (payload.projectId && payload.projectId !== activeProjectId) return;
-      } catch { /* resync payloads are still a refresh signal */ }
-      if (queued) clearTimeout(queued);
-      queued = setTimeout(() => void loadSnapshot().catch(() => {}), 75);
-    };
-    for (const type of ["file.changed", "project.changed", "resync"]) events.addEventListener(type, refresh);
-    return () => {
-      if (queued) clearTimeout(queued);
-      events.close();
-    };
-  }, [activeProjectId, loadSnapshot]);
-
   if (error) return <div className="text-destructive p-6 text-sm">{error}</div>;
   if (!snapshot) return <div className="text-muted-foreground p-6 text-sm">Loading studio…</div>;
 
   return (
     <div className="flex h-dvh flex-col overflow-hidden">
-      <StudioShell
-        projectId={snapshot.project.id}
-        projectSlug={snapshot.project.slug}
-        previewUrl={apiUrl(`/api/v1/projects/${encodeURIComponent(snapshot.project.id)}/preview`)}
-        aspectRatio={snapshot.project.width / snapshot.project.height}
-        authoredDuration={snapshot.project.duration}
-        tree={snapshot.tree}
-        files={[sourceFile(snapshot)]}
-        scenes={snapshot.scenes as Scene[]}
-        rootTrack={snapshot.rootTrack as RootTrack | null}
-        previewSettings={snapshot.previewSettings as PreviewSettings}
-        previewSettingsRevision={snapshot.previewSettingsRevision}
-        onRefresh={loadSnapshot}
-      />
+      <MountedStudio key={snapshot.project.id} snapshot={snapshot} loadSnapshot={loadSnapshot} />
     </div>
   );
 }

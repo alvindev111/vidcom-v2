@@ -11,6 +11,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { fetchApi } from "@/lib/api/services";
 import type { FileNode } from "@/lib/studio/types";
+import { useStudioSession } from "./studio-session-context";
 
 interface Installed {
   scriptTag: string;
@@ -55,6 +56,7 @@ export function MotionLibraryPanel({
   tree: FileNode[];
   onProjectChanged: () => void;
 }) {
+  const studio = useStudioSession();
   const [pending, setPending] = React.useState<MotionLibraryId | null>(null);
   const [error, setError] = React.useState<string | null>(null);
   const [copied, setCopied] = React.useState<string | null>(null);
@@ -64,11 +66,11 @@ export function MotionLibraryPanel({
     setPending(library.id);
     setError(null);
     try {
-      const response = await fetchApi(`/api/v1/projects/${projectId}/motion-libraries`, {
+      const response = await fetchApi(`/api/v1/projects/${projectId}/motion-libraries`, studio.request({
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ libraryId: library.id }),
-      });
+      }));
       if (!response.ok) {
         const payload = (await response.json().catch(() => null)) as {
           error?: { message?: string } | string;

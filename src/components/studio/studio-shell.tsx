@@ -128,6 +128,7 @@ export function StudioShell({
 
         <ResizablePanel defaultSize="62" minSize="25">
           <PreviewPanel
+            projectId={projectId}
             containerRef={containerRef}
             aspectRatio={aspectRatio}
             duration={duration}
@@ -139,6 +140,7 @@ export function StudioShell({
             selectedId={selectedId}
             onSelectScene={selectScene}
             onToggleHidden={toggleHidden}
+            onProjectChanged={handleProjectChanged}
           />
         </ResizablePanel>
       </ResizablePanelGroup>
