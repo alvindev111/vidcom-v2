@@ -1405,8 +1405,11 @@
           </p>
           <p class="text-slate-400 text-sm">
             Required local Browser session 4 file/12 test PASS; P2 node aggregate 9 file/62 test, production build,
-            typecheck, boundaries và diff-check PASS; lint còn đúng 5 warning baseline. Linux/Windows CI đang chờ
-            commit/push exact source nên task vẫn in progress.
+            typecheck, boundaries và diff-check PASS; lint còn đúng 5 warning baseline. Run CI đầu tiên tại exact SHA
+            f9a8afe đỏ trên cả Linux và Windows: helper test luôn kéo clip đầu DOM, nhưng thứ tự layout đa OS không bảo
+            đảm clip đó thuộc marquee selection, nên không có request group move. Đây là lỗi harness, không phải logic
+            production. Helper nay nhận sceneId rõ ràng và neo vào chính thành viên marquee; focused Chrome 1/1, toàn
+            Browser session 12/12, typecheck và git diff --check đều PASS. Task vẫn in progress tới khi CI rerun xanh cả OS.
           </p>
         </article>
       </section>

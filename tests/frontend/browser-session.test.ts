@@ -58,8 +58,12 @@ async function dragTimelineClip(
   page: Page,
   zone: "body" | "trim-end",
   finish: "drop" | "escape",
+  sceneId?: string,
 ): Promise<{ beforeLeft: string; afterLeft: string; beforeWidth: string; afterWidth: string }> {
-  const clip = await page.waitForSelector("[data-timeline-scene-id]");
+  const selector = sceneId
+    ? `[data-timeline-scene-id="${sceneId}"]`
+    : "[data-timeline-scene-id]";
+  const clip = await page.waitForSelector(selector);
   if (!clip) throw new Error("timeline clip did not mount");
   const box = await clip.boundingBox();
   if (!box) throw new Error("timeline clip has no browser geometry");
@@ -72,7 +76,7 @@ async function dragTimelineClip(
   await page.mouse.move(x, y);
   await page.mouse.down();
   await page.mouse.move(x + 24, y, { steps: 3 });
-  const after = await page.$eval("[data-timeline-scene-id]", (element) => ({
+  const after = await page.$eval(selector, (element) => ({
     left: (element as HTMLElement).style.left,
     width: (element as HTMLElement).style.width,
   }));
@@ -436,7 +440,7 @@ describe("browser session harness", () => {
       const moveResponse = page.waitForResponse((response) =>
         response.request().method() === "POST" && new URL(response.url()).pathname.endsWith("/scenes/move"),
       { timeout: 10_000 }).catch((cause) => { throw new Error("group move response timed out", { cause }); });
-      await dragTimelineClip(page, "body", "drop");
+      await dragTimelineClip(page, "body", "drop", marqueeSelection[0]);
       expect((await moveResponse).ok()).toBe(true);
       expect(moveBodies).toHaveLength(1);
       expect(new Set(moveBodies[0]?.sceneIds as string[])).toEqual(new Set(marqueeSelection));
