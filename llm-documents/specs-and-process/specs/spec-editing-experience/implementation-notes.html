@@ -1881,6 +1881,11 @@
             đúng một container bằng DOM APIs, không ghi file. Core mới gọi một mutateSource trên source sở hữu scene với
             expected hash. Focused 3/3; regression planner/project/composition 56/56; typecheck/boundaries/diff xanh.
           </p>
+          <p class="text-slate-400 text-sm">
+            P6.3 checkpoint ở HEAD sạch 9340ef1. Production markup đã là phần bắt buộc của 6.2 nên không rewrite để tạo
+            red giả; red thật của adapter ở run 6.2 là replaceCaptions chưa có nhánh DOM. Task này chỉ bổ sung assertion
+            khóa class clip, mốc cue/word tuyệt đối, marker estimated và U+0020 trong textContent rồi xác nhận lại focused.
+          </p>
         </article>
       </section>
     </main>
