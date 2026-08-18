@@ -215,7 +215,7 @@ describe("ingestAsset", () => {
 
     expect(result).toMatchObject({ ok: true, value: {
       replayed: false,
-      metadata: { status: "unknown", reason: "asset metadata could not be read" },
+      metadata: { status: "unknown", byteSize: null, reason: "asset metadata could not be read" },
     } });
     expect(setupResult.events).toEqual(["mutate", "probe"]);
   });

@@ -1648,6 +1648,22 @@
             và mọi lỗi đều dọn staging. Probe chỉ chạy sau commit và lỗi được trả metadata unknown. Typecheck,
             boundaries/diff xanh; lint không lỗi với năm warning nền.
           </p>
+          <p class="text-slate-400 text-sm">
+            P5.2c bắt đầu tại HEAD sạch 1867f9c. Adapter media sẽ chỉ chạy ProcessPort với ffprobePath tuyệt đối đã
+            resolve ở composition root, capture/timeout hữu hạn và project path contained; adapter font tái dùng
+            fontkit 2.0.4 hiện có để đọc family/style từ file project-local. Composition root sẽ expose probe và
+            FsAssetStaging. Startup dọn asset temp quá 24 giờ trước listener; lỗi list/dọn từng project chỉ ghi warning
+            cấu trúc, không biến thành lỗi boot.
+          </p>
+          <p class="text-slate-400 text-sm">
+            P5.2c PASS. Red 5/5 vì probe/wiring chưa tồn tại. NodeAssetProbe dùng path project contained, ffprobePath
+            tuyệt đối qua ProcessPort với timeout 10 giây/capture 256 KiB; parse size, duration, dimension, codec và
+            trả unknown có lý do khi process/output hỏng. Font dùng fontkit 2.0.4 hiện có và chặn đọc quá 5 MB.
+            Composition root expose probe + staging. Startup dọn temp quá 24 giờ sau reconcile nhưng trước listener;
+            lỗi workspace/project ghi warning cấu trúc và không chặn boot. Broad run đầu đỏ đúng audit vì import
+            HyperFrames mới; containment được đổi sang Node thuần, audit+focused 14/14 và broad Adapter+CLI cuối cùng
+            1.237/1.237 xanh, chỉ VieNeu-real skip chủ đích. Typecheck/boundaries/diff xanh; lint năm warning nền.
+          </p>
         </article>
       </section>
     </main>

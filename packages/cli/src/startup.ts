@@ -20,6 +20,7 @@ import { canonicalWorkspaceRoot } from "./workspace-selection";
  * a working day.
  */
 const TTS_SCRATCH_GRACE_MS = 60 * 60 * 1_000;
+const ASSET_STAGING_GRACE_MS = 24 * 60 * 60 * 1_000;
 
 export type StartupStepName =
   | "migration"
@@ -135,6 +136,34 @@ async function recoverJobsAndRenderRoots(
   try { await recoverRenderRoots(runtime.infrastructure); }
   catch (error) { errors.push(error); }
   if (errors.length > 0) throw new AggregateError(errors, "VidCom job recovery failed");
+}
+
+async function cleanupExpiredAssetStaging(
+  infrastructure: ReturnType<typeof createInfrastructure>,
+): Promise<void> {
+  let projects;
+  try {
+    projects = await infrastructure.workspace.listProjects();
+  } catch (error) {
+    infrastructure.logger.warn("asset staging cleanup failed", {
+      code: "asset_staging_cleanup_failed",
+      scope: "workspace",
+      reason: error instanceof Error ? error.message : "unknown error",
+    });
+    return;
+  }
+  const olderThan = new Date(infrastructure.clock.now().getTime() - ASSET_STAGING_GRACE_MS);
+  for (const project of projects) {
+    try {
+      await infrastructure.assetStaging.cleanupExpired(project, olderThan);
+    } catch (error) {
+      infrastructure.logger.warn("asset staging cleanup failed", {
+        code: "asset_staging_cleanup_failed",
+        projectId: project.id,
+        reason: error instanceof Error ? error.message : "unknown error",
+      });
+    }
+  }
 }
 
 async function closeListener(listener: unknown): Promise<void> {
@@ -283,6 +312,7 @@ export async function startVidcomFoundation<Listener>(
           observer: infrastructure.mutationObserver,
           clock: infrastructure.clock,
         });
+        await cleanupExpiredAssetStaging(infrastructure);
         await infrastructure.largeContent.cleanupUnreferenced(
           await infrastructure.journal.listPreviousObjectHashes(),
           new Date(infrastructure.clock.now().getTime()

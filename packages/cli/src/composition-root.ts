@@ -36,6 +36,8 @@ import {
   DownloadCacheCoordinator,
   NodeHyperframesDiagnosticsLint,
   FontkitCompatibilityInspector,
+  FsAssetStaging,
+  NodeAssetProbe,
   BgmLibraryStore,
   BgmProviderRegistry,
   CcMixterBgmProvider,
@@ -283,6 +285,8 @@ export function createInfrastructure(config: CompositionRootConfig) {
     caBundlePath,
   });
   const processes = config.processes ?? new NodeProcessRunner(undefined, caBundlePath);
+  const assetStaging = new FsAssetStaging();
+  const assetProbe = new NodeAssetProbe(processes, binaries.ffprobePath);
   const ttsProcesses = withAudioBinaryPaths(processes, binaries);
   const renderGuard = new LoopbackRuntimeAssetGuard();
   // The probe falls back to require.resolve when a path is absent, which cannot
@@ -424,6 +428,8 @@ export function createInfrastructure(config: CompositionRootConfig) {
     credentials,
     settings,
     processes,
+    assetStaging,
+    assetProbe,
     diagnosticLint,
     fontInspector,
     tts,

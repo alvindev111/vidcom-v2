@@ -102,9 +102,9 @@ async function probeAsset(
 ): Promise<AssetProbeMetadata> {
   try {
     const result = kind === "font" ? await probe.probeFont(ref, path) : await probe.probeMedia(ref, path);
-    return result.ok ? result.value : { status: "unknown", reason: result.error.message };
+    return result.ok ? result.value : { status: "unknown", byteSize: null, reason: result.error.message };
   } catch {
-    return { status: "unknown", reason: "asset metadata could not be read" };
+    return { status: "unknown", byteSize: null, reason: "asset metadata could not be read" };
   }
 }
 

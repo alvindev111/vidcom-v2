@@ -197,7 +197,7 @@ export interface SvgSanitizerPort {
   sanitize(source: StagedFileSource): Promise<Result<string, DomainError>>;
 }
 
-export type UnknownAssetMetadata = { status: "unknown"; reason: string };
+export type UnknownAssetMetadata = { status: "unknown"; byteSize: number | null; reason: string };
 export type MediaAssetMetadata = {
   status: "ok";
   kind: "media";
