@@ -402,8 +402,11 @@ export function Timeline({
           bottom: rect.bottom - surface.top,
         };
       });
-    applyInteraction(finishMarquee(interactionRef.current, bounds));
-  }, [applyInteraction, interactionRef]);
+    const finished = finishMarquee(interactionRef.current, bounds);
+    applyInteraction(finished);
+    const anchor = scenes.find((scene) => scene.id === finished.anchorSceneId);
+    if (anchor) onSelect(anchor);
+  }, [applyInteraction, interactionRef, onSelect, scenes]);
 
   React.useEffect(() => {
     const escape = (event: KeyboardEvent) => {

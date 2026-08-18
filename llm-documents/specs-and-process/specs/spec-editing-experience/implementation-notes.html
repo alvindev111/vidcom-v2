@@ -1422,6 +1422,14 @@
             left đã đổi trước network. Focused Chrome 1/1, interaction node 8/8, full Browser session 12/12, typecheck và
             diff-check PASS local; cần rerun CI để xác nhận chẩn đoán.
           </p>
+          <p class="text-slate-400 text-sm">
+            Run 32096969160 thêm assertion cho thấy preview vẫn ở 0px trên cả Linux và Windows, vì vậy pointer-up không
+            phải nguyên nhân và workaround đó được hoàn tác. Marquee trước đây chỉ đổi shared selection, còn primary
+            scene vẫn là clip cross-track cũ; pointer-down vào anchor làm hàng cũ collapse, hàng mới expand ngay giữa
+            gesture và target đổi vị trí dọc. Marquee completion nay chuyển primary về đúng anchorSceneId mà reducer
+            thuần đã quyết, để layout ổn định trước lần kéo kế tiếp. Focused Chrome 1/1, interaction node 8/8,
+            typecheck và diff-check PASS local; vẫn cần CI hai OS xác nhận.
+          </p>
         </article>
       </section>
     </main>
