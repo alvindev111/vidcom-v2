@@ -244,7 +244,6 @@ export const TimelineLane = React.memo(function TimelineLane({
           onPointerDown={(event) => {
             if (event.button !== 0) return;
             const bounds = event.currentTarget.getBoundingClientRect();
-            event.currentTarget.setPointerCapture(event.pointerId);
             onSelect(scene, {
               shift: event.shiftKey,
               additive: event.metaKey || event.ctrlKey,
@@ -252,12 +251,9 @@ export const TimelineLane = React.memo(function TimelineLane({
             onDragStart(scene, hitZone(event.clientX - bounds.left, bounds.width), event.clientX);
           }}
           onPointerMove={(event) => {
-            if (!event.currentTarget.hasPointerCapture(event.pointerId)) return;
             onDragMove(scene, event.clientX);
           }}
           onPointerUp={(event) => {
-            if (!event.currentTarget.hasPointerCapture(event.pointerId)) return;
-            event.currentTarget.releasePointerCapture(event.pointerId);
             onDragEnd(scene, event.clientX);
           }}
           onPointerCancel={onDragCancel}
