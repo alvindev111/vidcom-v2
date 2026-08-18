@@ -136,6 +136,13 @@ POST /api/v1/jobs/j_123/cancel      → 202
 
 Chi tiết: [08-jobs-and-queue](08-jobs-and-queue.md).
 
+Ngoại lệ duy nhất là **timeline thumbnail** tương tác: đây là derived-cache có thể huỷ, không phải
+artifact `snapshot` bền. Route MAY giữ request để stream tối đa 256 mốc của đúng một scene/profile
+khi và chỉ khi công việc đi qua scheduler chung toàn daemon có giới hạn `2 active` / `8 queued`,
+`AbortSignal` đi xuyên từ request tới cây process, và hết capacity trả failure hữu hạn
+`thumbnail_capacity` cho từng mốc thay vì tạo thêm promise/process. Kết quả chỉ được ghi vào cache
+app-data; MUST NOT ghi project, tăng source revision hoặc tạo artifact trong `snapshots/`.
+
 ## 7. Streaming (SSE)
 
 Một endpoint SSE dùng chung cho mọi loại event:

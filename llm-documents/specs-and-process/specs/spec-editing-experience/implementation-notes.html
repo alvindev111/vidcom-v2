@@ -1974,6 +1974,13 @@
             ngoại lệ hữu hạn trước code: 256 mốc, scheduler daemon 2 active/8 queued, AbortSignal, capacity failure hữu hạn,
             app-data cache và tuyệt đối không ghi project hay snapshots/.
           </p>
+          <p class="text-slate-400 text-sm">
+            P7.0 PASS. Red assertion dừng ngay vì steering chưa có khái niệm timeline thumbnail. Steering 04 §6 nay chỉ
+            cho phép ngoại lệ request tương tác hữu hạn; steering 08 §1.1 tách derived-cache này khỏi snapshot job bền.
+            Hai tài liệu cùng khóa tối đa 256 mốc một scene/profile, scheduler toàn daemon 2 active/8 queued, AbortSignal
+            xuyên tới process, thumbnail_capacity khi đầy, chỉ ghi app-data và không ghi project/revision/snapshots/.
+            Assertion xanh, spec-paths 115 path và diff-check xanh.
+          </p>
         </article>
       </section>
     </main>
