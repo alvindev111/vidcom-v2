@@ -65,6 +65,8 @@ async function dragTimelineClip(
     : "[data-timeline-scene-id]";
   const clip = await page.waitForSelector(selector);
   if (!clip) throw new Error("timeline clip did not mount");
+  await clip.evaluate((element) => element.scrollIntoView({ block: "center", inline: "center" }));
+  await page.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => resolve())));
   const box = await clip.boundingBox();
   if (!box) throw new Error("timeline clip has no browser geometry");
   const before = await clip.evaluate((element) => ({

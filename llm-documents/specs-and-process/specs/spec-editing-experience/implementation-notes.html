@@ -1444,6 +1444,12 @@
             hoặc width đổi rồi mới thả chuột; không thêm sleep và không tăng timeout backend. Focused Chrome 1/1, full
             Browser session 12/12, typecheck và diff-check PASS local.
           </p>
+          <p class="text-slate-400 text-sm">
+            Linux run 32097637956 timeout ngay ở điều kiện preview, chứng minh không phải React commit chậm mà raw
+            page.mouse chưa chạm target. Khác locator click, API này không tự cuộn phần tử có bounding box ngoài viewport.
+            Helper nay scroll anchor rõ ràng vào giữa viewport, chờ một animation frame rồi mới đo và kéo; điều kiện
+            preview vẫn giữ để chứng minh handler thực sự chạy. Focused Chrome 1/1, typecheck và diff-check PASS local.
+          </p>
         </article>
       </section>
     </main>
