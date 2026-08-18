@@ -2076,6 +2076,14 @@
             Full server chạy song song có đúng một phép đo RSS đỏ do delta 90.4 MiB vượt 64 MiB; chạy riêng đúng test
             streaming đó PASS 10.33 giây, nên evidence được ghi nguyên trạng thay vì gọi lần parallel là PASS.
           </p>
+          <p class="text-slate-400 text-sm">
+            P7.4 bắt đầu ở HEAD sạch cd1e7d5. Đã đọc CodeGraph của Timeline/TimelineLane và skill React
+            performance. Layout thumbnail sẽ là hàm thuần test bằng node: mật độ theo clipWidth/80, mốc tâm luôn
+            scene-local, và chỉ trả cell giao với viewport mở rộng một viewport mỗi phía. Timeline dùng ref +
+            requestAnimationFrame để throttle scroll measurement; lane memoized chỉ render cell được chọn, giữ input số
+            và drag hiện có. Mỗi batch visible có AbortController riêng, nên scroll, zoom hoặc unmount đều hủy request cũ;
+            zoom sinh mốc mới thay vì scale bitmap.
+          </p>
         </article>
       </section>
     </main>
