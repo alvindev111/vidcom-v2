@@ -1456,6 +1456,13 @@
             khi preview không đổi, CI in toàn bộ dữ liệu an toàn này. Focused Chrome 1/1, full Browser session 12/12,
             typecheck và diff-check PASS local.
           </p>
+          <p class="text-slate-400 text-sm">
+            Trace Linux run 32098041371 xác nhận rect 79,75×27 nằm trong viewport 800×600, hit đúng scene-2 và
+            pointerdown buttons=1. Tuy nhiên trong ba bước CDP yêu cầu chỉ có bước đầu +8px xuất hiện; đây đúng biên
+            snap nên left vẫn 0. Helper nay gửi một trusted mousemove thẳng +24px, không phụ thuộc intermediate steps,
+            đồng thời giữ preview wait và diagnostic. Focused Chrome 1/1, full Browser session 12/12, typecheck và
+            diff-check PASS local.
+          </p>
         </article>
       </section>
     </main>

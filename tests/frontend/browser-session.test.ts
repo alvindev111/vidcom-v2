@@ -97,7 +97,7 @@ async function dragTimelineClip(
   const y = box.y + box.height / 2;
   await page.mouse.move(x, y);
   await page.mouse.down();
-  await page.mouse.move(x + 24, y, { steps: 3 });
+  await page.mouse.move(x + 24, y);
   try {
     await page.waitForFunction((target, dragZone, left, width) => {
       const element = document.querySelector<HTMLElement>(target);
