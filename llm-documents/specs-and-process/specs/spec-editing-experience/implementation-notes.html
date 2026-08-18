@@ -1747,6 +1747,12 @@
             sanitizer vẫn dùng capability no-follow do adapter sở hữu. Security slice 47/47, typecheck/boundaries/diff
             xanh; lint không lỗi với năm warning nền.
           </p>
+          <p class="text-slate-400 text-sm">
+            P5.7b bắt đầu tại HEAD sạch f5c25f0. Sẽ tái dùng bindLoopback với SQLite/temp workspace thật và stream
+            sinh chunk để payload 500–512 MB không tự làm sai số RSS. Cả Content-Length lẫn chunked phải đi qua listener
+            HTTP/1.1 thật; test đo cleanup temp, reject sớm, abort socket, replay/changed/expired và giữ regression limit
+            source/file/BGM. XHR constructor đã có node evidence ở 5.6; task này chứng minh đúng đường server thực.
+          </p>
         </article>
       </section>
     </main>
