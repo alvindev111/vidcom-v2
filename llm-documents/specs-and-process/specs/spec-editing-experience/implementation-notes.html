@@ -1967,6 +1967,13 @@
             lease-loss, render-cancellation, startup, TTS. VieNeu real-engine run 32170350667 cũng xanh; WAV thật PCM
             s16le mono 44,1 kHz dài 3,733651 giây, 329.386 byte. P7 nay được phép bắt đầu.
           </p>
+          <p class="text-slate-400 text-sm">
+            P7.0 bắt đầu ở HEAD sạch da6ac0f. Đã đọc đầy đủ Bun, hyperframes-cli, snapshot-job, parse, dom và manifest
+            Adapter/parser; ảnh timeline cho thấy clip dùng dải nhiều frame, còn bố cục/pixel không được sao chép. Steering
+            hiện cấm mọi snapshot trong request mà chưa nêu ngoại lệ derived-cache của R10, nên task này chỉ hoà giải đúng
+            ngoại lệ hữu hạn trước code: 256 mốc, scheduler daemon 2 active/8 queued, AbortSignal, capacity failure hữu hạn,
+            app-data cache và tuyệt đối không ghi project hay snapshots/.
+          </p>
         </article>
       </section>
     </main>
