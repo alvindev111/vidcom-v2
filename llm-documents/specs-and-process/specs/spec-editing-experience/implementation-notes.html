@@ -1981,6 +1981,12 @@
             xuyên tới process, thumbnail_capacity khi đầy, chỉ ghi app-data và không ghi project/revision/snapshots/.
             Assertion xanh, spec-paths 115 path và diff-check xanh.
           </p>
+          <p class="text-slate-400 text-sm">
+            P7.1a bắt đầu ở HEAD sạch d5e4722. Graph sẽ chọn source của scene từ root, trả dependency canonical đã sort
+            và giữ path thiếu; vòng lặp dừng bằng visited. HTML đi qua linkedom, CSS qua PostCSS cộng scanner value của
+            safe-css, JS qua Acorn. External/path thoát project không vào fingerprint; parse lỗi, import/new URL động và
+            CSS var không chứng minh được đều fail-closed bằng dependency_graph_unavailable, không fallback toàn project.
+          </p>
         </article>
       </section>
     </main>
