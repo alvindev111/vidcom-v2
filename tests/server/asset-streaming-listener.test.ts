@@ -1,8 +1,6 @@
 // @vitest-environment node
 
 import { spawn } from "node:child_process";
-import { fileURLToPath } from "node:url";
-
 import { expect, it } from "vitest";
 
 interface Evidence {
@@ -33,12 +31,17 @@ function run(command: string, args: string[]): Promise<{ stdout: string; stderr:
 
 it("streams assets through a real HTTP/1.1 listener with bounded memory and exact replay", { timeout: 420_000 }, async () => {
   const support = new URL("./support/", import.meta.url);
+  const loader = new URL("workspace-typescript-loader.mjs", support);
   const worker = new URL("asset-streaming-listener-worker.ts", support);
   const { stdout } = await run(process.execPath, [
     "--expose-gc",
     "--experimental-transform-types",
-    "--experimental-loader", fileURLToPath(new URL("workspace-typescript-loader.mjs", support)),
-    "--eval", `import(${JSON.stringify(worker.href)})`,
+    "--input-type=module",
+    "--eval", [
+      'import { register } from "node:module";',
+      `register(${JSON.stringify(loader.href)});`,
+      `await import(${JSON.stringify(worker.href)});`,
+    ].join("\n"),
   ]);
   const marker = "VIDCOM_ASSET_STREAM_RESULT=";
   const line = stdout.split("\n").find((value) => value.startsWith(marker));

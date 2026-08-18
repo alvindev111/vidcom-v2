@@ -1822,6 +1822,11 @@
             giảm xuống 64 KiB như backup streaming; bỏ toàn bộ global expose-GC/test-GC vì đó chỉ che triệu chứng và đã
             được CI chứng minh không hiệu quả. Asset 96 MiB cùng ngưỡng nhỏ hơn 64 MiB giữ nguyên.
           </p>
+          <p class="text-slate-400 text-sm">
+            Windows của cùng run còn chỉ ra scheme d: đến từ argument --experimental-loader raw drive path, không chỉ
+            worker argv. Harness bỏ loader CLI hoàn toàn: eval chạy ESM, đăng ký chính loader đó qua node:module.register
+            bằng canonical file URL rồi import worker file URL. Không còn module specifier nào đi qua Windows path parser.
+          </p>
         </article>
       </section>
     </main>
