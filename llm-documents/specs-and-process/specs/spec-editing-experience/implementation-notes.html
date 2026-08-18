@@ -1833,6 +1833,13 @@
             staged verify hash và mutation-capture hash. Cả ba giảm xuống 64 KiB; semantics stream/hash/fsync/no-follow và
             ngưỡng nhỏ hơn 64 MiB không đổi.
           </p>
+          <p class="text-slate-400 text-sm">
+            Run exact-source 32156454499 đã PASS main macOS/Windows, Browser Linux/Windows và cả ba packaged smoke;
+            riêng main Linux bị GitHub huỷ đúng timeout 40 phút khi apt-get update chờ Ubuntu Azure mirror, trước lúc cài
+            dependency hay chạy bất kỳ source gate nào. Log đứng ở mirror từ 15:47:40Z đến lỗi “The operation was
+            canceled” lúc 16:26:34Z. Đây là FAIL hạ tầng thật, không được dùng 7/8 job để đóng phase và không có lý do
+            nới test, security hoặc threshold. Evidence được checkpoint rồi rerun toàn matrix trên exact SHA mới.
+          </p>
         </article>
       </section>
     </main>
