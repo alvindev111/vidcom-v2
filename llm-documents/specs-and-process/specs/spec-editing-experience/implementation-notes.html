@@ -1619,6 +1619,19 @@
             active, event/xml-base và URL ngoài fragment; lần sanitize hai byte-identical. PostCSS pin direct 8.5.25,
             typecheck/boundaries/diff xanh, lint không lỗi với năm warning nền.
           </p>
+          <p class="text-slate-400 text-sm">
+            P5.2a bắt đầu tại HEAD sạch 4b97f66. Port giữ đúng open/write/finalize/discard và lỗi limit có limit/actual.
+            Adapter chỉ tạo tên UUID dưới .vidcom/tmp thật, đếm trước write, hash tăng dần, fsync trước finalize và
+            discard idempotent kể cả sau finalize. Scavenger chỉ xoá temp asset hết hạn; wiring startup thuộc 5.2c.
+            Task này không publish target, không replay và chưa viết ingest use case.
+          </p>
+          <p class="text-slate-400 text-sm">
+            P5.2a PASS. Red 3/3 vì adapter chưa tồn tại; một expected SHA trong fixture bị gõ sai và được sửa theo
+            digest thực, không đổi production. Adapter xác minh directory thật/no-symlink, dùng UUID + wx 0600, chặn
+            chunk vượt limit trước write, xử lý partial write, hash tăng dần, fsync file/directory và giữ capability tới
+            discard. Finalize/discard lặp an toàn; scavenger chỉ xoá asset temp hết hạn. Focused+regression 8/8,
+            typecheck/boundaries/diff xanh, lint không lỗi với năm warning nền.
+          </p>
         </article>
       </section>
     </main>

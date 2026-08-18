@@ -25,6 +25,7 @@ export * from "./db/tool-audit";
 export * from "./db/schema";
 export * from "./fs/atomic-write";
 export * from "./fs/atomic-delete";
+export * from "./fs/asset-staging";
 export * from "./fs/backup-store";
 export * from "./fs/credential-store";
 export * from "./daemon/daemon-client";

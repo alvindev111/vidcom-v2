@@ -341,6 +341,25 @@ export interface StagedAssetPort {
   ): Promise<StagedAsset>;
 }
 
+export class AssetStagingLimitError extends Error {
+  readonly name = "AssetStagingLimitError";
+
+  constructor(readonly limit: number, readonly actual: number) {
+    super(`asset staging exceeded ${limit} bytes at ${actual}`);
+  }
+}
+
+export interface StagedWriter {
+  write(chunk: Uint8Array): Promise<void>;
+  finalize(): Promise<StagedFileSource>;
+  discard(): Promise<void>;
+}
+
+/** Bounded streaming ingress; it stages bytes but has no authority to publish a project target. */
+export interface AssetStagingPort {
+  open(ref: ProjectRef, hint: { filename: string; maxBytes: number }): Promise<StagedWriter>;
+}
+
 export type CompositionDocumentOptions = {
   root: boolean;
   runtimeUrl?: string;
