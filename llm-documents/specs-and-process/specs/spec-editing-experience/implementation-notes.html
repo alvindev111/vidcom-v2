@@ -2363,6 +2363,18 @@
             có sửa đổi. Ba lối thoát (đóng trình duyệt · đóng tab editor · rời project) đọc chung một bộ đếm
             `unsaved-guard`, nên không lối nào quên hỏi.
           </p>
+          <p class="text-slate-400 text-sm">
+            P11.1 (BLOCKED): harness đo thật đã chạy (studio thật, project thật, player thật) nhưng **chưa ra số**:
+            mọi reload preview bị từ chối `preview_unhealthy`. Bằng chứng thu được: player tạo **trước** khi ghi source
+            post timeline sau ~220 ms (tiêu chí `timeline` đạt); player tạo **sau** một lần ghi source thì **không bao
+            giờ** post timeline trong 15 s — dù dùng lại URL preview hay URL cache-bust, dù có hay không player khác
+            đang sống. Document preview sau ghi vẫn đúng (main + clip, không `data-no-timeline`, runtime 200, collector
+            có, nested layer có con). Hệ quả trong app thật: preview mount lần đầu OK, **mọi reload sau đó bị từ
+            chối** — preview không đi theo chỉnh sửa. P4 chứng minh swap bằng fixture player giả nên chưa lộ. Hai phát
+            hiện phụ: `data-no-timeline` trong fixture khiến tiêu chí không thể đạt (nay có option `withTimeline`), và
+            studio nay stamp `data-preview-change-seq` / `data-preview-error` / `data-studio-event-seq` để trạng thái
+            đồng bộ quan sát được. Hai case đo để `it.skip` kèm lý do trong file, không fake PASS.
+          </p>
         </article>
       </section>
     </main>

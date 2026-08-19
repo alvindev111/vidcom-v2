@@ -71,10 +71,18 @@ export function useHyperframesPlayer(projectId: string, previewUrl: string) {
     if (result.kind === "swapped") {
       mountedUrlRef.current = input.url;
       visibleChangeSeqRef.current = result.visibleChangeSeq;
+      // What the visible frame is showing, stated on the element itself: the
+      // preview is double-buffered, so "has it caught up yet" is otherwise only
+      // knowable from inside this hook.
+      if (containerRef.current) {
+        containerRef.current.dataset.previewChangeSeq = String(result.visibleChangeSeq);
+        delete containerRef.current.dataset.previewError;
+      }
       desiredChangeSeqRef.current = Math.max(desiredChangeSeqRef.current, result.visibleChangeSeq);
       setState((current) => ({ ...current, error: null }));
     } else if (result.kind === "rejected") {
       setState((current) => ({ ...current, error: result.reason }));
+      if (containerRef.current) containerRef.current.dataset.previewError = result.reason;
     }
     return result;
   }, []);

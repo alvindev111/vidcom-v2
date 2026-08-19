@@ -15,6 +15,7 @@ import {
   historyPath,
   isStudioResync,
   latestStudioChangeSeq,
+  studioEventChangeSeq,
   studioEventPath,
   studioEventPaths,
   studioRequestInit,
@@ -122,6 +123,11 @@ function MountedStudio({
         if (touched) setSourceEvent((current) => current && current.seq >= touched.seq ? current : touched);
       }
       queuedChangeSeq = latestStudioChangeSeq(queuedChangeSeq, event, projectId);
+      // The newest durable event this tab has actually received, stamped where
+      // it can be observed: it is the start of the "outside write to visible
+      // frame" window the budget is measured over.
+      const received = studioEventChangeSeq(event, projectId);
+      if (received !== null) document.documentElement.dataset.studioEventSeq = String(received);
       if (queued) clearTimeout(queued);
       queued = setTimeout(() => {
         if (queuedChangeSeq !== null) {
