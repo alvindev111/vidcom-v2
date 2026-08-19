@@ -542,8 +542,31 @@ describe("packaged smoke steps", () => {
       "render-cli",
       "offline",
       "lease-loss",
+      "editing-experience-runtime",
       "provenance",
     ]);
+  });
+
+  it("registers a self-contained editing-experience runtime step", async () => {
+    const step = SMOKE_STEPS.find((candidate) => candidate.id === "editing-experience-runtime");
+    expect(step).toMatchObject({ required: true });
+    const { STEP_BODIES: bodies } = await import("../../scripts/packaged-smoke/bodies.mjs");
+    const body = (bodies as Record<string, unknown>)["editing-experience-runtime"];
+    expect(typeof body).toBe("function");
+    const source = String(body);
+    // Independent evidence: it builds its own project and session instead of
+    // reading what `ui-lifecycle` or `render-media` left on the context.
+    expect(source).toContain("startServingWithSession");
+    expect(source).toContain("/api/v1/projects");
+    expect(source).not.toContain("context.session");
+    expect(source).not.toContain("context.media");
+    // Two boots, the bundled registry, a real install, and a refusal to name the
+    // source tree the artifact must never read.
+    expect(source).toContain("first");
+    expect(source).toContain("second");
+    expect(source).toContain("catalog-items/plans");
+    expect(source).toContain("packages/adapter/assets");
+    expect(source).toContain("catalog evidence names the source tree");
   });
 
   it("treats every step as required", () => {
@@ -846,7 +869,7 @@ describe("packaged smoke selection", () => {
   it("runs one step, or everything from one step on", () => {
     expect(selectSteps({ step: "bridge" }).map((step) => step.id)).toEqual(["bridge"]);
     expect(selectSteps({ from: "offline" }).map((step) => step.id))
-      .toEqual(["offline", "lease-loss", "provenance"]);
+      .toEqual(["offline", "lease-loss", "editing-experience-runtime", "provenance"]);
     expect(selectSteps({})).toHaveLength(SMOKE_STEPS.length);
   });
 

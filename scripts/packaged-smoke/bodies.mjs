@@ -1680,6 +1680,122 @@ export const STEP_BODIES = {
     }
   },
 
+  /**
+   * Bundled catalog inside the artifact (R7.6–7.7, R9.7–9.7c).
+   *
+   * Self-contained on purpose: it creates its own project rather than depending
+   * on `ui-lifecycle` or `render-media`, so `--step editing-experience-runtime`
+   * is independent evidence. Two boots prove the migration and the catalog are
+   * both idempotent, and the whole step runs with the runner's network cut, so a
+   * listing that appears can only have come from the artifact itself.
+   */
+  async "editing-experience-runtime"(context) {
+    const digests = new Set();
+    const seen = [];
+    let projectId = null;
+    let installedPath = null;
+    let sceneId = null;
+
+    for (const boot of ["first", "second"]) {
+      const serving = await startServingWithSession(context);
+      try {
+        const headers = packagedStudioHeaders(serving, { "content-type": "application/json" });
+        const listing = await jsonResponse(
+          `${boot} catalog listing`,
+          await fetch(`${serving.baseUrl}/api/v1/catalog`, { headers: { Cookie: serving.cookie } }),
+        );
+        if (listing.source !== "bundled" && listing.source !== "cache") {
+          throw new Error(`${boot} boot listed the catalog from ${String(listing.source)} with the network cut`);
+        }
+        const templates = (listing.items ?? []).filter((item) => item.kind === "template");
+        if (templates.length === 0) throw new Error(`${boot} boot listed no bundled template`);
+        for (const template of templates) {
+          if (template.source?.registry !== "bundled") {
+            throw new Error(`${boot} boot listed template ${String(template.name)} from a non-bundled registry`);
+          }
+          if (template.materialization !== "verified" || typeof template.integrity?.manifest !== "string") {
+            throw new Error(`${boot} boot listed template ${String(template.name)} without a verified digest`);
+          }
+          digests.add(`${String(template.name)}@${String(template.version)}:${String(template.integrity.manifest)}`);
+        }
+        seen.push(`${boot} ${String(listing.source)} ${templates.length}`);
+
+        if (boot === "first") {
+          const template = templates[0];
+          const created = await jsonResponse("create catalog project", await fetch(`${serving.baseUrl}/api/v1/projects`, {
+            method: "POST",
+            headers: { "content-type": "application/json", Cookie: serving.cookie },
+            body: JSON.stringify({ name: "Catalog smoke", presetId: "vertical-shorts" }),
+          }));
+          projectId = created.project?.id ?? created.id;
+          if (!projectId) throw new Error("creating the catalog project returned no id");
+          await attachPackagedStudioSession(serving, projectId);
+          const snapshot = await jsonResponse(
+            "read catalog project",
+            await fetch(`${serving.baseUrl}/api/v1/projects/${projectId}`, { headers: { Cookie: serving.cookie } }),
+          );
+          const intent = {
+            name: template.name,
+            version: template.version,
+            mount: { kind: "new-scene", toIndex: snapshot.scenes?.length ?? 0 },
+            expectedRevision: snapshot.project?.revision ?? 0,
+          };
+          const prepared = await jsonResponse("prepare catalog install", await fetch(
+            `${serving.baseUrl}/api/v1/projects/${projectId}/catalog-items/plans`,
+            { method: "POST", headers, body: JSON.stringify(intent) },
+          ));
+          if (prepared.status !== "ready") {
+            throw new Error(`preparing a fresh install returned ${String(prepared.status)}`);
+          }
+          const installed = await jsonResponse("execute catalog install", await fetch(
+            `${serving.baseUrl}/api/v1/projects/${projectId}/catalog-items/plans/${prepared.grantId}`,
+            { method: "POST", headers, body: JSON.stringify(intent) },
+          ));
+          if (installed.packageStatus !== "installed") {
+            throw new Error(`installing returned ${String(installed.packageStatus)}`);
+          }
+          if (installed.provenance?.integrity !== template.integrity.manifest) {
+            throw new Error("the installed provenance digest differs from the listed digest");
+          }
+          sceneId = installed.sceneId;
+          installedPath = prepared.plan?.mountTarget ?? null;
+          const files = await jsonResponse(
+            "read installed files",
+            await fetch(`${serving.baseUrl}/api/v1/projects/${projectId}/files`, { headers: { Cookie: serving.cookie } }),
+          );
+          const paths = (files.files ?? []).map((file) => file.path);
+          if (installedPath && !paths.includes(installedPath)) {
+            throw new Error(`the installed entry ${installedPath} is not in the project after install`);
+          }
+        } else {
+          // The second boot re-ran migrations against the same database and must
+          // still serve the identical package identity.
+          const snapshot = await jsonResponse(
+            "reread catalog project",
+            await fetch(`${serving.baseUrl}/api/v1/projects/${projectId}`, { headers: { Cookie: serving.cookie } }),
+          );
+          const kept = (snapshot.scenes ?? []).some((scene) => scene.id === sceneId);
+          if (!kept) throw new Error("the installed scene did not survive the restart");
+        }
+      } finally {
+        await stopServing(serving);
+      }
+    }
+
+    if (digests.size === 0) throw new Error("no bundled package identity was observed");
+    const identities = [...digests].sort();
+    if (identities.length !== new Set(identities.map((value) => value.split(":", 1)[0])).size) {
+      throw new Error(`the two boots disagreed about package identity: ${identities.join(" | ")}`);
+    }
+    // Nothing in this step may name the source tree: the artifact carries its own
+    // frozen snapshot, and reading the repository would make the evidence a lie.
+    const evidence = `${seen.join("; ")}; ${identities.join("; ")}; scene ${String(sceneId)}`;
+    if (evidence.includes("packages/adapter/assets")) {
+      throw new Error("catalog evidence names the source tree");
+    }
+    return `${evidence}; installed ${String(installedPath)} across two boots offline`;
+  },
+
   async provenance(context) {
     const directory = path.dirname(context.artifact);
     const entries = (await readdir(directory)).sort();
