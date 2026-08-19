@@ -197,7 +197,9 @@ export async function mountAsset(
   // A pending retry carries only its operation id: path, hash, time and track all
   // come from the server-side record, so a client cannot redirect the mount.
   let placement: { assetPath: RelPath; assetContentHash: ContentHash; atSeconds: number; trackIndex: number };
-  let closing: string | null = null;
+  // Close carries the failure the row had when it was read: the journal compares
+  // it again before publish, so a mount cannot close a row that changed meanwhile.
+  let closing: { operationId: string; previousFailure: PendingMount["lastFailure"] } | null = null;
   if (input.operationId !== undefined) {
     const found = await dependencies.pendingMount.lookup(input.projectId, input.operationId);
     // A mount whose response was lost is replayed from the record, never mounted a
@@ -227,7 +229,7 @@ export async function mountAsset(
       atSeconds: record.atSeconds,
       trackIndex: record.trackIndex,
     };
-    closing = record.operationId;
+    closing = { operationId: record.operationId, previousFailure: record.lastFailure };
   } else {
     placement = {
       assetPath: input.assetPath,
@@ -387,8 +389,9 @@ export async function mountAsset(
       ? {
           pendingMountTransition: {
             kind: "close" as const,
-            operationId: closing,
+            operationId: closing.operationId,
             sceneId,
+            previousFailure: closing.previousFailure,
           },
         }
       : {}),
