@@ -2323,6 +2323,16 @@
             `atSeconds` của record chọn **index** chèn, còn start do planner timeline liền mạch (§5.3) quyết — nên
             suite khẳng định `trackIndex` (thứ đến thẳng từ row) và để start cho §5.3.
           </p>
+          <p class="text-slate-400 text-sm">
+            P9.5b: kill được tiêm đúng ranh giới publish/settle (`commitComposite` ném một lần trên chính instance
+            journal đang chạy), rồi **stop foundation và boot foundation thứ hai** trên cùng app-data/workspace để
+            chính startup production sửa. Hai điều được chốt thay vì đoán: (1) commit bị kill trả `recovery_required`
+            chứ không ném — authority đã map ranh giới đó, nên test khẳng định mã lỗi; (2) sau mount bị kill,
+            reconcile kết luận composite **đã** committed và áp `close` đã ghi ở T1, nên row trở lại `mounted` trỏ vào
+            scene có thật, retry thì replay. Ban đầu tôi viết assertion dạng nhánh chấp nhận cả hai kết cục, sau đó
+            probe xem thực tế nhánh nào chạy và làm nó xác định — test chấp nhận cả hai đáp án thì không chứng minh
+            gì cả.
+          </p>
         </article>
       </section>
     </main>
