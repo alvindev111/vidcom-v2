@@ -1165,6 +1165,15 @@ export interface CatalogPort {
 - `minCliVersion` upstream normalize thành `compatibility.minHyperframesVersion`, validate semver và
   so với `HYPERFRAMES_EXPECTED_VERSION` 0.7.86 để UI cảnh báo trước mount. Adapter khai
   `compare-versions` direct đúng 6.1.1 đã có transitively; không tự viết comparator và không thêm bytes.
+  - **Erratum bản 12.1 (2026-08-19, không đổi AC)**: dependency direct `compare-versions` 6.1.1 được khai
+    ở `@vidcom/core` thay vì `@vidcom/adapter`, vì quyết định version/compatibility là policy của Core
+    (`packages/core/src/domain/catalog.ts`) và Adapter chạm nó qua dependency `@vidcom/core` đã có. Resolution
+    đã nằm trong lock nên vẫn zero byte thêm. Kèm đó, `parseCatalogVersion` kiểm **shape** semver bằng regex
+    canonical semver.org chứ không dùng `validate()` lỏng của thư viện (`v1.2.0`, `1.2` bị từ chối), để một
+    version chỉ có đúng một representation trong manifest digest và grant binding; mọi so sánh thứ tự vẫn do
+    `compare-versions` thực hiện. Riêng `minHyperframesVersion` của upstream được so bằng validate/compare của
+    thư viện, nên yêu cầu lỏng như `0.8` vẫn trả kết luận thật, còn yêu cầu không so được (ví dụ `^0.8`) trả
+    `unknown` thay vì ngầm coi là tương thích.
 - **Snapshot upstream bất biến**: refresh gọi API GitHub allowlisted để resolve `main` thành commit
   40-hex + `committedAt`, rồi `registry.json` và item manifest metadata đều tải từ
   `raw.githubusercontent.com/heygen-com/hyperframes/<commit>/registry/...`, không tải tiếp qua `main`.

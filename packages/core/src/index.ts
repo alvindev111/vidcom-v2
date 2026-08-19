@@ -1,6 +1,7 @@
 export * from "./domain/invariants";
 export * from "./domain/magic-bytes";
 export * from "./domain/asset-names";
+export * from "./domain/catalog";
 export * from "./domain/plan-scene-order";
 export * from "./domain/plan-caption-cues";
 export * from "./domain/models";

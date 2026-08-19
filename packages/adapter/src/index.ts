@@ -5,6 +5,7 @@ export * from "./bgm/bgm-provider";
 export * from "./bgm/openverse-bgm-provider";
 export * from "./bgm/ccmixter-bgm-provider";
 export * from "./cache/thumbnail-cache";
+export * from "./catalog/normalize";
 export * from "./agent/agent-terminal-pty";
 export * from "./agent/executable-lookup";
 export * from "./db/client";

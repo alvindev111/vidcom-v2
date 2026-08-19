@@ -2099,6 +2099,22 @@
             cache publish sau current-check, retry drift đúng một lần, graph fail-closed và key route strict. Phần còn
             thiếu sẽ chỉ bổ sung test: stress đủ 20 batch, child thật qua NodeProcessSupervisor bị abort có proof và
             zero cache put, missing→present/runtime identity tạo miss, codec WebP tường minh, và project tree/revision
+          <p class="text-slate-400 text-sm">
+            Phase gate P7 lần đầu đỏ ở Windows main (CI run 32204316559 tại `d9bdabd`): 275 file PASS, 2 file fail,
+            đều là hai suite integration mới của P7.5. Nguyên nhân là hai đặc tính nền tảng của Windows, không phải
+            lỗi production: (1) Windows không cho `unlink` file SQLite đang mở, nên `afterEach` xoá temp root gặp
+            `EBUSY` trên `vidcom.sqlite` — cả hai suite đều mở database mà chỉ suite invalidation mới `destroy()` ở
+            cuối test, và lần fail assertion thì không bao giờ chạy tới đó; (2) watcher đệ quy trên Windows
+            (ReadDirectoryChangesW) báo thêm chính directory chứa file, nên outbox có `styles` (seq 1) trước
+            `styles/shared.css` (seq 2) trong khi assertion cũ đòi đúng một event.
+            Cách sửa nhỏ nhất, không hạ AC: mỗi suite đưa mọi database đã mở vào danh sách và `destroy()` trong
+            `afterEach` trước khi xoá cây, dùng `removeTree` sẵn có (retry EBUSY/ENOTEMPTY/EPERM) thay cho `rm` trực
+            tiếp; assertion outbox vẫn chứng minh đúng một `file.changed` `external` cho `styles/shared.css`, vẫn
+            bắt buộc mọi event thuộc đúng project và nguồn `external`, và chỉ cho phép thêm đúng path tổ tiên
+            `styles` — vốn invalidate cùng scene phụ thuộc theo quy tắc equal/ancestor, nên tính chọn lọc R10.6
+            không bị nới. Không có production code nào đổi trong lần sửa này.
+          </p>
+
             của temp fixture không đổi.
           </p>
           <p class="text-slate-400 text-sm">
@@ -2135,7 +2151,41 @@
             vẫn giữ nguyên quyền tải lần đầu. Full local suite 279 file/2.370 test PASS (audit import HyperFrames
             được cập nhật đúng cho `dependency-graph.ts` đã review), browser-session 14/14 với Chrome bắt buộc.
           </p>
-        </article>
+          <p class="text-slate-400 text-sm">
+            P8.1a dựng contract catalog normalized của VidCom trong Core (`domain/catalog.ts`) + `CatalogPort`.
+            Hai quyết định đáng ghi vì test đỏ phơi ra hành vi thư viện chứ không do đoán: `compare-versions`
+            `validate()` nhận cả `v1.2.0` và `0.8`, nên version canonical của ta kiểm shape bằng regex
+            semver.org (một version chỉ một representation, vì chuỗi này vào manifest digest và grant binding),
+            còn mọi so sánh thứ tự vẫn để thư viện làm — không tự viết comparator. Riêng `minHyperframesVersion`
+            của upstream vẫn dùng validate/compare của thư viện: yêu cầu lỏng `0.8` cho kết luận
+            `incompatible` thật, yêu cầu không so được (`^0.8`) trả `unknown` chứ không ngầm coi tương thích.
+            Dependency direct `compare-versions` 6.1.1 khai ở `@vidcom/core` thay vì Adapter như Design bản 12
+            viết, vì quyết định version/compatibility là policy Core (luật L4) và Adapter chạm qua dependency Core
+            đã có; lock chỉ thêm một dòng workspace, không thêm byte package. Erratum 12.1 đã ghi vào Design §5.16.
+            Contract ràng materialization với integrity (`verified` bắt buộc digest, `metadata` cấm digest),
+            buộc revision 40-hex trùng đúng version `git:` cho HyperFrames và cấm revision cho bundled semver,
+            giữ `entry` tương đối và nằm trong tập file đã verify, từ chối dependency tự tham chiếu/trùng/không
+            phải kebab slug, áp bound NFC cho metadata với tag canonical (NFC + dedupe + sort code point), và
+            topo-sort closure chỉ nhận `component` — cycle, thiếu, hoặc `example` scaffold thì từ chối cả gói.
+          </p>          <p class="text-slate-400 text-sm">
+            P8.1b đọc contract upstream thật ở `node_modules/@hyperframes/core/dist/registry/types.d.ts` trước
+            khi code, và phát hiện một điểm lệch của Design bản 12: 0.7.86 **có** `resolveBlockCategory` +
+            `BLOCK_CATEGORIES`, nên câu "upstream không có category" đã cũ. Vẫn giữ bảng category versioned của
+            VidCom (`CATALOG_CATEGORY_RULE_VERSION`, fallback `Other`) vì category nằm trong manifest digest,
+            còn enum upstream có thể đổi theo release — nếu dùng trực tiếp thì cùng một item có thể đổi digest chỉ
+            vì nâng HyperFrames. Validation shape của manifest viết tay thay vì thêm zod cho Adapter (Adapter hiện
+            không có zod), diagnostics ổn định để item bị bỏ chỉ log một lần.
+            Hai lỗi thật lộ ra ở lần green đầu và được sửa ở implementation chứ không sửa assertion: resolver
+            closure coi chính item gốc là dependency thiếu (lookup chỉ biết dependency, không biết root), và nhánh
+            bundled tính entry do chính nó khai là target trùng. Ngược lại, hai expectation của test bị sai và đã
+            sửa test: tên 129 ký tự chữ thường vẫn là slug hợp lệ nên chỉ ra `name_too_long`, và case
+            `name_mismatch` phải truyền entry name khác trong `registry.json`.
+            Kết quả: chỉ `hyperframes:block` top-level được map (`kind:"block"`); `example`/`component` đứng
+            một mình bị bỏ nên project scaffold không bao giờ thành template; đúng một composition top-level thành
+            `entry`; mọi `target` bị canonicalize trước khi dùng (`..`/absolute ⇒ `target_invalid`, root
+            `index.html` ⇒ `target_reserved`, trùng ⇒ `target_duplicate`); tên không phải slug bị từ chối
+            trước khi có thể vào URL/path.
+          </p>        </article>
       </section>
     </main>
   </body>

@@ -115,6 +115,7 @@
       "version": "0.1.0",
       "dependencies": {
         "@vidcom/contracts": "workspace:*",
+        "compare-versions": "6.1.1",
         "zod": "4.4.3",
       },
     },

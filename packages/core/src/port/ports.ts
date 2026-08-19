@@ -18,6 +18,12 @@ import type {
 } from "@vidcom/contracts";
 
 import type { AbsolutePath, BinaryContent, CompositionModel, CompositionOp, CompositionSource, DirectoryEntry, FileContent, FileNode, FileStat, FontCompatibilityIssue, ProjectRef } from "../domain/models";
+import type {
+  CatalogListFilter,
+  CatalogListing,
+  CatalogMaterializedFile,
+  VerifiedCatalogItem,
+} from "../domain/catalog";
 import type { MotionLibrary } from "../domain/motion-libraries";
 import type { Result } from "../error/result";
 import type {
@@ -478,6 +484,27 @@ export interface ThumbnailPort {
     keys: readonly ThumbnailKey[],
     signal: AbortSignal,
   ): Promise<readonly ThumbnailRenderResult[]>;
+}
+
+/**
+ * Catalog listing and package materialization (Design §5.16).
+ *
+ * `list` is metadata only: opening the catalog must never download or hash item
+ * payloads. `materialize` is the single seam that resolves the dependency
+ * closure at the same immutable revision, verifies digests and returns opaque
+ * staged capabilities — never payload arrays — so no package bytes reach Core,
+ * the transport or the UI.
+ */
+export interface CatalogPort {
+  list(filter: CatalogListFilter): Promise<CatalogListing>;
+  materialize(
+    name: string,
+    version: string,
+    signal: AbortSignal,
+  ): Promise<Result<{
+    item: VerifiedCatalogItem;
+    files: readonly CatalogMaterializedFile[];
+  }, DomainError>>;
 }
 
 /** Durable unit of work joining mutation, revision, audit, entity and event records. */
