@@ -2185,6 +2185,24 @@
             `entry`; mọi `target` bị canonicalize trước khi dùng (`..`/absolute ⇒ `target_invalid`, root
             `index.html` ⇒ `target_reserved`, trùng ⇒ `target_duplicate`); tên không phải slug bị từ chối
             trước khi có thể vào URL/path.
+          </p>          <p class="text-slate-400 text-sm">
+            P8.2a: catalog bundled là **byte đóng băng trong repo** + `manifest.json` dẫn xuất, và loader
+            `loadBundledCatalog` fail-closed: manifest không đọc được, thiếu file, digest lệch, hoặc item không
+            qua contract Core đều là lỗi — tuyệt đối không trả catalog rỗng, vì rail template rỗng trông y như lỗi
+            offline. `catalogManifestDigest` đặt cạnh loader và tính trên item đã normalize (title/description/
+            category/tags đã sort/compatibility/duration/entry/version/sourceRevision/dependencies/digest từng
+            file), nên script maintainer, loader và bước install sau này đều **tính lại** cùng một giá trị thay vì
+            tin giá trị đã lưu. Script `scripts/update-bundled-catalog.mjs` bắt buộc `--upstream-commit` 40-hex
+            tường minh, không resolve branch, không gọi mạng, và không nằm trong bất kỳ package script nào — có
+            test chứng minh điều đó cùng với việc `build-artifact`/`stage-artifact-runtime` không hề nhắc tới
+            host registry, `fetch(` hay path `/main/`.
+            `catalogAssetRoot` là path **bắt buộc** (khác `bgmAssetRoot` tuỳ chọn): artifact thiếu catalog phải
+            fail boot có mã lỗi. Staging chỉ copy đúng file mà manifest khai và verify lại digest ngay lúc copy, nên
+            file lạ nằm cạnh snapshot không thể lọt vào artifact; `verify-artifact` chỉ cho `catalog/manifest.json`
+            và `catalog/files/**` trong archive hyperframes. Packaged manifest chỉ require đúng path manifest:
+            tập file là dữ liệu curate thay đổi theo snapshot, còn tính toàn vẹn từng file đã do loader lo, và giữ
+            một path hợp đồng duy nhất giúp ma trận "bỏ từng required entry" của sea-bootstrap vẫn chính xác.
+            Preview dùng SVG inline để bản offline vẫn có ảnh nhưng review được bằng text.
           </p>        </article>
       </section>
     </main>
