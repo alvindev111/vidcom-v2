@@ -517,6 +517,9 @@ export function Timeline({
   // handler read the same list, so a documented key cannot stop working quietly.
   React.useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
+      // A focused scene control handles its own Alt+arrow and marks the event;
+      // taking it again here would send the move twice.
+      if (event.defaultPrevented) return;
       const action = transportActionFor(event, event.target);
       if (action === null) return;
       const at = (seconds: number) => onScrub(Math.min(Math.max(seconds, 0), duration));

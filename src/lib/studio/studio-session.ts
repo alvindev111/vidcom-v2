@@ -90,3 +90,34 @@ export async function consumeStudioEvents(
     if (chunk.done) return lastEventId;
   }
 }
+
+export interface StudioSourceEvent {
+  seq: number;
+  /** Project-relative paths the durable event names; empty means "unknown". */
+  paths: string[];
+}
+
+/**
+ * The paths one durable event touched, or `null` when it is not this project's.
+ *
+ * The event carries no bytes — only which files moved — so the browser refetches
+ * exactly the drafts that are affected rather than trusting a payload.
+ */
+export function studioEventPaths(event: StudioEvent, projectId: string): StudioSourceEvent | null {
+  const seq = studioEventChangeSeq(event, projectId);
+  if (seq === null) return null;
+  try {
+    const payload = JSON.parse(event.data) as { payload?: { paths?: unknown; path?: unknown } };
+    const paths = Array.isArray(payload.payload?.paths)
+      ? payload.payload.paths.filter((value): value is string => typeof value === "string")
+      : typeof payload.payload?.path === "string" ? [payload.payload.path] : [];
+    return { seq, paths };
+  } catch {
+    return { seq, paths: [] };
+  }
+}
+
+/** True for the stream's own "the history you missed is gone" frame. */
+export function isStudioResync(event: StudioEvent): boolean {
+  return event.type === "resync";
+}

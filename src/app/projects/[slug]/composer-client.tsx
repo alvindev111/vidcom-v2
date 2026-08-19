@@ -13,11 +13,15 @@ import type { PreviewSettings } from "@/lib/studio/preview-settings";
 import {
   consumeStudioEvents,
   historyPath,
+  isStudioResync,
   latestStudioChangeSeq,
   studioEventPath,
+  studioEventPaths,
   studioRequestInit,
   type StudioEvent,
+  type StudioSourceEvent,
 } from "@/lib/studio/studio-session";
+import { installUnloadGuard } from "@/lib/studio/unsaved-guard";
 import type { RootTrack, Scene, SourceFile } from "@/lib/studio/types";
 
 import { SHELL_SENTINEL } from "./shell-sentinel";
@@ -57,6 +61,12 @@ function MountedStudio({
   const [eventRevision, setEventRevision] = React.useState(0);
   const [externalChangeSeq, setExternalChangeSeq] = React.useState<number | null>(null);
   const [shellGeneration, setShellGeneration] = React.useState(0);
+  const [sourceEvent, setSourceEvent] = React.useState<StudioSourceEvent | null>(null);
+  const [resyncSeq, setResyncSeq] = React.useState(0);
+
+  // Closing the browser is one of the three ways a draft can be lost, and the
+  // only one the app cannot intercept itself.
+  React.useEffect(() => installUnloadGuard(), []);
 
   const studioInit = React.useCallback(
     (init = {}) => studioRequestInit(studioSessionId.current, init),
@@ -102,6 +112,15 @@ function MountedStudio({
         const payload = JSON.parse(event.data) as { projectId?: string };
         if (payload.projectId && payload.projectId !== projectId) return;
       } catch { /* resync remains a refresh signal */ }
+      // Drafts resolve per event, not per debounce window: a coalesced refresh
+      // would hide which files actually moved.
+      if (isStudioResync(event)) {
+        const seq = Number(event.id);
+        setResyncSeq((current) => Math.max(current, Number.isSafeInteger(seq) ? seq : current + 1));
+      } else {
+        const touched = studioEventPaths(event, projectId);
+        if (touched) setSourceEvent((current) => current && current.seq >= touched.seq ? current : touched);
+      }
       queuedChangeSeq = latestStudioChangeSeq(queuedChangeSeq, event, projectId);
       if (queued) clearTimeout(queued);
       queued = setTimeout(() => {
@@ -170,6 +189,8 @@ function MountedStudio({
   return (
     <StudioSessionProvider
       eventRevision={eventRevision}
+      sourceEvent={sourceEvent}
+      resyncSeq={resyncSeq}
       request={studioInit}
       resetHistory={resetHistory}
     >

@@ -61,6 +61,7 @@ export function CodePane({
           onEdit={(code) => source.edit(source.activePath, code)}
           onSave={() => void source.save(source.activePath, onProjectChanged)}
           onRevert={() => source.revert(source.activePath)}
+          onResolve={(choice) => source.resolve(source.activePath, choice)}
         />
       </ResizablePanel>
     </ResizablePanelGroup>

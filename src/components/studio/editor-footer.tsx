@@ -7,6 +7,7 @@ export function EditorFooter({
   dirty,
   saving,
   error,
+  saveBlocked = false,
   onSave,
   onRevert,
 }: {
@@ -14,6 +15,8 @@ export function EditorFooter({
   dirty: boolean;
   saving: boolean;
   error: string | null;
+  /** Something changed under this draft; saving would overwrite it unread. */
+  saveBlocked?: boolean;
   onSave: () => void;
   onRevert: () => void;
 }) {
@@ -53,7 +56,7 @@ export function EditorFooter({
           <Button
             size="sm"
             className="h-6 gap-1.5 text-xs"
-            disabled={saving}
+            disabled={saving || saveBlocked}
             onClick={onSave}
           >
             <SaveIcon className="size-3.5" />
