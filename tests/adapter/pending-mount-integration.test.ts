@@ -21,6 +21,8 @@ import { dbAll } from "../support/database";
 import { writeSampleProject } from "../support/sample-project";
 
 const roots: string[] = [];
+/** Foundations to stop before their directories go: Windows will not unlink an open SQLite file. */
+const runtimes: Array<{ stop(): Promise<void> }> = [];
 const projectId = "project_pending_integration" as ProjectId;
 const otherProjectId = "project_pending_other" as ProjectId;
 const origin = {
@@ -60,6 +62,7 @@ async function mediaBinaries(): Promise<{ ffmpegPath: AbsolutePath; ffprobePath:
 }
 
 afterEach(async () => {
+  for (const runtime of runtimes.splice(0)) await runtime.stop();
   await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
 });
 
@@ -80,6 +83,7 @@ async function fixture(label: string) {
   }, {
     async recoverJobs() {}, async startScheduler() {}, async startWatcher() {}, async openListener() { return null; },
   });
+  runtimes.push(foundation);
   const { infrastructure, application } = foundation;
   if (!application) throw new Error("application was not created");
   const ingestDependencies = {

@@ -14,6 +14,8 @@ import { createSequentialIdPort } from "../support/deterministic";
 import { writeSampleProject } from "../support/sample-project";
 
 const roots: string[] = [];
+/** Foundations to stop before their directories go: Windows will not unlink an open SQLite file. */
+const runtimes: Array<{ stop(): Promise<void> }> = [];
 const projectId = "project_pending_recovery" as ProjectId;
 const origin = {
   kind: "ui", sessionId: "01K30Y8Z7K0000000000000011", label: "Mount asset",
@@ -44,6 +46,7 @@ async function mediaBinaries(): Promise<{ ffmpegPath: AbsolutePath; ffprobePath:
 }
 
 afterEach(async () => {
+  for (const runtime of runtimes.splice(0)) await runtime.stop();
   await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
 });
 
@@ -68,6 +71,7 @@ async function boot(place: Awaited<ReturnType<typeof workspace>>, label: string,
   }, {
     async recoverJobs() {}, async startScheduler() {}, async startWatcher() {}, async openListener() { return null; },
   });
+  runtimes.push(foundation);
   const { infrastructure, application } = foundation;
   return {
     foundation,
