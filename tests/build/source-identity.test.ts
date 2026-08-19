@@ -106,7 +106,9 @@ describe("source identity", () => {
     expect(before.digest).not.toBe(linked.digest);
   });
 
-  it("notices a mode change on its own", async () => {
+  // Windows has no executable bit for Git to notice, so this case is only
+  // meaningful where the filesystem actually carries one.
+  it.runIf(process.platform !== "win32")("notices a mode change on its own", async () => {
     const root = await repository();
     const before = await identity(root);
     await chmod(path.join(root, "src", "one.ts"), 0o755);
