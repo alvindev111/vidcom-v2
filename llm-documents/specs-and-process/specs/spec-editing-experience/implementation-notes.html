@@ -2333,6 +2333,16 @@
             probe xem thực tế nhánh nào chạy và làm nó xác định — test chấp nhận cả hai đáp án thì không chứng minh
             gì cả.
           </p>
+          <p class="text-slate-400 text-sm">
+            P9.5c: undo chạy qua đúng cặp `history.begin` + `applyMutationInverse` mà route undo dùng — không tự chế
+            inverse — nên thứ được chứng minh là đường app thật đi: wrapper + sidecar bị gỡ, **file upload vẫn còn**,
+            row mở lại thành `uploaded_unmounted`, redo đóng lại đúng scene cũ. Sửa asset ngoài app trong lúc mount
+            đang undo ⇒ `canRedo` false và redo bị từ chối (file không bị đụng). Asset có sẵn thì **không** sinh
+            pending row nào. Ở Chrome, drop dispatch `DataTransfer` thật với PNG thật lên timeline surface: đúng một
+            upload + một mount, cùng một operationId, body mount **không** mang placement, clip mới được chọn. Tôi
+            kiểm chứng khối mới thực sự chạy (không lặng lẽ skip) bằng cách cố tình phá một assertion và xem nó fail.
+            Mount ở đó probe file thật nên workflow `Browser session` nay cài FFmpeg trên cả hai runner.
+          </p>
         </article>
       </section>
     </main>
