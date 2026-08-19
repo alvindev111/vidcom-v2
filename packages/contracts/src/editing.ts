@@ -249,3 +249,41 @@ export const DeleteEntryResponseSchema = z.strictObject({
 export const ApplyFontResponseSchema = z.strictObject({
   path: RelativePathSchema, family: z.string(), style: z.string(), ...mutationEnvelope,
 });
+
+/** §7.14 precondition and overflow policy, identical on both arms of the mount union. */
+const mountPolicy = {
+  ...expectedSource,
+  onOverflow: z.enum(["shrink", "extend-root"]),
+} as const;
+
+/**
+ * §7.14. A retry carries its operation id and nothing else: placement lives in the
+ * server-side record, so a payload that also sends a path or a time is rejected
+ * rather than silently redirecting the mount.
+ */
+export const MountAssetRequestSchema = z.union([
+  z.strictObject({
+    assetPath: RelativePathSchema,
+    assetContentHash: ContentHashSchema,
+    atSeconds: z.number().finite().nonnegative(),
+    trackIndex: z.number().int().nonnegative(),
+    ...mountPolicy,
+  }),
+  z.strictObject({ operationId: PendingMountOperationIdSchema, ...mountPolicy }),
+]);
+
+export const MountAssetResponseSchema = z.strictObject({
+  sceneId: IdentifierSchema,
+  durationSeconds: z.number().finite().positive(),
+  ...mutationEnvelope,
+});
+
+/** §7.14b path parameters; every branch requires the operation to be in this project. */
+export const PendingMountParamsSchema = z.strictObject({
+  id: IdentifierSchema,
+  operationId: PendingMountOperationIdSchema,
+});
+
+export const PendingMountListResponseSchema = z.strictObject({
+  items: z.array(PendingMountSchema),
+});

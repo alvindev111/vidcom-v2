@@ -17,7 +17,12 @@ import {
   MAX_BGM_BYTES,
   MAX_SOURCE_BYTES,
   LegacySceneMutationRequestSchema,
+  MountAssetRequestSchema,
+  MountAssetResponseSchema,
   MoveScenesRequestSchema,
+  PendingMountListResponseSchema,
+  PendingMountParamsSchema,
+  PendingMountSchema,
   RenameEntryRequestSchema,
   RenameEntryResponseSchema,
   PatchPreviewSettingsRequestSchema,
@@ -66,6 +71,7 @@ import {
   setSceneScript,
   setSceneTiming,
   moveScenes,
+  mountAsset,
   uploadBgm,
   ingestAsset,
   type ApplyFontDependencies,
@@ -74,6 +80,7 @@ import {
   type IngestAssetDependencies,
   type EntryCrudDependencies,
   type MotionLibraryInstallDependencies,
+  type PendingMountPort,
   type ProjectReadDependencies,
   type ProjectWriteDependencies,
   type Result,
@@ -99,7 +106,8 @@ export interface ProjectWriteRouteDependencies extends ProjectWriteDependencies 
   mimeFromPath(path: string): string | null;
   staging?: IngestAssetDependencies["staging"];
   sanitizer?: IngestAssetDependencies["sanitizer"];
-  pendingMount?: IngestAssetDependencies["pendingMount"];
+  /** Full port: ingest only looks operations up, but §7.14b lists and abandons them. */
+  pendingMount?: PendingMountPort;
   probe?: IngestAssetDependencies["probe"];
   styles?: ApplyFontDependencies["styles"];
 }
@@ -129,6 +137,21 @@ function projectId(c: Context): ProjectId {
   return parsed.success
     ? parsed.data.id as ProjectId
     : fail({ code: ErrorCode.SchemaInvalid, message: "project id is invalid", field: "id" });
+}
+
+function pendingMountStore(
+  dependencies: ProjectWriteRouteDependencies,
+): NonNullable<ProjectWriteRouteDependencies["pendingMount"]> {
+  return dependencies.pendingMount
+    ?? fail({ code: ErrorCode.StorageUnavailable, message: "pending mount services are unavailable" });
+}
+
+/** §7.14b: the operation is always read with the project in the path, never alone. */
+function pendingMountParams(c: Context): { id: ProjectId; operationId: string } {
+  const parsed = PendingMountParamsSchema.safeParse({ id: c.req.param("id"), operationId: c.req.param("operationId") });
+  return parsed.success
+    ? { id: parsed.data.id as ProjectId, operationId: parsed.data.operationId }
+    : fail({ code: ErrorCode.SchemaInvalid, message: "pending mount operation id is invalid", field: "operationId" });
 }
 
 async function json(c: Context): Promise<unknown> {
@@ -211,6 +234,63 @@ export function createProjectWriteRoutes(
       revision: uploaded.revision,
       changeSeq: uploaded.envelope?.changeSeq ?? null,
     }), 201);
+  });
+  routes.post("/v1/projects/:id/assets/mount", async (c) => {
+    const parsed = MountAssetRequestSchema.safeParse(await json(c));
+    if (!parsed.success) fail({ code: ErrorCode.SchemaInvalid, message: "asset mount payload is invalid" });
+    const id = projectId(c);
+    if (!dependencies.pendingMount || !dependencies.probe) {
+      fail({ code: ErrorCode.StorageUnavailable, message: "asset mount services are unavailable" });
+    }
+    const invocation = studioWriteInvocation(studio, c, id, "Mount asset");
+    const mounted = valueOf(await mountAsset({
+      ...dependencies,
+      pendingMount: dependencies.pendingMount,
+      probe: dependencies.probe,
+      toolAudit: invocation.toolAudit,
+    }, {
+      projectId: id,
+      ...parsed.data,
+      ...("assetPath" in parsed.data ? { assetPath: parsed.data.assetPath as RelPath } : {}),
+    } as Parameters<typeof mountAsset>[1], "user", invocation.origin));
+    return c.json(MountAssetResponseSchema.parse({
+      sceneId: mounted.sceneId,
+      durationSeconds: mounted.durationSeconds,
+      revision: mounted.envelope.projectRevision,
+      diagnostics: mounted.envelope.diagnostics,
+      changeSeq: mounted.envelope.changeSeq,
+    }), 201);
+  });
+  routes.get("/v1/projects/:id/pending-mounts", async (c) => {
+    const id = projectId(c);
+    const store = pendingMountStore(dependencies);
+    return c.json(PendingMountListResponseSchema.parse({ items: await store.listPending(id) }));
+  });
+  routes.get("/v1/projects/:id/pending-mounts/:operationId", async (c) => {
+    const params = pendingMountParams(c);
+    const store = pendingMountStore(dependencies);
+    const found = await store.lookup(params.id, params.operationId);
+    // `expired` and `never-seen` stay distinct in the port but read the same over
+    // HTTP: there is nothing left to resume either way, and a client that learns
+    // an unknown ULID once existed learns nothing it can act on.
+    if (found.state !== "active") {
+      fail({ code: ErrorCode.NotFound, message: "there is no pending upload for that operation", field: "operationId" });
+    }
+    return c.json(PendingMountSchema.parse(found.record));
+  });
+  routes.delete("/v1/projects/:id/pending-mounts/:operationId", async (c) => {
+    const params = pendingMountParams(c);
+    const store = pendingMountStore(dependencies);
+    try {
+      await store.abandon(params.id, params.operationId, "abandoned by the studio");
+    } catch (error) {
+      // A lost abandon/close race is a conflict, not a server fault: the row is
+      // already mounted, so the studio should re-read it rather than retry.
+      const code = (error as { code?: ErrorCode }).code;
+      if (code === undefined) throw error;
+      fail({ code, message: (error as Error).message, field: "operationId" });
+    }
+    return c.body(null, 204);
   });
   routes.post("/v1/projects/:id/entries", async (c) => {
     const parsed = CreateEntryRequestSchema.safeParse(await json(c));
