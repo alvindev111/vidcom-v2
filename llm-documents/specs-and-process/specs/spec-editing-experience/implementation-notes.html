@@ -2375,6 +2375,16 @@
             studio nay stamp `data-preview-change-seq` / `data-preview-error` / `data-studio-event-seq` để trạng thái
             đồng bộ quan sát được. Hai case đo để `it.skip` kèm lý do trong file, không fake PASS.
           </p>
+          <p class="text-slate-400 text-sm">
+            P11 (trạng thái): 11.2, 11.3a–d, 11.4, 11.5a–e đã đóng với evidence thật; gate cuối chạy trên identity
+            `36deb17…` digest `2a860457…` (0 file đổi) — `CI` 8/8 xanh trên 3 OS + browser + packaged, `Packaged smoke`
+            3/3 xanh. Còn đúng **một** việc mở: 11.1 (số đo R4.1c) bị chặn bởi lỗi P4 — double buffer tạo player thứ
+            hai cho cùng composition, player đó không bao giờ nhận timeline, nên mọi reload sau lần mount đầu bị từ
+            chối. Vì thế spec **giữ `inprocess`**: chuyển sang `complete` sẽ là ghi một kết quả không đúng. Hai lỗi
+            đa OS được sửa trong lúc chạy gate (Windows EBUSY khi xoá SQLite đang mở; Windows không có bit
+            executable nên case mode-change không thể đúng ở đó), và hai lần flake local (`browser-session` timing,
+            RSS budget của `asset-streaming-listener`) được ghi đúng bản chất chứ không rerun im lặng.
+          </p>
         </article>
       </section>
     </main>
