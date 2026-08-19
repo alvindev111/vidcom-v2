@@ -67,6 +67,12 @@ const expectedSuccess: Record<string, object> = {
     backupId: "backup-contract-matrix",
     envelope: { projectRevision: 3 },
   },
+  reorder_scenes: { changed: false },
+  move_scenes: { changed: false },
+  delete_scenes: {
+    backupId: "backup-contract-matrix",
+    deletedFiles: ["compositions/scene-1.html"],
+  },
   list_tts_voices: { providers: [{ id: "matrix-tts", available: true }] },
   start_tts: { jobId: "job_matrix", status: "queued", pollWith: "get_job_status" },
   get_job_status: {

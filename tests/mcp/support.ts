@@ -116,6 +116,24 @@ export const CONTRACT_MATRIX_CASES: Record<string, Record<string, unknown>> = {
     expectedRevision: 2,
     grantId: "grant-contract-matrix",
   },
+  reorder_scenes: {
+    projectId: matrixProjectId,
+    sceneId: "scene-1",
+    toIndex: 0,
+    expectedContentHash: matrixHash,
+  },
+  move_scenes: {
+    projectId: matrixProjectId,
+    sceneIds: ["scene-1"],
+    deltaSeconds: 0,
+    expectedContentHash: matrixHash,
+  },
+  delete_scenes: {
+    projectId: matrixProjectId,
+    sceneIds: ["scene-1"],
+    expectedRevision: 2,
+    grantId: "grant-contract-matrix",
+  },
   list_tts_voices: { projectId: matrixProjectId },
   start_tts: {
     projectId: matrixProjectId,

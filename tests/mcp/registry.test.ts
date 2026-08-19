@@ -539,6 +539,18 @@ describe("complete tool descriptor contract", () => {
           },
           {
             "annotations": {
+              "destructiveHint": true,
+              "idempotentHint": false,
+              "openWorldHint": false,
+              "readOnlyHint": false,
+            },
+            "description": "Use when permanently removing a whole selection of scenes, their mounts, unique sources and narration, with one verified backup. Do not use to hide or reorder scenes, to delete a single scene when delete_scene already covers it, or when shared references must remain. Preconditions: sceneIds and expectedRevision come from current project context; omit grantId to create one approval request for the whole group, then retry once with the issued grantId and the identical selection. Side effects: after approval, deletes every owned artifact of the selection, updates the root duration, publishes one backup and commits one destructive revision. Errors/recovery: refresh context after write_conflict; request new approval after approval_invalid or approval_expired; on recovery_required stop and recover; never retry committed_response_error.",
+            "level": "destructive",
+            "name": "delete_scenes",
+            "title": "Delete several scenes",
+          },
+          {
+            "annotations": {
               "destructiveHint": false,
               "idempotentHint": true,
               "openWorldHint": false,
@@ -712,6 +724,18 @@ describe("complete tool descriptor contract", () => {
               "openWorldHint": false,
               "readOnlyHint": false,
             },
+            "description": "Use when shifting a whole selection of scenes by the same amount of time while keeping the gaps between them. Do not use to reorder one scene, to change durations, or to move scenes onto another track. Preconditions: sceneIds must be unique and current, deltaSeconds is the shift in seconds, and expectedContentHash comes from read_composition; pass extendRoot only after a root-overflow refusal that says it is allowed. Side effects: applies the whole shift in one revision or none of it, so a refused group leaves the timeline untouched. Errors/recovery: on write_conflict re-read the entry composition; timing_invalid or duration_overflow names what the group would have broken; on recovery_required stop writes and recover; never retry committed_response_error.",
+            "level": "write",
+            "name": "move_scenes",
+            "title": "Move several scenes together",
+          },
+          {
+            "annotations": {
+              "destructiveHint": false,
+              "idempotentHint": false,
+              "openWorldHint": false,
+              "readOnlyHint": false,
+            },
             "description": "Use when correcting the text, voice or offset of exactly one existing cue while its siblings keep their synthesis state. Do not use to add or remove cues, which replace_narration_cues owns, and do not use to synthesize audio. Preconditions: projectId, sceneId, cueId and expectedContentHash come from get_narration_cues, and at least one of text, voice or offsetSeconds must be present. Side effects: rewrites the sidecar as one journaled write and commits one revision; changing text or voice marks only that cue stale, while an offset change keeps its audio valid. Errors/recovery: not_found means that cueId is gone; write_conflict means the sidecar changed, so re-read it; re-run start_tts for cues whose staleSince is set.",
             "level": "write",
             "name": "patch_narration_cue",
@@ -752,6 +776,18 @@ describe("complete tool descriptor contract", () => {
             "level": "write",
             "name": "rename_project",
             "title": "Rename a project",
+          },
+          {
+            "annotations": {
+              "destructiveHint": false,
+              "idempotentHint": false,
+              "openWorldHint": false,
+              "readOnlyHint": false,
+            },
+            "description": "Use when moving one existing scene to a different position, or onto a different track, and letting the timeline close the gap it leaves. Do not use to change a scene's own start or duration, to move several scenes together, or to delete one. Preconditions: sceneId, toIndex and expectedContentHash come from read_composition or get_project_context; pass extendRoot only after a root-overflow refusal that says it is allowed. Side effects: rewrites the entry composition in one revision, shifting the scenes the move displaces and growing the root only when extendRoot was asked for. Errors/recovery: on write_conflict re-read the entry composition; a duration_overflow names the limit it hit; on recovery_required stop writes and recover; committed_response_error means the mutation committed, so do not retry it.",
+            "level": "write",
+            "name": "reorder_scenes",
+            "title": "Reorder one scene",
           },
           {
             "annotations": {

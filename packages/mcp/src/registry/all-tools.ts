@@ -25,11 +25,12 @@ import { registerLifecycleTools, type LifecycleToolDependencies } from "./lifecy
 import { registerNarrationTools, type NarrationToolDependencies } from "./narration-tools";
 import { registerBgmTools, type BgmToolDependencies } from "./bgm-tools";
 import { registerPaletteTools } from "./palette-tools";
+import { registerEditingTools, type EditingToolDependencies } from "./editing-tools";
 
 export type VidcomToolDependencies =
   ReadToolDependencies & WriteToolDependencies & DestructiveToolDependencies & JobToolDependencies
   & DeliveryLoopToolDependencies & LifecycleToolDependencies & AssetToolDependencies
-  & NarrationToolDependencies & BgmToolDependencies;
+  & NarrationToolDependencies & BgmToolDependencies & EditingToolDependencies;
 
 /** Registers the complete public tool surface exactly once. */
 export function registerVidcomTools(registry: ToolRegistry, dependencies: VidcomToolDependencies): void {
@@ -46,6 +47,7 @@ export function registerVidcomTools(registry: ToolRegistry, dependencies: Vidcom
   registerAssetTools(registry, dependencies);
   registerNarrationTools(registry, dependencies);
   registerBgmTools(registry, dependencies);
+  registerEditingTools(registry, dependencies);
   registerPaletteTools(registry);
   registry.assertPublicCatalogue();
 }

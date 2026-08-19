@@ -108,7 +108,7 @@ describe.each(["legacy", "modern"] as const)("%s tools/list golden", (era) => {
     ]);
     expect(results[1]).toEqual(results[0]);
     expect(results[2]).toEqual(results[0]);
-    expect(results[0].tools).toHaveLength(35);
+    expect(results[0].tools).toHaveLength(38);
     for (const tool of results[0].tools as Array<{ description: string }>) {
       expect(tool.description).toContain("Use when");
       expect(tool.description).toContain("Do not use");

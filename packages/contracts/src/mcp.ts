@@ -34,6 +34,13 @@ import {
   SearchBgmOutputSchema,
 } from "./bgm";
 import { NarrationCueInputSchema } from "./delivery-loop-http";
+import {
+  DeleteScenesRequestSchema,
+  DeleteScenesResponseSchema,
+  MoveScenesRequestSchema,
+  ReorderScenesRequestSchema,
+  SceneOrderMutationResponseSchema,
+} from "./editing";
 import { ErrorCode } from "./errors";
 import { MotionLibraryIdSchema } from "./motion-libraries";
 import {
@@ -571,6 +578,34 @@ export interface ToolSchemaEntry {
 }
 
 /** Canonical schema and authorization-level catalogue for every public MCP tool. */
+
+/**
+ * §7.2–§7.4 over MCP.
+ *
+ * The payloads are the HTTP ones plus the project the path carries there: one
+ * definition, imported by both surfaces, because two copies of a schema are two
+ * schemas that will disagree.
+ */
+export const ReorderScenesInputSchema = z.strictObject({
+  ...projectIdInput,
+  ...ReorderScenesRequestSchema.shape,
+});
+export const ReorderScenesOutputSchema = SceneOrderMutationResponseSchema;
+
+export const MoveScenesInputSchema = z.strictObject({
+  ...projectIdInput,
+  ...MoveScenesRequestSchema.shape,
+});
+export const MoveScenesOutputSchema = SceneOrderMutationResponseSchema;
+
+/** Without `grantId` this asks for approval; with it, the deletion runs. */
+export const DeleteScenesInputSchema = z.strictObject({
+  ...projectIdInput,
+  ...DeleteScenesRequestSchema.shape,
+  grantId,
+});
+export const DeleteScenesOutputSchema = DeleteScenesResponseSchema;
+
 export const TOOL_SCHEMA_CATALOGUE = {
   adopt_project: {
     input: AdoptProjectInputSchema,
@@ -581,6 +616,11 @@ export const TOOL_SCHEMA_CATALOGUE = {
     input: CancelJobInputSchema,
     output: CancelJobOutputSchema,
     level: "job",
+  },
+  delete_scenes: {
+    input: DeleteScenesInputSchema,
+    output: DeleteScenesOutputSchema,
+    level: "destructive",
   },
   import_bgm: {
     input: ImportBgmInputSchema,
@@ -596,6 +636,16 @@ export const TOOL_SCHEMA_CATALOGUE = {
     input: ListBgmBedsInputSchema,
     output: ListBgmBedsOutputSchema,
     level: "read",
+  },
+  move_scenes: {
+    input: MoveScenesInputSchema,
+    output: MoveScenesOutputSchema,
+    level: "write",
+  },
+  reorder_scenes: {
+    input: ReorderScenesInputSchema,
+    output: ReorderScenesOutputSchema,
+    level: "write",
   },
   search_bgm: {
     input: SearchBgmInputSchema,
