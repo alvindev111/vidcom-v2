@@ -2385,6 +2385,17 @@
             executable nên case mode-change không thể đúng ở đó), và hai lần flake local (`browser-session` timing,
             RSS budget của `asset-streaming-listener`) được ghi đúng bản chất chứ không rerun im lặng.
           </p>
+          <p class="text-slate-400 text-sm">
+            P11.1 (đào tiếp): tìm được **một lỗi thật và đã sửa** — `createCandidate` gán `src` **trước** khi append,
+            nên candidate nạp tài liệu lúc còn detached (ở đó `window.parent` chính là nó), runtime không mở bridge;
+            tệ hơn, một lần nạp như vậy làm cả trang mất khả năng bridge sau đó. Đo ở Chrome: append-rồi-gán-src báo
+            timeline sau ~300 ms, gán-src-rồi-append thì không bao giờ. Sau khi sửa, replacement player viết tay
+            bridge được, nhưng candidate của buffer vẫn không nhận timeline — cả khi đứng cạnh engine đang hiển thị
+            lẫn khi đã retire engine đó trước (đã thử, đã đo; biến thể retire-first bị revert vì kết cục là **không
+            còn preview nào** thay vì preview cũ). Đã loại bằng thực nghiệm: độ hiển thị của candidate, "claim" chung
+            ở window cha, URL (kể cả cache-bust), GSAP, và bản thân tài liệu. Phần còn lại nằm trong cặp
+            player/runtime của HyperFrames.
+          </p>
         </article>
       </section>
     </main>
