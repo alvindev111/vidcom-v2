@@ -60,6 +60,11 @@ function results(entries: Array<Partial<StepResult> & { id: string }>): StepResu
   return entries.map((entry) => ({ required: true, status: "passed", ...entry }));
 }
 
+const EDITING_TOOL_NAMES = [
+  "reorder_scenes", "move_scenes", "delete_scenes",
+  "list_catalog_items", "generate_captions", "mount_asset",
+];
+
 describe("packaged smoke steps", () => {
   it("attaches a packaged studio session and reuses its header for project writes", async () => {
     const serving = {
@@ -90,7 +95,12 @@ describe("packaged smoke steps", () => {
     const session = (era: "legacy" | "modern") => ({
       connect: async () => { events.push(`${era}:connect`); },
       listTools: async () => ({
-        tools: [{ name: era === "legacy" ? "list_projects" : "create_scene" }],
+        // Both eras must publish the editing tools, so the fake catalogue does
+        // too — otherwise this suite would only prove the assertion is absent.
+        tools: [
+          { name: era === "legacy" ? "list_projects" : "create_scene" },
+          ...EDITING_TOOL_NAMES.map((name) => ({ name })),
+        ],
       }),
       callTool: async (name: string) => {
         events.push(`${era}:${name}`);
@@ -119,7 +129,7 @@ describe("packaged smoke steps", () => {
         events.push("coexistence");
         expect(closed).toEqual([]);
       },
-    })).resolves.toEqual({ legacyTools: 1, modernTools: 1 });
+    })).resolves.toEqual({ legacyTools: 7, modernTools: 7 });
 
     expect(events).toEqual([
       "legacy:connect",
@@ -139,7 +149,12 @@ describe("packaged smoke steps", () => {
     const session = (era: "legacy" | "modern") => ({
       connect: async () => undefined,
       listTools: async () => ({
-        tools: [{ name: era === "legacy" ? "list_projects" : "create_scene" }],
+        // Both eras must publish the editing tools, so the fake catalogue does
+        // too — otherwise this suite would only prove the assertion is absent.
+        tools: [
+          { name: era === "legacy" ? "list_projects" : "create_scene" },
+          ...EDITING_TOOL_NAMES.map((name) => ({ name })),
+        ],
       }),
       callTool: async (name: string) => name === "list_projects"
         ? { structuredContent: { projects: [{ projectId: "project_smoke" }] } }

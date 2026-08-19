@@ -79,6 +79,30 @@ function packagedMcpSession(context, era) {
   };
 }
 
+/**
+ * Tools the editing experience publishes, checked inside the packaged artifact.
+ *
+ * A tool can exist in the repository and still be missing from a build, so the
+ * catalogue is asserted where it actually ships, and in both eras: a tool an
+ * older client cannot see is a tool half the hosts do not have.
+ */
+const EDITING_TOOLS = [
+  "reorder_scenes",
+  "move_scenes",
+  "delete_scenes",
+  "list_catalog_items",
+  "generate_captions",
+  "mount_asset",
+];
+
+function assertEditingToolsPublished(era, listed) {
+  const names = new Set((listed.tools ?? []).map((tool) => tool.name));
+  const missing = EDITING_TOOLS.filter((name) => !names.has(name));
+  if (missing.length > 0) {
+    throw new Error(`${era} catalogue omitted ${missing.join(", ")}`);
+  }
+}
+
 /** Runs both supported MCP SDK generations against the packaged stdio entry. */
 export async function exercisePackagedMcpStdioPair(context, input, dependencies = {}) {
   const createSession = dependencies.createSession ?? ((era) => packagedMcpSession(context, era));
@@ -95,6 +119,7 @@ export async function exercisePackagedMcpStdioPair(context, input, dependencies 
     if (!legacyTools.tools?.some((tool) => tool.name === "list_projects")) {
       throw new Error("legacy catalogue omitted list_projects");
     }
+    assertEditingToolsPublished("legacy", legacyTools);
     phase = "legacy list_projects";
     const projects = await legacy.callTool("list_projects", {});
     if (projects.isError === true
@@ -112,6 +137,7 @@ export async function exercisePackagedMcpStdioPair(context, input, dependencies 
     if (!modernTools.tools?.some((tool) => tool.name === "create_scene")) {
       throw new Error("modern catalogue omitted create_scene");
     }
+    assertEditingToolsPublished("modern", modernTools);
     phase = "modern create_scene";
     const written = await modern.callTool("create_scene", input.createScene);
     if (written.isError === true) throw new Error("modern create_scene returned a tool error");
