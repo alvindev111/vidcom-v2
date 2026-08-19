@@ -2303,6 +2303,16 @@
             test riêng. Tham chiếu: `rail-media.jpg` cho dropzone + empty state, `02-timeline.jpg` cho lane làm drop
             target (thêm drop marker) — lấy affordance, không copy pixel.
           </p>
+          <p class="text-slate-400 text-sm">
+            P9.4: sự thật "thiếu nguồn" tính **một lần ở parser** — chỗ duy nhất biết project root — và chỉ cho src
+            tương đối; gọi một URL remote là "missing" sẽ là báo động giả. Lane hiện **đường dẫn**, vì đường dẫn là thứ
+            duy nhất cho biết phải khôi phục file nào. Focus clip mới giữ trong `ref` tới khi model reload có scene đó
+            (chọn id timeline chưa render thì vô nghĩa), và effect không ghi state (lint chặn setState đồng bộ trong
+            effect). Bắt được một regression thật: drop surface của 9.3 gọi `preventDefault` cho **mọi** dragover, nuốt
+            luôn drag reorder scene — `browser-session` fail với bundle build sau 9.3, pass sau khi surface chỉ phản ứng
+            với drag mang `Files` hoặc kiểu asset-path. Bài học vận hành: suite browser chạy trên **bundle đã build**,
+            nên phải `bun run build` trước khi tin kết quả của nó.
+          </p>
         </article>
       </section>
     </main>
