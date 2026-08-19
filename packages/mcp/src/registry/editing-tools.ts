@@ -291,14 +291,6 @@ export function generateCaptionsTool(
   };
 }
 
-/**
- * Not registered yet.
- *
- * The tool itself is complete, but the contract matrix has to be able to run
- * every registered tool end to end, and a real catalog install needs a
- * materialized package fixture that does not exist yet. Registering it before
- * that would mean a tool whose behaviour is asserted nowhere.
- */
 export function installCatalogItemTool(
   dependencies: EditingToolDependencies,
 ): ToolDefinition<z.infer<typeof InstallCatalogItemInputSchema>, z.infer<typeof InstallCatalogItemOutputSchema>> {
@@ -416,6 +408,7 @@ export function registerEditingTools(registry: ToolRegistry, dependencies: Editi
   registry.register(moveScenesTool(dependencies));
   registry.register(deleteScenesTool(dependencies));
   registry.register(listCatalogItemsTool(dependencies));
+  registry.register(installCatalogItemTool(dependencies));
   registry.register(generateCaptionsTool(dependencies));
   registry.register(mountAssetTool(dependencies));
 }

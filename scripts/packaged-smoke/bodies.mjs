@@ -93,6 +93,7 @@ const EDITING_TOOLS = [
   "list_catalog_items",
   "generate_captions",
   "mount_asset",
+  "install_catalog_item",
 ];
 
 function assertEditingToolsPublished(era, listed) {

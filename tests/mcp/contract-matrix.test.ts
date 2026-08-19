@@ -69,6 +69,7 @@ const expectedSuccess: Record<string, object> = {
     envelope: { projectRevision: 3 },
   },
   list_catalog_items: { source: "bundled", stale: false },
+  install_catalog_item: { packageStatus: "installed" },
   generate_captions: { timingSource: "estimated" },
   mount_asset: { replayed: false },
   reorder_scenes: { changed: false },

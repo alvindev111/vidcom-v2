@@ -686,6 +686,11 @@ export const TOOL_SCHEMA_CATALOGUE = {
     output: ListBgmBedsOutputSchema,
     level: "read",
   },
+  install_catalog_item: {
+    input: InstallCatalogItemInputSchema,
+    output: InstallCatalogItemOutputSchema,
+    level: "write",
+  },
   list_catalog_items: {
     input: ListCatalogItemsInputSchema,
     output: ListCatalogItemsOutputSchema,

@@ -62,7 +62,7 @@ function results(entries: Array<Partial<StepResult> & { id: string }>): StepResu
 
 const EDITING_TOOL_NAMES = [
   "reorder_scenes", "move_scenes", "delete_scenes",
-  "list_catalog_items", "generate_captions", "mount_asset",
+  "list_catalog_items", "generate_captions", "mount_asset", "install_catalog_item",
 ];
 
 describe("packaged smoke steps", () => {
@@ -129,7 +129,7 @@ describe("packaged smoke steps", () => {
         events.push("coexistence");
         expect(closed).toEqual([]);
       },
-    })).resolves.toEqual({ legacyTools: 7, modernTools: 7 });
+    })).resolves.toEqual({ legacyTools: 8, modernTools: 8 });
 
     expect(events).toEqual([
       "legacy:connect",

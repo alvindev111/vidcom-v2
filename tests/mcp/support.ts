@@ -1,3 +1,8 @@
+import { createHash } from "node:crypto";
+import { mkdtemp, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import nodePath from "node:path";
+
 import {
   type BgmProviderTrack,
   type ContentHash,
@@ -19,7 +24,9 @@ import {
   type MutationRequest,
   type ProjectRef,
   type ResolvedPath,
+  type CatalogMaterializedFile,
   type ToolAuditEntry,
+  type VerifiedCatalogItem,
 } from "@vidcom/core";
 import {
   registerVidcomTools,
@@ -135,6 +142,14 @@ export const CONTRACT_MATRIX_CASES: Record<string, Record<string, unknown>> = {
     grantId: "grant-contract-matrix",
   },
   list_catalog_items: { kind: "template" },
+  install_catalog_item: {
+    projectId: matrixProjectId,
+    name: "lower-third",
+    version: "1.2.0",
+    mount: { kind: "new-scene", toIndex: 1 },
+    expectedRevision: 2,
+    grantId: "grant-contract-matrix",
+  },
   generate_captions: {
     projectId: matrixProjectId,
     sceneId: "scene-9",
@@ -226,6 +241,68 @@ function createBaseRegistry(auditEntries: ToolAuditEntry[] = [], journalOwned = 
 }
 
 /** Registers every production descriptor against a deterministic successful project harness. */
+
+/** A verified, materialized package so `install_catalog_item` can be run for real. */
+const PACKAGE_ENTRY = "blocks/lower-third/index.html" as RelPath;
+const PACKAGE_STYLE = "blocks/lower-third/style.css" as RelPath;
+const PACKAGE_ENTRY_BYTES = "<section data-composition-id=\"lower-third\"><p>lower third</p></section>\n";
+const PACKAGE_STYLE_BYTES = ".lower-third { color: red }\n";
+const packageDigest = (content: string) =>
+  `sha256:${createHash("sha256").update(content).digest("hex")}` as ContentHash;
+
+function verifiedPackage(): VerifiedCatalogItem {
+  const item = {
+    name: "lower-third",
+    kind: "block",
+    title: "Lower third",
+    description: null,
+    tags: ["social"],
+    category: "Social",
+    version: "1.2.0",
+    integrity: {
+      algo: "sha256" as const,
+      // The manifest carries bare hex; the guard adds the `sha256:` prefix when
+      // it compares, so storing a prefixed digest here would double it.
+      files: {
+        [PACKAGE_ENTRY]: createHash("sha256").update(PACKAGE_ENTRY_BYTES).digest("hex"),
+        [PACKAGE_STYLE]: createHash("sha256").update(PACKAGE_STYLE_BYTES).digest("hex"),
+      },
+      manifest: "",
+    },
+    materialization: "verified" as const,
+    source: { registry: "bundled" as const, url: null, revision: null, committedAt: null },
+    dependencies: [],
+    compatibility: { aspectRatios: null, minWidth: null, fps: null, minHyperframesVersion: null },
+    durationSeconds: 4,
+    entry: PACKAGE_ENTRY,
+    preview: null,
+  } as VerifiedCatalogItem;
+  // Bare hex: the manifest digest travels without an algorithm prefix.
+  item.integrity.manifest = createHash("sha256").update(`${item.name}@${item.version}`).digest("hex");
+  return item;
+}
+
+/** Writes the package's bytes where the installer will read them from. */
+async function materializePackage(): Promise<CatalogMaterializedFile[]> {
+  const directory = await mkdtemp(nodePath.join(tmpdir(), "vidcom-matrix-package-"));
+  const entries: Array<[RelPath, string]> = [
+    [PACKAGE_ENTRY, PACKAGE_ENTRY_BYTES],
+    [PACKAGE_STYLE, PACKAGE_STYLE_BYTES],
+  ];
+  const files: CatalogMaterializedFile[] = [];
+  for (const [target, content] of entries) {
+    const sourcePath = nodePath.join(directory, nodePath.basename(target));
+    await writeFile(sourcePath, content, "utf8");
+    files.push({
+      path: target,
+      contentHash: packageDigest(content),
+      source: { sourcePath: sourcePath as AbsolutePath, contentHash: packageDigest(content) },
+      encoding: "utf8",
+    });
+  }
+  return files;
+}
+
 export function createContractMatrixRegistry(): ToolRegistry {
   const registry = createBaseRegistry([], true);
   const ref: ProjectRef = {
@@ -478,6 +555,47 @@ export function createContractMatrixRegistry(): ToolRegistry {
         source: "bundled" as const,
         stale: false,
       }),
+    },
+    catalogInstall: {
+      workspace: {
+        readProjectRef: async (projectId: ProjectId) => projectId === matrixProjectId ? ref : null,
+        resolve: async (_ref: ProjectRef, path: RelPath) => ok(path as unknown as ResolvedPath),
+        readFile: async (path: ResolvedPath) => {
+          const content = files.get(path);
+          return content === undefined ? null : { content, contentHash: matrixHash };
+        },
+        readHash: async (path: ResolvedPath) => files.has(path) ? matrixHash : null,
+        exists: async (path: ResolvedPath) => files.has(path),
+      },
+      composition: {
+        parseProject: async () => model,
+        applyOps: async () => ok("<main data-composition-id=\"root\"></main>"),
+      },
+      journal: { latestRevision: async () => 2 },
+      catalog: {
+        materialize: async () => ok({
+          item: verifiedPackage(),
+          files: await materializePackage(),
+          release: async () => {},
+        }),
+      },
+      // Nothing of this package is installed yet, which is the case the matrix
+      // exercises: a first install, not a reinstall decision.
+      installedProvenance: async () => null,
+      // A real hasher here: the installer verifies every materialized file
+      // against the manifest, so a constant would only prove the constant.
+      hashContent: (content: string | Uint8Array) =>
+        `sha256:${createHash("sha256").update(content).digest("hex")}` as ContentHash,
+      // The guard compares this against the item's own manifest digest; the
+      // fixture states both from one place so they agree by construction.
+      manifestDigest: (candidate: VerifiedCatalogItem) => candidate.integrity.manifest,
+      clock: { now: () => new Date("2026-08-02T00:00:00.000Z") },
+      approval: { planReserve: async () => ok(undefined) },
+      authority: {
+        mutateSource: async () => ok({
+          projectRevision: 3, entityRevision: null, fileHashes: {}, diagnostics: [], changeSeq: 3,
+        }),
+      },
     },
     mount: {
       workspace: {

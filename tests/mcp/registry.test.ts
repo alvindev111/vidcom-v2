@@ -652,6 +652,18 @@ describe("complete tool descriptor contract", () => {
               "openWorldHint": false,
               "readOnlyHint": false,
             },
+            "description": "Use when installing one packaged catalog item into the project and mounting it as a new scene or inside an existing one. Do not use to browse the catalog, to install several items at once, or to overwrite an existing copy without saying so. Preconditions: name, version, mount and expectedRevision come from list_catalog_items and get_project_context; omit grantId to plan and request approval, then retry once with the issued grantId and the identical intent, including existingPolicy. Side effects: after approval, writes the item's files and mounts it in one revision, and records where the package came from. Errors/recovery: precondition_required means the package is already installed and needs an explicit existingPolicy — choose one deliberately rather than assuming replace; refresh context after write_conflict; request new approval after approval_invalid or approval_expired; never retry committed_response_error.",
+            "level": "write",
+            "name": "install_catalog_item",
+            "title": "Install a catalog item",
+          },
+          {
+            "annotations": {
+              "destructiveHint": false,
+              "idempotentHint": false,
+              "openWorldHint": false,
+              "readOnlyHint": false,
+            },
             "description": "Use when a composition needs GSAP, Anime.js, Motion One, Lottie, or Three.js before referencing it in source; GSAP is the default for the multi-phase choreography required by story scenes. Do not use to add a CDN script tag, install an arbitrary npm package, write the composition markup itself, or substitute a library install for an actual motion map. Preconditions: projectId comes from list_projects; the library version is pinned by the studio and is not caller-selectable. Side effects: copies the pinned library into assets/vendor/ as one atomic mutation and commits one revision; re-running returns already_installed without a write. Errors/recovery: returns the paste-ready scriptTag and entry path to use; on write_conflict re-read and retry; storage_unavailable means the studio install is incomplete, so report it instead of falling back to a CDN.",
             "level": "write",
             "name": "install_motion_library",

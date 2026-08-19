@@ -148,6 +148,18 @@ describe("all registered tool handlers", () => {
         clock: { now: () => new Date(0) },
       },
       catalog: { list: async () => ({ items: [], source: "bundled" as const, stale: false }) },
+      catalogInstall: {
+        workspace: { readProjectRef: async () => null },
+        composition: {},
+        journal: { latestRevision: async () => 0 },
+        catalog: { materialize: async () => ({ ok: false as const, error: { code: "project_not_found", message: "project was not found" } }) },
+        installedProvenance: async () => null,
+        hashContent: () => digest("1"),
+        manifestDigest: () => "",
+        clock: { now: () => new Date(0) },
+        approval: { planReserve: async () => ({ ok: true as const, value: undefined }) },
+        authority: {},
+      },
     } as unknown as VidcomToolDependencies;
     dependencies.reads = dependencies;
     registerVidcomTools(tools, dependencies);
@@ -170,6 +182,10 @@ describe("all registered tool handlers", () => {
       move_scenes: { projectId, sceneIds: ["scene-1"], deltaSeconds: 0, expectedContentHash: digest("1") },
       delete_scenes: { projectId, sceneIds: ["scene-1"], expectedRevision: 0 },
       list_catalog_items: {},
+      install_catalog_item: {
+        projectId, name: "lower-third", version: "1.2.0",
+        mount: { kind: "new-scene", toIndex: 0 }, expectedRevision: 0,
+      },
       generate_captions: { projectId, sceneId: "scene-1", expectedContentHash: digest("1") },
       mount_asset: {
         projectId, assetPath: "assets/clip.mp4", assetContentHash: digest("1"),
