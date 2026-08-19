@@ -355,6 +355,49 @@ describe("catalog registry transport and cache", () => {
     expect(listing.items.map((item) => item.name)).toEqual(["good-block"]);
   });
 
+  it("times out a hung request on its own budget and drops an oversized manifest", async () => {
+    const root = await cacheRoot();
+    const hung = new HyperframesRegistryCatalog({
+      cacheRoot: root,
+      bundled: async () => [],
+      http: {
+        timeoutMs: 40,
+        resolveHost: async () => ["8.8.8.8"],
+        fetch: (async () => {
+          await new Promise((resolve) => setTimeout(resolve, 3_000));
+          return Response.json({});
+        }) as FakeRegistry["fetch"],
+      },
+    });
+    // No caller signal: the transport's own timeout has to end this.
+    await expect(hung.fetchJson(new URL("https://api.github.com/a"), 1_024)).rejects.toThrow();
+
+    // A manifest larger than its 2 MiB ceiling drops that item and keeps the rest.
+    const oversized = catalogFor(await cacheRoot(), {
+      fetch: (async (input: URL | string) => {
+        const url = String(input);
+        if (url.endsWith("/commits/main")) {
+          return Response.json({ sha: COMMIT, commit: { committer: { date: COMMITTED_AT } } });
+        }
+        if (url.endsWith("/registry.json")) {
+          return Response.json({
+            name: "hyperframes",
+            homepage: "https://hyperframes.heygen.com",
+            items: [
+              { name: "fat-manifest", type: "hyperframes:block" },
+              { name: "lean-block", type: "hyperframes:block" },
+            ],
+          });
+        }
+        if (url.includes("fat-manifest")) return new Response("x".repeat(3 * 1024 * 1024));
+        return Response.json(blockManifest("lean-block"));
+      }) as FakeRegistry["fetch"],
+    }, { bundled: [] });
+    const listing = await oversized.list({});
+    expect(listing.source).toBe("network");
+    expect(listing.items.map((item) => item.name)).toEqual(["lean-block"]);
+  });
+
   it("applies the kind filter before text and matches tags and queries", async () => {
     const registry = fakeRegistry({ names: ["lower-third", "wipe-left"] });
     const catalog = catalogFor(await cacheRoot(), registry, {

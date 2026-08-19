@@ -224,6 +224,28 @@ describe("HyperFrames 0.7.86 registry normalization", () => {
     )).toEqual({ ok: false, diagnostics: ["dependency_cycle"] });
   });
 
+  it("accepts every upstream file type and rejects an unknown one", () => {
+    for (const type of [
+      "hyperframes:asset",
+      "hyperframes:snippet",
+      "hyperframes:style",
+      "hyperframes:timeline",
+    ]) {
+      const result = upstream(block({
+        name: "typed",
+        files: [
+          { path: "index.html", target: "blocks/typed/index.html", type: "hyperframes:composition" },
+          { path: "extra.bin", target: "blocks/typed/extra.bin", type },
+        ],
+      }));
+      expect(result.ok, type).toBe(true);
+    }
+    expect(upstream(block({
+      name: "typed",
+      files: [{ path: "index.html", target: "blocks/typed/index.html", type: "hyperframes:widget" }],
+    }))).toEqual({ ok: false, diagnostics: ["manifest_invalid"] });
+  });
+
   it("normalizes a curated bundled template with an explicit entry and semver", () => {
     const template = normalizeBundledCatalogItem({
       name: "title-card",
