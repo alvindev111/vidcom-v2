@@ -177,6 +177,29 @@ P6 chờ P3 + P4; P7 chờ thêm safe-CSS seam của P5; còn P9/P10/P11 giữ d
 
 ---
 
+## Phase Verification Matrix
+
+Each row is the focused command that phase is verified with, on real SQLite and a real filesystem, followed by
+`bun run typecheck`, `bun run lint`, and `bun run test:boundaries` where a boundary is touched. Only paths that
+exist are listed — a matrix that names a file nobody wrote is not evidence, and `scripts/verify-spec-test-paths.mjs`
+fails the build if one goes missing.
+
+| Phase | Focused verification command |
+|---|---|
+| S0 | `bunx vitest run tests/build/ci-workflows.test.ts` |
+| P0 | `bunx vitest run tests/core/write-authority.test.ts tests/adapter/composite-journal.test.ts` |
+| P1 | `bunx vitest run tests/frontend/editor-interaction.test.ts tests/frontend/snap.test.ts` |
+| P2 | `bunx vitest run tests/core/scene-order-usecases.test.ts tests/frontend/scene-order.test.ts` |
+| P3 | `bunx vitest run tests/adapter/history-staged-redo.test.ts tests/frontend/history-controls.test.ts` |
+| P4 | `bunx vitest run tests/frontend/preview-buffer.test.ts tests/frontend/player-host.test.ts tests/frontend/preview-buffer-browser.test.ts` |
+| P5 | `bunx vitest run tests/core/ingest-asset.test.ts tests/adapter/entry-crud-integration.test.ts` |
+| P6 | `bunx vitest run tests/core/plan-caption-cues.test.ts tests/adapter/caption-ops.test.ts tests/frontend/caption-runtime-browser.test.ts` |
+| P7 | `bunx vitest run tests/adapter/thumbnail-pipeline.test.ts tests/frontend/timeline-thumbnail-browser.test.ts` |
+| P8 | `bunx vitest run tests/contracts/catalog-contracts.test.ts tests/adapter/catalog-install-integration.test.ts tests/frontend/catalog-rail.test.ts` |
+| P9 | `bunx vitest run tests/core/mount-asset.test.ts tests/server/pending-mount-routes.test.ts tests/adapter/pending-mount-integration.test.ts tests/adapter/pending-mount-recovery.test.ts tests/adapter/pending-mount-undo.test.ts tests/frontend/mount-drop.test.ts` |
+| P10 | `bunx vitest run tests/frontend/draft-store.test.ts tests/frontend/transport-keys.test.ts tests/frontend/unsaved-guard.test.ts tests/frontend/browser-session.test.ts` |
+| P11 | `bun run test:mcp-contract` and `bunx vitest run tests/contracts/tool-schema-catalogue.test.ts tests/mcp/contract-matrix.test.ts tests/frontend/editing-experience-browser.test.ts` |
+
 ## Task Status Legend
 
 - `[ ]` — chưa bắt đầu
