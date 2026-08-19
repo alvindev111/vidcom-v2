@@ -25,6 +25,14 @@ export interface RuntimePaths {
    * visible gap for a dead install.
    */
   bgmAssetRoot: string;
+  /**
+   * Directory holding the frozen bundled catalog snapshot.
+   *
+   * Unlike the music, this one is required. A packaged install with no catalog
+   * would present an empty template rail that looks like an offline network
+   * failure, so an absent catalog fails boot with a coded error instead.
+   */
+  catalogAssetRoot: string;
 }
 
 export const RUNTIME_PATH_NAMES = [
@@ -34,6 +42,7 @@ export const RUNTIME_PATH_NAMES = [
   "nativeDependenciesRoot",
   "browserCacheRoot",
   "bgmAssetRoot",
+  "catalogAssetRoot",
 ] as const;
 
 export type RuntimePathName = (typeof RUNTIME_PATH_NAMES)[number];
@@ -87,7 +96,14 @@ function artifactPaths(input: ArtifactRuntimePathsInput): RuntimePaths {
   const hyperframes = input.archiveRoots.hyperframes;
   const node = input.archiveRoots.node;
   const absent: RuntimePathName[] = [];
-  if (!hyperframes) absent.push("hyperframesCliPath", "hyperframesPackagePath", "motionLibraryRoot");
+  if (!hyperframes) {
+    absent.push(
+      "hyperframesCliPath",
+      "hyperframesPackagePath",
+      "motionLibraryRoot",
+      "catalogAssetRoot",
+    );
+  }
   if (!node) absent.push("nativeDependenciesRoot");
   if (!input.appDataRoot) absent.push("browserCacheRoot");
   if (absent.length > 0) missing([...new Set(absent)]);
@@ -101,6 +117,8 @@ function artifactPaths(input: ArtifactRuntimePathsInput): RuntimePaths {
     browserCacheRoot: path.join(input.appDataRoot, "browser-cache"),
     // Where the `bgm` archive extracts to, whether or not this build shipped it.
     bgmAssetRoot: input.archiveRoots.bgm ?? path.join(input.versionRoot, "bgm"),
+    // Staged inside the verified HyperFrames archive by `stage-artifact-runtime`.
+    catalogAssetRoot: path.join(hyperframes!, "catalog"),
   };
   assertComplete(paths);
   return paths;
@@ -120,6 +138,8 @@ function developmentPaths(input: DevelopmentRuntimePathsInput): RuntimePaths {
     // committed inside this package, and adding a third `require.resolve` here
     // would widen what development mode depends on for no gain.
     bgmAssetRoot: path.join(fileURLToPath(new URL("../../assets/bgm", import.meta.url))),
+    // Same reasoning as the music: the snapshot is committed inside this package.
+    catalogAssetRoot: path.join(fileURLToPath(new URL("../../assets/catalog", import.meta.url))),
   };
   assertComplete(paths);
   return paths;
