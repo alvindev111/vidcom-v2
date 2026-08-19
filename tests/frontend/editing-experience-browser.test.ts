@@ -102,12 +102,16 @@ async function projectIdOf(page: Page): Promise<string> {
   });
 }
 
-// BLOCKED: a preview reload never completes against the real HyperFrames player.
-// A player created before any source write posts its timeline in ~220 ms, but no
-// player created after one ever does, so `waitForPreflightHealth` times out and
-// every swap is rejected as `preview_unhealthy`. Until that is fixed there is
-// nothing to measure: the number these cases would print is the budget of a swap
-// that does not happen. Recorded against P11.1 rather than asserted around.
+// BLOCKED: the double buffer cannot complete a swap against the real player.
+//
+// Measured here, not guessed: while the studio's own `hyperframes-player` is on
+// the page, a second one pointed at the same preview never receives the
+// composition timeline — three sequential attempts, 6 s each, none. Remove the
+// first player and a new one gets its timeline in ~220 ms. Since the swap
+// requires the candidate to report a timeline before it is shown, every reload
+// times out as `preview_unhealthy`, and the first mount is the only preview the
+// app ever shows. That is P4's contract, not P11.1's measurement, so these two
+// cases stay skipped with the finding recorded rather than asserted around.
 describe("editing experience in a browser", () => {
   it.skip("shows this tab's own write in the preview within the R4.1c budget", async () => {
     await withStudioBrowser("perf-write", async ({ page }) => {
