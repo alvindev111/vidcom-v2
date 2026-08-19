@@ -134,6 +134,21 @@ export const CONTRACT_MATRIX_CASES: Record<string, Record<string, unknown>> = {
     expectedRevision: 2,
     grantId: "grant-contract-matrix",
   },
+  list_catalog_items: { kind: "template" },
+  generate_captions: {
+    projectId: matrixProjectId,
+    sceneId: "scene-9",
+    expectedContentHash: matrixHash,
+  },
+  mount_asset: {
+    projectId: matrixProjectId,
+    assetPath: "assets/clip.mp4",
+    assetContentHash: matrixHash,
+    atSeconds: 0,
+    trackIndex: 0,
+    expectedContentHash: matrixHash,
+    onOverflow: "extend-root",
+  },
   list_tts_voices: { projectId: matrixProjectId },
   start_tts: {
     projectId: matrixProjectId,
@@ -239,6 +254,33 @@ export function createContractMatrixRegistry(): ToolRegistry {
       updatedAt: "2026-08-02T00:00:00.000Z",
       staleSince: null,
     })}\n`],
+    ["compositions/scene-9.html", "<section data-composition-id=\"scene-9\"></section>"],
+    // A second scene whose narration carries word timings: generate_captions
+    // plans cues from those, and scene-1 stays the scene without them.
+    ["narration/scene-9.json", `${JSON.stringify({
+      sceneId: "scene-9",
+      text: "Xin chào",
+      voice: "matrix-voice",
+      status: "mock",
+      audioPath: "narration/scene-9.wav",
+      revision: 0,
+      updatedAt: "2026-08-02T00:00:00.000Z",
+      staleSince: null,
+      cues: [{
+        cueId: "cue-1",
+        text: "Xin chào",
+        voice: "matrix-voice",
+        offsetSeconds: 0,
+        status: "mock",
+        audioPath: "narration/scene-9.wav",
+        staleSince: null,
+        wordTimingSource: "estimated",
+        words: [
+          { text: "Xin", startSeconds: 0, endSeconds: 0.4 },
+          { text: "chào", startSeconds: 0.4, endSeconds: 0.9 },
+        ],
+      }],
+    })}\n`],
     // Neither file was written through a tool: they stand for media dropped into
     // the project directory and an artifact a render left behind.
     [matrixBgmPath, "ID3 contract matrix"],
@@ -292,6 +334,31 @@ export function createContractMatrixRegistry(): ToolRegistry {
         ],
       }],
       unresolvedEffects: 0,
+    }, {
+      // The scene generate_captions works on: same shape, narration with word
+      // timings, and no elements to distract the other tools.
+      id: "scene-9",
+      start: 4,
+      duration: 4,
+      trackIndex: 1,
+      src: "compositions/scene-9.html" as RelPath,
+      block: null,
+      isTransition: false,
+      media: [],
+      script: [],
+      narration: {
+        sceneId: "scene-9",
+        text: "Xin chào",
+        voice: "matrix-voice",
+        status: "mock" as const,
+        audioPath: "narration/scene-9.wav" as RelPath,
+        command: "",
+        revision: 0,
+        updatedAt: "2026-08-02T00:00:00.000Z",
+        staleSince: null,
+      },
+      elements: [],
+      unresolvedEffects: 0,
     }],
     rootTrack: null,
     diagnostics: [],
@@ -299,6 +366,11 @@ export function createContractMatrixRegistry(): ToolRegistry {
       { path: "index.html" as RelPath, contentHash: matrixHash, byteSize: entry.length },
       {
         path: "compositions/scene-1.html" as RelPath,
+        contentHash: matrixHash,
+        byteSize: sceneSource.length,
+      },
+      {
+        path: "compositions/scene-9.html" as RelPath,
         contentHash: matrixHash,
         byteSize: sceneSource.length,
       },
@@ -398,6 +470,39 @@ export function createContractMatrixRegistry(): ToolRegistry {
       },
     },
     clock: { now: () => new Date("2026-08-02T00:00:00.000Z") },
+    // The editing tools take the same capabilities the routes do; the matrix
+    // supplies the two the fake workspace above cannot stand in for.
+    catalog: {
+      list: async () => ({
+        items: [],
+        source: "bundled" as const,
+        stale: false,
+      }),
+    },
+    mount: {
+      workspace: {
+        readProjectRef: async (projectId: ProjectId) => projectId === matrixProjectId ? ref : null,
+        resolve: async (_ref: ProjectRef, path: RelPath) => ok(path as unknown as ResolvedPath),
+        readHash: async () => matrixHash,
+      },
+      composition: {
+        parseProject: async () => model,
+        applyOps: async () => ok("<main data-composition-id=\"root\"></main>"),
+      },
+      probe: {
+        probeMedia: async () => ok({
+          status: "ok" as const, kind: "media" as const, byteSize: 12,
+          durationSeconds: 3, width: 1920, height: 1080, codec: "h264",
+        }),
+      },
+      pendingMount: { lookup: async () => ({ state: "never-seen" as const }) },
+      authority: {
+        mutateSource: async () => ok({
+          projectRevision: 3, entityRevision: null, fileHashes: {}, diagnostics: [], changeSeq: 3,
+        }),
+      },
+      clock: { now: () => new Date("2026-08-02T00:00:00.000Z") },
+    },
     hashContent: () => matrixHash,
     approvals: { request: async () => "unused-approval" },
     tts: {

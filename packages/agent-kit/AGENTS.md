@@ -36,8 +36,8 @@ On `write_conflict`, re-read and merge. Never remove a precondition. Destructive
 
 | Level | Tools |
 | --- | --- |
-| Read | `list_projects`, `get_project_context`, `list_scenes`, `read_composition`, `list_project_assets`, `get_narration_cues`, `list_tts_voices`, `list_color_palettes`, `search_bgm`, `list_bgm_beds`, `validate_project`, `get_job_status`, `get_render_output` |
-| Write | `create_project`, `adopt_project`, `rename_project`, `create_scene`, `set_scene_timing`, `set_text`, `save_file`, `set_preview_settings`, `replace_narration_cues`, `patch_narration_cue`, `install_motion_library`, `reorder_scenes`, `move_scenes`, `install_bgm`, `import_bgm`, `record_bgm_license` |
+| Read | `list_projects`, `list_catalog_items`, `get_project_context`, `list_scenes`, `read_composition`, `list_project_assets`, `get_narration_cues`, `list_tts_voices`, `list_color_palettes`, `search_bgm`, `list_bgm_beds`, `validate_project`, `get_job_status`, `get_render_output` |
+| Write | `create_project`, `adopt_project`, `rename_project`, `create_scene`, `set_scene_timing`, `set_text`, `save_file`, `set_preview_settings`, `replace_narration_cues`, `patch_narration_cue`, `install_motion_library`, `reorder_scenes`, `move_scenes`, `generate_captions`, `mount_asset`, `install_bgm`, `import_bgm`, `record_bgm_license` |
 | Job | `start_snapshot`, `start_tts`, `start_render`, `cancel_job` |
 | Destructive | `delete_file`, `delete_scene`, `delete_scenes`, `delete_project` |
 | Workspace | `install_agent_kit` |

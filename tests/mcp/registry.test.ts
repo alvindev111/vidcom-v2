@@ -552,6 +552,18 @@ describe("complete tool descriptor contract", () => {
           {
             "annotations": {
               "destructiveHint": false,
+              "idempotentHint": false,
+              "openWorldHint": false,
+              "readOnlyHint": false,
+            },
+            "description": "Use when turning one scene's narration into on-screen captions timed to the words that were actually spoken. Do not use to write narration text, to synthesize audio, or on a scene that has no narration. Preconditions: sceneId and expectedContentHash come from read_composition or get_project_context; the scene's narration must exist, and word timings from the engine give better cues than estimated ones. Side effects: replaces the scene's whole caption block in one revision, so no cue from a previous run survives. Errors/recovery: scene_not_found means the id is stale; a scene without narration is refused rather than captioned from nothing; on write_conflict re-read the composition; never retry committed_response_error.",
+            "level": "write",
+            "name": "generate_captions",
+            "title": "Generate captions for one scene",
+          },
+          {
+            "annotations": {
+              "destructiveHint": false,
               "idempotentHint": true,
               "openWorldHint": false,
               "readOnlyHint": true,
@@ -664,6 +676,18 @@ describe("complete tool descriptor contract", () => {
               "openWorldHint": false,
               "readOnlyHint": true,
             },
+            "description": "Use when looking for a template, block or other packaged item to install, optionally filtered by kind, category, tags or a search term. Do not use to install one, to read project files, or to reach a registry directly. Preconditions: none; every filter is optional. Side effects: read-only. The listing says where it came from and whether it is stale, so an offline fallback is visible rather than silent. Errors/recovery: a stale listing is still usable; install_catalog_item revalidates the exact item before it writes anything.",
+            "level": "read",
+            "name": "list_catalog_items",
+            "title": "List catalog items",
+          },
+          {
+            "annotations": {
+              "destructiveHint": false,
+              "idempotentHint": true,
+              "openWorldHint": false,
+              "readOnlyHint": true,
+            },
             "description": "Use when choosing a video's look and the user and brand kit provide no explicit color direction; filter by mood or category when the brief implies one. Do not use a preset to replace colors explicitly supplied by the user or brand; custom direction always wins. Preconditions: none; every entry includes semantic color roles, controlled moods, harmony, choose/avoid guidance, and its source palette URL and swatches. Side effects: read-only; to apply one result atomically, call set_preview_settings with patch.theme.paletteId set to its id. Errors/recovery: an omitted category returns the complete catalog; defaultPaletteId is the deterministic fallback when no palette better matches the brief.",
             "level": "read",
             "name": "list_color_palettes",
@@ -716,6 +740,18 @@ describe("complete tool descriptor contract", () => {
             "level": "read",
             "name": "list_tts_voices",
             "title": "List narration voices",
+          },
+          {
+            "annotations": {
+              "destructiveHint": false,
+              "idempotentHint": false,
+              "openWorldHint": false,
+              "readOnlyHint": false,
+            },
+            "description": "Use when putting a file that is already in the project onto the timeline, wrapped in its own scene, or when finishing an upload that was left unmounted. Do not use to upload a file, to change an existing clip's timing, or to pass a duration — the daemon measures the file itself. Preconditions: for an asset in the project pass assetPath, assetContentHash, atSeconds and trackIndex; for a pending upload pass only its operationId, because the placement lives in the server-side record. expectedContentHash comes from read_composition. Side effects: writes one wrapper scene and its narration sidecar, mounts it in the entry composition, and commits one revision. onOverflow shrink trims the wrapper; extend-root grows the timeline instead. Errors/recovery: an asset that cannot be inspected is refused and stays in Media; write_conflict means the file changed since its hash was read; not_found on a retry means that operation has expired, so do not start a new one for the same bytes.",
+            "level": "write",
+            "name": "mount_asset",
+            "title": "Mount an asset on the timeline",
           },
           {
             "annotations": {

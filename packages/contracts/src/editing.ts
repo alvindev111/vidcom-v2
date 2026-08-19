@@ -289,3 +289,26 @@ export const PendingMountParamsSchema = z.strictObject({
 export const PendingMountListResponseSchema = z.strictObject({
   items: z.array(PendingMountSchema),
 });
+
+/** §7.11: one caption cue as both surfaces return it. */
+export const CaptionWordSchema = z.strictObject({
+  text: z.string(),
+  start: z.number().finite().nonnegative(),
+  end: z.number().finite().nonnegative(),
+});
+
+export const CaptionCueSchema = z.strictObject({
+  start: z.number().finite().nonnegative(),
+  end: z.number().finite().nonnegative(),
+  words: z.array(CaptionWordSchema),
+  text: z.string(),
+});
+
+export const GenerateCaptionsRequestSchema = z.strictObject({ ...expectedSource });
+
+export const GenerateCaptionsResponseSchema = z.strictObject({
+  cues: z.array(CaptionCueSchema),
+  /** Whether the timings came from the engine or were estimated. */
+  timingSource: z.enum(["engine", "estimated"]),
+  ...mutationEnvelope,
+});

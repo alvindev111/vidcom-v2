@@ -2,6 +2,8 @@ import {
   BgmLicenseSchema,
   ApplyFontRequestSchema,
   ApplyFontResponseSchema,
+  GenerateCaptionsRequestSchema,
+  GenerateCaptionsResponseSchema,
   CreateEntryRequestSchema,
   CreateEntryResponseSchema,
   DeleteEntryRequestSchema,
@@ -49,6 +51,7 @@ import {
 import {
   createScene,
   applyFont,
+  generateCaptions,
   createEntry,
   compactTrack,
   deleteScenes,
@@ -350,6 +353,25 @@ export function createProjectWriteRoutes(
     return c.json(DeleteEntryResponseSchema.parse({
       deleted: deleted.deleted, backupId: deleted.backupId, revision: deleted.envelope.projectRevision,
       diagnostics: deleted.envelope.diagnostics, changeSeq: deleted.envelope.changeSeq,
+    }));
+  });
+  routes.post("/v1/projects/:id/scenes/:sceneId/captions", async (c) => {
+    const parsed = GenerateCaptionsRequestSchema.safeParse(await json(c));
+    if (!parsed.success) fail({ code: ErrorCode.SchemaInvalid, message: "caption payload is invalid" });
+    const sceneId = IdentifierSchema.safeParse(c.req.param("sceneId"));
+    if (!sceneId.success) fail({ code: ErrorCode.SchemaInvalid, message: "scene id is invalid", field: "sceneId" });
+    const id = projectId(c);
+    const captions = valueOf(await generateCaptions(dependencies, {
+      projectId: id,
+      sceneId: sceneId.data,
+      expectedContentHash: parsed.data.expectedContentHash as Parameters<typeof generateCaptions>[1]["expectedContentHash"],
+    }, "user", studioWriteInvocation(studio, c, id, "Generate captions")));
+    return c.json(GenerateCaptionsResponseSchema.parse({
+      cues: captions.cues,
+      timingSource: captions.timingSource,
+      revision: captions.envelope.projectRevision,
+      diagnostics: captions.envelope.diagnostics,
+      changeSeq: captions.envelope.changeSeq,
     }));
   });
   routes.post("/v1/projects/:id/fonts/apply", async (c) => {

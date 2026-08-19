@@ -137,6 +137,17 @@ describe("all registered tool handlers", () => {
           error: { code: "project_not_found", message: "project was not found" },
         }),
       },
+      // The editing tools take their own capability objects; the guarded harness
+      // gives them the same absent project every other tool sees.
+      mount: {
+        workspace: { readProjectRef: async () => null },
+        composition: {},
+        probe: {},
+        pendingMount: { lookup: async () => ({ state: "never-seen" as const }) },
+        authority: {},
+        clock: { now: () => new Date(0) },
+      },
+      catalog: { list: async () => ({ items: [], source: "bundled" as const, stale: false }) },
     } as unknown as VidcomToolDependencies;
     dependencies.reads = dependencies;
     registerVidcomTools(tools, dependencies);
@@ -158,6 +169,12 @@ describe("all registered tool handlers", () => {
       reorder_scenes: { projectId, sceneId: "scene-1", toIndex: 0, expectedContentHash: digest("1") },
       move_scenes: { projectId, sceneIds: ["scene-1"], deltaSeconds: 0, expectedContentHash: digest("1") },
       delete_scenes: { projectId, sceneIds: ["scene-1"], expectedRevision: 0 },
+      list_catalog_items: {},
+      generate_captions: { projectId, sceneId: "scene-1", expectedContentHash: digest("1") },
+      mount_asset: {
+        projectId, assetPath: "assets/clip.mp4", assetContentHash: digest("1"),
+        atSeconds: 0, trackIndex: 0, expectedContentHash: digest("1"), onOverflow: "extend-root",
+      },
       list_tts_voices: { projectId },
       start_tts: { projectId, sceneIds: ["scene-1"], providerId: "nobody", voiceId: "nobody" },
       get_job_status: { jobId: "job-1" },
@@ -208,6 +225,10 @@ describe("all registered tool handlers", () => {
       // The job-scoped tools are not project-scoped; an absent job is a plain not_found.
       else if (name === "record_bgm_license") {
         expect(result).toMatchObject({ ok: true, value: { trackId: "corporate-synth" } });
+      }
+      // The catalog is not project-scoped, so an empty listing is the answer.
+      else if (name === "list_catalog_items") {
+        expect(result).toMatchObject({ ok: true, value: { items: [], source: "bundled", stale: false } });
       }
       else if (name === "list_bgm_beds") {
         expect(result).toMatchObject({ ok: true, value: { library: [] } });

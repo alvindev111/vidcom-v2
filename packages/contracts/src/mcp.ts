@@ -35,9 +35,19 @@ import {
 } from "./bgm";
 import { NarrationCueInputSchema } from "./delivery-loop-http";
 import {
+  CatalogInstallExecuteRequestSchema,
+  CatalogInstallResponseSchema,
+  CatalogListQuerySchema,
+  CatalogListResponseSchema,
+} from "./catalog";
+import {
   DeleteScenesRequestSchema,
   DeleteScenesResponseSchema,
   MoveScenesRequestSchema,
+  GenerateCaptionsRequestSchema,
+  GenerateCaptionsResponseSchema,
+  MountAssetRequestSchema,
+  MountAssetResponseSchema,
   ReorderScenesRequestSchema,
   SceneOrderMutationResponseSchema,
 } from "./editing";
@@ -606,6 +616,40 @@ export const DeleteScenesInputSchema = z.strictObject({
 });
 export const DeleteScenesOutputSchema = DeleteScenesResponseSchema;
 
+
+/** §7.12 read tool: the same filter and the same `{items, source, stale}` listing. */
+export const ListCatalogItemsInputSchema = CatalogListQuerySchema;
+export const ListCatalogItemsOutputSchema = CatalogListResponseSchema;
+
+/** §7.11 over MCP. */
+export const GenerateCaptionsInputSchema = z.strictObject({
+  ...projectIdInput,
+  sceneId: IdentifierSchema,
+  ...GenerateCaptionsRequestSchema.shape,
+});
+export const GenerateCaptionsOutputSchema = GenerateCaptionsResponseSchema;
+
+/**
+ * §7.13a/b over MCP, in one tool.
+ *
+ * Without a grant this plans and asks; with one it installs exactly what was
+ * planned. A choice the plan requires stays a choice — it is never resolved
+ * into a silent replace.
+ */
+export const InstallCatalogItemInputSchema = z.strictObject({
+  ...projectIdInput,
+  ...CatalogInstallExecuteRequestSchema.shape,
+  grantId,
+});
+export const InstallCatalogItemOutputSchema = CatalogInstallResponseSchema;
+
+/** §7.14 over MCP: the same union, plus the project the path carries over HTTP. */
+export const MountAssetInputSchema = z.union([
+  z.strictObject({ ...projectIdInput, ...MountAssetRequestSchema.options[0].shape }),
+  z.strictObject({ ...projectIdInput, ...MountAssetRequestSchema.options[1].shape }),
+]);
+export const MountAssetOutputSchema = MountAssetResponseSchema;
+
 export const TOOL_SCHEMA_CATALOGUE = {
   adopt_project: {
     input: AdoptProjectInputSchema,
@@ -622,6 +666,11 @@ export const TOOL_SCHEMA_CATALOGUE = {
     output: DeleteScenesOutputSchema,
     level: "destructive",
   },
+  generate_captions: {
+    input: GenerateCaptionsInputSchema,
+    output: GenerateCaptionsOutputSchema,
+    level: "write",
+  },
   import_bgm: {
     input: ImportBgmInputSchema,
     output: ImportBgmOutputSchema,
@@ -636,6 +685,16 @@ export const TOOL_SCHEMA_CATALOGUE = {
     input: ListBgmBedsInputSchema,
     output: ListBgmBedsOutputSchema,
     level: "read",
+  },
+  list_catalog_items: {
+    input: ListCatalogItemsInputSchema,
+    output: ListCatalogItemsOutputSchema,
+    level: "read",
+  },
+  mount_asset: {
+    input: MountAssetInputSchema,
+    output: MountAssetOutputSchema,
+    level: "write",
   },
   move_scenes: {
     input: MoveScenesInputSchema,

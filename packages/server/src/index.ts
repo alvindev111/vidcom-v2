@@ -13,7 +13,7 @@ export * from "./middleware/error-mapper";
 export * from "./middleware/perimeter";
 export * from "./routes/project-reads";
 export { createJobRoutes } from "./routes/jobs";
-export { catalogItemDto, createCatalogRoutes, type CatalogRouteDependencies } from "./routes/catalog";
+export { createCatalogRoutes, type CatalogRouteDependencies } from "./routes/catalog";
 export {
   createBridgeRoutes,
   type BridgeRouteDependencies,

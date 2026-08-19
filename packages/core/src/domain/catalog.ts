@@ -1,6 +1,6 @@
 import { compareVersions, validate as isSemver } from "compare-versions";
 
-import { type ContentHash, type RelPath } from "@vidcom/contracts";
+import { type CatalogItemDto, type ContentHash, type RelPath } from "@vidcom/contracts";
 
 import { err, ok, type Result } from "../error/result";
 import { HYPERFRAMES_EXPECTED_VERSION, type StagedFileSource } from "../port/types";
@@ -337,3 +337,38 @@ export function orderCatalogDependencyClosure(
   const failure = visit(root, true);
   return failure ? err(failure) : ok(ordered);
 }
+
+/** Projects one item for the browser: digests and metadata only. */
+export function catalogItemDto(item: CatalogItem): CatalogItemDto {
+  const warning = assessCatalogRuntimeCompatibility(item);
+  return {
+    name: item.name,
+    kind: item.kind,
+    title: item.title,
+    description: item.description,
+    tags: [...item.tags],
+    category: item.category,
+    version: item.version,
+    integrity: item.integrity === null
+      ? null
+      : { manifest: item.integrity.manifest, files: { ...item.integrity.files } },
+    materialization: item.materialization,
+    source: {
+      registry: item.source.registry,
+      revision: item.source.revision,
+      committedAt: item.source.committedAt,
+    },
+    dependencies: [...item.dependencies],
+    compatibility: {
+      aspectRatios: item.compatibility.aspectRatios ? [...item.compatibility.aspectRatios] : null,
+      minWidth: item.compatibility.minWidth,
+      fps: item.compatibility.fps ? [...item.compatibility.fps] : null,
+      minHyperframesVersion: item.compatibility.minHyperframesVersion,
+    },
+    durationSeconds: item.durationSeconds,
+    entry: item.entry,
+    previewPath: item.preview?.path ?? null,
+    compatibilityWarning: warning.status === "compatible" ? null : warning,
+  };
+}
+

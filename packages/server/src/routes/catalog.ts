@@ -7,17 +7,15 @@ import {
   CatalogListResponseSchema,
   ErrorCode,
   ProjectParamsSchema,
-  type CatalogItemDto,
   type DomainError,
   type ProjectId,
 } from "@vidcom/contracts";
 import {
-  assessCatalogRuntimeCompatibility,
+  catalogItemDto,
   executeCatalogInstall,
   prepareCatalogInstall,
   type CatalogInstallDependencies,
   type CatalogInstallExecuteDependencies,
-  type CatalogItem,
   type CatalogListFilter,
   type CatalogListing,
 } from "@vidcom/core";
@@ -55,40 +53,6 @@ function projectId(c: Context): ProjectId {
   return parsed.success
     ? parsed.data.id as ProjectId
     : fail({ code: ErrorCode.SchemaInvalid, message: "project id is invalid", field: "id" });
-}
-
-/** Projects one item for the browser: digests and metadata only. */
-export function catalogItemDto(item: CatalogItem): CatalogItemDto {
-  const warning = assessCatalogRuntimeCompatibility(item);
-  return {
-    name: item.name,
-    kind: item.kind,
-    title: item.title,
-    description: item.description,
-    tags: [...item.tags],
-    category: item.category,
-    version: item.version,
-    integrity: item.integrity === null
-      ? null
-      : { manifest: item.integrity.manifest, files: { ...item.integrity.files } },
-    materialization: item.materialization,
-    source: {
-      registry: item.source.registry,
-      revision: item.source.revision,
-      committedAt: item.source.committedAt,
-    },
-    dependencies: [...item.dependencies],
-    compatibility: {
-      aspectRatios: item.compatibility.aspectRatios ? [...item.compatibility.aspectRatios] : null,
-      minWidth: item.compatibility.minWidth,
-      fps: item.compatibility.fps ? [...item.compatibility.fps] : null,
-      minHyperframesVersion: item.compatibility.minHyperframesVersion,
-    },
-    durationSeconds: item.durationSeconds,
-    entry: item.entry,
-    previewPath: item.preview?.path ?? null,
-    compatibilityWarning: warning.status === "compatible" ? null : warning,
-  };
 }
 
 export function createCatalogRoutes(dependencies: CatalogRouteDependencies): Hono {
