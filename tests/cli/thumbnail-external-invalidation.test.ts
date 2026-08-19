@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
@@ -10,13 +10,18 @@ import { type ProjectId } from "@vidcom/contracts";
 import { type AbsolutePath } from "@vidcom/core";
 
 import { dbRun } from "../support/database";
+import { removeTree } from "../support/platform";
 
 const roots: string[] = [];
+const databases: Array<{ destroy(): Promise<void> }> = [];
 const projectId = "project_shared_css" as ProjectId;
 const bytes = new Uint8Array([0x52, 0x49, 0x46, 0x46]);
 
 afterEach(async () => {
-  await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
+  // Windows refuses to unlink an open SQLite file, so the database is closed here
+  // even when an assertion threw before the end of the case.
+  await Promise.all(databases.splice(0).map((database) => database.destroy()));
+  await Promise.all(roots.splice(0).map((root) => removeTree(root)));
 });
 
 async function eventually(check: () => Promise<boolean>, timeoutMs = 5_000): Promise<void> {
@@ -66,6 +71,7 @@ async function fixture() {
     workspaceRoot: workspaceRoot as AbsolutePath,
   });
   await migrateDatabase(infrastructure.database);
+  databases.push(infrastructure.database);
   const stamp = "2026-08-19T00:00:00.000Z";
   dbRun(
     infrastructure.database,
@@ -129,14 +135,26 @@ describe("external shared-CSS writes and thumbnail invalidation", () => {
     expect(rekeyed.b).toBe(warmed.b);
     await expect(thumbnailCache.get(ref.id, rekeyed.a)).resolves.toBeNull();
     await expect(thumbnailCache.get(ref.id, rekeyed.b)).resolves.toEqual(bytes);
-    await expect(infrastructure.events.readFrom(0, 10)).resolves.toMatchObject({
-      events: [{
-        type: "file.changed",
-        projectId,
-        payload: { path: "styles/shared.css", source: "external" },
-      }],
-    });
-
-    await infrastructure.database.destroy();
+    // The stylesheet write is recorded exactly once as an external project event.
+    // A recursive watcher may also report the containing directory: Windows
+    // ReadDirectoryChangesW notifies the parent for a child write, and such an
+    // ancestor path invalidates the same dependent scene rather than a wider set.
+    // Nothing outside `styles/shared.css`'s own ancestry may appear.
+    const recorded = await infrastructure.events.readFrom(0, 10);
+    expect(recorded.gap).toBe(false);
+    expect(recorded.events.map((event) => ({
+      type: event.type,
+      projectId: event.projectId,
+      source: (event.payload as { source?: string }).source,
+    }))).toEqual(recorded.events.map(() => ({
+      type: "file.changed",
+      projectId,
+      source: "external",
+    })));
+    const paths = recorded.events.map((event) => (event.payload as { path: string }).path);
+    expect(paths.filter((value) => value === "styles/shared.css")).toHaveLength(1);
+    expect(paths.filter((value) => value !== "styles/shared.css")).toEqual(
+      paths.filter((value) => value !== "styles/shared.css").map(() => "styles"),
+    );
   });
 });

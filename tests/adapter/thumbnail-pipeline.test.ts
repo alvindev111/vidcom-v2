@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { access, mkdir, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
+import { access, mkdir, mkdtemp, readdir, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
@@ -32,13 +32,19 @@ import {
   type SupervisedProcessResult,
 } from "@vidcom/core";
 
+import { removeTree } from "../support/platform";
+
 const roots: string[] = [];
+const databases: Array<{ destroy(): Promise<void> }> = [];
 const FFMPEG_SENTINEL = path.join(path.sep, "runtime", "ffmpeg-sentinel");
 const hashContent = (content: string | Uint8Array): ContentHash =>
   `sha256:${createHash("sha256").update(content).digest("hex")}` as ContentHash;
 
 afterEach(async () => {
-  await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
+  // Windows refuses to unlink an open SQLite file, so every database opened by a
+  // case is closed here even when its assertions threw.
+  await Promise.all(databases.splice(0).map((database) => database.destroy()));
+  await Promise.all(roots.splice(0).map((root) => removeTree(root)));
 });
 
 const SNAPSHOT_SCRIPT = `import { writeFile } from "node:fs/promises";
@@ -243,6 +249,7 @@ describe("thumbnail renderer, cache and scheduler over real temp projects", () =
     const marks = sampleTimelineThumbnailTimes(2, 2, 30);
     expect(marks).toEqual([0.5, 1.5]);
     const database = await initializeDatabase(harness.appDataRoot);
+    databases.push(database);
     const journal = new MutationJournal(
       database,
       { now: () => new Date("2026-08-19T00:00:00.000Z") },
