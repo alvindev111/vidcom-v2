@@ -2278,6 +2278,19 @@
             sang cả `PendingMountPort`; production ở `next-host.ts` vốn đã truyền store đầy đủ nên không phải sửa
             composition-root.
           </p>
+          <p class="text-slate-400 text-sm">
+            P9.2b: retention để ở **adapter**, không thêm method vào `PendingMountPort` — port giữ đúng bốn hàm
+            query/status mà design chốt; sweep gọi **một lần** ở bước reconciliation lúc khởi động, chỗ mà history của
+            daemon cũ chắc chắn đã mất nên không receipt undo sống nào trỏ vào row bị xoá. Row `uploaded_unmounted`
+            quá hạn bị **abandon chứ không xoá**: file vẫn ở Media và phải còn lý do đi kèm. Marker `interrupted` chỉ
+            điền vào row **chưa có** lỗi (daemon bị kill), không đè lý do thật đã ghi. Xoá tombstone không làm mất dấu
+            operation: `lookup` rơi về expression index open-transition trong journal và trả `expired`, nên retry muộn
+            bị từ chối **trước** mutation. Điểm phải sửa lại của 9.1: khi đó row `mounted` trả 404 phẳng, nhưng §5.21
+            yêu cầu trả **kết quả cũ**, nên `mountAsset` đổi output thành `{revision, replayed, envelope|null}` —
+            đúng shape mà `ingestAsset` đã dùng cho replay của nó. Replay đọc duration **từ scene** chứ không probe
+            lại, vì timeline có thể đã rút wrapper một cách hợp lệ; record trỏ vào scene không còn tồn tại là
+            `write_conflict`, không phải cớ để dựng lại scene.
+          </p>
         </article>
       </section>
     </main>
