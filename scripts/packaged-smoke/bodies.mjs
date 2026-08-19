@@ -1730,12 +1730,20 @@ export const STEP_BODIES = {
             headers: { "content-type": "application/json", Cookie: serving.cookie },
             body: JSON.stringify({ name: "Catalog smoke", presetId: "vertical-shorts" }),
           }));
-          projectId = created.project?.id ?? created.id;
-          if (!projectId) throw new Error("creating the catalog project returned no id");
+          // `lifecycle.create` answers `{projectId, slug}`; the other shapes are
+          // accepted only so a future response cannot make this step read an
+          // undefined id as if it had a project.
+          projectId = created.projectId ?? created.project?.id ?? created.id;
+          if (typeof projectId !== "string") {
+            throw new Error(`creating the catalog project returned no id: ${JSON.stringify(created).slice(0, 200)}`);
+          }
           await attachPackagedStudioSession(serving, projectId);
           const snapshot = await jsonResponse(
             "read catalog project",
-            await fetch(`${serving.baseUrl}/api/v1/projects/${projectId}`, { headers: { Cookie: serving.cookie } }),
+            await fetch(
+              `${serving.baseUrl}/api/v1/projects/${projectId}/studio-snapshot`,
+              { headers: { Cookie: serving.cookie } },
+            ),
           );
           const intent = {
             name: template.name,
@@ -1762,12 +1770,14 @@ export const STEP_BODIES = {
           }
           sceneId = installed.sceneId;
           installedPath = prepared.plan?.mountTarget ?? null;
-          const files = await jsonResponse(
-            "read installed files",
-            await fetch(`${serving.baseUrl}/api/v1/projects/${projectId}/files`, { headers: { Cookie: serving.cookie } }),
+          const after = await jsonResponse(
+            "reread catalog project after install",
+            await fetch(
+              `${serving.baseUrl}/api/v1/projects/${projectId}/studio-snapshot`,
+              { headers: { Cookie: serving.cookie } },
+            ),
           );
-          const paths = (files.files ?? []).map((file) => file.path);
-          if (installedPath && !paths.includes(installedPath)) {
+          if (installedPath && !(installedPath in (after.fileHashes ?? {}))) {
             throw new Error(`the installed entry ${installedPath} is not in the project after install`);
           }
         } else {
@@ -1775,7 +1785,10 @@ export const STEP_BODIES = {
           // still serve the identical package identity.
           const snapshot = await jsonResponse(
             "reread catalog project",
-            await fetch(`${serving.baseUrl}/api/v1/projects/${projectId}`, { headers: { Cookie: serving.cookie } }),
+            await fetch(
+              `${serving.baseUrl}/api/v1/projects/${projectId}/studio-snapshot`,
+              { headers: { Cookie: serving.cookie } },
+            ),
           );
           const kept = (snapshot.scenes ?? []).some((scene) => scene.id === sceneId);
           if (!kept) throw new Error("the installed scene did not survive the restart");
