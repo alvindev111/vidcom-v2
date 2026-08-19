@@ -152,6 +152,14 @@ sau **101–105 ms**; buffer hỏng vì scene không nạp bị từ chối sau 
 - **Parity preview ↔ render thật** (R6.14): spike chỉ chạy preview.
 - **`data-fps` của root không đổi được fps runtime trong fixture này**: đặt 24 và 60 vẫn báo `30/1`.
   Fixture thiếu thứ mà project thật khai fps ở đó; phải xác định lại khi nối vào pipeline thật.
+- **Đã xác định lại trên project thật (P11.4, 2026-08-20)**: dựng project qua daemon thật
+  (`tests/support/browser-studio.ts` + `writeSampleProject({ fps: 24, withTimeline: true })`), mở studio
+  trong Chrome và nghe message `{source:"hf-preview", type:"timeline"}`. Preview do daemon phát **có**
+  `data-fps="24"` (kiểm bằng chính response `/preview`), nhưng runtime vẫn báo
+  `fps = {numerator: 30, denominator: 1}`. Vậy kết luận vòng 2 **không** phải khiếm khuyết của fixture:
+  `data-fps` trên root không phải đường khai fps của runtime, kể cả với project thật. Hệ quả cho §5.14:
+  script caption phải đọc fps từ message `timeline` (đang làm vậy) và **không** được suy ra từ
+  `data-fps`; muốn đổi fps thật thì phải tìm đường khai khác, không sửa attribute này.
 - **R4.1c end-to-end**: spike chỉ đo riêng `PlayerHost.reload()`; browser test còn phải đo
   response→first-new-frame và SSE-received→first-new-frame, gồm cả preview settings.
 
