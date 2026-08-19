@@ -36,6 +36,8 @@ export interface SceneMedia {
   src: string;
   start: number | null;
   duration: number | null;
+  /** A project file the clip references that is not on disk (R11.9). */
+  missing: boolean;
 }
 
 export interface SceneScriptLine { id: string; text: string; file: string }

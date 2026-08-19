@@ -151,7 +151,7 @@ function sceneScriptLines(composition: Composition, file: string, scene: { id: s
   return host ? scriptLines(host.children, file) : [];
 }
 
-function collectMedia(slug: string, hostFile: string, root: ParentNode): SceneMedia[] {
+function collectMedia(ref: ProjectRef, hostFile: string, root: ParentNode): SceneMedia[] {
   return [...root.querySelectorAll("img, video, audio, source")].flatMap((node) => {
     const owner = node.tagName.toUpperCase() === "SOURCE" ? node.parentElement : node;
     if (!owner) return [];
@@ -161,12 +161,16 @@ function collectMedia(slug: string, hostFile: string, root: ParentNode): SceneMe
     const timing = readClipTiming(owner);
     const hostDirectory = posix.dirname(hostFile.split("\\").join("/"));
     const relative = posix.normalize(posix.join(hostDirectory, src)).replace(/^\.\//, "");
+    const external = /^(https?:)?\/\//.test(src) || src.startsWith("data:");
     return [{
       kind,
       src,
-      url: /^(https?:)?\/\//.test(src) || src.startsWith("data:") ? src : `/api/hf/${slug}/files/${relative}`,
+      url: external ? src : `/api/hf/${ref.slug}/files/${relative}`,
       start: timing.start,
       duration: timing.duration ?? timing.end,
+      // Only a file this project owns can be missing; a remote source is not
+      // ours to find, and saying it is gone would be a false alarm.
+      missing: !external && safeProjectFile(ref, relative) === null,
     }];
   });
 }
@@ -274,7 +278,7 @@ async function parseScenes(
         trackIndex: host.trackIndex,
         block,
         isTransition: block?.category === "transitions" || (block?.tags.includes("transition") ?? false),
-        media: collectMedia(ref.slug, hostFile, root),
+        media: collectMedia(ref, hostFile, root),
         script: composition && scriptFile ? sceneScriptLines(composition, scriptFile, host) : [],
         narration: readNarration(ref, host.id),
         ...readSceneElements(root, host.id),
@@ -355,7 +359,7 @@ export class CompositionHf implements CompositionPort {
       recordSource,
     );
     const rootTrack = parseRootTrack(authoredRoot, root);
-    const entryMedia = collectMedia(ref.slug, ref.entry, authoredRoot);
+    const entryMedia = collectMedia(ref, ref.entry, authoredRoot);
     const sourceList = [...sources.values()];
     const stat = statSync(entry);
     return {

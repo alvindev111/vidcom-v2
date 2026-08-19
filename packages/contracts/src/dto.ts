@@ -162,6 +162,8 @@ export const SceneSchema = z.strictObject({
       src: z.string(),
       start: z.number().finite().nullable(),
       duration: z.number().finite().nullable(),
+      /** The project file this clip points at is not on disk (R11.9). */
+      missing: z.boolean(),
     }),
   ),
   script: z.array(

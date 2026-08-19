@@ -7,11 +7,13 @@ import {
   EyeIcon,
   EyeOffIcon,
   FilmIcon,
+  TriangleAlertIcon,
 } from "lucide-react";
 
 import { formatTimecode } from "@/lib/studio/format";
 import type { DragZone } from "@/lib/studio/editor-interaction";
 import { hitZone } from "@/lib/studio/snap";
+import { missingMediaPaths } from "@/lib/studio/scene-media";
 import { groupOf } from "@/lib/studio/snapshots";
 import type { RootTrack, Scene } from "@/lib/studio/types";
 import type { TimelineThumbnailViewport } from "@/lib/studio/timeline-thumbnail-layout";
@@ -150,6 +152,7 @@ export const TimelineLane = React.memo(function TimelineLane({
   const Icon = hidden ? EyeOffIcon : EyeIcon;
   const Chevron = expanded ? ChevronDownIcon : ChevronRightIcon;
   const group = groupOf(scene);
+  const missing = missingMediaPaths(scene);
   const end = scene.start + scene.duration;
   const inside = scene.elements.length + scene.unresolvedEffects;
 
@@ -263,11 +266,15 @@ export const TimelineLane = React.memo(function TimelineLane({
             onDragEnd(scene, event.clientX);
           }}
           onPointerCancel={onDragCancel}
-          title={`${formatTimecode(scene.start)} → ${formatTimecode(end)}`}
+          title={missing.length > 0
+            ? `${formatTimecode(scene.start)} → ${formatTimecode(end)} · missing source: ${missing.join(", ")}`
+            : `${formatTimecode(scene.start)} → ${formatTimecode(end)}`}
+          data-missing-source={missing.length > 0 || undefined}
           className={cn(
             "absolute inset-y-1.5 flex touch-none items-center overflow-hidden rounded-sm border px-1.5 transition-colors",
             GROUP_STYLE[group] ?? GROUP_STYLE.scene,
             selected && "ring-studio-accent ring-2",
+            missing.length > 0 && "border-red-500 bg-red-500/15",
             live && !selected && "border-studio-accent",
             hidden && "opacity-35",
           )}
@@ -283,6 +290,14 @@ export const TimelineLane = React.memo(function TimelineLane({
             pixelsPerSecond={pixelsPerSecond}
             viewport={thumbnailViewport}
           />
+          {missing.length > 0 ? (
+            // The path is the point: without it the clip is just an empty box and
+            // the person has no way to know which file to restore.
+            <span className="relative z-10 flex min-w-0 items-center gap-1 truncate rounded-sm bg-red-600/80 px-1 text-[10px] text-white">
+              <TriangleAlertIcon className="size-3 shrink-0" />
+              <span className="truncate">Missing {missing.join(", ")}</span>
+            </span>
+          ) : null}
           <span className="text-foreground/85 relative z-10 truncate rounded-sm bg-black/35 px-1 font-mono text-[10px]">
             {scene.duration}s
           </span>

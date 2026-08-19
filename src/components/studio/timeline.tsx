@@ -57,6 +57,11 @@ import { useEditorInteraction } from "./editor-interaction-context";
  * track order while the storyboard listed beats in playback order, and nothing
  * tied a row to a card.
  */
+/** True only for a drag that carries a file or an asset path from Media. */
+function carriesAsset(event: React.DragEvent<HTMLDivElement>): boolean {
+  return [...event.dataTransfer.types].some((type) => type === "Files" || type === ASSET_DRAG_TYPE);
+}
+
 export function Timeline({
   projectId,
   scenes,
@@ -102,6 +107,27 @@ export function Timeline({
   const marqueeSurface = React.useRef<HTMLDivElement>(null);
   const drops = useMountDrop({ projectId, revision: projectRevision, entryContentHash, onProjectChanged });
   const [dropAt, setDropAt] = React.useState<{ atSeconds: number; trackIndex: number } | null>(null);
+  // The scene a mount just created. It is held until the reloaded model contains
+  // it, because selecting an id the timeline has not rendered yet does nothing.
+  const focusSceneId = React.useRef<string | null>(null);
+
+  const focusMounted = React.useCallback((outcome: { kind: string; sceneId?: string } | null) => {
+    if (outcome?.kind === "mounted" && outcome.sceneId) focusSceneId.current = outcome.sceneId;
+  }, []);
+
+  // Runs when the reloaded model arrives: the new clip is selected and scrolled
+  // to, so a drop that lands off-screen is not silently invisible (R11.7).
+  React.useEffect(() => {
+    const wanted = focusSceneId.current;
+    if (!wanted) return;
+    const scene = scenes.find((candidate) => candidate.id === wanted);
+    if (!scene) return;
+    focusSceneId.current = null;
+    onSelect(scene);
+    viewport.current
+      ?.querySelector(`[data-timeline-row="${CSS.escape(scene.id)}"]`)
+      ?.scrollIntoView({ block: "nearest", inline: "center" });
+  }, [onSelect, scenes]);
 
   // Collapsed by default so the timeline still reads as a list of beats, with
   // the selected scene open. Derived rather than synced from an effect: only
@@ -601,22 +627,25 @@ export function Timeline({
             data-timeline-marquee-surface
             className="relative"
             onDragOver={(event) => {
-              if (!entryContentHash) return;
+              // A scene being reordered is also a drag over this surface; only a
+              // file or an asset from Media is a mount.
+              if (!entryContentHash || !carriesAsset(event)) return;
               event.preventDefault();
               event.dataTransfer.dropEffect = "copy";
               setDropAt(placementFromEvent(event));
             }}
             onDragLeave={() => setDropAt(null)}
             onDrop={(event) => {
+              if (!carriesAsset(event)) return;
               event.preventDefault();
               const placement = placementFromEvent(event);
               setDropAt(null);
               const assetPath = event.dataTransfer.getData(ASSET_DRAG_TYPE);
               // An asset already in the project mounts in one mutation; a file from
               // outside goes through upload first, under one operation.
-              if (assetPath) { void drops.dropAssetPath(assetPath, placement); return; }
+              if (assetPath) { void drops.dropAssetPath(assetPath, placement).then(focusMounted); return; }
               const file = event.dataTransfer.files.item(0);
-              if (file) void drops.dropFile(file, placement);
+              if (file) void drops.dropFile(file, placement).then(focusMounted);
             }}
             onPointerDown={beginMarquee}
             onPointerMove={moveMarquee}
