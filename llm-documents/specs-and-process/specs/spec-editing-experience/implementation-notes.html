@@ -2219,6 +2219,22 @@
             mô tả phần registry. (2) manifest trong cache được `validateCatalogItem` lại lúc đọc, vì file đó nằm
             ở app-data và bất cứ thứ gì trên máy cũng ghi được, còn luồng install lấy tên item từ listing; test
             sửa `entry` thành `../../../etc/passwd` chứng minh cache bị bỏ và refetch thay vì tin file.
+          </p>          <p class="text-slate-400 text-sm">
+            P8.2c: `StagedFileSource` chỉ là `{sourcePath,contentHash}` trỏ vào app-data, nên **chính file trong
+            verified cache là capability** — không cần copy lần hai; thứ giữ nó hợp lệ là pin. Vì vậy Design nhận
+            erratum 12.2: kết quả `materialize` có thêm `release()`, bởi "pin trong phạm vi call, release
+            `finally`" là bất khả thi nếu caller không kết thúc được pin (prepare phải nhả trước khi chờ approval,
+            execute phải giữ tới lúc mutation settle).
+            Bounds áp trên **byte đếm thật**: một response khai `content-length: 8` nhưng trả 4 KiB vẫn bị cắt ở
+            trần file; payload bị redirect vẫn chỉ một bộ đếm (thân chỉ đọc ở response cuối) chứ không reset.
+            Publish là rename **cả thư mục**, nên closure tải dở không bao giờ đọc được như một package; 404 giữa
+            closure hoặc abort đều để lại 0 byte ở `packages/` và `staging/`.
+            Pin dùng refcount theo package key: package đang pin vẫn đọc được dù vượt budget, và chỉ khi release
+            mới evict LRU unpinned cũ nhất — test đóng ở đúng 0 pin.
+            Trong lúc làm green có 4 lỗi: 3 là **expectation của test sai** (integrity lưu hex trần không có
+            `sha256:`; budget 900 byte không thực tế khi metadata package ~1 KB; dùng item thô của manifest thay vì
+            item đã normalize) và 1 là **lỗi thật của code**: cache hit vẫn refetch manifest closure, nên
+            `#openPublished` được đưa lên trước mọi việc manifest.
           </p>        </article>
       </section>
     </main>

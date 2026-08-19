@@ -504,6 +504,14 @@ export interface CatalogPort {
   ): Promise<Result<{
     item: VerifiedCatalogItem;
     files: readonly CatalogMaterializedFile[];
+    /**
+     * Releases the verified-cache pin held for these files.
+     *
+     * Required in a `finally`: `prepare` releases before it returns to await
+     * approval, `execute` holds it until its mutation settles. Without it the
+     * global cache budget could reclaim a package mid-install.
+     */
+    release(): Promise<void>;
   }, DomainError>>;
 }
 

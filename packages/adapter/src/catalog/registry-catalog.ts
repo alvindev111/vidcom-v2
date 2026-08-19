@@ -2,17 +2,46 @@ import { randomUUID } from "node:crypto";
 import { mkdir, readFile, rename, unlink, writeFile } from "node:fs/promises";
 import path from "node:path";
 
-import { ErrorCode } from "@vidcom/contracts";
+import { ErrorCode, type RelPath } from "@vidcom/contracts";
 import {
+  err,
+  ok,
+  type AbsolutePath,
   type CatalogDependencyNode,
   type CatalogItem,
   type CatalogListFilter,
   type CatalogListing,
+  type CatalogMaterializedFile,
+  type Result,
+  type VerifiedCatalogItem,
   validateCatalogItem,
 } from "@vidcom/core";
 
 import { isPublicAddress } from "../net/public-address";
-import { normalizeUpstreamCatalogItem } from "./normalize";
+import { catalogManifestDigest } from "./bundled-catalog";
+import { canonicalizeCatalogTarget, normalizeUpstreamCatalogItem } from "./normalize";
+import {
+  CATALOG_PACKAGE_LIMITS,
+  CatalogPackageCache,
+  CatalogPayloadError,
+  catalogPackageKey,
+  hashStagedFile,
+  writeStagedPayload,
+  type CatalogPackageLimits,
+} from "./package-cache";
+
+/** One materialized package: verified metadata plus staged file capabilities. */
+export interface MaterializedCatalogPackage {
+  item: VerifiedCatalogItem;
+  files: CatalogMaterializedFile[];
+  /** Releases the cache pin; callers must run it in a `finally`. */
+  release(): Promise<void>;
+}
+
+/** Text targets are decoded as UTF-8 by the install path; everything else is bytes. */
+function isTextTarget(target: string): "utf8" | "binary" {
+  return /\.(html|css|js|mjs|json|svg|txt|md)$/iu.test(target) ? "utf8" : "binary";
+}
 
 /**
  * HyperFrames registry listing with a bounded, offline-tolerant cache
@@ -72,8 +101,12 @@ export interface RegistryCatalogOptions {
   cacheRoot: string;
   /** Frozen bundled items, always listed and always offline-available. */
   bundled: () => Promise<readonly CatalogItem[]>;
+  /** `<catalogAssetRoot>/files`; required to materialize a bundled package. */
+  bundledFilesRoot?: string;
   now?: () => number;
   http?: CatalogHttpOptions;
+  /** Test seam for the byte ceilings; production uses the exact Design values. */
+  limits?: Partial<CatalogPackageLimits>;
 }
 
 interface CachedSnapshot {
@@ -107,6 +140,8 @@ function abortRejection(signal: AbortSignal): Promise<never> {
 export class HyperframesRegistryCatalog {
   readonly #cacheRoot: string;
   readonly #bundled: RegistryCatalogOptions["bundled"];
+  readonly #bundledFilesRoot: string | null;
+  readonly #packages: CatalogPackageCache;
   readonly #now: () => number;
   readonly #http: CatalogHttpOptions;
   /** Single-flight refresh, so concurrent callers make one network pass. */
@@ -117,8 +152,300 @@ export class HyperframesRegistryCatalog {
   constructor(options: RegistryCatalogOptions) {
     this.#cacheRoot = options.cacheRoot;
     this.#bundled = options.bundled;
+    this.#bundledFilesRoot = options.bundledFilesRoot ?? null;
     this.#now = options.now ?? (() => Date.now());
     this.#http = options.http ?? {};
+    this.#packages = new CatalogPackageCache({
+      root: options.cacheRoot,
+      limits: { ...CATALOG_PACKAGE_LIMITS, ...options.limits },
+      now: this.#now,
+    });
+  }
+
+  /** Packages currently pinned by a caller; zero when nothing is in flight. */
+  pinnedPackageCount(): number {
+    return this.#packages.pinnedCount();
+  }
+
+  /**
+   * Downloads and verifies one package plus its dependency closure.
+   *
+   * Only called when the author is about to install, so browsing never fills the
+   * cache. The result carries staged capabilities and a `release` the caller must
+   * run in a `finally`: `prepare` releases before it returns to await approval,
+   * while `execute` holds the pin until its mutation settles.
+   */
+  async materialize(
+    name: string,
+    version: string,
+    signal: AbortSignal,
+  ): Promise<Result<MaterializedCatalogPackage, CatalogPayloadError>> {
+    try {
+      const bundled = (await this.#bundled()).find((item) => item.name === name);
+      if (bundled) {
+        if (bundled.version !== version) {
+          throw new CatalogPayloadError("version_mismatch", "bundled catalog version does not match");
+        }
+        return ok(await this.#materializeBundled(bundled));
+      }
+      return ok(await this.#materializeRemote(name, version, signal));
+    } catch (error) {
+      return err(error instanceof CatalogPayloadError
+        ? error
+        : new CatalogPayloadError("unavailable", "catalog package could not be materialized", { cause: error }));
+    }
+  }
+
+  /** Bundled bytes are already verified in the source tree; no network at all. */
+  async #materializeBundled(item: CatalogItem): Promise<MaterializedCatalogPackage> {
+    if (this.#bundledFilesRoot === null) {
+      throw new CatalogPayloadError("unavailable", "bundled catalog files root is not configured");
+    }
+    if (item.integrity === null) {
+      throw new CatalogPayloadError("integrity_mismatch", "bundled catalog item has no digests");
+    }
+    const files: CatalogMaterializedFile[] = [];
+    for (const [target, digest] of Object.entries(item.integrity.files)) {
+      const sourcePath = path.join(this.#bundledFilesRoot, target);
+      const actual = await hashStagedFile(sourcePath);
+      if (actual === null) {
+        throw new CatalogPayloadError("not_found", `bundled catalog file ${target} is missing`);
+      }
+      if (actual !== `sha256:${digest}`) {
+        throw new CatalogPayloadError("integrity_mismatch", `bundled catalog file ${target} does not match its digest`);
+      }
+      files.push({
+        path: target as RelPath,
+        contentHash: actual,
+        source: { sourcePath: sourcePath as AbsolutePath, contentHash: actual },
+        encoding: isTextTarget(target) ? "utf8" : "binary",
+      });
+    }
+    return {
+      item: item as VerifiedCatalogItem,
+      files,
+      release: async () => { /* frozen source bytes are never reclaimed */ },
+    };
+  }
+
+  async #materializeRemote(
+    name: string,
+    version: string,
+    signal: AbortSignal,
+  ): Promise<MaterializedCatalogPackage> {
+    const parsed = /^git:([0-9a-f]{40})$/.exec(version);
+    if (!parsed) throw new CatalogPayloadError("version_mismatch", "catalog version is not a pinned commit");
+    const revision = parsed[1]!;
+    const snapshot = await this.#snapshotFor(revision, signal);
+    const item = snapshot.items.find((candidate) => candidate.name === name);
+    if (!item) throw new CatalogPayloadError("not_found", `catalog item ${name} is not in the snapshot`);
+    if (item.source.revision !== revision) {
+      throw new CatalogPayloadError("version_mismatch", "catalog item does not belong to the requested commit");
+    }
+
+    const limits = this.#packages.limits;
+    const key = catalogPackageKey(name, version);
+    // A published package is answered with zero network: its metadata and every
+    // digest were already verified when it was published.
+    const cached = await this.#openPublished(key, item);
+    if (cached) return cached;
+
+    if (item.dependencies.length + 1 > limits.closureItems) {
+      throw new CatalogPayloadError("too_large", "catalog dependency closure has too many items");
+    }
+    const closure = [...item.dependencies, name];
+    const manifests = await this.#closureManifests(closure, revision, signal);
+    const planned: { target: RelPath; url: URL }[] = [];
+    for (const member of closure) {
+      const manifest = manifests.get(member);
+      if (!manifest) throw new CatalogPayloadError("not_found", `catalog dependency ${member} is missing`);
+      for (const file of manifest.files) {
+        planned.push({ target: file.target, url: file.url });
+      }
+    }
+    if (planned.length > limits.files) {
+      throw new CatalogPayloadError("too_large", "catalog package declares too many files");
+    }
+    const targets = new Set(planned.map(({ target }) => target));
+    if (targets.size !== planned.length) {
+      throw new CatalogPayloadError("integrity_mismatch", "catalog package declares two files with one target");
+    }
+
+    const staged = await this.#packages.stage();
+    let total = 0;
+    const digests: Record<string, string> = {};
+    try {
+      for (const file of planned) {
+        if (signal.aborted) throw new CatalogPayloadError("aborted", "catalog materialization was aborted");
+        const remaining = Math.min(limits.fileBytes, limits.packageBytes - total);
+        const response = await this.#payloadResponse(file.url, signal);
+        const written = await writeStagedPayload(
+          response,
+          path.join(staged.root, "files", file.target),
+          remaining,
+          signal,
+        );
+        total += written.bytes;
+        if (total > limits.packageBytes) {
+          throw new CatalogPayloadError("too_large", "catalog package exceeds its byte limit");
+        }
+        digests[file.target] = written.contentHash.slice("sha256:".length);
+      }
+      const verified: VerifiedCatalogItem = {
+        ...item,
+        integrity: {
+          algo: "sha256",
+          files: digests as VerifiedCatalogItem["integrity"]["files"],
+          manifest: "",
+        },
+        materialization: "verified",
+      };
+      verified.integrity.manifest = catalogManifestDigest(verified);
+      await writeFile(
+        path.join(staged.root, "package.json"),
+        `${JSON.stringify(verified)}\n`,
+        { encoding: "utf8", mode: 0o600 },
+      );
+      await this.#packages.publish(key, staged.root);
+    } catch (error) {
+      await staged.discard();
+      throw error;
+    }
+    const opened = await this.#openPublished(key, item);
+    if (!opened) throw new CatalogPayloadError("unavailable", "catalog package disappeared after publication");
+    await this.#packages.enforceBudget();
+    return opened;
+  }
+
+  /** Opens an already-published package, re-verifying every digest first. */
+  async #openPublished(
+    key: string,
+    item: CatalogItem,
+  ): Promise<MaterializedCatalogPackage | null> {
+    const root = this.#packages.packageRoot(key);
+    let verified: VerifiedCatalogItem;
+    try {
+      verified = JSON.parse(await readFile(path.join(root, "package.json"), "utf8")) as VerifiedCatalogItem;
+    } catch {
+      return null;
+    }
+    if (verified.name !== item.name || verified.version !== item.version) return null;
+    const release = this.#packages.pin(key);
+    try {
+      const files: CatalogMaterializedFile[] = [];
+      for (const [target, digest] of Object.entries(verified.integrity.files)) {
+        const sourcePath = path.join(root, "files", target);
+        const actual = await hashStagedFile(sourcePath);
+        if (actual !== `sha256:${digest}`) {
+          throw new CatalogPayloadError("integrity_mismatch", `catalog file ${target} does not match its digest`);
+        }
+        files.push({
+          path: target as RelPath,
+          contentHash: actual,
+          source: { sourcePath: sourcePath as AbsolutePath, contentHash: actual },
+          encoding: isTextTarget(target) ? "utf8" : "binary",
+        });
+      }
+      if (catalogManifestDigest(verified) !== verified.integrity.manifest) {
+        throw new CatalogPayloadError("integrity_mismatch", "catalog package manifest digest does not match");
+      }
+      await this.#packages.touch(key);
+      return { item: verified, files, release };
+    } catch (error) {
+      await release();
+      if (error instanceof CatalogPayloadError) throw error;
+      return null;
+    }
+  }
+
+  /** Returns the snapshot for an exact commit, refreshing only if needed. */
+  async #snapshotFor(revision: string, signal: AbortSignal): Promise<CachedSnapshot> {
+    const cached = await this.#readCache();
+    if (cached?.revision === revision) return cached;
+    const refreshed = await this.#refresh();
+    if (refreshed.revision !== revision) {
+      throw new CatalogPayloadError("version_mismatch", "the registry no longer serves the requested commit");
+    }
+    if (signal.aborted) throw new CatalogPayloadError("aborted", "catalog materialization was aborted");
+    return refreshed;
+  }
+
+  /** Re-reads the closure manifests at the pinned commit to plan exact targets. */
+  async #closureManifests(
+    closure: readonly string[],
+    revision: string,
+    signal: AbortSignal,
+  ): Promise<Map<string, { files: { target: RelPath; url: URL }[] }>> {
+    const manifests = new Map<string, { files: { target: RelPath; url: URL }[] }>();
+    for (const member of closure) {
+      if (signal.aborted) throw new CatalogPayloadError("aborted", "catalog materialization was aborted");
+      let raw: unknown;
+      let directory = "blocks";
+      for (const candidate of ["blocks", "components"]) {
+        try {
+          raw = await this.fetchJson(
+            new URL(`${RAW_BASE}/${revision}/registry/${candidate}/${member}/registry-item.json`),
+            MAX_MANIFEST_BYTES,
+            signal,
+          );
+          directory = candidate;
+          break;
+        } catch { raw = undefined; }
+      }
+      if (!isRecord(raw) || !Array.isArray(raw.files)) {
+        throw new CatalogPayloadError("not_found", `catalog manifest for ${member} is unavailable`);
+      }
+      const files: { target: RelPath; url: URL }[] = [];
+      for (const file of raw.files) {
+        if (!isRecord(file) || typeof file.target !== "string" || typeof file.path !== "string") {
+          throw new CatalogPayloadError("integrity_mismatch", `catalog manifest for ${member} is invalid`);
+        }
+        const target = canonicalizeCatalogTarget(file.target);
+        if (target === null) {
+          throw new CatalogPayloadError("integrity_mismatch", `catalog manifest for ${member} has an unsafe target`);
+        }
+        const source = canonicalizeCatalogTarget(file.path);
+        if (source === null) {
+          throw new CatalogPayloadError("integrity_mismatch", `catalog manifest for ${member} has an unsafe path`);
+        }
+        files.push({
+          target,
+          url: new URL(`${RAW_BASE}/${revision}/registry/${directory}/${member}/${source}`),
+        });
+      }
+      manifests.set(member, { files });
+    }
+    return manifests;
+  }
+
+  /** One bounded payload request; shares the transport policy with metadata. */
+  async #payloadResponse(url: URL, signal: AbortSignal): Promise<Response> {
+    const timeout = AbortSignal.timeout(this.#http.timeoutMs ?? DEFAULT_TIMEOUT_MS);
+    const combined = AbortSignal.any([signal, timeout]);
+    let target = url;
+    for (let redirects = 0; redirects <= MAX_REDIRECTS; redirects += 1) {
+      await this.#assertReachable(target);
+      const doFetch = this.#http.fetch ?? globalThis.fetch;
+      const response = await Promise.race([
+        doFetch(target, { signal: combined, redirect: "manual" }),
+        abortRejection(combined),
+      ]);
+      const location = response.headers.get("location");
+      if (response.status >= 300 && response.status < 400 && location !== null) {
+        await response.body?.cancel().catch(() => undefined);
+        if (redirects === MAX_REDIRECTS) {
+          throw new CatalogPayloadError("unavailable", "catalog payload redirected too many times");
+        }
+        target = new URL(location, target);
+        continue;
+      }
+      if (!response.ok) {
+        await response.body?.cancel().catch(() => undefined);
+        throw new CatalogPayloadError("not_found", `catalog payload request failed with HTTP ${response.status}`);
+      }
+      return response;
+    }
+    throw new CatalogPayloadError("unavailable", "catalog payload redirected too many times");
   }
 
   /**

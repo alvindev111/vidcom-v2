@@ -7,6 +7,7 @@ export * from "./bgm/ccmixter-bgm-provider";
 export * from "./cache/thumbnail-cache";
 export * from "./catalog/normalize";
 export * from "./catalog/bundled-catalog";
+export * from "./catalog/package-cache";
 export * from "./catalog/registry-catalog";
 export * from "./net/public-address";
 export * from "./agent/agent-terminal-pty";

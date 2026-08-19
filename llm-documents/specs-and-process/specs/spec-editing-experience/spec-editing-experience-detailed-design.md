@@ -1189,6 +1189,10 @@ export interface CatalogPort {
   `write-staged` undoable. Mỗi call materialize giữ cache pin trong lifetime của call; riêng execute
   giữ source/pin tới mutation settle. `UndoContentPort` retain object refs cho redo trước publish,
   nên LRU catalog có thể evict package sau đó mà history vẫn đúng.
+  - **Erratum bản 12.2 (2026-08-19, không đổi AC)**: kết quả của `materialize` có thêm `release(): Promise<void>`.
+    Không có nó thì "pin trong phạm vi call, release `finally`" là bất khả thi: `prepare` phải nhả pin trước khi
+    chờ approval còn `execute` phải giữ tới lúc mutation settle, nên lifetime của pin bắt buộc do caller quyết.
+    Adapter refcount theo package key; release là idempotent và mỗi lần release đều chạy lại LRU budget.
 - `registryDependencies` được resolve đệ quy bằng topo-sort; thiếu, chu trình, type dependency không hỗ
   trợ, hoặc hai file trùng target nhưng khác digest ⇒ từ chối **toàn gói**. Files/digest của closure
   nằm trong cùng normalized manifest, cùng kế hoạch, cùng mutation và cùng undo với item gốc.
