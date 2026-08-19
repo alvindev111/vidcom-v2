@@ -102,16 +102,17 @@ async function projectIdOf(page: Page): Promise<string> {
   });
 }
 
-// BLOCKED: the double buffer cannot complete a swap against the real player.
+// BLOCKED: a preflighted candidate never receives the composition timeline.
 //
-// Measured here, not guessed: while the studio's own `hyperframes-player` is on
-// the page, a second one pointed at the same preview never receives the
-// composition timeline — three sequential attempts, 6 s each, none. Remove the
-// first player and a new one gets its timeline in ~220 ms. Since the swap
-// requires the candidate to report a timeline before it is shown, every reload
-// times out as `preview_unhealthy`, and the first mount is the only preview the
-// app ever shows. That is P4's contract, not P11.1's measurement, so these two
-// cases stay skipped with the finding recorded rather than asserted around.
+// Measured, not guessed. One bug behind this was found and fixed: the candidate
+// was given its `src` before it was connected, so it loaded while detached —
+// where `window.parent` is its own window — and the runtime never opened the
+// bridge, which also left the page unable to bridge afterwards. With that fixed,
+// a hand-written replacement player in the same page reports its timeline in
+// ~300 ms, but the buffer's own candidate still reports none, whether it is
+// created beside the visible engine or after retiring it. Until a candidate can
+// bridge, the swap can only time out as `preview_unhealthy`, and there is
+// nothing for these two cases to measure.
 describe("editing experience in a browser", () => {
   it.skip("shows this tab's own write in the preview within the R4.1c budget", async () => {
     await withStudioBrowser("perf-write", async ({ page }) => {

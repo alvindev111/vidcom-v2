@@ -106,13 +106,19 @@ export function createHyperframesPlayerEnvironment(input: {
         for (const [name, listener] of listeners) engine.removeEventListener(name, listener);
       };
       metadata.set(engine, state);
-      engine.setAttribute("src", url);
       engine.style.position = "absolute";
       engine.style.inset = "0";
       engine.style.opacity = "0";
       engine.style.zIndex = "0";
       engine.style.pointerEvents = "none";
+      // Connect before naming the source. Setting `src` first makes the element
+      // load its document while it is still detached, where `window.parent` is
+      // its own window, so the composition runtime never opens the bridge and
+      // the preflight can only ever time out — measured: an appended-then-sourced
+      // player reports its timeline in ~300 ms, a sourced-then-appended one never
+      // does, and it leaves the page unable to bridge afterwards.
       input.container.appendChild(engine);
+      engine.setAttribute("src", url);
       return engine;
     },
     waitForHealth(engine, signal) {
