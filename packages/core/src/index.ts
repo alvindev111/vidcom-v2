@@ -48,6 +48,7 @@ export * from "./usecase/project-import-idempotency";
 export * from "./usecase/apply-mutation-inverse";
 export * from "./usecase/assemble-catalog-install";
 export * from "./usecase/plan-catalog-mount";
+export * from "./usecase/catalog-install";
 export * from "./usecase/agent-kit-install";
 export * from "./usecase/project-identity";
 export * from "./usecase/project-lifecycle";

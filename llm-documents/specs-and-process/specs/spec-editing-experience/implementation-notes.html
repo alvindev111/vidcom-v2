@@ -2246,6 +2246,26 @@
             đúng 1 `section`, host chỉ có `id` + attribute provenance — nhưng vẫn escape thêm ở tầng JSON
             (`\u003c`, `\u003e`, `\u0026`) để attribute không còn byte nào trông như markup, kể cả với các
             scanner không dùng DOM trong repo; parse lại vẫn ra đúng object gồm title/description hostile.
+          </p>          <p class="text-slate-400 text-sm">
+            P8.4a–8.4c: toàn bộ policy install nằm ở Core. `planCatalogInstall` quyết kind nào mount được ở đâu
+            (template từ chối `into-scene`; ba kind chưa có requirement bị từ chối thẳng), reinstall là
+            identical/newer/older/different/unmanaged, mỗi trường hợp chỉ mở đúng lựa chọn hợp lệ (identical ⇒
+            `reuse`/`skip`; khác version hoặc unmanaged ⇒ `replace`/`skip`; cùng version khác digest ⇒ **từ
+            chối thẳng**, không đưa nút replace), và file nào create/replace/reuse. Lần cài đầu `targetHashes`
+            **rỗng** cho package: sự vắng mặt được khoá bằng plan digest + step expected-null chứ không bịa hash.
+            8.4b ghép **một** composite: `mkdir either` nông-trước, một `write-staged` undoable mỗi file
+            create/replace kèm pre-image chính xác, rồi các document mount. `new-scene` đi qua đúng
+            `planSceneInsertion` của timeline (wrapper + narration sidecar + root entry do `applyOps` viết lại),
+            `into-scene` chỉ chạm document scene đích với một layer scene-local 0, clamp theo duration scene, track
+            overlay kế tiếp. Reuse **không** ghi file, không tạo directory, nhưng vẫn mount và biến bytes reuse thành
+            typed read guard — nên event paths chỉ chứa file thực sự đổi.
+            8.4c: hai pha dùng **một** planner nên không có pending-plan sống giữa hai request. `prepare`
+            materialize → verify (guard 8.3) → plan → binding → release pin trong `finally` (test đếm đúng 1
+            materialize + 1 release). `execute` materialize lại, dựng lại binding, `planReserve` rồi mới mutate;
+            binding reserve khớp từng byte với binding của prepare, đúng một `mutateSource`. Grant sai hoặc
+            authority từ chối đều 0 mutation và **vẫn** release pin, nên grant hết hạn/revoke không rò pin. Một lỗi
+            của chính test bị phát hiện lúc green: fake spread counter vào bản copy nên hai assertion pin đọc số 0 —
+            sửa harness, không nới assertion.
           </p>        </article>
       </section>
     </main>
