@@ -444,7 +444,7 @@ function cueAudioPath(sceneId: string, cueId: string): string {
   return `narration/${sceneId}/${cueId}.wav`;
 }
 
-function initialCue(sceneId: string, text: string, cueId = sceneId): NarrationCue {
+export function initialCue(sceneId: string, text: string, cueId = sceneId): NarrationCue {
   const audioPath = cueAudioPath(sceneId, cueId);
   return {
     cueId,
@@ -459,7 +459,7 @@ function initialCue(sceneId: string, text: string, cueId = sceneId): NarrationCu
   };
 }
 
-function serializeNarrationSidecar(
+export function serializeNarrationSidecar(
   sceneId: string,
   cues: NarrationCue[],
   revision: number,

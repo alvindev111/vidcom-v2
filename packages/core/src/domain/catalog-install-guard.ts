@@ -1,6 +1,7 @@
 import { type ContentHash, type RelPath } from "@vidcom/contracts";
 
 import { err, ok, type Result } from "../error/result";
+import { canonicalizeJson } from "../service/canonical-json";
 import { isVerifiedCatalogItem, type CatalogItem, type VerifiedCatalogItem } from "./catalog";
 
 /**
@@ -100,6 +101,32 @@ export function catalogProvenanceOf(item: VerifiedCatalogItem): CatalogProvenanc
     version: item.version,
     integrity: item.integrity.manifest,
   };
+}
+
+/**
+ * Canonical provenance JSON with every markup-significant character escaped at
+ * the JSON level (`\u003c`, `\u003e`, `\u0026`).
+ *
+ * A quoted attribute containing `<script>` is already inert to an HTML parser,
+ * but escaping here means the serialized value carries no markup-looking bytes at
+ * all, so it is also safe for the repository's non-DOM scanners and safe to place
+ * into an authored markup string. It still parses back to the identical object.
+ */
+export function catalogProvenanceValue(item: VerifiedCatalogItem): string {
+  return canonicalizeJson(catalogProvenanceOf(item))
+    .replaceAll("<", "\\u003c")
+    .replaceAll(">", "\\u003e")
+    .replaceAll("&", "\\u0026");
+}
+
+/**
+ * The same value escaped for direct use inside a double-quoted HTML attribute.
+ *
+ * Only `"` remains to escape, because `catalogProvenanceValue` has already
+ * removed `<`, `>` and `&` from the output.
+ */
+export function catalogProvenanceAttribute(item: VerifiedCatalogItem): string {
+  return catalogProvenanceValue(item).replaceAll('"', "&quot;");
 }
 
 /** Parses mounted provenance; anything not matching the exact shape is null. */
