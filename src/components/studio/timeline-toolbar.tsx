@@ -5,6 +5,7 @@ import { MagnetIcon, Redo2Icon, Trash2Icon, Undo2Icon, ZoomInIcon, ZoomOutIcon }
 import { Button } from "@/components/ui/button";
 import { historyDirectionView } from "@/lib/studio/history-controls";
 import { TimeReadout } from "./player-time";
+import { ShortcutSheet } from "./shortcut-sheet";
 import type { useMutationHistory } from "./use-mutation-history";
 
 export function TimelineToolbar({
@@ -125,6 +126,8 @@ export function TimelineToolbar({
       >
         Ripple
       </Button>
+
+      <ShortcutSheet />
 
       <TimeReadout className="text-muted-foreground ml-auto shrink-0 font-mono text-[10px]" />
 

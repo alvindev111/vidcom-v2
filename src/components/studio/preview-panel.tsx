@@ -61,6 +61,7 @@ export function PreviewPanel({
             error={state.error}
           />
           <PlaybackBar
+            frameRate={frameRate}
             duration={duration}
             paused={state.paused}
             muted={state.muted}
@@ -88,6 +89,7 @@ export function PreviewPanel({
           projectRevision={projectRevision}
           selectedId={selectedId}
           onScrub={controls.seek}
+          onTogglePlay={controls.toggle}
           onSelect={onSelectScene}
           onToggleHidden={onToggleHidden}
           onProjectChanged={onProjectChanged}

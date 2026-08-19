@@ -44,6 +44,7 @@ import { TimelineRuler } from "./timeline-ruler";
 import { TimelineToolbar } from "./timeline-toolbar";
 import { TimelineLane, TimelineRootLane } from "./timeline-track";
 import { dropPlacement } from "@/lib/studio/mount-drop";
+import { transportActionFor } from "@/lib/studio/transport-keys";
 import { ASSET_DRAG_TYPE } from "./file-tree-item";
 import { useMountDrop } from "./use-mount-drop";
 import { useMutationHistory } from "./use-mutation-history";
@@ -73,6 +74,7 @@ export function Timeline({
   projectRevision,
   selectedId,
   onScrub,
+  onTogglePlay,
   onSelect,
   onToggleHidden,
   onProjectChanged,
@@ -88,6 +90,8 @@ export function Timeline({
   projectRevision: number;
   selectedId: string;
   onScrub: (seconds: number) => void;
+  /** Play/pause for the Space binding; the player itself lives above the timeline. */
+  onTogglePlay?: () => void;
   onSelect: (scene: Scene) => void;
   onToggleHidden: (scene: Scene) => void;
   onProjectChanged: ProjectChanged;
@@ -509,16 +513,44 @@ export function Timeline({
     applyInteraction(finishMarquee(interactionRef.current, bounds));
   }, [applyInteraction, interactionRef]);
 
+  // One listener, driven by TRANSPORT_BINDINGS: the shortcut sheet and the
+  // handler read the same list, so a documented key cannot stop working quietly.
   React.useEffect(() => {
-    const escape = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
-        applyInteraction(clearSelection(cancelDrag(interactionRef.current)));
-        setPreparedDeletion(null);
+    const onKeyDown = (event: KeyboardEvent) => {
+      const action = transportActionFor(event, event.target);
+      if (action === null) return;
+      const at = (seconds: number) => onScrub(Math.min(Math.max(seconds, 0), duration));
+      const now = timeStore.get();
+      switch (action) {
+        case "toggle-play": onTogglePlay?.(); break;
+        case "frame-back": at(now - 1 / (frameRate || 30)); break;
+        case "frame-forward": at(now + 1 / (frameRate || 30)); break;
+        case "second-back": at(now - 1); break;
+        case "second-forward": at(now + 1); break;
+        case "go-start": at(0); break;
+        case "go-end": at(duration); break;
+        case "undo": history.undo(); break;
+        case "redo": history.redo(); break;
+        case "nudge-scene-back":
+        case "nudge-scene-forward": {
+          const selected = scenes.find((scene) => scene.id === selectedId);
+          if (!selected) return;
+          keyboardReorder(selected, action === "nudge-scene-back" ? -1 : 1);
+          break;
+        }
+        case "clear-selection":
+          applyInteraction(clearSelection(cancelDrag(interactionRef.current)));
+          setPreparedDeletion(null);
+          break;
       }
+      event.preventDefault();
     };
-    window.addEventListener("keydown", escape);
-    return () => window.removeEventListener("keydown", escape);
-  }, [applyInteraction, interactionRef]);
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [
+    applyInteraction, duration, frameRate, history, interactionRef, keyboardReorder,
+    onScrub, onTogglePlay, scenes, selectedId, timeStore,
+  ]);
 
   return (
     <div className="bg-sidebar flex h-full flex-col">
