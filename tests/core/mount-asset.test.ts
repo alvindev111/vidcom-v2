@@ -273,16 +273,58 @@ describe("mountAsset", () => {
       expect(harnessed.state.requests, pendingState).toEqual([]);
     }
 
-    // A row that is already mounted is not a pending retry either.
-    const done = harness({ pending: pendingRecord({ state: "mounted", mountedSceneId: "scene-2" }) });
+    // An abandoned row is terminal: the file stays in Media, but this operation
+    // is over and cannot be resumed.
+    const gone = harness({
+      pending: pendingRecord({ state: "abandoned", lastFailure: { code: "abandoned", message: "cancelled" } }),
+    });
+    const abandoned = await mountAsset(gone.dependencies, {
+      projectId,
+      operationId: "01BX5ZZKBKACTAV9WEVGEMMVRZ",
+      expectedContentHash: ENTRY_HASH,
+      onOverflow: "extend-root",
+    }, "user", origin);
+    expect(abandoned.ok).toBe(false);
+    if (!abandoned.ok) expect(abandoned.error.code).toBe(ErrorCode.NotFound);
+    expect(gone.state.requests).toEqual([]);
+  });
+
+  it("replays a mounted operation with its old result instead of mounting twice", async () => {
+    const done = harness({
+      pending: pendingRecord({ state: "mounted", mountedSceneId: "scene-1", mountedRevision: 5 }),
+    });
     const replayed = await mountAsset(done.dependencies, {
       projectId,
       operationId: "01BX5ZZKBKACTAV9WEVGEMMVRZ",
       expectedContentHash: ENTRY_HASH,
       onOverflow: "extend-root",
     }, "user", origin);
-    expect(replayed.ok).toBe(false);
+    expect(replayed.ok).toBe(true);
+    if (!replayed.ok) return;
+    expect(replayed.value).toMatchObject({
+      sceneId: "scene-1",
+      durationSeconds: 4,
+      revision: 5,
+      replayed: true,
+      envelope: null,
+    });
+    // A retry after a lost response must not mint a second scene or a second write.
     expect(done.state.requests).toEqual([]);
+    expect(done.state.probed).toEqual([]);
+
+    // If the scene the record points at is gone, replay cannot resurrect it.
+    const orphaned = harness({
+      pending: pendingRecord({ state: "mounted", mountedSceneId: "scene-9", mountedRevision: 5 }),
+    });
+    const missing = await mountAsset(orphaned.dependencies, {
+      projectId,
+      operationId: "01BX5ZZKBKACTAV9WEVGEMMVRZ",
+      expectedContentHash: ENTRY_HASH,
+      onOverflow: "extend-root",
+    }, "user", origin);
+    expect(missing.ok).toBe(false);
+    if (!missing.ok) expect(missing.error.code).toBe(ErrorCode.WriteConflict);
+    expect(orphaned.state.requests).toEqual([]);
   });
 
   it("shrinks only the wrapper scene, and extends the root when asked", async () => {

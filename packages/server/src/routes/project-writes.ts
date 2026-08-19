@@ -256,9 +256,10 @@ export function createProjectWriteRoutes(
     return c.json(MountAssetResponseSchema.parse({
       sceneId: mounted.sceneId,
       durationSeconds: mounted.durationSeconds,
-      revision: mounted.envelope.projectRevision,
-      diagnostics: mounted.envelope.diagnostics,
-      changeSeq: mounted.envelope.changeSeq,
+      replayed: mounted.replayed,
+      revision: mounted.revision,
+      diagnostics: mounted.envelope?.diagnostics ?? [],
+      changeSeq: mounted.envelope?.changeSeq ?? null,
     }), 201);
   });
   routes.get("/v1/projects/:id/pending-mounts", async (c) => {

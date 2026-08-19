@@ -3,6 +3,7 @@ import {
   projectRegistrationLocationExists,
   reconcileStagedAssets,
   scavengeTtsScratch,
+  sweepPendingMounts,
   WORKSPACE_LEASE_RENEW_MS,
 } from "@vidcom/adapter";
 import {
@@ -316,6 +317,9 @@ export async function startVidcomFoundation<Listener>(
           clock: infrastructure.clock,
         });
         await cleanupExpiredAssetStaging(infrastructure);
+        // Retention runs here and nowhere else: the previous daemon's history is
+        // gone by now, so no live undo receipt can point at a row this deletes.
+        await sweepPendingMounts(infrastructure.database, infrastructure.clock.now());
         await infrastructure.largeContent.cleanupUnreferenced(
           await infrastructure.journal.listPreviousObjectHashes(),
           new Date(infrastructure.clock.now().getTime()

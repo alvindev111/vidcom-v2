@@ -275,6 +275,8 @@ export const MountAssetRequestSchema = z.union([
 export const MountAssetResponseSchema = z.strictObject({
   sceneId: IdentifierSchema,
   durationSeconds: z.number().finite().positive(),
+  /** True when a retry was answered from the recorded mount instead of a new one. */
+  replayed: z.boolean(),
   ...mutationEnvelope,
 });
 

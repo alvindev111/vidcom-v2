@@ -21,6 +21,7 @@ import type {
 import type {
   CompositeRequest,
   CompositeStep,
+  PendingMount,
   PendingToolAudit,
   WriteEnvelope,
 } from "../port/types";
@@ -58,6 +59,16 @@ export type MountAssetInput =
       expectedContentHash: ContentHash | null;
       onOverflow: "shrink" | "extend-root";
     };
+
+export interface MountAssetOutput {
+  sceneId: string;
+  durationSeconds: number;
+  /** Revision the mount is visible at; on a replay it is the recorded one. */
+  revision: number;
+  /** True when a prior mount of this operation was returned instead of a new one. */
+  replayed: boolean;
+  envelope: WriteEnvelope | null;
+}
 
 export interface MountAssetDependencies {
   workspace: Pick<WorkspacePort, "readProjectRef" | "resolve" | "readHash">;
@@ -135,12 +146,51 @@ async function hashOf(
   return await dependencies.workspace.readHash(resolved.value);
 }
 
+/**
+ * Answers a retry of an operation that already mounted, without writing anything.
+ *
+ * The duration is read back from the scene the record points at rather than
+ * re-probed: the timeline may legitimately have shortened the wrapper since, and
+ * the reply must describe what is on the timeline now. A record pointing at a
+ * scene that no longer exists is a conflict — the mount happened and was undone
+ * or deleted, and replaying cannot bring it back.
+ */
+async function replayMount(
+  dependencies: MountAssetDependencies,
+  ref: ProjectRef,
+  record: PendingMount,
+): Promise<Result<MountAssetOutput, DomainError>> {
+  const sceneId = record.mountedSceneId;
+  if (sceneId === null || record.mountedRevision === null) {
+    return err({ code: ErrorCode.InvariantViolated, message: "the mounted operation has no recorded result" });
+  }
+  let model: CompositionModel;
+  try { model = await dependencies.composition.parseProject(ref); }
+  catch { return err({ code: ErrorCode.StorageUnavailable, message: "composition could not be read" }); }
+  const scene = ((model.scenes ?? []) as unknown as Array<{ id: string; duration: number }>)
+    .find((candidate) => candidate.id === sceneId);
+  if (!scene) {
+    return err({
+      code: ErrorCode.WriteConflict,
+      message: "the scene this upload was mounted into no longer exists",
+      field: "operationId",
+    });
+  }
+  return ok({
+    sceneId,
+    durationSeconds: scene.duration,
+    revision: record.mountedRevision,
+    replayed: true,
+    envelope: null,
+  });
+}
+
 export async function mountAsset(
   dependencies: MountAssetDependencies,
   input: MountAssetInput,
   actor: Actor,
   origin: MutationOrigin,
-): Promise<Result<{ sceneId: string; durationSeconds: number; envelope: WriteEnvelope }, DomainError>> {
+): Promise<Result<MountAssetOutput, DomainError>> {
   const ref = await dependencies.workspace.readProjectRef(input.projectId);
   if (!ref) return err({ code: ErrorCode.ProjectNotFound, message: "project was not found" });
 
@@ -150,6 +200,14 @@ export async function mountAsset(
   let closing: string | null = null;
   if (input.operationId !== undefined) {
     const found = await dependencies.pendingMount.lookup(input.projectId, input.operationId);
+    // A mount whose response was lost is replayed from the record, never mounted a
+    // second time: the operation already produced a scene, and a second one would
+    // be a duplicate the user never asked for (Design §5.21).
+    if (found.state === "active"
+      && found.record.state === "mounted"
+      && found.record.projectId === input.projectId) {
+      return replayMount(dependencies, ref, found.record);
+    }
     if (found.state !== "active" || found.record.state !== "uploaded_unmounted") {
       return err({
         code: ErrorCode.NotFound,
@@ -336,5 +394,11 @@ export async function mountAsset(
       : {}),
   } as CompositeRequest, actor);
   if (!written.ok) return written;
-  return ok({ sceneId, durationSeconds: duration, envelope: written.value });
+  return ok({
+    sceneId,
+    durationSeconds: duration,
+    revision: written.value.projectRevision,
+    replayed: false,
+    envelope: written.value,
+  });
 }
