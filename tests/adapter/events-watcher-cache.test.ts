@@ -311,10 +311,18 @@ describe("event outbox, watcher and project cache", () => {
         kind: "entity", ref, entity: "preview-settings", patch: { bgm: { loop: true } }, expectedRevision: 1,
       }, "user");
       expect(stale).toMatchObject({ ok: false, error: { code: "write_conflict" } });
+      // The next authored write must advance the entity revision by exactly one.
+      // The absolute number is not asserted, and the expectation is read from the
+      // settled row: a platform whose recursive watcher reports one change more
+      // than once (Windows does) can settle the same external content at a higher
+      // revision, which is not what this case is about.
+      const settled = dbOne<{ revision: number }>(database,
+        "SELECT revision FROM entity_state WHERE project_id = ?", projectId)!.revision;
+      expect(settled).toBeGreaterThanOrEqual(2);
       const written = await authority.mutateSource({
-        kind: "entity", ref, entity: "preview-settings", patch: { bgm: { loop: true } }, expectedRevision: 2,
+        kind: "entity", ref, entity: "preview-settings", patch: { bgm: { loop: true } }, expectedRevision: settled,
       }, "user");
-      expect(written).toMatchObject({ ok: true, value: { revision: 3 } });
+      expect(written).toMatchObject({ ok: true, value: { revision: settled + 1 } });
       await new Promise((resolve) => setTimeout(resolve, 350));
       const events = await outbox.readFrom(0, 10);
       expect(events.events).toHaveLength(2);
