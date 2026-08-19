@@ -37,6 +37,11 @@ export interface InstalledProvenanceSource {
  * Reads authored documents rather than the package files themselves: the mount
  * instance is what records which version is in the project, so a file left behind
  * without a mount correctly reads as unmanaged.
+ *
+ * Scene documents author their content inside a `<template>`, and template
+ * content is a separate fragment that `querySelectorAll` does not descend into,
+ * so those fragments are searched explicitly. Missing this made every installed
+ * package look unmanaged.
  */
 export function createInstalledProvenanceReader(source: InstalledProvenanceSource) {
   return async (ref: ProjectRef, name: string): Promise<CatalogProvenance | null> => {
@@ -44,9 +49,18 @@ export function createInstalledProvenanceReader(source: InstalledProvenanceSourc
       const content = await source.read(ref, path);
       if (content === null || !content.includes(CATALOG_PROVENANCE_ATTRIBUTE)) continue;
       const { document } = parseHTML(content);
-      for (const element of document.querySelectorAll(`[${CATALOG_PROVENANCE_ATTRIBUTE}]`)) {
-        const parsed = parseCatalogProvenance(element.getAttribute(CATALOG_PROVENANCE_ATTRIBUTE) ?? "");
-        if (parsed?.name === name) return parsed;
+      const roots: ParentNode[] = [document as unknown as ParentNode];
+      for (const template of document.querySelectorAll("template")) {
+        const fragment = (template as unknown as { content?: ParentNode }).content;
+        if (fragment) roots.push(fragment);
+      }
+      for (const root of roots) {
+        for (const element of root.querySelectorAll(`[${CATALOG_PROVENANCE_ATTRIBUTE}]`)) {
+          const parsed = parseCatalogProvenance(
+            (element as unknown as Element).getAttribute(CATALOG_PROVENANCE_ATTRIBUTE) ?? "",
+          );
+          if (parsed?.name === name) return parsed;
+        }
       }
     }
     return null;
