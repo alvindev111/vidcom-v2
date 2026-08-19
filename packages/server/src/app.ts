@@ -30,6 +30,7 @@ import { createDeliveryLoopRoutes, type DeliveryLoopRouteDependencies } from "./
 import type { MutationHistory } from "./service/mutation-history";
 import { createHistoryRoutes } from "./routes/history";
 import type { StudioRouteDependencies } from "./routes/studio-session";
+import { createCatalogRoutes, type CatalogRouteDependencies } from "./routes/catalog";
 import { createThumbnailRoutes, type ThumbnailRouteDependencies } from "./routes/thumbnails";
 import { ActivateWorkspaceRequestSchema, ErrorCode, MAX_BGM_BYTES, MAX_SOURCE_BYTES } from "@vidcom/contracts";
 
@@ -56,6 +57,7 @@ export interface ServerAppDependencies {
   deliveryLoop?: DeliveryLoopRouteDependencies;
   agentTerminal?: AgentTerminalRouteDependencies;
   thumbnails?: ThumbnailRouteDependencies;
+  catalog?: CatalogRouteDependencies;
   /** Bootstrap-only workspace activation; active runtimes use `deliveryLoop`. */
   workspaceActivation?(selectionToken: string, sessionId?: string): Promise<Result<{
     workspaceRoot: string;
@@ -134,6 +136,7 @@ export function createServerApp(deps: ServerAppDependencies) {
   if (deps.deliveryLoop) app.route("/", createDeliveryLoopRoutes(deps.deliveryLoop, studio));
   if (deps.agentTerminal) app.route("/", createAgentTerminalRoutes(deps.agentTerminal));
   if (deps.thumbnails) app.route("/", createThumbnailRoutes(deps.thumbnails));
+  if (deps.catalog) app.route("/", createCatalogRoutes(deps.catalog));
   if (deps.workspaceActivation) app.put("/v1/workspace/active", async (c) => {
     const parsed = ActivateWorkspaceRequestSchema.safeParse(await c.req.json().catch(() => null));
     if (!parsed.success) {
