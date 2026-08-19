@@ -1261,9 +1261,9 @@ dependency-graph import registration in `tests/adapter/compiler-timeout-audit.te
 - [x] 10.1 `draft-store.ts`: `DraftEntry {path, baseHash, baseRevision, draft, acknowledgedChangeSeq, incomingGeneration, incomingStatus, incoming, resolution}`; `incomingStatus = idle|loading|ready|failed`; `incoming.content: string | null` (null = file bị xoá ngoài)
   - Ba lựa chọn conflict: `resolved-keep` **rebase** base lên incoming (giữ được thì phải lưu được); `resolved-take` thay draft; `compare` giữ conflict mở và hiển thị incoming/draft song song. Ca `incoming.content === null` ⇒ giữ draft và tạo lại file khi ghi.
   - _Requirements: R8.1d_ — _Design: §5.18_
-- [ ] 10.2 Ba đường cảnh báo: đóng tab/cửa sổ trình duyệt · đóng **tab editor** có draft (thay hành vi bỏ draft hiện tại) · điều hướng/đổi project
+- [x] 10.2 Ba đường cảnh báo: đóng tab/cửa sổ trình duyệt · đóng **tab editor** có draft (thay hành vi bỏ draft hiện tại) · điều hướng/đổi project
   - _Requirements: R8.1, R8.1b, R8.1c, R8.2_ — _Design: §5.18_
-- [ ] 10.3 SSE dùng `paths`: có draft đụng ⇒ hỏi; không đụng ⇒ làm mới im lặng
+- [x] 10.3 SSE dùng `paths`: có draft đụng ⇒ hỏi; không đụng ⇒ làm mới im lặng
   - Content và preview-settings đều vào buffer P4; compare/keep/take không làm rơi draft đang mở.
   - Conflict path dùng overlap equal/ancestor segment-safe. Mỗi path có generation theo SSE seq;
     event lập tức đặt `loading` + conflict và disable save **trước** GET; fetch chỉ apply nếu còn latest,
@@ -1279,19 +1279,22 @@ dependency-graph import registration in `tests/adapter/compiler-timeout-audit.te
   - `Space` · `←`/`→` một khung · `Shift`+`←`/`→` một giây · `Home`/`End` · `Alt`+mũi tên dịch scene · `Esc` bỏ chọn · `mod`+`Z` / `mod`+`Shift`+`Z`
   - Không nuốt phím khi con trỏ trong ô nhập
   - _Requirements: R8.4–8.6_ — _Design: §5.19_
-- [ ] 10.6a Unit: draft reducer keep/take/compare + incoming deleted/save-after-keep; `transportActionFor`; `formatTimecode` hai frame liền nhau
+- [x] 10.6a Unit: draft reducer keep/take/compare + incoming deleted/save-after-keep; `transportActionFor`; `formatTimecode` hai frame liền nhau
   - Phủ response A về sau B, SSE của chính save đến trước/sau response, external B đến trước response A,
     save click trong khi latest GET còn pending/failed, external directory parent, common-prefix khác
     segment, event mới sau keep trước save và SSE gap; draft không nhận snapshot stale/không overwrite im lặng.
   - _Requirements: R8_ — _Design: §5.18, §5.19, §11, §17_
-- [ ] 10.6b Browser: mọi warning path, SSE khi đang gõ, compare UI, modifier macOS/khác và input không bị nuốt phím
+- [x] 10.6b Browser: mọi warning path, SSE khi đang gõ, compare UI, modifier macOS/khác và input không bị nuốt phím
   - Phủ keep/take/compare, incoming deleted, save sau keep không 409, mọi warning path, modifier macOS/khác, input không bị nuốt phím.
   - _Requirements: R8_ — _Design: §5.18, §5.19, §11, §17_
 
 **Acceptance Criteria**:
-- [ ] Không đường nào bỏ draft mà không hỏi
+- [x] Không đường nào bỏ draft mà không hỏi
 
-**Deliverables Created / Modified**: (điền reducer/UI/bindings, browser conflict/warning evidence khi thực thi)
+**Deliverables Created / Modified**:
+- Logic: `src/lib/studio/{draft-store.ts,transport-keys.ts,unsaved-guard.ts,format.ts,studio-session.ts}`.
+- UI: `src/components/studio/{use-source-files.ts,editor-panel.tsx,editor-footer.tsx,code-pane.tsx,source-pane.tsx,shortcut-sheet.tsx,timeline.tsx,timeline-toolbar.tsx,player-time.tsx,playback-bar.tsx,preview-panel.tsx,studio-session-context.tsx}`; `src/app/projects/[slug]/composer-client.tsx`.
+- Tests: `tests/frontend/{draft-store,transport-keys,unsaved-guard}.test.ts`; the R8 block in `tests/frontend/browser-session.test.ts`.
 
 ---
 
@@ -1777,6 +1780,7 @@ caption · D7 tool MCP undo/redo · **D8 PR-11 hot-reload từng sub-composition
 | 2026-08-20 01:20 +07 | Phase P9 gate | All P9 tasks, the phase AC and Deliverables | Exact-source [`CI` run 32276655080](https://github.com/alvindev111/vidcom-v2/actions/runs/32276655080) at `708a904`, 8/8 `success`: main Linux, macOS and Windows, browser-session Linux and Windows, packaged-smoke Linux, macOS and Windows | 8/8 `success` after one rerun of the Linux job | `PASS` | Two red runs preceded this and both were worth the trip. The first ([32268563532](https://github.com/alvindev111/vidcom-v2/actions/runs/32268563532)) failed on Windows with `EBUSY … unlink vidcom.sqlite`: my new suites left each foundation running, and Windows will not unlink an open SQLite file — a real cross-OS defect in the tests, fixed by stopping every foundation before its directory goes. The second ([32276655080](https://github.com/alvindev111/vidcom-v2/actions/runs/32276655080)) failed once on Linux in the pre-existing `asset-streaming-listener` RSS budget (76 MB against a 64 MB delta budget) and once on macOS in `sea-bootstrap` with a 5 s timeout; both are load-sensitive budgets unrelated to this phase — the same RSS assertion also flaked once locally before any P9 test existed — and both passed on rerun with the budget left untouched | P9 closed; next phase P10 |
 | 2026-08-20 01:35 +07 | 10.1 checkpoint | `src/lib/studio/draft-store.ts`; `tests/frontend/draft-store.test.ts` | Baseline HEAD/remote `a55a6e8`; worktree clean. Planned RED: `bunx vitest run tests/frontend/draft-store.test.ts --environment node` | `IN PROGRESS` | Read `use-source-files.ts` in full (it currently drops a draft with the tab) and Design §5.18. The reducer is written first and alone, because every ordering rule the phase cares about — response A after event B, self-save coalescing, keep-then-event, SSE gap — is a pure state question | Write the RED suite, then the reducer |
 | 2026-08-20 01:50 +07 | 10.1 · 10.4 · 10.5 | `src/lib/studio/{draft-store.ts,transport-keys.ts,format.ts}`; `src/components/studio/{shortcut-sheet.tsx,timeline.tsx,timeline-toolbar.tsx,player-time.tsx,playback-bar.tsx,preview-panel.tsx}`; `tests/frontend/{draft-store,transport-keys}.test.ts` | RED both suites (neither module existed), GREEN 14/14 and 8/8; `tests/frontend` 31 files/158 tests PASS; typecheck and lint (0 errors / 5 baseline warnings) PASS | `PASS` | The draft store is a pure reducer with no I/O because every rule it encodes is an ordering rule — response A arriving after event B, the studio's own save echo, keep-then-event, an event-stream gap — and a component racing a fetch against a response is exactly how typing gets lost. `keep` rebases onto the incoming version rather than holding the stale hash: keeping something you then cannot save is a dead end. A file deleted outside becomes `baseHash: null`, so the next save recreates it instead of failing a precondition. `formatTimecode` takes the frame rate as an **optional** second argument: the frame-accurate form is used where frames are the unit the user is stepping in (the transport readout), while a scene range or a ruler tick is naming a position and keeps the plain clock — one function, no second formatter to drift. `transportActionFor` and the shortcut sheet read the same `TRANSPORT_BINDINGS`, the platform's own modifier only (Ctrl+Z on macOS is not undo), and nothing is taken from a field being typed into except Escape | Next: 10.2 and 10.3, the draft warnings and the SSE conflict wiring |
+| 2026-08-20 02:05 +07 | 10.2 · 10.3 · 10.6a · 10.6b | `src/lib/studio/{draft-store,unsaved-guard,studio-session}.ts`; `src/components/studio/{use-source-files.ts,editor-panel.tsx,editor-footer.tsx,code-pane.tsx,source-pane.tsx,studio-session-context.tsx}`; `src/app/projects/[slug]/composer-client.tsx`; `tests/frontend/{draft-store,unsaved-guard,browser-session}.test.ts` | Unit 17/17 + 3/3; `tests/frontend` 32 files/161 tests PASS including Chrome `browser-session` 5/5 against a rebuilt bundle; typecheck, lint (0 errors / 5 baseline warnings) and `bun run build` PASS | `PASS` | Two real defects surfaced only in the browser and both were fixed rather than asserted around. First, the new window-level key handler took Alt+arrow **again** after the focused scene control had already handled it, so one keypress sent two reorders; the handler now ignores an event another handler already claimed via `defaultPrevented`. Second, treating an event with **no** path list as a stream gap put every draft into conflict — preview-settings and thumbnail events name no path — which left Save disabled forever; only the stream's own `resync` frame now invalidates everything. Also decided here: a draft with no unsaved edits refreshes **silently** (R8.1e), because asking about text the user never touched is a dialog with one sane answer, and the conflict UI is only exposed for a draft that actually has edits | Next: P10 phase gate |
 
 ## Final Authoring-Readiness Audit
 

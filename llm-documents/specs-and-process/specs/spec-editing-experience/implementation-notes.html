@@ -2352,6 +2352,17 @@
             tải, không liên quan phase này (chính assertion RSS đó cũng từng flake ở máy local trước khi có bất kỳ
             test P9 nào), và cả hai xanh khi rerun **mà không nới ngân sách**.
           </p>
+          <p class="text-slate-400 text-sm">
+            P10: draft chuyển hẳn sang `draft-store.ts` (reducer thuần), hook chỉ làm I/O mà reducer yêu cầu. Hai lỗi
+            thật chỉ lộ ra ở browser và đều được sửa chứ không né: (1) handler phím ở window bắt **lại** Alt+mũi tên
+            sau khi control scene đang focus đã xử lý ⇒ một lần bấm gửi hai reorder; nay bỏ qua event đã
+            `defaultPrevented`; (2) coi event **không** kèm `paths` như gap ⇒ mọi draft vào conflict (event
+            preview-settings/thumbnail không có path) và Save tắt vĩnh viễn; nay chỉ frame `resync` mới vô hiệu hoá
+            toàn bộ. Quyết định thêm: draft **không** có sửa đổi thì refresh im lặng (R8.1e) — hỏi về đoạn text người
+            dùng chưa từng chạm là hộp thoại chỉ có một câu trả lời đúng — và UI conflict chỉ hiện cho draft thật sự
+            có sửa đổi. Ba lối thoát (đóng trình duyệt · đóng tab editor · rời project) đọc chung một bộ đếm
+            `unsaved-guard`, nên không lối nào quên hỏi.
+          </p>
         </article>
       </section>
     </main>
