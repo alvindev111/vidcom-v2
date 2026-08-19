@@ -2203,6 +2203,22 @@
             tập file là dữ liệu curate thay đổi theo snapshot, còn tính toàn vẹn từng file đã do loader lo, và giữ
             một path hợp đồng duy nhất giúp ma trận "bỏ từng required entry" của sea-bootstrap vẫn chính xác.
             Preview dùng SVG inline để bản offline vẫn có ảnh nhưng review được bằng text.
+          </p>          <p class="text-slate-400 text-sm">
+            P8.2b: BGM provider (Read-first) **không** reuse trực tiếp được — catalog cần allowlist host và
+            `AbortSignal` của caller, BGM không có cả hai, còn message/code của nó mang nhãn BGM. Nên chỉ tách
+            phần policy thuần (`isPublicAddress`/`expandIpv6`) sang `net/public-address.ts` để hai adapter
+            dùng **đúng một** luật địa chỉ, còn transport thì catalog tự sở hữu. Transport: HTTPS-only, allowlist
+            đúng `api.github.com` + `raw.githubusercontent.com`, mỗi hop redirect **kiểm lại** DNS + allowlist
+            (rebind trả `127.0.0.1` ở hop 2 bị chặn sau đúng 2 lần resolve), tối đa 3 redirect, và race với
+            signal của caller nên transport phớt lờ `AbortSignal` cũng không sống lâu hơn caller.
+            Định danh snapshot: resolve `main` một lần qua GitHub API rồi mọi request mang đúng commit 40-hex —
+            test khẳng định không URL nào chứa `/main/`. Mở catalog chỉ tải metadata: commit + index + một
+            manifest mỗi item (4 request cho 2 block), không một byte payload nào.
+            Hai quyết định ghi lại: (1) item bundled **luôn** được merge vào listing vì đó là nguồn duy nhất của
+            template curate — ẩn chúng khi có mạng sẽ làm template biến mất đúng lúc online; nên field `source`
+            mô tả phần registry. (2) manifest trong cache được `validateCatalogItem` lại lúc đọc, vì file đó nằm
+            ở app-data và bất cứ thứ gì trên máy cũng ghi được, còn luồng install lấy tên item từ listing; test
+            sửa `entry` thành `../../../etc/passwd` chứng minh cache bị bỏ và refetch thay vì tin file.
           </p>        </article>
       </section>
     </main>
