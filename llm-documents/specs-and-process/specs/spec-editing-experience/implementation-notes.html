@@ -2235,6 +2235,17 @@
             `sha256:`; budget 900 byte không thực tế khi metadata package ~1 KB; dùng item thô của manifest thay vì
             item đã normalize) và 1 là **lỗi thật của code**: cache hit vẫn refetch manifest closure, nên
             `#openPublished` được đưa lên trước mọi việc manifest.
+          </p>          <p class="text-slate-400 text-sm">
+            P8.3: Core không import `node:crypto` (mọi hash vào Core qua port), nên `verifyCatalogPackage` nhận
+            `manifestDigest` đã tính lại từ adapter và Core chỉ quyết **khớp nghĩa là gì**. Guard chặn trước khi có
+            `CompositeRequest`: item còn `metadata`, path thoát project/absolute/có ổ đĩa, target trùng, tập file
+            lệch manifest theo cả hai chiều (báo rõ missing và unexpected), sai digest một file, sai manifest digest,
+            và entry không nằm trong tập đã verify.
+            Provenance: test hostile phát hiện linkedom escape dấu nháy nhưng để nguyên `&lt;`/`&gt;` trong
+            attribute đã trích dẫn. Với parser HTML thật thì vô hại — re-parse chứng minh 0 node `script`/`img`,
+            đúng 1 `section`, host chỉ có `id` + attribute provenance — nhưng vẫn escape thêm ở tầng JSON
+            (`\u003c`, `\u003e`, `\u0026`) để attribute không còn byte nào trông như markup, kể cả với các
+            scanner không dùng DOM trong repo; parse lại vẫn ra đúng object gồm title/description hostile.
           </p>        </article>
       </section>
     </main>
