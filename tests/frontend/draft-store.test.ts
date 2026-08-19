@@ -186,4 +186,31 @@ describe("draft store", () => {
     const state = reduceDraft(opened("mine"), { kind: "discarded", path: PATH });
     expect(state.entries[PATH]).toBeUndefined();
   });
+
+  it("refuses a save while the newest read is still in flight or has failed", () => {
+    let state = reduceDraft(opened("mine"), { kind: "external", paths: [PATH], seq: 9 });
+    expect(saveDisabled(entry(state))).toBe(true);
+    state = reduceDraft(state, { kind: "incoming-failed", path: PATH, generation: 9 });
+    expect(saveDisabled(entry(state))).toBe(true);
+    // Only a resolution reopens saving — never the passage of time.
+    state = reduceDraft(state, { kind: "retry", path: PATH });
+    state = reduceDraft(state, { kind: "incoming", path: PATH, generation: 9, content: "theirs", contentHash: NEXT, revision: 5 });
+    expect(saveDisabled(entry(reduceDraft(state, { kind: "keep", path: PATH })))).toBe(false);
+  });
+
+  it("ignores an event older than one it already reacted to", () => {
+    let state = reduceDraft(opened("mine"), { kind: "external", paths: [PATH], seq: 12 });
+    state = reduceDraft(state, { kind: "external", paths: [PATH], seq: 7 });
+    expect(entry(state).incomingGeneration).toBe(12);
+  });
+
+  it("never rewrites the draft text on its own", () => {
+    // Every path that replaces the text is a choice the user made: take, or
+    // reverting. An arriving change is not one of them.
+    let state = reduceDraft(opened("mine"), { kind: "external", paths: [PATH], seq: 9 });
+    state = reduceDraft(state, { kind: "incoming", path: PATH, generation: 9, content: "theirs", contentHash: NEXT, revision: 5 });
+    expect(entry(state).draft).toBe("mine");
+    expect(entry(reduceDraft(state, { kind: "compare", path: PATH })).draft).toBe("mine");
+    expect(entry(reduceDraft(state, { kind: "keep", path: PATH })).draft).toBe("mine");
+  });
 });

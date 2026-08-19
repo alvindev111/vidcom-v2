@@ -639,6 +639,62 @@ describe("browser session harness", () => {
       await waitForEmptyHistory(page);
       await page.waitForFunction(() => document.querySelector(".cm-content")?.textContent?.includes("history-b-2") === true);
 
+      // R8: a draft survives a change made outside it, and none of the three
+      // exits drops one silently.
+      const typed = await page.$eval(".cm-content", (element) => element.textContent ?? "");
+      await page.locator(".cm-content").fill(`${typed}\n<!-- draft-a -->`);
+      await page.waitForFunction(() => document.body.innerText.includes("Unsaved changes"));
+
+      // Space inside the editor types a space; it does not reach the transport.
+      await page.keyboard.press("Space");
+      await page.waitForFunction(() => document.querySelector(".cm-content")?.textContent?.includes("draft-a") === true);
+
+      await appendSourceAndSave(pageB, "outside-1");
+      await page.waitForFunction(() => document.body.innerText.includes("This file changed outside the editor"));
+      expect(await page.$$eval("button", (buttons) => buttons
+        .filter((button) => button.textContent?.includes("Save"))
+        .every((button) => (button as HTMLButtonElement).disabled))).toBe(true);
+
+      // Compare shows the other version beside the draft without deciding anything.
+      await clickText(page, "button", "Compare");
+      await page.waitForSelector('[aria-label="Version from outside the editor"]');
+      expect(await page.$eval('[aria-label="Version from outside the editor"]', (element) =>
+        element.textContent?.includes("outside-1") === true)).toBe(true);
+
+      // Keeping the draft rebases it, so the save that follows lands rather than 409s.
+      await clickText(page, "button", "Keep mine");
+      await page.waitForFunction(() => [...document.querySelectorAll("button")]
+        .some((button) => button.textContent?.includes("Save") && !(button as HTMLButtonElement).disabled));
+      const keptSave = page.waitForResponse((response) =>
+        response.request().method() === "PUT" && new URL(response.url()).pathname.endsWith("/files"),
+      { timeout: 10_000 });
+      await clickText(page, "button", "Save");
+      expect((await keptSave).ok()).toBe(true);
+      await page.waitForFunction(() => document.querySelector(".cm-content")?.textContent?.includes("draft-a") === true);
+
+      // Closing a tab that still has a draft asks before dropping it.
+      await page.evaluate(() => {
+        const asked: string[] = [];
+        (window as unknown as { asked: string[] }).asked = asked;
+        window.confirm = (message?: string) => { asked.push(message ?? ""); return false; };
+      });
+      const stillTyped = await page.$eval(".cm-content", (element) => element.textContent ?? "");
+      await page.locator(".cm-content").fill(`${stillTyped}\n<!-- draft-b -->`);
+      await page.waitForFunction(() => document.body.innerText.includes("Unsaved changes"));
+      await page.click('button[aria-label^="Close index.html"]');
+      expect(await page.evaluate(() => (window as unknown as { asked: string[] }).asked.length)).toBe(1);
+      // Refused, so the tab and the draft are both still there.
+      expect(await page.$eval(".cm-content", (element) => element.textContent?.includes("draft-b") === true)).toBe(true);
+
+      // Leaving the project asks with the same question.
+      await page.click('a[href="/"]');
+      expect(await page.evaluate(() => (window as unknown as { asked: string[] }).asked.length)).toBe(2);
+      // Answering yes lets the same exits through, which is what the rest of
+      // this scenario needs.
+      await page.evaluate(() => { window.confirm = () => true; });
+      await page.click('button[aria-label^="Close index.html"]');
+      await page.waitForFunction(() => !document.body.innerText.includes("Unsaved changes"));
+
       // A different authenticated browser context cannot steal tab A's studio
       // id; the same id is also rejected when paired with another project.
       const secondNonce = Buffer.alloc(32, 23).toString("base64url");
