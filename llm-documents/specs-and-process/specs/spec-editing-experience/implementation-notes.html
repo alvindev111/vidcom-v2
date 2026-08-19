@@ -2266,7 +2266,19 @@
             authority từ chối đều 0 mutation và **vẫn** release pin, nên grant hết hạn/revoke không rò pin. Một lỗi
             của chính test bị phát hiện lúc green: fake spread counter vào bản copy nên hai assertion pin đọc số 0 —
             sửa harness, không nới assertion.
-          </p>        </article>
+          </p>          <p class="text-slate-400 text-sm">
+            P9.2a: port không phải sửa gì — `SqlitePendingMountStore` của P0 đã đủ ngữ nghĩa; suite adapter mới chỉ
+            khoá lại nó (list bỏ tombstone, `lookup` phân biệt `expired`/`never-seen`, abandon↔close chỉ một phía
+            thắng ở cả hai thứ tự). Phần thiếu là HTTP. Quyết định đáng ghi: request mount là **union hai strict
+            object** chứ không phải một object có field optional — payload retry mà kèm path/at/track không khớp
+            nhánh nào nên là 400, thay vì lặng lẽ mount sang file khác. Ngược lại, ở tầng HTTP `expired` và
+            `never-seen` **gộp** thành 404: port giữ riêng để phục vụ retention, nhưng client không hành động khác
+            nhau được, và tách ra chỉ tiết lộ rằng một ULID lạ từng tồn tại. DELETE chỉ map lỗi **có domain code**
+            thành 409, lỗi adapter thật vẫn thoát ra 500. Dependency của route đổi từ lát `lookup`-only của ingest
+            sang cả `PendingMountPort`; production ở `next-host.ts` vốn đã truyền store đầy đủ nên không phải sửa
+            composition-root.
+          </p>
+        </article>
       </section>
     </main>
   </body>
