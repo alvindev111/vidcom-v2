@@ -2313,6 +2313,16 @@
             với drag mang `Files` hoặc kiểu asset-path. Bài học vận hành: suite browser chạy trên **bundle đã build**,
             nên phải `bun run build` trước khi tin kết quả của nó.
           </p>
+          <p class="text-slate-400 text-sm">
+            P9.5a: chạy thật qua `startVidcomFoundation` + SQLite file + workspace tạm + **ffprobe thật** lấy từ PATH.
+            Lần chạy thật đầu tiên lộ ra lỗi mà fake của unit test che mất: `mountAsset` dựng transition `close`
+            **thiếu** `previousFailure`, trong khi `WriteAuthority` canonicalize field đó để so với row — nên mọi
+            pending mount thật đều ném `job input must be JSON-compatible`. Core nay lấy failure từ chính row vừa
+            lookup, đúng §5.21. Probe dùng binary thật vì probe giả chỉ chứng minh chính cái giả đó; máy không có
+            FFmpeg thì suite fail to tiếng chứ không đo suông. Một assertion của tôi sai và được sửa thay vì né:
+            `atSeconds` của record chọn **index** chèn, còn start do planner timeline liền mạch (§5.3) quyết — nên
+            suite khẳng định `trackIndex` (thứ đến thẳng từ row) và để start cho §5.3.
+          </p>
         </article>
       </section>
     </main>
