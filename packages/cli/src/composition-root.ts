@@ -314,6 +314,23 @@ export function createInfrastructure(config: CompositionRootConfig) {
     processes,
     downloadCache: downloads,
   });
+  // Same toolchain, different budget: a timeline scroll may not start the
+  // managed Chromium download, so thumbnails report a missing browser and draw
+  // placeholders while render jobs keep the first-run download.
+  const thumbnailBinaries = new NodeRenderBinaryProbe({
+    ...binaries,
+    browserCacheRoot,
+    ...config.runtimePaths ? {
+      hyperframesCliPath: config.runtimePaths.hyperframesCliPath as AbsolutePath,
+      hyperframesPackagePath: config.runtimePaths.hyperframesPackagePath as AbsolutePath,
+    } : {},
+  }, {
+    appDataRoot: config.appDataRoot,
+    caBundlePath,
+    processes,
+    downloadCache: downloads,
+    allowBrowserDownload: false,
+  });
   const events = new SqliteEventOutbox(database, clock);
   const cache = new ProjectCache();
   const dependencyGraph = new HyperframesCompositionDependencyGraph();
@@ -350,7 +367,7 @@ export function createInfrastructure(config: CompositionRootConfig) {
     process: renderProcess,
     roots: renderRoots,
     renderProjects,
-    binaries: renderBinaries,
+    binaries: thumbnailBinaries,
     guard: renderGuard,
     ids,
     runtimeSource: () => thumbnailRuntimeSource,

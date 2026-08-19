@@ -548,7 +548,7 @@ export function Timeline({
         </div>
       ) : null}
 
-      <div ref={viewport} className="relative min-h-0 flex-1 overflow-auto">
+      <div ref={viewport} data-timeline-viewport className="relative min-h-0 flex-1 overflow-auto">
         <div style={{ width: TIMELINE_GUTTER_PX + duration * pixelsPerSecond }}>
           <TimelineRuler
             duration={duration}

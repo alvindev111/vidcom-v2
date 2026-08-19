@@ -269,6 +269,9 @@ export async function startVidcomFoundation<Listener>(
   // instead of re-derived at each call site.
   const lifecycle = createLifecycleHandle([
     { name: "listener", run: closeListenerOnce },
+    // Interactive thumbnail batches own real snapshot children under app-data,
+    // so they must be aborted and awaited before the workspace is released.
+    { name: "thumbnails", run: () => infrastructure.thumbnailScheduler.stop() },
     { name: "scheduler", run: stopSchedulerOnce },
     { name: "watcher", run: closeWatcherOnce },
     { name: "mutation-history", run: () => infrastructure.mutationObserver.dispose() },

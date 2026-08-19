@@ -191,9 +191,12 @@ interface ScheduledBatch {
   ref: ProjectRef;
   input: ThumbnailRequest;
   signal: AbortSignal;
+  /** Linked to the caller signal so daemon shutdown can abort work the caller still awaits. */
+  controller: AbortController;
   plan: ThumbnailPlan;
   queueKey: string;
   state: "queued" | "active" | "settled";
+  settled: Promise<void>;
   resolve(value: readonly ThumbnailRenderResult[]): void;
   reject(reason: unknown): void;
   queuedAbort(): void;
@@ -213,7 +216,9 @@ export class ThumbnailBatchScheduler {
   private readonly queueLimit: number;
   private readonly cache: ThumbnailCachePort | undefined;
   private active = 0;
+  private stopped = false;
   private readonly queue: ScheduledBatch[] = [];
+  private readonly running = new Set<ScheduledBatch>();
 
   constructor(
     private readonly planner: ThumbnailPlanner,
@@ -233,12 +238,29 @@ export class ThumbnailBatchScheduler {
     return { active: this.active, queued: this.queue.length };
   }
 
+  /**
+   * Drains the daemon before the workspace it renders against goes away.
+   *
+   * Interactive batches outlive the HTTP request that started them only until
+   * the caller disconnects, so a workspace switch or shutdown has to abort them
+   * explicitly and wait: a snapshot child that keeps running would write into an
+   * app-data root the daemon has already released.
+   */
+  async stop(): Promise<void> {
+    this.stopped = true;
+    for (const entry of [...this.queue]) entry.queuedAbort();
+    const running = [...this.running];
+    for (const entry of running) entry.controller.abort(abortError("thumbnail scheduler stopped"));
+    await Promise.allSettled(running.map((entry) => entry.settled));
+  }
+
   async request(
     ref: ProjectRef,
     input: ThumbnailRequest,
     signal: AbortSignal,
   ): Promise<readonly ThumbnailRenderResult[]> {
     if (signal.aborted) throw abortError("thumbnail request was aborted");
+    if (this.stopped) throw abortError("thumbnail scheduler stopped");
     const planned = await this.planner.plan(ref, input);
     if (!planned.ok) throw planned.error;
     if (signal.aborted) throw abortError("thumbnail request was aborted");
@@ -252,19 +274,28 @@ export class ThumbnailBatchScheduler {
     signal: AbortSignal,
   ): Promise<readonly ThumbnailRenderResult[]> {
     if (signal.aborted) return Promise.reject(abortError("thumbnail request was aborted"));
+    if (this.stopped) return Promise.reject(abortError("thumbnail scheduler stopped"));
     const queueKey = canonicalizeJson({
       projectId: ref.id,
       sceneId: input.sceneId,
       profile: plan.profile,
     });
     return new Promise((resolve, reject) => {
+      const controller = new AbortController();
+      signal.addEventListener(
+        "abort",
+        () => controller.abort(abortError("thumbnail request was aborted")),
+        { once: true },
+      );
       const entry: ScheduledBatch = {
         ref,
         input,
         signal,
+        controller,
         plan,
         queueKey,
         state: "queued",
+        settled: Promise.resolve(),
         resolve,
         reject,
         queuedAbort: () => {
@@ -301,14 +332,17 @@ export class ThumbnailBatchScheduler {
     entry.signal.removeEventListener("abort", entry.queuedAbort);
     entry.state = "active";
     this.active += 1;
-    void this.execute(entry).then(entry.resolve, entry.reject).finally(() => {
+    this.running.add(entry);
+    entry.settled = this.execute(entry).then(entry.resolve, entry.reject).finally(() => {
       entry.state = "settled";
+      this.running.delete(entry);
       this.active -= 1;
       this.drain();
     });
   }
 
   private drain(): void {
+    if (this.stopped) return;
     while (this.active < this.activeLimit && this.queue.length > 0) {
       const entry = this.queue.shift()!;
       this.start(entry);
@@ -336,8 +370,8 @@ export class ThumbnailBatchScheduler {
           return plan.keys.map((key) => ({ key, result: ok(cached.get(key.atSeconds)!) }));
         }
       }
-      const rendered = await this.renderer.renderBatch(entry.ref, renderKeys, entry.signal);
-      if (entry.signal.aborted) throw abortError("thumbnail request was aborted");
+      const rendered = await this.renderer.renderBatch(entry.ref, renderKeys, entry.controller.signal);
+      if (entry.controller.signal.aborted) throw abortError("thumbnail request was aborted");
       const combined = () => plan.keys.map((key) => {
         const bytes = cached.get(key.atSeconds);
         return bytes

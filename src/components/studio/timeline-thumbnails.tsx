@@ -88,6 +88,7 @@ export const TimelineThumbnailStrip = React.memo(function TimelineThumbnailStrip
           // eslint-disable-next-line @next/next/no-img-element
           <img
             key={cell.index}
+            data-thumbnail-cell={cell.index}
             alt=""
             src={apiUrl(line.url as ApiPath)}
             className="absolute inset-y-0 object-cover opacity-70"
@@ -96,6 +97,7 @@ export const TimelineThumbnailStrip = React.memo(function TimelineThumbnailStrip
         ) : (
           <span
             key={cell.index}
+            data-thumbnail-cell={cell.index}
             title={line?.status === "placeholder" ? line.reason : "thumbnail loading"}
             className="bg-foreground/5 absolute inset-y-0 border-r border-white/10"
             style={{ left: cell.leftPx, width: cell.widthPx }}

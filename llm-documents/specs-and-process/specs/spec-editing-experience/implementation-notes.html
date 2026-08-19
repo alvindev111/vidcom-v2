@@ -2101,6 +2101,40 @@
             zero cache put, missing→present/runtime identity tạo miss, codec WebP tường minh, và project tree/revision
             của temp fixture không đổi.
           </p>
+          <p class="text-slate-400 text-sm">
+            P7.5a PASS mà không sửa production code. Harness mới dựng hai project thật trong cùng workspace root,
+            dùng `CompositionHf`, `WorkspaceFs` và dependency graph thật; process port là `NodeProcessSupervisor`
+            thật, chỉ đổi đúng sentinel FFmpeg đã probe sang script Node portable nên injection nằm ở child chứ
+            không ở adapter. Bằng chứng: một batch chạy đúng một child snapshot và một child FFmpeg, `--at 0.5,1.5`
+            với scene bắt đầu 6 s, `-c:v libwebp` và `scale=160:90` tường minh. Hai project nội dung giống nhau
+            cho cùng identity nhưng namespace hash khác nên project thứ hai vẫn phải render. Abort thật giết child
+            đang sống với proof `exhaustive` chứa đúng PID và không publish byte nào; exit khác 0 trả placeholder và
+            cũng zero cache. Tree hai project giữ nguyên từng byte, không sinh `snapshots/`, staging được release,
+            và `latestSourceRevision` trên SQLite thật không đổi. Stress 20 batch giữ peak 2 render, queue ≤8,
+            abort giải phóng slot cho scene mới, request cùng key supersede bản cũ, 10 batch còn lại trả
+            `thumbnail_capacity`. Lần chạy đầu đỏ 1/4 là do harness thiếu fan-out invalidation của production
+            (memo dependency graph), nên sửa test chứ không hạ hành vi memo.
+          </p>
+          <p class="text-slate-400 text-sm">
+            P7.5b bắt đầu ở HEAD 7d378ee. Watcher thật của production (`createInfrastructure` → fanout →
+            dependency graph) chứng minh: sửa `styles/shared.css` từ ngoài app chỉ làm mất hiệu lực scene phụ
+            thuộc nó — fingerprint scene-a hết hiện hành, render key mới miss cache, còn scene-b giữ nguyên key và
+            vẫn hit; outbox ghi đúng một `file.changed` nguồn `external`. Phần virtualization có bằng chứng Chrome
+            thật: project một scene, zoom ×8 nên clip rộng hơn 5 viewport, và DOM chỉ mount đúng tập cell mà planner
+            thuần trả về cho hình học lane đo được (cả lúc scroll giữa timeline). Chỉ thêm hook `data-*`, không đổi
+            layout.
+          </p>
+          <p class="text-slate-400 text-sm">
+            Gate browser bắt lộ hai lỗi thật do P7 sinh ra, không phải flake: (1) timeline tự động gọi thumbnail
+            khiến `NodeRenderBinaryProbe` khởi động tải Chromium managed tới 10 phút từ một cú scroll, và
+            (2) `foundation.stop()` không drain batch thumbnail nên snapshot child còn ghi vào app-data đã bị
+            giải phóng — biểu hiện là `ENOTEMPTY` khi teardown xoá temp root. Cách sửa nhỏ nhất: thêm
+            `allowBrowserDownload` cho probe và một instance riêng cho thumbnail (thiếu browser ⇒ placeholder
+            `render_binary_missing` thay vì tải), và `ThumbnailBatchScheduler.stop()` abort queued + running qua
+            controller liên kết rồi chờ settle, được nối vào lifecycle daemon ngay sau khi listener đóng. Render job
+            vẫn giữ nguyên quyền tải lần đầu. Full local suite 279 file/2.370 test PASS (audit import HyperFrames
+            được cập nhật đúng cho `dependency-graph.ts` đã review), browser-session 14/14 với Chrome bắt buộc.
+          </p>
         </article>
       </section>
     </main>

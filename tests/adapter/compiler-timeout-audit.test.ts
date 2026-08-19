@@ -25,6 +25,7 @@ interface ImportRecord {
 const EXPECTED_HYPERFRAMES_IMPORTS: ImportRecord[] = [
   record("packages/adapter/src/hyperframes/compiler-probe-child.ts", "@hyperframes/core/compiler", ["dynamic"], true),
   record("packages/adapter/src/hyperframes/document.ts", "@hyperframes/studio-server", ["buildSubCompositionHtml"]),
+  record("packages/adapter/src/hyperframes/dependency-graph.ts", "@hyperframes/core", ["resolveWithinProject"]),
   record("packages/adapter/src/hyperframes/dom.ts", "@hyperframes/core", ["readClipTiming"]),
   record("packages/adapter/src/hyperframes/elements.ts", "@hyperframes/core", ["readClipTiming"]),
   record("packages/adapter/src/hyperframes/elements.ts", "@hyperframes/parsers/gsap-parser", ["parseGsapScript"]),
@@ -289,11 +290,12 @@ describe("compiler boundary audit", () => {
     expect((await inventory()).compilerCalls).toEqual([`${COMPILER_BOUNDARY}:bundleToSingleHtml`]);
   });
 
-  it("keeps the nine reviewed static adapter import sites unchanged", async () => {
+  it("keeps the ten reviewed static adapter import sites unchanged", async () => {
     const staticFiles = new Set((await inventory()).imports
       .filter((entry) => !entry.dynamic)
       .map((entry) => entry.file));
     expect([...staticFiles].sort()).toEqual([
+      "packages/adapter/src/hyperframes/dependency-graph.ts",
       "packages/adapter/src/hyperframes/document.ts",
       "packages/adapter/src/hyperframes/dom.ts",
       "packages/adapter/src/hyperframes/elements.ts",

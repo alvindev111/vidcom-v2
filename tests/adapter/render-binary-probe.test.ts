@@ -220,6 +220,37 @@ describe("NodeRenderBinaryProbe", () => {
     expect((await cache.status(DOWNLOAD_CACHE_COMPONENTS.browser)).state).toBe("ready");
   });
 
+  it("never starts the managed download when the caller forbids it", async () => {
+    const paths = await fixture();
+    const root = projectRoot(paths);
+    const cache = new DownloadCacheCoordinator({ cacheRoot: root });
+    paths.browserCacheRoot = cache.componentRoot(DOWNLOAD_CACHE_COMPONENTS.browser) as AbsolutePath;
+    const invocations = path.join(root, "browser-invocations.jsonl");
+    await writeFile(paths.hyperframesCliPath, `
+      import { appendFile } from "node:fs/promises";
+      await appendFile(${JSON.stringify(invocations)}, JSON.stringify(process.argv.slice(2)) + "\\n", "utf8");
+    `, "utf8");
+    const input: ProbePaths = { ...paths };
+    delete input.browserPath;
+
+    const result = await new NodeRenderBinaryProbe(input, {
+      appDataRoot: root,
+      processes: new NodeProcessRunner(30_000),
+      downloadCache: cache,
+      allowBrowserDownload: false,
+    }).probe(root);
+
+    expect(result).toEqual({
+      ok: false,
+      error: {
+        code: ErrorCode.RenderBinaryMissing,
+        message: "render binaries are missing: chromium",
+        details: { missing: ["chromium"] },
+      },
+    });
+    await expect(access(invocations)).rejects.toMatchObject({ code: "ENOENT" });
+    expect((await cache.status(DOWNLOAD_CACHE_COMPONENTS.browser)).state).toBe("missing");
+  });
   it("maps a managed-browser TLS failure and leaves its marker partial", async () => {
     const paths = await fixture();
     const root = projectRoot(paths);

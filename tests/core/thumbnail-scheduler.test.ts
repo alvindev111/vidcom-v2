@@ -86,6 +86,107 @@ describe("ThumbnailBatchScheduler", () => {
     expect(scheduler.status).toEqual({ active: 0, queued: 0 });
   });
 
+  it("keeps twenty stress batches inside two processes and an eight-slot queue that abort and supersede free", async () => {
+    const gates: Array<ReturnType<typeof deferred<void>>> = [];
+    let concurrent = 0;
+    let peak = 0;
+    const renderer: ThumbnailPort = {
+      async renderBatch(_ref, keys) {
+        concurrent += 1;
+        peak = Math.max(peak, concurrent);
+        const gate = deferred<void>();
+        gates.push(gate);
+        await gate.promise;
+        concurrent -= 1;
+        return keys.map((key) => ({ key, result: ok(new Uint8Array([1])) }));
+      },
+    };
+    const planner = {
+      async plan(_ref: ProjectRef, input: ReturnType<typeof request>) { return ok(plan(input.sceneId, input.atSeconds)); },
+      async isFingerprintCurrent() { return ok(true); },
+    };
+    const scheduler = new ThumbnailBatchScheduler(planner, renderer);
+    const controllers = Array.from({ length: 20 }, () => new AbortController());
+    const pending = controllers.map((controller, index) =>
+      scheduler.request(ref, request(`scene-${index}`), controller.signal).then(
+        (value) => ({ kind: "settled" as const, value }),
+        (error: unknown) => ({ kind: "rejected" as const, error }),
+      ));
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(scheduler.status).toEqual({ active: 2, queued: 8 });
+    expect(gates).toHaveLength(2);
+
+    controllers[5]!.abort();
+    await Promise.resolve();
+    expect(scheduler.status).toEqual({ active: 2, queued: 7 });
+    const admitted = scheduler.request(ref, request("scene-admitted"), new AbortController().signal);
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(scheduler.status).toEqual({ active: 2, queued: 8 });
+    const superseding = scheduler.request(ref, request("scene-admitted", [0.75]), new AbortController().signal);
+    await expect(admitted).rejects.toMatchObject({ name: "AbortError" });
+    expect(scheduler.status).toEqual({ active: 2, queued: 8 });
+
+    const statuses: Array<{ active: number; queued: number }> = [];
+    for (let index = 0; index < 10; index += 1) {
+      while (gates.length <= index) await new Promise<void>((resolve) => setTimeout(resolve, 0));
+      statuses.push(scheduler.status);
+      gates[index]!.resolve();
+      await new Promise<void>((resolve) => setTimeout(resolve, 0));
+    }
+    const outcomes = await Promise.all(pending);
+    await superseding;
+
+    expect(peak).toBe(2);
+    expect(statuses.every((status) => status.active <= 2 && status.queued <= 8)).toBe(true);
+    expect(outcomes.filter((outcome) => outcome.kind === "rejected")).toHaveLength(1);
+    expect(outcomes.filter((outcome) => outcome.kind === "settled"
+      && outcome.value.every((item) => item.result.ok))).toHaveLength(9);
+    expect(outcomes.filter((outcome) => outcome.kind === "settled"
+      && outcome.value.every((item) => !item.result.ok
+        && item.result.error.code === ErrorCode.ThumbnailCapacity))).toHaveLength(10);
+    expect(gates).toHaveLength(10);
+    expect(scheduler.status).toEqual({ active: 0, queued: 0 });
+  });
+
+  it("aborts queued and running batches on stop and waits for the renderer to settle", async () => {
+    const gate = deferred<void>();
+    let aborted: string | null = null;
+    let settled = false;
+    const renderer: ThumbnailPort = {
+      async renderBatch(_ref, keys, signal) {
+        signal.addEventListener("abort", () => { aborted = "running"; }, { once: true });
+        await gate.promise;
+        await new Promise<void>((resolve) => setTimeout(resolve, 10));
+        settled = true;
+        return keys.map((key) => ({ key, result: ok(new Uint8Array([1])) }));
+      },
+    };
+    const planner = {
+      async plan(_ref: ProjectRef, input: ReturnType<typeof request>) { return ok(plan(input.sceneId, input.atSeconds)); },
+      async isFingerprintCurrent() { return ok(true); },
+    };
+    const scheduler = new ThumbnailBatchScheduler(planner, renderer, { activeLimit: 1, queueLimit: 1 });
+    const running = scheduler.request(ref, request("running"), new AbortController().signal);
+    const queued = scheduler.request(ref, request("queued"), new AbortController().signal);
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(scheduler.status).toEqual({ active: 1, queued: 1 });
+
+    const stopping = scheduler.stop();
+    await expect(queued).rejects.toMatchObject({ name: "AbortError" });
+    expect(aborted).toBe("running");
+    gate.resolve();
+    await stopping;
+
+    expect(settled).toBe(true);
+    expect(scheduler.status).toEqual({ active: 0, queued: 0 });
+    await expect(running).rejects.toMatchObject({ name: "AbortError" });
+    await expect(scheduler.request(ref, request("after-stop"), new AbortController().signal))
+      .rejects.toMatchObject({ name: "AbortError" });
+  });
+
   it("supersedes only an older queued batch with the same project, scene and profile", async () => {
     const blockers = [deferred<void>(), deferred<void>()];
     let calls = 0;
