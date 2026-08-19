@@ -2291,6 +2291,18 @@
             lại, vì timeline có thể đã rút wrapper một cách hợp lệ; record trỏ vào scene không còn tồn tại là
             `write_conflict`, không phải cớ để dựng lại scene.
           </p>
+          <p class="text-slate-400 text-sm">
+            P9.3: toàn bộ máy trạng thái nằm ở `src/lib/studio/mount-drop.ts` chạy được dưới `environment: node`, nên
+            component chỉ render thứ nó báo — không component nào tự tính duration, cue hay tên file. **Một** thanh
+            tiến độ: upload chiếm 0–90 %, mount phần còn lại; hai thanh sẽ đọc thành hai thao tác, không đúng việc
+            người dùng vừa làm. Upload hỏng/huỷ ⇒ **không** gọi mount (không có gì trên server để mount, lỗi thứ hai
+            chỉ che lỗi đầu). Chỉ lỗi transport **mơ hồ** (`xhr.onerror`, nay được gắn cờ `ambiguous` ngay chỗ phát
+            sinh) mới GET pending trước: có row thì đi thẳng mount, không có row thì gửi lại bytes **cùng
+            operationId**. Mount trả 404 là terminal — không tự sinh id mới, vì đó đúng là bản sao mà operationId sinh
+            ra để chặn. Thứ duy nhất browser tự quyết là điểm thả: `dropPlacement` đổi x sang giây và clamp, có unit
+            test riêng. Tham chiếu: `rail-media.jpg` cho dropzone + empty state, `02-timeline.jpg` cho lane làm drop
+            target (thêm drop marker) — lấy affordance, không copy pixel.
+          </p>
         </article>
       </section>
     </main>
