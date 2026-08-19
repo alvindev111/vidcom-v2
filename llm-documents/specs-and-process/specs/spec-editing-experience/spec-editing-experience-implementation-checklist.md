@@ -1433,13 +1433,27 @@ dependency-graph import registration in `tests/adapter/compiler-timeout-audit.te
 - [x] MCP và HTTP không có schema trùng lặp định nghĩa hai nơi
 - [x] Packaged artifact boot được DB migration, đọc bundled catalog, chạy MCP catalogue và không dựa vào source tree
 
-**Deliverables Created / Modified**: (điền test/artifact/agent-kit/spec closeout, exact-source-identity gate evidence khi thực thi)
+**Deliverables Created / Modified**:
+- Measurement: `tests/frontend/editing-experience-browser.test.ts` (R4.1c harness, cases skipped behind the 11.1 blocker); `tests/support/browser-studio.ts`; `tests/support/sample-project.ts` (`withTimeline`); observable sync state in `src/components/studio/use-hyperframes-player.ts` and `src/app/projects/[slug]/composer-client.tsx`.
+- Caption parity: `tests/frontend/caption-parity-browser.test.ts`; `package.json` (`test:browser-session`).
+- MCP: `packages/contracts/src/{mcp,editing}.ts`; `packages/mcp/src/registry/{editing-tools.ts,all-tools.ts}`; `packages/core/src/domain/catalog.ts` (`catalogItemDto`); `packages/server/src/routes/{catalog,project-writes}.ts` (§7.11 route); `packages/cli/src/composition-root.ts`; `packages/agent-kit/{AGENTS.md,CLAUDE.md,src/generated-bundle.ts}`; `tests/mcp/**`, `tests/e2e/mcp-stdio-host.test.ts`, `tests/cli/mcp-commands.test.ts`.
+- Gates and identity: `scripts/{source-identity,verify-spec-test-paths}.mjs`; `tests/build/source-identity.test.ts`; `scripts/packaged-smoke/bodies.mjs` + `tests/build/packaged-smoke.test.ts` (packaged MCP catalogue); the Phase Verification Matrix in this checklist.
+- Spike record: `spikes/phase-5/README.md` (the `data-fps` confirmation).
 
 ---
 
 ## Files Changed Summary
 
-(điền trong lúc thực thi — mỗi phase ghi vào mục **Deliverables** của phase đó)
+Each phase records its own files under its **Deliverables** heading; this is the shape of the whole change.
+
+- **Core**: `usecase/{mount-asset,generate-captions}.ts`, `domain/catalog.ts`, plus the P0–P8 use cases each phase lists.
+- **Adapter**: `db/pending-mount.ts` (port + retention), `hyperframes/{parse,types,document}.ts` (`SceneMedia.missing`), and each phase's own files.
+- **Contracts**: `editing.ts` (timeline, mount, pending-mount, captions), `dto.ts` (`media[].missing`), `mcp.ts` (seven shared tool schemas).
+- **Server**: `routes/project-writes.ts` (§7.14, §7.14b, §7.11), `routes/catalog.ts`.
+- **CLI**: `composition-root.ts` (editing tool capabilities), `startup.ts` (pending-mount retention sweep), `next-host.ts`.
+- **UI**: `src/lib/studio/{mount-drop,draft-store,transport-keys,unsaved-guard,scene-media,format,asset-manager,studio-session}.ts`; `src/components/studio/**` (drop surface, pending mounts, conflict UI, shortcut sheet, missing-source lane); `src/app/projects/[slug]/composer-client.tsx`.
+- **Tests**: `tests/{core,adapter,server,contracts,mcp,cli,frontend,build}/**` as listed per phase and in the Phase Verification Matrix.
+- **Tooling/CI**: `scripts/{source-identity,verify-spec-test-paths}.mjs`, `scripts/packaged-smoke/bodies.mjs`, `.github/workflows/phase4-browser-session.yml`, `package.json`.
 
 ## Validation Commands and Evidence Policy
 
