@@ -59,6 +59,8 @@ export function startAssetUpload(
     file: File;
     expectedRevision: number;
     requestInit: ApiRequestInit;
+    /** Set when the upload is the first half of a timeline drop (R11.3b). */
+    pendingMount?: { operationId: string; atSeconds: number; trackIndex: number };
     onProgress(value: number): void;
   },
   Xhr: XhrConstructor = XMLHttpRequest as unknown as XhrConstructor,
@@ -74,6 +76,11 @@ export function startAssetUpload(
     kind,
     filename: input.file.name,
     expectedRevision: String(input.expectedRevision),
+    ...(input.pendingMount === undefined ? {} : {
+      operationId: input.pendingMount.operationId,
+      atSeconds: String(input.pendingMount.atSeconds),
+      trackIndex: String(input.pendingMount.trackIndex),
+    }),
   });
   const xhr = new Xhr();
   const promise = new Promise<{ path: string; changeSeq: number | null }>((resolve, reject) => {
@@ -97,7 +104,9 @@ export function startAssetUpload(
       input.onProgress(100);
       resolve({ path: payload.path, changeSeq: payload.changeSeq ?? null });
     };
-    xhr.onerror = () => reject(new Error("upload connection failed"));
+    // The bytes may or may not have landed. The drop machine has to ask the
+    // server which before it considers resending them.
+    xhr.onerror = () => reject(Object.assign(new Error("upload connection failed"), { ambiguous: true }));
     xhr.onabort = () => reject(new Error("upload cancelled"));
     input.onProgress(0);
     xhr.send(input.file);

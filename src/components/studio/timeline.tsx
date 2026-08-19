@@ -43,6 +43,9 @@ import { TimelineElementRows, TimelineRootRows } from "./timeline-elements";
 import { TimelineRuler } from "./timeline-ruler";
 import { TimelineToolbar } from "./timeline-toolbar";
 import { TimelineLane, TimelineRootLane } from "./timeline-track";
+import { dropPlacement } from "@/lib/studio/mount-drop";
+import { ASSET_DRAG_TYPE } from "./file-tree-item";
+import { useMountDrop } from "./use-mount-drop";
 import { useMutationHistory } from "./use-mutation-history";
 import { useStudioSession } from "./studio-session-context";
 import { useEditorInteraction } from "./editor-interaction-context";
@@ -97,6 +100,8 @@ export function Timeline({
   const viewport = React.useRef<HTMLDivElement>(null);
   const viewportFrame = React.useRef<number | null>(null);
   const marqueeSurface = React.useRef<HTMLDivElement>(null);
+  const drops = useMountDrop({ projectId, revision: projectRevision, entryContentHash, onProjectChanged });
+  const [dropAt, setDropAt] = React.useState<{ atSeconds: number; trackIndex: number } | null>(null);
 
   // Collapsed by default so the timeline still reads as a list of beats, with
   // the selected scene open. Derived rather than synced from an effect: only
@@ -157,6 +162,21 @@ export function Timeline({
   const liveScenes = useLiveScenes(scenes);
   const fitScale = duration > 0 && laneWidth > 0 ? laneWidth / duration : 0;
   const pixelsPerSecond = fitScale * zoom;
+
+  const placementFromEvent = React.useCallback((event: React.DragEvent<HTMLDivElement>) => {
+    const bounds = event.currentTarget.getBoundingClientRect();
+    const row = (event.target as HTMLElement).closest?.("[data-timeline-row]") as HTMLElement | null;
+    const dropScene = scenes.find((scene) => scene.id === row?.dataset.timelineRow);
+    return dropPlacement({
+      pointerX: event.clientX,
+      surfaceLeft: bounds.left,
+      gutterPx: TIMELINE_GUTTER_PX,
+      pixelsPerSecond,
+      duration,
+      trackIndex: dropScene?.trackIndex ?? 0,
+    });
+  }, [duration, pixelsPerSecond, scenes]);
+
   const zoomIndex = ZOOM_LEVELS.indexOf(zoom as (typeof ZOOM_LEVELS)[number]);
 
   const selected = ordered.find(({ scene }) => scene.id === selectedId);
@@ -501,6 +521,26 @@ export function Timeline({
         onZoomOut={() => setZoom(ZOOM_LEVELS[Math.max(zoomIndex - 1, 0)])}
       />
 
+      {drops.progress !== null || drops.error ? (
+        <div className="flex items-center gap-2 border-b px-2 py-1" aria-live="polite">
+          {drops.progress !== null ? (
+            <>
+              {/* One bar for upload and mount together: two bars would read as two
+                  separate operations, which is not what the person did. */}
+              <div className="bg-muted h-1.5 grow overflow-hidden rounded-full">
+                <div className="bg-studio-accent h-full" style={{ width: `${drops.progress}%` }} />
+              </div>
+              <span className="text-muted-foreground text-[10px]">
+                {drops.progress < 90 ? "Uploading" : "Mounting"} {Math.round(drops.progress)}%
+              </span>
+              <Button variant="ghost" size="sm" className="h-6 text-[10px]" onClick={drops.cancelUpload}>Cancel</Button>
+            </>
+          ) : (
+            <span role="alert" className="text-destructive min-w-0 flex-1 text-[10px]">{drops.error}</span>
+          )}
+        </div>
+      ) : null}
+
       {timingIssue ? (
         <div className="flex items-center gap-2 border-b border-amber-500/30 bg-amber-500/10 px-2 py-1" role="alert">
           <span className="min-w-0 flex-1 text-[10px] text-amber-700 dark:text-amber-300">
@@ -560,11 +600,37 @@ export function Timeline({
             ref={marqueeSurface}
             data-timeline-marquee-surface
             className="relative"
+            onDragOver={(event) => {
+              if (!entryContentHash) return;
+              event.preventDefault();
+              event.dataTransfer.dropEffect = "copy";
+              setDropAt(placementFromEvent(event));
+            }}
+            onDragLeave={() => setDropAt(null)}
+            onDrop={(event) => {
+              event.preventDefault();
+              const placement = placementFromEvent(event);
+              setDropAt(null);
+              const assetPath = event.dataTransfer.getData(ASSET_DRAG_TYPE);
+              // An asset already in the project mounts in one mutation; a file from
+              // outside goes through upload first, under one operation.
+              if (assetPath) { void drops.dropAssetPath(assetPath, placement); return; }
+              const file = event.dataTransfer.files.item(0);
+              if (file) void drops.dropFile(file, placement);
+            }}
             onPointerDown={beginMarquee}
             onPointerMove={moveMarquee}
             onPointerUp={endMarquee}
             onPointerCancel={endMarquee}
           >
+            {dropAt ? (
+              <div
+                data-timeline-drop-marker
+                aria-hidden
+                className="bg-studio-accent pointer-events-none absolute inset-y-0 z-30 w-0.5"
+                style={{ left: TIMELINE_GUTTER_PX + dropAt.atSeconds * pixelsPerSecond }}
+              />
+            ) : null}
             {rootTrack ? (
               <>
                 <TimelineRootLane

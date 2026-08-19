@@ -6,6 +6,9 @@ import { cn } from "@/lib/utils";
 import type { FileNode } from "@/lib/studio/types";
 import { FileIcon } from "./file-icon";
 
+/** Drag payload for an asset headed to the timeline; the path is all it carries. */
+export const ASSET_DRAG_TYPE = "application/vidcom-asset-path";
+
 export function FileTreeItem({
   node,
   depth = 0,
@@ -28,10 +31,20 @@ export function FileTreeItem({
 }) {
   const isFolder = node.kind === "folder";
   const Chevron = expanded ? ChevronDownIcon : ChevronRightIcon;
+  // Only project assets can be dropped onto the timeline; a composition or a
+  // stylesheet has no place on a track.
+  const draggable = !isFolder && node.path.startsWith("assets/");
 
   return (
     <button
       type="button"
+      draggable={draggable || undefined}
+      onDragStart={draggable
+        ? (event) => {
+            event.dataTransfer.effectAllowed = "copy";
+            event.dataTransfer.setData(ASSET_DRAG_TYPE, node.path);
+          }
+        : undefined}
       onClick={() => {
         onManage?.(node.path);
         if (isFolder) onToggle(node.path); else onSelect(node.path);

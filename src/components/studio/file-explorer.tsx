@@ -10,7 +10,9 @@ import type { ProjectChanged } from "@/lib/studio/preview-reload";
 import { assetKindFromName } from "@/lib/studio/asset-manager";
 import { AssetDropzone } from "./asset-dropzone";
 import { FileTreeItem } from "./file-tree-item";
+import { PendingMountList } from "./pending-mount-list";
 import { useAssetManager } from "./use-asset-manager";
+import { useMountDrop } from "./use-mount-drop";
 
 export function FileExplorer({
   tree,
@@ -35,6 +37,11 @@ export function FileExplorer({
   const [expanded, setExpanded] = React.useState<string[]>([]);
   const [managedPath, setManagedPath] = React.useState("");
   const assets = useAssetManager(projectId, projectRevision, entryContentHash, onProjectChanged);
+  const drops = useMountDrop({ projectId, revision: projectRevision, entryContentHash, onProjectChanged });
+  // The list survives restarts, so it is read once the panel mounts rather than
+  // only after a drop this session.
+  const { refreshPending } = drops;
+  React.useEffect(() => { void refreshPending(); }, [refreshPending]);
 
   const toggle = (path: string) =>
     setExpanded((current) =>
@@ -125,6 +132,12 @@ export function FileExplorer({
           ) : null}
         </div>
       ) : null}
+      <PendingMountList
+        items={drops.pending}
+        onRetry={(operationId) => void drops.retryMount(operationId)}
+        onDiscard={(operationId) => void drops.abandonMount(operationId)}
+      />
+      {drops.error ? <p role="alert" className="text-destructive border-t px-2 py-1.5 text-[11px]">{drops.error}</p> : null}
       <AssetDropzone progress={assets.progress} error={assets.error} onUpload={(file) => void assets.upload(file)} onCancel={assets.cancelUpload} />
     </div>
   );
