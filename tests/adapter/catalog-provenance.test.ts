@@ -5,7 +5,11 @@ import { parseHTML } from "linkedom";
 import { type RelPath } from "@vidcom/contracts";
 import { type VerifiedCatalogItem } from "@vidcom/core";
 
-import { parseCatalogProvenance, writeCatalogProvenance } from "@vidcom/adapter";
+import {
+  createInstalledProvenanceReader,
+  parseCatalogProvenance,
+  writeCatalogProvenance,
+} from "@vidcom/adapter";
 
 const HOSTILE_TITLE = '"><script>alert(1)</script>';
 
@@ -98,5 +102,32 @@ describe("catalog provenance attribute", () => {
     for (const invalid of ["", "{}", "null", "[]", "{\"name\":1}", "not json"]) {
       expect(parseCatalogProvenance(invalid), invalid).toBeNull();
     }
+  });
+
+  it("reads an installed package's provenance from authored documents only", async () => {
+    const source = item();
+    const { html } = mounted(source);
+    const documents = new Map<string, string>([
+      ["index.html", "<main></main>"],
+      ["compositions/scene-2.html", html],
+    ]);
+    const read = createInstalledProvenanceReader({
+      documents: async () => [...documents.keys()],
+      read: async (_ref, path) => documents.get(path) ?? null,
+    });
+    const ref = { id: "project_x", entry: "index.html" } as never;
+    expect(await read(ref, "lower-third")).toMatchObject({
+      name: "lower-third",
+      version: source.version,
+      integrity: source.integrity.manifest,
+    });
+    // A different package name is not this package, and a project with no mount
+    // reads as unmanaged rather than guessing from leftover files.
+    expect(await read(ref, "other-block")).toBeNull();
+    const empty = createInstalledProvenanceReader({
+      documents: async () => ["index.html"],
+      read: async () => "<main></main>",
+    });
+    expect(await empty(ref, "lower-third")).toBeNull();
   });
 });

@@ -1,3 +1,4 @@
+import path from "node:path";
 import { createHash, randomUUID } from "node:crypto";
 import { basename, join } from "node:path";
 
@@ -39,6 +40,10 @@ import {
   FsAssetStaging,
   DomSvgSanitizer,
   HyperframesCompositionDependencyGraph,
+  HyperframesRegistryCatalog,
+  catalogManifestDigest,
+  createInstalledProvenanceReader,
+  loadBundledCatalog,
   HyperframesThumbnailRenderer,
   ThumbnailCacheAdapter,
   NodeAssetProbe,
@@ -386,6 +391,36 @@ export function createInfrastructure(config: CompositionRootConfig) {
   const thumbnailScheduler = new ThumbnailBatchScheduler(thumbnailService, thumbnailRenderer, {
     cache: thumbnailCache,
   });
+  // Catalog: bundled snapshot plus the pinned-commit registry, cached under
+  // app-data. A missing or drifted snapshot throws rather than presenting an
+  // empty template rail, which would read as an offline failure.
+  const catalogAssetRoot = config.runtimePaths?.catalogAssetRoot
+    ?? path.join(config.appDataRoot, "catalog");
+  const catalog = new HyperframesRegistryCatalog({
+    cacheRoot: path.join(config.appDataRoot, "cache", "catalog"),
+    bundledFilesRoot: path.join(catalogAssetRoot, "files"),
+    bundled: async () => {
+      const loaded = await loadBundledCatalog(catalogAssetRoot);
+      if (!loaded.ok) {
+        throw new Error(`bundled catalog is unusable: ${loaded.error.code}${loaded.error.name ? ` (${loaded.error.name})` : ""}`);
+      }
+      return loaded.value.items;
+    },
+  });
+  const installedProvenance = createInstalledProvenanceReader({
+    documents: async (ref) => {
+      const model = await composition.parseProject(ref);
+      const scenes = (model.scenes as unknown as { src?: string | null }[])
+        .flatMap((scene) => (scene.src ? [scene.src] : []));
+      return [ref.entry as string, ...scenes];
+    },
+    read: async (ref, target) => {
+      const resolved = await workspace.resolve(ref, target as never, "read-source");
+      if (!resolved.ok) return null;
+      const file = await workspace.readFile(resolved.value);
+      return file?.content ?? null;
+    },
+  });
   const grants = new SqliteApprovalGrantStore(database);
   const approvals = new ApprovalService({
     grants,
@@ -488,6 +523,9 @@ export function createInfrastructure(config: CompositionRootConfig) {
     thumbnailCache,
     thumbnailRenderer,
     thumbnailScheduler,
+    catalog,
+    catalogManifestDigest,
+    installedProvenance,
     grants,
     credentialStore,
     credentials,

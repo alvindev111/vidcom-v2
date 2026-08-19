@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { mkdir, readFile, rename, unlink, writeFile } from "node:fs/promises";
 import path from "node:path";
 
-import { ErrorCode, type RelPath } from "@vidcom/contracts";
+import { ErrorCode, type DomainError, type RelPath } from "@vidcom/contracts";
 import {
   err,
   ok,
@@ -27,6 +27,7 @@ import {
   catalogPackageKey,
   hashStagedFile,
   writeStagedPayload,
+  type CatalogPayloadFailureCode,
   type CatalogPackageLimits,
 } from "./package-cache";
 
@@ -42,6 +43,16 @@ export interface MaterializedCatalogPackage {
 function isTextTarget(target: string): "utf8" | "binary" {
   return /\.(html|css|js|mjs|json|svg|txt|md)$/iu.test(target) ? "utf8" : "binary";
 }
+
+/** Payload failures mapped into the shared error vocabulary once, here. */
+const PAYLOAD_ERROR_CODES: Record<CatalogPayloadFailureCode, ErrorCode> = {
+  not_found: ErrorCode.NotFound,
+  version_mismatch: ErrorCode.WriteConflict,
+  too_large: ErrorCode.TooLarge,
+  aborted: ErrorCode.DownloadUnavailable,
+  unavailable: ErrorCode.DownloadUnavailable,
+  integrity_mismatch: ErrorCode.IntegrityMismatch,
+};
 
 /**
  * HyperFrames registry listing with a bounded, offline-tolerant cache
@@ -179,7 +190,7 @@ export class HyperframesRegistryCatalog {
     name: string,
     version: string,
     signal: AbortSignal,
-  ): Promise<Result<MaterializedCatalogPackage, CatalogPayloadError>> {
+  ): Promise<Result<MaterializedCatalogPackage, DomainError>> {
     try {
       const bundled = (await this.#bundled()).find((item) => item.name === name);
       if (bundled) {
@@ -190,9 +201,16 @@ export class HyperframesRegistryCatalog {
       }
       return ok(await this.#materializeRemote(name, version, signal));
     } catch (error) {
-      return err(error instanceof CatalogPayloadError
+      const failure = error instanceof CatalogPayloadError
         ? error
-        : new CatalogPayloadError("unavailable", "catalog package could not be materialized", { cause: error }));
+        : new CatalogPayloadError("unavailable", "catalog package could not be materialized", { cause: error });
+      // The payload code travels in `details.reason`, so an integrity failure is
+      // never presented as "offline" by anything downstream.
+      return err({
+        code: PAYLOAD_ERROR_CODES[failure.code],
+        message: failure.message,
+        details: { reason: failure.code },
+      });
     }
   }
 
