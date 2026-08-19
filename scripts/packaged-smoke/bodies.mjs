@@ -1770,14 +1770,18 @@ export const STEP_BODIES = {
           }
           sceneId = installed.sceneId;
           installedPath = prepared.plan?.mountTarget ?? null;
-          const after = await jsonResponse(
-            "reread catalog project after install",
+          // Read the installed file back through the project, which answers for
+          // the file on disk. The studio snapshot only lists parsed composition
+          // sources, so it is the wrong question to ask about a package asset.
+          const read = await jsonResponse(
+            "read the installed package entry",
             await fetch(
-              `${serving.baseUrl}/api/v1/projects/${projectId}/studio-snapshot`,
+              `${serving.baseUrl}/api/v1/projects/${projectId}/files?path=${encodeURIComponent(installedPath)}`,
               { headers: { Cookie: serving.cookie } },
             ),
           );
-          if (installedPath && !(installedPath in (after.fileHashes ?? {}))) {
+          const entryHash = read.file?.contentHash ?? read.entry?.expectedContentHash ?? null;
+          if (typeof entryHash !== "string") {
             throw new Error(`the installed entry ${installedPath} is not in the project after install`);
           }
         } else {
