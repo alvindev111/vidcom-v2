@@ -565,6 +565,9 @@ describe("packaged smoke steps", () => {
     expect(source).toContain("first");
     expect(source).toContain("second");
     expect(source).toContain("catalog-items/plans");
+    // The step cuts the runner network itself, so a listing it accepts cannot
+    // have come from the registry.
+    expect(source).toContain("withRunnerNetworkCut");
     expect(source).toContain("packages/adapter/assets");
     expect(source).toContain("catalog evidence names the source tree");
   });

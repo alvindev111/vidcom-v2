@@ -1696,6 +1696,7 @@ export const STEP_BODIES = {
     let installedPath = null;
     let sceneId = null;
 
+    return await withRunnerNetworkCut(async (plan) => {
     for (const boot of ["first", "second"]) {
       const serving = await startServingWithSession(context);
       try {
@@ -1704,6 +1705,8 @@ export const STEP_BODIES = {
           `${boot} catalog listing`,
           await fetch(`${serving.baseUrl}/api/v1/catalog`, { headers: { Cookie: serving.cookie } }),
         );
+        // With the runner network cut, a registry refresh cannot succeed, so the
+        // only listing the daemon can serve is the artifact's own snapshot.
         if (listing.source !== "bundled" && listing.source !== "cache") {
           throw new Error(`${boot} boot listed the catalog from ${String(listing.source)} with the network cut`);
         }
@@ -1793,7 +1796,8 @@ export const STEP_BODIES = {
     if (evidence.includes("packages/adapter/assets")) {
       throw new Error("catalog evidence names the source tree");
     }
-    return `${evidence}; installed ${String(installedPath)} across two boots offline`;
+    return `${plan}; ${evidence}; installed ${String(installedPath)} across two boots offline`;
+    });
   },
 
   async provenance(context) {
