@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { LayersIcon, MusicIcon, SlidersHorizontalIcon, SparklesIcon } from "lucide-react";
+import { LayersIcon, MusicIcon, PackageIcon, SlidersHorizontalIcon, SparklesIcon } from "lucide-react";
 
 import {
   ResizableHandle,
@@ -15,6 +15,7 @@ import { fileVersionMap } from "@/lib/studio/file-version-cache";
 import { sceneSettings } from "@/lib/studio/preview-settings";
 import { mutationChangeSeq, type ProjectChanged } from "@/lib/studio/preview-reload";
 import type { FileNode, Scene, SceneScriptLine, SourceFile } from "@/lib/studio/types";
+import { CatalogRail } from "./catalog-rail";
 import { MotionLibraryPanel } from "./motion-library-panel";
 import { BgmPanel } from "./bgm-panel";
 import { PreviewEditor } from "./preview-editor";
@@ -69,11 +70,25 @@ export function ScenePane({
   const studio = useStudioSession();
   const [pending, setPending] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
+  // A catalog install reports its new scene id before the refreshed snapshot has
+  // arrived. The id is transient intent rather than rendered state, so it lives in
+  // a ref: the effect below fires when the refreshed scenes arrive and selects it
+  // through the same handler a storyboard click uses.
+  const pendingSceneId = React.useRef<string | null>(null);
   const hashes = React.useRef(fileVersionMap(files));
 
   React.useEffect(() => {
     hashes.current = fileVersionMap(files);
   }, [files]);
+
+  React.useEffect(() => {
+    const wanted = pendingSceneId.current;
+    if (wanted === null) return;
+    const created = scenes.find((scene) => scene.id === wanted);
+    if (!created) return;
+    pendingSceneId.current = null;
+    onSelectScene(created);
+  }, [onSelectScene, scenes]);
 
   const selected =
     scenes.find((scene) => scene.id === selectedId) ?? scenes[0] ?? null;
@@ -166,6 +181,10 @@ export function ScenePane({
               <SparklesIcon className="size-3.5" />
               Motion
             </TabsTrigger>
+            <TabsTrigger value="templates" className="h-8 gap-1.5 text-xs">
+              <PackageIcon className="size-3.5" />
+              Templates
+            </TabsTrigger>
             <TabsTrigger value="music" className="h-8 gap-1.5 text-xs">
               <MusicIcon className="size-3.5" />
               Music
@@ -238,6 +257,21 @@ export function ScenePane({
                   revision={preview.currentRevision()}
                   tree={tree}
                   onProjectChanged={onProjectChanged}
+                />
+              </div>
+            </ScrollArea>
+          </TabsContent>
+
+          <TabsContent value="templates" className="min-h-0 flex-1">
+            <ScrollArea className="h-full">
+              <div className="p-3">
+                <CatalogRail
+                  projectId={projectId}
+                  projectRevision={preview.currentRevision()}
+                  sceneCount={scenes.length}
+                  selectedSceneId={selected?.id ?? null}
+                  onProjectChanged={onProjectChanged}
+                  onSelectScene={(sceneId) => { pendingSceneId.current = sceneId; }}
                 />
               </div>
             </ScrollArea>
