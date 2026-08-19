@@ -1238,7 +1238,57 @@ async function stageHyperframes({ root, sourceRoot, libraries, motionPackageRoot
     libraries,
     motionPackageRoots,
   );
-  return { version: packageManifest.version, motion };
+  // The frozen bundled catalog rides inside this verified archive, for the same
+  // reason as the motion libraries: an artifact has no `packages/adapter/assets`,
+  // and a build that skipped this would show an empty template rail that reads
+  // as an offline failure instead of a broken install.
+  const catalog = await stageBundledCatalog(path.join(root, "catalog"));
+  return { version: packageManifest.version, motion, catalog };
+}
+
+/**
+ * Copies the frozen catalog snapshot into the staging root.
+ *
+ * Copies only what the manifest declares, so an untracked file next to the
+ * snapshot cannot ride into an artifact, and re-verifies each digest here rather
+ * than trusting the manifest a second time later.
+ */
+async function stageBundledCatalog(destinationRoot) {
+  const sourceRoot = path.join(REPOSITORY_ROOT, "packages", "adapter", "assets", "catalog");
+  const manifestPath = path.join(sourceRoot, "manifest.json");
+  let manifest;
+  try {
+    manifest = JSON.parse(await readFile(manifestPath, "utf8"));
+  } catch (error) {
+    fail("the bundled catalog manifest could not be read", { source: manifestPath });
+    throw error;
+  }
+  if (!Array.isArray(manifest?.items) || manifest.items.length === 0) {
+    fail("the bundled catalog manifest declares no items", { source: manifestPath });
+  }
+  await mkdir(destinationRoot, { recursive: true });
+  await copyFile(manifestPath, path.join(destinationRoot, "manifest.json"));
+  const staged = [];
+  for (const item of manifest.items) {
+    for (const [target, digest] of Object.entries(item?.integrity?.files ?? {})) {
+      const source = await assertContainedRegularFile(
+        path.join(sourceRoot, "files"),
+        path.join(sourceRoot, "files", target),
+        `bundled catalog file ${target}`,
+        false,
+        true,
+      );
+      const actual = createHash("sha256").update(await readFile(source)).digest("hex");
+      if (actual !== digest) {
+        fail("a bundled catalog file does not match its manifest digest", { target });
+      }
+      const destination = path.join(destinationRoot, "files", target);
+      await mkdir(path.dirname(destination), { recursive: true });
+      await copyFile(source, destination);
+      staged.push(`catalog/files/${target}`);
+    }
+  }
+  return { items: manifest.items.length, paths: ["catalog/manifest.json", ...staged].sort() };
 }
 
 async function walkRegularTree(root) {

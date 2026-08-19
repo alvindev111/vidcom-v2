@@ -211,6 +211,14 @@ export function productRuntimeFixtureEntries(
         path: `motion-libraries/${library.packageName}/${packagePath}`,
         content: Buffer.from(`${library.packageName}:${packagePath}\n`, "utf8"),
       }))]),
+      // The frozen bundled catalog rides in this archive, so a fixture without it
+      // would describe an artifact that cannot boot. Only the manifest is listed:
+      // it is the one required contract path, which keeps the "omit each required
+      // entry" matrices in the bootstrap suites exact.
+      {
+        path: "catalog/manifest.json",
+        content: Buffer.from('{"schemaVersion":1,"categoryRuleVersion":1,"items":[]}\n', "utf8"),
+      },
     ],
     native,
   };

@@ -53,6 +53,12 @@ const REQUIRED_HYPERFRAMES_ENTRIES = [
   "bin/commands/layout-audit.browser.js",
   "bin/commands/motion-sample.browser.js",
   "bin/commands/contrast-audit.browser.js",
+  // One stable contract path for the frozen catalog. The individual package files
+  // are not listed here on purpose: their exact set is data that changes whenever
+  // a snapshot is curated, and `loadBundledCatalog` already fails closed on a
+  // missing file or a digest drift. Requiring the manifest keeps a catalog-less
+  // artifact from booting at all.
+  "catalog/manifest.json",
 ] as const;
 
 const REQUIRED_BGM_ENTRIES = [

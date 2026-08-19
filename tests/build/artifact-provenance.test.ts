@@ -478,6 +478,21 @@ describe("runtime payload provenance", () => {
       allowed,
     )).toThrow(/pinned product catalogue/u);
   });
+
+  it("allows only the frozen catalog manifest and its package files", () => {
+    for (const allowed of [
+      "catalog/manifest.json",
+      "catalog/files/templates/title-card/scene.html",
+      "catalog/files/templates/title-card/preview.svg",
+    ]) {
+      expect(() => assertAllowedRuntimeEntry("hyperframes", HOST_TAG, allowed), allowed)
+        .not.toThrow();
+    }
+    for (const rejected of ["catalog/other.json", "catalog/files"]) {
+      expect(() => assertAllowedRuntimeEntry("hyperframes", HOST_TAG, rejected), rejected)
+        .toThrow(/frozen bundled snapshot/u);
+    }
+  });
 });
 
 describe("frontend payload provenance", () => {

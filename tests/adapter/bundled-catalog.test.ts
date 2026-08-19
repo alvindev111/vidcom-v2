@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
@@ -86,5 +86,29 @@ describe("frozen bundled catalog snapshot", () => {
     const root = await temporaryCatalog();
     expect(await loadBundledCatalog(path.join(root, "missing")))
       .toEqual({ ok: false, error: { code: "manifest_unreadable", name: null } });
+  });
+
+  it("keeps the snapshot refresh out of the build and off the network", async () => {
+    const repoRoot = path.resolve(".");
+    const manifest = JSON.parse(await readFile(path.join(repoRoot, "package.json"), "utf8")) as {
+      scripts: Record<string, string>;
+    };
+    // A build that refreshed the snapshot would make the artifact depend on when
+    // it ran rather than on its inputs.
+    for (const [name, command] of Object.entries(manifest.scripts)) {
+      expect(command, name).not.toContain("update-bundled-catalog");
+    }
+    const maintainer = await readFile(path.join(repoRoot, "scripts", "update-bundled-catalog.mjs"), "utf8");
+    expect(maintainer).toContain("--upstream-commit");
+    expect(maintainer).toMatch(/\^\[0-9a-f\]\{40\}\$/u);
+    for (const forbidden of ["api.github.com", "raw.githubusercontent.com", "fetch(", "/main/"]) {
+      expect(maintainer, forbidden).not.toContain(forbidden);
+    }
+    for (const script of ["build-artifact.mjs", "stage-artifact-runtime.mjs"]) {
+      const source = await readFile(path.join(repoRoot, "scripts", script), "utf8");
+      expect(source, script).not.toContain("update-bundled-catalog");
+      expect(source, script).not.toContain("api.github.com");
+      expect(source, script).not.toContain("raw.githubusercontent.com");
+    }
   });
 });
