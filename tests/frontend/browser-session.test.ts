@@ -1,5 +1,5 @@
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
-import { mkdtemp, mkdir, readFile, rm } from "node:fs/promises";
+import { access, constants, mkdtemp, mkdir, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
@@ -8,6 +8,33 @@ import { createScene, getStudioSnapshot, setSceneTiming } from "@vidcom/core";
 import type { Browser, Page } from "puppeteer-core";
 import { browserAvailability, browserIsRequired, requireBrowser } from "../support/browser-harness";
 import { describe, expect, it } from "vitest";
+
+/** A real 1×1 PNG the drop scenario hands to the browser. */
+const DROPPED_PNG = Buffer.from(
+  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==",
+  "base64",
+);
+
+/**
+ * Locates one media binary on PATH.
+ *
+ * `null` means this machine has none, which is a skip for a developer and a
+ * failure on CI, where `VIDCOM_REQUIRE_BROWSER` says the heavy dependencies are
+ * installed on purpose.
+ */
+async function mediaBinaryPath(name: "ffmpeg" | "ffprobe"): Promise<string | null> {
+  const declared = process.env[`HYPERFRAMES_${name.toUpperCase()}_PATH`]?.trim();
+  if (declared) return declared;
+  const suffix = process.platform === "win32" ? ".exe" : "";
+  for (const directory of (process.env.PATH ?? "").split(path.delimiter).filter(Boolean)) {
+    const candidate = path.join(directory, `${name}${suffix}`);
+    try { await access(candidate, constants.X_OK); return candidate; } catch { /* keep looking */ }
+  }
+  if (process.env.VIDCOM_REQUIRE_BROWSER === "1") {
+    throw new Error(`${name} must be installed where the browser session suite is required`);
+  }
+  return null;
+}
 
 async function bodyOf(request: IncomingMessage): Promise<Buffer> {
   const chunks: Buffer[] = [];
@@ -260,6 +287,12 @@ describe("browser session harness", () => {
       if (!address || typeof address === "string") throw new Error("browser harness did not reserve a port");
       const port = address.port;
       await new Promise<void>((resolve, reject) => server!.close((error) => error ? reject(error) : resolve()));
+      // The hosted runtime resolves its media binaries from the environment, so
+      // the drop below probes with a real ffprobe rather than a missing one.
+      const ffprobePath = await mediaBinaryPath("ffprobe");
+      const ffmpegPath = await mediaBinaryPath("ffmpeg");
+      if (ffprobePath) process.env.HYPERFRAMES_FFPROBE_PATH = ffprobePath;
+      if (ffmpegPath) process.env.HYPERFRAMES_FFMPEG_PATH = ffmpegPath;
       runtime = await startNextHostedRuntime(port, workspace);
       const baseUrl = `http://127.0.0.1:${port}`;
       server = createServer(async (request, response) => {
@@ -506,6 +539,62 @@ describe("browser session harness", () => {
       await dragTimelineClip(page, "body", "escape");
       await new Promise((resolve) => setTimeout(resolve, 250));
       expect(timingWrites).toHaveLength(2);
+
+      // One drop, one operation: the upload and the mount that follows it share
+      // an operation id, and the clip they produce is the one that ends up
+      // selected. Needs a real ffprobe, because the mount duration is probed.
+      const probe = await mediaBinaryPath("ffprobe");
+      if (probe === null) {
+        process.stdout.write("SKIPPING timeline drop: ffprobe is not installed\n");
+      } else {
+        const assetRequests: Array<{ pathname: string; search: string; body: string | undefined }> = [];
+        page.on("request", (request) => {
+          const url = new URL(request.url());
+          if (request.method() !== "POST") return;
+          if (!/\/assets(\/mount)?$/u.test(url.pathname)) return;
+          assetRequests.push({ pathname: url.pathname, search: url.search, body: request.postData() });
+        });
+        const mountResponse = page.waitForResponse((response) =>
+          response.request().method() === "POST" && new URL(response.url()).pathname.endsWith("/assets/mount"),
+        { timeout: 20_000 }).catch((cause) => { throw new Error("timeline drop mount timed out", { cause }); });
+        await page.evaluate((bytes) => {
+          const surface = document.querySelector("[data-timeline-marquee-surface]");
+          if (!surface) throw new Error("timeline drop surface is missing");
+          const transfer = new DataTransfer();
+          transfer.items.add(new File([new Uint8Array(bytes)], "dropped.png", { type: "image/png" }));
+          const bounds = surface.getBoundingClientRect();
+          const init: DragEventInit = {
+            bubbles: true,
+            cancelable: true,
+            clientX: bounds.left + Math.min(120, bounds.width / 2),
+            clientY: bounds.top + 20,
+            dataTransfer: transfer,
+          };
+          surface.dispatchEvent(new DragEvent("dragover", init));
+          surface.dispatchEvent(new DragEvent("drop", init));
+        }, [...DROPPED_PNG]);
+        const mounted = await mountResponse;
+        expect(mounted.ok()).toBe(true);
+        const payload = await mounted.json() as { sceneId: string; replayed: boolean };
+        expect(payload.replayed).toBe(false);
+
+        const uploads = assetRequests.filter((request) => request.pathname.endsWith("/assets"));
+        const mounts = assetRequests.filter((request) => request.pathname.endsWith("/assets/mount"));
+        expect(uploads).toHaveLength(1);
+        expect(mounts).toHaveLength(1);
+        const operationId = new URLSearchParams(uploads[0]!.search).get("operationId");
+        expect(operationId).toMatch(/^[0-9A-HJKMNP-TV-Z]{26}$/u);
+        // The mount carries the operation and the precondition, and no placement:
+        // where the clip goes is the server's record, not this request.
+        expect(JSON.parse(mounts[0]!.body ?? "{}")).toEqual({
+          operationId,
+          expectedContentHash: expect.any(String),
+          onOverflow: "extend-root",
+        });
+        await page.waitForFunction((sceneId) =>
+          document.querySelector(`[data-timeline-scene-id="${sceneId}"]`)?.getAttribute("aria-pressed") === "true",
+        { timeout: 10_000 }, payload.sceneId);
+      }
 
       // Timing writes belong to the first ephemeral studio session. Reloading
       // keeps the source changes while giving the history assertions below a

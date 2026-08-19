@@ -62,6 +62,16 @@ jobs:
       # measured curl answering differently — so this job exists to run a real
       # one. `hyperframes browser ensure` puts it in the same cache the
       # resolver already searches.
+      # The timeline-drop assertions mount a real asset, and the mount duration
+      # is probed rather than taken from the browser.
+      - name: Install FFmpeg (Linux)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y ffmpeg
+
+      - name: Install FFmpeg (Windows)
+        if: runner.os == 'Windows'
+        run: choco install ffmpeg --no-progress --yes
+
       - name: Install chrome-headless-shell
         run: node node_modules/hyperframes/bin/hyperframes.mjs browser ensure
 
