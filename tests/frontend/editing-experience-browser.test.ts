@@ -102,17 +102,23 @@ async function projectIdOf(page: Page): Promise<string> {
   });
 }
 
-// BLOCKED: a preflighted candidate never receives the composition timeline.
+// BLOCKED: after a source write, no newly created player receives a timeline.
 //
-// Measured, not guessed. One bug behind this was found and fixed: the candidate
-// was given its `src` before it was connected, so it loaded while detached —
-// where `window.parent` is its own window — and the runtime never opened the
-// bridge, which also left the page unable to bridge afterwards. With that fixed,
-// a hand-written replacement player in the same page reports its timeline in
-// ~300 ms, but the buffer's own candidate still reports none, whether it is
-// created beside the visible engine or after retiring it. Until a candidate can
-// bridge, the swap can only time out as `preview_unhealthy`, and there is
-// nothing for these two cases to measure.
+// Measured, not guessed, and narrowed to this one sentence. One real bug was
+// found and fixed on the way: the candidate was given its `src` before it was
+// connected, so it loaded while detached — where `window.parent` is its own
+// window — and the runtime never opened its bridge, which also left the page
+// unable to bridge afterwards.
+//
+// What remains is not about the buffer at all. In a page where nothing has been
+// written yet, a replacement player reports its timeline in ~230-300 ms. After
+// one source write through the daemon, no player created afterwards reports one
+// — not the buffer's candidate, and not a hand-written element in the same page,
+// with or without another player alive, with the same URL or a cache-busted one.
+// The served document is intact through all of it (clip, timing attributes,
+// runtime script, health collector). Since the swap requires the candidate to
+// report a timeline, every reload can only time out, and there is nothing here
+// to measure until that is resolved.
 describe("editing experience in a browser", () => {
   it.skip("shows this tab's own write in the preview within the R4.1c budget", async () => {
     await withStudioBrowser("perf-write", async ({ page }) => {
