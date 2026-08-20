@@ -3039,6 +3039,33 @@
             60 giây, không retry và không skip. Targeted hai file xanh 6/6; full Browser session local xanh
             9 file/20 test, R4.1c 185–306 ms. Fresh native Windows và Security run vẫn là authority.
           </p>
+          <p class="text-slate-400 text-sm">
+            2026-08-21 05:39 +07 — isolated Packaged smoke
+            <a class="text-cyan-300 underline" href="https://github.com/alvindev111/vidcom-v2/actions/runs/32419958203">32419958203</a>
+            tại <code>2615e255</code> kết thúc GREEN cả Linux x64, macOS arm64 và Windows x64. Windows mất
+            40 phút 49 giây nhưng hoàn tất validate/upload; artifact có <code>strict=true</code>,
+            <code>evidenceError=null</code>, 14/14 step pass, manifest clean/exact. Startup Windows
+            13.340/13.449 ms. Run này đóng điều tra exact-host trace; không còn job pending hay
+            <code>[!]</code>.
+          </p>
+          <p class="text-slate-400 text-sm">
+            P17.3 PASS tại exact source <code>cbf096154c800bd01e00daaf548173aeefbfe29a</code>. Manual
+            <a class="text-cyan-300 underline" href="https://github.com/alvindev111/vidcom-v2/actions/runs/32423346123">CI 32423346123</a>
+            conclusion success: main Linux/macOS/Windows = success/success/success; Browser session
+            Linux/Windows = success/success; Packaged smoke Linux/macOS/Windows = success/success/success;
+            CodeQL, OSV, secret scan và license/provenance đều success. Dependency review cần PR diff nên
+            manual job skipped theo condition; exact-SHA PR
+            <a class="text-cyan-300 underline" href="https://github.com/alvindev111/vidcom-v2/actions/runs/32423278909">Security 32423278909</a>
+            chứng minh riêng cả 5/5 job success, gồm dependency review thật.
+          </p>
+          <p class="text-slate-400 text-sm">
+            <code>gh run download 32423346123</code> lấy đủ bốn artifact: ba packaged evidence và OSV
+            SARIF. Mỗi packaged summary <code>strict=true</code>, <code>evidenceError=null</code>, 14/14
+            step pass; manifest đều <code>dirty=false</code> và commit đúng <code>cbf096154</code>. Startup
+            Linux 7.624/7.424 ms, macOS 4.257/4.657 ms, Windows 12.453/12.059 ms; cả ba qua ngay sample đầu,
+            không cần confirmation. SARIF có 0 result. Immutable action/workflow contract, repository
+            dependency graph và scan evidence nay cùng GREEN; checkpoint 17.4 được mở.
+          </p>
         </article>
       </section>
     </main>

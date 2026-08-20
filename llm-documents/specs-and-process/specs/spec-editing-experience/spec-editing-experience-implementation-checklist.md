@@ -1627,7 +1627,7 @@ events/agent-terminal routes; soak tests
 - [x] 17.2 Add automated accessibility gate
   - Audit critical studio flows plus keyboard/focus/ARIA assertions; zero critical/serious violation.
   - _Requirements: R15.6_ — _Design: §24_
-- [ ] 17.3 Add SCA/CodeQL/secret/license/provenance policies and immutable action pins
+- [x] 17.3 Add SCA/CodeQL/secret/license/provenance policies and immutable action pins
   - Keep sensitive output redacted; update workflow contract tests.
   - _Requirements: R15.5_ — _Design: §24_
 - [ ] 17.4 Add bounded presubmit + full release soak workflow
