@@ -3152,6 +3152,21 @@
             atomically trong một browser evaluation, cùng nguyên tắc với helper button đã sửa trước đó. Năm
             lần stress case gốc đều pass local; cần fresh native Windows proof.
           </p>
+          <p class="text-slate-400 text-sm">
+            P18.1 RED lần bốn tại <code>581708c8a3e9ae3f0263e48530c4f6b457e84fbb</code>:
+            dispatch CI <a class="text-cyan-300" href="https://github.com/alvindev111/vidcom-v2/actions/runs/32429053601">32429053601</a>
+            đã xác nhận CodeQL, OSV, secret, license, browser Linux/Windows, Linux/macOS static và packaged
+            Linux/macOS xanh; tuy nhiên PR CI chạy song song
+            <a class="text-cyan-300" href="https://github.com/alvindev111/vidcom-v2/actions/runs/32429051342">32429051342</a>
+            fail Linux full test ở watcher cache: authored write trả revision 4 thay vì assertion tương đối
+            dự kiến 3. Cả hai run bị hủy và không dùng làm evidence. Nguyên nhân fixture chỉ nối fallback
+            <code>recordWrittenHash</code> sau commit, khác production vốn nối <code>writtenStates</code> để
+            arm tracker trước publish và chờ journal settle. Repair inject đúng production port; 10 lần
+            stress focused liên tiếp, mỗi lần 7/7 test, đều PASS. Full local gate tiếp theo PASS 323/324
+            file với một VieNeu-real local skip, 2.671 test pass/5 skip; typecheck, boundaries, 150 spec
+            paths và diff-check xanh; lint 0 error + 5 warning baseline; R4.1c 188–292 ms. Fresh Actions
+            trên commit sửa vẫn là authority trước khi mở workflow kế.
+          </p>
         </article>
       </section>
     </main>

@@ -304,6 +304,7 @@ describe("event outbox, watcher and project cache", () => {
         leaseId: "lease_test",
         hashContent: hash,
         invalidate(id) { cache.invalidate(id); },
+        writtenStates: tracker,
         recordWrittenHash(id, relativePath, contentHash) { tracker.record(id, relativePath, contentHash); },
         notifyEvents() {},
       });
