@@ -2739,6 +2739,24 @@
             spec-paths 150 và diff-check pass; lint 0 error + 5 warning baseline. Trạng thái vẫn CI open:
             chỉ Windows native run mới chứng minh firewall rule và packaged artifact hoàn tất.
           </p>
+          <p class="text-slate-400 text-sm">
+            2026-08-21 01:38 +07 — P15 PASS tại exact source <code>ec6ff064</code>. Workflow
+            <code>CI</code> dispatch <code>32400379673</code> kết thúc success 8/8: main Linux/macOS/Windows,
+            Browser Linux/Windows và packaged smoke ba OS đều xanh. History soak 100.000 receipt có heap
+            delta bằng 0 trên cả ba runner, giữ đúng 4.096 receipt ID và history 50/0, rồi release đủ
+            100.000 content ref. SSE suspended chỉ đọc một lần; PTY 100.000 frame kết thúc listener bằng 0.
+            Upload-listener RSS lần lượt 41.267.200, 51.380.224 và 63.393.792 byte, đều dưới 64 MiB.
+          </p>
+          <p class="text-slate-400 text-sm">
+            <code>gh run download 32400379673</code> đã lấy đủ artifact. Cả ba packaged JSON đều
+            <code>strict=true</code>, <code>evidenceError=null</code> và 14/14 step bắt buộc pass. Windows
+            native chứng minh repair đúng: <code>offline</code> pass sau 329.814 ms với VieNeu ấm và MP4
+            8 giây; <code>editing-experience-runtime</code> pass sau 37.853 ms qua hai boot offline; artifact
+            vẫn upload bình thường vì GitHub Runner không bị firewall chặn. Hai run đỏ trước vẫn được giữ
+            nguyên trong log; không retry để che lỗi, không nâng threshold và không dùng <code>[!]</code>.
+            Token chỉ tồn tại trong shell qua ánh xạ <code>GH_KEY</code> sang <code>GH_TOKEN</code>. Gate P16
+            nay mới được mở.
+          </p>
         </article>
       </section>
     </main>
