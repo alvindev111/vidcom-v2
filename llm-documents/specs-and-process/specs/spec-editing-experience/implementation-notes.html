@@ -2833,6 +2833,20 @@
             được đóng local nhưng phase vẫn CI open: phải commit/push exact source, dispatch
             <code>CI</code>, watch và download artifact; bất kỳ job đỏ nào tiếp tục khóa P17.
           </p>
+          <p class="text-slate-400 text-sm">
+            2026-08-21 02:30 +07 — CI exact source <code>4bac61f</code>, run
+            <code>32408329370</code>, đỏ ở Browser Windows sau 4 phút 23 giây; Browser Linux xanh sau
+            2 phút 11 giây. Cảnh báo deleted đã hiện nhưng click Back ngay lập tức chưa gọi
+            <code>window.confirm</code> (expected 1, received 0). Đây là race sản phẩm: guard registry chỉ
+            nhận <code>exitProtectedCount</code> trong passive effect, sau khi warning có thể paint.
+          </p>
+          <p class="text-slate-400 text-sm">
+            Repair không thêm wait vào assertion và không retry run đỏ. Riêng synchronization registry
+            chuyển sang layout effect để bảo vệ dirty/deleted có hiệu lực trước frame hiển thị. Targeted
+            browser xanh 1/1; full browser xanh 9 file/19 test, R4.1c 189–304 ms. Build, typecheck,
+            boundaries và diff-check xanh; lint 0 error + 5 warning baseline. P17 vẫn khóa cho đến fresh
+            exact-source CI và artifact đầy đủ.
+          </p>
         </article>
       </section>
     </main>

@@ -147,7 +147,9 @@ export function useSourceFiles(projectId: string, _projectSlug: string, seed: So
 
   // Source loss is protected independently from dirtiness: a clean deleted
   // tab still owns the only visible copy until the user chooses Close.
-  React.useEffect(() => {
+  // Register before the warning can paint. A passive effect leaves one frame
+  // where a deleted/dirty tab is visible but immediate navigation is unguarded.
+  React.useLayoutEffect(() => {
     reportUnsaved(`source:${projectId}`, exitProtectedCount);
     return () => reportUnsaved(`source:${projectId}`, 0);
   }, [exitProtectedCount, projectId]);
