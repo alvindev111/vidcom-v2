@@ -145,18 +145,24 @@ describe.skipIf(!executablePath)("remote asset guard in a real browser", () => {
     });
     const resourcePort = await listen(resource);
     const baseUrl = `http://127.0.0.1:${resourcePort}`;
-    const authored = `<script>addEventListener("load",()=>{for(let i=0;i<2;i++){const node=document.createElement("script");node.src=${JSON.stringify(baseUrl)}+"/dynamic.js";document.head.append(node);}});</script>`;
     const html = injectRuntimeAssetGuardDocument(
-      `<!doctype html><html><head><meta charset="utf-8">${authored}</head><body></body></html>`,
+      '<!doctype html><html><head><meta charset="utf-8"></head><body></body></html>',
       opened,
     );
-    const document = createServer((_request, response) => {
+    const documentServer = createServer((_request, response) => {
       response.writeHead(200, { "content-type": "text/html; charset=utf-8" }).end(html);
     });
-    const documentPort = await listen(document);
+    const documentPort = await listen(documentServer);
     const page = await browser.newPage();
     try {
       await page.goto(`http://127.0.0.1:${documentPort}/`, { waitUntil: "domcontentloaded" });
+      await page.evaluate((dynamicUrl) => {
+        for (let index = 0; index < 2; index += 1) {
+          const node = document.createElement("script");
+          node.src = dynamicUrl;
+          document.head.append(node);
+        }
+      }, `${baseUrl}/dynamic.js`);
       await new Promise((resolve) => setTimeout(resolve, 1_000));
       const scriptLoads = await page.evaluate(() => (globalThis as typeof globalThis & { __guardScriptLoads?: number })
         .__guardScriptLoads ?? 0);
@@ -173,7 +179,7 @@ describe.skipIf(!executablePath)("remote asset guard in a real browser", () => {
     } finally {
       await page.close();
       await Promise.all([
-        close(document),
+        close(documentServer),
         close(resource),
         ...(guardClosed ? [] : [guard.close(jobId, opened.token).then(() => undefined)]),
       ]);

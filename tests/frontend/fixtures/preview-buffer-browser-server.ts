@@ -77,7 +77,10 @@ export async function startPreviewBufferBrowserFixture(): Promise<{
       return;
     }
     if (url.pathname === "/preview") {
-      const delay = Number(url.searchParams.get("delay") ?? 0);
+      const requestedDelay = Number(url.searchParams.get("delay") ?? 0);
+      const delay = Number.isFinite(requestedDelay)
+        ? Math.min(1_000, Math.max(0, requestedDelay))
+        : 0;
       setTimeout(() => {
         if (response.destroyed) return;
         response.writeHead(200, { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" })

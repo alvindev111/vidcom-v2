@@ -3114,6 +3114,23 @@
             byte. P18 được mở; chưa đóng goal vì exact-source five-workflow, branch protection và closure
             matrix vẫn còn.
           </p>
+          <p class="text-slate-400 text-sm">
+            P18.1 RED trên source sạch <code>6c418219b7e44f33ab305b95a279b6cddfccd6dd</code>:
+            manual CI <a class="text-cyan-300" href="https://github.com/alvindev111/vidcom-v2/actions/runs/32426761782">32426761782</a>
+            có các job Actions đang xanh/đang chạy, nhưng check hậu xử lý <code>CodeQL</code> của GitHub
+            Advanced Security fail với 8 alert (7 high, 1 medium). Vì job upload/analyze xanh không đồng
+            nghĩa query result xanh, run bị hủy và không dùng làm evidence. P18 dừng đúng stop-on-red.
+          </p>
+          <p class="text-slate-400 text-sm">
+            Repair không suppress alert: thay regex CSS có backtracking bằng scanner tuyến tính biết
+            comment/string, <code>@font-face</code>, <code>@import</code> và <code>url()</code>; tách link tag
+            khỏi rel-token test; bỏ regex lọc script trong test; clamp delay trình duyệt 0–1.000 ms; truyền
+            dynamic script URL qua <code>page.evaluate</code> argument thay vì dựng mã nguồn. Focused
+            production 3 file/31 test và browser 2 file/3 test PASS; full 324 file (323 pass, một VieNeu-real
+            local skip), 2.671 test pass/5 skip; build, typecheck, boundaries, 150 spec paths, diff-check
+            PASS; lint 0 error + 5 warning baseline. Chưa coi CodeQL xanh cho tới fresh Actions trên commit
+            sửa.
+          </p>
         </article>
       </section>
     </main>

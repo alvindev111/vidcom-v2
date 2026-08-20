@@ -14,7 +14,12 @@ const BASE_HTML = `<!doctype html><html><head></head><body>
 </body></html>`;
 
 function executeRuntime(script: string) {
-  const source = script.replace(/^<script\b[^>]*>/u, "").replace(/<\/script>$/u, "");
+  const openingEnd = script.indexOf(">");
+  if (!script.toLowerCase().startsWith("<script") || openingEnd < 0
+    || !script.toLowerCase().endsWith("</script>")) {
+    throw new TypeError("caption runtime must be wrapped in one script element");
+  }
+  const source = script.slice(openingEnd + 1, -"</script>".length);
   const { window, document } = parseHTML(BASE_HTML);
   const forwarded: unknown[] = [];
   window.parent = {
