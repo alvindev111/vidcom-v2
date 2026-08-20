@@ -169,6 +169,15 @@ export async function startNextHostedRuntime(
     host?: HostedRuntimeHost;
   } = {},
 ): Promise<NextHostedRuntime> {
+  const traceEnabled = process.env.VIDCOM_STARTUP_TRACE === "1";
+  const trace: Record<string, number> = {};
+  let traceCheckpointAt = Date.now();
+  const checkpoint = (name: string) => {
+    if (!traceEnabled) return;
+    const now = Date.now();
+    trace[name] = now - traceCheckpointAt;
+    traceCheckpointAt = now;
+  };
   const clock = options.hostState?.clock ?? createSystemClock();
   const nonces = options.hostState?.nonces ?? new InMemoryNonceStore(clock);
   const sessions = options.hostState?.sessions ?? new InMemorySessionStore(clock);
@@ -196,8 +205,10 @@ export async function startNextHostedRuntime(
   // Settings first: the file is allowed to say where application data lives, so
   // nothing that depends on that path can be computed before it is read.
   const settings = await readVidcomSettings();
+  checkpoint("settings-read");
   const appDataRoot = defaultAppDataRoot(settings);
   await ensureVidcomSettingsFile();
+  checkpoint("settings-ensure");
   let workspaceRoot: AbsolutePath;
   let boot = options.boot;
   if (boot) {
@@ -216,12 +227,14 @@ export async function startNextHostedRuntime(
     const prepared = await prepareRuntimeForCli(appDataRoot, {
       ...(options.migrate === undefined ? {} : { migrate: options.migrate }),
     });
+    checkpoint("runtime-prepare");
     try {
       workspaceRoot = await selectWorkspace({
         explicit: explicitWorkspace ?? process.env.VIDCOM_WORKSPACE ?? settings.workspaceRoot,
         appDataRoot,
         database: prepared.database,
       });
+      checkpoint("workspace-select");
       boot = { appDataRoot, runtimePaths: runtimePathsFor(appDataRoot, prepared) };
     } finally {
       await prepared.release();
@@ -269,8 +282,12 @@ export async function startNextHostedRuntime(
     },
   }, {
     migrationPrepared: true,
+    ...(traceEnabled ? {
+      onStartupStep: ({ step, durationMs }) => { trace[`foundation:${step}`] = durationMs; },
+    } : {}),
     ...(options.migrate === undefined ? {} : { migrate: options.migrate }),
   });
+  checkpoint("foundation-total");
   const origins = [`http://127.0.0.1:${port}`, `http://localhost:${port}`];
   const projectReads: NonNullable<ServerAppDependencies["projectReads"]> = {
     ...foundation.application.readDependencies,
@@ -322,6 +339,7 @@ export async function startNextHostedRuntime(
     foundation.infrastructure.credentials,
     port,
   );
+  checkpoint("agent-mcp");
   const workspaceOverview = async () => {
     const entries = await foundation.application.scanWorkspace();
     return {
@@ -642,6 +660,7 @@ export async function startNextHostedRuntime(
     },
     workspaceActivation: activateSelection,
   });
+  checkpoint("server-apps");
   runtimeValue = {
     foundation,
     nonces,
@@ -699,6 +718,9 @@ export async function startNextHostedRuntime(
       }
     }
   };
+  if (traceEnabled) {
+    process.stderr.write(`vidcom-startup-trace ${JSON.stringify({ scope: "hosted-runtime", phases: trace })}\n`);
+  }
   return runtimeValue;
 }
 

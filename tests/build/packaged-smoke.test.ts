@@ -38,6 +38,7 @@ import {
   cleanupDetachedRenderFailure,
   exercisePackagedMcpStdioPair,
   mediaSceneSource,
+  parseStartupTraces,
   packagedStudioHeaders,
   readLatestRenderJobSince,
   readJsonWithTransportRetry,
@@ -67,6 +68,19 @@ const EDITING_TOOL_NAMES = [
 ];
 
 describe("packaged smoke steps", () => {
+  it("extracts only duration-only startup traces from packaged stderr", () => {
+    expect(parseStartupTraces([
+      "private diagnostic that must not be copied",
+      'vidcom-startup-trace {"scope":"hosted-runtime","phases":{"settings-read":12,"secret":"token"}}',
+      'vidcom-startup-trace {"scope":"serve","phases":{"listener":4,"bad value":9}}',
+      'vidcom-startup-trace {"scope":"unknown","phases":{"listener":1}}',
+      "vidcom-startup-trace not-json",
+    ].join("\n"))).toEqual([
+      { scope: "hosted-runtime", phases: { "settings-read": 12 } },
+      { scope: "serve", phases: { listener: 4 } },
+    ]);
+  });
+
   it("attaches a packaged studio session and reuses its header for project writes", async () => {
     const serving = {
       baseUrl: "http://127.0.0.1:4567",
@@ -758,10 +772,12 @@ describe("packaged smoke steps", () => {
     const environment = smokeEnvironment("/tmp/vidcom-smoke", {
       PATH: "/usr/bin",
       NODE_ENV: "test",
+      VIDCOM_STARTUP_TRACE: "1",
       VIDCOM_SMOKE_RELEASE: "1",
       VIDCOM_SMOKE_EXPECTED_COMMIT: "b".repeat(40),
     });
     expect(environment).toMatchObject({
+      VIDCOM_STARTUP_TRACE: "1",
       VIDCOM_SMOKE_RELEASE: "1",
       VIDCOM_SMOKE_EXPECTED_COMMIT: "b".repeat(40),
     });
@@ -832,6 +848,7 @@ describe("native packaged-smoke inputs", () => {
     expect(workflow).toContain("bun-version: 1.3.14");
     expect(workflow).toContain("bun run build:artifact --release");
     expect(workflow).toContain("VIDCOM_SMOKE_EXPECTED_COMMIT:");
+    expect(workflow).toContain('VIDCOM_STARTUP_TRACE: "1"');
     expect(workflow).toContain("VIDCOM_SMOKE_EVIDENCE_DIR:");
     expect(workflow).toContain("doctor-report.json");
     expect(workflow).toContain("ffprobe.json");

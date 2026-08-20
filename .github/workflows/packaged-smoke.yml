@@ -109,6 +109,7 @@ jobs:
           VIDCOM_SMOKE_CACHE_ROOT: ${{ github.workspace }}/.vidcom-smoke-cache
           VIDCOM_SMOKE_NETWORK_CUT: "1"
           VIDCOM_SMOKE_RELEASE: "1"
+          VIDCOM_STARTUP_TRACE: "1"
           VIDCOM_SMOKE_EXPECTED_COMMIT: ${{ github.event.pull_request.head.sha || github.sha }}
           VIDCOM_SMOKE_EVIDENCE_DIR: ${{ github.workspace }}/packaged-smoke-evidence/${{ matrix.tag }}
         run: node scripts/packaged-smoke/run.mjs > packaged-smoke-${{ matrix.tag }}.json

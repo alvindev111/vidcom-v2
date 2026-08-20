@@ -72,6 +72,22 @@ describe("startup order", () => {
     expect(log).toEqual(ordered);
   });
 
+  it("reports bounded step timings without changing startup order", async () => {
+    const log: string[] = [];
+    const timings: Array<{ step: StartupStepName; durationMs: number }> = [];
+    await expect(runStartupSequence(steps(log), undefined, (timing) => timings.push(timing)))
+      .resolves.toBe("listener");
+    expect(timings.map(({ step }) => step)).toEqual(ordered);
+    expect(timings.every(({ durationMs }) => Number.isSafeInteger(durationMs) && durationMs >= 0)).toBe(true);
+  });
+
+  it("does not let a diagnostics sink alter startup", async () => {
+    const log: string[] = [];
+    await expect(runStartupSequence(steps(log), undefined, () => { throw new Error("sink failed"); }))
+      .resolves.toBe("listener");
+    expect(log).toEqual(ordered);
+  });
+
   it.each(ordered.slice(0, -1))("does not open listener when %s fails", async (failed) => {
     const log: string[] = [];
     await expect(runStartupSequence(steps(log, failed))).rejects.toMatchObject({

@@ -449,6 +449,31 @@ export async function stopServing(serving) {
   }
 }
 
+const STARTUP_TRACE_PREFIX = "vidcom-startup-trace ";
+const STARTUP_TRACE_SCOPES = new Set(["hosted-runtime", "serve"]);
+
+/** Extracts duration-only startup diagnostics without forwarding arbitrary child stderr. */
+export function parseStartupTraces(output) {
+  const traces = [];
+  for (const line of output.split(/\r?\n/u)) {
+    if (!line.startsWith(STARTUP_TRACE_PREFIX)) continue;
+    try {
+      const value = JSON.parse(line.slice(STARTUP_TRACE_PREFIX.length));
+      if (!value || !STARTUP_TRACE_SCOPES.has(value.scope)
+        || !value.phases || typeof value.phases !== "object" || Array.isArray(value.phases)) continue;
+      const phases = Object.fromEntries(Object.entries(value.phases).filter(([name, durationMs]) => (
+        /^[a-z][a-z:-]*$/u.test(name)
+        && Number.isSafeInteger(durationMs)
+        && durationMs >= 0
+      )));
+      traces.push({ scope: value.scope, phases });
+    } catch {
+      // A malformed diagnostic line is ignored; product readiness still has its own hard gate.
+    }
+  }
+  return traces;
+}
+
 /**
  * A daemon plus an authenticated browser session.
  *
@@ -1137,10 +1162,12 @@ export const STEP_BODIES = {
     const coldServeStartedAt = Date.now();
     const coldServing = await startServing(context);
     const coldServe = Date.now() - coldServeStartedAt;
+    const coldTrace = parseStartupTraces(coldServing.output());
     await stopServing(coldServing);
     const warmServeStartedAt = Date.now();
     const warmServing = await startServing(context);
     const warmServe = Date.now() - warmServeStartedAt;
+    const warmTrace = parseStartupTraces(warmServing.output());
     await stopServing(warmServing);
 
     const label = runnerLabel();
@@ -1150,12 +1177,16 @@ export const STEP_BODIES = {
       throw new Error(`required committed startup baseline is missing or invalid for ${label}`);
     }
     const evaluation = evaluateStartup(label, startup, baseline);
-    const failures = failingResults(evaluation);
-    if (failures.length > 0) {
-      throw new Error(`startup gate failed: ${failures.map((result) => `${result.name}=${result.value}>${result.limit}`).join(", ")}`);
-    }
     context.measurements.doctor = { coldMs: doctorColdMs, warmMs: doctorWarmMs };
     context.measurements.startup = { runner: label, ...startup, baselinePresent: true, evaluation };
+    context.measurements.startupTrace = { cold: coldTrace, warm: warmTrace };
+    const failures = failingResults(evaluation);
+    if (failures.length > 0) {
+      throw new Error(
+        `startup gate failed: ${failures.map((result) => `${result.name}=${result.value}>${result.limit}`).join(", ")}`
+        + `; trace=${JSON.stringify(context.measurements.startupTrace)}`,
+      );
+    }
     return `version ${version.vidcom}/${version.runtimeManifest}; doctor ${String(doctorColdMs)}/${String(doctorWarmMs)}ms; serve ${String(coldServe)}/${String(warmServe)}ms`;
   },
 

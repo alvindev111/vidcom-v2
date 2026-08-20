@@ -51,10 +51,26 @@ export interface StartupSteps<Listener = unknown> {
   listener(): Promise<Listener>;
 }
 
+export interface StartupStepTiming {
+  step: StartupStepName;
+  durationMs: number;
+}
+
+function reportStartupTiming(
+  observer: ((timing: StartupStepTiming) => void) | undefined,
+  timing: StartupStepTiming,
+): void {
+  try { observer?.(timing); }
+  catch {
+    // Diagnostics are observational: a broken sink must never change startup.
+  }
+}
+
 /** Executes the reviewed startup DAG as a strict sequence; no listener is opened early. */
 export async function runStartupSequence<Listener>(
   steps: StartupSteps<Listener>,
   signal?: AbortSignal,
+  onStepComplete?: (timing: StartupStepTiming) => void,
 ): Promise<Listener> {
   const ordered: Array<[StartupStepName, () => Promise<unknown>]> = [
     ["migration", steps.migration],
@@ -67,13 +83,17 @@ export async function runStartupSequence<Listener>(
   ];
   for (const [name, step] of ordered) {
     signal?.throwIfAborted();
+    const startedAt = Date.now();
     try { await step(); }
     catch (cause) { throw new StartupError(name, { cause }); }
+    reportStartupTiming(onStepComplete, { step: name, durationMs: Date.now() - startedAt });
     signal?.throwIfAborted();
   }
   signal?.throwIfAborted();
+  const listenerStartedAt = Date.now();
   try {
     const listener = await steps.listener();
+    reportStartupTiming(onStepComplete, { step: "listener", durationMs: Date.now() - listenerStartedAt });
     signal?.throwIfAborted();
     return listener;
   }
@@ -205,6 +225,8 @@ export async function startVidcomFoundation<Listener>(
     migrationPrepared?: boolean;
     /** Test seam used to count the real migration call across the whole boot. */
     migrate?: typeof migrateDatabase;
+    /** Optional diagnostics observer; it cannot alter the reviewed startup order. */
+    onStartupStep?: (timing: StartupStepTiming) => void;
   } = {},
 ) {
   const effectiveConfig = {
@@ -368,7 +390,7 @@ export async function startVidcomFoundation<Listener>(
       scheduler: async () => { schedulerHandle = await hooks.startScheduler({ infrastructure, application, leaseId }) ?? null; },
       watcher: async () => { watcherHandle = await hooks.startWatcher({ infrastructure, application, leaseId }) ?? null; },
       listener: async () => { listenerHandle = await hooks.openListener({ infrastructure, application, leaseId }); return listenerHandle; },
-    }, options.signal);
+    }, options.signal, options.onStartupStep);
     return {
       infrastructure,
       application: application!,

@@ -2967,6 +2967,42 @@
             Repair cuối giữ <code>extra_args</code> chỉ còn <code>--results=verified,unknown</code>; contract
             cấm lặp cả <code>--fail</code> và <code>--no-update</code>. P17.3 vẫn mở chờ fresh CI.
           </p>
+          <p class="text-slate-400 text-sm">
+            2026-08-21 04:05 +07 — CI <code>32416783438</code> tại <code>d7d2b0e4</code> chứng minh
+            toàn bộ Security GREEN: CodeQL, OSV 0 vulnerability, TruffleHog full-history thật và
+            license/provenance; Browser Linux/Windows cùng main Linux cũng GREEN. Packaged smoke macOS
+            build/verify artifact thành công và 13 step nghiệp vụ còn lại đều pass, nhưng
+            <code>identify</code> RED vì cold serve 7.330 ms vượt statistical limit 7.092 ms đúng 238 ms.
+            Run được cancel ngay theo stop-on-red; các job còn lại bị cancel không được tính kết luận.
+          </p>
+          <p class="text-slate-400 text-sm">
+            Không nới threshold từ một hosted-runner sample. Baseline v2 hiện lấy tối thiểu 5 sample và
+            gate <code>max(1,5×median, p95+200 ms)</code>; packaging execution record yêu cầu rerun cô lập
+            cùng SHA khi chỉ một sample sát ngưỡng để phân biệt jitter với regression. Dispatch
+            <code>Packaged smoke</code> cùng exact source trước; P17.4 vẫn bị khóa và P17.3 chưa PASS.
+          </p>
+          <p class="text-slate-400 text-sm">
+            2026-08-21 04:18 +07 — isolated <code>Packaged smoke</code>
+            <code>32417842876</code> cùng SHA <code>d7d2b0e4</code> lặp lại macOS RED:
+            cold serve 8.134 ms &gt; 7.092 ms. Mọi step artifact/runtime còn lại tiếp tục pass; Linux và
+            Windows bị cancel sau tín hiệu đỏ và không được tính kết luận. Hai sample liên tiếp 7.330 và
+            8.134 ms khiến failure không còn được dismiss như jitter một lần.
+          </p>
+          <p class="text-slate-400 text-sm">
+            Causal comparison: P16 run <code>32409916163</code> trên cùng hosted image đo 4.469/4.264 ms;
+            SEA boot trước/sau đều 5.671 modules, khoảng 17,16 MB; frontend pack mới còn nhỏ hơn. Diff P17
+            không đổi CLI/Server startup source; runtime dependency delta chỉ là Hono security patch
+            4.12.33→4.12.34. Local Mac tái tạo artifact đo 1.819/1.820 ms, nên chưa có quyền kết luận phase
+            product nào chậm trên hosted runner.
+          </p>
+          <p class="text-slate-400 text-sm">
+            Thêm diagnostics opt-in <code>VIDCOM_STARTUP_TRACE=1</code>: duration-only JSON cho runtime
+            prepare, từng foundation step, server app, static assets/listener/discovery; harness chỉ parse
+            scope/key/integer allowlist thay vì forward stderr riêng tư. Failed identify nay vẫn ghi đủ
+            doctor/startup/trace measurements vào artifact. Local trace cho thấy hosted-runtime 0,75 s,
+            phần còn lại trước JS khoảng 1,06 s; 75/75 focused test, typecheck và lint 0 error/5 warning
+            baseline xanh. Cần exact-host trace để sửa đúng layer, P17.3 vẫn mở.
+          </p>
         </article>
       </section>
     </main>

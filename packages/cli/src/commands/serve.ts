@@ -145,8 +145,18 @@ export async function startServing(
   options: ServeCommandOptions = {},
   dependencies: StartServingDependencies = {},
 ): Promise<ServingDaemon> {
+  const traceEnabled = process.env.VIDCOM_STARTUP_TRACE === "1";
+  const trace: Record<string, number> = {};
+  let traceCheckpointAt = Date.now();
+  const checkpoint = (name: string) => {
+    if (!traceEnabled) return;
+    const now = Date.now();
+    trace[name] = now - traceCheckpointAt;
+    traceCheckpointAt = now;
+  };
   const appDataRoot = defaultAppDataRoot();
   const port = options.port ?? await freeLoopbackPort();
+  checkpoint("port");
   const discovery = new DaemonDiscoveryStore(appDataRoot);
   let listener: LoopbackListener | null = null;
   let currentRecord: HostedRuntimeRecord | null = null;
@@ -191,12 +201,14 @@ export async function startServing(
   );
   registerHostedRuntime(port, pending);
   const runtime = await pending;
+  checkpoint("hosted-runtime");
 
   const assets = resolveStaticAssets(path.join(process.cwd(), "dist", "sea"));
   // Built once, not per request. The host parses the manifest and bounds-checks
   // every entry when it is constructed, and doing that on each request would
   // repeat the whole thing for every image on a page.
   const assetHost = assets === null ? null : createSeaStaticAssetHost(assets);
+  checkpoint("static-assets");
   const staticTarget: FetchTarget = assetHost === null
     ? unbuiltFrontendTarget()
     : (request) => assetHost.handle(request);
@@ -206,10 +218,15 @@ export async function startServing(
   });
 
   listener = await bindLoopback({ fetch: (request) => router.handle(request) }, port);
+  checkpoint("listener");
   await host.replaceDiscovery(null, {
     workspaceRoot: runtime.workspaceRoot,
     instanceId: runtime.instanceId,
   });
+  checkpoint("discovery");
+  if (traceEnabled) {
+    process.stderr.write(`vidcom-startup-trace ${JSON.stringify({ scope: "serve", phases: trace })}\n`);
+  }
 
   let stopped: Promise<void> | null = null;
   return {
