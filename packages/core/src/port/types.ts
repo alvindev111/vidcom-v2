@@ -368,6 +368,7 @@ export interface FileMutationCapture {
   target: ResolvedPath;
   rollbackPath: ResolvedPath | null;
   capturedHash: ContentHash | null;
+  lease?: MutationPathLease;
 }
 
 /** Directory capture records state only; directory bytes are never moved or read. */
@@ -379,6 +380,7 @@ export interface DirectoryMutationCapture {
   rollbackPath: null;
   capturedHash: null;
   existedBefore: boolean;
+  lease?: MutationPathLease;
 }
 
 /** Durable filesystem capture owned by one journal step at the publish boundary. */
@@ -389,9 +391,30 @@ export type DirectoryCaptureExpectation = { kind: "directory"; existedBefore: bo
 
 export type MutationCaptureExpectation = ContentHash | null | DirectoryCaptureExpectation;
 
+export interface MutationDirectoryIdentity {
+  device: string;
+  inode: string;
+  mode: string;
+  canonicalPath: string;
+}
+
+export interface MutationPathParentLease {
+  path: ResolvedPath;
+  identity: MutationDirectoryIdentity | null;
+}
+
+/** No-follow parent-chain authority carried from resolution into each mutation seam. */
+export interface MutationPathLease {
+  target: ResolvedPath;
+  canonicalRoot: ResolvedPath;
+  parents: readonly MutationPathParentLease[];
+}
+
 export interface MutationCaptureOptions {
   /** Directory targets that will be removed later in this mutation; rollback storage must sit outside all of them. */
   rollbackOutside?: readonly ResolvedPath[];
+  /** Parent identity authority resolved before T1 and revalidated inside capture/publish. */
+  lease?: MutationPathLease;
 }
 
 export type DirectoryPublishAction = { kind: "directory"; action: "mkdir" | "rmdir" };
@@ -414,7 +437,12 @@ export interface TrackedProjectPathState {
 /** Precondition mismatch observed while atomically capturing the live target. */
 export type MutationCaptureConflict =
   | { actualHash: ContentHash | null }
-  | { actualState: "absent" | "file" | "directory" | "other" };
+  | { actualState: "absent" | "file" | "directory" | "other" }
+  | {
+      reason: "recovery_required";
+      actualState: "absent" | "file" | "directory" | "other";
+      capture: FileMutationCapture;
+    };
 
 /** Exact durable lease identity that T1 must validate before opening a mutation journal. */
 export interface MutationAuthority {

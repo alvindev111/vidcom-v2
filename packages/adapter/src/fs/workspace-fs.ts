@@ -13,6 +13,7 @@ import {
   type JournalId,
   type WorkspaceOperationId,
   type MutationCapture,
+  type MutationPathLease,
   type PathPurpose,
   type PathRejection,
   type ProjectRef,
@@ -28,7 +29,13 @@ import { writeAtomic } from "./atomic-write";
 import { openRegularFileNoFollow } from "./regular-file";
 import { deleteAtomic } from "./atomic-delete";
 import { syncDirectory } from "./durability";
-import { resolveProjectPath, resolveWorkspacePath } from "./resolve";
+import {
+  resolveMutationPath,
+  resolveProjectPath,
+  resolveWorkspacePath,
+  refreshMutationPath,
+  revalidateMutationPath,
+} from "./resolve";
 import {
   captureForMutation,
   discardCapture,
@@ -166,6 +173,25 @@ export class WorkspaceFs implements WorkspacePort {
     return resolveProjectPath(ref, relativePath, purpose);
   }
 
+  resolveMutation(
+    ref: ProjectRef,
+    relativePath: string,
+    purpose: PathPurpose,
+  ): Promise<Result<MutationPathLease, PathRejection>> {
+    return resolveMutationPath(ref, relativePath, purpose);
+  }
+
+  revalidateMutationPath(lease: MutationPathLease): Promise<boolean> {
+    return revalidateMutationPath(lease);
+  }
+
+  refreshMutationPath(
+    lease: MutationPathLease,
+    restoredParent: ResolvedPath,
+  ): Promise<MutationPathLease | null> {
+    return refreshMutationPath(lease, restoredParent);
+  }
+
   async resolveWorkspace(
     workspaceRoot: AbsolutePath,
     relativePath: RelPath,
@@ -264,9 +290,12 @@ export class WorkspaceFs implements WorkspacePort {
     expectedHash: ContentHash,
   ): Promise<StagedSourceHandle> {
     const project = await this.directProjectRoot(ref.root);
-    const resolved = await this.resolve(ref, sourcePath, "authored-write");
+    const resolved = await this.resolveMutation(ref, sourcePath, "authored-write");
     if (!resolved.ok) throw new TypeError("staged source path is not allowed");
-    const sourceMetadata = await lstat(resolved.value);
+    if (!(await this.revalidateMutationPath(resolved.value))) {
+      throw new TypeError("staged source parent identity changed");
+    }
+    const sourceMetadata = await lstat(resolved.value.target);
     if (!sourceMetadata.isFile() || sourceMetadata.isSymbolicLink()) {
       throw new TypeError("staged source is not a regular file");
     }
@@ -283,7 +312,7 @@ export class WorkspaceFs implements WorkspacePort {
       }
     }
     const temporary = path.join(temporaryRoot, `entry-${randomUUID()}.tmp`) as AbsolutePath;
-    await link(resolved.value, temporary);
+    await link(resolved.value.target, temporary);
     let discarded = false;
     try {
       if (await hashRegularFile(temporary) !== expectedHash) throw new TypeError("staged source hash changed");
@@ -398,23 +427,29 @@ export class WorkspaceFs implements WorkspacePort {
   }
 
   /** Moves the live target into a journal-owned rollback slot and verifies its hash at that boundary. */
-  captureForMutation(
+  async captureForMutation(
     pathname: ResolvedPath,
     expectation: Parameters<WorkspacePort["captureForMutation"]>[1],
     journalId: JournalId | WorkspaceOperationId,
     ordinal: number,
     options?: Parameters<WorkspacePort["captureForMutation"]>[4],
   ) {
+    if (options?.lease
+      && (options.lease.target !== pathname || !await this.revalidateMutationPath(options.lease))) {
+      return { ok: false as const, error: { actualState: "other" as const } };
+    }
     return captureForMutation(pathname, expectation, journalId, ordinal, options);
   }
 
   /** Publishes bytes without replacing a target created after capture. */
-  publishCaptured(capture: MutationCapture, content: Parameters<WorkspacePort["publishCaptured"]>[1]): Promise<boolean> {
+  async publishCaptured(capture: MutationCapture, content: Parameters<WorkspacePort["publishCaptured"]>[1]): Promise<boolean> {
+    if (capture.lease && !(await this.revalidateMutationPath(capture.lease))) return false;
     return publishCaptured(capture, content);
   }
 
   /** Restores captured bytes only while the live target still matches the landed mutation hash. */
-  restoreCaptured(capture: MutationCapture, landedState: Parameters<WorkspacePort["restoreCaptured"]>[1]): Promise<boolean> {
+  async restoreCaptured(capture: MutationCapture, landedState: Parameters<WorkspacePort["restoreCaptured"]>[1]): Promise<boolean> {
+    if (capture.lease && !(await this.revalidateMutationPath(capture.lease))) return false;
     return restoreCaptured(capture, landedState);
   }
 
@@ -428,6 +463,7 @@ export class WorkspaceFs implements WorkspacePort {
     const walk = async (directory: string): Promise<FileNode[]> => {
       const entries = (await readdir(directory, { withFileTypes: true }))
         .filter((entry) => !IGNORED_TREE_ENTRIES.has(entry.name))
+        .filter((entry) => entry.isDirectory() || entry.isFile())
         .sort((left, right) => {
           if (left.isDirectory() !== right.isDirectory()) return left.isDirectory() ? -1 : 1;
           return left.name.localeCompare(right.name);

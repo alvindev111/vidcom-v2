@@ -32,6 +32,7 @@ import type {
   CompositeStep,
   EntityState,
   MutationCapture,
+  MutationPathLease,
   PathPurpose,
   PathRejection,
   PendingMountOpen,
@@ -248,6 +249,7 @@ function samePendingOpen(record: PendingMountOpen, expected: PendingMountOpen): 
 interface PreparedCompositeStep {
   step: CompositeStep;
   target: ResolvedPath;
+  lease: MutationPathLease;
   entityState: EntityState | null;
 }
 
@@ -427,17 +429,17 @@ export class WriteAuthority {
         }
         purpose = inferred;
       }
-      const resolved = await this.dependencies.workspace.resolve(request.ref, path, purpose);
+      const resolved = await this.dependencies.workspace.resolveMutation(request.ref, path, purpose);
       if (!resolved.ok) return err(pathError(resolved.error));
-      if (canonicalTargets.has(resolved.value)) {
+      if (canonicalTargets.has(resolved.value.target)) {
         return err({
           code: ErrorCode.DuplicateMutationTarget,
           message: "multiple mutation steps resolve to the same project target",
           details: { path },
         });
       }
-      canonicalTargets.add(resolved.value);
-      prepared.push({ step, target: resolved.value, entityState });
+      canonicalTargets.add(resolved.value.target);
+      prepared.push({ step, target: resolved.value.target, lease: resolved.value, entityState });
     }
     return ok(prepared);
   }
@@ -640,8 +642,8 @@ export class WriteAuthority {
             ({ step: candidate }) => candidate.kind === "mkdir" && candidate.path === parentPath,
           );
           if (!plannedParent) {
-            const parent = await this.dependencies.workspace.resolve(request.ref, parentPath, "authored-write");
-            if (!parent.ok || (await this.dependencies.workspace.stat(parent.value))?.kind !== "directory") {
+            const parent = await this.dependencies.workspace.resolveMutation(request.ref, parentPath, "authored-write");
+            if (!parent.ok || (await this.dependencies.workspace.stat(parent.value.target))?.kind !== "directory") {
               return err(conflict({ path: step.path, parent: parentPath }, "path"));
             }
           }
@@ -1065,14 +1067,30 @@ export class WriteAuthority {
           item.intent.ordinal,
           itemPath
             ? {
-                rollbackOutside: steps.flatMap((candidate) =>
+              rollbackOutside: steps.flatMap((candidate) =>
                   candidate.step.kind === "rmdir" && isPathBelow(itemPath, candidate.step.path)
                     ? [candidate.target]
                     : []),
+                lease: item.lease,
               }
-            : undefined,
+            : { lease: item.lease },
         );
         if (!captured.ok) {
+          if ("reason" in captured.error && captured.error.reason === "recovery_required") {
+            captures.push(captured.error.capture);
+            try {
+              await this.dependencies.compositeJournal.markStepCaptured(
+                journalId,
+                item.intent.ordinal,
+                captured.error.capture.rollbackPath,
+                captured.error.capture.capturedHash,
+              );
+            } catch {
+              // The deterministic rollback path still embeds journal + ordinal;
+              // orphaning T1 below keeps recovery ownership even if this update failed.
+            }
+            return this.orphanCapturedMutation(request, journalId, captures, "capture_restore_blocked");
+          }
           const restored = await this.restoreCapturedSteps(steps, captures, new Set());
           if (!restored) {
             return this.orphanCapturedMutation(request, journalId, captures, "capture_conflict");
@@ -1247,6 +1265,23 @@ export class WriteAuthority {
       for (const item of steps) {
         const capture = captures[item.intent.ordinal];
         if (!capture) throw new Error("a mutation capture was lost before publish");
+        if (!(await this.dependencies.workspace.revalidateMutationPath(item.lease))) {
+          const restored = await this.restoreCapturedSteps(steps, captures, published);
+          if (!restored) {
+            settleWrittenStates("unknown");
+            abandonHistory();
+            return this.orphanCapturedMutation(request, journalId, captures, "publish_parent_identity");
+          }
+          await this.dependencies.compositeJournal.abortComposite(
+            journalId,
+            ErrorCode.WriteConflict,
+            request.grant ? { kind: "release", grantId: request.grant.id } : undefined,
+          );
+          await this.discardCaptures(captures);
+          settleWrittenStates("rolled_back");
+          abandonHistory();
+          return err(conflict({}, "path"));
+        }
         let landed: boolean;
         if (item.step.kind === "mkdir" || item.step.kind === "rmdir") {
           landed = await this.dependencies.workspace.publishCaptured(
@@ -1272,6 +1307,9 @@ export class WriteAuthority {
           try {
             if (staged.contentHash !== item.intent.toHash) {
               throw new Error("staged artifact hash differs from the journal intent");
+            }
+            if (!(await this.dependencies.workspace.revalidateMutationPath(item.lease))) {
+              throw new Error("staged target parent identity changed before commit");
             }
             await staged.commit();
             landed = await this.dependencies.workspace.readHash(item.target) === item.intent.toHash;
@@ -1469,6 +1507,18 @@ export class WriteAuthority {
           if (!(await this.dependencies.workspace.restoreCaptured(capture, landedState))) return false;
           const restored = await this.dependencies.workspace.stat(capture.target);
           if ((restored?.kind === "directory") !== item.intent.existedBefore) return false;
+          if (capture.existedBefore && !currentExists) {
+            for (const earlier of captures) {
+              if (earlier.ordinal >= capture.ordinal || !earlier.lease
+                || !earlier.lease.parents.some((parent) => parent.path === capture.target)) continue;
+              const refreshed = await this.dependencies.workspace.refreshMutationPath(
+                earlier.lease,
+                capture.target,
+              );
+              if (!refreshed) return false;
+              earlier.lease = refreshed;
+            }
+          }
           continue;
         }
         const actual = await this.dependencies.workspace.readHash(capture.target);

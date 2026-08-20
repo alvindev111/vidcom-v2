@@ -110,6 +110,9 @@ describe("classifyCompositeStep", () => {
     const operations: string[] = [];
     const workspace: WorkspacePort = {
       async resolve() { return ok(first); },
+      async resolveMutation() { return ok({ target: first, canonicalRoot: first, parents: [] }); },
+      async revalidateMutationPath() { return true; },
+      async refreshMutationPath(lease) { return lease; },
       async resolveWorkspace() { throw new Error("unused"); },
       async listProjects() { return []; },
       async readProjectRef() { return null; },
@@ -154,6 +157,9 @@ describe("classifyCompositeStep", () => {
     const target = "/workspace/project/index.html" as ResolvedPath;
     const workspace: WorkspacePort = {
       async resolve() { return ok(target); },
+      async resolveMutation() { return ok({ target, canonicalRoot: target, parents: [] }); },
+      async revalidateMutationPath() { return true; },
+      async refreshMutationPath(lease) { return lease; },
       async resolveWorkspace() { throw new Error("unused"); },
       async listProjects() { return []; },
       async readProjectRef() { return null; },

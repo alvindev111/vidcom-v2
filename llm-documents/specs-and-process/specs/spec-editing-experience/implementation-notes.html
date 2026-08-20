@@ -2501,6 +2501,45 @@
             Sửa harness đúng chỗ: browser-session chạy một Vitest worker để mỗi phép đo sở hữu runner;
             đồng thời hoàn tác timeout tổng 120 giây về 60 giây. Gate Windows vẫn mở cho tới dispatch mới.
           </p>
+          <p class="text-slate-400 text-sm">
+            2026-08-20 20:40 +07 — P12 PASS tại <code>795745a</code>, Browser session dispatch
+            32374931910 xanh Linux + Windows, 18/18 test và zero skip trên mỗi OS. R4.1c Linux:
+            251/211/291/292 ms; Windows: 261/249/354/332 ms — tất cả dưới 500 ms. Lệnh download artifact
+            đã chạy; workflow này không publish artifact nên API trả <code>total_count=0</code>. Hai lần đỏ
+            trước vẫn được giữ trong Execution Log cùng nguyên nhân và bản sửa; P13 nay mới được mở.
+          </p>
+          <p class="text-slate-400 text-sm">
+            2026-08-20 20:46 +07 — 13.1 PASS. Capture nay nhận ownership ngay sau rename, trước mọi
+            sync/type/hash có thể fail. Directory, symlink và lỗi hash được trả về vị trí cũ nếu target
+            còn vắng; rollback slot biến mất ở failure thông thường. Nếu external editor đã tạo target
+            mới, VidCom không overwrite: trả typed <code>recovery_required</code>, đánh dấu capture vào
+            journal rồi orphan transaction để pre-image vẫn có owner. Focused 54/54 và typecheck xanh.
+          </p>
+          <p class="text-slate-400 text-sm">
+            2026-08-20 20:49 +07 — 13.2 PASS. Resolver của authored CRUD không follow symlink nữa:
+            project root, leaf và mọi parent component là link đều bị từ chối trước T1. Tree chỉ trả
+            directory/file thật, không còn giả link thành file. Matrix real foundation chứng minh
+            rename/delete alias nội bộ và create qua directory alias nội bộ/ngoài đều trả lỗi typed,
+            target, revision và mutation journal giữ nguyên. Test symlink mới không conditional skip.
+          </p>
+          <p class="text-slate-400 text-sm">
+            2026-08-20 21:03 +07 — 13.3–13.4 local PASS. Mỗi authored mutation mang một lease gồm
+            canonical root và identity no-follow của toàn bộ parent chain từ resolve qua capture,
+            publish và rollback. Hai case RED ban đầu chỉ ra rollback slot đặt cạnh target cũng bị parent
+            swap chuyển hướng; leased capture nay đặt rollback tại canonical project root. Matrix còn bắt
+            một regression hợp lệ của composite rollback: journal khôi phục directory đã xóa sẽ tạo inode
+            mới, nên lease của capture con chỉ được refresh sau đúng directory restore do journal sở hữu,
+            không bao giờ refresh để hợp thức hóa thay đổi bên ngoài.
+          </p>
+          <p class="text-slate-400 text-sm">
+            Focused lease/composite 36/36 và toàn bộ P13 144/144 xanh, zero skip; typecheck, boundaries,
+            diff-check xanh, lint 0 error + 5 warning baseline. Matrix thật phủ absent parent thành symlink,
+            parent swap trước publish, replacement cùng path, capture directory/symlink/hash failure,
+            live file handle, case-only alias, CRUD alias và reverse rollback. Giới hạn portability của
+            Decision 14 vẫn được ghi trung thực: mọi seam deterministic trước syscall cuối đều revalidate,
+            nhưng không tuyên bố ngăn được same-user swap không quan sát được sau syscall cuối. P13 chỉ
+            được đóng sau workflow <code>CI</code> xanh trên Linux/macOS/Windows exact source.
+          </p>
         </article>
       </section>
     </main>

@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { mkdtemp, mkdir, readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
+import { access, mkdtemp, mkdir, readFile, readdir, rename, rm, stat, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
@@ -813,6 +813,38 @@ describe("Composite WriteAuthority with real SQLite and filesystem", () => {
       expect(dbOne(database, "SELECT status FROM mutation_journal WHERE id = 1")).toEqual({ status: "aborted" });
     },
   );
+
+  it("rejects a parent symlink installed after T1 without writing outside the project", async () => {
+    const parent = path.join(projectRoot, "compositions");
+    const moved = path.join(projectRoot, "compositions-before");
+    const outside = path.join(root, "outside");
+    await mkdir(outside);
+    authority = createAuthority({
+      compositeJournal: journalBarrier("after-t1", async () => {
+        await rename(parent, moved);
+        await symlink(outside, parent, process.platform === "win32" ? "junction" : "dir");
+      }),
+    });
+
+    const result = await authority.mutateSource({
+      ref,
+      steps: [{
+        kind: "write",
+        path: "compositions/a.html" as RelPath,
+        content: "daemon-write",
+        expectedContentHash: hash("a-old"),
+      }],
+      origin: TEST_ORIGIN,
+      toolAudit: null,
+      backup: false,
+    }, "agent");
+
+    expect(result).toMatchObject({ ok: false, error: { code: ErrorCode.WriteConflict } });
+    await expect(access(path.join(outside, "a.html"))).rejects.toMatchObject({ code: "ENOENT" });
+    expect(await readFile(path.join(moved, "a.html"), "utf8")).toBe("a-old");
+    expect(dbOne(database, "SELECT COUNT(*) AS count FROM revision")).toEqual({ count: 0 });
+    expect(dbOne(database, "SELECT status FROM mutation_journal WHERE id = 1")).toEqual({ status: "aborted" });
+  });
 
   it.each(["during-backup", "after-backup-verify"] as const)(
     "backs up captured bytes, preserves an external edit %s, and never commits the delete",

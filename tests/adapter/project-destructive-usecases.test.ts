@@ -168,6 +168,9 @@ function targetMatches(target: string, suffix: string | undefined): boolean {
 function authorityWithFailure(options: { writePath?: string; deletePath?: string }): WriteAuthority {
   const proxy: WorkspacePort = {
     resolve: workspace.resolve.bind(workspace),
+    resolveMutation: workspace.resolveMutation.bind(workspace),
+    revalidateMutationPath: workspace.revalidateMutationPath.bind(workspace),
+    refreshMutationPath: workspace.refreshMutationPath.bind(workspace),
     resolveWorkspace: workspace.resolveWorkspace.bind(workspace),
     listProjects: workspace.listProjects.bind(workspace),
     readProjectRef: workspace.readProjectRef.bind(workspace),

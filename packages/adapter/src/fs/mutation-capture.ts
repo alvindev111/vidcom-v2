@@ -21,6 +21,13 @@ import { syncDirectory } from "./durability";
 
 const CAPTURE_HASH_BUFFER_BYTES = 16 * 1024;
 
+export interface MutationCaptureRuntime {
+  /** Deterministic real-filesystem barrier used to exercise the post-rename ownership seam. */
+  afterRename?(capture: MutationCapture): Promise<void>;
+  /** Injectable only so a failed open/hash can be proven without platform-specific permissions. */
+  hashFile?(pathname: string): Promise<ContentHash>;
+}
+
 async function hashRegularFile(pathname: string): Promise<ContentHash> {
   const handle = await open(pathname, constants.O_RDONLY | constants.O_NOFOLLOW);
   try {
@@ -93,6 +100,38 @@ async function restoreSlotWithoutReplace(capture: MutationCapture): Promise<bool
   return true;
 }
 
+async function restoreRenamedEntry(capture: MutationCapture): Promise<boolean> {
+  if (capture.rollbackPath === null) return !(await exists(capture.target));
+  if (await exists(capture.target)) return false;
+  await rename(capture.rollbackPath, capture.target);
+  await syncDirectory(path.dirname(capture.target));
+  if (path.dirname(capture.rollbackPath) !== path.dirname(capture.target)) {
+    await syncDirectory(path.dirname(capture.rollbackPath));
+  }
+  return true;
+}
+
+async function tryRestoreRenamedEntry(capture: MutationCapture): Promise<boolean> {
+  try {
+    return await restoreRenamedEntry(capture);
+  } catch {
+    return false;
+  }
+}
+
+async function capturedEntryState(
+  pathname: string,
+): Promise<"absent" | "file" | "directory" | "other"> {
+  try {
+    const value = await lstat(pathname);
+    if (value.isSymbolicLink()) return "other";
+    return value.isFile() ? "file" : value.isDirectory() ? "directory" : "other";
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return "absent";
+    throw error;
+  }
+}
+
 /** Captures the live target into a deterministic same-filesystem rollback slot and verifies its expected hash. */
 export async function captureForMutation(
   target: ResolvedPath,
@@ -100,6 +139,7 @@ export async function captureForMutation(
   journalId: JournalId | WorkspaceOperationId,
   ordinal: number,
   options: MutationCaptureOptions = {},
+  runtime: MutationCaptureRuntime = {},
 ): Promise<Result<MutationCapture, MutationCaptureConflict>> {
   if (expectation !== null && typeof expectation === "object" && expectation.kind === "directory") {
     let actualState: "absent" | "file" | "directory" | "other";
@@ -124,13 +164,15 @@ export async function captureForMutation(
         rollbackPath: null,
         capturedHash: null,
         existedBefore: expectation.existedBefore,
+        ...(options.lease ? { lease: options.lease } : {}),
       },
     };
   }
   const expectedHash = expectation;
   const outermostRemovedDirectory = [...(options.rollbackOutside ?? [])]
     .sort((left, right) => left.split(path.sep).length - right.split(path.sep).length)[0];
-  const directory = outermostRemovedDirectory ? path.dirname(outermostRemovedDirectory) : path.dirname(target);
+  const directory = options.lease?.canonicalRoot
+    ?? (outermostRemovedDirectory ? path.dirname(outermostRemovedDirectory) : path.dirname(target));
   const rollbackPath = path.join(
     directory,
     `.${path.basename(target)}.vidcom-${journalId}-${ordinal}.rollback`,
@@ -146,20 +188,48 @@ export async function captureForMutation(
     if (expectedHash !== null) return { ok: false, error: { actualHash: null } };
     return {
       ok: true,
-      value: { journalId, ordinal, target, rollbackPath: null, capturedHash: null },
+      value: {
+        journalId,
+        ordinal,
+        target,
+        rollbackPath: null,
+        capturedHash: null,
+        ...(options.lease ? { lease: options.lease } : {}),
+      },
     };
   }
-  await syncDirectory(path.dirname(target));
-  if (directory !== path.dirname(target)) await syncDirectory(directory);
+  let capture: MutationCapture = {
+    journalId,
+    ordinal,
+    target,
+    rollbackPath,
+    capturedHash: null,
+    ...(options.lease ? { lease: options.lease } : {}),
+  };
+  let actualState: "absent" | "file" | "directory" | "other" = "other";
+  try {
+    await syncDirectory(path.dirname(target));
+    if (directory !== path.dirname(target)) await syncDirectory(directory);
+    await runtime.afterRename?.(capture);
+    actualState = await capturedEntryState(rollbackPath);
+    if (actualState !== "file") {
+      if (await tryRestoreRenamedEntry(capture)) return { ok: false, error: { actualState } };
+      return { ok: false, error: { reason: "recovery_required", actualState, capture } };
+    }
 
-  const capturedHash = await hashRegularFile(rollbackPath);
-  const capture: MutationCapture = { journalId, ordinal, target, rollbackPath, capturedHash };
-  if (capturedHash === expectedHash) return { ok: true, value: capture };
-
-  if (!(await restoreSlotWithoutReplace(capture))) {
-    throw new Error("captured bytes changed and could not be restored without overwriting a newer target");
+    const capturedHash = await (runtime.hashFile ?? hashRegularFile)(rollbackPath);
+    capture = { ...capture, capturedHash };
+    if (capturedHash === expectedHash) return { ok: true, value: capture };
+    if (!(await restoreSlotWithoutReplace(capture))) {
+      return { ok: false, error: { reason: "recovery_required", actualState, capture } };
+    }
+    return { ok: false, error: { actualHash: capturedHash } };
+  } catch (error) {
+    if (!(await tryRestoreRenamedEntry(capture))) {
+      return { ok: false, error: { reason: "recovery_required", actualState, capture } };
+    }
+    throw error;
   }
-  return { ok: false, error: { actualHash: capturedHash } };
 }
 
 /** Publishes one captured mutation without overwriting a target created by an external editor. */

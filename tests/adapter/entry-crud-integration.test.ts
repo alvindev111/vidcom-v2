@@ -2,7 +2,7 @@
 
 import { createHash } from "node:crypto";
 import { statSync } from "node:fs";
-import { copyFile, link, mkdir, mkdtemp, open, readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
+import { copyFile, link, mkdir, mkdtemp, open, readFile, readdir, rm, stat, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
@@ -13,6 +13,7 @@ import { createApplication, hashContent, startVidcomFoundation } from "@vidcom/c
 import { ErrorCode, type ContentHash, type ProjectId, type RelPath } from "@vidcom/contracts";
 import {
   applyFont,
+  createEntry,
   executeDeleteEntry,
   getEntryExpectation,
   prepareDeleteEntry,
@@ -89,6 +90,72 @@ async function measureRss<Value>(action: () => Promise<Value>): Promise<{ value:
 }
 
 describe("entry CRUD real filesystem integration", () => {
+  it("rejects CRUD through internal, external and parent symlink aliases without mutating targets", async () => {
+    const value = await fixture("symlink-aliases");
+    try {
+      const outside = path.join(value.root, "outside");
+      await mkdir(outside);
+      await writeFile(path.join(outside, "outside.html"), "outside");
+      await symlink("index.html", path.join(value.project.root, "alias.html"));
+      await symlink(
+        path.join(value.project.root, "assets", "source"),
+        path.join(value.project.root, "alias-dir"),
+        process.platform === "win32" ? "junction" : "dir",
+      );
+      await symlink(outside, path.join(value.project.root, "outside-dir"), process.platform === "win32" ? "junction" : "dir");
+      const revision = await latestRevision(value);
+      const originalIndex = await readFile(path.join(value.project.root, "index.html"), "utf8");
+      const dependencies = { ...value.foundation.application.writeDependencies, hashContent };
+
+      const renamedFile = await renameEntry(dependencies, {
+        projectId,
+        from: "alias.html" as RelPath,
+        to: "renamed.html" as RelPath,
+        expectedRevision: revision,
+        expected: { kind: "file", contentHash: `sha256:${"0".repeat(64)}` as ContentHash },
+      }, "user", { origin, toolAudit: null });
+      const deletedFile = await prepareDeleteEntry(dependencies, {
+        projectId,
+        path: "alias.html" as RelPath,
+        recursive: false,
+        expectedRevision: revision,
+      });
+      const renamedDirectory = await renameEntry(dependencies, {
+        projectId,
+        from: "alias-dir" as RelPath,
+        to: "renamed-dir" as RelPath,
+        expectedRevision: revision,
+        expected: { kind: "folder", treeDigest: `sha256:${"0".repeat(64)}` as ContentHash },
+      }, "user", { origin, toolAudit: null });
+      const createdInternal = await createEntry(dependencies, {
+        projectId,
+        path: "alias-dir/new.html" as RelPath,
+        kind: "file",
+        expectedRevision: revision,
+      }, "user", { origin, toolAudit: null });
+      const createdExternal = await createEntry(dependencies, {
+        projectId,
+        path: "outside-dir/new.html" as RelPath,
+        kind: "file",
+        expectedRevision: revision,
+      }, "user", { origin, toolAudit: null });
+
+      for (const result of [renamedFile, deletedFile, renamedDirectory, createdInternal, createdExternal]) {
+        expect(result).toMatchObject({ ok: false, error: { code: ErrorCode.PathOutsideProject } });
+      }
+      expect(await readFile(path.join(value.project.root, "index.html"), "utf8")).toBe(originalIndex);
+      expect(await readdir(value.source)).toHaveLength(200);
+      expect(await readFile(path.join(outside, "outside.html"), "utf8")).toBe("outside");
+      await expect(stat(path.join(value.project.root, "renamed.html"))).rejects.toMatchObject({ code: "ENOENT" });
+      await expect(stat(path.join(value.project.root, "renamed-dir"))).rejects.toMatchObject({ code: "ENOENT" });
+      await expect(stat(path.join(value.source, "new.html"))).rejects.toMatchObject({ code: "ENOENT" });
+      await expect(stat(path.join(outside, "new.html"))).rejects.toMatchObject({ code: "ENOENT" });
+      expect(await latestRevision(value)).toBe(revision);
+      expect(value.foundation.infrastructure.database.$client
+        .prepare("SELECT COUNT(*) AS count FROM mutation_journal").get()).toEqual({ count: 0 });
+    } finally { await value.foundation.stop(); }
+  });
+
   it("renames 200 files including a 96 MiB asset in one bounded-memory revision", { timeout: 120_000 }, async () => {
     const value = await fixture("rename-200", true);
     try {

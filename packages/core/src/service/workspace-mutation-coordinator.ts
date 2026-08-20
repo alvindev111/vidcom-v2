@@ -488,7 +488,18 @@ export class WorkspaceMutationCoordinator {
           operationId,
           ordinal,
         );
-        if (!captured.ok) throw new Error("workspace capture precondition changed");
+        if (!captured.ok) {
+          if ("reason" in captured.error && captured.error.reason === "recovery_required") {
+            captures.push(captured.error.capture);
+            await this.dependencies.journal.markStepCaptured(
+              operationId,
+              ordinal,
+              captured.error.capture.rollbackPath,
+              captured.error.capture.capturedHash,
+            );
+          }
+          throw new Error("workspace capture precondition changed");
+        }
         captures.push(captured.value);
         await this.dependencies.journal.markStepCaptured(
           operationId,

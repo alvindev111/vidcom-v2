@@ -26,6 +26,7 @@ import {
   type CompositionModel,
   type EntityState,
   type JournalId,
+  type MutationPathLease,
   type MutationRequest,
   type WriteResult,
   type Result,
@@ -123,6 +124,14 @@ function setup(options: {
       }
       return ok(path as ResolvedPath);
     },
+    async resolveMutation(ref: ProjectRef, path: string, purpose: string) {
+      const resolved = await this.resolve(ref, path, purpose);
+      return resolved.ok
+        ? ok({ target: resolved.value, canonicalRoot: ref.root as unknown as ResolvedPath, parents: [] })
+        : resolved;
+    },
+    async revalidateMutationPath() { return true; },
+    async refreshMutationPath(lease: MutationPathLease) { return lease; },
     async resolveWorkspace() { throw new Error("unused"); },
     async listProjects() { return options.missing ? [] : [ref]; },
     async readProjectRef() { return options.missing ? null : ref; },

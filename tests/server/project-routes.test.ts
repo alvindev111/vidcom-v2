@@ -15,6 +15,7 @@ import {
   ok,
   type AbsolutePath,
   type CompositionDocumentOptions,
+  type MutationPathLease,
   type ProjectRef,
   type ResolvedPath,
 } from "@vidcom/core";
@@ -65,6 +66,15 @@ function fixture(initialProjectChangeSeq = 8) {
   const projectReads = {
     workspace: {
       async resolve(_ref: ProjectRef, path: string) { return ok(path as ResolvedPath); },
+      async resolveMutation(ref: ProjectRef, path: string) {
+        return ok({
+          target: path as ResolvedPath,
+          canonicalRoot: ref.root as unknown as ResolvedPath,
+          parents: [],
+        });
+      },
+      async revalidateMutationPath() { return true; },
+      async refreshMutationPath(lease: MutationPathLease) { return lease; },
       async resolveWorkspace() { throw new Error("unused"); },
       async listProjects() { return [ref]; },
       async readProjectRef(projectId: ProjectId) { return projectId === id ? ref : null; },

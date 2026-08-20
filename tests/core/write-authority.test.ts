@@ -23,6 +23,7 @@ import {
   type MutationCapture,
   type MutationCaptureExpectation,
   type MutationLandedState,
+  type MutationPathLease,
   type MutationPublishContent,
   type MutationResult,
   type PendingMutation,
@@ -75,6 +76,7 @@ class FakeWorkspace {
   beforeDirectoryPublish: ((capture: Extract<MutationCapture, { kind: "directory" }>, action: "mkdir" | "rmdir") => void) | null = null;
   discardFailures = 0;
   discardAttempts = 0;
+  captureRecovery = false;
 
   async resolve(_ref: ProjectRef, path: string) {
     if (this.rejectedPaths.has(path)) {
@@ -82,6 +84,18 @@ class FakeWorkspace {
     }
     return { ok: true as const, value: (this.resolvedPaths.get(path) ?? path) as ResolvedPath };
   }
+  async resolveMutation(ref: ProjectRef, path: string) {
+    const resolved = await this.resolve(ref, path);
+    return resolved.ok
+      ? { ok: true as const, value: {
+          target: resolved.value,
+          canonicalRoot: ref.root as unknown as ResolvedPath,
+          parents: [],
+        } }
+      : resolved;
+  }
+  async revalidateMutationPath() { return true; }
+  async refreshMutationPath(lease: MutationPathLease) { return lease; }
   async resolveWorkspace(_root: AbsolutePath, path: RelPath) { return this.resolve(project, path); }
   async listProjects() { return [project]; }
   async readProjectRef(id: ProjectId) { return id === projectId ? project : null; }
@@ -143,6 +157,17 @@ class FakeWorkspace {
       : `${target}.rollback-${journalId}-${ordinal}` as ResolvedPath;
     if (rollbackPath !== null) this.captures.set(rollbackPath, current);
     this.files.delete(target);
+    if (this.captureRecovery) {
+      this.files.set(target, "external replacement");
+      return {
+        ok: false as const,
+        error: {
+          reason: "recovery_required" as const,
+          actualState: "file" as const,
+          capture: { journalId, ordinal, target, rollbackPath, capturedHash: actualHash },
+        },
+      };
+    }
     return {
       ok: true as const,
       value: { journalId, ordinal, target, rollbackPath, capturedHash: actualHash },
@@ -235,6 +260,7 @@ class FakeJournal {
   readonly attachedBackups: Array<{ id: JournalId; backupId: string }> = [];
   readonly compositeAborted: JournalId[] = [];
   readonly compositeOrphaned: JournalId[] = [];
+  readonly capturedSteps: Array<{ id: JournalId; ordinal: number; rollbackPath: ResolvedPath | null }> = [];
 
   async begin(intent: MutationIntent): Promise<JournalId> {
     const id = (this.pending.length + 1) as JournalId;
@@ -303,7 +329,9 @@ class FakeJournal {
     }
     return id;
   }
-  async markStepCaptured() {}
+  async markStepCaptured(id: JournalId, ordinal: number, rollbackPath: ResolvedPath | null) {
+    this.capturedSteps.push({ id, ordinal, rollbackPath });
+  }
   async attachBackup(id: JournalId, backupId: string) { this.attachedBackups.push({ id, backupId }); }
   async commitComposite(id: JournalId, result: CompositeResult): Promise<WriteEnvelope> {
     if (this.compositeCommitError || this.commitError) throw this.compositeCommitError ?? this.commitError;
@@ -891,6 +919,40 @@ describe("WriteAuthority composite gate", () => {
     }, "agent")).resolves.toMatchObject({ ok: false, error: { code: ErrorCode.WriteConflict } });
     expect(remove.workspace.directories.has("assets")).toBe(true);
     expect(remove.workspace.directoryEntries.get("assets")).toEqual([{ name: "external.txt", kind: "file" }]);
+  });
+
+  it("records and orphans a capture whose local restore is blocked by a replacement", async () => {
+    const { authority, journal, workspace } = setup();
+    workspace.files.set("index.html", "original");
+    workspace.captureRecovery = true;
+
+    await expect(authority.mutateSource({
+      ref: project,
+      steps: [{
+        kind: "write",
+        path: "index.html" as RelPath,
+        content: "new",
+        expectedContentHash: digest("original"),
+      }],
+      origin: TEST_ORIGIN,
+      toolAudit: null,
+      backup: false,
+    }, "agent")).resolves.toMatchObject({
+      ok: false,
+      error: {
+        code: ErrorCode.RecoveryRequired,
+        details: { phase: "capture_restore_blocked", captures: 1 },
+      },
+    });
+
+    expect(workspace.files.get("index.html")).toBe("external replacement");
+    expect([...workspace.captures.values()]).toEqual(["original"]);
+    expect(journal.capturedSteps).toEqual([{
+      id: 1,
+      ordinal: 0,
+      rollbackPath: "index.html.rollback-1-0",
+    }]);
+    expect(journal.compositeOrphaned).toEqual([1]);
   });
 
   it("checks lease and recovery state under the project mutex before T1 or filesystem I/O", async () => {

@@ -70,6 +70,7 @@ import type {
   MutationLandedState,
   MutationPublishContent,
   MutationCaptureConflict,
+  MutationPathLease,
   MutationAuthority,
   PendingWorkspaceOperation,
   WorkspaceOperationId,
@@ -303,6 +304,19 @@ export interface WorkspacePort {
   listWorkspaceDirectories?(root: AbsolutePath): Promise<Array<{ slug: string; root: AbsolutePath }>>;
   /** Resolves and authorizes a path; supports missing targets and returns rejection without throwing. */
   resolve(ref: ProjectRef, path: string, purpose: PathPurpose): Promise<Result<ResolvedPath, PathRejection>>;
+  /** Resolves a write target together with its no-follow parent identity chain. */
+  resolveMutation(
+    ref: ProjectRef,
+    path: string,
+    purpose: PathPurpose,
+  ): Promise<Result<MutationPathLease, PathRejection>>;
+  /** Revalidates every parent immediately before a mutation seam. */
+  revalidateMutationPath(lease: MutationPathLease): Promise<boolean>;
+  /** Re-bases only the named parent after a journal-owned directory restore recreated it. */
+  refreshMutationPath(
+    lease: MutationPathLease,
+    restoredParent: ResolvedPath,
+  ): Promise<MutationPathLease | null>;
   /** Resolves an agent-kit path against the exact injected workspace root; only the workspace coordinator calls this. */
   resolveWorkspace(
     workspaceRoot: AbsolutePath,
