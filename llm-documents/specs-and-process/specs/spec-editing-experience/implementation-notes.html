@@ -2428,6 +2428,14 @@
             đầu là thứ tự append/src, lần sau là cho mỗi preview một parent context riêng. Chỉ khi đo tới cơ chế
             thật (chứ không dừng ở triệu chứng) thì đường đó mới hiện ra.
           </p>
+          <p class="text-slate-400 text-sm">
+            Chốt cuối: `CI` run 32323174197 tại `264fc5d` xanh **8/8**. R4.1c đo được cả trên **máy CI**: Windows
+            runner cho 264 ms · 225 ms (hai ca studio tự lưu) và 332 ms · 311 ms (ghi ngoài, tính từ durable event) —
+            cả bốn dưới 500 ms. Lần chạy trước Windows đo 539 ms ở ca ghi ngoài và timeout kịch bản browser dài, vì
+            mỗi reload phải trả một lần nạp host page trên máy chậm; nay giữ sẵn **một** host page rỗng, không tốn
+            thêm preview nào — ràng buộc "≤ 2 engine" đếm composition đang render, và probe cũng được sửa để đếm đúng
+            như vậy.
+          </p>
         </article>
       </section>
     </main>
