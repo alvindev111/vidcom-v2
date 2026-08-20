@@ -2406,6 +2406,19 @@
             timeline từ thuộc tính `scenes` (không đổi gì). Giữ lại đúng một thay đổi: sửa thứ tự append/src, vì nạp
             candidate lúc detached là lỗi thật.
           </p>
+          <p class="text-slate-400 text-sm">
+            P11.1 (ĐÃ SỬA, có số đo): runtime chỉ mở bridge tới **parent context chưa có preview nào**. Studio luôn có
+            một cái đang hiển thị, nên candidate tạo cạnh nó câm lặng và preflight chỉ có thể timeout. Nay mỗi engine
+            sống trong `/preview-host.html` — trang tĩnh, một bundle nhỏ, **không** phải route Next: các trang này bị
+            tạo/huỷ mỗi lần reload, và bản Next tốn cả framework mỗi lần (đo được: làm renderer chết trong kịch bản
+            browser dài). Hai lỗi nữa lộ ra và đã sửa: candidate gán `src` trước khi connect thì nạp lúc detached và
+            không bao giờ bridge; dispose chạm vào frame đang tự huỷ thì ném `Event is not a constructor` và giết cả
+            tab. Giữ nguyên ràng buộc **≤ 2 engine sống** — bản warm spare đã thử, đo thấy không lợi gì sau khi mount
+            xong, nên bỏ. Số đo cuối: 268 ms (content save của chính studio) · 294 ms (preview-settings của chính
+            studio) · 376 ms và 353 ms (ghi ngoài, tính từ durable event) — cả bốn dưới 500 ms. Phép đo cũng được sửa
+            cho đúng cửa sổ AC: chờ khung đầu tiên hiện rồi mới ghi (ghi trong lúc mount là đo mount), và đi qua
+            **đường lưu của chính app** chứ không phải request do test tự chế.
+          </p>
         </article>
       </section>
     </main>
