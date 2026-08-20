@@ -2494,6 +2494,13 @@
             10–30 giây vẫn giữ nguyên, chỉ ngân sách tổng của kịch bản dài tăng lên 120 giây. Chưa hạ gate hay
             dùng <code>[!]</code>; phải có dispatch mới xanh Linux + Windows.
           </p>
+          <p class="text-slate-400 text-sm">
+            2026-08-20 20:31 +07 — dispatch 32374022385 xanh Linux nhưng Windows vẫn đỏ: chín file
+            Chrome/daemon chạy song song làm phép đo R4.1c thành 2508,4 ms và kịch bản dài đồng thời chờ
+            nút Save quá 30 giây. Đây là contention của runner, nhưng không được dùng để bỏ ngưỡng 500 ms.
+            Sửa harness đúng chỗ: browser-session chạy một Vitest worker để mỗi phép đo sở hữu runner;
+            đồng thời hoàn tác timeout tổng 120 giây về 60 giây. Gate Windows vẫn mở cho tới dispatch mới.
+          </p>
         </article>
       </section>
     </main>
