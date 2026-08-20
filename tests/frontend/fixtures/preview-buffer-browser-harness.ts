@@ -9,7 +9,10 @@ if (!container) throw new Error("preview probe host is missing");
 // One host frame is one live preview, and a frame torn down with its document
 // cannot report its own removal — so the count is observed from out here.
 let maxLiveFrames = 0;
-const liveFrames = () => container.querySelectorAll("iframe").length;
+// A host page with no composition in it is not a preview; the bound this probe
+// guards is about compositions being rendered.
+const liveFrames = () => [...container.querySelectorAll("iframe")]
+  .filter((frame) => (frame.getAttribute("src") ?? "").includes("src=")).length;
 const trackFrames = new MutationObserver(() => {
   maxLiveFrames = Math.max(maxLiveFrames, liveFrames());
 });

@@ -84,9 +84,14 @@ export function readHyperframesPreflightHealth(
   };
 }
 
-/** Host page for one candidate, carrying the composition it should load. */
-export function previewHostUrl(source: string): string {
-  return `/preview-host.html?src=${encodeURIComponent(source)}`;
+/**
+ * Host page for one candidate, carrying the composition it should load.
+ *
+ * `null` asks for an empty host: the page comes up with its player ready and no
+ * composition, so the candidate that takes it only pays for the composition.
+ */
+export function previewHostUrl(source: string | null): string {
+  return source === null ? "/preview-host.html" : `/preview-host.html?src=${encodeURIComponent(source)}`;
 }
 
 /** Same-origin bridge from the replaceable host pages to the pure buffer coordinator. */
@@ -96,6 +101,17 @@ export function createHyperframesPlayerEnvironment(input: {
 }): PreviewBufferEnvironment<HyperframesPreviewEngine> {
   const metadata = new WeakMap<HyperframesPreviewEngine, EngineMetadata>();
   let visible: HyperframesPreviewEngine | null = null;
+  /**
+   * One host page kept loaded and empty for the next reload.
+   *
+   * A host page and its player cost a page load to bring up, and on a slow
+   * machine that lands inside the budget a person waits after saving. The spare
+   * pays it in advance. It holds no composition, so it is not a second preview:
+   * the two-engine bound is about compositions being rendered, not about idle
+   * documents.
+   */
+  let spare: HTMLIFrameElement | null = null;
+
   const hostFrame = (): HTMLIFrameElement => {
     const frame = document.createElement("iframe");
     frame.title = "HyperFrames preview";
@@ -116,7 +132,12 @@ export function createHyperframesPlayerEnvironment(input: {
 
   return {
     createCandidate({ url }) {
-      const frame = hostFrame();
+      const taken = (() => {
+        try { return spare?.contentDocument?.querySelector("hyperframes-player") as HyperframesPlayerElement | null; }
+        catch { return null; }
+      })();
+      const frame = taken ? spare! : hostFrame();
+      if (taken) spare = null;
 
       const state = { timeline: false, cleanup: () => {} };
       const engine: HyperframesPreviewEngine = {
@@ -196,8 +217,20 @@ export function createHyperframesPlayerEnvironment(input: {
         cleanup: () => { window.clearInterval(poll); state.cleanup(); },
       } as EngineMetadata);
 
-      input.container.appendChild(frame);
-      frame.src = previewHostUrl(url);
+      if (taken) {
+        attach(taken);
+        taken.setAttribute("src", url);
+      } else {
+        input.container.appendChild(frame);
+        frame.src = previewHostUrl(url);
+      }
+      // Bring up the next spare while this candidate is being watched.
+      if (!spare) {
+        const next = hostFrame();
+        input.container.appendChild(next);
+        next.src = previewHostUrl(null);
+        spare = next;
+      }
       return engine;
     },
     waitForHealth(engine, signal) {
@@ -214,6 +247,7 @@ export function createHyperframesPlayerEnvironment(input: {
       notify(engine);
     },
     dispose(engine) {
+      if (engine.frame === spare) spare = null;
       metadata.get(engine)?.cleanup();
       metadata.delete(engine);
       // Everything here touches a document that may already be tearing itself
