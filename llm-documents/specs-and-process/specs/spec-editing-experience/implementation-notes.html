@@ -2396,6 +2396,16 @@
             ở window cha, URL (kể cả cache-bust), GSAP, và bản thân tài liệu. Phần còn lại nằm trong cặp
             player/runtime của HyperFrames.
           </p>
+          <p class="text-slate-400 text-sm">
+            P11.1 (cơ chế đã cô lập): trong **một trang**, tạo `hyperframes-player` bằng tay với các bước y hệt nhau —
+            lần tạo **đầu tiên** bridge được (185–300 ms), mọi lần sau **không bao giờ**, bất kể gắn listener nào, style
+            ra sao, thứ tự `src`/`appendChild`, có gỡ player cũ trước hay không, URL cũ hay cache-bust. Mở **tab mới**
+            trên cùng project sau cùng lần ghi thì bridge ngay — nên daemon và tài liệu đều không sai. Đó chính là lý do
+            double buffer không preflight được: candidate của nó, theo định nghĩa, không phải player đầu tiên của
+            trang. Mọi cách lách đã dựng đều đo rồi **revert**: retire-then-create (kết cục mất hẳn preview) và đọc
+            timeline từ thuộc tính `scenes` (không đổi gì). Giữ lại đúng một thay đổi: sửa thứ tự append/src, vì nạp
+            candidate lúc detached là lỗi thật.
+          </p>
         </article>
       </section>
     </main>
