@@ -1,4 +1,4 @@
-# Spec Editing Experience (Giai đoạn 5) — INPROCESS
+# Spec Editing Experience (Giai đoạn 5) — COMPLETE
 
 > **Related Documents**:
 > - [Detailed Goals](./spec-editing-experience-detailed-goal.md)

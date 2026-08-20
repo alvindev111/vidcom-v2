@@ -2419,6 +2419,15 @@
             cho đúng cửa sổ AC: chờ khung đầu tiên hiện rồi mới ghi (ghi trong lúc mount là đo mount), và đi qua
             **đường lưu của chính app** chứ không phải request do test tự chế.
           </p>
+          <p class="text-slate-400 text-sm">
+            Đóng spec (11.6): mọi task và AC của S0 + P0–P11 đã `[x]`, mỗi phase có gate `PASS`. Gate cuối tại
+            `94e1a74` digest `fa180283…` (0 file đổi): `CI` **8/8 xanh** (3 OS + browser + packaged) và
+            `Packaged smoke` **3/3 xanh**. Main spec chuyển `inprocess` → `complete`; `source-identity.mjs` cập nhật
+            theo tên file mới để danh sách "chỉ evidence" vẫn đúng. Bài học lớn nhất của phiên: hai lần tôi định
+            dừng ở "cần quyết định của người dùng" thì cả hai lần vẫn còn một đường kỹ thuật **không** hạ gate — lần
+            đầu là thứ tự append/src, lần sau là cho mỗi preview một parent context riêng. Chỉ khi đo tới cơ chế
+            thật (chứ không dừng ở triệu chứng) thì đường đó mới hiện ra.
+          </p>
         </article>
       </section>
     </main>

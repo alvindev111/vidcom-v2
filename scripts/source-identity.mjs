@@ -29,7 +29,7 @@ const repositoryRoot = path.resolve(fileURLToPath(new URL("..", import.meta.url)
 const EVIDENCE_ONLY = new Set([
   "llm-documents/specs-and-process/specs/spec-editing-experience/spec-editing-experience-implementation-checklist.md",
   "llm-documents/specs-and-process/specs/spec-editing-experience/implementation-notes.html",
-  "llm-documents/specs-and-process/specs/spec-editing-experience/spec-editing-experience-inprocess.md",
+  "llm-documents/specs-and-process/specs/spec-editing-experience/spec-editing-experience-complete.md",
 ]);
 
 /** Git's own file modes, which is what a digest of "the source" has to include. */

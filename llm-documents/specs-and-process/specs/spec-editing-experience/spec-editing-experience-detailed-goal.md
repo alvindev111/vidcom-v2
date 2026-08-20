@@ -1,6 +1,6 @@
 # Spec Editing Experience — Detailed Goals
 
-> **Reference**: [Main Spec File](./spec-editing-experience-inprocess.md)
+> **Reference**: [Main Spec File](./spec-editing-experience-complete.md)
 > **Backlog**: [15-build-order §Giai đoạn 5](../../../product-features/15-build-order.md) — 5.1–5.9
 > **Trạng thái**: **Bản 7 — Approved 2026-08-16**. Bản 7 đồng bộ AC R4.5 theo quyết định đã chốt:
 > preview settings đi qua cùng double-buffer như mọi cập nhật preview khác. Bản 6 đã đổi R4 sang
