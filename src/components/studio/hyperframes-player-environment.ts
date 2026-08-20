@@ -22,8 +22,8 @@ export interface HyperframesPreviewEngine extends PreviewBufferEngine {
 
 interface BridgeFrame {
   frame: HTMLIFrameElement;
-  send(command: PreviewParentCommandPayload): void;
-  onSnapshot(listener: (snapshot: PreviewBridgeSnapshot) => void): void;
+  send(command: PreviewParentCommandPayload): string;
+  onSnapshot(listener: (snapshot: PreviewBridgeSnapshot, requestId: string | null) => void): void;
   onError(listener: (error: string) => void): void;
   dispose(): void;
 }
@@ -88,7 +88,7 @@ function createBridgeFrame(input: {
   let ready = false;
   let disposed = false;
   let sequence = 0;
-  let snapshotListener: (snapshot: PreviewBridgeSnapshot) => void = () => {};
+  let snapshotListener: (snapshot: PreviewBridgeSnapshot, requestId: string | null) => void = () => {};
   let errorListener: (error: string) => void = () => {};
   const queue: PreviewParentCommand[] = [];
   const post = (command: PreviewParentCommand) => {
@@ -111,7 +111,7 @@ function createBridgeFrame(input: {
       ready = true;
       for (const command of queue.splice(0)) post(command);
     } else if (message.type === "snapshot") {
-      snapshotListener(message.state);
+      snapshotListener(message.state, message.requestId);
     } else if (!message.ok) {
       errorListener(message.error ?? "preview command failed");
     }
@@ -123,13 +123,15 @@ function createBridgeFrame(input: {
   return {
     frame,
     send(command) {
+      const requestId = `preview-${++sequence}`;
       post({
         channel: PREVIEW_BRIDGE_CHANNEL,
         version: PREVIEW_BRIDGE_VERSION,
         nonce,
-        requestId: `preview-${++sequence}`,
+        requestId,
         ...command,
       } as PreviewParentCommand);
+      return requestId;
     },
     onSnapshot(listener) { snapshotListener = listener; },
     onError(listener) { errorListener = listener; },
@@ -185,6 +187,7 @@ export function createHyperframesPlayerEnvironment(input: {
         playbackRate: 1,
         health: { ...EMPTY_HEALTH },
       };
+      let pendingTransportRequest: string | null = null;
       const engine: HyperframesPreviewEngine = {
         frame: bridge.frame,
         ready: false,
@@ -196,28 +199,39 @@ export function createHyperframesPlayerEnvironment(input: {
         get playbackRate() { return state.playbackRate; },
         set playbackRate(value: number) {
           state.playbackRate = value;
-          bridge.send({ type: "set-rate", rate: value });
+          pendingTransportRequest = bridge.send({ type: "set-rate", rate: value });
         },
         get muted() { return state.muted; },
         set muted(value: boolean) {
           state.muted = value;
-          bridge.send({ type: "set-muted", muted: value });
+          pendingTransportRequest = bridge.send({ type: "set-muted", muted: value });
         },
         seek(seconds: number) {
           state.currentTime = seconds;
-          bridge.send({ type: "seek", seconds });
+          pendingTransportRequest = bridge.send({ type: "seek", seconds });
         },
         play() {
           state.paused = false;
-          bridge.send({ type: "play" });
+          pendingTransportRequest = bridge.send({ type: "play" });
         },
         pause() {
           state.paused = true;
-          bridge.send({ type: "pause" });
+          pendingTransportRequest = bridge.send({ type: "pause" });
         },
       };
-      bridge.onSnapshot((snapshot) => {
-        Object.assign(state, snapshot);
+      bridge.onSnapshot((snapshot, requestId) => {
+        const transportAcknowledged = pendingTransportRequest === null || requestId === pendingTransportRequest;
+        state.ready = snapshot.ready;
+        state.scenes = snapshot.scenes;
+        state.duration = snapshot.duration;
+        state.health = snapshot.health;
+        if (transportAcknowledged) {
+          state.currentTime = snapshot.currentTime;
+          state.paused = snapshot.paused;
+          state.muted = snapshot.muted;
+          state.playbackRate = snapshot.playbackRate;
+          if (requestId === pendingTransportRequest) pendingTransportRequest = null;
+        }
         engine.ready = snapshot.ready;
         engine.scenes = snapshot.scenes;
         engine.health = snapshot.health;

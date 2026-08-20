@@ -2484,6 +2484,16 @@
             18/18, zero skip; R4.1c 237/212/297/315 ms. Phase 12 chưa đóng cho tới khi workflow Browser
             session xanh trên Linux + Windows exact source.
           </p>
+          <p class="text-slate-400 text-sm">
+            2026-08-20 20:21 +07 — workflow dispatch Browser session 32373038317 tại <code>96fb3147</code>
+            đỏ trên cả hai OS nên P13 chưa được phép bắt đầu. Linux bắt được race thật: snapshot cũ của
+            lệnh load đến sau cập nhật transport optimistic và kéo play/rate/mute về mặc định. Bridge nay
+            giữ transport local cho tới snapshot mang đúng request id cuối cùng; 5 lần chạy focused và toàn
+            bộ 18 browser test đều xanh cục bộ. Windows chạy xanh 8 file còn lại nhưng kịch bản browser tổng
+            hợp cũ vượt aggregate timeout 60 giây sau khi suite bắt buộc tăng lên 9 file; các timeout thao tác
+            10–30 giây vẫn giữ nguyên, chỉ ngân sách tổng của kịch bản dài tăng lên 120 giây. Chưa hạ gate hay
+            dùng <code>[!]</code>; phải có dispatch mới xanh Linux + Windows.
+          </p>
         </article>
       </section>
     </main>

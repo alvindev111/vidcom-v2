@@ -780,5 +780,5 @@ describe("browser session harness", () => {
       else process.env.VIDCOM_SETTINGS = prior.settings;
       await rm(root, { recursive: true, force: true });
     }
-  }, 60_000);
+  }, 120_000);
 });
