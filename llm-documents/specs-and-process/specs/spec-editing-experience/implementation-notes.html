@@ -3023,6 +3023,22 @@
             chỉnh sửa cuối xanh 321 file/2.664 test, boundaries và 150 spec path xanh. P17.3 tiếp tục khóa
             cho tới fresh exact-source full CI.
           </p>
+          <p class="text-slate-400 text-sm">
+            2026-08-21 05:12 +07 — kiểm tra mọi event của SHA <code>2615e255</code> phát hiện thêm hai
+            PR run RED, nên không dùng manual run xanh để che: Security <code>32419958759</code> có 4/5 job
+            xanh nhưng Dependency review không được hỗ trợ vì repository chưa bật dependency graph;
+            Browser session <code>32419952534</code> có Linux xanh, Windows đỏ do nút Close biến mất giữa
+            rerender và thao tác, đồng thời cold Chrome launch vượt hook 30 giây. Đây là hai gate thật phải
+            repair trước full CI.
+          </p>
+          <p class="text-slate-400 text-sm">
+            Theo prerequisite chính thức của Dependency review, bật repository vulnerability alerts qua
+            API admin cũng bật dependency graph; PUT và GET verification đều trả 204, sau đó compare API
+            trả 28 dependency changes thay vì unsupported. Browser helper nay chờ-và-click exact label
+            nguyên tử trong một browser predicate; Windows Chrome cold hook tăng có giới hạn từ 30 lên
+            60 giây, không retry và không skip. Targeted hai file xanh 6/6; full Browser session local xanh
+            9 file/20 test, R4.1c 185–306 ms. Fresh native Windows và Security run vẫn là authority.
+          </p>
         </article>
       </section>
     </main>

@@ -132,14 +132,13 @@ async function selectTreeEntry(page: Page, relativePath: string): Promise<void> 
 }
 
 async function clickExactButton(page: Page, label: string): Promise<void> {
-  const clicked = await page.evaluate((exactLabel) => {
+  await page.waitForFunction((exactLabel) => {
     const button = [...document.querySelectorAll("button")]
       .find((candidate) => candidate.textContent?.trim() === exactLabel) as HTMLButtonElement | undefined;
     if (!button) return false;
     button.click();
     return true;
-  }, label);
-  if (!clicked) throw new Error(`button ${label} was not found`);
+  }, { timeout: 10_000, polling: 16 }, label);
 }
 
 describe("editing experience in a browser", () => {
