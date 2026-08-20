@@ -1,8 +1,13 @@
-# Spec Editing Experience — Detail Design (bản 12)
+# Spec Editing Experience — Detail Design (bản 13)
 
-> **Reference**: [Detailed Goals](./spec-editing-experience-detailed-goal.md) — **bản 7, Approved 2026-08-16** (12 requirement, ~212 SP; R4 theo mô hình `PlayerHost` + double-buffer cho mọi cập nhật)
-> **Next**: [Implementation Checklist](./spec-editing-experience-implementation-checklist.md) — Pending Confirmation; chưa được thực thi
+> **Reference**: [Detailed Goals](./spec-editing-experience-detailed-goal.md) — **bản 8, Approved 2026-08-20 cho remediation** (R1–R12 giữ nguyên; R13–R15 đóng deep review)
+> **Next**: [Implementation Checklist](./spec-editing-experience-implementation-checklist.md) — remediation P12–P18 Approved 2026-08-20
 > **Tham chiếu UX**: [`reference-editor/`](./reference-editor/README.md)
+>
+> **Bản 13** (2026-08-20). Deep review hậu triển khai phát hiện một trust boundary Critical, bốn lỗi
+> High ở filesystem/range serving, bảy lỗi Medium, một lỗi Low và ba governance gaps. Bản này thêm
+> §18–§25 làm thiết kế remediation; không viết lại bằng chứng lịch sử của bản 12 và không coi unit test
+> hoặc synthetic DOM là closure cho lỗi ở browser/filesystem/packaged boundary.
 >
 > **Bản 12** (2026-08-16). Review implementation-readiness sửa các mâu thuẫn contract còn lại: journal hiện
 > dùng `JournalId` số, trong khi bản 11 vừa yêu cầu receipt ULID mới vừa khẳng định migration chỉ thêm
@@ -2193,3 +2198,167 @@ có pending transition · route mount nói `operationId?` · Goals footer lên b
 | R12.4–4e | §5.1, §5.3 `planGroupShift`, §5.4 `moveScenes` | 7.3 | unit all-or-nothing, anchor snap, ripple off; integration 422 |
 | R12.5–12.6 | §5.4 `deleteScenes`, §5.5 receipt | 7.4, 7.5 | integration một mutation + một mục undo |
 | R12.7–12.8 | §5.1, §5.22 | — | unit; browser Esc bỏ chọn |
+
+## 18. Deep-review remediation architecture (bản 13)
+
+### 18.1 Threat model và nguyên tắc closure
+
+- Project HTML/JavaScript, catalog package và remote-authored asset là **untrusted executable input**.
+- Trang web ngoài, authored preview và process/editor local hợp tác gây race đều nằm trong threat model.
+- Process local đã chiếm cùng user account và cố ý gọi syscall trong khe thời gian nhỏ nhất nằm ngoài
+  confidentiality boundary của app local, nhưng không nằm ngoài data-integrity gate: mọi seam
+  resolve/capture/publish vẫn revalidate và fail typed khi barrier deterministic đổi parent/entry.
+- Browser origin/cookie/CSP phải test bằng Chrome thật; filesystem ownership bằng temp filesystem thật;
+  RSS/stream ở listener thật; packaged claim bằng executable trong artifact.
+
+```mermaid
+flowchart LR
+  UI[UI origin + HttpOnly cookie] -->|postMessage nonce + schema| PH[preview.localhost host]
+  PH --> AD[authored document]
+  AD -->|project read capability| PA[preview + asset routes only]
+  AD -. blocked .-> API[privileged API / terminal / system]
+  API -->|Origin + Fetch Metadata + session| CORE[Core]
+  CORE --> WA[WriteAuthority]
+  WA --> LEASE[symlink-free parent identity lease]
+  LEASE --> FS[real filesystem]
+```
+
+## 19. Preview security principal (C-01)
+
+### 19.1 Dedicated host, capability và route partition
+
+- UI giữ origin hiện tại và host-only session cookie. Preview chạy trên
+  `preview.localhost:<same-port>`. Host-check chỉ nhận hostname này cho preview host/runtime/document/
+  asset; mọi privileged `/api/v1`, system và agent-terminal request bị từ chối trước auth.
+- `PreviewCapabilityService` mint token ngẫu nhiên 256-bit, bind `{projectId, studioSessionId,
+  expiresAt}`; chỉ GET/HEAD preview document, runtime và allowlisted asset đúng project được dùng.
+  Token hết hạn ngắn, revoke khi detach/project close, không ghi log/notes và không bao giờ được chấp
+  nhận ở privileged route.
+- Preview CSP: `default-src 'none'`; script/style/media/font/image chỉ cho preview origin + data/blob
+  cần thiết; `connect-src 'self'` chỉ tới route capability của preview origin; `form-action 'none'`;
+  `base-uri 'self'` vì HyperFrames cần `<base>` do daemon sinh để nạp sub-composition/asset (base đầu
+  tiên là authority, external base vẫn bị chặn); `object-src 'none'`.
+
+### 19.2 PostMessage bridge
+
+- UI tạo host frame bằng preview-origin URL và nonce 256-bit trong fragment. Parent xác minh exact
+  source window, exact preview origin, nonce, closed schema và payload cap.
+- Preview host là bên duy nhất chạm `hyperframes-player`/composition DOM. Nó phát snapshot bounded
+  `{ready, scenes, duration, currentTime, paused, muted, playbackRate, health, revision, changeSeq}` và
+  nhận command allowlist `load|seek|play|pause|set-rate|set-muted|dispose`.
+- `hyperframes-player-environment.ts` bỏ `contentDocument`/direct custom-element access. Engine methods
+  là request/ack qua bridge. Nonce bind window, không là server credential.
+- Privileged route thêm Origin/Fetch-Metadata: unsafe method yêu cầu UI origin; sensitive GET JSON/
+  system/terminal yêu cầu same-origin hoặc daemon/MCP credential path. `Origin: null`, preview origin
+  và cross-site đều fail.
+
+### 19.3 Closure test
+
+Chrome thật chạy malicious inline/external script và thử project list/source, studio attach,
+write/delete, system roots, terminal start/input, fetch/WebSocket/form/beacon external, stale/cross-
+project capability. Suite thuộc `test:browser-session` Linux + Windows.
+
+## 20. Secure authored filesystem mutation (H-01–H-03)
+
+- Authored CRUD reject mọi symlink ở leaf/parent. `FileNode` không giả symlink thành file; tree bỏ
+  symlink khỏi editable output và direct access trả typed reason.
+- `ResolvedPathLease` giữ canonical root, component list và identity mỗi directory (`dev`, `ino`,
+  `mode`; Windows dùng file identity Node cung cấp + canonical realpath). Resolver lstat no-follow,
+  cấm special file và chụp identity.
+- Capture và từng publish/rollback operation revalidate lease ngay trước I/O. Write-staged/open/hash
+  dùng no-follow regular-file helper. Bare absolute path không được sống qua seam mutation.
+- Sau khi rename sang rollback slot thành công, local capture owner nằm trong `try/finally`. Hash/open/
+  type fail phải restore nếu target absent; target mới xuất hiện thì quarantine pre-image do journal sở
+  hữu, trả `recovery_required`/typed conflict và không overwrite.
+- Capture đăng ký với outer transaction trước post-rename work có thể fail. Cleanup idempotent;
+  commit/abort/reconcile biết owner cuối.
+- Barrier tests đặt tại resolve→capture, rename→hash, capture→publish và T1→T2; assert zero byte ngoài
+  project, external entry được restore hoặc có recovery record, không orphan ordinary rollback slot.
+
+## 21. Asset range streaming (H-04, L-01)
+
+- Route parse Range thành `none | satisfiable | invalid` trước I/O.
+- `WorkspacePort.statAsset()` trả size/media identity/weak ETag;
+  `openAssetRange({start,end,signal})` trả bounded `ReadableStream<Uint8Array>` từ `FileHandle`, đóng
+  handle khi finish/error/cancel.
+- Không `readFile`, `Uint8Array.from` toàn file, full hash hoặc full-buffer slice. Ingestion hash được
+  giữ khi có; external-edit identity dùng weak ETag watcher-invalidated.
+- Semaphore daemon giới hạn stream. Invalid/unsatisfiable/multi-range trả `416` +
+  `Content-Range: bytes */<size>`; no Range mới trả 200.
+- Sparse 500 MB + 20 consumers + cancel đo RSS và instrument cấm full-file read.
+
+## 22. Bounded resources và lifecycle (M-01–M-03, M-06–M-07)
+
+### 22.1 Tree và recursive plan
+
+- Budget chung: depth 64, nodes 10,000, entries/directory 2,000, serialized plan 8 MiB và deadline hữu
+  hạn. `.vidcom`, dotfiles/protected roots bị loại trước đếm.
+- Vượt budget trả `resource_limit_exceeded` với reason cụ thể. UI dùng directory pagination/lazy
+  expansion + virtualized rows; studio snapshot không nhúng cây vô hạn.
+
+### 22.2 Catalog ownership
+
+- `planInstall()` dùng `try/finally`: pin release trừ khi `PlannedInstall` thành công và transfer
+  ownership. `prepare`/`execute` luôn release transferred pin trong `finally`.
+- `readPackageTargetHash` dùng purpose riêng cho mọi authored package extension được plan cho phép.
+  `rejected|unreadable|absent` là state khác nhau; chỉ absent trở thành create.
+
+### 22.3 Long-lived service bounds
+
+- Receipt dedupe dùng bounded LRU gắn entry/operation retention; clear/detach/evict xóa ID không cần.
+  Soak 100k receipt đo heap.
+- SSE/PTY dùng pull/capacity-aware pump; `desiredSize <= 0` dừng producer, resume ở `pull`, abort hủy
+  timer/subscription/process listener. Queue có byte/event cap và typed overflow.
+
+## 23. Draft conflict và frame authority (M-04, M-05)
+
+- Draft tách `dirty` khỏi `sourceStatus: present|deleted|conflicted`. `incoming:null` luôn tạo deleted
+  projection; clean file không bị silent-refresh bỏ qua. UI hiện Recreate/Close và save không no-op.
+- `FrameGrid` Core nhận fps hữu tỉ và validate start/duration/group delta/reorder timing. Mutation mới
+  sub-frame trả `timing_not_frame_aligned` 422 với field/value/fps.
+- UI snap/no-snap/playhead cùng gọi pure frame helper. Legacy sub-frame đọc/display nguyên; mutation
+  mới chỉ ghi frame-aligned.
+
+## 24. CI, governance và hardening (G-01–G-03)
+
+- `CI` dispatch là exact-source three-OS matrix + FFmpeg required; `Browser session` là Linux/Windows
+  Chrome; Packaged/Process/VieNeu giữ đúng R15.3. Workflow upload evidence cả khi fail.
+- Action release-sensitive pin full SHA. Thêm CodeQL JS/TS, lockfile OSV audit, secret scan,
+  dependency-review/license/provenance và Dependabot policy.
+- Accessibility dùng real-browser audit + keyboard/focus; CRUD thay native prompt/confirm bằng dialog
+  có label, focus trap/restore, deterministic test.
+- Soak suite có command/artifact RSS/heap riêng; release bắt buộc, presubmit dùng sample bounded.
+- Main protection require exact-head static three OS, browser two OS và packaged release checks;
+  dismiss stale security review, cấm force-push/deletion. Query lại setting và ghi evidence.
+
+## 25. Remediation decisions và approval
+
+### Decision 13 — Preview principal
+**Context**: Same-origin authored code có UI cookie authority.
+**Options**: opaque sandbox phá direct player DOM · listener riêng · dedicated hostname cùng port.
+**Decision**: `preview.localhost` + read capability + postMessage + CSP.
+**Rationale**: giữ player/inner document same-origin với nhau nhưng tách cookie/UI/API principal.
+**Implications**: host partition/capability lifecycle/malicious browser suite là một gate.
+
+### Decision 14 — Filesystem race posture
+**Context**: Node không expose `openat2`/descriptor-relative rename portable trên ba OS.
+**Options**: native addon · validate path một lần · reject symlink + identity lease/revalidation.
+**Decision**: không thêm native dependency SEA; reject symlink và revalidate ở mọi seam, kèm local
+exception ownership/quarantine.
+**Rationale**: đóng deterministic editor races và alias mutation trong boundary portable hiện có.
+**Implications**: không tuyên bố chống process cùng user cố ý thắng race sau syscall cuối; mọi barrier
+trước I/O cuối phải zero escape.
+
+### Decision 15 — Release evidence
+**Context**: local/historical green không enforce merge hay platform boundary.
+**Options**: local authority · CI chỉ multi-OS · CI exact-source authority.
+**Decision**: CI exact-source là authority; local chỉ feedback nhanh.
+**Rationale**: missing local runtime chuyển sang Actions, không thành skip.
+**Implications**: workflow đỏ chặn task kế; URL + per-OS conclusion + artifact vào log.
+
+### Approval Gate bản 13
+
+- **Status**: **Approved 2026-08-20 cho remediation**
+- **Confirmed by**: người dùng yêu cầu `/goal Fix các review` và khóa CI runner/evidence contract.
+- **Scope**: C-01, H-01–H-04, M-01–M-07, L-01, G-01–G-03; không hạ severity/không defer gate.
+- **Execution**: P12–P18 được phép chạy; design drift material cập nhật phần này trước code tiếp.

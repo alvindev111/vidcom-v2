@@ -1,10 +1,11 @@
-# Spec Editing Experience (Giai đoạn 5) — COMPLETE
+# Spec Editing Experience (Giai đoạn 5) — IN PROCESS (DEEP-REVIEW REMEDIATION)
 
 > **Related Documents**:
 > - [Detailed Goals](./spec-editing-experience-detailed-goal.md)
 > - [Detailed Design](./spec-editing-experience-detailed-design.md)
 > - [Implementation Checklist](./spec-editing-experience-implementation-checklist.md)
 > - [Execution Goal — prompt khởi động cho LLM agent](./spec-editing-experience-execution-goal.md)
+> - [Deep post-implementation review 2026-08-20](./spec-editing-experience-deep-review-2026-08-20.md)
 > - [Tham chiếu UX — ảnh chụp editor motionvid.ai](./reference-editor/README.md)
 >
 > **Backlog nguồn**: [15-build-order §Giai đoạn 5](../../../product-features/15-build-order.md) — mục 5.1–5.9.
@@ -88,14 +89,17 @@ trên timeline, undo/redo, preview không giật khi ghi, quản lý file/asset 
   contract/failure-cleanup gate của Design bản 12; S0 bắt đầu thực thi sau khi gate được duyệt
 
 ## During Spec
-- **Standups**: 2026-08-16 — S0 chạy: spec chuyển `pending` → `inprocess`, `implementation-notes.html` tạo, baseline ghi vào Execution Log của checklist. Bước kế: P0.1.
-- **Impediments**: —
-- **Adjustments**: —
+- **Standups**: 2026-08-16 — S0 chạy: spec chuyển `pending` → `inprocess`, `implementation-notes.html` tạo, baseline ghi vào Execution Log của checklist. 2026-08-20 — audit hậu triển khai mở lại spec: C-01, H-01–H-04, M-01–M-07, L-01 và G-01–G-03 trở thành remediation gate bắt buộc trước merge/release.
+- **Impediments**: Không có blocker môi trường tại thời điểm mở gate. CI là runner evidence chính; local thiếu Chrome/FFmpeg/artifact không được dùng để hạ gate.
+- **Adjustments**:
+  - Giữ nguyên toàn bộ checkbox/evidence lịch sử của S0–P11; không sửa quá khứ thành “chưa chạy”.
+  - Bổ sung R13–R15, Design bản 13 và P12–P18 để xử lý độc lập các finding mới.
+  - Trạng thái `COMPLETE` ngày 2026-08-19 là mốc hoàn tất phạm vi checklist cũ, không còn là release verdict sau audit 2026-08-20.
 
 ## Spec Review
-- **Completed**: —
-- **Demo**: —
-- **Feedback**: —
+- **Completed**: Phạm vi R1–R12/checklist S0–P11 đã hoàn tất theo evidence lịch sử; remediation R13–R15/P12–P18 đang mở.
+- **Demo**: Chưa được phép gọi release-ready cho tới khi deep-review closure matrix và CI exact-source đều xanh.
+- **Feedback**: NO-GO theo deep review 2026-08-20; mọi Critical/High phải đóng trước merge, toàn bộ Medium/Low/governance phải đóng trước release.
 
 ## Spec Retrospective
 - **Well**: —

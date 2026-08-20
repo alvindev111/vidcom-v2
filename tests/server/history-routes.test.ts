@@ -16,6 +16,7 @@ import {
 import {
   createServerApp,
   InMemoryNonceStore,
+  InMemoryPreviewCapabilityStore,
   InMemorySessionStore,
   MutationHistory,
   SESSION_COOKIE,
@@ -79,6 +80,7 @@ function fixture() {
     release(refs) { releases.push([...refs]); },
   };
   const history = new MutationHistory(content, { operationId: () => "operation-route" });
+  const previewCapabilities = new InMemoryPreviewCapabilityStore(clock, () => Buffer.alloc(32, 8));
   const writes: Array<{ request: CompositeRequest | { path: RelPath; content: string }; invocation?: WriteInvocation }> = [];
   let releaseInverse = () => {};
   let holdInverse = false;
@@ -133,6 +135,7 @@ function fixture() {
     nonces: new InMemoryNonceStore(clock),
     sessions,
     history,
+    previewCapabilities,
     browserSessionId: () => browserId,
     projectWrites: projectWrites as never,
   });
@@ -145,6 +148,7 @@ function fixture() {
   return {
     history,
     browserId,
+    previewCapabilities,
     writes,
     request,
     hold() { holdInverse = true; },
@@ -295,5 +299,27 @@ describe("browser history routes", () => {
     expect(detached.status).toBe(204);
     const state = await runtime.request(`/api/v1/projects/${projectId}/history`, { headers: sessionHeaders });
     expect(state.status).toBe(400);
+  });
+
+  it("mints preview authority only after attach and revokes it on detach", async () => {
+    const runtime = fixture();
+    const path = `/api/v1/projects/${projectId}/preview-capability`;
+    expect((await runtime.request(path, { method: "POST", headers: sessionHeaders })).status).toBe(400);
+
+    await runtime.request(`/api/v1/projects/${projectId}/history/session`, {
+      method: "POST",
+      headers: sessionHeaders,
+    });
+    const response = await runtime.request(path, { method: "POST", headers: sessionHeaders });
+    expect(response.status).toBe(200);
+    const issued = await response.json() as { token: string; expiresAt: string; origin: string };
+    expect(issued.origin).toBe(`http://preview.localhost:${port}`);
+    expect(runtime.previewCapabilities.verify(issued.token, projectId)).toBe(true);
+
+    await runtime.request(`/api/v1/projects/${projectId}/history/session`, {
+      method: "DELETE",
+      headers: sessionHeaders,
+    });
+    expect(runtime.previewCapabilities.verify(issued.token, projectId)).toBe(false);
   });
 });

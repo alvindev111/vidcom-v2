@@ -66,10 +66,23 @@ describe("CompositionHf", () => {
     expect(document).toContain('id="hf-preview-settings"');
     expect(document).toContain("/api/hf/runtime");
     expect(document.match(/id="hf-preview-settings"/g)).toHaveLength(1);
-    expect(document).toMatch(/<head[^>]*>\s*<script data-vidcom-health="collector"/u);
+    expect(document).toMatch(/<head[^>]*>\s*<meta data-vidcom-preview-security="csp"[^>]*>\s*<script data-vidcom-health="collector"/u);
     expect(document).toContain('data-project-revision="12"');
     expect(document).toContain('data-change-seq="34"');
     expect(document.indexOf('data-vidcom-health="collector"')).toBeLessThan(document.indexOf("Old title"));
+  });
+
+  it("localizes the upstream GSAP compatibility tag on preview only", async () => {
+    const document = await buildCompositionDocument(ref, DEFAULT_PREVIEW_SETTINGS, {
+      mode: "preview",
+      root: true,
+      projectRevision: 1,
+      changeSeq: 1,
+      runtimeUrl: "/api/preview/v1/c/token/projects/project_hf/runtime",
+      fileBaseUrl: "/api/preview/v1/c/token/projects/project_hf/assets/",
+    });
+    expect(document).toContain("/api/preview/v1/c/token/projects/project_hf/vendor/gsap.js");
+    expect(document).not.toContain("cdn.jsdelivr.net/npm/gsap");
   });
 
   it("keeps the preview health collector out of render documents", async () => {

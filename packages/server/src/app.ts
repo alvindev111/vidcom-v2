@@ -2,15 +2,18 @@ import { bodyLimit } from "hono/body-limit";
 import { Hono } from "hono";
 
 import type { NonceSource } from "./auth/nonce";
+import type { PreviewCapabilityIssuer, PreviewCapabilityVerifier } from "./auth/preview-capability";
 import type { DomainError } from "@vidcom/contracts";
 import type { Result, SessionPort } from "@vidcom/core";
 import type { EventOutboxPort, JobStorePort } from "@vidcom/core";
 import { mapHttpError, HttpBoundaryError } from "./middleware/error-mapper";
 import {
   hostCheck,
+  browserRequestGuard,
   mcpBearerAuth,
   requestId,
   requestLogger,
+  previewCapabilityAuth,
   sessionAuth,
   strictCors,
   type McpAuthEnv,
@@ -39,6 +42,7 @@ export interface ServerAppDependencies {
   uiOrigins: readonly string[];
   nonces: NonceSource;
   sessions: SessionPort;
+  previewCapabilities?: PreviewCapabilityIssuer & PreviewCapabilityVerifier;
   mcpCredentials?: McpCredentialVerifier;
   mcp?: McpRouteDependencies;
   bridge?: BridgeRouteDependencies;
@@ -85,16 +89,23 @@ export function createServerApp(deps: ServerAppDependencies) {
   register("logger", requestLogger(deps.log ?? (() => {})));
   register("hostCheck", hostCheck(deps.port));
   register("cors", strictCors(deps.uiOrigins));
+  register("browserRequestGuard", browserRequestGuard());
   const browserAuth = sessionAuth(deps.sessions);
   const mcpAuth = mcpBearerAuth(deps.mcpCredentials ?? { verify: async () => null });
   // The bridge authenticates the same way MCP does — a bearer, not a browser
   // session — because the client is an agent host, not a page. Which bearer is
   // acceptable there is narrower, and the bridge routes enforce that
   // themselves.
-  app.use("*", observed("auth", (c, next) => c.req.path.startsWith("/api/mcp")
-    || c.req.path.startsWith("/api/bridge")
-    ? mcpAuth(c, next)
-    : browserAuth(c, next), deps.trace));
+  app.use("*", observed("auth", (c, next) => {
+    if (c.req.path.startsWith("/api/preview/")) {
+      return deps.previewCapabilities
+        ? previewCapabilityAuth(deps.previewCapabilities)(c, next)
+        : browserAuth(c, next);
+    }
+    return c.req.path.startsWith("/api/mcp") || c.req.path.startsWith("/api/bridge")
+      ? mcpAuth(c, next)
+      : browserAuth(c, next);
+  }, deps.trace));
   const limits = {
     regular: bodyLimit({ maxSize: 1_048_576, onError: bodyTooLarge }),
     source: bodyLimit({ maxSize: MAX_SOURCE_BYTES + 65_536, onError: bodyTooLarge }),
@@ -127,7 +138,14 @@ export function createServerApp(deps: ServerAppDependencies) {
   if (deps.projectReads) app.route("/", createProjectReadRoutes(deps.projectReads));
   if (deps.jobs) app.route("/v1", createJobRoutes(deps.jobs));
   const studio: StudioRouteDependencies | undefined = deps.history && deps.browserSessionId
-    ? { history: deps.history, browserSessionId: deps.browserSessionId }
+    ? {
+      history: deps.history,
+      browserSessionId: deps.browserSessionId,
+      ...(deps.previewCapabilities === undefined ? {} : {
+        previewCapabilities: deps.previewCapabilities,
+        previewOrigin: `http://preview.localhost:${deps.port}`,
+      }),
+    }
     : undefined;
   if (deps.events) app.route("/v1", createEventRoutes(deps.events, {}, studio));
   if (deps.projectWrites) app.route("/", createProjectWriteRoutes(deps.projectWrites, studio));

@@ -9,6 +9,12 @@ function get(pathname: string): Request {
   return new Request(`http://127.0.0.1${pathname}`);
 }
 
+function previewGet(pathname: string): Request {
+  return new Request(`http://preview.localhost${pathname}`, {
+    headers: { Host: "preview.localhost:43123" },
+  });
+}
+
 async function body(router: ReturnType<typeof createRequestRouter>, pathname: string): Promise<string> {
   return (await router.handle(get(pathname))).text();
 }
@@ -77,5 +83,17 @@ describe("loopback request router", () => {
 
     expect(await body(router, "/projects/demo")).toBe("new");
     expect(await body(router, "/api/health")).toBe("api");
+  });
+
+  it("serves only the isolated preview shell on the preview hostname", async () => {
+    const router = createRequestRouter({ api: responder("api"), static: responder("static") });
+
+    const host = await router.handle(previewGet("/preview-host.html"));
+    expect(await host.text()).toBe("static");
+    expect(host.headers.get("content-security-policy")).toContain("connect-src 'none'");
+    expect(await (await router.handle(previewGet("/preview-host.js"))).text()).toBe("static");
+    expect((await router.handle(previewGet("/"))).status).toBe(403);
+    expect((await router.handle(previewGet("/projects/demo"))).status).toBe(403);
+    expect(await (await router.handle(previewGet("/api/preview/v1/c/token/projects/p/runtime"))).text()).toBe("api");
   });
 });

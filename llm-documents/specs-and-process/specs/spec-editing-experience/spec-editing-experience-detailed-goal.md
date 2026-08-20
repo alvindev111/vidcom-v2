@@ -1,8 +1,10 @@
 # Spec Editing Experience — Detailed Goals
 
-> **Reference**: [Main Spec File](./spec-editing-experience-complete.md)
+> **Reference**: [Main Spec File](./spec-editing-experience-inprocess.md)
 > **Backlog**: [15-build-order §Giai đoạn 5](../../../product-features/15-build-order.md) — 5.1–5.9
-> **Trạng thái**: **Bản 7 — Approved 2026-08-16**. Bản 7 đồng bộ AC R4.5 theo quyết định đã chốt:
+> **Trạng thái**: **Bản 8 — Approved 2026-08-20 cho remediation**. Bản 8 giữ nguyên R1–R12 bản 7 và
+> bổ sung R13–R15 từ deep review hậu triển khai; yêu cầu “Fix các review” là xác nhận tường minh để
+> thực thi các AC remediation, không phải quyền hạ severity hoặc bỏ finding. Bản 7 đã đồng bộ AC R4.5:
 > preview settings đi qua cùng double-buffer như mọi cập nhật preview khác. Bản 6 đã đổi R4 sang
 > `PlayerHost` + double-buffer; bản 5 sửa R9.9 và thêm R10–R12.
 
@@ -413,7 +415,107 @@ toàn, không phải chi tiết Design:
 7. WHEN vùng chọn thay đổi THEN hệ thống SHALL hiện số clip đang chọn và SHALL cho phép bỏ chọn bằng `Esc`.
 8. IF vùng chọn trải qua nhiều track THEN hệ thống SHALL vẫn cho kéo cùng nhau nhưng SHALL giữ nguyên `trackIndex` của từng clip.
 
-## Ước lượng sơ bộ (sàn, chốt lại sau Design)
+### Requirement 13 — Trust boundary và an toàn mutation (deep review C-01, H-01–H-03)
+
+**User Story:** Là người mở project hoặc block lấy từ nguồn bên ngoài, tôi muốn preview và file manager
+không thể dùng quyền của phiên UI hoặc làm thay đổi file ngoài đúng entry tôi yêu cầu, để nội dung tác
+giả không trở thành mã có quyền quản trị máy/project và race không làm mất dữ liệu.
+
+#### Acceptance Criteria
+1. WHEN authored project/catalog script chạy trong preview THEN browser SHALL đặt nó trong một
+   security principal không có origin/cookie authority của UI và SHALL NOT cho script đọc project
+   listing/source, attach studio session, ghi/xoá file, duyệt filesystem root, hoặc mở/gửi input tới
+   agent terminal.
+2. WHEN UI điều khiển preview hoặc đọc health/transport THEN giao tiếp SHALL chỉ đi qua `postMessage`
+   có exact source window, nonce ngẫu nhiên theo frame, schema đóng, message type allowlist và payload
+   bounded; UI SHALL NOT đọc `contentDocument`, `contentWindow.__vidcomHealth` hoặc custom element của
+   authored frame trực tiếp.
+3. WHEN preview cố `fetch`/XHR/WebSocket/form/beacon tới origin mạng tuỳ ý hoặc privileged API THEN
+   browser/server SHALL chặn; capability preview chỉ được đọc runtime/asset của đúng project, hết hạn
+   khi project/session đóng và không dùng chéo project.
+4. WHEN một request thay đổi state đi vào API đặc quyền THEN server SHALL kiểm anti-CSRF bằng
+   Origin/Fetch-Metadata phù hợp với UI principal; request từ opaque/cross-site preview SHALL bị từ chối
+   kể cả khi browser vô tình gửi cookie.
+5. WHEN capture đã rename entry sang rollback slot rồi bước hash/open/validate thất bại THEN capture
+   SHALL tự sở hữu cleanup: khôi phục entry nếu target còn absent; nếu target mới xuất hiện SHALL không
+   ghi đè, SHALL quarantine pre-image và trả typed conflict/recovery state.
+6. WHEN CRUD gặp symlink ở leaf hoặc bất kỳ parent component nào THEN hệ thống SHALL từ chối typed,
+   SHALL không hiện symlink như file thường, và SHALL không mutate target dù target nằm trong project.
+7. WHEN external editor thay loại entry hoặc thay parent giữa resolve → capture → publish THEN hệ thống
+   SHALL revalidate parent identity tại từng boundary, trả typed conflict/recovery và SHALL không ghi
+   byte nào ngoài project.
+8. WHEN chạy regression gate THEN real browser SHALL chứng minh các hành vi C-01 bị chặn và real
+   filesystem SHALL dùng barrier deterministic cho rename/hash, leaf swap và parent swap; mock
+   `node:fs` hoặc synthetic DOM SHALL NOT được tính là closure.
+
+### Requirement 14 — Resource bounds, protocol và data integrity (H-04, M-01–M-07, L-01)
+
+**User Story:** Là người dựng project lớn và để daemon chạy lâu, tôi muốn đọc asset, cây file, catalog,
+draft, timeline và stream luôn hữu hạn, đúng protocol và không giữ state rác, để một seek nhỏ hoặc
+consumer chậm không làm cạn RAM hay giấu thay đổi ngoài app.
+
+#### Acceptance Criteria
+1. WHEN client gửi Range hợp lệ cho asset tới 500 MB THEN server SHALL parse range trước I/O, stream
+   đúng đoạn từ file handle với backpressure/cancel, giới hạn concurrency và SHALL không `readFile`,
+   hash hoặc copy toàn file để trả một đoạn nhỏ.
+2. WHEN Range malformed, multi-range không hỗ trợ hoặc unsatisfiable THEN server SHALL trả `416` kèm
+   `Content-Range: bytes */<size>`; chỉ request không có Range mới được trả toàn file.
+3. WHEN file tree/recursive CRUD vượt node count, depth, entries-per-directory hoặc serialized-plan
+   bytes đã khai báo THEN hệ thống SHALL dừng hữu hạn với reason machine-readable; `.vidcom` và root
+   nội bộ/protected SHALL không xuất hiện trong user tree, và UI SHALL không render đồng thời một cây
+   không giới hạn.
+4. WHEN catalog materialization đã pin cache THEN mọi integrity/parse/policy/unsupported/abort/throw
+   path SHALL release pin đúng một lần trừ khi ownership được transfer tường minh; repeated invalid
+   installs SHALL không làm tăng pin/disk vô hạn.
+5. WHEN package có HTML + PNG + WOFF2 được cài lại THEN create/reuse/replace/skip và external-edit
+   precondition SHALL đọc hash của mọi authored package target hợp lệ; path rejected/unreadable SHALL
+   không bị đổi nghĩa thành “absent”.
+6. WHEN file đang mở bị xoá/đổi parent ngoài app THEN clean và dirty draft SHALL đều hiện state
+   “deleted outside” với hành động Recreate/Close hoặc auto-close + durable notice; stale text SHALL
+   không tiếp tục trông như source hiện hành.
+7. WHEN mutation mới thay đổi timing qua UI, HTTP hoặc MCP THEN Core SHALL yêu cầu start/duration/delta
+   nằm trên frame grid của fps project và trả typed validation cho input sub-frame; legacy authored
+   value có thể đọc nguyên nhưng không được tạo mutation sub-frame mới.
+8. WHEN daemon nhận 100k+ mutation receipts THEN dedupe retention SHALL bounded và heap SHALL ổn định;
+   ID của entry đã clear/detach/evict SHALL không sống vô hạn.
+9. WHEN SSE hoặc PTY consumer chậm/suspended THEN producer SHALL tôn trọng capacity/backpressure,
+   dừng poll/subscription ngay khi abort và giữ RSS bounded.
+10. WHEN chạy closure suite THEN sparse 500 MB ranges, concurrent/cancel, 10k-file/deep tree,
+    repeated invalid catalog, clean/dirty delete, UI/HTTP/MCP frame alignment, slow SSE/PTY và 100k
+    receipts SHALL có boundary-level evidence, zero skip.
+
+### Requirement 15 — Release governance, CI evidence và hardening (G-01–G-03)
+
+**User Story:** Là maintainer chuẩn bị merge/release, tôi muốn exact-source evidence được runner chính
+và policy repository cưỡng chế, để local green hoặc historical artifact không thể thay thế bằng chứng
+đa OS, browser, packaged, security và soak thật.
+
+#### Acceptance Criteria
+1. CI SHALL là runner evidence chính. Agent SHALL đọc `GH_KEY` từ `.env` vào `GH_TOKEN` mà không in
+   token ra log/notes, dispatch bằng `gh workflow run "<name>" --ref <branch>`, chờ bằng
+   `gh run watch`, tải artifact bằng `gh run download`, rồi ghi URL + conclusion từng OS vào Execution
+   Log. Thiếu Chrome/FFmpeg/artifact local SHALL chuyển sang Actions; `[!]` chỉ hợp lệ khi CI cũng
+   không chạy được. Workflow đỏ SHALL được sửa trước task kế.
+2. Workflow `CI` dispatch SHALL chạy typecheck · lint · boundaries · test với FFmpeg bắt buộc ·
+   mcp-contract · golden · schema-drift · spec-paths · build · runtime-smoke trên Linux/macOS/Windows.
+3. Workflow `Browser session` SHALL chạy kéo-thả, preview, malicious-preview và R4.1c `<500 ms` trên
+   Linux/Windows. `Packaged smoke` SHALL chứng minh P8 catalog trong artifact và gate 11.5d cho đủ ba
+   platform tag. `Process supervision gate` SHALL chạy render/kill P4+P7. `VieNeu real engine` SHALL
+   sinh TTS thật cho caption P6.
+4. Main branch SHALL được bảo vệ bằng required exact-head checks cho static/browser/packaged release
+   path, review đối với security-boundary change, và cấm force-push/deletion; repository SHALL không
+   cho merge một commit không mang evidence bắt buộc.
+5. CI/release SHALL có lockfile vulnerability scan, CodeQL JavaScript/TypeScript, secret scan,
+   dependency update policy và license/provenance check; release-sensitive GitHub Actions SHALL pin
+   immutable commit SHA.
+6. Accessibility gate SHALL kiểm keyboard/focus/ARIA và dialog first-class thay cho
+   `window.prompt`/`window.confirm` ở file CRUD. Soak gate SHALL phủ 100k receipts, invalid catalog,
+   slow streams, 10k-file/deep tree và concurrent large ranges/uploads.
+7. WHEN remediation hoàn tất THEN mọi P0/P1 deep-review case SHALL zero skip, exact-source CI/browser/
+   packaged/process/TTS artifacts SHALL được tải và kiểm, branch policy SHALL active, và main spec mới
+   được đổi `inprocess` → `complete`.
+
+## Ước lượng sơ bộ (lịch sử R1–R12; remediation R13–R15 được gate riêng)
 
 | # | Requirement | Build-order | ID | SP bản 1 | **SP bản 5** | Vì sao đổi |
 |---|---|---|---|---|---|---|
@@ -492,7 +594,7 @@ quyết định sản phẩm rơi vào tay người đang viết code.
 - [x] Mọi hạng mục 5.1–5.9 của build-order có ít nhất một requirement
 - [x] Có ca lỗi và ca biên (hash lệch, vượt duration, offline, probe fail, không còn undo)
 - [x] Data and Persistence Scope đã điền
-- [x] Approval Gate ghi đúng trạng thái `Approved (bản 7)` và ngày xác nhận
+- [x] Approval Gate ghi đúng trạng thái `Approved (bản 8)` và ngày xác nhận remediation
 
 **Clarity**
 - [x] EARS dùng nhất quán (WHEN/IF/THEN/SHALL)
@@ -510,9 +612,12 @@ quyết định sản phẩm rơi vào tay người đang viết code.
 
 > Không bắt đầu detailed design cho tới khi mục này được xác nhận tường minh.
 
-- **Status**: **Approved (bản 7)**
-- **Confirmed by**: người dùng (chủ dự án)
-- **Confirmation date**: 2026-08-15 (bản 5) · **2026-08-16 (bản 6–7)** — R4.1/1a/1b sửa sang mô hình `PlayerHost` + double-buffer theo hai quyết định người dùng, sau khi spike đo được swap tại chỗ mang ba lỗi im lặng. PR-11 chuyển sang Giai đoạn 6; bản 7 đồng bộ R4.5 theo chính quyết định “double-buffer cho mọi cập nhật preview”.
+- **Status**: **Approved (bản 8)**
+- **Confirmed by**: người dùng (chủ dự án) — yêu cầu `/goal Fix các review` ngày 2026-08-20
+- **Confirmation date**: 2026-08-15 (bản 5) · 2026-08-16 (bản 6–7) · **2026-08-20 (bản 8 remediation)**
+- **Remediation authority**: R13–R15 lấy nguyên finding/closure boundary từ deep review. Việc duyệt
+  cho phép sửa code, workflow, test và spec trong repo; không tự hạ security, không bỏ finding, không
+  giả evidence. External repository policy chỉ được đổi theo gate R15 và phải ghi exact setting/evidence.
 - **Notes / required revisions before design**: **không còn câu hỏi nào chặn.** Bảy quyết định phạm vi và ngưỡng đã chốt (OQ-2, 4, 5, 6, 8, 9, 10). Ba câu còn lại (OQ-3 cách lưu undo · OQ-7 công cụ probe · OQ-11 cơ chế integrity của registry) là lựa chọn cách làm, **bắt buộc** vào Design dưới dạng Decision Record và không đổi AC nào. OQ-12 đã đóng ở bản 5 bằng cách sửa R9.9.
 - **Vòng review 7 — đồng bộ quyết định R4 bản 6 (2026-08-16)**: R4.5 còn giữ câu “preview settings không tải lại toàn bộ composition”, trái R4.1a và quyết định “double-buffer cho mọi cập nhật preview”. Bản 7 bỏ ngoại lệ đó: preview settings dùng cùng buffer, cùng transport và cùng ngân sách R4.1c; build-order bỏ “hot-reload preview settings”.
 - **Vòng review 1 (2026-08-15)**: bản 1 bị chặn ở 7 điểm — R6 thiếu phần *sinh* caption, R9 thiếu mount, R3 chưa định nghĩa phạm vi undo, R5 thiếu luật upload bắt buộc và thiếu font, R8 chưa phủ hai đường mất draft đang có thật trong code, R2 chưa chốt semantics gap/ranh giới nhóm/bàn phím, và OQ mâu thuẫn với AC. Bản 2 sửa cả 7.

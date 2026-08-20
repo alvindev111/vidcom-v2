@@ -1,4 +1,9 @@
-import { ErrorCode, ProjectParamsSchema, type ProjectId } from "@vidcom/contracts";
+import {
+  ErrorCode,
+  PreviewCapabilityResponseSchema,
+  ProjectParamsSchema,
+  type ProjectId,
+} from "@vidcom/contracts";
 import { applyMutationInverse } from "@vidcom/core";
 import { Hono, type Context } from "hono";
 
@@ -39,8 +44,22 @@ export function createHistoryRoutes(
   routes.delete("/v1/projects/:id/history/session", (c) => {
     const id = projectId(c);
     const attached = requireAttachedStudio(dependencies, c, id);
+    dependencies.previewCapabilities?.revoke({ projectId: id, ...attached });
     dependencies.history.detach(attached.browserSessionId, attached.studioSessionId, id);
     return c.body(null, 204);
+  });
+
+  routes.post("/v1/projects/:id/preview-capability", (c) => {
+    const id = projectId(c);
+    const attached = requireAttachedStudio(dependencies, c, id);
+    if (!dependencies.previewCapabilities || !dependencies.previewOrigin) {
+      fail(ErrorCode.StorageUnavailable, "preview capability service is unavailable");
+    }
+    const capability = dependencies.previewCapabilities.mint({ projectId: id, ...attached });
+    return c.json(PreviewCapabilityResponseSchema.parse({
+      ...capability,
+      origin: dependencies.previewOrigin,
+    }));
   });
 
   routes.get("/v1/projects/:id/history", (c) => {

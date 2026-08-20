@@ -2,12 +2,16 @@
 
 import * as React from "react";
 import { usePathname } from "next/navigation";
-import type { StudioSnapshotResponse } from "@vidcom/contracts";
+import {
+  PreviewCapabilityResponseSchema,
+  type PreviewCapabilityResponse,
+  type StudioSnapshotResponse,
+} from "@vidcom/contracts";
 
 import { StudioShell } from "@/components/studio/studio-shell";
 import { StudioSessionProvider } from "@/components/studio/studio-session-context";
 import { apiError, ensureBrowserSession } from "@/lib/api/browser-session";
-import { apiUrl, fetchApi } from "@/lib/api/services";
+import { fetchApi } from "@/lib/api/services";
 import { createUlid } from "@/lib/studio/ids";
 import type { PreviewSettings } from "@/lib/studio/preview-settings";
 import {
@@ -58,6 +62,7 @@ function MountedStudio({
   const studioSessionId = React.useRef(createUlid());
   const projectId = snapshot.project.id;
   const [attached, setAttached] = React.useState(false);
+  const [previewCapability, setPreviewCapability] = React.useState<PreviewCapabilityResponse | null>(null);
   const [error, setError] = React.useState<string | null>(null);
   const [eventRevision, setEventRevision] = React.useState(0);
   const [externalChangeSeq, setExternalChangeSeq] = React.useState<number | null>(null);
@@ -80,14 +85,28 @@ function MountedStudio({
     ),
     [projectId, studioInit],
   );
+  const mintPreviewCapability = React.useCallback(async () => {
+    const response = await fetchApi(
+      `/api/v1/projects/${encodeURIComponent(projectId)}/preview-capability`,
+      studioInit({ method: "POST" }),
+    );
+    await requireOk(response);
+    const capability = PreviewCapabilityResponseSchema.parse(await response.json());
+    setPreviewCapability(capability);
+    return capability;
+  }, [projectId, studioInit]);
 
   React.useEffect(() => {
     let active = true;
-    const detach = () => void sessionRequest("DELETE", true).catch(() => undefined);
+    const detach = () => {
+      setPreviewCapability(null);
+      void sessionRequest("DELETE", true).catch(() => undefined);
+    };
     const pagehide = () => detach();
     window.addEventListener("pagehide", pagehide);
     void sessionRequest("POST")
       .then(requireOk)
+      .then(mintPreviewCapability)
       .then(() => {
         if (active) setAttached(true);
         else detach();
@@ -100,7 +119,18 @@ function MountedStudio({
       window.removeEventListener("pagehide", pagehide);
       detach();
     };
-  }, [sessionRequest]);
+  }, [mintPreviewCapability, sessionRequest]);
+
+  React.useEffect(() => {
+    if (!attached || !previewCapability) return;
+    const renewIn = Math.max(1_000, Date.parse(previewCapability.expiresAt) - Date.now() - 60_000);
+    const timer = window.setTimeout(() => {
+      void mintPreviewCapability().catch((cause) => {
+        setError(cause instanceof Error ? cause.message : "Could not renew preview access.");
+      });
+    }, renewIn);
+    return () => window.clearTimeout(timer);
+  }, [attached, mintPreviewCapability, previewCapability]);
 
   React.useEffect(() => {
     if (!attached) return;
@@ -181,16 +211,22 @@ function MountedStudio({
     setAttached(false);
     await requireOk(await sessionRequest("DELETE"));
     await requireOk(await sessionRequest("POST"));
+    await mintPreviewCapability();
     if (reloadSource) {
       await loadSnapshot();
       setShellGeneration((current) => current + 1);
     }
     setEventRevision((current) => current + 1);
     setAttached(true);
-  }, [loadSnapshot, sessionRequest]);
+  }, [loadSnapshot, mintPreviewCapability, sessionRequest]);
 
   if (error) return <div className="text-destructive p-6 text-sm">{error}</div>;
-  if (!attached) return <div className="text-muted-foreground p-6 text-sm">Attaching studio history…</div>;
+  if (!attached || !previewCapability) return <div className="text-muted-foreground p-6 text-sm">Attaching studio history…</div>;
+
+  const previewDocument = new URL(
+    `/api/preview/v1/c/${encodeURIComponent(previewCapability.token)}/projects/${encodeURIComponent(snapshot.project.id)}/preview`,
+    previewCapability.origin,
+  );
 
   return (
     <StudioSessionProvider
@@ -204,7 +240,7 @@ function MountedStudio({
         key={shellGeneration}
         projectId={snapshot.project.id}
         projectSlug={snapshot.project.slug}
-        previewUrl={apiUrl(`/api/v1/projects/${encodeURIComponent(snapshot.project.id)}/preview`)}
+        previewUrl={previewDocument.href}
         aspectRatio={snapshot.project.width / snapshot.project.height}
         authoredDuration={snapshot.project.duration}
         frameRate={snapshot.frameRate}

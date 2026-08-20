@@ -1,11 +1,13 @@
 import { randomUUID } from "node:crypto";
 
 import { ErrorCode } from "@vidcom/contracts";
+import type { ProjectId } from "@vidcom/contracts";
 import type { SessionPort } from "@vidcom/core";
 import { getCookie } from "hono/cookie";
 import type { MiddlewareHandler } from "hono";
 
 import { HttpBoundaryError } from "./error-mapper";
+import type { PreviewCapabilityVerifier } from "../auth/preview-capability";
 
 export const SESSION_COOKIE = "vidcom_session";
 
@@ -38,7 +40,10 @@ export function requestId(): MiddlewareHandler {
 }
 
 export function redactRequestUrl(rawUrl: string): string {
-  return new URL(rawUrl).pathname;
+  return new URL(rawUrl).pathname.replace(
+    /\/api\/preview\/v1\/c\/[^/]+\//u,
+    "/api/preview/v1/c/[redacted]/",
+  );
 }
 
 export function requestLogger(write: (line: string) => void): MiddlewareHandler {
@@ -50,8 +55,11 @@ export function requestLogger(write: (line: string) => void): MiddlewareHandler 
 
 export function hostCheck(port: number): MiddlewareHandler {
   const allowed = new Set([`127.0.0.1:${port}`, `localhost:${port}`]);
+  const previewHost = `preview.localhost:${port}`;
   return async (c, next) => {
-    if (!allowed.has(c.req.header("Host") ?? "")) {
+    const host = c.req.header("Host") ?? "";
+    const previewPath = c.req.path.startsWith("/api/preview/");
+    if ((host === previewHost && !previewPath) || (allowed.has(host) && previewPath) || (!allowed.has(host) && host !== previewHost)) {
       reject(ErrorCode.HostNotAllowed, "request host is not allowed");
     }
     await next();
@@ -97,6 +105,29 @@ export function strictCors(allowedOrigins: readonly string[]): MiddlewareHandler
   };
 }
 
+/** Rejects browser ambient-authority requests that did not originate in the UI context. */
+export function browserRequestGuard(): MiddlewareHandler {
+  return async (c, next) => {
+    const pathname = c.req.path;
+    if (pathname.startsWith("/api/mcp") || pathname.startsWith("/api/bridge") || pathname.startsWith("/api/preview/")) {
+      await next();
+      return;
+    }
+    const site = c.req.header("Sec-Fetch-Site");
+    const mode = c.req.header("Sec-Fetch-Mode");
+    const destination = c.req.header("Sec-Fetch-Dest");
+    if (
+      (site !== undefined && site !== "same-origin")
+      || mode === "navigate"
+      || (destination !== undefined && destination !== "empty")
+      || (site !== undefined && !["GET", "HEAD", "OPTIONS"].includes(c.req.method) && !c.req.header("Origin"))
+    ) {
+      reject(ErrorCode.OriginNotAllowed, "browser request context is not allowed");
+    }
+    await next();
+  };
+}
+
 export function sessionAuth(sessions: SessionPort): MiddlewareHandler {
   return async (c, next) => {
     const isExchange = c.req.method === "POST" && c.req.path === "/api/v1/auth/exchange";
@@ -105,6 +136,22 @@ export function sessionAuth(sessions: SessionPort): MiddlewareHandler {
       if (!token || !sessions.verify(token).valid) {
         reject(ErrorCode.AuthRequired, "authentication required");
       }
+    }
+    await next();
+  };
+}
+
+/** Accepts one read-only capability and only on the dedicated preview namespace. */
+export function previewCapabilityAuth(capabilities: PreviewCapabilityVerifier): MiddlewareHandler {
+  return async (c, next) => {
+    if (c.req.method !== "GET" && c.req.method !== "HEAD") {
+      reject(ErrorCode.AuthRequired, "preview capability is required");
+    }
+    const match = /^\/api\/preview\/v1\/c\/([^/]+)\/projects\/([^/]+)\/(?:runtime|preview|vendor\/gsap\.js|assets\/)/u.exec(c.req.path);
+    const token = match?.[1];
+    const projectId = match?.[2];
+    if (!projectId || !token || !capabilities.verify(token, projectId as ProjectId)) {
+      reject(ErrorCode.AuthRequired, "preview capability is required");
     }
     await next();
   };

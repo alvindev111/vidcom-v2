@@ -6,6 +6,7 @@ export {
 export * from "./routes/system";
 export * from "./auth/nonce";
 export * from "./auth/session";
+export * from "./auth/preview-capability";
 export * from "./bridge/attachments";
 export * from "./listener";
 export * from "./service/mutation-history";

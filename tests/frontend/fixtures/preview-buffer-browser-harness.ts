@@ -12,13 +12,20 @@ let maxLiveFrames = 0;
 // A host page with no composition in it is not a preview; the bound this probe
 // guards is about compositions being rendered.
 const liveFrames = () => [...container.querySelectorAll("iframe")]
-  .filter((frame) => (frame.getAttribute("src") ?? "").includes("src=")).length;
+  .filter((frame) => {
+    const player = frame.contentDocument?.querySelector("hyperframes-player");
+    return player?.hasAttribute("src") ?? false;
+  }).length;
 const trackFrames = new MutationObserver(() => {
   maxLiveFrames = Math.max(maxLiveFrames, liveFrames());
 });
 trackFrames.observe(container, { childList: true });
 
-const environment = createHyperframesPlayerEnvironment({ container, onVisibleState() {} });
+const environment = createHyperframesPlayerEnvironment({
+  container,
+  previewOrigin: window.location.origin,
+  onVisibleState() {},
+});
 const host = new PlayerHost({ projectToken: "project-browser", environment });
 const previewUrl = (input: {
   served: number;

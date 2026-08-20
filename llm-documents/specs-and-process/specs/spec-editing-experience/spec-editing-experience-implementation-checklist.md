@@ -1,8 +1,9 @@
 # Spec Editing Experience — Implementation Checklist
 
-> **Reference**: [Detailed Goals](./spec-editing-experience-detailed-goal.md) — bản 7, Approved 2026-08-16
-> **Design**: [Detailed Design](./spec-editing-experience-detailed-design.md) — bản 12, Approved 2026-08-16
-> **Main spec**: [spec-editing-experience-complete.md](./spec-editing-experience-complete.md)
+> **Reference**: [Detailed Goals](./spec-editing-experience-detailed-goal.md) — bản 8, Approved 2026-08-20 cho remediation
+> **Design**: [Detailed Design](./spec-editing-experience-detailed-design.md) — bản 13, Approved 2026-08-20 cho remediation
+> **Main spec**: [spec-editing-experience-inprocess.md](./spec-editing-experience-inprocess.md)
+> **Deep review**: [2026-08-20](./spec-editing-experience-deep-review-2026-08-20.md) — source của P12–P18
 > **Spike evidence**: [`spikes/phase-5/README.md`](../../../../spikes/phase-5/README.md) — 24 probe hợp lệ PASS + 1 superseded
 
 ## Context
@@ -116,7 +117,9 @@ Mục này là chỉ dẫn tường minh để agent có thể chạy liên tụ
 - **Confirmation date**: 2026-08-16
 - **Notes / required revisions before code execution**: Việc duyệt
   bao gồm bảng **Các điểm lệch steering**, erratum path `applyCompositionOps` và D9 MCP blob/file-manager
-  R5 ở trên; Detailed Design bản 12 đã Approved, không cần một vòng duyệt Design khác.
+  R5 ở trên. **Remediation addendum Approved 2026-08-20** theo yêu cầu `/goal Fix các review`:
+  Goals bản 8, Design bản 13 và P12–P18 được phép thực thi; không hạ severity, không bỏ finding và
+  không dùng historical/local green thay exact-source boundary evidence.
 
 ## Sequencing Strategy
 
@@ -143,6 +146,10 @@ P1…P10          → P11
 ```
 
 **Recommended execution order**: S0 → P0 → P3 → P4 → P1 → P2 → P5 → P6 → P7 → P8 → P9 → P10 → P11.
+
+**Deep-review remediation order**: historical S0–P11 stays closed; execute
+`P12 → P13 → P14 → P15 → P16 → P17 → P18`. P17 repository-contained hardening may begin only after
+P12–P16 are green; P18 owns exact-source Actions and external repository policy.
 
 **Parallelizable**: checklist mặc định cho **một agent tuần tự**. Nếu nhiều agent được người dùng cho
   phép tường minh, sau P0 làm P3; sau P3 có thể tách P4 · P1 · P5, P2 cũng chờ P3;
@@ -171,6 +178,13 @@ P6 chờ P3 + P4; P7 chờ thêm safe-CSS seam của P5; còn P9/P10/P11 giữ d
 | P9 Kéo asset | `.agents/skills/bun/SKILL.md` + `.agents/skills/hono/SKILL.md` | P5 + P2 + P3 deliverables, `packages/core/src/usecase/project-writes.ts` (search `createScene`), `packages/cli/src/startup.ts`, `src/components/studio/scene-media-list.tsx` |
 | P10 Draft & phím tắt | `.agents/skills/bun/SKILL.md` + `.agents/skills/http-driver/SKILL.md` | `src/components/studio/use-source-files.ts` (FULL), `src/app/projects/[slug]/composer-client.tsx` (FULL), `src/lib/studio/format.ts` |
 | P11 Chốt chất lượng | `.agents/skills/bun/SKILL.md` + `.agents/skills/mcp-builder/SKILL.md` | `llm-documents/steering/{03-architecture-ddd,04-api-design,05-mcp-tool-design,10-testing,13-mcp-protocol-compatibility}.md` (các đoạn D1/parity/approval), `tests/support/browser-harness.ts` (FULL), `package.json` (FULL), `.github/workflows/phase4-browser-session.yml`, `packages/mcp/src/registry/registry.ts` (FULL), `packages/mcp/src/registry/write-tools.ts`, `packages/agent-kit/AGENTS.md` |
+| P12 Preview isolation | `.agents/skills/bun/SKILL.md` + `.agents/skills/hono/SKILL.md` | Deep review C-01; Design §18–§19; `src/components/studio/{hyperframes-player-environment,use-hyperframes-player,player-host}.ts`; `src/preview-host/entry.ts`; `packages/adapter/src/hyperframes/document.ts`; server auth/perimeter/app/preview routes |
+| P13 Filesystem safety | `.agents/skills/bun/SKILL.md` | Deep review H-01–H-03; Design §20; `packages/adapter/src/fs/{resolve,mutation-capture,workspace-fs,regular-file}.ts`; `packages/core/src/service/write-authority.ts`; `packages/core/src/usecase/entry-crud.ts` |
+| P14 Asset range | `.agents/skills/bun/SKILL.md` + `.agents/skills/hono/SKILL.md` | Deep review H-04/L-01; Design §21; `packages/server/src/routes/project-reads.ts`; `packages/core/src/usecase/project-reads.ts`; Workspace port/adapter; listener stream tests |
+| P15 Resource lifecycle | `.agents/skills/bun/SKILL.md` + `.agents/skills/hono/SKILL.md` | Deep review M-01–M-03/M-06/M-07; Design §22; tree/entry CRUD, catalog install/path policy, mutation history, event/terminal routes |
+| P16 Draft + frame grid | `.agents/skills/bun/SKILL.md` | Deep review M-04/M-05; Design §23; `draft-store.ts`, `use-source-files.ts`, editor UI; snap/interaction; Core timing/order use cases |
+| P17 Hardening + workflow | `.agents/skills/bun/SKILL.md` + `.agents/skills/hono/SKILL.md` | Deep review G-02/G-03; Design §24; CRUD dialogs; browser tests; workflows/package scripts; dependency/security configuration |
+| P18 CI/governance closeout | `.agents/skills/bun/SKILL.md` | Goals R15; all workflow YAML; source identity; Execution Log; GitHub branch policy current state |
 
 **Lưu ý về template**: template checklist nhắc tới `backend-docs/` và `frontend-docs/` — hai thư mục đó **không tồn tại** trong repo này. Luật code nằm ở
 `llm-documents/steering/11-code-style.md`; đọc nó một lần trước P0.
@@ -1443,6 +1457,220 @@ dependency-graph import registration in `tests/adapter/compiler-timeout-audit.te
 
 ---
 
+## Phase 12: Deep-review bootstrap + preview isolation (C-01)
+
+**Addresses**: R13.1–R13.4, R13.8 · C-01
+**Design reference**: §18–§19, Decision 13
+**Files affected**: spec files; preview host/player bridge; server host/auth/perimeter/preview routes;
+contracts and composition root wiring
+**Prerequisite**: historical P11 PASS; deep-review Goals v8 + Design v13 approved
+**Skill**: Bun + Hono rows above
+**Read first**: full C-01 finding and all P12 row files via CodeGraph call paths
+
+**Tasks**:
+- [x] 12.0 Reopen the spec and ratify the remediation authority
+  - Preserve S0–P11 evidence; rename main spec `complete` → `inprocess`; add R13–R15, Design §18–§25,
+    P12–P18 and review disposition mapping.
+  - Verify no stale main-spec link, duplicate approval status or invalid requirement/task reference.
+  - _Requirements: R13–R15_ — _Design: §18, §25_
+- [x] 12.1 Add preview-origin and capability contracts
+  - Implement dedicated `preview.localhost` host classification, short-lived project/session read
+    capability lifecycle, route partition and composition-root wiring.
+  - Capability only authorizes preview/runtime/allowlisted asset GET/HEAD; never privileged API.
+  - _Requirements: R13.1, R13.3_ — _Design: §19.1_
+- [x] 12.2 Replace direct DOM access with the bounded postMessage bridge
+  - Move player/health/transport reads and commands into preview host; exact window/origin/nonce/schema;
+    remove UI `contentDocument`/custom-element access; keep double-buffer and R4.1c behavior.
+  - _Requirements: R13.1–R13.3_ — _Design: §19.2_
+- [x] 12.3 Enforce preview CSP and privileged request CSRF defenses
+  - Inject preview-only CSP; require UI Origin/Fetch-Metadata on privileged browser routes; keep
+    daemon/MCP credential paths working; block preview/cross-site/null origins.
+  - _Requirements: R13.3–R13.4_ — _Design: §19.1–§19.2_
+- [x] 12.4 Add real-browser malicious-preview closure suite
+  - Prove all C-01 capability attempts, external egress, stale token and cross-project token fail;
+    preserve normal preview/playback/reload/R4.1c tests.
+  - _Requirements: R13.8, R15.3_ — _Design: §19.3_
+
+**Acceptance Criteria**:
+- [x] Authored script has no UI cookie/API authority and no arbitrary network egress
+- [x] UI no longer reads authored/preview DOM directly
+- [ ] Browser session suite zero-skip locally or in Actions Linux + Windows
+
+## Phase 13: Filesystem capture, symlink and parent-race safety (H-01–H-03)
+
+**Addresses**: R13.5–R13.8 · H-01–H-03
+**Design reference**: §20, Decision 14
+**Files affected**: resolver/lease, mutation capture, WorkspaceFs, WriteAuthority, entry CRUD, tree DTO
+**Prerequisite**: P12 PASS
+**Skill**: Bun
+**Read first**: full H-01–H-03 findings and P13 row files via CodeGraph
+
+**Tasks**:
+- [ ] 13.1 Make post-rename capture locally exception-safe
+  - Register ownership before fallible hash/open; restore absent target; quarantine on new target;
+    typed recovery and idempotent cleanup/reconcile.
+  - _Requirements: R13.5_ — _Design: §20_
+- [ ] 13.2 Reject symlink leaf/components and represent tree entries honestly
+  - No editable alias to internal/external target; direct CRUD typed rejection; events/audit name the
+    actual intended entry and no target changes.
+  - _Requirements: R13.6_ — _Design: §20_
+- [ ] 13.3 Add parent identity leases and boundary revalidation
+  - Carry component identities resolve→capture→publish/rollback; no bare stale absolute capability.
+  - _Requirements: R13.7_ — _Design: §20, Decision 14_
+- [ ] 13.4 Add deterministic real-filesystem race matrix
+  - Leaf type swap, parent swap at each seam, new target on restore, locked/case-only OS cases; assert
+    zero outside-project write and deterministic recovery ownership.
+  - _Requirements: R13.8_ — _Design: §20_
+
+**Acceptance Criteria**:
+- [ ] H-01–H-03 boundary tests zero-skip on three OS
+- [ ] Ordinary failure leaves no rollback orphan; ambiguous restore produces owned recovery record
+- [ ] No symlink alias target is mutated
+
+## Phase 14: Streaming asset Range and HTTP 416 (H-04, L-01)
+
+**Addresses**: R14.1–R14.2, R14.10 · H-04/L-01
+**Design reference**: §21
+**Files affected**: Workspace port/adapter, Core project reads, Hono route, stream semaphore/tests
+**Prerequisite**: P13 PASS
+**Skills**: Bun + Hono
+**Read first**: full H-04/L-01 findings and P14 row files via CodeGraph
+
+**Tasks**:
+- [ ] 14.1 Add stat/range stream port and bounded adapter
+  - FileHandle stream with cancellation/backpressure/concurrency cap; weak watcher-invalidated ETag;
+    no full read/hash/copy.
+  - _Requirements: R14.1_ — _Design: §21_
+- [ ] 14.2 Parse Range before I/O and return correct 200/206/416 contracts
+  - Cover prefix/suffix/middle/end, malformed, overflow, reversed, multi-range, If-Range/ETag behavior.
+  - _Requirements: R14.1–R14.2_ — _Design: §21_
+- [ ] 14.3 Add sparse-500MB RSS/concurrency/cancel listener tests
+  - Instrument against full-file reads; retain samples in failure artifact.
+  - _Requirements: R14.10_ — _Design: §21_
+
+**Acceptance Criteria**:
+- [ ] One-byte Range does not allocate/hash/read the full asset
+- [ ] Invalid/unsatisfiable Range always returns 416 with size
+- [ ] 20 concurrent/cancelled ranges stay within measured RSS bound
+
+## Phase 15: Bounded tree/catalog/history/streams (M-01–M-03, M-06–M-07)
+
+**Addresses**: R14.3–R14.5, R14.8–R14.10
+**Design reference**: §22
+**Files affected**: tree/contracts/UI; entry CRUD; catalog install/path policy; mutation history;
+events/agent-terminal routes; soak tests
+**Prerequisite**: P14 PASS
+**Skills**: Bun + Hono
+**Read first**: M-01–M-03/M-06/M-07 findings and P15 row files via CodeGraph
+
+**Tasks**:
+- [ ] 15.1 Bound/protect tree and recursive plans; lazy/virtualize UI
+  - Enforce budgets/reasons; exclude `.vidcom`/protected roots; directory pagination/lazy expansion;
+    no unbounded Studio Snapshot tree.
+  - _Requirements: R14.3_ — _Design: §22.1_
+- [ ] 15.2 Fix catalog pin ownership on every exit
+  - Transfer/release in `finally`; zero retained pins for all direct error/abort/throw paths.
+  - _Requirements: R14.4_ — _Design: §22.2_
+- [ ] 15.3 Hash all allowed package targets without conflating rejection with absence
+  - HTML + PNG + WOFF2 create/reuse/replace/skip and external edit matrix.
+  - _Requirements: R14.5_ — _Design: §22.2_
+- [ ] 15.4 Bound mutation receipt dedupe and add 100k soak
+  - Retention tied to stack/operation lifecycle; stable heap and reference cleanup.
+  - _Requirements: R14.8_ — _Design: §22.3_
+- [ ] 15.5 Make SSE/PTY pumps capacity-aware and abort-clean
+  - Pull-driven/capped queue, immediate unsubscribe; slow/suspended consumer RSS tests.
+  - _Requirements: R14.9–R14.10_ — _Design: §22.3_
+
+**Acceptance Criteria**:
+- [ ] Tree/catalog/history/stream soak samples bounded and zero-skip
+- [ ] No pin/reference/listener survives its owner lifecycle
+- [ ] Protected internal state is absent from user tree
+
+## Phase 16: External deletion UX + frame-grid authority (M-04, M-05)
+
+**Addresses**: R14.6–R14.7, R14.10
+**Design reference**: §23
+**Files affected**: draft store/hook/editor UI; frame-grid Core/domain; timing/order contracts/use cases/UI
+**Prerequisite**: P15 PASS
+**Skill**: Bun
+**Read first**: M-04/M-05 findings and P16 row files via CodeGraph
+
+**Tasks**:
+- [ ] 16.1 Model deleted source independently from dirty draft
+  - Clean/dirty deletion, parent rename/delete, delete-during-save, recreate and stream-gap cases;
+    Recreate/Close UX with visible feedback.
+  - _Requirements: R14.6_ — _Design: §23_
+- [ ] 16.2 Add Core frame-grid value object and typed error
+  - Validate every new timing/group/reorder mutation using project fps; preserve legacy read values.
+  - _Requirements: R14.7_ — _Design: §23_
+- [ ] 16.3 Align UI snap/playhead candidates and add UI/HTTP/MCP matrix
+  - Remove tests accepting new half-frame writes; prove all boundaries reject sub-frame input.
+  - _Requirements: R14.7, R14.10_ — _Design: §23_
+
+**Acceptance Criteria**:
+- [ ] Clean external delete cannot remain a hidden stale tab
+- [ ] UI, HTTP and MCP cannot create new sub-frame timing
+
+## Phase 17: Accessibility, security scanning and soak workflow (G-02, G-03)
+
+**Addresses**: R15.5–R15.6
+**Design reference**: §24
+**Files affected**: file CRUD dialogs/UI tests; security/dependency config; workflows/scripts
+**Prerequisite**: P12–P16 PASS
+**Skills**: Bun + Hono
+**Read first**: G-02/G-03, workflow source and existing CRUD prompt/confirm call paths
+
+**Tasks**:
+- [ ] 17.1 Replace native file CRUD prompts/confirms with accessible dialogs
+  - Label, description, focus trap/restore, keyboard cancel/submit, deterministic browser test.
+  - _Requirements: R15.6_ — _Design: §24_
+- [ ] 17.2 Add automated accessibility gate
+  - Audit critical studio flows plus keyboard/focus/ARIA assertions; zero critical/serious violation.
+  - _Requirements: R15.6_ — _Design: §24_
+- [ ] 17.3 Add SCA/CodeQL/secret/license/provenance policies and immutable action pins
+  - Keep sensitive output redacted; update workflow contract tests.
+  - _Requirements: R15.5_ — _Design: §24_
+- [ ] 17.4 Add bounded presubmit + full release soak workflow
+  - Tree, receipts, catalog, range/upload and slow stream samples; upload RSS/heap artifacts on fail.
+  - _Requirements: R15.6_ — _Design: §24_
+
+**Acceptance Criteria**:
+- [ ] Accessibility/security/soak workflows are dispatchable and contract-tested
+- [ ] Release-sensitive Actions use immutable SHAs
+
+## Phase 18: Exact-source CI, governance and final council (G-01 + all closure)
+
+**Addresses**: R15.1–R15.7 · all deep-review findings
+**Design reference**: §24–§25, Decision 15
+**Files affected**: workflows, Execution Log, downloaded evidence, GitHub main protection, main spec
+**Prerequisite**: P12–P17 PASS
+**Skill**: Bun
+**Read first**: user CI contract, exact-source identity script, every workflow YAML, current branch policy
+
+**Tasks**:
+- [ ] 18.1 Run local static/focused gates and freeze exact source identity
+  - Red diff failure blocks next task; no stale artifact or synthetic merge SHA.
+  - _Requirements: R15.1–R15.3_ — _Design: §24, Decision 15_
+- [ ] 18.2 Dispatch/watch/download five required workflows using redacted GH_TOKEN
+  - `CI`, `Browser session`, `Packaged smoke`, `Process supervision gate`, `VieNeu real engine`;
+    record run URL + per-OS conclusion + artifact verification. CI red blocks continuation.
+  - _Requirements: R15.1–R15.3_ — _Design: §24_
+- [ ] 18.3 Configure and verify main branch protection/required checks
+  - Require exact-head static/browser/packaged release checks and review; disable force-push/deletion;
+    query setting after write and log evidence without credential.
+  - _Requirements: R15.4_ — _Design: §24_
+- [ ] 18.4 Deep-review closure matrix and council closeout
+  - Map every C/H/M/L/G finding to code, boundary test, run/artifact and final disposition; zero required
+    skip; SM/PO/Dev review; rename `inprocess` → `complete` only after all evidence.
+  - _Requirements: R13–R15_ — _Design: §18–§25_
+
+**Acceptance Criteria**:
+- [ ] Every review finding has boundary evidence and closed disposition
+- [ ] Required Actions green on exact source; artifacts downloaded/verified
+- [ ] Main protection active; spec complete only after council PASS
+
+---
+
 ## Files Changed Summary
 
 Each phase records its own files under its **Deliverables** heading; this is the shape of the whole change.
@@ -1842,6 +2070,17 @@ caption · D7 tool MCP undo/redo · **D8 PR-11 hot-reload từng sub-composition
 | 2026-08-20 08:30 +07 | 11.1 | `src/preview-host/entry.ts`; `public/preview-host.html`; `package.json`; `.gitignore`; `eslint.config.mjs`; `src/components/studio/{hyperframes-player-environment,use-hyperframes-player}.ts`; `tests/frontend/{editing-experience-browser,player-host}.test.ts`; `tests/frontend/fixtures/preview-buffer-browser-{harness,player,server}.ts` | **Four real numbers, all inside the budget**: the studio's own content save **268 ms**, its own preview-settings write **294 ms**, an outside write to `index.html` **376 ms**, an outside write to `preview-settings.json` **353 ms** — the first two measured from the response to the studio's own save, the last two from the durable event that announced someone else's. `tests/frontend` 167/167 PASS with both cases no longer skipped; full `bun run test` 2570 passed / 5 skipped, the one failure being the known load-sensitive `asset-streaming-listener` RSS budget; typecheck, lint and build PASS | `PASS` | The blocker was real and is fixed: a composition runtime opens its bridge only to a parent browsing context that does not already hold a preview, so every candidate created beside the visible frame stayed silent and preflight could only time out. Each engine now lives in `/preview-host.html`, a page whose only job is to be that parent — static, with one small bundle, because these pages are created and discarded per reload and a route in the studio cost the whole framework each time (measured: it exhausted the renderer and killed the tab in the long browser scenario). Two further defects surfaced while proving it and are fixed: a candidate sourced before it is connected loads detached and never bridges, and disposal that touches a frame already tearing itself down throws `Event is not a constructor` and takes the page with it. The `≤ 2 live engines` bound is kept — a warm spare was tried, measured to buy nothing once the mount is complete, and removed. Also corrected in the measurement itself: it now waits for the first frame before writing, because a save issued during the initial mount measures the mount, and it drives the studio's **own** save path rather than a request the test invented | P11 acceptance criteria all met |
 | 2026-08-20 09:05 +07 | P11 phase gate · 11.6 closeout | Whole spec at `94e1a74cbc924162212eb44924423bb13d59b10b` / digest `fa1802838ecfa5c368b11eaaeb48e7864c42c56b8164ff11b765d70c3f8de43e` (0 changed paths) | Exact-source [`CI` run 32320212151](https://github.com/alvindev111/vidcom-v2/actions/runs/32320212151): **8/8 `success`** — main Linux/macOS/Windows, browser-session Linux/Windows (the R4.1c measurement runs there), packaged-smoke Linux/macOS/Windows. Exact-source [`Packaged smoke` run 32320214284](https://github.com/alvindev111/vidcom-v2/actions/runs/32320214284): **3/3 `success`** | 8/8 + 3/3 `success` | `PASS` | **SM**: every task and every acceptance criterion across S0 and P0–P11 is `[x]`, each phase has a `PASS` gate, the Verification Matrix names only files that exist, and the Execution Log and `implementation-notes.html` are in step. **PO**: R1–R12 all have working behaviour and a stated failure state — timing drags, group moves, undo that keeps a mounted file, a preview that now follows every edit inside 500 ms, captions that agree between preview and render, thumbnails, catalog installs, asset drops that survive a crash, drafts no exit can drop silently. **Dev**: boundaries verified, every write goes through `WriteAuthority.mutateSource`, persistence carries migrations and retention, the artifact boots offline and serves its own catalogue on three operating systems, and nothing outside this spec was rewritten. Main spec moved `inprocess` → `complete` | Spec closed |
 | 2026-08-20 09:35 +07 | Final gate on the closed spec | Whole spec at `264fc5d` | Exact-source [`CI` run 32323174197](https://github.com/alvindev111/vidcom-v2/actions/runs/32323174197): **8/8 `success`** — main Linux/macOS/Windows, browser-session Linux/Windows, packaged-smoke Linux/macOS/Windows | 8/8 `success` | `PASS` | The R4.1c numbers are now measured on **CI hardware** as well as locally: on the Windows runner, 264 ms and 225 ms for the studio's own content and preview-settings saves, 332 ms and 311 ms from the durable event announcing an outside write — all four inside 500 ms. That run also fixed the last cross-OS problem honestly rather than by retry: the previous Windows job measured 539 ms on the outside-write case and timed the long browser scenario out, because every reload paid for a host page load on a slower machine. One empty host page is now kept ready, which costs nothing in previews rendered — the two-engine bound counts compositions, and the probe was changed to count them the same way | Spec complete |
+| 2026-08-20 remediation start | 12.0 checkpoint | Deep review; main spec rename; Goals v8; Design v13; checklist P12–P18; notes | Baseline `HEAD=d2deb571847fcc105aca402ffa1707a8ec77482d`; initial dirty state only untracked deep-review artifact. Planned docs/link/task validation, then focused P12 preview-security tests | `IN PROGRESS` | Historical S0–P11 remains immutable evidence. Deep review opens a new NO-GO gate; CI exact-source is authority and any red run blocks the next task | Resume 12.0 |
+| 2026-08-20 remediation bootstrap | 12.0 | Main spec `-inprocess`; Goals v8; Design v13; checklist P12–P18; execution goal; deep-review disposition; source-identity registry/test; build-order; notes | `git diff --check` PASS; internal Markdown targets PASS 6 files; `bun run test:spec-paths` PASS 150 paths/4 specs; source-identity focused 7/7 PASS; stale current main-spec links none (one historical deliverable line retained) | `PASS` | User instruction ratifies remediation execution and exact CI contract; no production behavior changed in 12.0 | 12.1 |
+| 2026-08-20 19:40 +07 | 12.1 checkpoint | Preview capability contract/store; history attach lifecycle; preview-only route partition; composition root; focused security/route tests | Baseline `HEAD=d2deb571847fcc105aca402ffa1707a8ec77482d`; current dirty state is remediation docs only. Planned RED capability expiry/session/project/revoke tests and preview-host privileged-route denial tests before production code | `IN PROGRESS` | Dedicated origin is wired server-first; UI remains on the current preview route until the postMessage bridge in 12.2 can preserve runtime behavior | Resume 12.1 |
+| 2026-08-20 19:45 +07 | 12.1 | Central `PreviewCapabilityResponseSchema`; hashed 256-bit in-memory store; preview-host/API partition; project-scoped preview/runtime/asset routes; attach-only mint + detach revoke; daemon wiring | RED capability suite 3/3 failed before implementation; GREEN focused security/history/project/router suites 42/42; `bun run typecheck`, `bun run test:boundaries`, `git diff --check` PASS | `PASS` | Capability cookie is host-only on `preview.localhost`, read-only and project-scoped; request logger already strips query. UI cutover intentionally belongs to 12.2 | 12.2 |
+| 2026-08-20 19:45 +07 | 12.2 checkpoint | Preview bridge contracts; preview-host player ownership; UI proxy engine; capability acquisition/cutover; focused DOM/protocol tests | Baseline remains `d2deb571847fcc105aca402ffa1707a8ec77482d`; 12.1 focused gates green. Planned RED tests for exact source/origin/nonce/schema and proof UI environment has zero `contentDocument`/direct player access | `IN PROGRESS` | Preserve latest-wins double buffer and transport surface; browser timing remains a P12.4 gate after CSP/CSRF in 12.3 | Resume 12.2 |
+| 2026-08-20 19:57 +07 | 12.2 | Closed postMessage protocol; preview-host player/health owner; UI proxy engine; capability renewal/cutover; browser probe bridge | RED protocol module missing and first real studio run failed on third-party preview cookie. Reworked capability into redacted path; GREEN protocol/player 6/6, all frontend 169/169; R4.1c local 209/185/285/290 ms; build, typecheck, boundaries, diff-check PASS; UI bridge DOM-access search empty | `PASS` | Cookie-less capability path avoids third-party-cookie policy; request logger redacts bearer segment. Trusted host alone reads authored DOM; UI validates exact source/origin/nonce/schema | 12.3 |
+| 2026-08-20 19:57 +07 | 12.3 checkpoint | Preview CSP + static headers; privileged browser Origin/Fetch-Metadata middleware; security contract tests | 12.2 full frontend and static gates green. Planned RED route matrix for preview/null/cross-site/same-origin and CSP egress directives before middleware/document changes | `IN PROGRESS` | Preserve auth exchange/bootstrap and MCP/bridge bearer paths; no token/log exposure | Resume 12.3 |
+| 2026-08-20 20:05 +07 | 12.3 | Preview document/static CSP; Fetch Metadata guard; pinned local GSAP compatibility route; CSP/header/perimeter tests | RED 3 focused CSP/metadata tests; first browser CSP run blocked required base/sub-composition and exposed upstream GSAP CDN. Design refined to self-only capability fetch/base and pinned local GSAP. GREEN focused 42/42; build, typecheck, boundaries PASS; real studio R4.1c 212/211 ms | `PASS` | `connect-src/base-uri 'self'` is constrained by preview-host route partition; arbitrary network remains blocked. Browser automation without Fetch Metadata remains supported, real browser metadata is enforced | 12.4 |
+| 2026-08-20 20:05 +07 | 12.4 checkpoint | Malicious authored preview fixture; privileged/API/system/terminal/egress attempts; browser script registration | 12.3 real studio green with CSP active. Planned browser proof of no UI cookie, no privileged read/write/session/system/terminal authority, no external request, plus stale/cross-project capability regression | `IN PROGRESS` | Browser suite must be registered in `test:browser-session`; no skip counts as PASS on required runner | Resume 12.4 |
+| 2026-08-20 20:07 +07 | 12.4 local | `preview-security-browser.test.ts`; browser script registration; UI/preview/capability/CSP regressions | Malicious browser 1/1 PASS: zero external sentinel request; no UI cookie; project/source/session/write/system/terminal blocked; cross-project + revoked token 401. Full `bun run test:browser-session` 9 files/18 tests PASS, zero skip; R4.1c 237/212/297/315 ms; typecheck/lint (0 error, 5 pre-existing warnings)/boundaries/diff-check PASS | `PASS (LOCAL)` | Linux + Windows `Browser session` Actions evidence remains required by the user's CI contract before Phase 12 gate can close | Dispatch Browser session exact source |
+| 2026-08-20 20:12 +07 | P12 pre-CI regression | Full P12 source + docs | Initial full `bun run test` exposed 3 stale MCP middleware-order assertions; fixed before continuation. Rerun: 315 files PASS + 1 intentional real-VieNeu skip, 2583 tests PASS + 5 intentional skips; spec-paths 150/150; MCP contract 92/92; typecheck/boundaries/diff-check PASS; lint 0 errors + 5 pre-existing warnings | `PASS (LOCAL)` | Browser workflow Linux + Windows remains the only P12 gate; commit/push is required so Actions can test exact source | Commit exact P12 source, dispatch Browser session |
 
 ## Final Authoring-Readiness Audit
 

@@ -1,6 +1,7 @@
 import { buildSubCompositionHtml } from "@hyperframes/studio-server";
 
 import type { CompositionDocumentOptions, PreviewSettings, ProjectRef } from "@vidcom/core";
+import { PREVIEW_DOCUMENT_CSP } from "@vidcom/contracts";
 
 import { readNarrationClips, type NarrationClip } from "./narration-clips";
 import {
@@ -26,9 +27,20 @@ function injectPreviewHealthCollectorDocument(
 ): string {
   const head = html.match(/<head\b[^>]*>/iu);
   if (!head || head.index === undefined) throw new Error("HyperFrames document has no head for the preview health collector");
-  const injection = `<script data-vidcom-health="collector" data-project-revision="${identity.projectRevision}" data-change-seq="${identity.changeSeq}">${buildHealthCollectorScript()}</script>`;
+  const csp = PREVIEW_DOCUMENT_CSP.replaceAll("&", "&amp;").replaceAll('"', "&quot;");
+  const injection = `<meta data-vidcom-preview-security="csp" http-equiv="Content-Security-Policy" content="${csp}">\n`
+    + `<script data-vidcom-health="collector" data-project-revision="${identity.projectRevision}" data-change-seq="${identity.changeSeq}">${buildHealthCollectorScript()}</script>`;
   const insertion = head.index + head[0].length;
   return `${html.slice(0, insertion)}\n${injection}${html.slice(insertion)}`;
+}
+
+/** Replaces HyperFrames' compatibility CDN tag with the daemon's pinned, offline copy. */
+function localizePreviewRuntimeDependencies(html: string, runtimeUrl: string): string {
+  const gsapUrl = runtimeUrl.replace(/\/runtime$/u, "/vendor/gsap.js");
+  return html.replace(
+    /https:\/\/cdn\.jsdelivr\.net\/npm\/gsap@3(?:\.[^/"']*)?\/dist\/gsap\.min\.js/giu,
+    gsapUrl,
+  );
 }
 
 /** Inserts the runtime guard before every author-controlled head element. */
@@ -89,7 +101,7 @@ export async function buildCompositionDocument(
   const base = buildHyperframesBaseDocument(ref.root, ref.entry, runtimeUrl, fileBaseUrl);
   if (base === null) throw new Error("HyperFrames could not build the project preview document");
   const html = options.mode === "preview"
-    ? injectPreviewHealthCollectorDocument(base, options)
+    ? injectPreviewHealthCollectorDocument(localizePreviewRuntimeDependencies(base, runtimeUrl), options)
     : base;
   return injectPreviewSettingsDocument(html, settings, {
     root: options.root,

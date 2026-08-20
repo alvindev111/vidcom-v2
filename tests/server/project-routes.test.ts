@@ -21,6 +21,7 @@ import {
 import {
   createServerApp,
   InMemoryNonceStore,
+  InMemoryPreviewCapabilityStore,
   InMemorySessionStore,
 } from "@vidcom/server";
 import { describe, expect, it } from "vitest";
@@ -40,6 +41,7 @@ function fixture(initialProjectChangeSeq = 8) {
   const clock = { now: () => new Date("2026-08-01T00:00:00.000Z") };
   const nonces = new InMemoryNonceStore(clock);
   const sessions = new InMemorySessionStore(clock);
+  const previewCapabilities = new InMemoryPreviewCapabilityStore(clock, () => Buffer.alloc(32, 9));
   const files = new Map<string, string>([
     ["index.html", '<main data-composition-id="root" data-duration="4">hello</main>'],
     ["preview-settings.json", `${JSON.stringify(DEFAULT_PREVIEW_SETTINGS)}\n`],
@@ -125,6 +127,7 @@ function fixture(initialProjectChangeSeq = 8) {
     },
     events: { async latestProjectSeq(projectId: ProjectId) { return projectChangeSequences.get(projectId) ?? 0; } },
     runtimeSource: () => "globalThis.Hyperframes = {};",
+    motionLibrarySource: async () => "globalThis.gsap = {};",
     mimeFromPath,
   };
   const app = createServerApp({
@@ -132,6 +135,7 @@ function fixture(initialProjectChangeSeq = 8) {
     uiOrigins: [],
     nonces,
     sessions,
+    previewCapabilities,
     projectReads,
   });
   const base = `http://127.0.0.1:${port}`;
@@ -148,6 +152,11 @@ function fixture(initialProjectChangeSeq = 8) {
     });
     return response.headers.get("set-cookie")!.split(";", 1)[0]!;
   };
+  const previewRequest = async (pathname: string, init: RequestInit = {}) => {
+    const headers = new Headers(init.headers);
+    headers.set("Host", `preview.localhost:${port}`);
+    return app.request(`http://preview.localhost:${port}${pathname}`, { ...init, headers });
+  };
   const mutatePreview = (content: string, revision: number, sequence: number) => {
     files.set("index.html", content);
     projectRevision = revision;
@@ -156,7 +165,7 @@ function fixture(initialProjectChangeSeq = 8) {
   const setProjectChangeSeq = (projectId: ProjectId, sequence: number) => {
     projectChangeSequences.set(projectId, sequence);
   };
-  return { request, authenticate, mutatePreview, setProjectChangeSeq };
+  return { request, previewRequest, previewCapabilities, authenticate, mutatePreview, setProjectChangeSeq };
 }
 
 describe("project read routing contracts", () => {
@@ -208,6 +217,35 @@ describe("project read routing contracts", () => {
     expect(legacy.headers.get("x-vidcom-project-revision")).toBe("3");
     expect(legacy.headers.get("x-vidcom-change-seq")).toBe("8");
     expect(legacy.status).toBe(200);
+  });
+
+  it("serves document, runtime and allowlisted assets only through one project capability", async () => {
+    const { request, previewRequest, previewCapabilities } = fixture();
+    const { token } = previewCapabilities.mint({
+      projectId: id,
+      browserSessionId: "browser:test",
+      studioSessionId: "01K34H7G9F0M7JQF1D91V8KY0A",
+    });
+    const document = await previewRequest(
+      `/api/preview/v1/c/${encodeURIComponent(token)}/projects/${id}/preview`,
+    );
+    expect(document.status).toBe(200);
+    expect(document.headers.get("content-security-policy")).toContain("connect-src 'self'");
+    expect(document.headers.get("content-security-policy")).toContain("form-action 'none'");
+    const html = await document.text();
+    const capabilityPath = `/api/preview/v1/c/${token}/projects/${id}`;
+    expect(html).toContain(`${capabilityPath}/runtime`);
+    expect(html).toContain(`${capabilityPath}/assets/`);
+
+    const runtime = await previewRequest(`${capabilityPath}/runtime`);
+    expect(runtime.status).toBe(200);
+    const vendor = await previewRequest(`${capabilityPath}/vendor/gsap.js`);
+    expect(await vendor.text()).toBe("globalThis.gsap = {};");
+    const asset = await previewRequest(`${capabilityPath}/assets/assets/pixel.png`);
+    expect([...new Uint8Array(await asset.arrayBuffer())]).toEqual([1, 2, 3, 4]);
+
+    const uiOrigin = await request(`${capabilityPath}/runtime`);
+    expect(uiOrigin.status).toBe(403);
   });
 
   it("returns fresh content and identity for the identical no-store preview URL", async () => {

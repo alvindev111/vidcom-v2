@@ -3,6 +3,7 @@ import {
   AssetMetadataSchema,
   ErrorCode,
   ProjectParamsSchema,
+  PREVIEW_DOCUMENT_CSP,
   ReadProjectFileQuerySchema,
   type ProjectId,
   type RelPath,
@@ -23,7 +24,6 @@ import {
   type EntryCrudDependencies,
 } from "@vidcom/core";
 import { Hono, type Context } from "hono";
-
 import { HttpBoundaryError } from "../middleware/error-mapper";
 
 export interface ProjectReadRouteDependencies extends ProjectReadDependencies {
@@ -31,6 +31,7 @@ export interface ProjectReadRouteDependencies extends ProjectReadDependencies {
   probe?: MediaProbePort;
   hashContent?(content: string | Uint8Array): import("@vidcom/contracts").ContentHash;
   runtimeSource(): string;
+  motionLibrarySource?(): Promise<string>;
   mimeFromPath(path: string): string | null;
 }
 
@@ -105,6 +106,8 @@ function assetResponse(c: Context, bytes: Uint8Array, contentHash: string, mime:
 function previewHeaders(preview: { projectRevision: number; changeSeq: number }) {
   return {
     "Cache-Control": "no-store",
+    "Content-Security-Policy": PREVIEW_DOCUMENT_CSP,
+    "Referrer-Policy": "no-referrer",
     "X-Vidcom-Project-Revision": String(preview.projectRevision),
     "X-Vidcom-Change-Seq": String(preview.changeSeq),
   };
@@ -118,6 +121,36 @@ async function legacyId(dependencies: ProjectReadDependencies, slug: string): Pr
 
 export function createProjectReadRoutes(dependencies: ProjectReadRouteDependencies): Hono {
   const routes = new Hono();
+
+  routes.get("/preview/v1/c/:cap/projects/:id/runtime", (c) => c.body(dependencies.runtimeSource(), 200, {
+    "Content-Type": "text/javascript; charset=utf-8",
+    "Cache-Control": "no-store",
+  }));
+  routes.get("/preview/v1/c/:cap/projects/:id/vendor/gsap.js", async (c) => {
+    if (!dependencies.motionLibrarySource) {
+      fail({ code: ErrorCode.StorageUnavailable, message: "preview motion runtime is unavailable" });
+    }
+    return c.body(await dependencies.motionLibrarySource(), 200, {
+      "Content-Type": "text/javascript; charset=utf-8",
+      "Cache-Control": "public, max-age=300, immutable",
+    });
+  });
+  routes.get("/preview/v1/c/:cap/projects/:id/preview", async (c) => {
+    const id = projectId(c);
+    const capabilityPath = `/api/preview/v1/c/${encodeURIComponent(c.req.param("cap"))}/projects/${id}`;
+    const preview = valueOf(await getProjectPreview(dependencies, id, {
+      runtimeUrl: `${capabilityPath}/runtime`,
+      fileBaseUrl: `${capabilityPath}/assets/`,
+    }));
+    return c.html(preview.html, 200, previewHeaders(preview));
+  });
+  routes.get("/preview/v1/c/:cap/projects/:id/assets/:path{.+}", async (c) => {
+    const path = assetPath(c);
+    const mime = dependencies.mimeFromPath(path);
+    if (!mime) fail({ code: ErrorCode.AssetNotAllowed, message: "asset type is not served" });
+    const asset = valueOf(await readAsset(dependencies, projectId(c), path));
+    return assetResponse(c, asset.bytes, asset.contentHash, mime);
+  });
 
   routes.get("/v1/runtime", (c) => c.body(dependencies.runtimeSource(), 200, {
     "Content-Type": "text/javascript; charset=utf-8",

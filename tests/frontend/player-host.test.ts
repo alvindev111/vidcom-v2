@@ -79,20 +79,22 @@ function deferred<Value>() {
 
 describe("PlayerHost", () => {
   it("reads collector identity, counters and every nested composition from the real adapter seam", () => {
-    const collector = { scriptErrors: 0, rejections: 0, resourceErrors: 1 };
-    const script = { dataset: { projectRevision: "7", changeSeq: "11" } };
-    const document = {
-      querySelector: () => script,
-      querySelectorAll: () => [{ children: [{}] }, { children: [] }],
-    };
-    // The engine is the host page; the composition it holds is one level deeper.
     const engine = {
       ready: true,
       duration: 5,
-      player: { iframeElement: { contentDocument: document, contentWindow: { __vidcomHealth: collector } } },
+      health: {
+        timeline: true,
+        scenesLoaded: false,
+        collectorSeen: true,
+        revision: 7,
+        changeSeq: 11,
+        scriptErrors: 0,
+        rejections: 0,
+        resourceErrors: 1,
+      },
     } as unknown as HyperframesPreviewEngine;
 
-    expect(readHyperframesPreflightHealth(engine, true)).toEqual({
+    expect(readHyperframesPreflightHealth(engine)).toEqual({
       ready: true,
       timeline: true,
       scenesLoaded: false,

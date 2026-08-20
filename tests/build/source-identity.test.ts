@@ -128,7 +128,7 @@ describe("source identity", () => {
     for (const name of [
       "spec-editing-experience-implementation-checklist.md",
       "implementation-notes.html",
-      "spec-editing-experience-complete.md",
+      "spec-editing-experience-inprocess.md",
     ]) {
       await writeFile(path.join(specDirectory, name), "recorded evidence\n");
     }

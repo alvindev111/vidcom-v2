@@ -102,6 +102,7 @@ export function useHyperframesPlayer(projectId: string, previewUrl: string) {
 
       const environment = createHyperframesPlayerEnvironment({
         container,
+        previewOrigin: new URL(previewUrlRef.current, window.location.href).origin,
         onVisibleState: (player, error) => {
           timeStore.set(player.currentTime);
           const duration = player.duration || 0;

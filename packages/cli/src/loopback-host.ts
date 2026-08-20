@@ -10,6 +10,17 @@ export interface RequestRouter {
 }
 
 const API_PREFIX = "/api/";
+const PREVIEW_STATIC_PATHS = new Set(["/preview-host.html", "/preview-host.js"]);
+const PREVIEW_HOST_CSP = [
+  "default-src 'none'",
+  "script-src 'self'",
+  "style-src 'unsafe-inline'",
+  "frame-src 'self'",
+  "connect-src 'none'",
+  "form-action 'none'",
+  "base-uri 'none'",
+  "object-src 'none'",
+].join("; ");
 
 /**
  * Routes every request by reading the current targets, never by capturing them.
@@ -34,8 +45,18 @@ export function createRequestRouter(initial: {
     async handle(request: Request): Promise<Response> {
       // Read at call time, not at construction: that is what makes the swap
       // visible to the very next request.
-      const target = new URL(request.url).pathname.startsWith(API_PREFIX) ? api : staticHost;
-      return target(request);
+      const url = new URL(request.url);
+      const isApi = url.pathname.startsWith(API_PREFIX);
+      if (url.hostname === "preview.localhost" && !isApi && !PREVIEW_STATIC_PATHS.has(url.pathname)) {
+        return new Response("preview host path is not allowed", { status: 403 });
+      }
+      const target = isApi ? api : staticHost;
+      const response = await target(request);
+      if (url.hostname !== "preview.localhost" || url.pathname !== "/preview-host.html") return response;
+      const headers = new Headers(response.headers);
+      headers.set("Content-Security-Policy", PREVIEW_HOST_CSP);
+      headers.set("Referrer-Policy", "no-referrer");
+      return new Response(response.body, { status: response.status, statusText: response.statusText, headers });
     },
     swapApi(target: FetchTarget): void {
       api = target;

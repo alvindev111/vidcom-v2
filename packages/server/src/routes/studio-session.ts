@@ -4,12 +4,15 @@ import type { Context } from "hono";
 
 import { HttpBoundaryError } from "../middleware/error-mapper";
 import type { MutationHistory } from "../service/mutation-history";
+import type { PreviewCapabilityIssuer } from "../auth/preview-capability";
 
 export const STUDIO_SESSION_HEADER = "x-vidcom-studio-session";
 
 export interface StudioRouteDependencies {
   history: MutationHistory;
   browserSessionId(request: Request): string | undefined;
+  previewCapabilities?: PreviewCapabilityIssuer;
+  previewOrigin?: string;
 }
 
 function fail(code: ErrorCode, message: string, field?: string): never {

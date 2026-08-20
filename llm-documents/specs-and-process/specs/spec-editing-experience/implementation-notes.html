@@ -2436,6 +2436,54 @@
             thêm preview nào — ràng buộc "≤ 2 engine" đếm composition đang render, và probe cũng được sửa để đếm đúng
             như vậy.
           </p>
+          <p class="text-slate-400 text-sm">
+            2026-08-20 — mở remediation gate sau deep review: giữ nguyên lịch sử S0–P11, nhưng verdict
+            release chuyển về **NO-GO**. Main spec đổi `complete` → `inprocess`; Goals bản 8 thêm R13–R15;
+            Design bản 13 chốt preview principal `preview.localhost` + project read capability +
+            postMessage/CSP, filesystem symlink-free identity lease, streaming Range, resource bounds và
+            CI exact-source authority; checklist thêm P12–P18. Baseline trước remediation là
+            `d2deb571847fcc105aca402ffa1707a8ec77482d`, dirty ban đầu chỉ có deep-review artifact untracked.
+            Không token nào được ghi vào notes; Actions sẽ lấy `GH_TOKEN` từ `GH_KEY` trong `.env` ở shell.
+          </p>
+          <p class="text-slate-400 text-sm">
+            2026-08-20 19:40 +07 — checkpoint 12.1: chọn triển khai server-first để không tạo một khoảng
+            preview bị hỏng giữa hai task. Capability 256-bit sẽ bind project + browser session + studio
+            session, lưu hash thay vì raw token, hết hạn ngắn và bị thu hồi khi detach. Route preview dùng
+            namespace riêng trên `preview.localhost`; route UI hiện tại chỉ được chuyển sang namespace đó
+            khi bridge postMessage của 12.2 đã sẵn sàng. Test RED phải chứng minh token sai project/session,
+            token hết hạn/đã revoke và mọi privileged route trên preview host đều bị chặn.
+          </p>
+          <p class="text-slate-400 text-sm">
+            2026-08-20 19:45 +07 — 12.1 PASS: capability được lưu bằng SHA-256, bind project/browser/
+            studio session, TTL 5 phút, và detach thu hồi toàn bộ token cùng owner. API preview có
+            namespace riêng; `preview.localhost` không thể gọi API đặc quyền hay mở các trang static
+            khác. Preview document đặt cookie host-only, HttpOnly cho runtime/asset tiếp theo; UI origin
+            bị cấm dùng namespace này. Focused suite 42/42, typecheck và boundaries đều xanh. Bắt đầu
+            12.2: host preview sẽ sở hữu player/DOM, còn UI chỉ giữ proxy postMessage có nonce.
+          </p>
+          <p class="text-slate-400 text-sm">
+            2026-08-20 19:57 +07 — 12.2 PASS. Lần chạy browser thật đầu tiên bắt được cookie trên
+            `preview.localhost` bị chính sách third-party chặn, làm runtime trả 401. Capability vì vậy
+            chuyển vào path project-scoped; logger thay segment bearer bằng `[redacted]`, còn builder
+            sinh runtime/asset URL cùng segment nên không cần cookie. UI không còn đọc `contentDocument`
+            hay custom element; host trusted sở hữu player và phát snapshot bounded qua exact source +
+            origin + nonce + closed schema. Full frontend 169/169; bốn số R4.1c là 209/185/285/290 ms.
+          </p>
+          <p class="text-slate-400 text-sm">
+            2026-08-20 20:01 +07 — drift 12.3 từ probe browser thật: CSP `connect-src 'none'` và
+            `base-uri 'none'` làm HyperFrames không thể fetch sub-composition và chặn chính `<base>`
+            do daemon sinh. Chuyển cả hai về `'self'`; preview host chỉ route namespace capability
+            read-only nên `'self'` không mở API đặc quyền hay egress mạng ngoài. `form-action` và
+            `object-src` vẫn `none`, script/image/media/font vẫn chỉ self + data/blob cần thiết.
+          </p>
+          <p class="text-slate-400 text-sm">
+            2026-08-20 20:07 +07 — 12.4 local PASS. Authored script chạy thật trong Chrome không thấy
+            UI cookie; mọi thử đọc project/source, attach studio, ghi source, liệt kê filesystem và mở
+            terminal đều fail. Fetch/WebSocket/form/beacon/image tới sentinel ngoài tạo đúng 0 request;
+            capability sai project và đã revoke đều 401. `test:browser-session` đăng ký test mới và xanh
+            18/18, zero skip; R4.1c 237/212/297/315 ms. Phase 12 chưa đóng cho tới khi workflow Browser
+            session xanh trên Linux + Windows exact source.
+          </p>
         </article>
       </section>
     </main>

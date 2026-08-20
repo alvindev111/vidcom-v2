@@ -4,6 +4,7 @@ import {
   AttachmentRegistry,
   createServerApp,
   InMemoryNonceStore,
+  InMemoryPreviewCapabilityStore,
   InMemorySessionStore,
   type ServerAppDependencies,
 } from "@vidcom/server";
@@ -27,7 +28,7 @@ import { enqueueRenderJob, enqueueSnapshotJob } from "@vidcom/worker";
 import { createJobTypes, createMcpRegistry, createSystemClock, hashContent } from "./composition-root";
 import { startVidcomFoundation, type DaemonRuntime } from "./startup";
 import { BrowseTokenStore, FilesystemBrowserService } from "@vidcom/core";
-import { ErrorCode, SUPPORTED_REVISIONS } from "@vidcom/contracts";
+import { ErrorCode, MOTION_LIBRARIES, SUPPORTED_REVISIONS } from "@vidcom/contracts";
 import { agentMcpServer } from "./agent-mcp-server";
 import { BRIDGE_CREDENTIAL_SETTING } from "./bridge-credential";
 import { VIDCOM_VERSION } from "./commands/version";
@@ -77,6 +78,7 @@ interface HostedRuntimeState {
   readonly clock: ReturnType<typeof createSystemClock>;
   readonly nonces: InMemoryNonceStore;
   readonly sessions: InMemorySessionStore;
+  readonly previewCapabilities: InMemoryPreviewCapabilityStore;
   readonly instanceId: string;
   attachments?: AttachmentRegistry;
   /**
@@ -170,6 +172,8 @@ export async function startNextHostedRuntime(
   const clock = options.hostState?.clock ?? createSystemClock();
   const nonces = options.hostState?.nonces ?? new InMemoryNonceStore(clock);
   const sessions = options.hostState?.sessions ?? new InMemorySessionStore(clock);
+  const previewCapabilities = options.hostState?.previewCapabilities
+    ?? new InMemoryPreviewCapabilityStore(clock);
   // A workspace swap stays inside this daemon and keeps its identity; a fresh
   // process gets a fresh id so a stale handshake cannot bind to a restart.
   const instanceId = options.hostState?.instanceId ?? `daemon_${crypto.randomUUID()}`;
@@ -177,6 +181,7 @@ export async function startNextHostedRuntime(
     clock,
     nonces,
     sessions,
+    previewCapabilities,
     instanceId,
     activeRuntime: null,
     switching: false,
@@ -273,6 +278,15 @@ export async function startNextHostedRuntime(
     mimeFromPath: foundation.infrastructure.mimeFromPath,
     probe: foundation.infrastructure.assetProbe,
     hashContent,
+    motionLibrarySource: async () => {
+      const gsap = MOTION_LIBRARIES.find((library) => library.id === "gsap");
+      if (!gsap) throw new Error("pinned GSAP catalogue entry is unavailable");
+      const source = await foundation.infrastructure.motionLibraries.read(gsap);
+      if (!source.ok || !source.value[0]) {
+        throw new Error(source.ok ? "pinned GSAP source is unavailable" : source.error.message);
+      }
+      return source.value[0].content;
+    },
   };
   const projectWrites: NonNullable<ServerAppDependencies["projectWrites"]> = {
     ...foundation.application.writeDependencies,
@@ -443,6 +457,7 @@ export async function startNextHostedRuntime(
       );
       activateHostedRuntime(port, replacement);
       committed = true;
+      previewCapabilities.revokeAll();
       // Only after persistence, discovery and request routing all name the new
       // foundation. Until this point the old one stays authoritative and can be
       // restored without rebuilding it if any preparation step fails.
@@ -500,6 +515,7 @@ export async function startNextHostedRuntime(
       uiOrigins: origins,
       nonces,
       sessions,
+      previewCapabilities,
       mcpCredentials: foundation.infrastructure.credentials,
       mcp,
       bridge: {

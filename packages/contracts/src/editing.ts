@@ -19,6 +19,31 @@ export const PendingMountOperationIdSchema = UlidSchema;
 /** Browser-generated identity for one mounted editor history stack. */
 export const StudioSessionIdSchema = UlidSchema;
 
+/** Read-only authority returned only to an attached studio session. */
+export const PreviewCapabilityResponseSchema = z.strictObject({
+  token: z.string().regex(/^[A-Za-z0-9_-]{43}$/u),
+  expiresAt: z.iso.datetime({ offset: true }),
+  origin: z.string().url(),
+});
+
+export type PreviewCapabilityResponse = z.infer<typeof PreviewCapabilityResponseSchema>;
+
+/** Network confinement shared by the document builder and HTTP response boundary. */
+export const PREVIEW_DOCUMENT_CSP = [
+  "default-src 'none'",
+  "script-src 'self' 'unsafe-inline' 'unsafe-eval' blob:",
+  "style-src 'self' 'unsafe-inline'",
+  "img-src 'self' data: blob:",
+  "media-src 'self' data: blob:",
+  "font-src 'self' data: blob:",
+  "frame-src 'self' data: blob:",
+  "worker-src 'self' blob:",
+  "connect-src 'self'",
+  "form-action 'none'",
+  "base-uri 'self'",
+  "object-src 'none'",
+].join("; ");
+
 const expectedSource = { expectedContentHash: ContentHashSchema } as const;
 const sceneIds = z.array(IdentifierSchema).min(1).superRefine((values, context) => {
   if (new Set(values).size !== values.length) {

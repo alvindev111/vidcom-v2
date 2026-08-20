@@ -172,6 +172,15 @@ export async function withStudioBrowser(
       args: ["--no-sandbox", "--disable-dev-shm-usage"],
     });
     const page = await browser.newPage();
+    if (process.env.VIDCOM_BROWSER_DIAGNOSTICS === "1") {
+      page.on("console", (message) => process.stdout.write(`browser console: ${message.type()} ${message.text()}\n`));
+      page.on("pageerror", (error) => process.stdout.write(
+        `browser pageerror: ${error instanceof Error ? error.message : String(error)}\n`,
+      ));
+      page.on("requestfailed", (request) => process.stdout.write(
+        `browser requestfailed: ${request.url()} ${request.failure()?.errorText ?? "unknown"}\n`,
+      ));
+    }
     await page.goto(`${baseUrl}/?t=${encodeURIComponent(nonce)}`, { waitUntil: "networkidle0" });
     await page.goto(`${baseUrl}/projects/${encodeURIComponent(projectId)}`, { waitUntil: "domcontentloaded" });
     await page.waitForSelector("[data-timeline-viewport]", { timeout: 30_000 }).catch(async (cause) => {

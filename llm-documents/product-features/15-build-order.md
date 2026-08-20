@@ -146,7 +146,7 @@ D1 là quyết định số một, nhưng nó cần nền móng ở giai đoạn
 
 ## Giai đoạn 5 — Trải nghiệm editing (re-baseline 9–11 tuần)
 
-> **Spec đã mở 2026-08-15** — [spec Editing Experience](../specs-and-process/specs/spec-editing-experience/spec-editing-experience-complete.md). Goals bản 7, Detailed Design bản 12 và Implementation Checklist đều duyệt 2026-08-16; S0 xong, đang ở P0 (R4 → PlayerHost + double-buffer cho mọi cập nhật, PR-11 sang GĐ 6); Implementation Checklist đang Pending Confirmation; spike năm vòng, 24 PASS + 1 superseded; ước lượng **~212 SP** (sàn), coi 3–4 tuần là con số backlog chứ không phải con số Design.
+> **Spec mở lại remediation 2026-08-20** — [spec Editing Experience](../specs-and-process/specs/spec-editing-experience/spec-editing-experience-inprocess.md). R1–R12/S0–P11 đã có evidence lịch sử, nhưng deep review hậu triển khai đặt verdict NO-GO; Goals bản 8, Design bản 13 và checklist P12–P18 xử lý C-01, H-01–H-04, M-01–M-07, L-01 và G-01–G-03 trước khi merge/release.
 
 | # | Việc | ID |
 |---|---|---|
