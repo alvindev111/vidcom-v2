@@ -2582,6 +2582,23 @@
             source và để workflow <code>CI</code> chạy full suite trên ba OS. Bất kỳ job đỏ nào sẽ được sửa
             trước khi ba AC của P14 được đánh dấu.
           </p>
+          <p class="text-slate-400 text-sm">
+            2026-08-20 22:45 +07 — P14 PASS tại <code>7fba0e4</code>. CI dispatch
+            <code>32383889563</code> xanh 8/8 job trên main ba OS, Browser Linux/Windows và packaged smoke
+            ba OS. Suite asset-range đạt 5/5, zero skip trên từng main runner. Với sparse 500 MB, Linux,
+            macOS và Windows đều chỉ đọc đúng một byte, largest read một byte; RSS delta lần lượt 0,
+            180.224 và 94.208 byte. Sample 20 consumer trên cả ba OS giữ tối đa bốn stream active và tổng
+            20 byte đọc. Upload-listener cũ cũng xanh dưới 64 MiB trên từng OS: 53.362.688, 44.105.728 và
+            12.898.304 byte.
+          </p>
+          <p class="text-slate-400 text-sm">
+            <code>gh run download 32383889563</code> đã lấy đủ artifacts; ba packaged JSON đều
+            <code>strict=true</code>, <code>evidenceError=null</code>, 14/14 step passed. Packaged Windows
+            chạy chậm 41 phút nhưng kết thúc success, không bị cancel/rerun để che evidence. Local RSS
+            outlier vẫn được giữ trong log; exact-source authority ba OS mới là bằng chứng đóng gate.
+            Token chỉ tồn tại trong shell qua ánh xạ <code>GH_KEY</code> sang <code>GH_TOKEN</code>. P15 nay
+            mới được mở.
+          </p>
         </article>
       </section>
     </main>
