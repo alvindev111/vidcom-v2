@@ -3003,6 +3003,26 @@
             phần còn lại trước JS khoảng 1,06 s; 75/75 focused test, typecheck và lint 0 error/5 warning
             baseline xanh. Cần exact-host trace để sửa đúng layer, P17.3 vẫn mở.
           </p>
+          <p class="text-slate-400 text-sm">
+            2026-08-21 05:06 +07 — isolated <code>Packaged smoke</code>
+            <code>32419958203</code> tại exact source <code>2615e255</code> đã cho macOS và Linux GREEN;
+            Windows vẫn đang chạy nên chưa có kết luận ba OS. Artifact đã tải của hai OS đều
+            <code>strict=true</code>, <code>evidenceError=null</code>, 14/14 step pass, manifest
+            <code>dirty=false</code> và commit đúng source. macOS đo cold/warm 6.492/5.869 ms; trace tách
+            hosted runtime 2.828/2.787 ms, foundation 19/21 ms và phần SEA trước JS khoảng
+            3.652/3.068 ms. Điều này định vị variance ở hosted filesystem/SEA pre-JS cùng integrity scan,
+            không phải foundation product path.
+          </p>
+          <p class="text-slate-400 text-sm">
+            Gate repair giữ nguyên mọi hard ceiling và vẫn fail ngay khi sample đầu là
+            <code>over-ceiling</code>/<code>invalid</code>. Chỉ sample đầu vượt statistical baseline mới
+            chạy thêm hai cặp cold/warm tuần tự trên hai app-data root độc lập rồi đánh giá median của ba
+            sample; một hard/invalid sample trong cohort vẫn thắng median. Shape
+            <code>startupTrace</code> cũ được giữ, confirmation trace chỉ thêm khi thật sự cần. Unit contract
+            khóa cả median lẫn điều kiện không-confirm hard failure; focused xanh 92/92, full Vitest trước
+            chỉnh sửa cuối xanh 321 file/2.664 test, boundaries và 150 spec path xanh. P17.3 tiếp tục khóa
+            cho tới fresh exact-source full CI.
+          </p>
         </article>
       </section>
     </main>

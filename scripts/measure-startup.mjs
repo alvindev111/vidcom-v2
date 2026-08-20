@@ -121,6 +121,25 @@ function median(sorted) {
     : sorted[middle];
 }
 
+export function medianStartupMeasurements(samples) {
+  if (!Array.isArray(samples) || samples.length < 3 || samples.length % 2 === 0) return null;
+  const names = ["coldServe", "warmServe"];
+  if (samples.some((sample) => (
+    !sample || typeof sample !== "object" || Array.isArray(sample)
+    || Object.keys(sample).sort().join(",") !== names.slice().sort().join(",")
+    || names.some((name) => !Number.isSafeInteger(sample[name]) || sample[name] < 0)
+  ))) return null;
+  return Object.fromEntries(names.map((name) => [
+    name,
+    median(samples.map((sample) => sample[name]).sort((left, right) => left - right)),
+  ]));
+}
+
+export function shouldConfirmStartup(results) {
+  const failures = failingResults(results);
+  return failures.length > 0 && failures.every((result) => result.status === "regressed");
+}
+
 export function startupBaselineStatistics(label, baseline, name) {
   if (!isStartupBaseline(label, baseline) || (name !== "coldServe" && name !== "warmServe")) return null;
   const values = baseline.samples

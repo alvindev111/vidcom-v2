@@ -12,8 +12,10 @@ import { StdioClientTransport as LegacyMcpStdio } from "@modelcontextprotocol/sd
 import {
   evaluateStartup,
   failingResults,
+  medianStartupMeasurements,
   readBaseline,
   runnerLabel,
+  shouldConfirmStartup,
 } from "../measure-startup.mjs";
 import { withRunnerNetworkCut } from "./network-cut.mjs";
 
@@ -472,6 +474,28 @@ export function parseStartupTraces(output) {
     }
   }
   return traces;
+}
+
+async function measureStartupPair(context, appDataRoot) {
+  const measuredContext = appDataRoot === undefined ? context : {
+    ...context,
+    environment: { ...context.environment, VIDCOM_APP_DATA: appDataRoot },
+  };
+  const coldStartedAt = Date.now();
+  const coldServing = await startServing(measuredContext);
+  const coldServe = Date.now() - coldStartedAt;
+  const coldTrace = parseStartupTraces(coldServing.output());
+  await stopServing(coldServing);
+
+  const warmStartedAt = Date.now();
+  const warmServing = await startServing(measuredContext);
+  const warmServe = Date.now() - warmStartedAt;
+  const warmTrace = parseStartupTraces(warmServing.output());
+  await stopServing(warmServing);
+  return {
+    measurements: { coldServe, warmServe },
+    trace: { cold: coldTrace, warm: warmTrace },
+  };
 }
 
 /**
@@ -1159,35 +1183,62 @@ export const STEP_BODIES = {
     const doctorWarmMs = Date.now() - doctorWarmStartedAt;
     assertRuntimeHealthy("warm doctor --deep", warm);
 
-    const coldServeStartedAt = Date.now();
-    const coldServing = await startServing(context);
-    const coldServe = Date.now() - coldServeStartedAt;
-    const coldTrace = parseStartupTraces(coldServing.output());
-    await stopServing(coldServing);
-    const warmServeStartedAt = Date.now();
-    const warmServing = await startServing(context);
-    const warmServe = Date.now() - warmServeStartedAt;
-    const warmTrace = parseStartupTraces(warmServing.output());
-    await stopServing(warmServing);
-
     const label = runnerLabel();
-    const startup = { coldServe, warmServe };
     const baseline = await readBaseline(label);
     if (baseline === null) {
       throw new Error(`required committed startup baseline is missing or invalid for ${label}`);
     }
-    const evaluation = evaluateStartup(label, startup, baseline);
+    const first = await measureStartupPair(context);
+    const samples = [first.measurements];
+    const traces = [first.trace];
+    let evaluated = first.measurements;
+    let evaluation = evaluateStartup(label, evaluated, baseline);
+    if (shouldConfirmStartup(evaluation)) {
+      for (let index = 1; index < 3; index += 1) {
+        const confirmation = await measureStartupPair(
+          context,
+          path.join(context.root, `startup-confirm-${String(index)}-app-data`),
+        );
+        samples.push(confirmation.measurements);
+        traces.push(confirmation.trace);
+      }
+      evaluated = medianStartupMeasurements(samples);
+      if (evaluated === null) throw new Error("startup confirmation samples were invalid");
+      evaluation = evaluateStartup(label, evaluated, baseline);
+    }
     context.measurements.doctor = { coldMs: doctorColdMs, warmMs: doctorWarmMs };
-    context.measurements.startup = { runner: label, ...startup, baselinePresent: true, evaluation };
-    context.measurements.startupTrace = { cold: coldTrace, warm: warmTrace };
-    const failures = failingResults(evaluation);
+    const startupEvidence = {
+      runner: label,
+      ...evaluated,
+      baselinePresent: true,
+      evaluation,
+    };
+    if (samples.length > 1) {
+      startupEvidence.initial = first.measurements;
+      startupEvidence.samples = samples;
+    }
+    context.measurements.startup = startupEvidence;
+    context.measurements.startupTrace = first.trace;
+    if (traces.length > 1) {
+      context.measurements.startupConfirmationTraces = traces.slice(1);
+    }
+    const immediateFailures = samples.flatMap((sample) => failingResults(
+      evaluateStartup(label, sample, baseline),
+    )).filter((result) => result.status === "over-ceiling" || result.status === "invalid");
+    const failures = immediateFailures.length > 0 ? immediateFailures : failingResults(evaluation);
     if (failures.length > 0) {
       throw new Error(
         `startup gate failed: ${failures.map((result) => `${result.name}=${result.value}>${result.limit}`).join(", ")}`
-        + `; trace=${JSON.stringify(context.measurements.startupTrace)}`,
+        + `; trace=${JSON.stringify({
+          initial: context.measurements.startupTrace,
+          confirmations: context.measurements.startupConfirmationTraces ?? [],
+        })}`,
       );
     }
-    return `version ${version.vidcom}/${version.runtimeManifest}; doctor ${String(doctorColdMs)}/${String(doctorWarmMs)}ms; serve ${String(coldServe)}/${String(warmServe)}ms`;
+    const confirmed = samples.length > 1
+      ? `; confirmed median ${String(evaluated.coldServe)}/${String(evaluated.warmServe)}ms`
+      : "";
+    return `version ${version.vidcom}/${version.runtimeManifest}; doctor ${String(doctorColdMs)}/${String(doctorWarmMs)}ms; serve ${String(first.measurements.coldServe)}/${String(first.measurements.warmServe)}ms${confirmed}`;
   },
 
   async "ui-lifecycle"(context) {
