@@ -194,6 +194,20 @@ describe("mountAsset", () => {
     if (rejected.ok) expect(rejected.value.durationSeconds).toBe(7.5);
   });
 
+  it("rejects a probed sub-frame duration before composing or writing", async () => {
+    const harnessed = harness({ duration: 7.55 });
+    const mounted = await mountAsset(harnessed.dependencies, existingAssetInput, "user", origin);
+    expect(mounted).toMatchObject({
+      ok: false,
+      error: {
+        code: ErrorCode.TimingNotFrameAligned,
+        field: "duration",
+        details: { value: 7.55, fps: 30 },
+      },
+    });
+    expect(harnessed.state.requests).toHaveLength(0);
+  });
+
   it("defaults an image to four seconds and keeps a video's probed duration", async () => {
     const image = harness({ duration: null });
     // The image is a different file, so it needs its own hash on disk.

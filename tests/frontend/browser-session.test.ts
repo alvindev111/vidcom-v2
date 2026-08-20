@@ -522,6 +522,9 @@ describe("browser session harness", () => {
       await Promise.all([bodyRequest, bodyResponse]);
       expect(timingWrites).toHaveLength(1);
       expect(timingWrites[0]).toMatchObject({ timing: { start: expect.any(Number) } });
+      const bodyStart = timingWrites[0]?.timing?.start;
+      expect(typeof bodyStart).toBe("number");
+      expect(Math.abs(bodyStart! * 30 - Math.round(bodyStart! * 30))).toBeLessThan(1e-8);
 
       const edgeRequest = page.waitForRequest((request) =>
         request.method() === "PATCH"
@@ -535,6 +538,9 @@ describe("browser session harness", () => {
       await Promise.all([edgeRequest, edgeResponse]);
       expect(timingWrites).toHaveLength(2);
       expect(timingWrites[1]).toMatchObject({ timing: { duration: expect.any(Number) } });
+      const edgeDuration = timingWrites[1]?.timing?.duration;
+      expect(typeof edgeDuration).toBe("number");
+      expect(Math.abs(edgeDuration! * 30 - Math.round(edgeDuration! * 30))).toBeLessThan(1e-8);
 
       await dragTimelineClip(page, "body", "escape");
       await new Promise((resolve) => setTimeout(resolve, 250));

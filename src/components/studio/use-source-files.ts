@@ -25,6 +25,7 @@ export interface OpenFile {
   error: string | null;
   /** Set while something changed underneath this draft (R8.1d). */
   conflict: {
+    sourceStatus: DraftEntry["sourceStatus"];
     status: DraftEntry["incomingStatus"];
     resolution: DraftEntry["resolution"];
     /** The other version, once it has been read back; `null` = deleted outside. */
@@ -51,6 +52,7 @@ export function useSourceFiles(projectId: string, _projectSlug: string, seed: So
   const [drafts, dispatch] = React.useReducer(reduceDraft, undefined, (): DraftState => ({
     entries: Object.fromEntries(seed.map((file) => [file.path, {
       path: file.path,
+      sourceStatus: "present" as const,
       baseHash: file.version,
       baseRevision: 0,
       draft: file.code,
@@ -138,12 +140,17 @@ export function useSourceFiles(projectId: string, _projectSlug: string, seed: So
   const dirtyPaths = Object.values(drafts.entries)
     .filter((entry) => entry.draft !== (meta.current[entry.path]?.code ?? ""))
     .map((entry) => entry.path);
+  const exitProtectedCount = Object.values(drafts.entries)
+    .filter((entry) => entry.sourceStatus === "deleted"
+      || entry.draft !== (meta.current[entry.path]?.code ?? ""))
+    .length;
 
-  // The three exits that could drop a draft all read the same count.
+  // Source loss is protected independently from dirtiness: a clean deleted
+  // tab still owns the only visible copy until the user chooses Close.
   React.useEffect(() => {
-    reportUnsaved(`source:${projectId}`, dirtyPaths.length);
+    reportUnsaved(`source:${projectId}`, exitProtectedCount);
     return () => reportUnsaved(`source:${projectId}`, 0);
-  }, [dirtyPaths.length, projectId]);
+  }, [exitProtectedCount, projectId]);
 
   const openPath = React.useCallback(async (path: string) => {
     setOpenError(null);
@@ -190,18 +197,24 @@ export function useSourceFiles(projectId: string, _projectSlug: string, seed: So
     dispatch({ kind: "edited", path, draft });
   }, []);
 
-  const save = React.useCallback(async (path: string, onSaved?: ProjectChanged) => {
-    const entry = drafts.entries[path];
-    if (!entry || saveDisabled(entry)) return;
-    if (entry.draft === meta.current[path]?.code && entry.resolution === "editing") return;
-
+  const persist = React.useCallback(async ({
+    path,
+    entry,
+    expectedContentHash,
+    onSaved,
+  }: {
+    path: string;
+    entry: DraftEntry;
+    expectedContentHash: string | null;
+    onSaved?: ProjectChanged;
+  }) => {
     setSaving(path);
     setErrors((current) => ({ ...current, [path]: null }));
     try {
       const response = await fetchApi(`/api/v1/projects/${encodeURIComponent(projectId)}/files`, studio.request({
         method: "PUT",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ path, content: entry.draft, ...savePrecondition(entry) }),
+        body: JSON.stringify({ path, content: entry.draft, expectedContentHash }),
       }));
       const payload = await response.json().catch(() => null) as {
         file?: { path: string; content: string; contentHash: string };
@@ -235,7 +248,46 @@ export function useSourceFiles(projectId: string, _projectSlug: string, seed: So
     } finally {
       setSaving(null);
     }
-  }, [drafts, projectId, studio]);
+  }, [projectId, studio]);
+
+  const save = React.useCallback(async (path: string, onSaved?: ProjectChanged) => {
+    const entry = drafts.entries[path];
+    if (!entry) return;
+    if (entry.sourceStatus === "deleted") {
+      setErrors((current) => ({
+        ...current,
+        [path]: "File was deleted outside the editor — recreate it or close the tab.",
+      }));
+      return;
+    }
+    if (saveDisabled(entry)) {
+      setErrors((current) => ({
+        ...current,
+        [path]: "Resolve the external source change before saving.",
+      }));
+      return;
+    }
+    if (entry.draft === meta.current[path]?.code && entry.resolution === "editing") return;
+    await persist({
+      path,
+      entry,
+      expectedContentHash: savePrecondition(entry).expectedContentHash,
+      onSaved,
+    });
+  }, [drafts, persist]);
+
+  /** Recreate a source deleted outside while preserving the current draft bytes. */
+  const recreate = React.useCallback(async (path: string, onSaved?: ProjectChanged) => {
+    const entry = drafts.entries[path];
+    if (!entry || entry.sourceStatus !== "deleted" || entry.incomingStatus !== "ready") {
+      setErrors((current) => ({
+        ...current,
+        [path]: "The deleted source is not ready to be recreated yet.",
+      }));
+      return;
+    }
+    await persist({ path, entry, expectedContentHash: null, onSaved });
+  }, [drafts, persist]);
 
   /** Discard unsaved edits and go back to what is on disk. */
   const revert = React.useCallback((path: string) => {
@@ -270,7 +322,9 @@ export function useSourceFiles(projectId: string, _projectSlug: string, seed: So
       draft: entry.draft,
       saving: saving === path,
       error: errors[path] ?? null,
-      conflict: entry.draft === base.code || (entry.incomingStatus === "idle" && entry.resolution !== "conflicted") ? null : {
+      conflict: entry.sourceStatus === "present"
+        && (entry.draft === base.code || (entry.incomingStatus === "idle" && entry.resolution !== "conflicted")) ? null : {
+        sourceStatus: entry.sourceStatus,
         status: entry.incomingStatus,
         resolution: entry.resolution,
         incoming: entry.incoming?.content ?? null,
@@ -291,6 +345,7 @@ export function useSourceFiles(projectId: string, _projectSlug: string, seed: So
     close,
     edit,
     save,
+    recreate,
     revert,
     resolve,
     /** Open drafts a set of changed paths would touch — used by the tests and the guard. */

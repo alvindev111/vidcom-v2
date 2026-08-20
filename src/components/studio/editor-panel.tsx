@@ -19,6 +19,7 @@ export function EditorPanel({
   onClose,
   onEdit,
   onSave,
+  onRecreate,
   onRevert,
   onResolve,
 }: {
@@ -33,6 +34,7 @@ export function EditorPanel({
   onClose: (path: string) => void;
   onEdit: (code: string) => void;
   onSave: () => void;
+  onRecreate: () => void;
   onRevert: () => void;
   onResolve: (choice: "keep" | "take" | "compare" | "retry") => void;
 }) {
@@ -61,7 +63,7 @@ export function EditorPanel({
 
   const dirty = dirtyPaths.includes(active.file.path);
   const conflict = active.conflict;
-  const deletedOutside = conflict?.status === "ready" && conflict.incoming === null;
+  const deletedOutside = conflict?.sourceStatus === "deleted";
 
   return (
     <div className="flex h-full min-h-0 flex-col">
@@ -87,7 +89,7 @@ export function EditorPanel({
           <span className="min-w-0 flex-1 text-[11px] text-amber-700 dark:text-amber-300">
             {conflict.status === "loading" ? "Checking what changed outside the editor…"
               : conflict.status === "failed" ? "Could not read the file that changed outside. Your edits are still here."
-              : deletedOutside ? "This file was deleted outside the editor. Keeping your version recreates it."
+              : deletedOutside ? "This file was deleted outside the editor. Recreate it or close the tab."
               : conflict.resolution === "resolved-keep" ? "Keeping your version; the next save overwrites the other one."
               : conflict.resolution === "resolved-take" ? "Using the version from outside."
               : "This file changed outside the editor."}
@@ -96,21 +98,28 @@ export function EditorPanel({
             <Button variant="outline" size="sm" className="h-6 text-[10px]" onClick={() => onResolve("retry")}>Try again</Button>
           ) : null}
           {conflict.status === "ready" ? (
-            <>
-              <Button variant="outline" size="sm" className="h-6 text-[10px]" onClick={() => { setComparing(false); onResolve("keep"); }}>
-                Keep mine
-              </Button>
-              {deletedOutside ? null : (
+            deletedOutside ? (
+              <>
+                <Button variant="outline" size="sm" className="h-6 text-[10px]" onClick={onRecreate}>
+                  Recreate
+                </Button>
+                <Button variant="ghost" size="sm" className="h-6 text-[10px]" onClick={() => onClose(active.file.path)}>
+                  Close
+                </Button>
+              </>
+            ) : (
+              <>
+                <Button variant="outline" size="sm" className="h-6 text-[10px]" onClick={() => { setComparing(false); onResolve("keep"); }}>
+                  Keep mine
+                </Button>
                 <Button variant="outline" size="sm" className="h-6 text-[10px]" onClick={() => { setComparing(false); onResolve("take"); }}>
                   Use theirs
                 </Button>
-              )}
-              {deletedOutside ? null : (
                 <Button variant="ghost" size="sm" className="h-6 text-[10px]" onClick={() => { setComparing((current) => !current); onResolve("compare"); }}>
                   {comparing ? "Hide comparison" : "Compare"}
                 </Button>
-              )}
-            </>
+              </>
+            )
           ) : null}
         </div>
       ) : null}

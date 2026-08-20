@@ -96,6 +96,7 @@ function protocolCode(error: DomainError, era: Era): number {
     case ErrorCode.WriteConflict:
     case ErrorCode.IdempotencyKeyReused:
     case ErrorCode.TimingInvalid:
+    case ErrorCode.TimingNotFrameAligned:
     case ErrorCode.DurationOverflow:
     case ErrorCode.InvariantViolated:
     case ErrorCode.SceneNotFound:

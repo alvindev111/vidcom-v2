@@ -33,7 +33,7 @@ describe("draft store", () => {
     const state = openDraft({ entries: {} }, { path: PATH, content: "on disk", contentHash: BASE, revision: 4 });
     expect(entry(state)).toMatchObject({
       path: PATH, baseHash: BASE, baseRevision: 4, draft: "on disk",
-      incomingStatus: "idle", incoming: null, resolution: "editing",
+      incomingStatus: "idle", incoming: null, resolution: "editing", sourceStatus: "present",
     });
     expect(saveDisabled(entry(state))).toBe(false);
     expect(entry(reduceDraft(state, { kind: "edited", path: PATH, draft: "typed" })).draft).toBe("typed");
@@ -109,13 +109,64 @@ describe("draft store", () => {
     expect(saveDisabled(entry(comparing))).toBe(true);
   });
 
-  it("treats a file deleted outside as content null, and recreates it on the next save", () => {
+  it("projects a dirty external deletion independently from draft dirtiness", () => {
     let state = reduceDraft(opened("mine"), { kind: "external", paths: [PATH], seq: 9 });
     state = reduceDraft(state, { kind: "incoming", path: PATH, generation: 9, content: null, contentHash: null, revision: 5 });
-    expect(entry(state)).toMatchObject({ incomingStatus: "ready", incoming: { content: null, hash: null } });
-    const kept = reduceDraft(state, { kind: "keep", path: PATH });
-    // No file to expect: the save recreates it rather than failing a precondition.
-    expect(entry(kept)).toMatchObject({ baseHash: null, draft: "mine", resolution: "resolved-keep" });
+    expect(entry(state)).toMatchObject({
+      draft: "mine",
+      sourceStatus: "deleted",
+      incomingStatus: "ready",
+      incoming: { content: null, hash: null },
+    });
+    expect(saveDisabled(entry(state))).toBe(true);
+  });
+
+  it("projects a clean external deletion instead of hiding the stale tab", () => {
+    let state = reduceDraft(openDraft({ entries: {} }, {
+      path: PATH, content: "on disk", contentHash: BASE, revision: 4,
+    }), { kind: "external", paths: [PATH], seq: 9 });
+    state = reduceDraft(state, {
+      kind: "incoming", path: PATH, generation: 9, content: null, contentHash: null, revision: 5,
+    });
+    expect(entry(state)).toMatchObject({
+      draft: "on disk",
+      sourceStatus: "deleted",
+      incomingStatus: "ready",
+    });
+    expect(saveDisabled(entry(state))).toBe(true);
+  });
+
+  it("keeps a newer deletion authoritative when an older save response arrives", () => {
+    let state = reduceDraft(opened("mine"), { kind: "external", paths: [PATH], seq: 30 });
+    state = reduceDraft(state, {
+      kind: "incoming", path: PATH, generation: 30, content: null, contentHash: null, revision: 6,
+    });
+    state = reduceDraft(state, {
+      kind: "saved", path: PATH, contentHash: NEXT, revision: 5, changeSeq: 25,
+    });
+    expect(entry(state)).toMatchObject({
+      sourceStatus: "deleted",
+      incomingGeneration: 30,
+      incoming: { content: null, hash: null },
+    });
+    expect(saveDisabled(entry(state))).toBe(true);
+  });
+
+  it("settles a recreated deletion only after the recreate write is acknowledged", () => {
+    let state = reduceDraft(opened("mine"), { kind: "external", paths: [PATH], seq: 30 });
+    state = reduceDraft(state, {
+      kind: "incoming", path: PATH, generation: 30, content: null, contentHash: null, revision: 6,
+    });
+    const recreated = reduceDraft(state, {
+      kind: "saved", path: PATH, contentHash: THIRD, revision: 7, changeSeq: 31,
+    });
+    expect(entry(recreated)).toMatchObject({
+      sourceStatus: "present",
+      baseHash: THIRD,
+      incomingStatus: "idle",
+      incoming: null,
+      resolution: "editing",
+    });
   });
 
   it("keeps save disabled when the fetch fails, without falling back to the old base", () => {
@@ -170,6 +221,11 @@ describe("draft store", () => {
       });
       expect(saveDisabled(state.entries[path]!)).toBe(true);
     }
+
+    state = reduceDraft(state, {
+      kind: "incoming", path: PATH, generation: 41, content: null, contentHash: null, revision: 5,
+    });
+    expect(entry(state)).toMatchObject({ sourceStatus: "deleted", incomingStatus: "ready" });
   });
 
   it("matches changed paths by whole segments, including a renamed parent directory", () => {
@@ -180,6 +236,20 @@ describe("draft store", () => {
     // …but a common prefix that is not a whole segment covers nothing.
     expect(conflicts(state, ["composition"])).toEqual([]);
     expect(conflicts(state, ["compositions/scene-1.html.bak"])).toEqual([]);
+  });
+
+  it("projects a parent rename or deletion onto every affected open source", () => {
+    const nested = "compositions/deep/scene-9.html";
+    let state = openDraft(opened("mine"), {
+      path: nested, content: "nested", contentHash: NEXT, revision: 4,
+    });
+    state = reduceDraft(state, { kind: "external", paths: ["compositions"], seq: 50 });
+    for (const path of [PATH, nested]) {
+      state = reduceDraft(state, {
+        kind: "incoming", path, generation: 50, content: null, contentHash: null, revision: 5,
+      });
+      expect(state.entries[path]).toMatchObject({ sourceStatus: "deleted", incomingStatus: "ready" });
+    }
   });
 
   it("closes a draft only through an explicit discard", () => {

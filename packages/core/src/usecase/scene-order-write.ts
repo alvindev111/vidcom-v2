@@ -8,6 +8,7 @@ import {
   type ProjectId,
 } from "@vidcom/contracts";
 
+import { FrameGrid } from "../domain/frame-grid";
 import { detectTrackGapsAndOverlaps, type SceneClip } from "../domain/invariants";
 import type { CompositionModel, ProjectRef } from "../domain/models";
 import type { ReorderPlan } from "../domain/plan-scene-order";
@@ -26,6 +27,7 @@ export interface SceneOrderContext {
   model: CompositionModel;
   clips: SceneClip[];
   contentHash: ContentHash;
+  frameGrid: FrameGrid;
 }
 
 export async function loadSceneOrderContext(
@@ -74,6 +76,7 @@ export async function loadSceneOrderContext(
       trackIndex: scene.trackIndex,
     })),
     contentHash: source.contentHash,
+    frameGrid: FrameGrid.fromFps(model.frameRate ?? 30),
   });
 }
 
@@ -94,6 +97,15 @@ export async function applySceneOrderPlan(
   if (plan.noOp) {
     invocation.noteUnchanged?.();
     return ok({ changed: false, project: context.model.project, envelope: null, changes: [], diagnostics: [] });
+  }
+  for (const change of plan.changes) {
+    if (change.start === undefined) continue;
+    const alignment = context.frameGrid.validate(change.start, "start");
+    if (alignment) return err(alignment);
+  }
+  if (plan.rootDuration !== context.model.project.duration) {
+    const alignment = context.frameGrid.validate(plan.rootDuration, "duration");
+    if (alignment) return err(alignment);
   }
   if (plan.rootDuration > MAX_PROJECT_DURATION_SECONDS) {
     return err({

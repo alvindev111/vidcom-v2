@@ -27,11 +27,11 @@ describe("timeline snap geometry", () => {
       { time: 1, kind: "ruler", id: "second-1" },
       { time: 1.08, kind: "clip-edge", id: "scene-b:start" },
     ];
-    expect(snapTime(1.06, candidates, 0.05)).toEqual({
-      time: 1.08,
-      candidate: candidates[1],
+    expect(snapTime(1.06, candidates, 0.05, 30)).toEqual({
+      time: 32 / 30,
+      candidate: { ...candidates[1], time: 32 / 30 },
     });
-    expect(snapTime(1.2, candidates, 0.05)).toEqual({ time: 1.2, candidate: null });
+    expect(snapTime(1.21, candidates, 0.01, 30)).toEqual({ time: 36 / 30, candidate: null });
   });
 
   it("leaves a draggable body between capped edge zones on a 20px clip", () => {

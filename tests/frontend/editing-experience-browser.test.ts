@@ -1,10 +1,12 @@
 // @vitest-environment node
 
-import { readFile, writeFile } from "node:fs/promises";
+import { readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 
-import { describe, expect, it } from "vitest";
 import type { Page } from "puppeteer-core";
+import { describe, expect, it } from "vitest";
+
+import type { ProjectId, RelPath } from "@vidcom/contracts";
 
 import { withStudioBrowser } from "../support/browser-studio";
 
@@ -69,6 +71,47 @@ async function previewReached(page: Page, seq: number): Promise<number> {
     (window as unknown as { probe: Probe }).probe.previewAt(target) !== null,
   { timeout: 20_000, polling: 16 }, seq);
   return (await probe(page).previewAt(seq))!;
+}
+
+/** Opens a lazily loaded source through the real project file explorer. */
+async function openTreeSource(page: Page, relativePath: string): Promise<void> {
+  const segments = relativePath.split("/");
+  for (const segment of segments.slice(0, -1)) {
+    await page.waitForFunction((label) => [...document.querySelectorAll("button")]
+      .some((button) => button.textContent?.trim() === label), { timeout: 10_000 }, segment);
+    const buttons = await page.$$("button");
+    for (const button of buttons) {
+      if (await button.evaluate((node) => node.textContent?.trim()) !== segment) continue;
+      if (await button.evaluate((node) => node.getAttribute("aria-expanded")) !== "true") await button.click();
+      break;
+    }
+  }
+  const filename = segments.at(-1);
+  if (!filename) throw new Error(`source path has no filename: ${relativePath}`);
+  await page.waitForFunction((label) => [...document.querySelectorAll("button")]
+    .some((button) => button.textContent?.trim() === label), { timeout: 10_000 }, filename);
+  const buttons = await page.$$("button");
+  for (const button of buttons) {
+    if (await button.evaluate((node) => node.textContent?.trim()) !== filename) continue;
+    await button.click();
+    break;
+  }
+  await page.waitForFunction((label) => [...document.querySelectorAll("button")]
+    .some((button) => button.getAttribute("aria-label")?.startsWith(`Close ${label}`)),
+  { timeout: 10_000 }, filename);
+  await page.waitForFunction((path) => [...document.querySelectorAll("[data-active] button[title]")]
+    .some((button) => button.getAttribute("title") === path),
+  { timeout: 10_000 }, relativePath);
+}
+
+async function clickExactButton(page: Page, label: string): Promise<void> {
+  const buttons = await page.$$("button");
+  for (const button of buttons) {
+    if (await button.evaluate((node) => node.textContent?.trim()) !== label) continue;
+    await button.click();
+    return;
+  }
+  throw new Error(`button ${label} was not found`);
 }
 
 describe("editing experience in a browser", () => {
@@ -174,6 +217,87 @@ describe("editing experience in a browser", () => {
         process.stdout.write(`R4.1c outside write (${target}): ${elapsed.toFixed(0)} ms\n`);
         expect(elapsed).toBeLessThan(BUDGET_MS);
       }
+    });
+  }, 180_000);
+
+  it("exposes clean and dirty external deletions with Close and Recreate", async () => {
+    await withStudioBrowser("external-delete", async ({ page, projectId, projectRoot, runtime }) => {
+      const relativePath = "compositions/scene-1.html" as RelPath;
+      const filename = "scene-1.html";
+      const sourcePath = path.join(projectRoot, relativePath);
+      const sourceBytes = await readFile(sourcePath);
+      const projectRef = await runtime.foundation.infrastructure.workspace.readProjectRef(projectId as ProjectId);
+      if (!projectRef) throw new Error("external deletion fixture has no project ref");
+      const deletionReads: Array<{ status: number; body: string }> = [];
+      page.on("response", (response) => {
+        const url = new URL(response.url());
+        if (response.request().method() !== "GET" || !url.pathname.endsWith("/files")) return;
+        if (url.searchParams.get("path") !== relativePath) return;
+        void response.text().then((body) => deletionReads.push({ status: response.status(), body }));
+      });
+
+      await openTreeSource(page, relativePath);
+      deletionReads.length = 0;
+      const beforeDeleteSeq = Number(await page.evaluate(() => document.documentElement.dataset.studioEventSeq ?? "0"));
+      await rm(sourcePath);
+      // fs.watch does not promise that every platform reports unlink. `observe`
+      // is the production watcher's deterministic post-filesystem seam: it
+      // samples the real absence, writes the real durable event and wakes SSE.
+      await runtime.foundation.infrastructure.watcher.observe(projectRef, relativePath);
+      await page.waitForFunction((before) =>
+        Number(document.documentElement.dataset.studioEventSeq ?? "0") > before,
+      { timeout: 10_000 }, beforeDeleteSeq);
+      await expect.poll(() => deletionReads.at(-1)?.status, { timeout: 10_000 }).toBe(404);
+      await page.waitForFunction(() => document.body.innerText.includes("This file was deleted outside the editor"), {
+        timeout: 10_000,
+      }).catch(async (cause) => {
+        const state = await page.evaluate(() => ({
+          text: document.body.innerText.slice(0, 1_500),
+          alerts: [...document.querySelectorAll('[role="alert"]')].map((node) => node.textContent?.trim()),
+        }));
+        throw new Error(`external deletion did not reach the editor: ${JSON.stringify({ state, deletionReads })}`, { cause });
+      });
+      await page.waitForFunction(() => ["Recreate", "Close"].every((label) =>
+        [...document.querySelectorAll("button")].some((button) => button.textContent?.trim() === label)));
+      expect(await page.$$eval("button", (buttons) => buttons
+        .filter((button) => button.textContent?.includes("Save"))
+        .every((button) => (button as HTMLButtonElement).disabled))).toBe(true);
+      await page.evaluate(() => {
+        const asked: string[] = [];
+        (window as unknown as { deletionExitPrompts: string[] }).deletionExitPrompts = asked;
+        window.confirm = (message?: string) => { asked.push(message ?? ""); return false; };
+      });
+      await page.click('a[href="/"]');
+      expect(await page.evaluate(() =>
+        (window as unknown as { deletionExitPrompts: string[] }).deletionExitPrompts.length)).toBe(1);
+      expect(new URL(page.url()).pathname).not.toBe("/");
+      await clickExactButton(page, "Close");
+      await page.waitForFunction((label) => ![...document.querySelectorAll("button")]
+        .some((button) => button.getAttribute("aria-label")?.startsWith(`Close ${label}`)),
+      { timeout: 10_000 }, filename);
+
+      await writeFile(sourcePath, sourceBytes);
+      await runtime.foundation.infrastructure.watcher.observe(projectRef, relativePath);
+      await openTreeSource(page, relativePath);
+      const beforeDelete = await page.$eval(".cm-content", (element) => element.textContent ?? "");
+      await page.locator(".cm-content").fill(`${beforeDelete}\n<!-- recreate-dirty-delete -->`);
+      await page.waitForFunction(() => document.body.innerText.includes("Unsaved changes"));
+      deletionReads.length = 0;
+      const beforeDirtyDeleteSeq = Number(await page.evaluate(() => document.documentElement.dataset.studioEventSeq ?? "0"));
+      await rm(sourcePath);
+      await runtime.foundation.infrastructure.watcher.observe(projectRef, relativePath);
+      await page.waitForFunction((before) =>
+        Number(document.documentElement.dataset.studioEventSeq ?? "0") > before,
+      { timeout: 10_000 }, beforeDirtyDeleteSeq);
+      await expect.poll(() => deletionReads.at(-1)?.status, { timeout: 10_000 }).toBe(404);
+      await page.waitForFunction(() => document.body.innerText.includes("This file was deleted outside the editor"));
+      const recreateResponse = page.waitForResponse((response) =>
+        response.request().method() === "PUT" && new URL(response.url()).pathname.endsWith("/files"),
+      { timeout: 10_000 });
+      await clickExactButton(page, "Recreate");
+      expect((await recreateResponse).ok()).toBe(true);
+      await page.waitForFunction(() => !document.body.innerText.includes("This file was deleted outside the editor"));
+      expect(await readFile(sourcePath, "utf8")).toContain("recreate-dirty-delete");
     });
   }, 180_000);
 });

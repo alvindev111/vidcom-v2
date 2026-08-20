@@ -7,6 +7,7 @@ import {
   type RelPath,
 } from "@vidcom/contracts";
 
+import { FrameGrid } from "../domain/frame-grid";
 import type { CompositionModel, ProjectRef } from "../domain/models";
 import { planSceneInsertion } from "../domain/plan-scene-order";
 import { err, ok, type Result } from "../error/result";
@@ -313,6 +314,7 @@ export async function mountAsset(
       trackIndex: placement.trackIndex,
       rootDuration: project.duration,
     },
+    FrameGrid.fromFps(model.frameRate ?? 30),
   );
   if (!insertion.ok) return insertion;
 

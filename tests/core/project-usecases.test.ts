@@ -64,6 +64,7 @@ function setup(options: {
   tooLarge?: boolean;
   recoveryRequired?: boolean;
   withNarration?: boolean;
+  frameRate?: number;
   sceneTiming?: { start: number; duration: number; trackIndex: number };
 } = {}) {
   const files = new Map<string, string>([
@@ -92,6 +93,7 @@ function setup(options: {
     backingPath: "preview-settings.json" as RelPath,
   };
   const model: CompositionModel = {
+    frameRate: options.frameRate ?? 30,
     project: {
       id: projectId,
       slug: "project",
@@ -598,6 +600,58 @@ describe("project write and legacy use cases without HTTP", () => {
       expectedContentHash: hash("<main>old</main>"),
     }, "user")).resolves.toMatchObject({ ok: false, error: { code } });
     expect(runtime.mutations).toHaveLength(0);
+  });
+  it("rejects a new sub-frame timing value but preserves legacy timing during a track-only write", async () => {
+    const rejected = setup();
+    await expect(setSceneTiming(rejected.deps, {
+      projectId,
+      sceneId: "scene-1",
+      timing: { start: 2.55 },
+      expectedContentHash: hash("<main>old</main>"),
+    }, "user")).resolves.toMatchObject({
+      ok: false,
+      error: {
+        code: ErrorCode.TimingNotFrameAligned,
+        field: "start",
+        details: { value: 2.55, fps: 30 },
+      },
+    });
+    expect(rejected.appliedOps).toHaveLength(0);
+    expect(rejected.mutations).toHaveLength(0);
+
+    const legacy = setup({ sceneTiming: { start: 2.55, duration: 4, trackIndex: 1 } });
+    await expect(setSceneTiming(legacy.deps, {
+      projectId,
+      sceneId: "scene-1",
+      timing: { trackIndex: 2 },
+      expectedContentHash: hash("<main>old</main>"),
+    }, "user")).resolves.toMatchObject({ ok: true, value: { scene: { start: 2.55, trackIndex: 2 } } });
+  });
+  it("uses the parsed project fps for direct timing and scene creation", async () => {
+    const at24 = setup({ frameRate: 24 });
+    await expect(setSceneTiming(at24.deps, {
+      projectId,
+      sceneId: "scene-1",
+      timing: { start: 1 / 24 },
+      expectedContentHash: hash("<main>old</main>"),
+    }, "user")).resolves.toMatchObject({ ok: true, value: { scene: { start: 1 / 24 } } });
+
+    const created = setup();
+    await expect(createScene(created.deps, {
+      projectId,
+      title: "Sub-frame",
+      duration: 2.55,
+      expectedContentHash: hash("<main>old</main>"),
+    }, "user")).resolves.toMatchObject({
+      ok: false,
+      error: {
+        code: ErrorCode.TimingNotFrameAligned,
+        field: "duration",
+        details: { value: 2.55, fps: 30 },
+      },
+    });
+    expect(created.appliedOps).toHaveLength(0);
+    expect(created.mutations).toHaveLength(0);
   });
   it("sets scene script by serializing then writing through authority", async () => {
     const runtime = setup({ withNarration: true });

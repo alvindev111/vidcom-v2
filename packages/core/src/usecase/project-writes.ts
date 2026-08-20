@@ -10,8 +10,9 @@ import {
   type RelPath,
 } from "@vidcom/contracts";
 
-import type { ProjectRef } from "../domain/models";
+import { FrameGrid } from "../domain/frame-grid";
 import { detectTrackGapsAndOverlaps, planRipple, validateSceneTiming, type SceneClip } from "../domain/invariants";
+import type { ProjectRef } from "../domain/models";
 import { planSceneInsertion } from "../domain/plan-scene-order";
 import { checkPathPurpose, checkPathSyntax } from "../domain/path-policy";
 import { rootCompositionSource } from "../domain/platform-preset";
@@ -194,6 +195,7 @@ export async function setSceneTiming(
   const parsed = await parseForMutation(dependencies, ref.value);
   if (!parsed.ok) return parsed;
   const model = parsed.value;
+  const frameGrid = FrameGrid.fromFps(model.frameRate ?? 30);
   const scene = model.scenes.find((candidate) => candidate.id === input.sceneId);
   if (!scene) return err({ code: ErrorCode.NotFound, message: "scene was not found" });
   const next = {
@@ -204,6 +206,11 @@ export async function setSceneTiming(
   };
   const timingError = validateSceneTiming({ ...next, rootDuration: Number.POSITIVE_INFINITY });
   if (timingError) return err(timingError);
+  for (const [field, value] of [["start", input.timing.start], ["duration", input.timing.duration]] as const) {
+    if (value === undefined) continue;
+    const alignment = frameGrid.validate(value, field);
+    if (alignment) return err(alignment);
+  }
   if (input.ripple && next.trackIndex !== scene.trackIndex) {
     return err({ code: ErrorCode.TimingInvalid, message: "ripple cannot move a scene between tracks", field: "trackIndex" });
   }
@@ -215,13 +222,20 @@ export async function setSceneTiming(
     : null;
   if (ripple && !ripple.ok) return ripple;
   const moved = ripple?.ok ? ripple.value.moved : [];
+  for (const movement of moved) {
+    const alignment = frameGrid.validate(movement.toStart, "start");
+    if (alignment) return err(alignment);
+  }
   const changed = new Map(moved.map((item) => [item.sceneId, item.toStart]));
   changed.set(scene.id, next.start);
   const nextClips = clips.map((item) => item.sceneId === scene.id
     ? next
     : changed.has(item.sceneId) ? { ...item, start: changed.get(item.sceneId)! } : item);
   const rootDuration = nextClips.reduce((maximum, item) => Math.max(maximum, item.start + item.duration), 0);
-  if (rootDuration > MAX_PROJECT_DURATION_SECONDS) return err({
+  const temporalMutation = input.timing.start !== undefined
+    || input.timing.duration !== undefined
+    || moved.length > 0;
+  if (temporalMutation && rootDuration > MAX_PROJECT_DURATION_SECONDS) return err({
     code: ErrorCode.DurationOverflow,
     message: "project duration exceeds the VidCom runtime guard",
     field: "duration",
@@ -230,7 +244,7 @@ export async function setSceneTiming(
       maxSeconds: MAX_PROJECT_DURATION_SECONDS, extendRootAllowed: false,
     },
   });
-  if (rootDuration > model.project.duration && !input.extendRoot) return err({
+  if (temporalMutation && rootDuration > model.project.duration && !input.extendRoot) return err({
     code: ErrorCode.DurationOverflow,
     message: "scene timing exceeds the current root duration",
     field: "duration",
@@ -241,12 +255,17 @@ export async function setSceneTiming(
   });
   const source = await sourceForMutation(dependencies, ref.value, ref.value.entry);
   if (!source.ok) return source;
+  const writeRootDuration = temporalMutation && rootDuration !== model.project.duration;
+  if (writeRootDuration) {
+    const alignment = frameGrid.validate(rootDuration, "duration");
+    if (alignment) return err(alignment);
+  }
   const operations = [
     { kind: "setTiming" as const, target: input.sceneId, value: input.timing },
     ...moved.filter(({ sceneId }) => sceneId !== input.sceneId).map((item) => ({
       kind: "setTiming" as const, target: item.sceneId, value: { start: item.toStart },
     })),
-    ...(rootDuration !== model.project.duration
+    ...(writeRootDuration
       ? [{ kind: "setTiming" as const, target: "@root", value: { duration: rootDuration } }]
       : []),
   ];
@@ -603,6 +622,11 @@ export async function createScene(
     start: 0, duration, trackIndex: input.trackIndex ?? 0, rootDuration: Number.POSITIVE_INFINITY,
   });
   if (basicTiming) return err(basicTiming);
+  if (duration > MAX_PROJECT_DURATION_SECONDS) return err({
+    code: ErrorCode.DurationOverflow,
+    message: "scene duration exceeds the VidCom runtime guard",
+    field: "duration",
+  });
 
   if (!existingEntry) {
     if (input.index !== undefined && input.index !== 0) {
@@ -612,6 +636,8 @@ export async function createScene(
     if (!identity?.ok || !identity.identity.platform) {
       return err({ code: ErrorCode.ProjectInvalid, message: "empty project platform is unavailable" });
     }
+    const alignment = FrameGrid.fromFps(identity.identity.platform.fps).validate(duration, "duration");
+    if (alignment) return err(alignment);
     const trackIndex = input.trackIndex ?? 0;
     const sceneId = "scene-1";
     const scenePath = `compositions/${sceneId}.html` as RelPath;
@@ -662,6 +688,9 @@ export async function createScene(
   const parsed = await parseForMutation(dependencies, ref.value);
   if (!parsed.ok) return parsed;
   const model = parsed.value;
+  const frameGrid = FrameGrid.fromFps(model.frameRate ?? 30);
+  const durationAlignment = frameGrid.validate(duration, "duration");
+  if (durationAlignment) return err(durationAlignment);
   const scenes = model.scenes as Array<{ id: string; start: number; duration: number; trackIndex: number }>;
   const generated = scenes.flatMap((scene) => {
     const match = /^scene-(\d+)$/.exec(scene.id);
@@ -688,6 +717,7 @@ export async function createScene(
       trackIndex,
       rootDuration: model.project.duration,
     },
+    frameGrid,
   );
   if (!insertion.ok) return insertion;
   if (insertion.value.rootDuration > MAX_PROJECT_DURATION_SECONDS) return err({

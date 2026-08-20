@@ -291,6 +291,7 @@ describe("API response contracts", () => {
       "sub_timeline_readiness_timeout",
       "thumbnail_capacity",
       "timing_invalid",
+      "timing_not_frame_aligned",
       "too_large",
       "tool_not_available_in_era",
       "tts_credential_missing",

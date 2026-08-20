@@ -3,6 +3,7 @@
 import { describe, expect, it } from "vitest";
 
 import { ErrorCode, type RelPath } from "@vidcom/contracts";
+import { FrameGrid } from "../../packages/core/src/domain/frame-grid";
 import {
   groupOf,
   planCompact,
@@ -137,7 +138,7 @@ describe("scene order planners", () => {
       toIndex: 1,
       trackIndex: 1,
       rootDuration: 6,
-    });
+    }, FrameGrid.fromFps(30));
 
     expect(planned).toEqual({
       ok: true,

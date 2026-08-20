@@ -1,4 +1,5 @@
 export * from "./domain/invariants";
+export * from "./domain/frame-grid";
 export * from "./domain/magic-bytes";
 export * from "./domain/asset-names";
 export * from "./domain/catalog";

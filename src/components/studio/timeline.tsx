@@ -297,9 +297,10 @@ export function Timeline({
     clips,
     playhead: timeStore.get(),
     duration,
+    fps: frameRate,
     excludedSceneIds,
   });
-  }, [clips, duration, interactionRef, timeStore]);
+  }, [clips, duration, frameRate, interactionRef, timeStore]);
 
   const startDrag = React.useCallback((scene: Scene, zone: DragZone, pointerX: number) => {
     if (pendingTiming || pixelsPerSecond <= 0) return;

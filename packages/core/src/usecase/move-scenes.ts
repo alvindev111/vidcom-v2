@@ -22,6 +22,8 @@ export async function moveScenes(
   if (!selection.ok) return selection;
   const context = await loadSceneOrderContext(dependencies, input);
   if (!context.ok) return context;
+  const alignment = context.value.frameGrid.validate(input.deltaSeconds, "deltaSeconds");
+  if (alignment) return { ok: false as const, error: alignment };
   const completePlan = planGroupShift(context.value.clips, input.sceneIds, input.deltaSeconds);
   return completePlan.ok
     ? applySceneOrderPlan(dependencies, context.value, completePlan.value, input, actor, invocation)

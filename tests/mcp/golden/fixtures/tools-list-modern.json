@@ -1648,6 +1648,7 @@
                       "idempotency_key_reused",
                       "workspace_lease_lost",
                       "timing_invalid",
+                      "timing_not_frame_aligned",
                       "duration_overflow",
                       "invariant_violated",
                       "scene_not_found",

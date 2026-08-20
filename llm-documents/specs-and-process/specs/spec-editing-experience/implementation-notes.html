@@ -2757,6 +2757,82 @@
             Token chỉ tồn tại trong shell qua ánh xạ <code>GH_KEY</code> sang <code>GH_TOKEN</code>. Gate P16
             nay mới được mở.
           </p>
+          <p class="text-slate-400 text-sm">
+            2026-08-21 01:42 +07 — mở checkpoint 16.1 tại <code>b5611f6</code>, worktree sạch. M-04 và
+            Design §23 xác nhận reducer đã giữ deletion dưới dạng <code>incoming.content=null</code>, nhưng
+            hook lại ẩn projection khi draft sạch bằng điều kiện <code>draft === base.code</code>. Vì vậy
+            tab vẫn hiện text cũ, không dirty, không có cảnh báo và save chỉ no-op. Chọn hành vi đã duyệt:
+            source status độc lập với dirtiness, file bị xóa luôn hiện Recreate/Close; không tự đóng và
+            không làm mất draft. RED matrix sẽ phủ clean/dirty delete, parent delete/rename, save race,
+            recreate và stream-gap refetch; browser thật sẽ kiểm cả Close lẫn PUT recreate.
+          </p>
+          <p class="text-slate-400 text-sm">
+            2026-08-21 02:05 +07 — 16.1 focused PASS. RED reducer có 7 failure/21 trước khi
+            <code>sourceStatus</code> tồn tại; GREEN 21/21 phủ clean/dirty delete, parent rename/delete,
+            deletion sau save response cũ, recreate có acknowledgement và stream-gap refetch. Browser
+            thật xóa <code>compositions/scene-1.html</code>, đi qua watcher/SSE và GET 404, chứng minh tab
+            sạch hiện Recreate/Close, Save bị khóa, navigation có prompt nhưng không rời route, Close xóa
+            tab; sau đó draft bẩn được Recreate bằng PUT thật và byte marker còn nguyên trên disk.
+          </p>
+          <p class="text-slate-400 text-sm">
+            Full browser lần đầu đỏ 18/19: <code>page.reload()</code> timeout vì guard mới bảo vệ cả trạng
+            thái <code>conflicted</code> sạch trong khoảng auto-refresh. Đây là regression thật nên 16.2
+            vẫn bị khóa. Repair thu hẹp predicate đúng contract: draft bẩn hoặc source đã
+            <code>deleted</code>; harness gây lỗi xanh 5/5 và deletion vẫn xanh 1/1. Lần cuối full browser
+            xanh 9 file/19 test, R4.1c 186–311 ms. Build, typecheck, boundaries, diff-check xanh; lint 0
+            error + 5 warning baseline. Không retry để che dấu lỗi và không dùng <code>[!]</code>.
+          </p>
+          <p class="text-slate-400 text-sm">
+            2026-08-21 02:07 +07 — mở checkpoint 16.2. CodeGraph xác nhận mọi direct timing đi qua
+            <code>setSceneTiming</code>; reorder/group dùng context parse chung rồi planner; create, asset
+            mount và catalog mount cùng dùng insertion planner. Frame authority sẽ lấy
+            <code>model.frameRate ?? 30</code>, không quét và không rewrite legacy sub-frame chỉ vì đọc.
+            Chỉ field mới gửi hoặc timing mới được planner sinh ra phải frame-aligned. Contract đã duyệt
+            là reject typed <code>timing_not_frame_aligned</code> với field/value/fps, không silently round.
+          </p>
+          <p class="text-slate-400 text-sm">
+            2026-08-21 02:14 +07 — 16.2 focused PASS. RED 4/54 chứng minh chưa có FrameGrid/error public,
+            direct start 2,55 giây và group delta 0,05 giây ở 30 fps vẫn được ghi. GREEN thêm value object
+            numerator/denominator, không silently normalize, rồi validate explicit start/duration,
+            ripple-derived start, group delta, reorder/compact-derived timing và mọi insertion qua create,
+            probed asset mount, catalog new-scene/into-scene. Track-only/no-op không rewrite hoặc reject
+            legacy sub-frame chỉ vì đọc.
+          </p>
+          <p class="text-slate-400 text-sm">
+            Error <code>timing_not_frame_aligned</code> mang field và details <code>{value,fps}</code>, HTTP
+            map 422, MCP công khai như invalid params. Contract run trung gian đỏ đúng ba lock/golden cũ;
+            đã cập nhật vocabulary và tools/list hai era. Gate cuối xanh 10 file/101 test, gồm rational
+            30000/1001 và project 24 fps; typecheck, boundaries, diff-check xanh, lint 0 error + 5 warning
+            baseline. 16.3 mới được mở để hợp nhất helper UI và chứng minh UI/HTTP/MCP thật.
+          </p>
+          <p class="text-slate-400 text-sm">
+            2026-08-21 02:16 +07 — mở checkpoint 16.3. CodeGraph cho thấy snap-enabled đang trả raw
+            candidate/raw time, chỉ snap-disabled mới gọi <code>roundToFrame</code>; test hiện tại còn chấp
+            nhận playhead 2,55 giây ở 30 fps. RED sẽ đổi commit thành 77/30, bắt cả snap-enabled không có
+            candidate và toàn bộ playhead/clip-edge/ruler candidate đi qua một pure frame helper. Browser
+            thật sẽ assert frame count nguyên; fixture infrastructure thật sẽ so HTTP 422 và MCP typed
+            refusal đồng nhất, đồng thời xác nhận source không đổi.
+          </p>
+          <p class="text-slate-400 text-sm">
+            2026-08-21 02:22 +07 — 16.3 local PASS. UI RED 4/12: playhead 2,55 giây, free time
+            0,017 giây khi snap bật, playhead candidate và candidate của <code>snapTime</code> đều còn
+            off-grid ở 30 fps. GREEN cho cả candidate và free projection dùng chung
+            <code>roundToFrame</code>, gồm clip edge, playhead, ruler và start suy ra từ end. Browser thật
+            bắt frame count nguyên sau drag/trim; full suite xanh 9 file/19 test, R4.1c 186–303 ms.
+          </p>
+          <p class="text-slate-400 text-sm">
+            Fixture SQLite/filesystem thật chứng minh HTTP và MCP cùng từ chối duration 2,55 giây: HTTP
+            422 và MCP typed <code>timing_not_frame_aligned</code>, field duration, details value/fps 2,55/30;
+            source hai phía không đổi. Assertion HTTP đầu tiên trả 400 vì chính test bỏ trường
+            <code>ripple</code> bắt buộc ở HTTP, trong khi MCP có default; fixture được sửa thành
+            <code>ripple=false</code> để hai request thực sự tương đương, không nới schema production.
+          </p>
+          <p class="text-slate-400 text-sm">
+            Combined P16 focused xanh 11 file/128 test; golden 11 file/45 test. Build, typecheck,
+            boundaries, spec-paths 150 và diff-check xanh; lint 0 error + 5 warning baseline. Hai AC P16
+            được đóng local nhưng phase vẫn CI open: phải commit/push exact source, dispatch
+            <code>CI</code>, watch và download artifact; bất kỳ job đỏ nào tiếp tục khóa P17.
+          </p>
         </article>
       </section>
     </main>

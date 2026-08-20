@@ -2,6 +2,7 @@ import { type ContentHash, type DomainError, type RelPath } from "@vidcom/contra
 
 import { catalogProvenanceAttribute } from "../domain/catalog-install-guard";
 import { type VerifiedCatalogItem } from "../domain/catalog";
+import { FrameGrid } from "../domain/frame-grid";
 import { type CatalogInstallMount } from "../domain/plan-catalog-install";
 import type { CompositionModel, CompositionOp, ProjectRef } from "../domain/models";
 import { planSceneInsertion } from "../domain/plan-scene-order";
@@ -97,6 +98,7 @@ export async function planCatalogMountDocuments(
   }
   const scenes = (model.scenes ?? []) as unknown as SceneClip[];
   const project = model.project as unknown as { width: number; height: number; duration: number };
+  const frameGrid = FrameGrid.fromFps(model.frameRate ?? 30);
 
   if (mount.kind === "into-scene") {
     const scene = scenes.find((candidate) => candidate.id === mount.sceneId);
@@ -104,6 +106,8 @@ export async function planCatalogMountDocuments(
     const target = (scene.src ?? ref.entry) as RelPath;
     // Scene-local zero, clamped to the host scene, on the next overlay track.
     const duration = Math.min(item.durationSeconds ?? scene.duration, scene.duration);
+    const alignment = frameGrid.validate(duration, "duration");
+    if (alignment) return err({ code: "insertion_rejected", error: alignment });
     const trackIndex = (input.sceneOverlays ?? 0) + 1;
     const instanceId = `${item.name}-${scene.id}-${trackIndex}`;
     const applied = await input.composition.applyOps(ref, target, [{
@@ -145,6 +149,7 @@ export async function planCatalogMountDocuments(
       trackIndex,
       rootDuration: project.duration,
     },
+    frameGrid,
   );
   if (!insertion.ok) return err({ code: "insertion_rejected", error: insertion.error });
 

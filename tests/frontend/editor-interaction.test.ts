@@ -41,13 +41,13 @@ describe("timeline editor interaction", () => {
       candidates: [{ time: 2.55, kind: "playhead", id: "playhead" }],
     });
     expect(moved.drag).toMatchObject({
-      preview: { start: 2.55, duration: 2 },
-      snappedTo: { id: "playhead" },
+      preview: { start: 77 / 30, duration: 2 },
+      snappedTo: { id: "playhead", time: 77 / 30 },
       rippleSceneCount: 0,
     });
     expect(commitDrag(moved)).toEqual({
       sceneId: "a",
-      timing: { start: 2.55 },
+      timing: { start: 77 / 30 },
       ripple: false,
     });
   });
@@ -103,14 +103,20 @@ describe("timeline editor interaction", () => {
     const escaped = reduceInteraction(framed, { type: "escape" });
     expect(escaped).toMatchObject({ drag: null });
     expect(commitDrag(escaped)).toBeNull();
+
+    const snappedState = createEditorInteractionState({ pixelsPerSecond: 100, snapEnabled: true });
+    const snappedFree = moveDrag(beginDrag(snappedState, {
+      clip: clips[0]!, clips, zone: "body", pointerX: 0, ripple: false,
+    }), { pointerX: 1.7, fps: 30, candidates: [] });
+    expect(snappedFree.drag?.preview.start).toBeCloseTo(1 / 30);
   });
 
   it("builds snap markers from same-track edges, playhead and ruler seconds", () => {
     const candidates = timelineSnapCandidates({
-      clip: clips[0]!, clips, playhead: 1.25, duration: 5,
+      clip: clips[0]!, clips, playhead: 1.25, duration: 5, fps: 30,
     });
     expect(candidates).toContainEqual({ time: 2, kind: "clip-edge", id: "b:start" });
-    expect(candidates).toContainEqual({ time: 1.25, kind: "playhead", id: "playhead" });
+    expect(candidates).toContainEqual({ time: 38 / 30, kind: "playhead", id: "playhead" });
     expect(candidates).toContainEqual({ time: 5, kind: "ruler", id: "second-5" });
     expect(candidates.some(({ id }) => id.startsWith("a:"))).toBe(false);
   });
@@ -158,7 +164,7 @@ describe("timeline editor interaction", () => {
       selectedSceneIds: initial.selection,
     });
     const candidates = timelineSnapCandidates({
-      clip: clips[0]!, clips, playhead: 3, duration: 10, excludedSceneIds: initial.selection,
+      clip: clips[0]!, clips, playhead: 3, duration: 10, fps: 30, excludedSceneIds: initial.selection,
     });
     expect(candidates.some(({ id }) => id.startsWith("c:"))).toBe(false);
     const moved = moveDrag(dragging, { pointerX: 100, fps: 30, candidates });

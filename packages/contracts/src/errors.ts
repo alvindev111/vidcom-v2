@@ -27,6 +27,7 @@ export enum ErrorCode {
   IdempotencyKeyReused = "idempotency_key_reused",
   WorkspaceLeaseLost = "workspace_lease_lost",
   TimingInvalid = "timing_invalid",
+  TimingNotFrameAligned = "timing_not_frame_aligned",
   DurationOverflow = "duration_overflow",
   InvariantViolated = "invariant_violated",
   SceneNotFound = "scene_not_found",

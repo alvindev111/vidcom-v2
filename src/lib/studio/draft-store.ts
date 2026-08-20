@@ -17,6 +17,8 @@ export interface DraftIncoming {
 
 export interface DraftEntry {
   path: string;
+  /** Disk authority independent from whether the editor text is dirty. */
+  sourceStatus: "present" | "deleted" | "conflicted";
   /** Hash the draft is based on; `null` once the file is known to be gone. */
   baseHash: string | null;
   baseRevision: number;
@@ -53,6 +55,7 @@ export type DraftEvent =
 function newEntry(input: { path: string; content: string; contentHash: string; revision: number }): DraftEntry {
   return {
     path: input.path,
+    sourceStatus: "present",
     baseHash: input.contentHash,
     baseRevision: input.revision,
     draft: input.content,
@@ -75,6 +78,7 @@ export function openDraft(
 function beginRefetch(entry: DraftEntry, seq: number): DraftEntry {
   return {
     ...entry,
+    sourceStatus: "conflicted",
     incomingGeneration: seq,
     incomingStatus: "loading",
     incoming: null,
@@ -86,6 +90,7 @@ function rebase(entry: DraftEntry, draft: string, resolution: DraftEntry["resolu
   const incoming = entry.incoming;
   return {
     ...entry,
+    sourceStatus: incoming?.content === null ? "deleted" : "present",
     draft,
     baseHash: incoming ? incoming.hash : entry.baseHash,
     baseRevision: incoming ? incoming.revision : entry.baseRevision,
@@ -136,6 +141,7 @@ export function reduceDraft(state: DraftState, event: DraftEvent): DraftState {
         ? entry
         : {
             ...entry,
+            sourceStatus: event.content === null ? "deleted" : "conflicted",
             incomingStatus: "ready",
             incoming: { hash: event.contentHash, content: event.content, revision: event.revision },
             resolution: "conflicted",
@@ -145,10 +151,16 @@ export function reduceDraft(state: DraftState, event: DraftEvent): DraftState {
         ? entry
         // Still conflicted, still unsaveable: falling back to the stale base is
         // how an unread change gets overwritten.
-        : { ...entry, incomingStatus: "failed", incoming: null, resolution: "conflicted" });
+        : {
+            ...entry,
+            sourceStatus: "conflicted",
+            incomingStatus: "failed",
+            incoming: null,
+            resolution: "conflicted",
+          });
     case "retry":
       return map(state, event.path, (entry) => entry.incomingStatus === "failed"
-        ? { ...entry, incomingStatus: "loading" }
+        ? { ...entry, sourceStatus: "conflicted", incomingStatus: "loading" }
         : entry);
     case "keep":
       return map(state, event.path, (entry) => entry.incomingStatus === "ready"
@@ -172,6 +184,7 @@ export function reduceDraft(state: DraftState, event: DraftEvent): DraftState {
           ...(settles
             ? { incomingGeneration: 0, incomingStatus: "idle" as const, incoming: null, resolution: "editing" as const }
             : {}),
+          ...(settles ? { sourceStatus: "present" as const } : {}),
         };
       });
   }
@@ -193,7 +206,7 @@ export function conflicts(state: DraftState, paths: readonly string[]): string[]
 
 /** True while this draft must not be written: something unread changed under it. */
 export function saveDisabled(entry: DraftEntry): boolean {
-  return entry.resolution === "conflicted";
+  return entry.sourceStatus !== "present" || entry.resolution === "conflicted";
 }
 
 /** Precondition for the next save: `null` recreates a file deleted outside. */

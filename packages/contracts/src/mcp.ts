@@ -356,6 +356,7 @@ export const MCP_PUBLIC_ERROR_CODES = [
   ErrorCode.IdempotencyKeyReused,
   ErrorCode.WorkspaceLeaseLost,
   ErrorCode.TimingInvalid,
+  ErrorCode.TimingNotFrameAligned,
   ErrorCode.DurationOverflow,
   ErrorCode.InvariantViolated,
   ErrorCode.SceneNotFound,

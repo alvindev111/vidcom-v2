@@ -20,17 +20,20 @@ export function snapTime(
   time: number,
   candidates: readonly SnapCandidate[],
   tolerance: number,
+  fps: number,
 ): SnapResult {
+  const framedTime = roundToFrame(time, fps);
   let candidate: SnapCandidate | null = null;
   let distance = Number.POSITIVE_INFINITY;
-  for (const current of candidates) {
-    const currentDistance = Math.abs(current.time - time);
+  for (const raw of candidates) {
+    const current = { ...raw, time: roundToFrame(raw.time, fps) };
+    const currentDistance = Math.abs(current.time - framedTime);
     if (currentDistance <= tolerance && currentDistance < distance) {
       candidate = current;
       distance = currentDistance;
     }
   }
-  return candidate ? { time: candidate.time, candidate } : { time, candidate: null };
+  return candidate ? { time: candidate.time, candidate } : { time: framedTime, candidate: null };
 }
 
 export function roundToFrame(time: number, fps: number): number {

@@ -34,6 +34,7 @@ const hash = (digit: string): ContentHash => `sha256:${digit.repeat(64)}` as Con
 
 function model(): CompositionModel {
   return {
+    frameRate: 30,
     project: {
       id: projectId,
       slug: "order",
@@ -145,6 +146,34 @@ describe("scene order use cases", () => {
     }, "user")).resolves.toMatchObject({ ok: false, error: { code: ErrorCode.DuplicateMutationTarget } });
     expect(runtime.operations).toHaveLength(0);
     expect(runtime.requests).toHaveLength(0);
+  });
+
+  it("rejects sub-frame group and reorder-derived writes before apply or authority", async () => {
+    const shifted = timingHarness();
+    await expect(moveScenes(shifted.deps, {
+      projectId, sceneIds: ["a", "c"], deltaSeconds: 0.05, expectedContentHash: hash("1"),
+    }, "user")).resolves.toMatchObject({
+      ok: false,
+      error: {
+        code: ErrorCode.TimingNotFrameAligned,
+        field: "deltaSeconds",
+        details: { value: 0.05, fps: 30 },
+      },
+    });
+    expect(shifted.operations).toHaveLength(0);
+    expect(shifted.requests).toHaveLength(0);
+
+    const legacy = model();
+    legacy.scenes[1] = { ...legacy.scenes[1]!, duration: 2.55 };
+    const reordered = timingHarness(legacy);
+    await expect(reorderScenes(reordered.deps, {
+      projectId, sceneId: "b", toIndex: 0, expectedContentHash: hash("1"),
+    }, "user")).resolves.toMatchObject({
+      ok: false,
+      error: { code: ErrorCode.TimingNotFrameAligned, field: "start", details: { fps: 30 } },
+    });
+    expect(reordered.operations).toHaveLength(0);
+    expect(reordered.requests).toHaveLength(0);
   });
 
   it("returns overlap diagnostics without blocking the composite", async () => {

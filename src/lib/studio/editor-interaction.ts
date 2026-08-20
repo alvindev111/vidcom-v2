@@ -89,6 +89,7 @@ export function timelineSnapCandidates(input: {
   clips: readonly TimelineClip[];
   playhead: number;
   duration: number;
+  fps: number;
   excludedSceneIds?: ReadonlySet<string>;
 }): SnapCandidate[] {
   const candidates: SnapCandidate[] = [];
@@ -105,7 +106,10 @@ export function timelineSnapCandidates(input: {
   for (let second = 0; second <= Math.floor(input.duration); second += 1) {
     candidates.push({ time: second, kind: "ruler", id: `second-${second}` });
   }
-  return candidates;
+  return candidates.map((candidate) => ({
+    ...candidate,
+    time: roundToFrame(candidate.time, input.fps),
+  }));
 }
 
 export function selectClip(
@@ -235,13 +239,14 @@ function snappedBodyStart(
   duration: number,
   candidates: readonly SnapCandidate[],
   tolerance: number,
+  fps: number,
 ): { time: number; candidate: SnapCandidate | null } {
-  const startResult = snapTime(start, candidates, tolerance);
-  const endResult = snapTime(start + duration, candidates, tolerance);
+  const startResult = snapTime(start, candidates, tolerance, fps);
+  const endResult = snapTime(start + duration, candidates, tolerance, fps);
   const startCorrection = Math.abs(startResult.time - start);
   const endCorrection = Math.abs(endResult.time - (start + duration));
   return endResult.candidate && (!startResult.candidate || endCorrection < startCorrection)
-    ? { time: endResult.time - duration, candidate: endResult.candidate }
+    ? { time: roundToFrame(endResult.time - duration, fps), candidate: endResult.candidate }
     : startResult;
 }
 
@@ -284,23 +289,23 @@ export function moveDrag(
   if (drag.zone === "body") {
     const raw = drag.clip.start + delta;
     const projected = state.snapEnabled
-      ? snappedBodyStart(raw, drag.clip.duration, input.candidates, tolerance)
-      : { time: roundToFrame(raw, input.fps), candidate: null };
+      ? snappedBodyStart(raw, drag.clip.duration, input.candidates, tolerance, input.fps)
+      : snapTime(raw, [], tolerance, input.fps);
     start = Math.max(0, projected.time);
     snappedTo = start === projected.time ? projected.candidate : null;
   } else if (drag.zone === "trim-start") {
     const raw = drag.clip.start + delta;
     const projected = state.snapEnabled
-      ? snapTime(raw, input.candidates, tolerance)
-      : { time: roundToFrame(raw, input.fps), candidate: null };
+      ? snapTime(raw, input.candidates, tolerance, input.fps)
+      : snapTime(raw, [], tolerance, input.fps);
     start = Math.max(0, Math.min(projected.time, end - frame));
     duration = end - start;
     snappedTo = start === projected.time ? projected.candidate : null;
   } else {
     const rawEnd = end + delta;
     const projected = state.snapEnabled
-      ? snapTime(rawEnd, input.candidates, tolerance)
-      : { time: roundToFrame(rawEnd, input.fps), candidate: null };
+      ? snapTime(rawEnd, input.candidates, tolerance, input.fps)
+      : snapTime(rawEnd, [], tolerance, input.fps);
     const nextEnd = Math.max(drag.clip.start + frame, projected.time);
     duration = nextEnd - drag.clip.start;
     snappedTo = nextEnd === projected.time ? projected.candidate : null;

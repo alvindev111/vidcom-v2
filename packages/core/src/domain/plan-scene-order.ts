@@ -1,6 +1,7 @@
 import { ErrorCode, type DomainError, type RelPath } from "@vidcom/contracts";
 
 import { err, ok, type Result } from "../error/result";
+import type { FrameGrid } from "./frame-grid";
 import type { SceneClip } from "./invariants";
 
 export type SceneGroup = "scene" | "transition" | "overlay";
@@ -203,6 +204,7 @@ export function planSceneInsertion(
     trackIndex: number;
     rootDuration: number;
   },
+  frameGrid: FrameGrid,
 ): Result<SceneInsertionPlan, DomainError> {
   if (clips.some((clip) => clip.sceneId === request.sceneId)) {
     return err({
@@ -214,6 +216,8 @@ export function planSceneInsertion(
   if (!Number.isFinite(request.duration) || request.duration <= 0) {
     return err({ code: ErrorCode.TimingInvalid, message: "duration must be greater than zero", field: "duration" });
   }
+  const durationAlignment = frameGrid.validate(request.duration, "duration");
+  if (durationAlignment) return err(durationAlignment);
   if (!Number.isInteger(request.trackIndex)) {
     return err({ code: ErrorCode.TimingInvalid, message: "trackIndex must be an integer", field: "trackIndex" });
   }
@@ -228,6 +232,19 @@ export function planSceneInsertion(
     sceneId: clip.sceneId,
     start: clip.start + request.duration,
   }));
+  if (!Number.isFinite(start) || start < 0 || changes.some((change) => !Number.isFinite(change.start))) {
+    return err({
+      code: ErrorCode.TimingInvalid,
+      message: "scene insertion would produce a negative or non-finite start",
+      field: "start",
+    });
+  }
+  const startAlignment = frameGrid.validate(start, "start");
+  if (startAlignment) return err(startAlignment);
+  for (const change of changes) {
+    const alignment = frameGrid.validate(change.start, "start");
+    if (alignment) return err(alignment);
+  }
   const scene = {
     sceneId: request.sceneId,
     scenePath: request.scenePath,
@@ -235,15 +252,23 @@ export function planSceneInsertion(
     duration: request.duration,
     trackIndex: request.trackIndex,
   };
+  const nextRootDuration = Math.max(
+    request.rootDuration,
+    start + request.duration,
+    rootDuration([...clips, scene], changes),
+  );
+  if (!Number.isFinite(nextRootDuration)) {
+    return err({ code: ErrorCode.DurationOverflow, message: "scene insertion duration is not finite", field: "duration" });
+  }
+  if (nextRootDuration !== request.rootDuration) {
+    const rootAlignment = frameGrid.validate(nextRootDuration, "duration");
+    if (rootAlignment) return err(rootAlignment);
+  }
   return ok({
     scene,
     changes,
     beforeSceneId: track[request.toIndex]?.sceneId ?? null,
-    rootDuration: Math.max(
-      request.rootDuration,
-      start + request.duration,
-      rootDuration([...clips, scene], changes),
-    ),
+    rootDuration: nextRootDuration,
     noOp: false,
   });
 }

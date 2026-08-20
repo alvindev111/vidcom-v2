@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { type ContentHash, type ProjectId, type RelPath } from "@vidcom/contracts";
+import { ErrorCode, type ContentHash, type ProjectId, type RelPath } from "@vidcom/contracts";
 import {
   parseCatalogProvenance,
   planCatalogMountDocuments,
@@ -155,6 +155,27 @@ describe("catalog mount document planning", () => {
     expect(html).toContain('data-duration="4"');
     expect(html).toContain('data-track-index="1"');
     expect(html).toContain("data-catalog-provenance=");
+  });
+
+  it("rejects a new sub-frame catalog duration before applying composition ops", async () => {
+    const composition = compositionPort();
+    const planned = await planCatalogMountDocuments({
+      ref,
+      model,
+      item: item({ durationSeconds: 2.55 }),
+      mount: { kind: "new-scene", toIndex: 2 },
+      entryHash: null,
+      composition,
+      now: () => new Date(),
+    });
+    expect(planned).toMatchObject({
+      ok: false,
+      error: {
+        code: "insertion_rejected",
+        error: { code: ErrorCode.TimingNotFrameAligned, field: "duration" },
+      },
+    });
+    expect(composition.calls).toHaveLength(0);
   });
 
   it("refuses an unknown scene and a template mounted into a scene", async () => {

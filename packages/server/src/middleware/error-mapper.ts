@@ -28,6 +28,7 @@ const ERROR_STATUS = {
   [ErrorCode.IdempotencyKeyReused]: 409,
   [ErrorCode.WorkspaceLeaseLost]: 409,
   [ErrorCode.TimingInvalid]: 422,
+  [ErrorCode.TimingNotFrameAligned]: 422,
   [ErrorCode.DurationOverflow]: 422,
   [ErrorCode.InvariantViolated]: 422,
   [ErrorCode.SceneNotFound]: 422,
