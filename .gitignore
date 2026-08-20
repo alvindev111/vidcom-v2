@@ -5,6 +5,7 @@ dist/
 out/
 coverage/
 test-results/
+.artifacts/
 /release/
 *.log
 .env

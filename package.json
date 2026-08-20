@@ -32,6 +32,8 @@
     "test:accessibility": "vitest run --maxWorkers=1 tests/frontend/accessibility-browser.test.ts",
     "test:licenses": "license-checker-rseidelsohn --production --excludePrivatePackages --summary --onlyAllow 'MIT;MIT*;ISC;BSD-2-Clause;BSD-3-Clause;Apache-2.0;Apache-2.0*;BlueOak-1.0.0;Python-2.0;CC-BY-4.0;0BSD;(MIT OR CC0-1.0)'",
     "test:provenance": "node scripts/verify-dependency-provenance.mjs",
+    "test:soak": "node scripts/run-resource-soak.mjs --profile presubmit",
+    "test:soak:release": "node scripts/run-resource-soak.mjs --profile release",
     "build:artifact": "node scripts/build-artifact.mjs",
     "build:release-media": "node scripts/build-release-media.mjs",
     "test:packaged-smoke": "node scripts/packaged-smoke/run.mjs"

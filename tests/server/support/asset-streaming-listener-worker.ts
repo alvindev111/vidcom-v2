@@ -12,6 +12,8 @@ import { createSequentialIdPort } from "../../support/deterministic";
 import { writeSampleProject } from "../../support/sample-project";
 
 const FIVE_HUNDRED_MB = 500 * 1024 * 1024;
+const SOAK_PROFILE = process.env.VIDCOM_SOAK_PROFILE === "presubmit" ? "presubmit" : "release";
+const EXACT_UPLOAD_BYTES = SOAK_PROFILE === "presubmit" ? 64 * 1024 * 1024 : FIVE_HUNDRED_MB;
 const CHUNK_BYTES = 64 * 1024;
 const OPERATION_ID = "01K30Y8Z7K0000000000000001";
 
@@ -140,11 +142,12 @@ async function main(): Promise<void> {
       if (memory.rss > peakRss) { peakRss = memory.rss; peakMemory = memory; }
     }, 2);
     const exact = await uploadGenerated({
-      ...common, filename: "exact.mp4", bytes: FIVE_HUNDRED_MB, expectedRevision: 1, contentLength: true,
+      ...common, filename: "exact.mp4", bytes: EXACT_UPLOAD_BYTES, expectedRevision: 1, contentLength: true,
     });
     clearInterval(sample);
     const oneOver = await uploadGenerated({
-      ...common, filename: "one-over.mp4", bytes: FIVE_HUNDRED_MB + 1, expectedRevision: 2, contentLength: false,
+      ...common, filename: "one-over.mp4", bytes: FIVE_HUNDRED_MB + 1, expectedRevision: 2,
+      contentLength: SOAK_PROFILE === "presubmit",
     });
     const oversized = await uploadGenerated({
       ...common, filename: "oversized.mp4", bytes: 512 * 1024 * 1024, expectedRevision: 2, contentLength: true,
@@ -208,6 +211,7 @@ async function main(): Promise<void> {
     });
     const brokenApplyBody = await brokenApply.text();
     process.stdout.write(`\nVIDCOM_ASSET_STREAM_RESULT=${JSON.stringify({
+      profile: SOAK_PROFILE, exactBytes: EXACT_UPLOAD_BYTES,
       warmupStatus: warmup.status, exactStatus: exact.status, rssDeltaBytes: peakRss - baselineRss,
       baselineRss, baselineMemory, peakRss, peakMemory, oneOverStatus: oneOver.status, oversizedStatus: oversized.status,
       tempAfterAbort, firstStatus: first.status, replayStatus: replay.status, replayed: replayBody.replayed,

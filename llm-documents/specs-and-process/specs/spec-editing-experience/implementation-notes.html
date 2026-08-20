@@ -3066,6 +3066,43 @@
             không cần confirmation. SARIF có 0 result. Immutable action/workflow contract, repository
             dependency graph và scan evidence nay cùng GREEN; checkpoint 17.4 được mở.
           </p>
+          <p class="text-slate-400 text-sm">
+            2026-08-21 05:44 +07 — 17.4 RED. Workflow contract mới yêu cầu pull-request presubmit,
+            dispatch/call release profile, exact-source assertion, immutable upload action và
+            <code>if: always()</code> cho JSON evidence. RED đúng tại
+            <code>ENOENT .github/workflows/resource-soak.yml</code> (1/9 test fail); chưa có workflow hay
+            package command nên chưa thể coi các soak rời rạc trong full test là release evidence.
+          </p>
+          <p class="text-slate-400 text-sm">
+            GREEN candidate contract 13/13 và tree/catalog presubmit chạy thật: 1.000-file node limit,
+            depth 17 và 1.000 invalid install đều trả typed boundary, heap/RSS dưới gate. Lần chạy toàn
+            command đầu RED đúng ở upload RSS 78.364.672 &gt; 67.108.864 byte; JSON failure artifact vẫn
+            được ghi, đủ mọi marker. Nguyên nhân harness: presubmit warm-up bị hạ 8 MiB trong khi sample
+            64 MiB, nên baseline chưa hấp thụ allocator pool; production/release test luôn warm-up 64 MiB.
+            Repair giữ nguyên threshold và sample, đưa warm-up trở lại 64 MiB; cần rerun command.
+          </p>
+          <p class="text-slate-400 text-sm">
+            Presubmit command rerun GREEN 6 file/39 test và ghi report status passed, đủ bảy loại marker;
+            upload sample 64 MiB có RSS delta 1.540.096 byte. Full release profile GREEN 6 file/39 test:
+            10.000-file tree và depth 65 fail typed/bounded; 100.000 invalid catalog install đều bị từ
+            chối với heap/RSS delta 14.432.520/23.724.032 byte; receipt 100k, suspended SSE/PTY, sparse
+            500 MiB + 20 concurrent ranges đều pass; exact 500 MiB HTTP upload có RSS delta 58.671.104
+            byte dưới 64 MiB. Runner dùng <code>--expose-gc</code>, timeout 15/45 phút, kiểm exact source,
+            gom stdout marker và luôn ghi JSON trước exit failure.
+          </p>
+          <p class="text-slate-400 text-sm">
+            Workflow <code>Resource soak</code> dùng presubmit cho mọi PR, dispatch mặc định full release,
+            reusable call có profile rõ, checkout exact head và upload report bằng immutable Action với
+            <code>if: always()</code>. Focused cuối xanh 4 file/14 test; typecheck, boundaries, 150 spec
+            paths và diff-check xanh; lint 0 error + 5 warning baseline. 17.4 còn mở cho tới Actions
+            release run và artifact download thật.
+          </p>
+          <p class="text-slate-400 text-sm">
+            Full regression trước khi đóng source P17.4 PASS: 324 test file (323 pass, một VieNeu-real
+            local skip) và 2.670 test pass/5 skip; R4.1c đo 216–313 ms. Workflow YAML parse được toàn bộ,
+            diff-check sạch. Đây chỉ là local gate; checklist vẫn để mở cho tới khi presubmit và release
+            profile chạy đúng commit trên Actions, rồi tải và kiểm report JSON.
+          </p>
         </article>
       </section>
     </main>

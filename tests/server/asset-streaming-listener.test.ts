@@ -4,6 +4,7 @@ import { spawn } from "node:child_process";
 import { expect, it } from "vitest";
 
 interface Evidence {
+  profile: "presubmit" | "release"; exactBytes: number;
   warmupStatus: number; exactStatus: number; rssDeltaBytes: number;
   baselineRss: number; baselineMemory: NodeJS.MemoryUsage; peakRss: number; peakMemory: NodeJS.MemoryUsage;
   oneOverStatus: number; oversizedStatus: number; tempAfterAbort: string[];
@@ -48,6 +49,8 @@ it("streams assets through a real HTTP/1.1 listener with bounded memory and exac
   expect(line, stdout).toBeDefined();
   const evidence = JSON.parse(line!.slice(marker.length)) as Evidence;
   process.stdout.write(`ASSET_STREAM_LISTENER_SAMPLE ${JSON.stringify({
+    profile: evidence.profile,
+    exactBytes: evidence.exactBytes,
     rssDeltaBytes: evidence.rssDeltaBytes,
     baselineRss: evidence.baselineRss,
     peakRss: evidence.peakRss,
