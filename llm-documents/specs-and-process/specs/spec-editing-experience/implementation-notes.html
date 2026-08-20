@@ -3103,6 +3103,17 @@
             diff-check sạch. Đây chỉ là local gate; checklist vẫn để mở cho tới khi presubmit và release
             profile chạy đúng commit trên Actions, rồi tải và kiểm report JSON.
           </p>
+          <p class="text-slate-400 text-sm">
+            P17.4/Phase P17 PASS tại exact source <code>9d5266ca652cd0d75d4ebe45a41f9d3fb6626eb1</code>.
+            PR presubmit run <a class="text-cyan-300" href="https://github.com/alvindev111/vidcom-v2/actions/runs/32426415844">32426415844</a>
+            và release dispatch <a class="text-cyan-300" href="https://github.com/alvindev111/vidcom-v2/actions/runs/32426419210">32426419210</a>
+            đều Linux success. Hai artifact tải về <code>/tmp/vidcom-p17-soak-324264.1EJhxx</code> đều
+            <code>status=passed</code>, expected/actual SHA trùng, <code>dirty=false</code>, exit 0, không
+            timeout và không thiếu marker. Release chứng minh tree 10k/depth 65, catalog 100k, receipt
+            100k, suspended SSE/PTY, hai range sample và HTTP upload đúng 500 MiB với RSS delta 33.714.176
+            byte. P18 được mở; chưa đóng goal vì exact-source five-workflow, branch protection và closure
+            matrix vẫn còn.
+          </p>
         </article>
       </section>
     </main>
