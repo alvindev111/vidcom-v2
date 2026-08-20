@@ -2960,6 +2960,13 @@
             0 error + 5 warning baseline. Browser R4.1c 212–297 ms; P15 receipt/PTY/SSE và P14 500 MB
             samples vẫn chạy trong full suite. Candidate sẵn sàng cho fresh CI.
           </p>
+          <p class="text-slate-400 text-sm">
+            2026-08-21 03:54 +07 — CI <code>32416539145</code> tại <code>2f4017b0</code> xác nhận OSV
+            GREEN 0 vulnerability, license/provenance GREEN. TruffleHog vẫn dừng trước scan vì action cũng
+            tự thêm <code>--no-update</code>; đây không phải secret finding. Cancel runner sau kết luận đó.
+            Repair cuối giữ <code>extra_args</code> chỉ còn <code>--results=verified,unknown</code>; contract
+            cấm lặp cả <code>--fail</code> và <code>--no-update</code>. P17.3 vẫn mở chờ fresh CI.
+          </p>
         </article>
       </section>
     </main>
