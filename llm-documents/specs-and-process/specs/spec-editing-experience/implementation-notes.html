@@ -2540,6 +2540,22 @@
             nhưng không tuyên bố ngăn được same-user swap không quan sát được sau syscall cuối. P13 chỉ
             được đóng sau workflow <code>CI</code> xanh trên Linux/macOS/Windows exact source.
           </p>
+          <p class="text-slate-400 text-sm">
+            2026-08-20 21:37 +07 — P13 PASS tại <code>87182d33</code>. CI dispatch
+            <code>32378379288</code> xanh 8/8 job: main Linux/macOS/Windows, browser Linux/Windows và
+            packaged smoke ba OS. Bốn suite P13 đạt 48/48, zero skip trên từng main runner: composite 29,
+            entry CRUD 5, mutation lease 7, capture 7. Lần trích log Windows đầu bằng output compact bỏ sót
+            các dòng bị ANSI/NUL tách và tạm trông như thiếu coverage; tải run-log ZIP đầy đủ rồi normalize
+            bằng <code>strings</code> xác nhận đủ bốn suite, nên không tạo repair/rerun giả.
+          </p>
+          <p class="text-slate-400 text-sm">
+            <code>gh run download 32378379288</code> đã lấy artifacts. Ba JSON packaged evidence đều
+            <code>strict=true</code>, <code>evidenceError=null</code>, 14/14 step passed. Main jobs cũng
+            hoàn tất FFmpeg report, typecheck, lint, boundaries, full test, VieNeu sidecar contract, MCP,
+            golden, schema drift, spec paths, build và runtime smoke. Token chỉ được nạp từ
+            <code>GH_KEY</code> vào <code>GH_TOKEN</code> trong shell và không được in hay ghi vào notes.
+            P14 nay mới được mở.
+          </p>
         </article>
       </section>
     </main>
