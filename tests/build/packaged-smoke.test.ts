@@ -18,6 +18,7 @@ import {
 import {
   macNetworkCutRoutes,
   networkCutPlan,
+  windowsNetworkCutPrograms,
 } from "../../scripts/packaged-smoke/network-cut.mjs";
 import {
   canonicalSmokeDirectories,
@@ -879,6 +880,41 @@ describe("native packaged-smoke inputs", () => {
     for (const route of routes) {
       expect(route.add.at(-1)).toBe("-reject");
       expect(route.delete).not.toContain("-reject");
+    }
+  });
+
+  it("keeps the Windows Actions control process online while cutting every packaged executable", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "vidcom-windows-network-cut-"));
+    try {
+      const runtime = path.join(root, "app-data", "runtime");
+      const nested = path.join(runtime, "python", "Scripts");
+      const harness = path.join(root, "node.exe");
+      const artifact = path.join(root, "vidcom.exe");
+      await mkdir(nested, { recursive: true });
+      await Promise.all([
+        writeFile(harness, "harness"),
+        writeFile(artifact, "artifact"),
+        writeFile(path.join(runtime, "ffmpeg.exe"), "ffmpeg"),
+        writeFile(path.join(nested, "python.EXE"), "python"),
+        writeFile(path.join(runtime, "README.txt"), "not executable"),
+      ]);
+
+      const programs = await windowsNetworkCutPrograms({
+        harnessProgram: harness,
+        programs: [artifact, artifact],
+        roots: [path.join(root, "app-data")],
+      });
+
+      expect(programs).toEqual([
+        harness,
+        artifact,
+        path.join(runtime, "ffmpeg.exe"),
+        path.join(nested, "python.EXE"),
+      ].sort((left, right) => left.localeCompare(right)));
+      expect(programs).not.toContain(path.join(runtime, "README.txt"));
+      expect(programs.some((program) => /Runner\.(?:Worker|Listener)\.exe$/iu.test(program))).toBe(false);
+    } finally {
+      await rm(root, { recursive: true, force: true });
     }
   });
 });

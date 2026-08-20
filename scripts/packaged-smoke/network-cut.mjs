@@ -1,5 +1,7 @@
 import { spawnSync } from "node:child_process";
+import { readdir } from "node:fs/promises";
 import net from "node:net";
+import path from "node:path";
 
 function command(executable, args) {
   const result = spawnSync(executable, args, {
@@ -68,29 +70,77 @@ function macCut() {
   };
 }
 
-function windowsCut() {
-  const name = `VidComPackagedSmoke-${process.pid}`;
+export async function windowsNetworkCutPrograms(options = {}) {
+  // A machine-wide Windows block also cuts Runner.Worker off from GitHub. Scope
+  // the native runner rule to the smoke harness, SEA, and every materialized
+  // runtime executable instead; the harness entry proves its own egress is cut.
+  const programs = new Map();
+  const add = (program) => {
+    if (typeof program !== "string" || !path.isAbsolute(program) || program.includes("\0")) {
+      throw new Error(`Windows network-cut program must be an absolute path: ${String(program)}`);
+    }
+    programs.set(program.toLowerCase(), program);
+  };
+  add(options.harnessProgram ?? process.execPath);
+  for (const program of options.programs ?? []) add(program);
+
+  const pending = [...(options.roots ?? [])];
+  while (pending.length > 0) {
+    const directory = pending.pop();
+    if (typeof directory !== "string" || !path.isAbsolute(directory) || directory.includes("\0")) {
+      throw new Error(`Windows network-cut root must be an absolute path: ${String(directory)}`);
+    }
+    const entries = await readdir(directory, { withFileTypes: true }).catch((error) => {
+      if (error?.code === "ENOENT") return [];
+      throw error;
+    });
+    entries.sort((left, right) => left.name.localeCompare(right.name));
+    for (const entry of entries) {
+      const pathname = path.join(directory, entry.name);
+      if (entry.isDirectory()) pending.push(pathname);
+      else if (entry.isFile() && /\.exe$/iu.test(entry.name)) add(pathname);
+    }
+  }
+  return [...programs.values()].sort((left, right) => left.localeCompare(right));
+}
+
+function windowsCut(programs) {
+  const group = `VidComPackagedSmoke-${process.pid}`;
   const powershell = (script) => command("powershell.exe", [
     "-NoLogo", "-NoProfile", "-NonInteractive", "-Command", script,
   ]);
-  powershell(
-    `New-NetFirewallRule -Name '${name}' -DisplayName '${name}' -Direction Outbound`
-      + " -Action Block -RemoteAddress Internet -Profile Any | Out-Null",
+  const encodedPrograms = Buffer.from(JSON.stringify(programs), "utf8").toString("base64");
+  powershell([
+    "$ErrorActionPreference = 'Stop'",
+    `$group = '${group}'`,
+    `$json = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('${encodedPrograms}'))`,
+    "[array]$programs = $json | ConvertFrom-Json",
+    "try {",
+    "  for ($index = 0; $index -lt $programs.Count; $index += 1) {",
+    "    $name = $group + '-' + $index",
+    "    New-NetFirewallRule -Name $name -DisplayName $name -Group $group -Direction Outbound -Action Block -Program $programs[$index] -RemoteAddress Internet -Profile Any | Out-Null",
+    "  }",
+    "} catch {",
+    "  Get-NetFirewallRule -Group $group -ErrorAction SilentlyContinue | Remove-NetFirewallRule",
+    "  throw",
+    "}",
+  ].join("; "));
+  return () => powershell(
+    `Get-NetFirewallRule -Group '${group}' -ErrorAction Stop | Remove-NetFirewallRule -ErrorAction Stop`,
   );
-  return () => powershell(`Remove-NetFirewallRule -Name '${name}' -ErrorAction Stop`);
 }
 
 export function networkCutPlan(platform = process.platform) {
   if (platform === "linux") return "iptables OUTPUT reject except loopback";
   if (platform === "darwin") return "two IPv4 and two IPv6 runner reject routes, loopback preserved";
-  if (platform === "win32") return "Windows outbound firewall rule for Internet remote addresses";
+  if (platform === "win32") return "Windows outbound firewall rules for the packaged process set";
   throw new Error(`packaged smoke has no runner network cut for ${platform}`);
 }
 
-function activate() {
+async function activate(options) {
   if (process.platform === "linux") return linuxCut();
   if (process.platform === "darwin") return macCut();
-  if (process.platform === "win32") return windowsCut();
+  if (process.platform === "win32") return windowsCut(await windowsNetworkCutPrograms(options));
   throw new Error(`packaged smoke has no runner network cut for ${process.platform}`);
 }
 
@@ -108,12 +158,12 @@ async function assertExternalBlocked() {
   if (connected) throw new Error("runner network cut still allowed an external TCP connection");
 }
 
-/** Runs work while the runner network layer blocks external traffic but keeps loopback. */
-export async function withRunnerNetworkCut(work) {
+/** Runs work while the native runner blocks smoke-process egress but keeps loopback. */
+export async function withRunnerNetworkCut(work, options = {}) {
   if (process.env.VIDCOM_SMOKE_NETWORK_CUT !== "1") {
     throw new Error("runner network cut is not authorized; set VIDCOM_SMOKE_NETWORK_CUT=1 in the native smoke job");
   }
-  const restore = activate();
+  const restore = await activate(options);
   try {
     await assertExternalBlocked();
     return await work(networkCutPlan());

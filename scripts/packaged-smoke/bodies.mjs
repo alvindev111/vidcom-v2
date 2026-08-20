@@ -1584,7 +1584,7 @@ export const STEP_BODIES = {
       return await withRunnerNetworkCut(async (plan) => {
         const result = await runMediaPipeline(context, { label: "offline", snapshot: false });
         return `${plan}; warm VieNeu and MP4 render succeeded offline (${result.report.format.duration}s)`;
-      });
+      }, { programs: [context.artifact], roots: [context.appData] });
     } finally {
       if (previousHf === undefined) delete context.environment.HF_HUB_OFFLINE;
       else context.environment.HF_HUB_OFFLINE = previousHf;
@@ -1841,7 +1841,7 @@ export const STEP_BODIES = {
       throw new Error("catalog evidence names the source tree");
     }
     return `${plan}; ${evidence}; installed ${String(installedPath)} across two boots offline`;
-    });
+    }, { programs: [context.artifact], roots: [context.appData] });
   },
 
   async provenance(context) {

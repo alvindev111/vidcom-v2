@@ -2708,6 +2708,37 @@
             Trạng thái chỉ là local PASS/CI open: phải commit, push và dispatch run mới; run đỏ cũ không
             được dùng để đóng phase dù các job khác có kết thúc xanh.
           </p>
+          <p class="text-slate-400 text-sm">
+            2026-08-21 00:47 +07 — CI exact-source <code>32392813748</code> tại
+            <code>f04b176</code> vẫn đỏ nên P15 tiếp tục khóa. Bảy job xanh gồm main ba OS, Browser
+            Linux/Windows và packaged Linux/macOS. Packaged Windows thất bại sau 1 giờ 11 phút 05 giây;
+            log thật chứng minh mười step đầu đến <code>render-cli</code> đã pass, rồi dừng ở
+            <code>offline</code> và không upload evidence.
+          </p>
+          <p class="text-slate-400 text-sm">
+            Check-run annotation xác định hosted runner mất liên lạc với GitHub. Nguyên nhân nằm ở harness:
+            Windows dùng firewall rule machine-wide <code>RemoteAddress Internet</code>, vì vậy chính
+            process điều khiển Actions cũng bị cắt trong lúc native VieNeu/render chạy chậm. Đây không phải
+            thiếu runner và không được gắn <code>[!]</code>. Repair sẽ giữ network cut thật cho smoke
+            harness, SEA artifact và mọi executable runtime hiện có trong app-data, nhưng không chặn GitHub
+            Runner; thêm unit contract cho program scope trước khi dispatch CI mới.
+          </p>
+          <p class="text-slate-400 text-sm">
+            2026-08-21 00:55 +07 — repair local PASS. RED test ban đầu 1/40 vì chưa có seam liệt kê
+            executable. GREEN Windows cut tạo rule riêng cho Node smoke harness, SEA artifact và mọi
+            file <code>.exe</code> thường bên dưới packaged app-data; đường dẫn được dedupe không phân biệt
+            hoa thường và truyền vào PowerShell bằng base64 JSON, không nội suy dữ liệu đường dẫn. Rule
+            cùng group nên partial setup và <code>finally</code> đều dọn sạch. GitHub Runner không thuộc
+            program set, còn chính Node harness vẫn bị chặn để <code>assertExternalBlocked</code> chứng
+            minh egress thật; POSIX cut không đổi.
+          </p>
+          <p class="text-slate-400 text-sm">
+            Focused packaged suite xanh 40/40. Full local regression xanh 318 file, 2.642 test pass và
+            5 gated skip đã biết; history sample heap 0/RSS 33.816.576 byte, upload listener RSS
+            46.219.264 byte, PTY listener 0/heap 19.532.856/RSS 18.415.616 byte. Typecheck, boundaries,
+            spec-paths 150 và diff-check pass; lint 0 error + 5 warning baseline. Trạng thái vẫn CI open:
+            chỉ Windows native run mới chứng minh firewall rule và packaged artifact hoàn tất.
+          </p>
         </article>
       </section>
     </main>
