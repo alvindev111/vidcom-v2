@@ -78,7 +78,7 @@ jobs:
           base: ""
           head: ${{ github.ref_name }}
           version: 3.97.0
-          extra_args: --results=verified,unknown --fail --no-update
+          extra_args: --results=verified,unknown --no-update
 
   dependency-review:
     name: Dependency review

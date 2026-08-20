@@ -2,6 +2,7 @@
 
 import * as React from "react";
 import { PlusIcon } from "lucide-react";
+import { useRouter } from "next/navigation";
 
 import { callService } from "@/lib/api/services";
 import type { PresetId } from "@/lib/new-project/state";
@@ -13,6 +14,7 @@ import { NewProjectDialog } from "./new-project-dialog";
  * agent workflow rather than a promise hidden behind this button.
  */
 export function NewProjectCard() {
+  const router = useRouter();
   const [open, setOpen] = React.useState(false);
   const create = React.useCallback((input: { name: string; presetId: PresetId }) =>
     callService<{ slug: string }>("v1.projects.create", { body: input }), []);
@@ -54,7 +56,7 @@ export function NewProjectCard() {
           </button>
           <NewProjectDialog
             api={{ create }}
-            onCreated={(slug) => { window.location.assign(`/projects/${encodeURIComponent(slug)}`); }}
+            onCreated={(slug) => { router.push(`/projects/${encodeURIComponent(slug)}`); }}
           />
         </div>
       ) : null}

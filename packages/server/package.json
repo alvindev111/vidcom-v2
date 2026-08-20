@@ -10,6 +10,6 @@
     "@vidcom/adapter": "workspace:*",
     "@vidcom/contracts": "workspace:*",
     "@vidcom/core": "workspace:*",
-    "hono": "4.12.33"
+    "hono": "4.12.34"
   }
 }

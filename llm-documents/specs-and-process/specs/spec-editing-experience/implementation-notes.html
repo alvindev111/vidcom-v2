@@ -2939,6 +2939,27 @@
             production build, axe browser 1/1, Editing Experience + workflow contract 55/55 đều xanh;
             lint 0 error và giữ đúng 5 warning baseline. Không dùng kết quả local để thay thế CI.
           </p>
+          <p class="text-slate-400 text-sm">
+            2026-08-21 03:47 +07 — exact-source CI <code>32415782982</code> tại
+            <code>92b6212e</code> RED nên 17.3 tiếp tục khóa. Supply-chain license/provenance xanh, nhưng
+            TruffleHog fail trước khi scan do action đã tự thêm <code>--fail</code> còn workflow lặp flag;
+            OSV phát hiện 15 advisory có bản vá trên 6 package. Run được cancel sau khi hai nguyên nhân đã
+            đủ rõ để không tiếp tục tốn runner; các job bị cancel không được tính là product failure/PASS.
+          </p>
+          <p class="text-slate-400 text-sm">
+            Repair bỏ flag TruffleHog trùng và không thêm suppression. Nâng Hono lên bản vá 4.12.34;
+            Next + eslint-config-next lên 16.3.1 để lấy PostCSS 8.5.23 và Sharp 0.35.3; khóa override
+            js-yaml 4.3.1, nanoid 3.3.18 và Hono để mọi transitive path cùng ở mức đã vá. Provenance mới
+            xác nhận 1.173 registry + 8 workspace package; license gate vẫn xanh. Chờ local regression rồi
+            fresh CI mới.
+          </p>
+          <p class="text-slate-400 text-sm">
+            Local regression sau repair xanh: full Vitest 2.660 pass, 5 skip; production build Next 16.3.1,
+            typecheck và 51 security/workflow contract đều xanh. Eslint-config mới phát hiện một internal
+            navigation còn dùng <code>window.location.assign</code>; đổi sang Next router, lint trở lại đúng
+            0 error + 5 warning baseline. Browser R4.1c 212–297 ms; P15 receipt/PTY/SSE và P14 500 MB
+            samples vẫn chạy trong full suite. Candidate sẵn sàng cho fresh CI.
+          </p>
         </article>
       </section>
     </main>

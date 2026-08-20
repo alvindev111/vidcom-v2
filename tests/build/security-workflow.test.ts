@@ -30,7 +30,8 @@ describe("security and dependency policy", () => {
     expect(workflow).toContain("github/codeql-action/analyze@");
     expect(workflow).toContain("google/osv-scanner-action/.github/workflows/osv-scanner-reusable.yml@");
     expect(workflow).toContain("trufflesecurity/trufflehog@");
-    expect(workflow).toContain("--results=verified,unknown");
+    expect(workflow).toContain("extra_args: --results=verified,unknown --no-update");
+    expect(workflow).not.toContain("--results=verified,unknown --fail");
     expect(workflow).toContain("actions/dependency-review-action@");
     expect(workflow).toContain("bun run test:licenses");
     expect(workflow).toContain("bun run test:provenance");
