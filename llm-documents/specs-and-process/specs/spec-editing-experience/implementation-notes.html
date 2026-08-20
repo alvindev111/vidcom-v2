@@ -2859,6 +2859,20 @@
             1/1; full browser xanh 9 file/19 test, R4.1c 188–299 ms. Typecheck, boundaries và diff-check
             xanh; lint 0 error + 5 warning baseline. Cần thêm một exact-source CI native Windows xanh.
           </p>
+          <p class="text-slate-400 text-sm">
+            2026-08-21 03:14 +07 — P16 PASS tại exact source <code>5c9c6bba</code>. Fresh CI
+            <code>32409916163</code> xanh 8/8: main Linux/macOS/Windows, browser Linux/Windows và packaged
+            smoke ba OS. Windows browser chứng minh cả immediate exit guard lẫn Close/Recreate không còn
+            race. Hai run đỏ trước vẫn được giữ nguyên trong Execution Log, không retry hay dùng
+            <code>[!]</code>.
+          </p>
+          <p class="text-slate-400 text-sm">
+            <code>gh run download 32409916163</code> lấy đủ ba packaged artifact. Cả ba summary có
+            <code>strict=true</code>, <code>evidenceError=null</code>, 14/14 required step pass; manifest
+            đều dirty=false và commit đúng <code>5c9c6bba</code>. Windows native tạo VieNeu WAV và MP4
+            audiovisual 8 giây; render-media 367.448 ms, render-cli 226.991 ms, offline warm VieNeu/MP4
+            95.765 ms, editing runtime hai boot 34.815 ms. P17 nay mới được mở.
+          </p>
         </article>
       </section>
     </main>
