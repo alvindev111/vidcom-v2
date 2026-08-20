@@ -50,13 +50,24 @@ describe("GitHub Actions packaging gates", () => {
     expect(browser).toContain("pull_request:");
     expect(browser).not.toContain("github.head_ref");
     expect(browser).toContain("npm run test:browser-session");
+    expect(browser).toContain("bun run test:accessibility");
     expect(browser).toContain('VIDCOM_REQUIRE_BROWSER: "1"');
     expect(manifest.scripts["test:browser-session"]).toContain(
       "tests/frontend/caption-runtime-browser.test.ts",
     );
+    expect(manifest.scripts["test:accessibility"]).toContain(
+      "tests/frontend/accessibility-browser.test.ts",
+    );
     expect(ci).toContain(
       "npm run test -- --exclude tests/adapter/remote-asset-browser.test.ts",
     );
+  });
+
+  it("includes the security suite in an exact-ref manual CI dispatch", async () => {
+    const { ci } = await workflows();
+
+    expect(ci).toContain("uses: ./.github/workflows/security.yml");
+    expect(ci).toContain("security-events: write");
   });
 
   it("reruns process supervision when dependency or test configuration changes", async () => {

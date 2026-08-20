@@ -841,7 +841,7 @@ describe("native packaged-smoke inputs", () => {
 
   it("does not duplicate pull-request heavy workflows through the CI wrapper", async () => {
     const workflow = await readFile(".github/workflows/ci.yml", "utf8");
-    expect(workflow.match(/if: github\.event_name == 'workflow_dispatch'/gu)).toHaveLength(2);
+    expect(workflow.match(/if: github\.event_name == 'workflow_dispatch'/gu)).toHaveLength(3);
     expect(workflow).not.toContain(
       "github.event_name == 'workflow_dispatch' || github.event_name == 'pull_request'",
     );

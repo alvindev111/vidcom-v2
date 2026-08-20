@@ -1621,10 +1621,10 @@ events/agent-terminal routes; soak tests
 **Read first**: G-02/G-03, workflow source and existing CRUD prompt/confirm call paths
 
 **Tasks**:
-- [ ] 17.1 Replace native file CRUD prompts/confirms with accessible dialogs
+- [x] 17.1 Replace native file CRUD prompts/confirms with accessible dialogs
   - Label, description, focus trap/restore, keyboard cancel/submit, deterministic browser test.
   - _Requirements: R15.6_ — _Design: §24_
-- [ ] 17.2 Add automated accessibility gate
+- [x] 17.2 Add automated accessibility gate
   - Audit critical studio flows plus keyboard/focus/ARIA assertions; zero critical/serious violation.
   - _Requirements: R15.6_ — _Design: §24_
 - [ ] 17.3 Add SCA/CodeQL/secret/license/provenance policies and immutable action pins

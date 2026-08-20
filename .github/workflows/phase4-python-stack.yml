@@ -54,7 +54,7 @@ jobs:
 
     steps:
       - name: Check out repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
       - name: Confirm the runner really is arm64
         # A silent switch to x86_64 would produce wheels for the wrong platform
@@ -159,7 +159,7 @@ jobs:
 
       - name: Upload the measured package sets
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: darwin-python-stack
           path: |

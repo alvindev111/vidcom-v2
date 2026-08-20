@@ -69,7 +69,6 @@ export function useAssetManager(
       const intent = { path, recursive: true, expectedRevision: revision };
       const prepared = await send(entryMutationRequest(projectId, "prepare-delete", intent));
       if (!prepared?.grantId) throw new Error("deletion approval was not created");
-      if (!window.confirm(`Delete ${path}? This operation creates a backup.`)) return;
       const payload = await send(entryMutationRequest(projectId, "delete", intent, prepared.grantId));
       onProjectChanged(mutationChangeSeq(payload));
     } catch (cause) { setError(cause instanceof Error ? cause.message : "entry deletion failed"); }

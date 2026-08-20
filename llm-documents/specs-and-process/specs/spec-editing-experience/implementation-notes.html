@@ -2873,6 +2873,72 @@
             audiovisual 8 giây; render-media 367.448 ms, render-cli 226.991 ms, offline warm VieNeu/MP4
             95.765 ms, editing runtime hai boot 34.815 ms. P17 nay mới được mở.
           </p>
+          <p class="text-slate-400 text-sm">
+            2026-08-21 03:20 +07 — mở checkpoint 17.1 tại <code>2e5ec53</code>, worktree sạch. CodeGraph
+            và kiểm tra call path xác nhận file CRUD còn đúng ba <code>window.prompt</code> trong
+            <code>FileExplorer</code>, còn delete gọi <code>window.confirm</code> sau prepare-delete trong
+            hook. Các confirm bảo vệ draft/route và <code>beforeunload</code> không thuộc CRUD nên không
+            thay đổi ở task này. Repo đã có Radix qua <code>radix-ui</code> nhưng chưa có dialog primitive.
+          </p>
+          <p class="text-slate-400 text-sm">
+            Chọn một controlled CRUD dialog dùng chung create file/folder, rename và delete: title +
+            description được nối ARIA, form Enter submit, Escape cancel, focus trap/restore do Radix quản
+            lý, input autofocus. Delete vẫn giữ prepare/grant/execute trong hook; UI chỉ thay native
+            confirmation bằng destructive dialog trước khi gọi hook. RED browser sẽ đi toàn bộ create →
+            rename → delete qua HTTP thật, đồng thời khóa semantic, bàn phím và focus.
+          </p>
+          <p class="text-slate-400 text-sm">
+            2026-08-21 03:25 +07 — 17.1 PASS. RED native prompt chặn browser hơn 60 giây và không tạo
+            <code>role=dialog</code>. GREEN candidate đầu tiên phát hiện focus về <code>body</code> vì
+            controlled dialog không có trigger; repair ghi lại opener và restore rõ qua close lifecycle.
+            Một failure tiếp theo là harness đòi file vừa rename phải mở thành editor tab dù task chỉ cần
+            chọn entry để delete; helper được tách thành selection quản trị, không thêm sleep/retry.
+          </p>
+          <p class="text-slate-400 text-sm">
+            Test browser cuối đi create → rename → prepare-delete → execute-delete qua runtime/HTTP thật;
+            khóa title, description, autofocus, focus trap, Escape cancel/restore và Enter submit. Targeted
+            xanh 1/1; toàn bộ <code>editing-experience-browser</code> xanh 4/4, R4.1c 187–303 ms. Build,
+            typecheck và focused lint xanh; native prompt/confirm không còn trong file CRUD call path.
+            Hướng dẫn shadcn dẫn đến primitive Radix local, giữ style/theme của repo và semantic/focus sẵn
+            có thay vì tự viết modal behavior.
+          </p>
+          <p class="text-slate-400 text-sm">
+            2026-08-21 03:35 +07 — 17.2 PASS. Thêm axe 4.13 real-browser gate cho bốn critical flow:
+            Code editor, file CRUD dialog sau animation ổn định, Video Scene và AI Composer; critical hoặc
+            serious violation đều làm job đỏ. RED ban đầu tìm đúng hai input không accessible name
+            (CodeMirror textbox và playback slider thumb), gutter/syntax contrast dưới 4,5:1. Repair thêm
+            content label theo path, chuyển aria label từ slider root xuống thumb, label mọi slider field,
+            và dùng highlight palette light/dark có contrast thay cho One Dark highlight cũ.
+          </p>
+          <p class="text-slate-400 text-sm">
+            Dialog scan ban đầu đo giữa fade-in nên báo contrast hiệu dụng giả; harness nay chờ Web
+            Animations của riêng dialog subtree, không sleep và không chờ animation player. Stress CRUD
+            sau đó bắt race path append thật: input rename chỉ focus, không select default. Product repair
+            dùng <code>select()</code>; keyboard test khóa full selection rồi type path mới. Ba mẫu tuần tự
+            xanh 3/3, axe xanh 1/1, Editing Experience + workflow contract xanh 11/11; R4.1c 185–303 ms.
+            Workflow Browser session Linux/Windows có step <code>bun run test:accessibility</code> với
+            Chrome required. Pin immutable Actions vẫn thuộc 17.3 nên 17.3 mới được mở.
+          </p>
+          <p class="text-slate-400 text-sm">
+            2026-08-21 03:43 +07 — checkpoint 17.3 local GREEN, chưa nhận PASS vì còn chờ exact-source
+            CI. RED contract bắt toàn bộ mutable <code>uses:</code>, Security workflow chưa tồn tại và
+            Dependabot chưa có. Repair pin mọi external Action/reusable workflow bằng full 40-hex commit;
+            thêm CodeQL JavaScript/TypeScript, OSV scan trực tiếp <code>bun.lock</code>, TruffleHog full
+            history chỉ xuất verified/unknown, dependency review, production license allowlist và lock
+            provenance SHA-512. Không token hay secret finding nào được ghi vào notes/log.
+          </p>
+          <p class="text-slate-400 text-sm">
+            Dependabot nay theo dõi Bun và GitHub Actions hằng tuần. Security hỗ trợ cả
+            <code>workflow_call</code> lẫn dispatch riêng, đồng thời được gọi bởi manual <code>CI</code>
+            exact-ref nên default branch chưa cần biết workflow mới. Local contract xanh 51/51;
+            provenance xác nhận 1.201 registry + 8 workspace package; license gate xanh; Ruby parse đủ 8
+            workflow và Dependabot YAML. Giữ 17.3 mở cho tới khi CI Security jobs kết luận xanh.
+          </p>
+          <p class="text-slate-400 text-sm">
+            Local source gate trước commit: typecheck, boundaries, spec-paths, provenance, license,
+            production build, axe browser 1/1, Editing Experience + workflow contract 55/55 đều xanh;
+            lint 0 error và giữ đúng 5 warning baseline. Không dùng kết quả local để thay thế CI.
+          </p>
         </article>
       </section>
     </main>

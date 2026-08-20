@@ -104,6 +104,33 @@ async function openTreeSource(page: Page, relativePath: string): Promise<void> {
   { timeout: 10_000 }, relativePath);
 }
 
+/** Selects a tree entry for rename/delete without requiring it to open in the editor. */
+async function selectTreeEntry(page: Page, relativePath: string): Promise<void> {
+  const segments = relativePath.split("/");
+  for (const segment of segments.slice(0, -1)) {
+    await page.waitForFunction((label) => [...document.querySelectorAll("button")]
+      .some((button) => button.textContent?.trim() === label), { timeout: 10_000 }, segment);
+    await page.evaluate((label) => {
+      const button = [...document.querySelectorAll("button")]
+        .find((candidate) => candidate.textContent?.trim() === label) as HTMLButtonElement | undefined;
+      if (button?.getAttribute("aria-expanded") !== "true") button?.click();
+    }, segment);
+  }
+  const filename = segments.at(-1);
+  if (!filename) throw new Error(`managed path has no filename: ${relativePath}`);
+  await page.waitForFunction((label) => [...document.querySelectorAll("button")]
+    .some((button) => button.textContent?.trim() === label), { timeout: 10_000 }, filename);
+  await page.evaluate((label) => {
+    const button = [...document.querySelectorAll("button")]
+      .find((candidate) => candidate.textContent?.trim() === label) as HTMLButtonElement | undefined;
+    button?.click();
+  }, filename);
+  await page.waitForFunction(() => {
+    const rename = document.querySelector('button[aria-label="Rename selected entry"]') as HTMLButtonElement | null;
+    return rename !== null && !rename.disabled;
+  }, { timeout: 10_000 });
+}
+
 async function clickExactButton(page: Page, label: string): Promise<void> {
   const clicked = await page.evaluate((exactLabel) => {
     const button = [...document.querySelectorAll("button")]
@@ -299,6 +326,85 @@ describe("editing experience in a browser", () => {
       expect((await recreateResponse).ok()).toBe(true);
       await page.waitForFunction(() => !document.body.innerText.includes("This file was deleted outside the editor"));
       expect(await readFile(sourcePath, "utf8")).toContain("recreate-dirty-delete");
+    });
+  }, 180_000);
+
+  it("uses keyboard-accessible dialogs for project file CRUD", async () => {
+    await withStudioBrowser("file-crud-dialogs", async ({ page }) => {
+      const newFile = await page.waitForSelector('button[aria-label="New file"]');
+      await newFile!.focus();
+      await newFile!.click();
+
+      const dialog = await page.waitForSelector('[role="dialog"]', { timeout: 5_000 });
+      const semantics = await dialog!.evaluate((element) => ({
+        labelledBy: element.getAttribute("aria-labelledby"),
+        describedBy: element.getAttribute("aria-describedby"),
+        label: element.getAttribute("aria-labelledby")
+          ? document.getElementById(element.getAttribute("aria-labelledby")!)?.textContent?.trim()
+          : null,
+        description: element.getAttribute("aria-describedby")
+          ? document.getElementById(element.getAttribute("aria-describedby")!)?.textContent?.trim()
+          : null,
+      }));
+      expect(semantics).toMatchObject({
+        labelledBy: expect.any(String),
+        describedBy: expect.any(String),
+        label: "Create file",
+        description: "Enter a project-relative path for the new file.",
+      });
+      expect(await page.evaluate(() => document.activeElement?.tagName)).toBe("INPUT");
+
+      await page.keyboard.press("Tab");
+      expect(await page.evaluate(() => document.activeElement?.closest('[role="dialog"]') !== null)).toBe(true);
+      await page.keyboard.press("Escape");
+      await page.waitForSelector('[role="dialog"]', { hidden: true });
+      await page.waitForFunction(() => document.activeElement?.getAttribute("aria-label") === "New file");
+      expect(await page.evaluate(() => document.activeElement?.getAttribute("aria-label"))).toBe("New file");
+
+      await page.click('button[aria-label="New file"]');
+      await page.locator('[role="dialog"] input').fill("assets/dialog-file.txt");
+      const created = page.waitForResponse((response) => response.request().method() === "POST"
+        && new URL(response.url()).pathname.endsWith("/entries"));
+      const createdSnapshot = page.waitForResponse(async (response) => response.request().method() === "GET"
+        && new URL(response.url()).pathname.endsWith("/studio-snapshot")
+        && (await response.text()).includes('"path":"assets/dialog-file.txt"'));
+      await page.keyboard.press("Enter");
+      expect((await created).status()).toBe(201);
+      expect((await createdSnapshot).ok()).toBe(true);
+
+      await selectTreeEntry(page, "assets/dialog-file.txt");
+      await page.click('button[aria-label="Rename selected entry"]');
+      await page.waitForSelector('[role="dialog"]');
+      expect(await page.$eval('[role="dialog"] input', (input) => (input as HTMLInputElement).value))
+        .toBe("assets/dialog-file.txt");
+      expect(await page.$eval('[role="dialog"] input', (input) => ({
+        start: (input as HTMLInputElement).selectionStart,
+        end: (input as HTMLInputElement).selectionEnd,
+      }))).toEqual({ start: 0, end: "assets/dialog-file.txt".length });
+      await page.keyboard.type("assets/dialog-renamed.txt");
+      const renamed = page.waitForResponse((response) => response.request().method() === "PATCH"
+        && new URL(response.url()).pathname.endsWith("/entries"));
+      const renamedSnapshot = page.waitForResponse(async (response) => response.request().method() === "GET"
+        && new URL(response.url()).pathname.endsWith("/studio-snapshot")
+        && (await response.text()).includes('"path":"assets/dialog-renamed.txt"')).catch(() => null);
+      await page.keyboard.press("Enter");
+      const renamedResponse = await renamed;
+      if (!renamedResponse.ok()) {
+        throw new Error(`rename failed (${renamedResponse.status()}): ${await renamedResponse.text()}`);
+      }
+      expect((await renamedSnapshot)?.ok()).toBe(true);
+
+      await selectTreeEntry(page, "assets/dialog-renamed.txt");
+      await page.click('button[aria-label="Delete selected entry"]');
+      await page.waitForFunction(() => document.body.innerText.includes("Delete dialog-renamed.txt?"));
+      expect(await page.$eval('[role="dialog"]', (element) => element.getAttribute("aria-describedby"))).toBeTruthy();
+      const prepared = page.waitForResponse((response) => response.request().method() === "POST"
+        && new URL(response.url()).pathname.endsWith("/entries/deletions"));
+      const deleted = page.waitForResponse((response) => response.request().method() === "POST"
+        && /\/entries\/deletions\/[^/]+$/u.test(new URL(response.url()).pathname));
+      await page.keyboard.press("Enter");
+      expect((await prepared).ok()).toBe(true);
+      expect((await deleted).ok()).toBe(true);
     });
   }, 180_000);
 });

@@ -16,6 +16,7 @@ import type { FileNode } from "@/lib/studio/types";
 import type { ProjectChanged } from "@/lib/studio/preview-reload";
 import { assetKindFromName } from "@/lib/studio/asset-manager";
 import { AssetDropzone } from "./asset-dropzone";
+import { FileCrudDialog, type FileCrudIntent } from "./file-crud-dialog";
 import { FileTreeItem } from "./file-tree-item";
 import { PendingMountList } from "./pending-mount-list";
 import { useAssetManager } from "./use-asset-manager";
@@ -61,6 +62,9 @@ export function FileExplorer({
   const [renderRows, setRenderRows] = React.useState(INITIAL_RENDER_ROWS);
   const requests = React.useRef(new Set<AbortController>());
   const [managedPath, setManagedPath] = React.useState("");
+  const [crudIntent, setCrudIntent] = React.useState<FileCrudIntent | null>(null);
+  const [crudValue, setCrudValue] = React.useState("");
+  const crudOpener = React.useRef<HTMLElement | null>(null);
   const assets = useAssetManager(projectId, projectRevision, entryContentHash, onProjectChanged);
   const drops = useMountDrop({ projectId, revision: projectRevision, entryContentHash, onProjectChanged });
   // The list survives restarts, so it is read once the panel mounts rather than
@@ -130,8 +134,9 @@ export function FileExplorer({
           Files
         </span>
         <Button variant="ghost" size="icon" className="size-6" aria-label="New file" onClick={() => {
-          const path = window.prompt("Project-relative file path", "assets/new-file.txt")?.trim();
-          if (path) void assets.create(path, "file");
+          crudOpener.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+          setCrudValue("assets/new-file.txt");
+          setCrudIntent({ action: "create", kind: "file" });
         }}>
           <FilePlusIcon className="size-3.5" />
         </Button>
@@ -141,17 +146,23 @@ export function FileExplorer({
           className="size-6"
           aria-label="New folder"
           onClick={() => {
-            const path = window.prompt("Project-relative folder path", "assets/new-folder")?.trim();
-            if (path) void assets.create(path, "folder");
+            crudOpener.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+            setCrudValue("assets/new-folder");
+            setCrudIntent({ action: "create", kind: "folder" });
           }}
         >
           <FolderPlusIcon className="size-3.5" />
         </Button>
         <Button variant="ghost" size="icon" className="size-6" aria-label="Rename selected entry" disabled={!managedPath} onClick={() => {
-          const to = window.prompt("New project-relative path", managedPath)?.trim();
-          if (to && to !== managedPath) void assets.rename(managedPath, to);
+          crudOpener.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+          setCrudValue(managedPath);
+          setCrudIntent({ action: "rename", path: managedPath });
         }}><PencilIcon className="size-3.5" /></Button>
-        <Button variant="ghost" size="icon" className="size-6" aria-label="Delete selected entry" disabled={!managedPath} onClick={() => void assets.remove(managedPath)}>
+        <Button variant="ghost" size="icon" className="size-6" aria-label="Delete selected entry" disabled={!managedPath} onClick={() => {
+          crudOpener.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+          setCrudValue("");
+          setCrudIntent({ action: "delete", path: managedPath });
+        }}>
           <Trash2Icon className="size-3.5" />
         </Button>
       </div>
@@ -241,6 +252,21 @@ export function FileExplorer({
       />
       {drops.error ? <p role="alert" className="text-destructive border-t px-2 py-1.5 text-[11px]">{drops.error}</p> : null}
       <AssetDropzone progress={assets.progress} error={assets.error} onUpload={(file) => void assets.upload(file)} onCancel={assets.cancelUpload} />
+      <FileCrudDialog
+        intent={crudIntent}
+        value={crudValue}
+        onValueChange={setCrudValue}
+        onOpenChange={(open) => { if (!open) setCrudIntent(null); }}
+        onRestoreFocus={() => crudOpener.current?.focus()}
+        onSubmit={() => {
+          if (!crudIntent) return;
+          const value = crudValue.trim();
+          if (crudIntent.action === "create") void assets.create(value, crudIntent.kind);
+          else if (crudIntent.action === "rename") void assets.rename(crudIntent.path, value);
+          else void assets.remove(crudIntent.path);
+          setCrudIntent(null);
+        }}
+      />
     </div>
   );
 }
