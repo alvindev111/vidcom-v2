@@ -410,6 +410,29 @@ export interface MutationPathLease {
   parents: readonly MutationPathParentLease[];
 }
 
+/** Cheap no-content identity used to bind an HTTP asset response to one regular file version. */
+export interface AssetFileIdentity {
+  device: string;
+  inode: string;
+  size: number;
+  modifiedAtNs: string;
+  changedAtNs: string;
+}
+
+export interface AssetFileMetadata {
+  size: number;
+  /** Weak validator derived only from file identity; obtaining it never hashes file contents. */
+  etag: string;
+  identity: AssetFileIdentity;
+}
+
+export interface AssetRangeOpenOptions {
+  start: number;
+  end: number;
+  identity: AssetFileIdentity;
+  signal?: AbortSignal;
+}
+
 export interface MutationCaptureOptions {
   /** Directory targets that will be removed later in this mutation; rollback storage must sit outside all of them. */
   rollbackOutside?: readonly ResolvedPath[];

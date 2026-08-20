@@ -2556,6 +2556,32 @@
             <code>GH_KEY</code> vào <code>GH_TOKEN</code> trong shell và không được in hay ghi vào notes.
             P14 nay mới được mở.
           </p>
+          <p class="text-slate-400 text-sm">
+            2026-08-20 21:43 +07 — checkpoint 14.1. Bắt đầu từ primitive adapter: stat identity + weak
+            ETag không hash toàn file, FileHandle range stream theo pull với buffer hữu hạn, cancellation
+            đóng handle và semaphore giới hạn concurrent stream. RED suite sẽ dùng sparse 500 MB, ghi nhận
+            chính xác số byte đọc và 20 consumer. Parser HTTP/416/If-Range chưa đổi trong task này; thuộc
+            14.2 sau khi primitive bounded đã xanh.
+          </p>
+          <p class="text-slate-400 text-sm">
+            2026-08-20 22:02 +07 — 14.1–14.3 focused PASS. Asset GET không còn gọi
+            <code>readFile</code>, hash toàn file, <code>Uint8Array.from</code> hay slice toàn bộ: route
+            parse cú pháp Range trước metadata I/O, stat identity + weak ETag, rồi mở đúng đoạn inclusive
+            qua FileHandle pull stream. Semaphore mặc định 8, test đặt 4; finish/error/cancel/abort đều đóng
+            handle và trả slot. File sparse 500 MB đọc range một byte chỉ đọc một byte, RSS delta cục bộ
+            147.456–163.840 byte; 20 consumer chỉ có tối đa 4 active và tổng 20 byte đọc. External replace
+            đổi ETag và identity cũ bị từ chối. HTTP matrix phủ prefix/suffix/middle/end, overflow, reversed,
+            multi-range, unsatisfiable, If-None-Match và weak If-Range; invalid luôn 416 + kích thước, không
+            mở byte stream. Focused 70/70, typecheck/boundaries/diff-check xanh, lint không có error.
+          </p>
+          <p class="text-slate-400 text-sm">
+            Full local regression chưa được gọi là PASS: 2.618 test xanh nhưng upload-listener RSS gate cũ
+            có một outlier 85.770.240 byte &gt; 64 MiB; hai rerun isolated chạy đồng thời sau đó xanh ở
+            27.852.800 và 32.342.016 byte. Thêm dòng sample machine-readable vào log, không nâng threshold,
+            không retry để xoá evidence và không dùng <code>[!]</code>. P15 vẫn khóa; phải commit exact
+            source và để workflow <code>CI</code> chạy full suite trên ba OS. Bất kỳ job đỏ nào sẽ được sửa
+            trước khi ba AC của P14 được đánh dấu.
+          </p>
         </article>
       </section>
     </main>

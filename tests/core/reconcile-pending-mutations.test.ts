@@ -89,6 +89,8 @@ function workspace(actualHashes: Map<string, ContentHash | null>): WorkspacePort
     async readProjectRef() { return ref; },
     async readFile() { return null; },
     async readBytes() { return null; },
+    async statAsset() { return null; },
+    async openAssetRange() { return null; },
     async readHash(path) { return actualHashes.get(path) ?? null; },
     async writeAtomic() {},
     async exists(path) { return actualHashes.get(path) !== null && actualHashes.has(path); },

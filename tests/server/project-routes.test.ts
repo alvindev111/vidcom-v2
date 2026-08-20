@@ -50,6 +50,10 @@ function fixture(initialProjectChangeSeq = 8) {
   const assets = new Map<string, Uint8Array>([
     ["assets/pixel.png", new Uint8Array([1, 2, 3, 4])],
   ]);
+  const assetIo = {
+    fullReads: 0,
+    opens: [] as Array<{ start: number; end: number }>,
+  };
   let projectRevision = 3;
   const projectChangeSequences = new Map<ProjectId, number>([[id, initialProjectChangeSeq]]);
   const project = {
@@ -83,8 +87,36 @@ function fixture(initialProjectChangeSeq = 8) {
         return content === undefined ? null : { content, contentHash: contentHash(content) };
       },
       async readBytes(path: ResolvedPath) {
+        assetIo.fullReads += 1;
         const bytes = assets.get(path);
         return bytes ? { bytes, contentHash: contentHash(bytes) } : null;
+      },
+      async statAsset(path: ResolvedPath) {
+        const bytes = assets.get(path);
+        if (!bytes) return null;
+        return {
+          size: bytes.byteLength,
+          etag: `W/\"${bytes.byteLength}\"`,
+          identity: {
+            device: "fake",
+            inode: String(path),
+            size: bytes.byteLength,
+            modifiedAtNs: "1",
+            changedAtNs: "1",
+          },
+        };
+      },
+      async openAssetRange(path: ResolvedPath, input: { start: number; end: number }) {
+        const source = assets.get(path);
+        if (!source) return null;
+        assetIo.opens.push({ start: input.start, end: input.end });
+        const body = source.slice(input.start, input.end + 1);
+        return new ReadableStream<Uint8Array>({
+          start(controller) {
+            controller.enqueue(body);
+            controller.close();
+          },
+        });
       },
       async readHash() { return null; },
       async writeAtomic() {},
@@ -175,7 +207,7 @@ function fixture(initialProjectChangeSeq = 8) {
   const setProjectChangeSeq = (projectId: ProjectId, sequence: number) => {
     projectChangeSequences.set(projectId, sequence);
   };
-  return { request, previewRequest, previewCapabilities, authenticate, mutatePreview, setProjectChangeSeq };
+  return { request, previewRequest, previewCapabilities, authenticate, mutatePreview, setProjectChangeSeq, assetIo };
 }
 
 describe("project read routing contracts", () => {
@@ -306,6 +338,76 @@ describe("project read routing contracts", () => {
     const rejected = await request(`/api/v1/projects/${id}/assets/assets/secret.exe`, { headers: { Cookie: cookie } });
     expect(rejected.status).toBe(403);
     expect(ErrorResponseSchema.parse(await rejected.json()).error.code).toBe("asset_not_allowed");
+  });
+
+  it.each([
+    ["bytes=0-0", [1], "bytes 0-0/4", { start: 0, end: 0 }],
+    ["bytes=-2", [3, 4], "bytes 2-3/4", { start: 2, end: 3 }],
+    ["bytes=1-2", [2, 3], "bytes 1-2/4", { start: 1, end: 2 }],
+    ["bytes=2-", [3, 4], "bytes 2-3/4", { start: 2, end: 3 }],
+    ["bytes=-99", [1, 2, 3, 4], "bytes 0-3/4", { start: 0, end: 3 }],
+  ])("streams valid asset range %s with exact headers", async (range, body, contentRange, openedRange) => {
+    const { request, authenticate, assetIo } = fixture();
+    const cookie = await authenticate();
+    const response = await request(`/api/v1/projects/${id}/assets/assets/pixel.png`, {
+      headers: { Cookie: cookie, Range: range },
+    });
+
+    expect(response.status).toBe(206);
+    expect(response.headers.get("accept-ranges")).toBe("bytes");
+    expect(response.headers.get("content-length")).toBe(String(body.length));
+    expect(response.headers.get("content-range")).toBe(contentRange);
+    expect([...new Uint8Array(await response.arrayBuffer())]).toEqual(body);
+    expect(assetIo).toEqual({ fullReads: 0, opens: [openedRange] });
+  });
+
+  it.each([
+    "bytes=-",
+    "bytes=-0",
+    "bytes=4-",
+    "bytes=2-1",
+    "bytes=0-1,2-3",
+    "items=0-1",
+    "bytes=9007199254740992-",
+    "bytes=0-9007199254740992",
+  ])("returns 416 without opening bytes for invalid asset range %s", async (range) => {
+    const { request, authenticate, assetIo } = fixture();
+    const cookie = await authenticate();
+    const response = await request(`/api/v1/projects/${id}/assets/assets/pixel.png`, {
+      headers: { Cookie: cookie, Range: range },
+    });
+
+    expect(response.status).toBe(416);
+    expect(response.headers.get("content-length")).toBe("0");
+    expect(response.headers.get("content-range")).toBe("bytes */4");
+    expect((await response.arrayBuffer()).byteLength).toBe(0);
+    expect(assetIo).toEqual({ fullReads: 0, opens: [] });
+  });
+
+  it("uses weak ETags for revalidation and never treats one as a valid If-Range validator", async () => {
+    const { request, authenticate, assetIo } = fixture();
+    const cookie = await authenticate();
+    const url = `/api/v1/projects/${id}/assets/assets/pixel.png`;
+    const initial = await request(url, { headers: { Cookie: cookie } });
+    const etag = initial.headers.get("etag");
+    expect(etag).toBe('W/"4"');
+    expect((await initial.arrayBuffer()).byteLength).toBe(4);
+
+    const unchanged = await request(url, {
+      headers: { Cookie: cookie, "If-None-Match": `"other", ${etag}` },
+    });
+    expect(unchanged.status).toBe(304);
+
+    const ifRange = await request(url, {
+      headers: { Cookie: cookie, Range: "bytes=1-2", "If-Range": etag! },
+    });
+    expect(ifRange.status).toBe(200);
+    expect(ifRange.headers.get("content-range")).toBeNull();
+    expect([...new Uint8Array(await ifRange.arrayBuffer())]).toEqual([1, 2, 3, 4]);
+    expect(assetIo).toEqual({
+      fullReads: 0,
+      opens: [{ start: 0, end: 3 }, { start: 0, end: 3 }],
+    });
   });
 
   it("never exposes an absolute project path in errors", async () => {

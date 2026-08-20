@@ -47,6 +47,13 @@ it("streams assets through a real HTTP/1.1 listener with bounded memory and exac
   const line = stdout.split("\n").find((value) => value.startsWith(marker));
   expect(line, stdout).toBeDefined();
   const evidence = JSON.parse(line!.slice(marker.length)) as Evidence;
+  process.stdout.write(`ASSET_STREAM_LISTENER_SAMPLE ${JSON.stringify({
+    rssDeltaBytes: evidence.rssDeltaBytes,
+    baselineRss: evidence.baselineRss,
+    peakRss: evidence.peakRss,
+    peakExternal: evidence.peakMemory.external,
+    peakArrayBuffers: evidence.peakMemory.arrayBuffers,
+  })}\n`);
   expect(evidence).toMatchObject({
     warmupStatus: 201,
     exactStatus: 201,

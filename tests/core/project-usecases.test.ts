@@ -12,6 +12,7 @@ import {
   listProjects,
   mergePreviewSettings,
   ok,
+  openAssetRange,
   patchPreviewSettings,
   readAsset,
   readComposition,
@@ -20,6 +21,7 @@ import {
   saveSourceFile,
   setSceneScript,
   setSceneTiming,
+  statAsset,
   uploadBgm,
   createScene,
   type AbsolutePath,
@@ -143,6 +145,32 @@ function setup(options: {
     async readBytes(path: ResolvedPath) {
       const bytes = binaries.get(path);
       return bytes ? { bytes, contentHash: hash(bytes) } : null;
+    },
+    async statAsset(path: ResolvedPath) {
+      const bytes = binaries.get(path);
+      if (!bytes) return null;
+      return {
+        size: bytes.byteLength,
+        etag: `W/\"${bytes.byteLength}\"`,
+        identity: {
+          device: "fake",
+          inode: String(path),
+          size: bytes.byteLength,
+          modifiedAtNs: "1",
+          changedAtNs: "1",
+        },
+      };
+    },
+    async openAssetRange(path: ResolvedPath, input: { start: number; end: number }) {
+      const source = binaries.get(path);
+      if (!source) return null;
+      const body = source.slice(input.start, input.end + 1);
+      return new ReadableStream<Uint8Array>({
+        start(controller) {
+          controller.enqueue(body);
+          controller.close();
+        },
+      });
     },
     async readHash(path: ResolvedPath) {
       const content = files.get(path);
@@ -449,6 +477,20 @@ describe("project read use cases without HTTP", () => {
       ok: true, value: { bytes: new Uint8Array([1, 2, 3]) },
     });
   });
+  it("stats and opens one bounded asset range", async () => {
+    const { deps } = setup();
+    const metadata = await statAsset(deps, projectId, "assets/poster.png" as RelPath);
+    if (!metadata.ok) throw new Error("asset metadata was not returned");
+    expect(metadata.value).toMatchObject({ size: 3, etag: 'W/"3"' });
+
+    const opened = await openAssetRange(deps, projectId, "assets/poster.png" as RelPath, {
+      start: 1,
+      end: 2,
+      identity: metadata.value.identity,
+    });
+    if (!opened.ok) throw new Error("asset range was not opened");
+    expect([...new Uint8Array(await new Response(opened.value.stream).arrayBuffer())]).toEqual([2, 3]);
+  });
   it("normalizes preview settings with entity revision", async () => {
     expect(await getPreviewSettings(setup().deps, projectId)).toMatchObject({
       ok: true, value: { revision: 1, previewSettings: DEFAULT_PREVIEW_SETTINGS },
@@ -458,6 +500,7 @@ describe("project read use cases without HTTP", () => {
     ["snapshot", (deps) => getStudioSnapshot(deps, projectId)],
     ["source", (deps) => readSourceFile(deps, projectId, "index.html" as RelPath)],
     ["asset", (deps) => readAsset(deps, projectId, "assets/poster.png" as RelPath)],
+    ["asset metadata", (deps) => statAsset(deps, projectId, "assets/poster.png" as RelPath)],
     ["settings", (deps) => getPreviewSettings(deps, projectId)],
   ];
   it.each(missingReads)("returns project_not_found for %s", async (_name, invoke) => {

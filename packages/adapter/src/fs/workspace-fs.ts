@@ -6,6 +6,9 @@ import path from "node:path";
 import type { ContentHash, ProjectId, RelPath } from "@vidcom/contracts";
 import {
   type AbsolutePath,
+  type AssetFileIdentity,
+  type AssetFileMetadata,
+  type AssetRangeOpenOptions,
   type BackupSource,
   type FileContent,
   type FileNode,
@@ -44,6 +47,123 @@ import {
 } from "./mutation-capture";
 
 const IGNORED_TREE_ENTRIES = new Set(["node_modules", ".git", ".hyperframes"]);
+const ASSET_STREAM_BUFFER_BYTES = 64 * 1024;
+const DEFAULT_ASSET_STREAM_CONCURRENCY = 8;
+
+interface AssetStreamObserver {
+  open?(): void;
+  read?(bytes: number): void;
+  close?(): void;
+}
+
+function observe(callback: (() => void) | undefined): void {
+  try { callback?.(); } catch { /* Diagnostic callbacks must not affect I/O ownership. */ }
+}
+
+function observeRead(callback: ((bytes: number) => void) | undefined, bytes: number): void {
+  try { callback?.(bytes); } catch { /* Diagnostic callbacks must not affect I/O ownership. */ }
+}
+
+export interface WorkspaceFsOptions {
+  assetStreamConcurrency?: number;
+  /** Test/diagnostic counters only; no file contents or paths are exposed. */
+  assetStreamObserver?: AssetStreamObserver;
+}
+
+interface AssetStreamWaiter {
+  signal?: AbortSignal;
+  resolve(release: () => void): void;
+  reject(error: Error): void;
+  abort?(): void;
+}
+
+function abortError(): Error {
+  const error = new Error("asset stream was aborted");
+  error.name = "AbortError";
+  return error;
+}
+
+class AssetStreamSemaphore {
+  private active = 0;
+  private readonly waiters: AssetStreamWaiter[] = [];
+
+  constructor(private readonly limit: number) {
+    if (!Number.isInteger(limit) || limit < 1) throw new TypeError("asset stream concurrency must be positive");
+  }
+
+  acquire(signal?: AbortSignal): Promise<() => void> {
+    if (signal?.aborted) return Promise.reject(abortError());
+    if (this.active < this.limit) {
+      this.active += 1;
+      return Promise.resolve(this.releaseOnce());
+    }
+    return new Promise((resolve, reject) => {
+      const waiter: AssetStreamWaiter = { signal, resolve, reject };
+      if (signal) {
+        waiter.abort = () => {
+          const index = this.waiters.indexOf(waiter);
+          if (index >= 0) this.waiters.splice(index, 1);
+          reject(abortError());
+        };
+        signal.addEventListener("abort", waiter.abort, { once: true });
+      }
+      this.waiters.push(waiter);
+    });
+  }
+
+  private releaseOnce(): () => void {
+    let released = false;
+    return () => {
+      if (released) return;
+      released = true;
+      while (this.waiters.length > 0) {
+        const waiter = this.waiters.shift()!;
+        if (waiter.abort) waiter.signal?.removeEventListener("abort", waiter.abort);
+        if (waiter.signal?.aborted) continue;
+        waiter.resolve(this.releaseOnce());
+        return;
+      }
+      this.active -= 1;
+    };
+  }
+}
+
+function assetIdentity(metadata: Awaited<ReturnType<Awaited<ReturnType<typeof open>>["stat"]>>): AssetFileIdentity {
+  const value = metadata as unknown as {
+    dev: bigint;
+    ino: bigint;
+    size: bigint;
+    mtimeNs: bigint;
+    ctimeNs: bigint;
+    isFile(): boolean;
+  };
+  const size = Number(value.size);
+  if (!value.isFile() || !Number.isSafeInteger(size) || size < 0) {
+    throw new TypeError("asset is not a supported regular file");
+  }
+  return {
+    device: value.dev.toString(),
+    inode: value.ino.toString(),
+    size,
+    modifiedAtNs: value.mtimeNs.toString(),
+    changedAtNs: value.ctimeNs.toString(),
+  };
+}
+
+function sameAssetIdentity(left: AssetFileIdentity, right: AssetFileIdentity): boolean {
+  return left.device === right.device
+    && left.inode === right.inode
+    && left.size === right.size
+    && left.modifiedAtNs === right.modifiedAtNs
+    && left.changedAtNs === right.changedAtNs;
+}
+
+function weakAssetEtag(identity: AssetFileIdentity): string {
+  const digest = createHash("sha256")
+    .update(JSON.stringify(identity))
+    .digest("base64url");
+  return `W/"${digest}"`;
+}
 
 function sha256(content: string | Uint8Array): ContentHash {
   return `sha256:${createHash("sha256").update(content).digest("hex")}` as ContentHash;
@@ -99,9 +219,15 @@ async function hashRegularFile(pathname: string): Promise<ContentHash> {
 export class WorkspaceFs implements WorkspacePort {
   private readonly directProjectRootChecks = new Map<AbsolutePath, Promise<string>>();
   private readonly workspaceRootCanonical: Promise<string>;
+  private readonly assetStreams: AssetStreamSemaphore;
+  private readonly assetStreamObserver: AssetStreamObserver;
 
-  constructor(private readonly workspaceRoot: AbsolutePath) {
+  constructor(private readonly workspaceRoot: AbsolutePath, options: WorkspaceFsOptions = {}) {
     this.workspaceRootCanonical = realpath(workspaceRoot);
+    this.assetStreams = new AssetStreamSemaphore(
+      options.assetStreamConcurrency ?? DEFAULT_ASSET_STREAM_CONCURRENCY,
+    );
+    this.assetStreamObserver = options.assetStreamObserver ?? {};
   }
 
   private async directProjectRoot(root: AbsolutePath): Promise<string> {
@@ -272,6 +398,109 @@ export class WorkspaceFs implements WorkspacePort {
       if ((error as NodeJS.ErrnoException).code === "ENOENT") return null;
       throw error;
     }
+  }
+
+  async statAsset(pathname: ResolvedPath): Promise<AssetFileMetadata | null> {
+    let handle: Awaited<ReturnType<typeof open>> | null = null;
+    try {
+      handle = await openRegularFileNoFollow(pathname, "asset is not a regular file");
+      const identity = assetIdentity(await handle.stat({ bigint: true }));
+      return { size: identity.size, etag: weakAssetEtag(identity), identity };
+    } catch (error) {
+      if (["ENOENT", "ELOOP"].includes((error as NodeJS.ErrnoException).code ?? "")) return null;
+      throw error;
+    } finally {
+      await handle?.close();
+    }
+  }
+
+  async openAssetRange(
+    pathname: ResolvedPath,
+    options: AssetRangeOpenOptions,
+  ): Promise<ReadableStream<Uint8Array> | null> {
+    if (!Number.isSafeInteger(options.start) || !Number.isSafeInteger(options.end)
+      || options.start < 0 || options.end < options.start || options.end >= options.identity.size) {
+      throw new RangeError("asset byte range is invalid");
+    }
+    const release = await this.assetStreams.acquire(options.signal);
+    let handle: Awaited<ReturnType<typeof open>> | null = null;
+    try {
+      handle = await openRegularFileNoFollow(pathname, "asset is not a regular file");
+      const current = assetIdentity(await handle.stat({ bigint: true }));
+      if (!sameAssetIdentity(current, options.identity)) {
+        await handle.close();
+        release();
+        return null;
+      }
+    } catch (error) {
+      await handle?.close().catch(() => undefined);
+      release();
+      if (["ENOENT", "ELOOP"].includes((error as NodeJS.ErrnoException).code ?? "")) return null;
+      throw error;
+    }
+    const ownedHandle = handle;
+    const observer = this.assetStreamObserver;
+    let position = options.start;
+    let settled = false;
+    let abortListener: (() => void) | null = null;
+    observe(observer.open);
+    const settle = async () => {
+      if (settled) return;
+      settled = true;
+      if (abortListener) options.signal?.removeEventListener("abort", abortListener);
+      await ownedHandle.close().catch(() => undefined);
+      observe(observer.close);
+      release();
+    };
+    let stream: ReadableStream<Uint8Array>;
+    try {
+      stream = new ReadableStream<Uint8Array>({
+        start(controller) {
+          if (!options.signal) return;
+          abortListener = () => {
+            controller.error(abortError());
+            void settle();
+          };
+          options.signal.addEventListener("abort", abortListener, { once: true });
+          if (options.signal.aborted) abortListener();
+        },
+        async pull(controller) {
+          if (settled) return;
+          if (options.signal?.aborted) {
+            controller.error(abortError());
+            await settle();
+            return;
+          }
+          const length = Math.min(ASSET_STREAM_BUFFER_BYTES, options.end - position + 1);
+          const buffer = new Uint8Array(length);
+          try {
+            const { bytesRead } = await ownedHandle.read(buffer, 0, length, position);
+            observeRead(observer.read, bytesRead);
+            if (bytesRead === 0) {
+              await settle();
+              controller.close();
+              return;
+            }
+            position += bytesRead;
+            controller.enqueue(bytesRead === buffer.byteLength ? buffer : buffer.subarray(0, bytesRead));
+            if (position > options.end) {
+              await settle();
+              controller.close();
+            }
+          } catch (error) {
+            controller.error(error);
+            await settle();
+          }
+        },
+        async cancel() {
+          await settle();
+        },
+      }, { highWaterMark: 1 });
+    } catch (error) {
+      await settle();
+      throw error;
+    }
+    return stream;
   }
 
   /** Streams file bytes through sha256; `null` means the file is absent. */

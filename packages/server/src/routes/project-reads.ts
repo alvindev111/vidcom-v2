@@ -15,9 +15,10 @@ import {
   getEntryExpectation,
   getStudioSnapshot,
   listProjects,
-  readAsset,
+  openAssetRange,
   readSourceFile,
   resolveProjectIdBySlug,
+  statAsset,
   type EventOutboxPort,
   type ProjectReadDependencies,
   type MediaProbePort,
@@ -57,16 +58,51 @@ function assetPath(c: Context): RelPath {
     : fail({ code: ErrorCode.SchemaInvalid, message: "asset path is invalid", field: "path" });
 }
 
-function requestedRange(header: string | undefined, size: number): { start: number; end: number } | null {
-  const match = header?.match(/^bytes=(\d*)-(\d*)$/);
-  if (!match) return null;
+type ParsedRange =
+  | { kind: "none" }
+  | { kind: "invalid" }
+  | { kind: "requested"; start: number | null; end: number | null };
+
+type RequestedRange =
+  | { kind: "none" }
+  | { kind: "invalid" }
+  | { kind: "satisfiable"; start: number; end: number };
+
+function decimal(value: string): number | null {
+  const parsed = Number(value);
+  return Number.isSafeInteger(parsed) && parsed >= 0 ? parsed : null;
+}
+
+/** Parses syntax before any asset I/O; size-dependent satisfiability is resolved after stat. */
+function parseRange(header: string | undefined): ParsedRange {
+  if (header === undefined) return { kind: "none" };
+  const match = /^bytes=(\d*)-(\d*)$/.exec(header);
+  if (!match) return { kind: "invalid" };
   const rawStart = match[1] ?? "";
   const rawEnd = match[2] ?? "";
-  const start = rawStart === "" ? size - Number(rawEnd) : Number(rawStart);
-  const end = rawStart === "" || rawEnd === "" ? size - 1 : Number(rawEnd);
-  const from = Math.max(start, 0);
-  const to = Math.min(end, size - 1);
-  return Number.isFinite(from) && Number.isFinite(to) && from <= to ? { start: from, end: to } : null;
+  if (rawStart === "" && rawEnd === "") return { kind: "invalid" };
+  const start = rawStart === "" ? null : decimal(rawStart);
+  const end = rawEnd === "" ? null : decimal(rawEnd);
+  return (rawStart !== "" && start === null) || (rawEnd !== "" && end === null)
+    ? { kind: "invalid" }
+    : { kind: "requested", start, end };
+}
+
+function requestedRange(parsed: ParsedRange, size: number): RequestedRange {
+  if (parsed.kind !== "requested") return parsed;
+  if (size === 0) return { kind: "invalid" };
+  if (parsed.start === null) {
+    if (parsed.end === null || parsed.end === 0) return { kind: "invalid" };
+    return {
+      kind: "satisfiable",
+      start: Math.max(size - parsed.end, 0),
+      end: size - 1,
+    };
+  }
+  if (parsed.start >= size) return { kind: "invalid" };
+  const end = parsed.end ?? size - 1;
+  if (end < parsed.start) return { kind: "invalid" };
+  return { kind: "satisfiable", start: parsed.start, end: Math.min(end, size - 1) };
 }
 
 function foldableLines(content: string): number[] {
@@ -79,28 +115,57 @@ function foldableLines(content: string): number[] {
   }, []);
 }
 
-function assetResponse(c: Context, bytes: Uint8Array, contentHash: string, mime: string): Response {
-  const etag = `"${contentHash}"`;
+function ifNoneMatch(header: string | undefined, etag: string): boolean {
+  return header?.split(",").some((candidate) => candidate.trim() === "*" || candidate.trim() === etag) ?? false;
+}
+
+function ifRangeAllows(header: string | undefined, etag: string): boolean {
+  if (header === undefined) return true;
+  return !header.startsWith("W/") && !etag.startsWith("W/") && header === etag;
+}
+
+async function assetResponse(
+  c: Context,
+  dependencies: ProjectReadDependencies,
+  id: ProjectId,
+  path: RelPath,
+  mime: string,
+): Promise<Response> {
+  const parsedRange = parseRange(c.req.header("Range"));
+  const metadata = valueOf(await statAsset(dependencies, id, path));
+  const range = requestedRange(parsedRange, metadata.size);
   const headers = {
     "Accept-Ranges": "bytes",
     "Cache-Control": "no-cache",
     "Content-Type": mime,
-    ETag: etag,
+    ETag: metadata.etag,
   };
-  if (c.req.header("If-None-Match") === etag) return new Response(null, { status: 304, headers });
-  const range = requestedRange(c.req.header("Range"), bytes.byteLength);
-  if (!range) return new Response(Uint8Array.from(bytes).buffer, {
-    headers: { ...headers, "Content-Length": String(bytes.byteLength) },
-  });
-  const body = bytes.slice(range.start, range.end + 1);
-  return new Response(Uint8Array.from(body).buffer, {
-    status: 206,
-    headers: {
-      ...headers,
-      "Content-Length": String(body.byteLength),
-      "Content-Range": `bytes ${range.start}-${range.end}/${bytes.byteLength}`,
-    },
-  });
+  if (range.kind === "invalid") {
+    return new Response(null, {
+      status: 416,
+      headers: { ...headers, "Content-Length": "0", "Content-Range": `bytes */${metadata.size}` },
+    });
+  }
+  if (ifNoneMatch(c.req.header("If-None-Match"), metadata.etag)) {
+    return new Response(null, { status: 304, headers });
+  }
+  const partial = range.kind === "satisfiable"
+    && ifRangeAllows(c.req.header("If-Range"), metadata.etag);
+  const start = partial ? range.start : 0;
+  const end = partial ? range.end : metadata.size - 1;
+  const responseHeaders: Record<string, string> = {
+    ...headers,
+    "Content-Length": String(end - start + 1),
+  };
+  if (partial) responseHeaders["Content-Range"] = `bytes ${start}-${end}/${metadata.size}`;
+  if (metadata.size === 0) return new Response(null, { status: 200, headers: responseHeaders });
+  const opened = valueOf(await openAssetRange(dependencies, id, path, {
+    start,
+    end,
+    identity: metadata.identity,
+    signal: c.req.raw.signal,
+  }));
+  return new Response(opened.stream, { status: partial ? 206 : 200, headers: responseHeaders });
 }
 
 function previewHeaders(preview: { projectRevision: number; changeSeq: number }) {
@@ -148,8 +213,7 @@ export function createProjectReadRoutes(dependencies: ProjectReadRouteDependenci
     const path = assetPath(c);
     const mime = dependencies.mimeFromPath(path);
     if (!mime) fail({ code: ErrorCode.AssetNotAllowed, message: "asset type is not served" });
-    const asset = valueOf(await readAsset(dependencies, projectId(c), path));
-    return assetResponse(c, asset.bytes, asset.contentHash, mime);
+    return assetResponse(c, dependencies, projectId(c), path, mime);
   });
 
   routes.get("/v1/runtime", (c) => c.body(dependencies.runtimeSource(), 200, {
@@ -243,8 +307,7 @@ export function createProjectReadRoutes(dependencies: ProjectReadRouteDependenci
     const path = assetPath(c);
     const mime = dependencies.mimeFromPath(path);
     if (!mime) fail({ code: ErrorCode.AssetNotAllowed, message: "asset type is not served" });
-    const asset = valueOf(await readAsset(dependencies, projectId(c), path));
-    return assetResponse(c, asset.bytes, asset.contentHash, mime);
+    return assetResponse(c, dependencies, projectId(c), path, mime);
   });
   routes.get("/hf/:slug/files/:path{.+}", async (c) => {
     const slug = c.req.param("slug");
@@ -254,8 +317,7 @@ export function createProjectReadRoutes(dependencies: ProjectReadRouteDependenci
     if (!parsed.success) fail({ code: ErrorCode.SchemaInvalid, message: "asset path is invalid", field: "path" });
     const mime = dependencies.mimeFromPath(path);
     if (!mime) fail({ code: ErrorCode.AssetNotAllowed, message: "asset type is not served" });
-    const asset = valueOf(await readAsset(dependencies, id, path));
-    return assetResponse(c, asset.bytes, asset.contentHash, mime);
+    return assetResponse(c, dependencies, id, path, mime);
   });
 
   return routes;

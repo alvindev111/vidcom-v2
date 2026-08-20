@@ -118,6 +118,8 @@ describe("classifyCompositeStep", () => {
       async readProjectRef() { return null; },
       async readFile() { return null; },
       async readBytes() { return null; },
+      async statAsset() { return null; },
+      async openAssetRange() { return null; },
       async readHash(target) { operations.push(`verify:${target}`); return hashes.get(target) ?? null; },
       async writeAtomic(target, content) {
         operations.push(`write:${target}:${String(content)}`);
@@ -165,6 +167,8 @@ describe("classifyCompositeStep", () => {
       async readProjectRef() { return null; },
       async readFile() { return null; },
       async readBytes() { return null; },
+      async statAsset() { return null; },
+      async openAssetRange() { return null; },
       async readHash() { return next; },
       async writeAtomic() {},
       async exists() { return true; },

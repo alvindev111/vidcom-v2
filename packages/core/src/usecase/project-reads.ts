@@ -19,7 +19,7 @@ import type {
   MutationJournalPort,
   WorkspacePort,
 } from "../port/ports";
-import type { PreviewSettings } from "../port/types";
+import type { AssetFileIdentity, PreviewSettings } from "../port/types";
 import type { ProjectCache } from "../service/project-cache";
 
 export interface ProjectReadDependencies {
@@ -268,6 +268,54 @@ export async function readAsset(
       : err({ code: ErrorCode.NotFound, message: "asset was not found" });
   } catch {
     return storageError("asset could not be read");
+  }
+}
+
+/** Stats an allowlisted asset without reading or hashing its contents. */
+export async function statAsset(
+  dependencies: ProjectReadDependencies,
+  projectId: ProjectId,
+  path: RelPath,
+) {
+  try {
+    const found = await projectRef(dependencies, projectId);
+    if (!found.ok) return found;
+    const resolved = await dependencies.workspace.resolve(found.value, path, "read-asset");
+    if (!resolved.ok) return err({ code: ErrorCode.AssetNotAllowed, message: "asset path was rejected" });
+    const metadata = await dependencies.workspace.statAsset(resolved.value);
+    return metadata
+      ? ok({ path, ...metadata })
+      : err({ code: ErrorCode.NotFound, message: "asset was not found" });
+  } catch {
+    return storageError("asset metadata could not be read");
+  }
+}
+
+/** Opens an inclusive range only while the file still matches the identity returned by statAsset. */
+export async function openAssetRange(
+  dependencies: ProjectReadDependencies,
+  projectId: ProjectId,
+  path: RelPath,
+  input: { start: number; end: number; identity: AssetFileIdentity; signal?: AbortSignal },
+) {
+  try {
+    const found = await projectRef(dependencies, projectId);
+    if (!found.ok) return found;
+    const resolved = await dependencies.workspace.resolve(found.value, path, "read-asset");
+    if (!resolved.ok) return err({ code: ErrorCode.AssetNotAllowed, message: "asset path was rejected" });
+    const stream = await dependencies.workspace.openAssetRange(resolved.value, input);
+    return stream
+      ? ok({ stream })
+      : err({
+          code: ErrorCode.WriteConflict,
+          message: "asset changed before the requested range could be opened",
+          details: { path },
+        });
+  } catch (error) {
+    if ((error as Error).name === "AbortError") {
+      return err({ code: ErrorCode.WriteConflict, message: "asset range request was cancelled" });
+    }
+    return storageError("asset range could not be opened");
   }
 }
 

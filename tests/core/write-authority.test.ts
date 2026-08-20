@@ -109,6 +109,8 @@ class FakeWorkspace {
       ? null
       : { bytes: new TextEncoder().encode(content), contentHash: digest(content) };
   }
+  async statAsset() { return null; }
+  async openAssetRange() { return null; }
   async readHash(path: ResolvedPath) {
     const content = this.files.get(path);
     return content === undefined ? null : digest(content);

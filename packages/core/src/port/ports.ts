@@ -59,6 +59,8 @@ import type {
   ToolAuditEntry,
   WriteEnvelope,
   ApprovalGrantRecord,
+  AssetFileMetadata,
+  AssetRangeOpenOptions,
   BackupManifest,
   BackupPayload,
   BackupSource,
@@ -331,6 +333,13 @@ export interface WorkspacePort {
   readFile(path: ResolvedPath): Promise<FileContent | null>;
   /** Reads arbitrary allowlisted bytes; `null` means the file does not exist. */
   readBytes(path: ResolvedPath): Promise<BinaryContent | null>;
+  /** Stats a regular asset without reading or hashing its contents. */
+  statAsset(path: ResolvedPath): Promise<AssetFileMetadata | null>;
+  /** Opens one identity-bound inclusive byte range as a bounded pull stream. */
+  openAssetRange(
+    path: ResolvedPath,
+    options: AssetRangeOpenOptions,
+  ): Promise<ReadableStream<Uint8Array> | null>;
   /** Hashes one resolved file; `null` means the file does not exist and hashing performs I/O. */
   readHash(path: ResolvedPath): Promise<ContentHash | null>;
   /** Opens a Core-only, no-follow staged capability for bounded-memory rename/move. */

@@ -176,6 +176,8 @@ function authorityWithFailure(options: { writePath?: string; deletePath?: string
     readProjectRef: workspace.readProjectRef.bind(workspace),
     readFile: workspace.readFile.bind(workspace),
     readBytes: workspace.readBytes.bind(workspace),
+    statAsset: workspace.statAsset.bind(workspace),
+    openAssetRange: workspace.openAssetRange.bind(workspace),
     readHash: workspace.readHash.bind(workspace),
     async writeAtomic(target, content) {
       if (targetMatches(target, options.writePath)) throw new Error("injected write failure");
