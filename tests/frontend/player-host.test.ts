@@ -5,7 +5,7 @@ import { describe, expect, it } from "vitest";
 import { PlayerHost } from "../../src/components/studio/player-host";
 import {
   readHyperframesPreflightHealth,
-  type HyperframesPlayerElement,
+  type HyperframesPreviewEngine,
 } from "../../src/components/studio/hyperframes-player-environment";
 import type {
   PreflightHealthResult,
@@ -85,11 +85,12 @@ describe("PlayerHost", () => {
       querySelector: () => script,
       querySelectorAll: () => [{ children: [{}] }, { children: [] }],
     };
+    // The engine is the host page; the composition it holds is one level deeper.
     const engine = {
       ready: true,
       duration: 5,
-      iframeElement: { contentDocument: document, contentWindow: { __vidcomHealth: collector } },
-    } as unknown as HyperframesPlayerElement;
+      player: { iframeElement: { contentDocument: document, contentWindow: { __vidcomHealth: collector } } },
+    } as unknown as HyperframesPreviewEngine;
 
     expect(readHyperframesPreflightHealth(engine, true)).toEqual({
       ready: true,

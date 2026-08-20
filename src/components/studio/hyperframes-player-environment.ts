@@ -21,6 +21,26 @@ export interface HyperframesPlayerElement extends HTMLElement, PreviewBufferEngi
   scenes: Array<{ id: string; start: number; duration: number }>;
 }
 
+/**
+ * One preview frame, hosted in a page of its own.
+ *
+ * Measured, not assumed: a composition runtime opens its bridge only to a parent
+ * browsing context that does not already have a preview in it. The studio always
+ * has one — the frame on screen — so a candidate created beside it never reports
+ * a timeline, and a double-buffered swap could never complete. Each engine
+ * therefore lives inside `/preview-host.html`, a page whose only job is to be
+ * that parent. It is same-origin, so health and transport still read straight
+ * through it.
+ */
+export interface HyperframesPreviewEngine extends PreviewBufferEngine {
+  /** The host page this engine lives in: what is shown, hidden and removed. */
+  frame: HTMLIFrameElement;
+  /** The player inside the host page, once that page has created it. */
+  player: HyperframesPlayerElement | null;
+  ready: boolean;
+  scenes: Array<{ id: string; start: number; duration: number }>;
+}
+
 interface EngineMetadata {
   timeline: boolean;
   cleanup: () => void;
@@ -35,25 +55,26 @@ function identity(script: HTMLScriptElement | null, name: "projectRevision" | "c
   return Number.isFinite(value) && value >= 0 ? value : 0;
 }
 
-/** Reads the daemon-owned collector and structural state from the same-origin iframe. */
+/** Reads the daemon-owned collector and structural state from the composition document. */
 export function readHyperframesPreflightHealth(
-  engine: HyperframesPlayerElement,
+  engine: HyperframesPreviewEngine,
   timeline: boolean,
 ): PreflightHealthSnapshot {
-  let document: Document | null = null;
+  const player = engine.player;
+  let composition: Document | null = null;
   let collector: CollectorValue | undefined;
   try {
-    document = engine.iframeElement.contentDocument;
-    collector = (engine.iframeElement.contentWindow as PreviewWindow | null)?.__vidcomHealth;
+    composition = player?.iframeElement.contentDocument ?? null;
+    collector = (player?.iframeElement.contentWindow as PreviewWindow | null)?.__vidcomHealth;
   } catch {
-    document = null;
+    composition = null;
   }
-  const script = document?.querySelector<HTMLScriptElement>('script[data-vidcom-health="collector"]') ?? null;
-  const nested = document ? [...document.querySelectorAll<HTMLElement>("[data-composition-src]")] : [];
+  const script = composition?.querySelector<HTMLScriptElement>('script[data-vidcom-health="collector"]') ?? null;
+  const nested = composition ? [...composition.querySelectorAll<HTMLElement>("[data-composition-src]")] : [];
   return {
     ready: engine.ready && engine.duration > 0,
     timeline,
-    scenesLoaded: document !== null && nested.every((layer) => layer.children.length > 0),
+    scenesLoaded: composition !== null && nested.every((layer) => layer.children.length > 0),
     collectorSeen: collector !== undefined && script !== null,
     scriptErrors: finiteCounter(collector?.scriptErrors),
     rejections: finiteCounter(collector?.rejections),
@@ -63,62 +84,120 @@ export function readHyperframesPreflightHealth(
   };
 }
 
-/** Same-origin bridge from the replaceable custom elements to the pure buffer coordinator. */
+/** Host page for one candidate, carrying the composition it should load. */
+export function previewHostUrl(source: string): string {
+  return `/preview-host.html?src=${encodeURIComponent(source)}`;
+}
+
+/** Same-origin bridge from the replaceable host pages to the pure buffer coordinator. */
 export function createHyperframesPlayerEnvironment(input: {
   container: HTMLDivElement;
-  onVisibleState: (engine: HyperframesPlayerElement, error: string | null) => void;
-}): PreviewBufferEnvironment<HyperframesPlayerElement> {
-  const metadata = new WeakMap<HyperframesPlayerElement, EngineMetadata>();
-  let visible: HyperframesPlayerElement | null = null;
+  onVisibleState: (engine: HyperframesPreviewEngine, error: string | null) => void;
+}): PreviewBufferEnvironment<HyperframesPreviewEngine> {
+  const metadata = new WeakMap<HyperframesPreviewEngine, EngineMetadata>();
+  let visible: HyperframesPreviewEngine | null = null;
+  const hostFrame = (): HTMLIFrameElement => {
+    const frame = document.createElement("iframe");
+    frame.title = "HyperFrames preview";
+    frame.style.position = "absolute";
+    frame.style.inset = "0";
+    frame.style.width = "100%";
+    frame.style.height = "100%";
+    frame.style.border = "0";
+    frame.style.opacity = "0";
+    frame.style.zIndex = "0";
+    frame.style.pointerEvents = "none";
+    return frame;
+  };
 
-  const notify = (engine: HyperframesPlayerElement, error: string | null = null) => {
+  const notify = (engine: HyperframesPreviewEngine, error: string | null = null) => {
     if (visible === engine) input.onVisibleState(engine, error);
   };
 
   return {
     createCandidate({ url }) {
-      const engine = document.createElement("hyperframes-player") as HyperframesPlayerElement;
+      const frame = hostFrame();
+
       const state = { timeline: false, cleanup: () => {} };
-      const sync = () => notify(engine);
-      const onReady = () => sync();
-      const onScenes = () => {
-        state.timeline = true;
+      const engine: HyperframesPreviewEngine = {
+        frame,
+        player: null,
+        ready: false,
+        scenes: [],
+        get currentTime() { return engine.player?.currentTime ?? 0; },
+        get duration() { return engine.player?.duration ?? 0; },
+        get paused() { return engine.player?.paused ?? true; },
+        get playbackRate() { return engine.player?.playbackRate ?? 1; },
+        set playbackRate(value: number) { if (engine.player) engine.player.playbackRate = value; },
+        get muted() { return engine.player?.muted ?? false; },
+        set muted(value: boolean) { if (engine.player) engine.player.muted = value; },
+        seek(seconds: number) { engine.player?.seek(seconds); },
+        play() { engine.player?.play(); },
+        pause() { engine.player?.pause(); },
+      };
+
+      const attach = (hosted: HyperframesPlayerElement) => {
+        engine.player = hosted;
+        const sync = () => {
+          engine.ready = hosted.ready;
+          engine.scenes = hosted.scenes;
+          notify(engine);
+        };
+        const onScenes = () => { state.timeline = true; sync(); };
+        const onError = (event: Event) => notify(
+          engine,
+          (event as CustomEvent<{ message?: string }>).detail?.message ?? event.type,
+        );
+        const listeners: Array<[string, EventListener]> = [
+          ["timeupdate", sync],
+          ["ready", sync],
+          ["scenes", onScenes],
+          ["play", sync],
+          ["pause", sync],
+          ["ratechange", sync],
+          ["volumechange", sync],
+          ["error", onError],
+          ["playbackerror", onError],
+          ["runtimeprotocolerror", onError],
+        ];
+        for (const [name, listener] of listeners) hosted.addEventListener(name, listener);
+        state.cleanup = () => {
+          for (const [name, listener] of listeners) hosted.removeEventListener(name, listener);
+        };
         sync();
       };
-      const onError = (event: Event) => notify(
-        engine,
-        (event as CustomEvent<{ message?: string }>).detail?.message ?? event.type,
-      );
-      const listeners: Array<[string, EventListener]> = [
-        ["timeupdate", sync],
-        ["ready", onReady],
-        ["scenes", onScenes],
-        ["play", sync],
-        ["pause", sync],
-        ["ratechange", sync],
-        ["volumechange", sync],
-        ["error", onError],
-        ["playbackerror", onError],
-        ["runtimeprotocolerror", onError],
-      ];
-      for (const [name, listener] of listeners) engine.addEventListener(name, listener);
-      state.cleanup = () => {
-        for (const [name, listener] of listeners) engine.removeEventListener(name, listener);
-      };
-      metadata.set(engine, state);
-      engine.style.position = "absolute";
-      engine.style.inset = "0";
-      engine.style.opacity = "0";
-      engine.style.zIndex = "0";
-      engine.style.pointerEvents = "none";
-      // Connect before naming the source. Setting `src` first makes the element
-      // load its document while it is still detached, where `window.parent` is
-      // its own window, so the composition runtime never opens the bridge and
-      // the preflight can only ever time out — measured: an appended-then-sourced
-      // player reports its timeline in ~300 ms, a sourced-then-appended one never
-      // does, and it leaves the page unable to bridge afterwards.
-      input.container.appendChild(engine);
-      engine.setAttribute("src", url);
+
+      // The host page creates its player after a dynamic import settles, so this
+      // watches for it rather than racing it, and keeps reading the scene list
+      // from the element itself — an event dispatched before the listener
+      // attached would otherwise be lost.
+      // Watches only until the host page has produced a player that has reported
+      // its scenes: after that the element's own events keep the engine current,
+      // and a timer left running per engine is a leak that ends in a dead tab.
+      const poll = window.setInterval(() => {
+        if (!engine.player) {
+          const hosted = (() => {
+            try { return frame.contentDocument?.querySelector("hyperframes-player") as HyperframesPlayerElement | null; }
+            catch { return null; }
+          })();
+          if (hosted) attach(hosted);
+          return;
+        }
+        engine.ready = engine.player.ready;
+        engine.scenes = engine.player.scenes;
+        if (engine.scenes.length > 0) {
+          state.timeline = true;
+          window.clearInterval(poll);
+        }
+      }, 50);
+
+      metadata.set(engine, {
+        get timeline() { return state.timeline; },
+        cleanup: () => { window.clearInterval(poll); state.cleanup(); },
+      } as EngineMetadata);
+
+      input.container.appendChild(frame);
+      frame.src = previewHostUrl(url);
       return engine;
     },
     waitForHealth(engine, signal) {
@@ -129,16 +208,19 @@ export function createHyperframesPlayerEnvironment(input: {
     },
     show(engine) {
       visible = engine;
-      engine.style.opacity = "1";
-      engine.style.zIndex = "1";
-      engine.style.pointerEvents = "auto";
+      engine.frame.style.opacity = "1";
+      engine.frame.style.zIndex = "1";
+      engine.frame.style.pointerEvents = "auto";
       notify(engine);
     },
     dispose(engine) {
       metadata.get(engine)?.cleanup();
       metadata.delete(engine);
-      engine.pause();
-      engine.remove();
+      // Everything here touches a document that may already be tearing itself
+      // down, and a throw from a teardown path takes the whole page with it.
+      try { engine.player?.pause(); } catch { /* the frame is already gone */ }
+      engine.player = null;
+      try { engine.frame.remove(); } catch { /* already detached */ }
       if (visible === engine) visible = null;
     },
   };

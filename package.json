@@ -8,7 +8,7 @@
   ],
   "scripts": {
     "dev": "next dev",
-    "build": "next build",
+    "build": "bun build src/preview-host/entry.ts --target=browser --minify --outfile=public/preview-host.js && next build",
     "build:agent-kit": "bun run --cwd packages/agent-kit build",
     "build:runtime-archives": "node scripts/build-runtime-archives.mjs",
     "start": "next start",

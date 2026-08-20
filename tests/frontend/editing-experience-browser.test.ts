@@ -71,112 +71,88 @@ async function previewReached(page: Page, seq: number): Promise<number> {
   return (await probe(page).previewAt(seq))!;
 }
 
-/**
- * Attaches a second studio session for this tab.
- *
- * Studio writes carry a session header so the mutation can be undone from the
- * tab that made it. The measurement makes real studio writes, so it attaches a
- * real session rather than bypassing the requirement.
- */
-async function attachSession(page: Page, projectId: string): Promise<string> {
-  return await page.evaluate(async (id: string) => {
-    const alphabet = "0123456789ABCDEFGHJKMNPQRSTVWXYZ";
-    let studioId = "";
-    for (let index = 0; index < 26; index += 1) {
-      studioId += alphabet[Math.floor(Math.random() * alphabet.length)];
-    }
-    const response = await fetch(`/api/v1/projects/${id}/history/session`, {
-      method: "POST",
-      headers: { "x-vidcom-studio-session": studioId },
-    });
-    if (!response.ok) throw new Error(`could not attach a studio session (${response.status})`);
-    return studioId;
-  }, projectId);
-}
-
-async function projectIdOf(page: Page): Promise<string> {
-  return await page.evaluate(async () => {
-    const response = await fetch("/api/v1/projects");
-    const payload = await response.json() as { projects: Array<{ id: string }> };
-    return payload.projects[0]!.id;
-  });
-}
-
-// BLOCKED: after a source write, no newly created player receives a timeline.
-//
-// Measured, not guessed, and narrowed to this one sentence. One real bug was
-// found and fixed on the way: the candidate was given its `src` before it was
-// connected, so it loaded while detached — where `window.parent` is its own
-// window — and the runtime never opened its bridge, which also left the page
-// unable to bridge afterwards.
-//
-// What remains is not about the buffer at all. In a page where nothing has been
-// written yet, a replacement player reports its timeline in ~230-300 ms. After
-// one source write through the daemon, no player created afterwards reports one
-// — not the buffer's candidate, and not a hand-written element in the same page,
-// with or without another player alive, with the same URL or a cache-busted one.
-// The served document is intact through all of it (clip, timing attributes,
-// runtime script, health collector). Since the swap requires the candidate to
-// report a timeline, every reload can only time out, and there is nothing here
-// to measure until that is resolved.
 describe("editing experience in a browser", () => {
-  it.skip("shows this tab's own write in the preview within the R4.1c budget", async () => {
+  it("shows this tab's own write in the preview within the R4.1c budget", async () => {
     await withStudioBrowser("perf-write", async ({ page }) => {
       await install(page);
-      const projectId = await projectIdOf(page);
-      const studioId = await attachSession(page, projectId);
+      // The budget is what a person waits after saving into a studio that is
+      // already showing them a preview — so wait for the first frame before
+      // starting, or the measurement includes the initial mount.
+      await page.waitForFunction(() => [...document.querySelectorAll("[data-player-host-id] iframe")]
+        .some((frame) => (frame as HTMLElement).style.opacity === "1"),
+      { timeout: 30_000, polling: 50 });
+      // The studio's own writes, driven through the studio: the budget is what a
+      // person waits after saving, so the clock starts at the response their own
+      // save produced, not at a request this test invented.
+      await page.evaluate(() => {
+        interface Recorded { path: string; at: number; changeSeq: number | null }
+        const recorded: Recorded[] = [];
+        (window as unknown as { recorded: Recorded[] }).recorded = recorded;
+        const original = window.fetch.bind(window);
+        window.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
+          const response = await original(input, init);
+          const url = new URL(typeof input === "string" ? input : input instanceof URL ? input.href : input.url, location.href);
+          const method = (init?.method ?? (input instanceof Request ? input.method : "GET")).toUpperCase();
+          const interesting = (method === "PUT" && url.pathname.endsWith("/files"))
+            || (method === "PATCH" && url.pathname.endsWith("/preview-settings"));
+          if (!interesting) return response;
+          const clone = response.clone();
+          const payload = await clone.json().catch(() => null) as { changeSeq?: number | null } | null;
+          recorded.push({ path: url.pathname, at: performance.now(), changeSeq: payload?.changeSeq ?? null });
+          return response;
+        };
+      });
 
-      // Case 1 — a content mutation, timed from its own success response.
-      const content = await page.evaluate(async (input: { id: string; studioId: string }) => {
-        const read = await fetch(`/api/v1/projects/${input.id}/files?path=index.html`);
-        const file = (await read.json() as { file: { content: string; contentHash: string } }).file;
-        const response = await fetch(`/api/v1/projects/${input.id}/files`, {
-          method: "PUT",
-          headers: { "content-type": "application/json", "x-vidcom-studio-session": input.studioId },
-          body: JSON.stringify({
-            path: "index.html",
-            // Inserted inside the document rather than appended after
-            // `</html>`, so the composition it produces is still well formed.
-            content: file.content.replace("</body>", "<!-- measured --></body>"),
-            expectedContentHash: file.contentHash,
-          }),
-        });
-        const payload = await response.json().catch(() => null) as { changeSeq?: number | null } | null;
-        return { at: performance.now(), changeSeq: payload?.changeSeq ?? null, status: response.status };
-      }, { id: projectId, studioId });
-      expect(content.status, "content write failed").toBe(200);
-      expect(content.changeSeq).not.toBeNull();
-      const contentMs = await previewReached(page, content.changeSeq!) - content.at;
+      const settled = async (path: string) => {
+        await page.waitForFunction((suffix: string) =>
+          (window as unknown as { recorded: Array<{ path: string }> }).recorded.some((entry) => entry.path.endsWith(suffix)),
+        { timeout: 20_000 }, path);
+        return await page.evaluate((suffix: string) => {
+          const all = (window as unknown as { recorded: Array<{ path: string; at: number; changeSeq: number | null }> }).recorded;
+          return all.filter((entry) => entry.path.endsWith(suffix)).at(-1)!;
+        }, path);
+      };
+
+      // Case 1 — a content mutation saved from the editor.
+      const typed = await page.$eval(".cm-content", (element) => element.textContent ?? "");
+      await page.locator(".cm-content").fill(`${typed}\n<!-- measured -->`);
+      await page.waitForFunction(() => [...document.querySelectorAll("button")]
+        .some((button) => button.textContent?.includes("Save") && !(button as HTMLButtonElement).disabled));
+      await page.evaluate(() => {
+        const save = [...document.querySelectorAll("button")]
+          .find((button) => button.textContent?.includes("Save")) as HTMLButtonElement | undefined;
+        save?.click();
+      });
+      const contentWrite = await settled("/files");
+      expect(contentWrite.changeSeq).not.toBeNull();
+      const contentAt = await previewReached(page, contentWrite.changeSeq!);
+      const contentMs = contentAt - contentWrite.at;
       process.stdout.write(`R4.1c browser content mutation: ${contentMs.toFixed(0)} ms\n`);
       expect(contentMs).toBeLessThan(BUDGET_MS);
 
       // Case 2 — a preview-settings mutation, which rebuilds the preview
       // document without touching the project's scenes.
-      const settings = await page.evaluate(async (input: { id: string; studioId: string }) => {
-        const read = await fetch(`/api/v1/projects/${input.id}/preview-settings`);
-        const current = await read.json() as { revision: number };
-        const response = await fetch(`/api/v1/projects/${input.id}/preview-settings`, {
-          method: "PATCH",
-          headers: { "content-type": "application/json", "x-vidcom-studio-session": input.studioId },
-          body: JSON.stringify({
-            patch: { tone: { backgroundFx: "scan" } },
-            expectedRevision: current.revision,
-          }),
-        });
-        const payload = await response.json().catch(() => null) as { changeSeq?: number | null } | null;
-        return { at: performance.now(), changeSeq: payload?.changeSeq ?? null, status: response.status };
-      }, { id: projectId, studioId });
-      expect(settings.status, "preview-settings write failed").toBe(200);
-      expect(settings.changeSeq).not.toBeNull();
-      const settingsMs = await previewReached(page, settings.changeSeq!) - settings.at;
+      // Hiding a scene is a preview-settings write the studio makes on its own,
+      // which rebuilds the preview document without touching the project.
+      await page.evaluate(() => {
+        const toggle = [...document.querySelectorAll("button")]
+          .find((button) => (button.getAttribute("aria-label") ?? "").includes("in the preview")) as HTMLButtonElement | undefined;
+        toggle?.click();
+      });
+      const settingsWrite = await settled("/preview-settings");
+      expect(settingsWrite.changeSeq).not.toBeNull();
+      const settingsMs = await previewReached(page, settingsWrite.changeSeq!) - settingsWrite.at;
       process.stdout.write(`R4.1c browser preview-settings mutation: ${settingsMs.toFixed(0)} ms\n`);
       expect(settingsMs).toBeLessThan(BUDGET_MS);
     });
   }, 180_000);
 
-  it.skip("shows a write made outside the app within the budget of the event that announced it", async () => {
+  it("shows a write made outside the app within the budget of the event that announced it", async () => {
     await withStudioBrowser("perf-outside", async ({ page, projectRoot }) => {
       await install(page);
+      await page.waitForFunction(() => [...document.querySelectorAll("[data-player-host-id] iframe")]
+        .some((frame) => (frame as HTMLElement).style.opacity === "1"),
+      { timeout: 30_000, polling: 50 });
 
       // Written straight to disk, with no request from this tab: the page can
       // only learn about it from the durable event stream, which is where the

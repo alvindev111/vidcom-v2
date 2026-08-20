@@ -34,14 +34,45 @@ export async function startPreviewBufferBrowserFixture(): Promise<{
     cwd: process.cwd(),
   });
   const bundle = await readFile(bundlePath);
+  // The host pages need the player definition and nothing else from the harness.
+  const playerPath = path.join(scratch, "probe-player.js");
+  await execFileAsync("bun", [
+    "build", path.resolve("tests/frontend/fixtures/preview-buffer-browser-player.ts"),
+    "--target=browser", `--outfile=${playerPath}`,
+  ], { cwd: process.cwd() });
+  const playerBundle = await readFile(playerPath);
   const server = createServer((request, response) => {
     const url = new URL(request.url ?? "/", "http://127.0.0.1");
+    if (url.pathname === "/probe-player.js") {
+      response.writeHead(200, { "content-type": "text/javascript; charset=utf-8" }).end(playerBundle);
+      return;
+    }
     if (url.pathname === "/harness.js") {
       response.writeHead(200, { "content-type": "text/javascript; charset=utf-8" }).end(bundle);
       return;
     }
     if (url.pathname === "/missing.js") {
       response.writeHead(404, { "content-type": "text/javascript; charset=utf-8" }).end("missing");
+      return;
+    }
+    // Each engine now lives in a host page of its own, because a composition
+    // runtime only bridges to a parent that has no preview in it yet. The probe
+    // serves the same shape the app's static export does.
+    if (url.pathname === "/preview-host.html") {
+      const source = url.searchParams.get("src") ?? "";
+      response.writeHead(200, { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" })
+        .end(`<!doctype html><html><body style="margin:0">
+<div data-preview-host style="position:absolute;inset:0"></div>
+<script type="module">
+  import "/probe-player.js";
+  const host = document.querySelector("[data-preview-host]");
+  const player = document.createElement("hyperframes-player");
+  player.style.position = "absolute";
+  player.style.inset = "0";
+  host.appendChild(player);
+  player.setAttribute("src", ${JSON.stringify(source)});
+</script>
+</body></html>`);
       return;
     }
     if (url.pathname === "/preview") {

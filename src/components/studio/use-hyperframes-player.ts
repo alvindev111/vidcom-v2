@@ -4,7 +4,7 @@ import * as React from "react";
 
 import {
   createHyperframesPlayerEnvironment,
-  type HyperframesPlayerElement,
+  type HyperframesPreviewEngine,
 } from "./hyperframes-player-environment";
 import { PlayerHost, type PlayerHostMountResult } from "./player-host";
 import { createTimeStore, type TimeStore } from "./player-time";
@@ -41,7 +41,7 @@ const INITIAL: PlayerState = {
  */
 export function useHyperframesPlayer(projectId: string, previewUrl: string) {
   const containerRef = React.useRef<HTMLDivElement | null>(null);
-  const hostRef = React.useRef<PlayerHost<HyperframesPlayerElement> | null>(null);
+  const hostRef = React.useRef<PlayerHost<HyperframesPreviewEngine> | null>(null);
   const mountPromiseRef = React.useRef<Promise<PlayerHostMountResult> | null>(null);
   const mountedUrlRef = React.useRef<string | null>(null);
   const visibleChangeSeqRef = React.useRef(0);
@@ -89,7 +89,7 @@ export function useHyperframesPlayer(projectId: string, previewUrl: string) {
 
   React.useEffect(() => {
     let disposed = false;
-    let host: PlayerHost<HyperframesPlayerElement> | null = null;
+    let host: PlayerHost<HyperframesPreviewEngine> | null = null;
     let hostContainer: HTMLDivElement | null = null;
 
     const mount = async () => {
