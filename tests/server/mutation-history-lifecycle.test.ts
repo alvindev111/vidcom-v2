@@ -303,6 +303,49 @@ describe("MutationHistory lifecycle and ref ownership", () => {
     expect(history.isAttached("browser-studio-b", "studio-b", projectId)).toBe(false);
     expect(releaseCount(releases, first)).toBe(1);
     expect(releaseCount(releases, second)).toBe(1);
+    expect(history.diagnosticState()).toEqual({ retainedReceiptIds: 0, undoEntries: 0, redoEntries: 0 });
+  });
+
+  it("bounds receipt dedupe and releases every retained ref across a 100k-receipt soak", () => {
+    let releasedRefs = 0;
+    const history = new MutationHistory({
+      async retainBytes() { throw new Error("not used"); },
+      async retainFile() { throw new Error("not used"); },
+      async resolve() { throw new Error("not used"); },
+      release(refs) { releasedRefs += refs.length; },
+    });
+    attach(history);
+    const total = 100_000;
+    const warmup = 10_000;
+    let warmRss = 0;
+    let warmHeap = 0;
+    for (let index = 0; index < total; index += 1) {
+      history.emit(receipt(`soak-${index}`, "studio", objectRef(`soak-${index}`)));
+      if (index + 1 === warmup) {
+        const memory = process.memoryUsage();
+        warmRss = memory.rss;
+        warmHeap = memory.heapUsed;
+      }
+    }
+    const memory = process.memoryUsage();
+    const rssDeltaBytes = Math.max(0, memory.rss - warmRss);
+    const heapDeltaBytes = Math.max(0, memory.heapUsed - warmHeap);
+    const diagnostics = (history as unknown as {
+      diagnosticState(): { retainedReceiptIds: number; undoEntries: number; redoEntries: number };
+    }).diagnosticState();
+    process.stdout.write(`P15_MUTATION_HISTORY_SAMPLE ${JSON.stringify({
+      receipts: total,
+      warmup,
+      rssDeltaBytes,
+      heapDeltaBytes,
+      ...diagnostics,
+    })}\n`);
+
+    expect(diagnostics).toEqual({ retainedReceiptIds: 4_096, undoEntries: 50, redoEntries: 0 });
+    expect(heapDeltaBytes).toBeLessThan(32 * 1024 * 1024);
+    expect(rssDeltaBytes).toBeLessThan(64 * 1024 * 1024);
+    history.clear("studio", projectId);
+    expect(releasedRefs).toBe(total);
   });
 
   it("does not let a second browser or project steal an attached studio id", () => {

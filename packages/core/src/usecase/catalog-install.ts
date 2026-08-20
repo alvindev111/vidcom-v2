@@ -103,10 +103,22 @@ async function readHashOf(
   dependencies: CatalogInstallDependencies,
   ref: ProjectRef,
   path: RelPath,
-): Promise<ContentHash | null> {
-  const resolved = await dependencies.workspace.resolve(ref, path, "read-source");
-  if (!resolved.ok) return null;
-  return await dependencies.workspace.readHash(resolved.value);
+  purpose: "read-source" | "read-package-target",
+): Promise<Result<ContentHash | null, DomainError>> {
+  const resolved = await dependencies.workspace.resolve(ref, path, purpose);
+  if (!resolved.ok) {
+    return err({
+      code: resolved.error.reason === "invalid_syntax"
+        ? ErrorCode.PathInvalid
+        : resolved.error.reason === "not_allowed_for_purpose"
+          ? ErrorCode.AssetNotAllowed
+          : ErrorCode.PathOutsideProject,
+      message: "catalog target path could not be read",
+      field: "path",
+      details: { path, reason: resolved.error.reason },
+    });
+  }
+  return ok(await dependencies.workspace.readHash(resolved.value));
 }
 
 /** Shared planner; the caller decides when to release the returned pin. */
@@ -128,7 +140,9 @@ async function planInstall(
   const materialized = await dependencies.catalog.materialize(intent.name, intent.version, signal);
   if (!materialized.ok) return materialized;
   const { item, files, release } = materialized.value;
+  let transferred = false;
   try {
+    signal.throwIfAborted();
     const verified = verifyCatalogPackage({
       item,
       files: files.map((file) => ({ path: file.path, contentHash: file.contentHash })),
@@ -144,10 +158,14 @@ async function planInstall(
     let model: CompositionModel;
     try { model = await dependencies.composition.parseProject(ref); }
     catch { return err({ code: ErrorCode.StorageUnavailable, message: "composition could not be read" }); }
+    signal.throwIfAborted();
 
     const targets: Record<RelPath, ContentHash | null> = {};
     for (const path of Object.keys(item.integrity.files) as RelPath[]) {
-      targets[path] = await readHashOf(dependencies, ref, path);
+      signal.throwIfAborted();
+      const target = await readHashOf(dependencies, ref, path, "read-package-target");
+      if (!target.ok) return target;
+      targets[path] = target.value;
     }
     const installed = await dependencies.installedProvenance(ref, item.name);
     const planned = planCatalogInstall({
@@ -163,21 +181,23 @@ async function planInstall(
     // Authored documents this mutation will rewrite are existing targets too, so
     // their real hashes belong in the binding beside the package targets.
     const documentHashes: Record<RelPath, ContentHash> = {};
-    const entryHash = await readHashOf(dependencies, ref, ref.entry);
-    if (entryHash) documentHashes[ref.entry] = entryHash;
+    const entryHash = await readHashOf(dependencies, ref, ref.entry, "read-source");
+    if (!entryHash.ok) return entryHash;
+    if (entryHash.value) documentHashes[ref.entry] = entryHash.value;
     if (intent.mount.kind === "into-scene") {
       const sceneId = intent.mount.sceneId;
       const scene = (model.scenes as unknown as { id: string; src?: string | null }[])
         .find((candidate) => candidate.id === sceneId);
       const scenePath = (scene?.src ?? null) as RelPath | null;
       if (scenePath) {
-        const sceneHash = await readHashOf(dependencies, ref, scenePath);
-        if (sceneHash) documentHashes[scenePath] = sceneHash;
+        const sceneHash = await readHashOf(dependencies, ref, scenePath, "read-source");
+        if (!sceneHash.ok) return sceneHash;
+        if (sceneHash.value) documentHashes[scenePath] = sceneHash.value;
       }
     }
 
     if (planned.value.status !== "ready") {
-      return ok({
+      const value: PlannedInstall = {
         ref,
         model,
         item,
@@ -187,7 +207,9 @@ async function planInstall(
           : { status: "choice_required", decision: planned.value },
         documentHashes,
         release,
-      });
+      };
+      transferred = true;
+      return ok(value);
     }
 
     const plan = planned.value.plan;
@@ -202,7 +224,7 @@ async function planInstall(
       })),
       targetHashes: { ...plan.targetHashes, ...documentHashes },
     };
-    return ok({
+    const value: PlannedInstall = {
       ref,
       model,
       item,
@@ -210,10 +232,11 @@ async function planInstall(
       preparation: { status: "ready", plan, binding },
       documentHashes,
       release,
-    });
-  } catch (error) {
-    await release();
-    throw error;
+    };
+    transferred = true;
+    return ok(value);
+  } finally {
+    if (!transferred) await release();
   }
 }
 

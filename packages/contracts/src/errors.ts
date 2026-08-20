@@ -33,6 +33,7 @@ export enum ErrorCode {
   SdkRejected = "sdk_rejected",
   NoFile = "no_file",
   TooLarge = "too_large",
+  ResourceLimitExceeded = "resource_limit_exceeded",
   UnsupportedMedia = "unsupported_media",
   IntegrityMismatch = "integrity_mismatch",
   Internal = "internal",

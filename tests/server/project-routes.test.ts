@@ -5,6 +5,7 @@ import {
   ErrorResponseSchema,
   ErrorCode,
   ListProjectsResponseSchema,
+  ProjectTreeResponseSchema,
   StudioSnapshotResponseSchema,
   type ContentHash,
   type ProjectId,
@@ -127,6 +128,14 @@ function fixture(initialProjectChangeSeq = 8) {
       async restoreCaptured() { throw new Error("unused"); },
       async discardCapture() {},
       async readTree() { return [{ path: "index.html" as RelPath, name: "index.html", kind: "file" as const }]; },
+      async readTreePage(_ref: ProjectRef, options: { directory: RelPath | null; cursor: string | null; limit: number }) {
+        return { ok: true as const, value: {
+          directory: options.directory,
+          entries: [{ path: "assets" as RelPath, name: "assets", kind: "folder" as const }],
+          nextCursor: null,
+          totalEntries: 1,
+        } };
+      },
       async stat() { return null; },
       async readDirectory() { return []; },
     },
@@ -232,6 +241,13 @@ describe("project read routing contracts", () => {
       frameRate: 30,
       entryFile: { path: "index.html" },
       revision: 3,
+    });
+    const tree = await request(`/api/v1/projects/${id}/tree?limit=1`, { headers: { Cookie: cookie } });
+    expect(ProjectTreeResponseSchema.parse(await tree.json())).toEqual({
+      directory: null,
+      entries: [{ path: "assets", name: "assets", kind: "folder" }],
+      nextCursor: null,
+      totalEntries: 1,
     });
   });
 

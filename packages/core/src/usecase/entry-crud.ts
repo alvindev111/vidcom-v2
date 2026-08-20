@@ -8,7 +8,7 @@ import {
 } from "@vidcom/contracts";
 
 import { checkPathPurpose, checkPathSyntax } from "../domain/path-policy";
-import type { ProjectRef } from "../domain/models";
+import { DEFAULT_WORKSPACE_TREE_LIMITS, type ProjectRef, type WorkspaceTreeLimits } from "../domain/models";
 import { err, ok, type Result } from "../error/result";
 import type { MutationOrigin } from "../port/mutation-observer";
 import type { MutationJournalPort, StagedSourceHandle, WorkspacePort } from "../port/ports";
@@ -40,6 +40,9 @@ export interface EntryCrudDependencies {
     mutateSource(request: CompositeRequest, actor: Actor): Promise<Result<WriteEnvelope, DomainError>>;
   };
   hashContent(content: string | Uint8Array): ContentHash;
+  /** Diagnostic override used by focused resource-bound tests. */
+  entryResourceLimits?: WorkspaceTreeLimits;
+  resourceNow?: () => number;
 }
 
 export interface DeleteEntryPlan {
@@ -155,7 +158,30 @@ async function scanEntry(
   root: RelPath,
 ): Promise<Result<ScannedEntry, DomainError>> {
   const semaphore = new Semaphore(ENTRY_IO_CONCURRENCY);
-  const walk = async (current: RelPath): Promise<Result<EntrySnapshot[], DomainError>> => {
+  const limits = dependencies.entryResourceLimits ?? DEFAULT_WORKSPACE_TREE_LIMITS;
+  const now = dependencies.resourceNow ?? Date.now;
+  const startedAt = now();
+  let nodes = 0;
+  let serializedBytes = 2;
+  const exceeded = (reason: string, limit: number, actual: number): Result<never, DomainError> => err({
+    code: ErrorCode.ResourceLimitExceeded,
+    message: `entry operation exceeded the ${reason} limit`,
+    details: { reason, limit, actual },
+  });
+  const account = (snapshot: EntrySnapshot): Result<null, DomainError> => {
+    nodes += 1;
+    if (nodes > limits.maxNodes) return exceeded("node_count", limits.maxNodes, nodes);
+    serializedBytes += new TextEncoder().encode(JSON.stringify(snapshot)).byteLength + 1;
+    if (serializedBytes > limits.maxSerializedBytes) {
+      return exceeded("serialized_bytes", limits.maxSerializedBytes, serializedBytes);
+    }
+    const elapsed = now() - startedAt;
+    return elapsed > limits.maxDurationMs
+      ? exceeded("deadline", limits.maxDurationMs, elapsed)
+      : ok(null);
+  };
+  const walk = async (current: RelPath, depth: number): Promise<Result<EntrySnapshot[], DomainError>> => {
+    if (depth > limits.maxDepth) return exceeded("depth", limits.maxDepth, depth);
     const resolved = await semaphore.run(() => dependencies.workspace.resolve(ref, current, "authored-write"));
     if (!resolved.ok) return err({ code: ErrorCode.PathOutsideProject, message: "entry path escaped the project" });
     const metadata = await semaphore.run(() => dependencies.workspace.stat(resolved.value));
@@ -163,24 +189,31 @@ async function scanEntry(
     const relativePath = relativeTo(root, current);
     if (metadata.kind === "file") {
       const contentHash = await semaphore.run(() => dependencies.workspace.readHash(resolved.value));
-      return contentHash
-        ? ok([{ relativePath, kind: "file", contentHash }])
-        : err({ code: ErrorCode.WriteConflict, message: "entry changed while it was being read" });
+      if (!contentHash) return err({ code: ErrorCode.WriteConflict, message: "entry changed while it was being read" });
+      const snapshot: EntrySnapshot = { relativePath, kind: "file", contentHash };
+      const accounted = account(snapshot);
+      return accounted.ok ? ok([snapshot]) : accounted;
     }
     if (metadata.kind !== "directory") {
       return err({ code: ErrorCode.AssetNotAllowed, message: "symlink and special entries cannot be changed" });
     }
     const children = await semaphore.run(() => dependencies.workspace.readDirectory(resolved.value));
     if (children === null) return err({ code: ErrorCode.WriteConflict, message: "directory changed while it was being read" });
+    if (children.length > limits.maxEntriesPerDirectory) {
+      return exceeded("directory_entries", limits.maxEntriesPerDirectory, children.length);
+    }
     const invalid = children.find((entry) => entry.kind === "symlink" || entry.kind === "other");
     if (invalid) return err({ code: ErrorCode.AssetNotAllowed, message: "symlink and special entries cannot be changed" });
     const nested = await Promise.all([...children]
       .sort((left, right) => left.name.localeCompare(right.name))
-      .map((entry) => walk(`${current}/${entry.name}` as RelPath)));
+      .map((entry) => walk(`${current}/${entry.name}` as RelPath, depth + 1)));
     const failed = nested.find((result) => !result.ok);
     if (failed && !failed.ok) return failed;
+    const folder: EntrySnapshot = { relativePath, kind: "folder", contentHash: null };
+    const accounted = account(folder);
+    if (!accounted.ok) return accounted;
     return ok([
-      ...(relativePath ? [{ relativePath, kind: "folder" as const, contentHash: null }] : []),
+      ...(relativePath ? [folder] : []),
       ...nested.flatMap((result) => result.ok ? result.value : []),
     ]);
   };
@@ -193,7 +226,7 @@ async function scanEntry(
     if (metadata.kind !== "file" && metadata.kind !== "directory") {
       return err({ code: ErrorCode.AssetNotAllowed, message: "symlink and special entries cannot be changed" });
     }
-    const scanned = await walk(root);
+    const scanned = await walk(root, 0);
     return scanned.ok ? ok({ rootKind: metadata.kind === "file" ? "file" : "folder", entries: scanned.value }) : scanned;
   } catch {
     return err({ code: ErrorCode.StorageUnavailable, message: "entry tree could not be read" });

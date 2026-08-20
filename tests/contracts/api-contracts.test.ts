@@ -279,6 +279,7 @@ describe("API response contracts", () => {
       "referenced_by_composition",
       "remote_asset_not_local",
       "render_binary_missing",
+      "resource_limit_exceeded",
       "rollback_payload_pruned",
       "runtime_extraction_incomplete",
       "runtime_manifest_invalid",

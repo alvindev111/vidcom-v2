@@ -362,6 +362,7 @@ export const MCP_PUBLIC_ERROR_CODES = [
   ErrorCode.SdkRejected,
   ErrorCode.NoFile,
   ErrorCode.TooLarge,
+  ErrorCode.ResourceLimitExceeded,
   ErrorCode.UnsupportedMedia,
   ErrorCode.IntegrityMismatch,
   ErrorCode.Internal,

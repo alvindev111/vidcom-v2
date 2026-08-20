@@ -8,7 +8,7 @@ import {
 } from "@vidcom/contracts";
 
 import { checkPathPurpose, checkPathSyntax } from "../domain/path-policy";
-import type { FileNode } from "../domain/models";
+import { WorkspaceResourceLimitError, type FileNode } from "../domain/models";
 import { err, ok, type Result } from "../error/result";
 import type { AssetProbeMetadata, JobStorePort, MediaProbePort, WorkspacePort } from "../port/ports";
 import type { JobId } from "../port/types";
@@ -94,8 +94,14 @@ export async function listProjectAssets(
   let candidates: RelPath[];
   try {
     candidates = flatten(await dependencies.workspace.readTree(ref));
-  } catch {
-    return err({ code: ErrorCode.StorageUnavailable, message: "the project tree could not be read" });
+  } catch (error) {
+    return error instanceof WorkspaceResourceLimitError
+      ? err({
+          code: ErrorCode.ResourceLimitExceeded,
+          message: "the project asset tree crossed a resource limit",
+          details: { reason: error.reason, limit: error.limit, actual: error.actual },
+        })
+      : err({ code: ErrorCode.StorageUnavailable, message: "the project tree could not be read" });
   }
   const allowed = candidates
     .filter((path) => !checkPathSyntax(path) && !checkPathPurpose(path, "read-asset"))

@@ -526,6 +526,19 @@ export const StudioSnapshotResponseSchema = z.strictObject({
   diagnostics: z.array(DiagnosticSchema),
 });
 
+export const ProjectTreeQuerySchema = z.strictObject({
+  directory: relativePathSchema.optional(),
+  cursor: z.string().regex(/^\d+$/u).optional(),
+  limit: z.coerce.number().int().min(1).max(200).default(200),
+});
+
+export const ProjectTreeResponseSchema = z.strictObject({
+  directory: relativePathSchema.nullable(),
+  entries: z.array(FileNodeSchema).max(200),
+  nextCursor: z.string().regex(/^\d+$/u).nullable(),
+  totalEntries: z.number().int().nonnegative().max(2_000),
+});
+
 export const ReadProjectFileQuerySchema = z.strictObject({ path: relativePathSchema });
 export const ReadProjectFileResponseSchema = z.strictObject({ file: ProjectFileSchema });
 
@@ -660,6 +673,7 @@ export const LegacyGenerateResponseSchema = z.strictObject({
 export type ProjectSummaryDto = z.infer<typeof ProjectSummarySchema>;
 export type SceneDto = z.infer<typeof SceneSchema>;
 export type StudioSnapshotResponse = z.infer<typeof StudioSnapshotResponseSchema>;
+export type ProjectTreeResponse = z.infer<typeof ProjectTreeResponseSchema>;
 export type PreviewSettingsDto = z.infer<typeof PreviewSettingsSchema>;
 export type PreviewSettingsPatchDto = z.infer<typeof PreviewSettingsPatchSchema>;
 export type JobDto = z.infer<typeof JobSchema>;

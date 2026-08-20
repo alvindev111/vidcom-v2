@@ -22,6 +22,8 @@ export type AgentTerminalRouteDependencies = StartAgentTerminalDependencies;
 
 /** 15 s — under any proxy or browser idle cutoff, and invisible on a live terminal. */
 const HEARTBEAT_MS = 15_000;
+const MAX_STREAM_QUEUE_EVENTS = 256;
+const MAX_STREAM_QUEUE_BYTES = 512 * 1024;
 
 function fail(error: { code: ErrorCode; message: string; field?: string }): never {
   throw new HttpBoundaryError(error);
@@ -96,36 +98,124 @@ export function createAgentTerminalRoutes(
     const live = session(dependencies, c);
     const encoder = new TextEncoder();
     let unsubscribe = () => {};
-    let heartbeat: ReturnType<typeof setInterval> | undefined;
+    let sourceDetached = false;
+    let stopped = false;
+    let sourceEnded = false;
+    let queuedBytes = 0;
+    let lastWrite = Date.now();
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    let resumeWait: (() => void) | undefined;
+    let activeController: ReadableStreamDefaultController<Uint8Array> | undefined;
+    const queue: Array<{ bytes: Uint8Array; closeAfter: boolean }> = [];
+    const wake = () => {
+      if (timer !== undefined) clearTimeout(timer);
+      timer = undefined;
+      const resume = resumeWait;
+      resumeWait = undefined;
+      resume?.();
+    };
+    const detachSource = () => {
+      if (sourceDetached) return;
+      sourceDetached = true;
+      unsubscribe();
+    };
+    const cleanup = () => {
+      detachSource();
+      wake();
+      c.req.raw.signal.removeEventListener("abort", abortStream);
+    };
+    const stop = () => {
+      if (stopped) return;
+      stopped = true;
+      queue.length = 0;
+      queuedBytes = 0;
+      cleanup();
+    };
+    const abortStream = () => {
+      stop();
+      try { activeController?.close(); } catch { /* request already closed */ }
+    };
+    const encodedFrame = (frame: AgentTerminalFrame): Uint8Array => encoder.encode(
+      `event: ${frame.type}\ndata: ${JSON.stringify(frame)}\n\n`,
+    );
+    const overflowFrame = () => encoder.encode(
+      `event: error\ndata: ${JSON.stringify({
+        type: "error",
+        code: ErrorCode.ResourceLimitExceeded,
+        message: "terminal output exceeded the suspended-consumer queue",
+      })}\n\n`,
+    );
+    const push = (frame: AgentTerminalFrame) => {
+      if (stopped || sourceEnded) return;
+      const bytes = encodedFrame(frame);
+      if (queue.length + 1 > MAX_STREAM_QUEUE_EVENTS || queuedBytes + bytes.byteLength > MAX_STREAM_QUEUE_BYTES) {
+        queue.length = 0;
+        queuedBytes = 0;
+        const overflow = overflowFrame();
+        queue.push({ bytes: overflow, closeAfter: true });
+        queuedBytes = overflow.byteLength;
+        sourceEnded = true;
+        detachSource();
+        wake();
+        return;
+      }
+      const closeAfter = frame.type === "exit";
+      queue.push({ bytes, closeAfter });
+      queuedBytes += bytes.byteLength;
+      if (closeAfter) {
+        sourceEnded = true;
+        detachSource();
+      }
+      wake();
+    };
+    c.req.raw.signal.addEventListener("abort", abortStream, { once: true });
     const body = new ReadableStream<Uint8Array>({
       start(controller) {
-        const send = (frame: AgentTerminalFrame) => {
-          // Guarded because the browser can drop the connection between a pty
-          // write and this enqueue, and an enqueue on a closed controller throws
-          // where nothing is left to catch it.
-          try {
-            controller.enqueue(encoder.encode(
-              `event: ${frame.type}\ndata: ${JSON.stringify(frame)}\n\n`,
-            ));
-          } catch { return; }
-          if (frame.type === "exit") {
-            unsubscribe();
-            if (heartbeat) clearInterval(heartbeat);
-            try { controller.close(); } catch { /* already closed by the client */ }
+        activeController = controller;
+        const subscribed = live.subscribe(push);
+        unsubscribe = subscribed;
+        if (sourceDetached) subscribed();
+      },
+      async pull(controller) {
+        activeController = controller;
+        while (!stopped && (controller.desiredSize ?? 0) > 0) {
+          const next = queue.shift();
+          if (next) {
+            queuedBytes -= next.bytes.byteLength;
+            controller.enqueue(next.bytes);
+            lastWrite = Date.now();
+            if (next.closeAfter) {
+              stopped = true;
+              cleanup();
+              controller.close();
+              return;
+            }
+            continue;
           }
-        };
-        unsubscribe = live.subscribe(send);
-        heartbeat = setInterval(() => {
-          try { controller.enqueue(encoder.encode(":hb\n\n")); }
-          catch { /* closed; cancel() clears the interval */ }
-        }, HEARTBEAT_MS);
-        heartbeat.unref?.();
+          if (sourceEnded) {
+            stopped = true;
+            cleanup();
+            controller.close();
+            return;
+          }
+          const heartbeatIn = HEARTBEAT_MS - (Date.now() - lastWrite);
+          if (heartbeatIn <= 0) {
+            controller.enqueue(encoder.encode(":hb\n\n"));
+            lastWrite = Date.now();
+            continue;
+          }
+          await new Promise<void>((resolve) => {
+            resumeWait = resolve;
+            timer = setTimeout(wake, heartbeatIn);
+            timer.unref?.();
+          });
+        }
       },
       cancel() {
-        unsubscribe();
-        if (heartbeat) clearInterval(heartbeat);
+        stop();
       },
     });
+    if (c.req.raw.signal.aborted) abortStream();
     return new Response(body, {
       headers: {
         "Cache-Control": "no-cache, no-transform",

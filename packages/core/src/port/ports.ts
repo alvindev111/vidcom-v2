@@ -17,7 +17,7 @@ import type {
   RelPath,
 } from "@vidcom/contracts";
 
-import type { AbsolutePath, BinaryContent, CompositionModel, CompositionOp, CompositionSource, DirectoryEntry, FileContent, FileNode, FileStat, FontCompatibilityIssue, ProjectRef } from "../domain/models";
+import type { AbsolutePath, BinaryContent, CompositionModel, CompositionOp, CompositionSource, DirectoryEntry, FileContent, FileNode, FileStat, FileTreePage, FontCompatibilityIssue, ProjectRef } from "../domain/models";
 import type {
   CatalogListFilter,
   CatalogListing,
@@ -368,6 +368,12 @@ export interface WorkspacePort {
   discardCapture(capture: MutationCapture): Promise<void>;
   /** Reads the complete project tree and may be expensive for large projects. */
   readTree(ref: ProjectRef): Promise<FileNode[]>;
+  /** Reads one sorted direct-child page without recursively expanding folders. */
+  readTreePage?(ref: ProjectRef, options: {
+    directory: RelPath | null;
+    cursor: string | null;
+    limit: number;
+  }): Promise<Result<FileTreePage, PathRejection>>;
   /** Reads metadata for a resolved path; `null` means the path does not exist. */
   stat(path: ResolvedPath): Promise<FileStat | null>;
   /** Lists direct children without following symlinks; `null` means the directory is absent. */

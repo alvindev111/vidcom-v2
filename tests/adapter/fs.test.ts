@@ -171,6 +171,51 @@ describe("allowlist and workspace I/O", () => {
     await expect(adapter.deleteAtomic(resolved.value)).resolves.toBeUndefined();
   });
 
+  it("excludes protected roots and pages direct children without recursive expansion", async () => {
+    await mkdir(path.join(projectRoot, ".vidcom", "cache"), { recursive: true });
+    await mkdir(path.join(projectRoot, ".private"));
+    await mkdir(path.join(projectRoot, "assets"));
+    await writeFile(path.join(projectRoot, ".vidcom", "cache", "secret.bin"), "secret");
+    await writeFile(path.join(projectRoot, ".private", "secret.txt"), "secret");
+    await writeFile(path.join(projectRoot, "package.json"), "{}");
+    await writeFile(path.join(projectRoot, "assets", "a.txt"), "a");
+    await writeFile(path.join(projectRoot, "assets", "b.txt"), "b");
+
+    const adapter = new WorkspaceFs(workspace as AbsolutePath);
+    const tree = await adapter.readTree(project);
+    expect(tree.map((entry) => entry.name)).not.toEqual(expect.arrayContaining([
+      ".vidcom", ".private", "hyperframes.json", "vidcom.json", "package.json",
+    ]));
+    const page = await (adapter as unknown as {
+      readTreePage(ref: ProjectRef, options: { directory: RelPath; cursor: string | null; limit: number }): Promise<unknown>;
+    }).readTreePage(project, { directory: "assets" as RelPath, cursor: null, limit: 1 });
+    expect(page).toEqual({ ok: true, value: {
+      directory: "assets",
+      entries: [{ path: "assets/a.txt", name: "a.txt", kind: "file" }],
+      nextCursor: "1",
+      totalEntries: 2,
+    } });
+  });
+
+  it("fails deterministically when a full tree crosses a production resource dimension", async () => {
+    await mkdir(path.join(projectRoot, "assets"));
+    await writeFile(path.join(projectRoot, "assets", "a.txt"), "a");
+    const adapter = new WorkspaceFs(workspace as AbsolutePath, {
+      treeLimits: {
+        maxDepth: 64,
+        maxNodes: 1,
+        maxEntriesPerDirectory: 2_000,
+        maxSerializedBytes: 8 * 1024 * 1024,
+        maxDurationMs: 5_000,
+      },
+    } as never);
+    await expect(adapter.readTree(project)).rejects.toMatchObject({
+      name: "WorkspaceResourceLimitError",
+      reason: "node_count",
+      limit: 1,
+    });
+  });
+
   it("omits symlinks from the editable project tree", async () => {
     const adapter = new WorkspaceFs(workspace as AbsolutePath);
     await mkdir(path.join(projectRoot, "internal"));

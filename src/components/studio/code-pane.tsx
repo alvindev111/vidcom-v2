@@ -35,6 +35,7 @@ export function CodePane({
     <ResizablePanelGroup orientation="horizontal">
       <ResizablePanel defaultSize="26" minSize="12">
         <FileExplorer
+          key={`${projectId}:${projectRevision}`}
           tree={tree}
           selectedPath={source.activePath}
           dirtyPaths={source.dirtyPaths}

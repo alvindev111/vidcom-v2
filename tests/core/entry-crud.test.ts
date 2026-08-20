@@ -34,7 +34,17 @@ function digest(value: string | Uint8Array): ContentHash {
   return `sha256:${createHash("sha256").update(value).digest("hex")}` as ContentHash;
 }
 
-function setup(options: { revision?: number; special?: Record<string, "symlink" | "other"> } = {}) {
+function setup(options: {
+  revision?: number;
+  special?: Record<string, "symlink" | "other">;
+  entryResourceLimits?: {
+    maxDepth: number;
+    maxNodes: number;
+    maxEntriesPerDirectory: number;
+    maxSerializedBytes: number;
+    maxDurationMs: number;
+  };
+} = {}) {
   const files = new Map<string, ContentHash>([
     ["assets/source/a.txt", digest("a")],
     ["assets/source/nested/b.txt", digest("b")],
@@ -84,6 +94,7 @@ function setup(options: { revision?: number; special?: Record<string, "symlink" 
       },
     },
     hashContent: digest,
+    ...(options.entryResourceLimits ? { entryResourceLimits: options.entryResourceLimits } : {}),
   };
   return { dependencies, files, directories, mutations, opened };
 }
@@ -232,5 +243,23 @@ describe("entry CRUD", () => {
         { kind: "rmdir", path: "assets/source" },
       ],
     });
+  });
+
+  it.each([
+    ["node_count", { maxDepth: 64, maxNodes: 2, maxEntriesPerDirectory: 2_000, maxSerializedBytes: 8 * 1024 * 1024, maxDurationMs: 5_000 }],
+    ["directory_entries", { maxDepth: 64, maxNodes: 10_000, maxEntriesPerDirectory: 1, maxSerializedBytes: 8 * 1024 * 1024, maxDurationMs: 5_000 }],
+    ["depth", { maxDepth: 1, maxNodes: 10_000, maxEntriesPerDirectory: 2_000, maxSerializedBytes: 8 * 1024 * 1024, maxDurationMs: 5_000 }],
+    ["serialized_bytes", { maxDepth: 64, maxNodes: 10_000, maxEntriesPerDirectory: 2_000, maxSerializedBytes: 1, maxDurationMs: 5_000 }],
+  ] as const)("rejects recursive plans that cross the %s budget", async (reason, entryResourceLimits) => {
+    const value = setup({ entryResourceLimits });
+    const result = await prepareDeleteEntry(value.dependencies, {
+      projectId, path: "assets/source" as RelPath, recursive: true, expectedRevision: 7,
+    });
+    expect(result).toEqual({ ok: false, error: expect.objectContaining({
+      code: "resource_limit_exceeded",
+      details: expect.objectContaining({ reason }),
+    }) });
+    expect(value.mutations).toHaveLength(0);
+    expect(value.opened).toHaveLength(0);
   });
 });

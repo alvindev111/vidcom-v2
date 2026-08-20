@@ -53,6 +53,48 @@ export interface FileNode {
   children?: FileNode[];
 }
 
+export interface FileTreePage {
+  directory: RelPath | null;
+  entries: FileNode[];
+  nextCursor: string | null;
+  totalEntries: number;
+}
+
+export interface WorkspaceTreeLimits {
+  maxDepth: number;
+  maxNodes: number;
+  maxEntriesPerDirectory: number;
+  maxSerializedBytes: number;
+  maxDurationMs: number;
+}
+
+export const DEFAULT_WORKSPACE_TREE_LIMITS: Readonly<WorkspaceTreeLimits> = Object.freeze({
+  maxDepth: 64,
+  maxNodes: 10_000,
+  maxEntriesPerDirectory: 2_000,
+  maxSerializedBytes: 8 * 1024 * 1024,
+  maxDurationMs: 5_000,
+});
+
+export type WorkspaceResourceLimitReason =
+  | "depth"
+  | "node_count"
+  | "directory_entries"
+  | "serialized_bytes"
+  | "deadline";
+
+export class WorkspaceResourceLimitError extends Error {
+  readonly name = "WorkspaceResourceLimitError";
+
+  constructor(
+    readonly reason: WorkspaceResourceLimitReason,
+    readonly limit: number,
+    readonly actual: number,
+  ) {
+    super(`workspace resource limit ${reason} exceeded: ${actual} > ${limit}`);
+  }
+}
+
 /** One composition source already read by the parser with its digest and UTF-8 byte size. */
 export interface CompositionSource {
   path: RelPath;

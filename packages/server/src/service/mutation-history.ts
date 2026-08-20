@@ -69,6 +69,35 @@ export interface MutationHistoryOptions {
 }
 
 const MAX_ENTRIES = 50;
+const MAX_RETAINED_RECEIPT_IDS = 4_096;
+
+/** Fixed-size insertion-ordered dedupe window for at-least-once receipt delivery. */
+class BoundedReceiptIds {
+  private readonly ids = new Set<string>();
+
+  has(id: string): boolean {
+    if (!this.ids.delete(id)) return false;
+    this.ids.add(id);
+    return true;
+  }
+
+  add(id: string): void {
+    this.ids.delete(id);
+    this.ids.add(id);
+    if (this.ids.size > MAX_RETAINED_RECEIPT_IDS) {
+      const oldest = this.ids.values().next().value;
+      if (oldest !== undefined) this.ids.delete(oldest);
+    }
+  }
+
+  clear(): void {
+    this.ids.clear();
+  }
+
+  get size(): number {
+    return this.ids.size;
+  }
+}
 
 function stackKey(sessionId: string, projectId: ProjectId): string {
   return `${sessionId}\u0000${projectId}`;
@@ -120,7 +149,7 @@ function conflict(message: string): Result<never, DomainError> {
 export class MutationHistory implements MutationObserverPort {
   private readonly stacks = new Map<string, HistoryStack>();
   private readonly attachments = new Map<string, Attachment>();
-  private readonly seenReceiptIds = new Set<string>();
+  private readonly seenReceiptIds = new BoundedReceiptIds();
   private readonly createOperationId: () => string;
   private readonly schedule: (callback: () => void, delayMs: number) => unknown;
   private readonly cancelScheduled: (timer: unknown) => void;
@@ -360,6 +389,17 @@ export class MutationHistory implements MutationObserverPort {
     };
   }
 
+  /** Bounded counters emitted by lifecycle soak tests without exposing receipt identities. */
+  diagnosticState(): { retainedReceiptIds: number; undoEntries: number; redoEntries: number } {
+    let undoEntries = 0;
+    let redoEntries = 0;
+    for (const stack of this.stacks.values()) {
+      undoEntries += stack.undo.length;
+      redoEntries += stack.redo.length;
+    }
+    return { retainedReceiptIds: this.seenReceiptIds.size, undoEntries, redoEntries };
+  }
+
   clear(sessionId: string, projectId?: ProjectId): void {
     try {
       for (const stack of this.stacks.values()) {
@@ -382,6 +422,7 @@ export class MutationHistory implements MutationObserverPort {
         if (stack.operation?.state === "committing") stack.clearDeferred = true;
         else this.clearStack(stack);
       }
+      this.seenReceiptIds.clear();
     } catch {}
   }
 

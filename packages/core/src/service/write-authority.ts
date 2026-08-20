@@ -421,7 +421,7 @@ export class WriteAuthority {
         if (step.kind === "write-staged" && !advancesSource) {
           return err({ code: ErrorCode.SchemaInvalid, message: "write-staged is only available to authored mutations" });
         }
-        const inferred = step.kind === "mkdir" || step.kind === "rmdir"
+        const inferred = step.kind === "mkdir" || step.kind === "rmdir" || step.kind === "write-staged"
           ? advancesSource ? "authored-write" : null
           : inferMutationPurpose(advancesSource ? "source" : "derived", step.path);
         if (inferred === null) {
@@ -452,7 +452,11 @@ export class WriteAuthority {
     const mutationTargets = new Set(steps.map(({ target }) => target));
     const byTarget = new Map<ResolvedPath, PreparedHistoryReadGuard>();
     for (const guard of request.historyReadGuards ?? []) {
-      const purpose = inferMutationPurpose(advancesSource ? "source" : "derived", guard.path);
+      // Read guards are Core-owned dependencies, not transport-selected reads. Authored
+      // package guards must support the same binary extensions as their staged writes.
+      const purpose = advancesSource
+        ? "read-package-target"
+        : inferMutationPurpose("derived", guard.path);
       if (purpose === null) return err(pathError({ reason: "not_allowed_for_purpose" }));
       if (guard.state.kind === "file" && !/^sha256:[0-9a-f]{64}$/u.test(guard.state.contentHash)) {
         return err({

@@ -101,6 +101,7 @@ function protocolCode(error: DomainError, era: Era): number {
     case ErrorCode.SceneNotFound:
     case ErrorCode.SdkRejected:
     case ErrorCode.TooLarge:
+    case ErrorCode.ResourceLimitExceeded:
     case ErrorCode.UnsupportedMedia:
     case ErrorCode.IntegrityMismatch:
     case ErrorCode.ApprovalRequired:

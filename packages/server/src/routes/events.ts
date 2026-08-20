@@ -5,6 +5,9 @@ import { Hono } from "hono";
 import { HttpBoundaryError } from "../middleware/error-mapper";
 import { requireAttachedStudio, STUDIO_SESSION_HEADER, type StudioRouteDependencies } from "./studio-session";
 
+const MAX_EVENT_QUEUE_EVENTS = 100;
+const MAX_EVENT_QUEUE_BYTES = 1024 * 1024;
+
 function frame(event: StoredEvent): string {
   const data = { id: event.seq, type: event.type, projectId: event.projectId, payload: event.payload };
   return `id: ${event.seq}\nevent: ${event.type}\ndata: ${JSON.stringify(data)}\n\n`;
@@ -56,8 +59,12 @@ export function createEventRoutes(
     let cursor = parsed.data.lastEventId ?? 0;
     let stopped = false;
     let timer: ReturnType<typeof setTimeout> | undefined;
+    let resumeWait: (() => void) | undefined;
     let lastWrite = Date.now();
     let leaseClosed = false;
+    let closing = false;
+    let queuedBytes = 0;
+    const pending: Array<{ bytes: Uint8Array; cursor: number | null; closeAfter: boolean }> = [];
     const closeLease = () => {
       if (leaseClosed || !leased || !studio) return;
       leaseClosed = true;
@@ -67,47 +74,106 @@ export function createEventRoutes(
         leased.projectId,
         leased.generation,
       );
-      c.req.raw.signal.removeEventListener("abort", closeLease);
     };
-    c.req.raw.signal.addEventListener("abort", closeLease, { once: true });
+    const wake = () => {
+      if (timer !== undefined) clearTimeout(timer);
+      timer = undefined;
+      const resume = resumeWait;
+      resumeWait = undefined;
+      resume?.();
+    };
+    const stop = () => {
+      if (stopped) return;
+      stopped = true;
+      pending.length = 0;
+      wake();
+      closeLease();
+      c.req.raw.signal.removeEventListener("abort", stop);
+    };
+    const queueFrame = (bytes: Uint8Array, nextCursor: number | null) => {
+      if (closing) return;
+      if (pending.length + 1 > MAX_EVENT_QUEUE_EVENTS || queuedBytes + bytes.byteLength > MAX_EVENT_QUEUE_BYTES) {
+        pending.length = 0;
+        queuedBytes = 0;
+        const overflow = encoder.encode(
+          `event: error\ndata: ${JSON.stringify({
+            type: "error",
+            code: ErrorCode.ResourceLimitExceeded,
+            message: "event output exceeded the suspended-consumer queue",
+          })}\n\n`,
+        );
+        pending.push({ bytes: overflow, cursor: null, closeAfter: true });
+        queuedBytes = overflow.byteLength;
+        closing = true;
+        return;
+      }
+      pending.push({ bytes, cursor: nextCursor, closeAfter: false });
+      queuedBytes += bytes.byteLength;
+    };
+    c.req.raw.signal.addEventListener("abort", stop, { once: true });
     const body = new ReadableStream<Uint8Array>({
-      async start(controller) {
-        const pump = async () => {
-          if (stopped) return;
-          try {
-            const batch = await outbox.readFrom(cursor, 100);
+      async pull(controller) {
+        try {
+          while (!stopped && (controller.desiredSize ?? 0) > 0) {
+            const next = pending.shift();
+            if (next) {
+              queuedBytes -= next.bytes.byteLength;
+              controller.enqueue(next.bytes);
+              if (next.cursor !== null) cursor = next.cursor;
+              lastWrite = Date.now();
+              if (next.closeAfter) {
+                stopped = true;
+                pending.length = 0;
+                queuedBytes = 0;
+                wake();
+                closeLease();
+                c.req.raw.signal.removeEventListener("abort", stop);
+                controller.close();
+                return;
+              }
+              continue;
+            }
+
+            const batch = await outbox.readFrom(cursor, MAX_EVENT_QUEUE_EVENTS);
+            if (stopped) return;
             if (batch.gap) {
               const latestSeq = await outbox.latestSeq();
-              controller.enqueue(encoder.encode(
-                `id: ${latestSeq}\nevent: resync\ndata: ${JSON.stringify({ id: latestSeq, type: "resync", reason: "outside_retention", latestSeq })}\n\n`,
-              ));
-              cursor = latestSeq;
-              lastWrite = Date.now();
+              if (stopped) return;
+              queueFrame(
+                encoder.encode(
+                  `id: ${latestSeq}\nevent: resync\ndata: ${JSON.stringify({ id: latestSeq, type: "resync", reason: "outside_retention", latestSeq })}\n\n`,
+                ),
+                latestSeq,
+              );
             } else {
               for (const event of batch.events) {
-                controller.enqueue(encoder.encode(frame(event)));
-                cursor = event.seq;
-                lastWrite = Date.now();
+                queueFrame(encoder.encode(frame(event)), event.seq);
               }
             }
-            if (Date.now() - lastWrite >= heartbeatMs) {
-              controller.enqueue(encoder.encode(":hb\n\n"));
-              lastWrite = Date.now();
+            if (pending.length > 0) continue;
+
+            const heartbeatIn = heartbeatMs - (Date.now() - lastWrite);
+            if (heartbeatIn <= 0) {
+              queueFrame(encoder.encode(":hb\n\n"), null);
+              continue;
             }
-            timer = setTimeout(() => void pump(), pollMs);
-          } catch (error) {
-            closeLease();
-            controller.error(error);
+
+            await new Promise<void>((resolve) => {
+              resumeWait = resolve;
+              timer = setTimeout(wake, Math.max(1, Math.min(pollMs, heartbeatIn)));
+              timer.unref?.();
+            });
           }
-        };
-        await pump();
+        } catch (error) {
+          stop();
+          controller.error(error);
+        }
       },
       cancel() {
-        stopped = true;
-        if (timer) clearTimeout(timer);
-        closeLease();
+        stop();
       },
     });
+    if (c.req.raw.signal.aborted) stop();
     return new Response(body, {
       headers: {
         "Cache-Control": "no-cache, no-transform",

@@ -34,6 +34,7 @@ const ERROR_STATUS = {
   [ErrorCode.SdkRejected]: 422,
   [ErrorCode.NoFile]: 404,
   [ErrorCode.TooLarge]: 413,
+  [ErrorCode.ResourceLimitExceeded]: 413,
   [ErrorCode.UnsupportedMedia]: 415,
   [ErrorCode.IntegrityMismatch]: 422,
   [ErrorCode.Internal]: 500,

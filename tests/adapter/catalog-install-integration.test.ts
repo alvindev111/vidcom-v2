@@ -44,12 +44,16 @@ const now = "2026-08-19T00:00:00.000Z";
 const projectId = "project_catalog_install" as ProjectId;
 const ENTRY_TARGET = "blocks/lower-third/index.html" as RelPath;
 const STYLE_TARGET = "blocks/lower-third/style.css" as RelPath;
+const POSTER_TARGET = "blocks/lower-third/poster.png" as RelPath;
+const FONT_TARGET = "blocks/lower-third/font.woff2" as RelPath;
 const hashContent = (content: string | Uint8Array): ContentHash =>
   `sha256:${createHash("sha256").update(content).digest("hex")}` as ContentHash;
-const digestOf = (content: string) => createHash("sha256").update(content).digest("hex");
+const digestOf = (content: string | Uint8Array) => createHash("sha256").update(content).digest("hex");
 
 const ENTRY_BYTES = "<section data-composition-id=\"lower-third\"><p>lower third</p></section>\n";
 const STYLE_BYTES = ".lower-third { color: red }\n";
+const POSTER_BYTES = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 1, 2, 3]);
+const FONT_BYTES = new Uint8Array([0x77, 0x4f, 0x46, 0x32, 4, 5, 6, 7]);
 
 const indexSource = `<!doctype html><html><body>
 <main data-hf-id="root" data-composition-id="root" data-width="1920" data-height="1080" data-duration="4">
@@ -121,6 +125,51 @@ async function materializedFiles(): Promise<CatalogMaterializedFile[]> {
       encoding: "utf8",
     },
   ];
+}
+
+async function binaryPackage(options: {
+  version?: string;
+  entry?: string;
+  poster?: Uint8Array;
+  font?: Uint8Array;
+} = {}): Promise<{ item: VerifiedCatalogItem; files: CatalogMaterializedFile[] }> {
+  const entry = options.entry ?? ENTRY_BYTES;
+  const poster = options.poster ?? POSTER_BYTES;
+  const font = options.font ?? FONT_BYTES;
+  const style = STYLE_BYTES;
+  const item = verifiedItem({
+    version: options.version ?? "1.2.0",
+    integrity: {
+      algo: "sha256",
+      files: {
+        [ENTRY_TARGET]: digestOf(entry),
+        [STYLE_TARGET]: digestOf(style),
+        [POSTER_TARGET]: digestOf(poster),
+        [FONT_TARGET]: digestOf(font),
+      },
+      manifest: "",
+    },
+  });
+  const materialized = [
+    [ENTRY_TARGET, "binary-index.html", entry, "utf8"],
+    [STYLE_TARGET, "binary-style.css", style, "utf8"],
+    [POSTER_TARGET, "poster.png", poster, "binary"],
+    [FONT_TARGET, "font.woff2", font, "binary"],
+  ] as const;
+  const files: CatalogMaterializedFile[] = [];
+  for (const [target, filename, content, encoding] of materialized) {
+    const sourcePath = path.join(cacheRoot, filename);
+    await mkdir(path.dirname(sourcePath), { recursive: true });
+    await writeFile(sourcePath, content);
+    const contentHash = hashContent(content);
+    files.push({
+      path: target,
+      contentHash,
+      source: { sourcePath: sourcePath as AbsolutePath, contentHash },
+      encoding,
+    });
+  }
+  return { item, files };
 }
 
 const intent: CatalogInstallIntent = {
@@ -328,6 +377,77 @@ describe("catalog install over real SQLite and a real filesystem", () => {
     expect(executed).toBeNull();
     expect(await absent(path.join(projectRoot, ENTRY_TARGET))).toBe(true);
     expect(await journal.latestSourceRevision(projectId)).toBeNull();
+  });
+
+  it("creates and identically reuses HTML, PNG and WOFF2 package targets", async () => {
+    const binary = await binaryPackage();
+    const first = await installOnce(await dependencies(binary));
+    const executed = first.executed;
+    if (!executed?.ok) throw new Error(JSON.stringify(executed?.error));
+    expect(executed).toMatchObject({ ok: true });
+    expect(new Uint8Array(await readFile(path.join(projectRoot, POSTER_TARGET)))).toEqual(POSTER_BYTES);
+    expect(new Uint8Array(await readFile(path.join(projectRoot, FONT_TARGET)))).toEqual(FONT_BYTES);
+
+    const reused = await installOnce(await dependencies(binary), {
+      expectedRevision: 1,
+      existingPolicy: "reuse",
+    });
+    expect(reused.executed?.ok).toBe(true);
+    if (!reused.executed?.ok) return;
+    expect(reused.executed.value.files).toEqual(expect.arrayContaining([
+      expect.objectContaining({ path: POSTER_TARGET, action: "reuse" }),
+      expect.objectContaining({ path: FONT_TARGET, action: "reuse" }),
+    ]));
+  });
+
+  it("replaces binary targets and permits an explicit skip without a write", async () => {
+    const first = await binaryPackage();
+    expect((await installOnce(await dependencies(first))).executed).toMatchObject({ ok: true });
+    const nextPoster = new Uint8Array([...POSTER_BYTES, 9]);
+    const nextFont = new Uint8Array([...FONT_BYTES, 10]);
+    const next = await binaryPackage({
+      version: "1.3.0",
+      entry: `${ENTRY_BYTES}<!-- next -->\n`,
+      poster: nextPoster,
+      font: nextFont,
+    });
+    const replaced = await installOnce(await dependencies(next), {
+      version: "1.3.0",
+      expectedRevision: 1,
+      existingPolicy: "replace",
+    });
+    expect(replaced.executed?.ok).toBe(true);
+    expect(new Uint8Array(await readFile(path.join(projectRoot, POSTER_TARGET)))).toEqual(nextPoster);
+    expect(new Uint8Array(await readFile(path.join(projectRoot, FONT_TARGET)))).toEqual(nextFont);
+    const revision = await journal.latestSourceRevision(projectId);
+    const skipped = await prepareCatalogInstall(await dependencies(next), {
+      ...intent,
+      version: "1.3.0",
+      expectedRevision: revision ?? 0,
+      existingPolicy: "skip",
+    });
+    expect(skipped).toEqual({ ok: true, value: { status: "skipped" } });
+    expect(await journal.latestSourceRevision(projectId)).toBe(revision);
+  });
+
+  it("invalidates the grant when a binary target is externally edited after prepare", async () => {
+    const binary = await binaryPackage();
+    expect((await installOnce(await dependencies(binary))).executed).toMatchObject({ ok: true });
+    const deps = await dependencies(binary);
+    const target = { ...intent, expectedRevision: 1, existingPolicy: "reuse" as const };
+    const prepared = await prepareCatalogInstall(deps, target);
+    if (!prepared.ok || prepared.value.status !== "ready") throw new Error("expected a ready reuse plan");
+    const grantId = await approvals.request(prepared.value.binding, "Reuse binary package");
+    await approvals.issue(grantId, "ui");
+    await writeFile(path.join(projectRoot, POSTER_TARGET), new Uint8Array([...POSTER_BYTES, 99]));
+    const executed = await executeCatalogInstall(
+      deps,
+      { intent: target, grantId },
+      "user",
+      { origin, toolAudit: null },
+    );
+    expect(executed).toEqual({ ok: false, error: expect.objectContaining({ code: ErrorCode.ApprovalInvalid }) });
+    expect(await journal.latestSourceRevision(projectId)).toBe(1);
   });
 
   it("refuses the same version with different bytes rather than offering a replace", async () => {

@@ -2599,6 +2599,92 @@
             Token chỉ tồn tại trong shell qua ánh xạ <code>GH_KEY</code> sang <code>GH_TOKEN</code>. P15 nay
             mới được mở.
           </p>
+          <p class="text-slate-400 text-sm">
+            2026-08-20 22:51 +07 — checkpoint 15.1 tại <code>83acd8a</code>. CodeGraph xác nhận tree
+            adapter đang đệ quy toàn bộ bằng <code>Promise.all</code>, recursive CRUD chỉ giới hạn tám I/O
+            đồng thời, còn FileExplorer render đệ quy toàn bộ node đã mở. RED plan sẽ khóa các budget
+            production: depth 64, 10.000 node, 2.000 entry mỗi directory, plan 8 MiB và deadline hữu hạn;
+            test dùng limit nhỏ qua diagnostic seam để không tạo fixture khổng lồ. Dot/protected roots
+            phải bị loại trước khi đếm. Directory page sẽ là read capability riêng; explorer tải page khi
+            expand và chỉ render một window hữu hạn. Các consumer hiện hữu vẫn nhận tree đầy đủ nhưng bị
+            hard-bound, nên Studio Snapshot không thể tăng vô hạn.
+          </p>
+          <p class="text-slate-400 text-sm">
+            2026-08-20 22:58 +07 — 15.1 focused PASS. RED có sáu failure: protected root còn lộ và
+            recursive plan bỏ qua node/directory/depth/serialized-byte budgets. GREEN 57/57 cùng
+            typecheck, boundaries, diff-check và lint 0 error. Full tree nay loại dot/internal/protected
+            name trước khi đếm, giới hạn depth 64, 10.000 node, 2.000 entry/directory, 8 MiB JSON và
+            deadline 5 giây; vượt limit trả <code>resource_limit_exceeded</code>/413 với reason, limit,
+            actual. Recursive expectation/delete dùng cùng budget trước mọi stage/grant/mutation.
+          </p>
+          <p class="text-slate-400 text-sm">
+            Route tree page trả tối đa 200 direct child đã sort. FileExplorer bỏ recursive children từ
+            snapshot, chỉ fetch folder lúc expand, merge page không trùng và render từng window 300 row
+            có continuation. Theo React performance skill, reset state không chạy trong effect; component
+            remount theo <code>projectId:revision</code>, cleanup abort request cũ. Các panel khác vẫn nhận
+            full tree nhưng tree đó đã hard-bound, nên không còn payload vô hạn.
+          </p>
+          <p class="text-slate-400 text-sm">
+            2026-08-20 23:07 +07 — 15.2–15.3 focused PASS. RED unit matrix bắt được pin còn sống sau
+            integrity mismatch, planner rejection, abort và adapter throw; PNG/WOFF2 cũng bị hiểu sai là
+            file vắng. Ownership nay có một cờ transfer duy nhất: mọi exit trực tiếp release trong
+            <code>finally</code>, chỉ plan executable mới chuyển pin cho caller và caller cũng release
+            trong <code>finally</code>. Read package target có purpose riêng nên rejected, unreadable và
+            absent không còn nhập làm một.
+          </p>
+          <p class="text-slate-400 text-sm">
+            Integration thật trên SQLite/filesystem phát hiện thêm một defect ở mutation boundary:
+            planner đọc binary đúng nhưng <code>WriteAuthority</code> từng ép staged PNG/WOFF2 qua
+            allowlist source text và trả <code>asset_not_allowed</code>. Capability
+            <code>write-staged</code> là Core-only, nên nay dùng <code>authored-write</code>; recovery của
+            durable step không đoán lại extension, còn hidden/protected/symlink checks vẫn nguyên vẹn.
+            History guard dùng read capability của package. Matrix 5 file/87 test xanh, phủ HTML + PNG +
+            WOFF2 create/reuse/replace/skip và external edit làm grant invalid mà revision không đổi;
+            typecheck, boundaries xanh, lint 0 error + 5 warning baseline.
+          </p>
+          <p class="text-slate-400 text-sm">
+            2026-08-20 23:10 +07 — 15.4 focused PASS. <code>seenReceiptIds</code> không còn là Set sống
+            suốt daemon: dedupe insertion-order giữ tối đa 4.096 ID gần nhất và xóa sạch khi service
+            dispose. History stack vẫn giữ tối đa 50 entry; duplicate, eviction, branch cut, inverse,
+            clear và dispose đều release content ref đúng một lần. RED soak trước đó không có bounded
+            diagnostic và giữ toàn bộ ID.
+          </p>
+          <p class="text-slate-400 text-sm">
+            Soak 100.000 receipt ghi sample machine-readable: sau warm-up 10.000, retained ID = 4.096,
+            undo = 50, redo = 0, heap tăng 4.460.728 byte và RSS tăng 39.321.600 byte; clear cuối cùng
+            đã release đủ 100.000 ref. Bốn file history/36 test xanh, typecheck, boundaries, diff-check
+            xanh và lint 0 error. Bằng chứng chính là cardinality hữu hạn chính xác; memory sample bổ sung
+            xác nhận allocator không tăng theo số receipt.
+          </p>
+          <p class="text-slate-400 text-sm">
+            2026-08-20 23:15 +07 — 15.5 focused PASS. RED suspended SSE đã poll 19 lần trong 25 ms dù
+            browser không đọc; PTY giữ flood trong internal stream queue, không trả typed overflow và
+            RSS tăng 96.403.456 byte. SSE nay chỉ poll trong <code>pull</code>, cursor chỉ advance khi
+            enqueue, queue tối đa 100 event/1 MiB. PTY là source push-only nên giữ queue riêng tối đa
+            256 event/512 KiB; overflow bỏ backlog, unsubscribe ngay, phát
+            <code>resource_limit_exceeded</code> rồi đóng.
+          </p>
+          <p class="text-slate-400 text-sm">
+            Heartbeat timer chỉ tồn tại khi consumer còn demand; cancel và request abort đều dọn timer,
+            studio lease và PTY subscription tức thời. GREEN matrix 3 file/30 test: SSE suspended chỉ
+            đọc outbox một lần; PTY flood 100.000 frame có listener = 0, heap delta 0 và RSS delta
+            19.316.736 byte. Oversized durable event batch, retention gap, replay, heartbeat, exit và
+            abort đều được phủ. Typecheck, boundaries, diff-check xanh, lint 0 error.
+          </p>
+          <p class="text-slate-400 text-sm">
+            2026-08-20 23:18 +07 — P15 pre-CI gate. Combined matrix 16 file/210 test xanh. Full local
+            regression đạt 2.638 pass nhưng có ba failure nên không được gọi PASS: hai contract lock thật
+            bị thiếu sau khi thêm <code>resource_limit_exceeded</code>, và upload-listener sampler cũ lại
+            có RSS outlier 80.871.424 byte trên ngưỡng 64 MiB. Hai lỗi contract đã sửa: error code được
+            khóa trong shared vocabulary và public MCP schema vì recursive MCP mutation có thể chạm cùng
+            budget; focused contract/MCP 5 file/23 test xanh.
+          </p>
+          <p class="text-slate-400 text-sm">
+            Outlier allocator-sensitive vẫn là evidence đỏ local, không đổi threshold, không retry để
+            xóa dấu vết và không gắn <code>[!]</code>. Typecheck, lint 0 error, boundaries, spec-paths 150
+            path và diff-check đều xanh. Gate chính tiếp theo là commit exact source rồi dispatch workflow
+            <code>CI</code> trên ba OS; bất kỳ CI red nào phải được sửa trước P16.
+          </p>
         </article>
       </section>
     </main>

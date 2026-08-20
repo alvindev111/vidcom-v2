@@ -5,6 +5,8 @@ import path from "node:path";
 
 import type { ContentHash, ProjectId, RelPath } from "@vidcom/contracts";
 import {
+  DEFAULT_WORKSPACE_TREE_LIMITS,
+  WorkspaceResourceLimitError,
   type AbsolutePath,
   type AssetFileIdentity,
   type AssetFileMetadata,
@@ -13,6 +15,7 @@ import {
   type FileContent,
   type FileNode,
   type FileStat,
+  type FileTreePage,
   type JournalId,
   type WorkspaceOperationId,
   type MutationCapture,
@@ -24,6 +27,7 @@ import {
   type Result,
   type StagedSourceHandle,
   type WorkspacePort,
+  type WorkspaceTreeLimits,
   type ProjectCandidate,
   type ProjectRegistration,
 } from "@vidcom/core";
@@ -46,7 +50,18 @@ import {
   restoreCaptured,
 } from "./mutation-capture";
 
-const IGNORED_TREE_ENTRIES = new Set(["node_modules", ".git", ".hyperframes"]);
+const IGNORED_TREE_ENTRIES = new Set([
+  "node_modules",
+  ".git",
+  ".hyperframes",
+  ".vidcom",
+  "package.json",
+  "agents.md",
+  "claude.md",
+  "hyperframes.json",
+  "vidcom.json",
+  "preview-settings.json",
+]);
 const ASSET_STREAM_BUFFER_BYTES = 64 * 1024;
 const DEFAULT_ASSET_STREAM_CONCURRENCY = 8;
 
@@ -68,6 +83,14 @@ export interface WorkspaceFsOptions {
   assetStreamConcurrency?: number;
   /** Test/diagnostic counters only; no file contents or paths are exposed. */
   assetStreamObserver?: AssetStreamObserver;
+  /** Diagnostic override; production always uses the exported bounded defaults. */
+  treeLimits?: WorkspaceTreeLimits;
+  treeNow?: () => number;
+}
+
+function visibleTreeEntry(name: string): boolean {
+  const lower = name.toLowerCase();
+  return !name.startsWith(".") && !IGNORED_TREE_ENTRIES.has(lower);
 }
 
 interface AssetStreamWaiter {
@@ -221,6 +244,8 @@ export class WorkspaceFs implements WorkspacePort {
   private readonly workspaceRootCanonical: Promise<string>;
   private readonly assetStreams: AssetStreamSemaphore;
   private readonly assetStreamObserver: AssetStreamObserver;
+  private readonly treeLimits: WorkspaceTreeLimits;
+  private readonly treeNow: () => number;
 
   constructor(private readonly workspaceRoot: AbsolutePath, options: WorkspaceFsOptions = {}) {
     this.workspaceRootCanonical = realpath(workspaceRoot);
@@ -228,6 +253,8 @@ export class WorkspaceFs implements WorkspacePort {
       options.assetStreamConcurrency ?? DEFAULT_ASSET_STREAM_CONCURRENCY,
     );
     this.assetStreamObserver = options.assetStreamObserver ?? {};
+    this.treeLimits = options.treeLimits ?? DEFAULT_WORKSPACE_TREE_LIMITS;
+    this.treeNow = options.treeNow ?? Date.now;
   }
 
   private async directProjectRoot(root: AbsolutePath): Promise<string> {
@@ -689,25 +716,114 @@ export class WorkspaceFs implements WorkspacePort {
 
   /** Reads a deterministic project-relative tree without following directory symlinks. */
   async readTree(ref: ProjectRef): Promise<FileNode[]> {
-    const walk = async (directory: string): Promise<FileNode[]> => {
+    const startedAt = this.treeNow();
+    let nodeCount = 0;
+    let serializedBytes = 2;
+    const assertDeadline = () => {
+      const elapsed = this.treeNow() - startedAt;
+      if (elapsed > this.treeLimits.maxDurationMs) {
+        throw new WorkspaceResourceLimitError("deadline", this.treeLimits.maxDurationMs, elapsed);
+      }
+    };
+    const account = (node: FileNode) => {
+      nodeCount += 1;
+      if (nodeCount > this.treeLimits.maxNodes) {
+        throw new WorkspaceResourceLimitError("node_count", this.treeLimits.maxNodes, nodeCount);
+      }
+      serializedBytes += new TextEncoder().encode(JSON.stringify({
+        path: node.path,
+        name: node.name,
+        kind: node.kind,
+      })).byteLength + 1;
+      if (serializedBytes > this.treeLimits.maxSerializedBytes) {
+        throw new WorkspaceResourceLimitError(
+          "serialized_bytes",
+          this.treeLimits.maxSerializedBytes,
+          serializedBytes,
+        );
+      }
+    };
+    const walk = async (directory: string, depth: number): Promise<FileNode[]> => {
+      assertDeadline();
+      if (depth > this.treeLimits.maxDepth) {
+        throw new WorkspaceResourceLimitError("depth", this.treeLimits.maxDepth, depth);
+      }
       const entries = (await readdir(directory, { withFileTypes: true }))
-        .filter((entry) => !IGNORED_TREE_ENTRIES.has(entry.name))
+        .filter((entry) => visibleTreeEntry(entry.name))
         .filter((entry) => entry.isDirectory() || entry.isFile())
         .sort((left, right) => {
           if (left.isDirectory() !== right.isDirectory()) return left.isDirectory() ? -1 : 1;
           return left.name.localeCompare(right.name);
         });
-      return Promise.all(
-        entries.map(async (entry): Promise<FileNode> => {
-          const absolute = path.join(directory, entry.name);
-          const relative = path.relative(ref.root, absolute).split(path.sep).join("/") as RelPath;
-          return entry.isDirectory()
-            ? { path: relative, name: entry.name, kind: "folder", children: await walk(absolute) }
-            : { path: relative, name: entry.name, kind: "file" };
-        }),
-      );
+      if (entries.length > this.treeLimits.maxEntriesPerDirectory) {
+        throw new WorkspaceResourceLimitError(
+          "directory_entries",
+          this.treeLimits.maxEntriesPerDirectory,
+          entries.length,
+        );
+      }
+      const nodes: FileNode[] = [];
+      for (const entry of entries) {
+        assertDeadline();
+        const absolute = path.join(directory, entry.name);
+        const relative = path.relative(ref.root, absolute).split(path.sep).join("/") as RelPath;
+        const node: FileNode = entry.isDirectory()
+          ? { path: relative, name: entry.name, kind: "folder" }
+          : { path: relative, name: entry.name, kind: "file" };
+        account(node);
+        if (entry.isDirectory()) node.children = await walk(absolute, depth + 1);
+        nodes.push(node);
+      }
+      return nodes;
     };
-    return walk(ref.root);
+    return walk(ref.root, 0);
+  }
+
+  async readTreePage(
+    ref: ProjectRef,
+    options: { directory: RelPath | null; cursor: string | null; limit: number },
+  ): Promise<Result<FileTreePage, PathRejection>> {
+    const resolved = options.directory === null
+      ? { ok: true as const, value: ref.root as unknown as ResolvedPath }
+      : await resolveProjectPath(ref, options.directory, "authored-write");
+    if (!resolved.ok) return resolved;
+    const metadata = await this.stat(resolved.value);
+    if (!metadata || metadata.kind !== "directory") return { ok: false, error: { reason: "not_allowed_for_purpose" } };
+    const entries = (await readdir(resolved.value, { withFileTypes: true }))
+      .filter((entry) => visibleTreeEntry(entry.name))
+      .filter((entry) => entry.isDirectory() || entry.isFile())
+      .sort((left, right) => {
+        if (left.isDirectory() !== right.isDirectory()) return left.isDirectory() ? -1 : 1;
+        return left.name.localeCompare(right.name);
+      });
+    if (entries.length > this.treeLimits.maxEntriesPerDirectory) {
+      throw new WorkspaceResourceLimitError(
+        "directory_entries",
+        this.treeLimits.maxEntriesPerDirectory,
+        entries.length,
+      );
+    }
+    const offset = options.cursor === null ? 0 : Number(options.cursor);
+    const page = entries.slice(offset, offset + options.limit).map((entry): FileNode => {
+      const relative = options.directory === null
+        ? entry.name
+        : `${options.directory}/${entry.name}`;
+      return {
+        path: relative as RelPath,
+        name: entry.name,
+        kind: entry.isDirectory() ? "folder" : "file",
+      };
+    });
+    const nextOffset = offset + page.length;
+    return {
+      ok: true,
+      value: {
+        directory: options.directory,
+        entries: page,
+        nextCursor: nextOffset < entries.length ? String(nextOffset) : null,
+        totalEntries: entries.length,
+      },
+    };
   }
 
   /** Reads portable metadata; `null` means the resolved path is absent. */

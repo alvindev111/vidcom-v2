@@ -48,7 +48,9 @@ function purposeForStep(step: StepIntent): PathPurpose {
     || (step.path?.startsWith("narration/") && step.path.endsWith(".json"))) return "system-write";
   if (step.path && ["assets/", "preview-assets/", "narration/", "snapshots/", "renders/"]
     .some((root) => step.path?.startsWith(root))) return "write-asset";
-  return "write-source";
+  // The authority already validated this durable authored target before journaling.
+  // Recovery must not narrow it later by guessing from the file extension.
+  return "authored-write";
 }
 
 async function resolveSteps(

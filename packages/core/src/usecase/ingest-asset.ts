@@ -10,7 +10,7 @@ import {
 
 import { resolveCollision, sanitizeFilename } from "../domain/asset-names";
 import { ASSET_POLICIES, isSvgContent, matchesDeclaredKind, type AssetKind } from "../domain/magic-bytes";
-import type { ProjectRef } from "../domain/models";
+import { WorkspaceResourceLimitError, type ProjectRef } from "../domain/models";
 import { err, ok, type Result } from "../error/result";
 import type { MutationOrigin } from "../port/mutation-observer";
 import type {
@@ -241,7 +241,15 @@ export async function ingestAsset(
 
     let tree: Awaited<ReturnType<WorkspacePort["readTree"]>>;
     try { tree = await dependencies.workspace.readTree(ref); }
-    catch { return err({ code: ErrorCode.StorageUnavailable, message: "project assets could not be listed" }); }
+    catch (error) {
+      return error instanceof WorkspaceResourceLimitError
+        ? err({
+            code: ErrorCode.ResourceLimitExceeded,
+            message: "the project asset tree crossed a resource limit",
+            details: { reason: error.reason, limit: error.limit, actual: error.actual },
+          })
+        : err({ code: ErrorCode.StorageUnavailable, message: "project assets could not be listed" });
+    }
     const assets = directAssetNames(tree);
     const finalName = resolveCollision(filename, new Set(assets.names));
     const path = `assets/${finalName}` as RelPath;

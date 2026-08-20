@@ -3,6 +3,7 @@ import {
   AssetMetadataSchema,
   ErrorCode,
   ProjectParamsSchema,
+  ProjectTreeQuerySchema,
   PREVIEW_DOCUMENT_CSP,
   ReadProjectFileQuerySchema,
   type ProjectId,
@@ -12,6 +13,7 @@ import {
   getPreviewSettings,
   getProjectPreview,
   getProjectAssetMetadata,
+  getProjectTreePage,
   getEntryExpectation,
   getStudioSnapshot,
   listProjects,
@@ -228,6 +230,20 @@ export function createProjectReadRoutes(dependencies: ProjectReadRouteDependenci
   routes.get("/v1/projects", async (c) => c.json({ projects: valueOf(await listProjects(dependencies)) }));
   routes.get("/v1/projects/:id/studio-snapshot", async (c) =>
     c.json(valueOf(await getStudioSnapshot(dependencies, projectId(c)))));
+  routes.get("/v1/projects/:id/tree", async (c) => {
+    const parsed = ProjectTreeQuerySchema.safeParse({
+      directory: c.req.query("directory"),
+      cursor: c.req.query("cursor"),
+      limit: c.req.query("limit"),
+    });
+    if (!parsed.success) fail({ code: ErrorCode.SchemaInvalid, message: "tree page query is invalid" });
+    return c.json(valueOf(await getProjectTreePage(dependencies, {
+      projectId: projectId(c),
+      directory: parsed.data.directory as RelPath | undefined ?? null,
+      cursor: parsed.data.cursor ?? null,
+      limit: parsed.data.limit,
+    })));
+  });
   routes.get("/v1/projects/:id/files", async (c) => {
     const path = c.req.query("path");
     if (!path) fail({ code: ErrorCode.PathRequired, message: "path is required", field: "path" });
