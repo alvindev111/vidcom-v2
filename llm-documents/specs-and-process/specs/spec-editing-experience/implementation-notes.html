@@ -2847,6 +2847,18 @@
             boundaries và diff-check xanh; lint 0 error + 5 warning baseline. P17 vẫn khóa cho đến fresh
             exact-source CI và artifact đầy đủ.
           </p>
+          <p class="text-slate-400 text-sm">
+            2026-08-21 02:40 +07 — fresh run <code>32409026508</code> tại
+            <code>4422a5e</code> vẫn đỏ ở Browser Windows, nhưng failure đã đi qua assertion product cũ:
+            immediate confirm nay pass. Lỗi mới là Puppeteer giữ button handle qua React rerender rồi
+            click node detached tại Close. Browser Linux cùng source xanh.
+          </p>
+          <p class="text-slate-400 text-sm">
+            Repair helper tìm exact label và gọi <code>button.click()</code> nguyên tử trong cùng browser
+            evaluation, không giữ DOM handle qua render, không thêm delay/retry. Targeted deletion xanh
+            1/1; full browser xanh 9 file/19 test, R4.1c 188–299 ms. Typecheck, boundaries và diff-check
+            xanh; lint 0 error + 5 warning baseline. Cần thêm một exact-source CI native Windows xanh.
+          </p>
         </article>
       </section>
     </main>

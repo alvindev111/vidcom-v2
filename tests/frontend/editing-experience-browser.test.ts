@@ -105,13 +105,14 @@ async function openTreeSource(page: Page, relativePath: string): Promise<void> {
 }
 
 async function clickExactButton(page: Page, label: string): Promise<void> {
-  const buttons = await page.$$("button");
-  for (const button of buttons) {
-    if (await button.evaluate((node) => node.textContent?.trim()) !== label) continue;
-    await button.click();
-    return;
-  }
-  throw new Error(`button ${label} was not found`);
+  const clicked = await page.evaluate((exactLabel) => {
+    const button = [...document.querySelectorAll("button")]
+      .find((candidate) => candidate.textContent?.trim() === exactLabel) as HTMLButtonElement | undefined;
+    if (!button) return false;
+    button.click();
+    return true;
+  }, label);
+  if (!clicked) throw new Error(`button ${label} was not found`);
 }
 
 describe("editing experience in a browser", () => {
