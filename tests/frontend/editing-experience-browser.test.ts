@@ -294,7 +294,7 @@ describe("editing experience in a browser", () => {
         (window as unknown as { deletionExitPrompts: string[] }).deletionExitPrompts = asked;
         window.confirm = (message?: string) => { asked.push(message ?? ""); return false; };
       });
-      await page.click('a[href="/"]');
+      await page.$eval('a[href="/"]', (link) => (link as HTMLAnchorElement).click());
       expect(await page.evaluate(() =>
         (window as unknown as { deletionExitPrompts: string[] }).deletionExitPrompts.length)).toBe(1);
       expect(new URL(page.url()).pathname).not.toBe("/");

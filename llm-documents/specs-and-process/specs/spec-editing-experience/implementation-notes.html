@@ -3141,6 +3141,17 @@
             typecheck và diff-check PASS; lint 0 error + 5 warning baseline. Vẫn chờ fresh Advanced
             Security check trước khi mở workflow kế.
           </p>
+          <p class="text-slate-400 text-sm">
+            P18.1 RED lần ba: CI
+            <a class="text-cyan-300" href="https://github.com/alvindev111/vidcom-v2/actions/runs/32428399313">32428399313</a>
+            tại <code>2c65ca547d5a5f43e717bcb4af49ab1be33b733f</code> đã có Advanced Security
+            CodeQL/OSV success và Browser Linux success, nhưng Browser Windows fail ở immediate deleted-file
+            exit prompt: physical <code>page.click</code> không giao click tới link trong lúc layout runner
+            Windows dịch chuyển, nên prompt count vẫn 0. Run bị hủy ngay; main/packaged cancelled không phải
+            evidence. Repair giữ nguyên assertion tức thời và không retry/wait: gọi DOM <code>link.click()</code>
+            atomically trong một browser evaluation, cùng nguyên tắc với helper button đã sửa trước đó. Năm
+            lần stress case gốc đều pass local; cần fresh native Windows proof.
+          </p>
         </article>
       </section>
     </main>
