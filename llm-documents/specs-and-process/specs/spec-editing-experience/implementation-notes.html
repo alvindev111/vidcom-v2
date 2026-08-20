@@ -3131,6 +3131,16 @@
             PASS; lint 0 error + 5 warning baseline. Chưa coi CodeQL xanh cho tới fresh Actions trên commit
             sửa.
           </p>
+          <p class="text-slate-400 text-sm">
+            P18.1 RED lần hai: fresh CI
+            <a class="text-cyan-300" href="https://github.com/alvindev111/vidcom-v2/actions/runs/32428142926">32428142926</a>
+            tại <code>da41fd7a2b68bcf25d2229a46f551b000d2ded63</code> đã giảm CodeQL từ 8 còn đúng
+            một high: timer fixture vẫn bị coi là user-controlled dù đã clamp. Run tiếp tục bị hủy và
+            không dùng làm evidence. Repair thứ hai đổi fixture sang allowlist chuỗi <code>180</code>/<code>300</code>
+            trả duration hằng; giá trị khác luôn 0, đúng toàn bộ race cases hiện có. Browser focused 1/1,
+            typecheck và diff-check PASS; lint 0 error + 5 warning baseline. Vẫn chờ fresh Advanced
+            Security check trước khi mở workflow kế.
+          </p>
         </article>
       </section>
     </main>

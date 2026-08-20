@@ -23,6 +23,12 @@ ${authored}${resource}</head><body data-duration="${duration}">
 </body></html>`;
 }
 
+function previewDelay(value: string | null): number {
+  if (value === "300") return 300;
+  if (value === "180") return 180;
+  return 0;
+}
+
 export async function startPreviewBufferBrowserFixture(): Promise<{
   url: string;
   close(): Promise<void>;
@@ -77,10 +83,7 @@ export async function startPreviewBufferBrowserFixture(): Promise<{
       return;
     }
     if (url.pathname === "/preview") {
-      const requestedDelay = Number(url.searchParams.get("delay") ?? 0);
-      const delay = Number.isFinite(requestedDelay)
-        ? Math.min(1_000, Math.max(0, requestedDelay))
-        : 0;
+      const delay = previewDelay(url.searchParams.get("delay"));
       setTimeout(() => {
         if (response.destroyed) return;
         response.writeHead(200, { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" })
