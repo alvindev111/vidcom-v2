@@ -1,5 +1,6 @@
 // @vitest-environment node
 
+import { spawn } from "node:child_process";
 import { describe, expect, it } from "vitest";
 
 import type {
@@ -80,6 +81,25 @@ function fixture(options: ConstructorParameters<typeof MutationHistory>[1] = {})
 
 function releaseCount(releases: Map<string, number>, ref: UndoContentRef): number {
   return releases.get(ref.contentHash) ?? 0;
+}
+
+function run(command: string, args: string[]): Promise<{ stdout: string; stderr: string }> {
+  return new Promise((resolve, reject) => {
+    const child = spawn(command, args, { stdio: ["ignore", "pipe", "pipe"] });
+    const stdout: Buffer[] = [];
+    const stderr: Buffer[] = [];
+    child.stdout.on("data", (chunk: Buffer) => stdout.push(chunk));
+    child.stderr.on("data", (chunk: Buffer) => stderr.push(chunk));
+    child.on("error", reject);
+    child.on("close", (code) => {
+      const output = {
+        stdout: Buffer.concat(stdout).toString("utf8"),
+        stderr: Buffer.concat(stderr).toString("utf8"),
+      };
+      if (code !== 0) reject(new Error(output.stderr || output.stdout || `${command} exited ${code}`));
+      else resolve(output);
+    });
+  });
 }
 
 function attach(history: MutationHistory, studio = "studio", browser = `browser-${studio}`): void {
@@ -306,46 +326,45 @@ describe("MutationHistory lifecycle and ref ownership", () => {
     expect(history.diagnosticState()).toEqual({ retainedReceiptIds: 0, undoEntries: 0, redoEntries: 0 });
   });
 
-  it("bounds receipt dedupe and releases every retained ref across a 100k-receipt soak", () => {
-    let releasedRefs = 0;
-    const history = new MutationHistory({
-      async retainBytes() { throw new Error("not used"); },
-      async retainFile() { throw new Error("not used"); },
-      async resolve() { throw new Error("not used"); },
-      release(refs) { releasedRefs += refs.length; },
-    });
-    attach(history);
-    const total = 100_000;
-    const warmup = 10_000;
-    let warmRss = 0;
-    let warmHeap = 0;
-    for (let index = 0; index < total; index += 1) {
-      history.emit(receipt(`soak-${index}`, "studio", objectRef(`soak-${index}`)));
-      if (index + 1 === warmup) {
-        const memory = process.memoryUsage();
-        warmRss = memory.rss;
-        warmHeap = memory.heapUsed;
-      }
-    }
-    const memory = process.memoryUsage();
-    const rssDeltaBytes = Math.max(0, memory.rss - warmRss);
-    const heapDeltaBytes = Math.max(0, memory.heapUsed - warmHeap);
-    const diagnostics = (history as unknown as {
-      diagnosticState(): { retainedReceiptIds: number; undoEntries: number; redoEntries: number };
-    }).diagnosticState();
-    process.stdout.write(`P15_MUTATION_HISTORY_SAMPLE ${JSON.stringify({
-      receipts: total,
-      warmup,
-      rssDeltaBytes,
-      heapDeltaBytes,
-      ...diagnostics,
-    })}\n`);
+  it("bounds receipt dedupe and releases every retained ref across a 100k-receipt soak", { timeout: 30_000 }, async () => {
+    const support = new URL("./support/", import.meta.url);
+    const loader = new URL("workspace-typescript-loader.mjs", support);
+    const worker = new URL("mutation-history-lifecycle-worker.ts", support);
+    const { stdout } = await run(process.execPath, [
+      "--expose-gc",
+      "--experimental-transform-types",
+      "--input-type=module",
+      "--eval", [
+        'import { register } from "node:module";',
+        `register(${JSON.stringify(loader.href)});`,
+        `await import(${JSON.stringify(worker.href)});`,
+      ].join("\n"),
+    ]);
+    const marker = "VIDCOM_MUTATION_HISTORY_RESULT=";
+    const line = stdout.split("\n").find((value) => value.startsWith(marker));
+    expect(line, stdout).toBeDefined();
+    const sample = JSON.parse(line!.slice(marker.length)) as {
+      receipts: number;
+      warmup: number;
+      heapDeltaBytes: number;
+      rssDeltaBytes: number;
+      releasedRefs: number;
+      retainedReceiptIds: number;
+      undoEntries: number;
+      redoEntries: number;
+    };
+    process.stdout.write(`P15_MUTATION_HISTORY_SAMPLE ${JSON.stringify(sample)}\n`);
 
-    expect(diagnostics).toEqual({ retainedReceiptIds: 4_096, undoEntries: 50, redoEntries: 0 });
-    expect(heapDeltaBytes).toBeLessThan(32 * 1024 * 1024);
-    expect(rssDeltaBytes).toBeLessThan(64 * 1024 * 1024);
-    history.clear("studio", projectId);
-    expect(releasedRefs).toBe(total);
+    expect(sample).toMatchObject({
+      receipts: 100_000,
+      warmup: 10_000,
+      releasedRefs: 100_000,
+      retainedReceiptIds: 4_096,
+      undoEntries: 50,
+      redoEntries: 0,
+    });
+    expect(sample.heapDeltaBytes).toBeLessThan(32 * 1024 * 1024);
+    expect(sample.rssDeltaBytes).toBeLessThan(64 * 1024 * 1024);
   });
 
   it("does not let a second browser or project steal an attached studio id", () => {

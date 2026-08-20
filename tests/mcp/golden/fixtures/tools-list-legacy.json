@@ -1654,6 +1654,7 @@
                       "sdk_rejected",
                       "no_file",
                       "too_large",
+                      "resource_limit_exceeded",
                       "unsupported_media",
                       "integrity_mismatch",
                       "internal",

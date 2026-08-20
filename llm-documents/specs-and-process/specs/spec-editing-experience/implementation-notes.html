@@ -2685,6 +2685,29 @@
             path và diff-check đều xanh. Gate chính tiếp theo là commit exact source rồi dispatch workflow
             <code>CI</code> trên ba OS; bất kỳ CI red nào phải được sửa trước P16.
           </p>
+          <p class="text-slate-400 text-sm">
+            2026-08-20 23:31 +07 — CI dispatch <code>32391388312</code> tại exact source
+            <code>aaec45f</code> đỏ ở Linux main test. Browser Linux/Windows đã success nhưng không thể
+            thay thế main gate. Ba assertion đỏ gồm hai tools/list golden chưa phản ánh error code public
+            <code>resource_limit_exceeded</code>, và soak history đo heap tăng 77.883.448 byte trong
+            process full-suite không có collection boundary. P16 tiếp tục khóa; không dùng <code>[!]</code>,
+            không nâng ngưỡng và không coi các job xanh còn lại là phase PASS.
+          </p>
+          <p class="text-slate-400 text-sm">
+            Repair golden thêm đúng code public vào legacy/modern fixture. Soak 100.000 receipt được tách
+            sang exact-source Node worker với <code>--expose-gc</code>, thu GC-stable sample sau warm-up và
+            sau tải thay vì nhầm transient garbage của full suite thành retained heap. Gate vẫn giữ heap
+            dưới 32 MiB, RSS dưới 64 MiB, retained ID đúng 4.096, history 50/0 và release đủ 100.000 ref.
+            Focused 2 file/16 test xanh; sample cục bộ heap delta 0, RSS delta 32.227.328 byte. Cần full/local
+            static gate và một CI dispatch exact-source mới trước khi đóng P15.
+          </p>
+          <p class="text-slate-400 text-sm">
+            Repair full local gate sau đó xanh: 318 file, 2.641 test pass và 5 gated skip đã biết; history
+            worker sample heap delta 0, RSS delta 33.734.656 byte, upload-listener RSS delta 61.603.840 byte.
+            Typecheck, boundaries, spec-paths 150 và diff-check đều pass; lint 0 error + 5 warning baseline.
+            Trạng thái chỉ là local PASS/CI open: phải commit, push và dispatch run mới; run đỏ cũ không
+            được dùng để đóng phase dù các job khác có kết thúc xanh.
+          </p>
         </article>
       </section>
     </main>
