@@ -8,13 +8,13 @@ Comparison base: main@57f602f57cefda11a505240a87da641475a00a90
 Review mode: post-implementation audit; static source review plus verification of the evidence already recorded in the checklist and CI configuration
 Roles: Specs Manager (SM) · Product Owner (PO) · Developer/Security Reviewer (Dev)
 
-Remediation status: IN PROGRESS — tracked by Goals v8, Design v13 and checklist P12–P18. Historical
-S0–P11 evidence remains intact; this document stays the finding authority until every closure row has
-boundary evidence and a final disposition.
+Remediation status: CLOSED 2026-08-21 — Goals v8, Design v13 and checklist P12–P18 completed.
+Production evidence source: `03a2df5659552ad9638d05888f08b3a0fba38f2f`. Historical S0–P11 evidence
+and this audit-time NO-GO remain intact; §14 records the evidence-backed disposition that supersedes it.
 
 1. Executive decision
 
-Decision: NO-GO for merge/release under the claim that all editing-experience edge cases and security concerns are closed.
+Audit-time decision: NO-GO for merge/release under the claim that all editing-experience edge cases and security concerns are closed.
 
 The implementation is broad and the execution evidence is substantially better than a normal feature branch: the branch has centralized contracts, real-filesystem integration tests, real-browser tests, MCP contract matrices, packaged smoke tests, cross-platform CI, source-identity evidence, and measured preview refresh latency. The final checklist is therefore not “fake green”.
 
@@ -1342,3 +1342,30 @@ Checklist execution quality: strong
 Edge-case closure: incomplete
 Security/data-integrity readiness: failed
 Merge/release decision: NO-GO
+
+14. Remediation closure — 2026-08-21
+
+The audit-time NO-GO is superseded for the editing-experience scope. The implementation checklist's
+“P18 deep-review closure matrix” maps all 16 findings — C-01, H-01–H-04, M-01–M-07, L-01 and G-01–G-03 —
+to production code, boundary tests, exact-source Actions evidence and a final `CLOSED` disposition.
+
+The production source authority is commit `03a2df5659552ad9638d05888f08b3a0fba38f2f`:
+
+- `CI` 32446589563: success for static Linux/macOS/Windows, Browser Linux/Windows, Packaged
+  Linux/macOS/Windows and security; downloaded packaged evidence is strict 14/14 at the clean exact SHA.
+- `Browser session` 32448369053: success on Linux/Windows; every R4.1c sample is below 500 ms.
+- `Packaged smoke` 32448700000: success on all three platform tags; artifacts downloaded and verified.
+- `Process supervision gate` 32450453353: success on all jobs; real-render log says
+  `TERMINATED_CLEAN` with no survivors.
+- `VieNeu real engine` 32450780804: success with engine 3.2.4 and resolved model revision
+  `2da0efab622a1722125991736524f080b751ef5b`; downloaded Vietnamese WAV is PCM 44.1 kHz mono,
+  3.621769 seconds, SHA-256 `c98000c07f42bfd37b36c1be9ca2a5648f7f3d73cd7d90044327a2f598c14a39`.
+
+GitHub `main` branch protection is active with strict exact-head static three-OS, browser two-OS and
+packaged three-OS GitHub Actions contexts; one approval, stale/last-push review protection,
+conversation resolution and admin enforcement are required; force-push and deletion are disabled.
+PR #4 is consequently blocked pending an independent human approval, which is the intended governance
+state rather than an unresolved product or CI defect.
+
+Final council: SM `PASS`; PO `PASS`; Dev/Security `PASS`. The Editing Experience remediation is safe
+to close, while the human review required by branch protection remains a separate merge authorization.

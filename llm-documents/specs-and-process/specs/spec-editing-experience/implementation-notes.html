@@ -3323,6 +3323,61 @@
             PASS; lint 0 error + 5 warning baseline. Fresh exact-source CI bắt buộc trước khi chạy lại
             standalone Packaged smoke.
           </p>
+          <p class="text-slate-400 text-sm">
+            P18 exact-source authority chốt tại <code>03a2df5659552ad9638d05888f08b3a0fba38f2f</code>.
+            Manual CI <a class="text-cyan-300" href="https://github.com/alvindev111/vidcom-v2/actions/runs/32446589563">32446589563</a>
+            success toàn bộ static Linux/macOS/Windows, Browser Linux/Windows, Packaged Linux/macOS/Windows
+            và security. Artifact tải về <code>/private/tmp/vidcom-p18-ci-324465.EEs7BF</code>: ba
+            packaged bundle cùng clean exact SHA, <code>strict=true</code>, <code>evidenceError=null</code>,
+            14/14 step pass, startup <code>ok</code>; OSV SARIF có 0 result. Đây là scan của lockfile
+            trên branch, không bị diễn giải thành tuyên bố repository-wide zero CVE vì Dependabot của
+            default branch vẫn báo advisory riêng.
+          </p>
+          <p class="text-slate-400 text-sm">
+            Standalone Browser session
+            <a class="text-cyan-300" href="https://github.com/alvindev111/vidcom-v2/actions/runs/32448369053">32448369053</a>
+            success Linux/Windows; bốn R4.1c sample lần lượt 259/210/299/287 ms và 257/251/335/310 ms,
+            đều dưới 500 ms. Standalone Packaged smoke
+            <a class="text-cyan-300" href="https://github.com/alvindev111/vidcom-v2/actions/runs/32448700000">32448700000</a>
+            success cả ba OS; artifact tại <code>/private/tmp/vidcom-p18-packaged-324487.qsjt4s</code>
+            đều strict 14/14, clean exact SHA và startup <code>ok</code>. macOS cold/warm là
+            6.475/5.282 ms, chứng minh reviewed baseline sửa đúng runner variance mà vẫn giữ hard ceiling.
+          </p>
+          <p class="text-slate-400 text-sm">
+            Process supervision gate
+            <a class="text-cyan-300" href="https://github.com/alvindev111/vidcom-v2/actions/runs/32450453353">32450453353</a>
+            success real-render Windows, contract Windows, Linux và macOS. Không nhận dấu xanh làm đủ:
+            log job real render được đọc trực tiếp và trả <code>verdict=TERMINATED_CLEAN</code>,
+            <code>survivors=[]</code>, <code>survivorsByGroundTruthProbe=[]</code>; vì vậy đây không còn
+            là inconclusive giả xanh như run trước.
+          </p>
+          <p class="text-slate-400 text-sm">
+            VieNeu real engine
+            <a class="text-cyan-300" href="https://github.com/alvindev111/vidcom-v2/actions/runs/32450780804">32450780804</a>
+            success Linux CPU với engine 3.2.4, model resolved revision
+            <code>2da0efab622a1722125991736524f080b751ef5b</code>, 14 voice thật và voice tổng hợp
+            <code>vieneu-v3-minh-duc</code>; integration 3/3 pass. Artifact
+            <code>/private/tmp/vidcom-p18-vieneu-32450780804/vieneu-narration/intro.wav</code> được
+            download và probe: PCM s16le, 44.1 kHz mono, 3.621769 giây, 319.518 byte, SHA-256
+            <code>c98000c07f42bfd37b36c1be9ca2a5648f7f3d73cd7d90044327a2f598c14a39</code>.
+          </p>
+          <p class="text-slate-400 text-sm">
+            P18.3: query ban đầu xác nhận <code>main</code> unprotected (404) và ruleset rỗng. PUT đầu
+            bị 422 vì personal repository không nhận organization-only <code>dismissal_restrictions</code>;
+            query sau lỗi xác nhận không có partial write. Payload sửa được ghi và đọc lại: exact-head
+            strict; static Linux/macOS/Windows, browser Linux/Windows và packaged Linux/macOS/Windows là
+            required GitHub Actions context; một approval, dismiss stale, require last-push approval,
+            conversation resolution và admin enforcement bật; force-push/deletion tắt. PR #4 trở thành
+            <code>BLOCKED / REVIEW_REQUIRED</code> đúng thiết kế. Token chỉ tồn tại trong environment
+            shell dưới mapping <code>GH_KEY</code>→<code>GH_TOKEN</code>, không được in hay persist.
+          </p>
+          <p class="text-slate-400 text-sm">
+            Council P18: SM xác nhận mọi task/AC P12–P18 và closure matrix 16 finding có evidence,
+            không còn required skip hay <code>[!]</code>; PO xác nhận outcome R13–R15; Dev/Security xác
+            nhận exact-source Actions, artifact inspection và branch policy đủ đóng review. Commit docs
+            closeout sau đây không được gọi là production-source evidence; authority vẫn là
+            <code>03a2df5</code> và docs chỉ được push sau spec-path/diff/link gate.
+          </p>
         </article>
       </section>
     </main>

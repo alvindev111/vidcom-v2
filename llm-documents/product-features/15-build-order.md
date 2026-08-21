@@ -146,7 +146,7 @@ D1 là quyết định số một, nhưng nó cần nền móng ở giai đoạn
 
 ## Giai đoạn 5 — Trải nghiệm editing (re-baseline 9–11 tuần)
 
-> **Spec mở lại remediation 2026-08-20** — [spec Editing Experience](../specs-and-process/specs/spec-editing-experience/spec-editing-experience-inprocess.md). R1–R12/S0–P11 đã có evidence lịch sử, nhưng deep review hậu triển khai đặt verdict NO-GO; Goals bản 8, Design bản 13 và checklist P12–P18 xử lý C-01, H-01–H-04, M-01–M-07, L-01 và G-01–G-03 trước khi merge/release.
+> **Spec hoàn tất remediation 2026-08-21** — [spec Editing Experience](../specs-and-process/specs/spec-editing-experience/spec-editing-experience-complete.md). R1–R15/S0–P18 và toàn bộ C-01, H-01–H-04, M-01–M-07, L-01, G-01–G-03 có closure evidence; production-source authority là `03a2df5659552ad9638d05888f08b3a0fba38f2f`.
 
 | # | Việc | ID |
 |---|---|---|

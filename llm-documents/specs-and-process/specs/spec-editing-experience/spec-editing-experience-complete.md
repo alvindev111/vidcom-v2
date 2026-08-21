@@ -1,4 +1,4 @@
-# Spec Editing Experience (Giai đoạn 5) — IN PROCESS (DEEP-REVIEW REMEDIATION)
+# Spec Editing Experience (Giai đoạn 5) — COMPLETE
 
 > **Related Documents**:
 > - [Detailed Goals](./spec-editing-experience-detailed-goal.md)
@@ -87,24 +87,26 @@ trên timeline, undo/redo, preview không giật khi ghi, quản lý file/asset 
   mở tool nhận absolute path
 - **Implementation Checklist**: **Approved 2026-08-16** — đồng bộ từ Goals bản 7 + toàn bộ
   contract/failure-cleanup gate của Design bản 12; S0 bắt đầu thực thi sau khi gate được duyệt
+- **Deep-review remediation**: **Approved and complete 2026-08-21** — Goals bản 8, Design bản 13 và
+  checklist P12–P18 đóng đủ C-01, H-01–H-04, M-01–M-07, L-01 và G-01–G-03.
 
 ## During Spec
-- **Standups**: 2026-08-16 — S0 chạy: spec chuyển `pending` → `inprocess`, `implementation-notes.html` tạo, baseline ghi vào Execution Log của checklist. 2026-08-20 — audit hậu triển khai mở lại spec: C-01, H-01–H-04, M-01–M-07, L-01 và G-01–G-03 trở thành remediation gate bắt buộc trước merge/release.
-- **Impediments**: Không có blocker môi trường tại thời điểm mở gate. CI là runner evidence chính; local thiếu Chrome/FFmpeg/artifact không được dùng để hạ gate.
+- **Standups**: 2026-08-16 — S0 chạy: spec chuyển `pending` → `inprocess`, `implementation-notes.html` tạo, baseline ghi vào Execution Log của checklist. 2026-08-20 — audit hậu triển khai mở lại spec: C-01, H-01–H-04, M-01–M-07, L-01 và G-01–G-03 trở thành remediation gate bắt buộc trước merge/release. 2026-08-21 — P18 exact-source Actions, artifact inspection, branch protection và council đều PASS.
+- **Impediments**: Không còn blocker trong phạm vi spec. PR #4 vẫn cần một human approval theo branch protection mới; đây là merge authorization, không phải product/CI defect.
 - **Adjustments**:
   - Giữ nguyên toàn bộ checkbox/evidence lịch sử của S0–P11; không sửa quá khứ thành “chưa chạy”.
   - Bổ sung R13–R15, Design bản 13 và P12–P18 để xử lý độc lập các finding mới.
   - Trạng thái `COMPLETE` ngày 2026-08-19 là mốc hoàn tất phạm vi checklist cũ, không còn là release verdict sau audit 2026-08-20.
 
 ## Spec Review
-- **Completed**: Phạm vi R1–R12/checklist S0–P11 đã hoàn tất theo evidence lịch sử; remediation R13–R15/P12–P18 đang mở.
-- **Demo**: Chưa được phép gọi release-ready cho tới khi deep-review closure matrix và CI exact-source đều xanh.
-- **Feedback**: NO-GO theo deep review 2026-08-20; mọi Critical/High phải đóng trước merge, toàn bộ Medium/Low/governance phải đóng trước release.
+- **Completed**: R1–R15, checklist S0–P18 và toàn bộ 16 finding deep-review đã đóng; production evidence authority là `03a2df5659552ad9638d05888f08b3a0fba38f2f`.
+- **Demo**: CI 32446589563, Browser 32448369053, Packaged 32448700000, Process 32450453353 và VieNeu 32450780804 đều success; artifact và log ngữ nghĩa đã được tải/kiểm.
+- **Feedback**: Audit-time NO-GO ngày 2026-08-20 được supersede bởi closure §14 và council SM/PO/Dev `PASS` ngày 2026-08-21. Main protection active; merge vẫn cần independent review.
 
 ## Spec Retrospective
-- **Well**: —
-- **Not Well**: —
-- **Improvements**: —
+- **Well**: CI exact-source làm authority đã bắt được lỗi thật trên Windows/macOS, race SSE/snapshot và false-green process supervision trước khi đóng task kế.
+- **Not Well**: Job name static dùng chung giữa vài workflow làm UI check rollup khó đọc; evidence vẫn đúng qua run URL/SHA và required app-bound contexts nhưng nên đặt tên duy nhất ở lần hardening workflow sau.
+- **Improvements**: Giữ semantic artifact inspection bắt buộc sau dấu xanh; tách production-source SHA khỏi commit docs closeout; nâng pinned Actions khỏi runtime Node 20 trước thời hạn deprecation.
 
 ## Next Spec Adjustments
 - **Changes**: —

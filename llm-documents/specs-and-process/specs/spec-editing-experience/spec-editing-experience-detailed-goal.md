@@ -1,6 +1,6 @@
 # Spec Editing Experience — Detailed Goals
 
-> **Reference**: [Main Spec File](./spec-editing-experience-inprocess.md)
+> **Reference**: [Main Spec File](./spec-editing-experience-complete.md)
 > **Backlog**: [15-build-order §Giai đoạn 5](../../../product-features/15-build-order.md) — 5.1–5.9
 > **Trạng thái**: **Bản 8 — Approved 2026-08-20 cho remediation**. Bản 8 giữ nguyên R1–R12 bản 7 và
 > bổ sung R13–R15 từ deep review hậu triển khai; yêu cầu “Fix các review” là xác nhận tường minh để
