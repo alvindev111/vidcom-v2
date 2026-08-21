@@ -3226,6 +3226,21 @@
             Repair giữ nguyên toàn bộ workload/assertion và đặt budget riêng 30 giây. Focused case stress
             10/10 trên macOS local, mỗi vòng khoảng 0,8–0,9 giây test, đều PASS. Cần fresh exact-source CI.
           </p>
+          <p class="text-slate-400 text-sm">
+            P18.1 RED tại exact source <code>9357c5d24aad63c312e0bfd692812d4cc5ec6ee7</code>:
+            manual CI <a class="text-cyan-300" href="https://github.com/alvindev111/vidcom-v2/actions/runs/32439762456">32439762456</a>
+            có macOS main, Browser Linux, CodeQL, OSV, secret và license success, nhưng Browser Windows
+            fail ở lần ghi <code>history-b-2</code>: Save không bao giờ bật sau reload. Run bị hủy ngay;
+            các job bị cancel không phải evidence. Root cause là tab mới nhận snapshot hiện tại nhưng SSE
+            luôn mở từ cursor 0, replay event cũ; nếu người dùng gõ trước khi replay xong, draft mới bị
+            conflict giả. Repair thêm <code>eventCursor</code> lấy trước snapshot read và mở SSE từ cursor
+            đó. Thứ tự cursor-trước/snapshot-sau đảm bảo mutation chen giữa hai bước vẫn nằm trong snapshot
+            hoặc được SSE replay, không bị bỏ qua. Focused contract/server/browser 3 file/37 test PASS;
+            browser scenario gốc stress 10/10, mỗi vòng 5/5 PASS. Full local gate PASS 323/324 file với một
+            VieNeu-real local skip, 2.671 test pass/5 skip; typecheck, boundaries, schema drift, 150 spec
+            paths, golden 11 file/45 test, build và diff-check xanh; lint 0 error + 5 warning baseline;
+            R4.1c 183–293 ms. Fresh exact-source Actions vẫn là authority trước workflow kế.
+          </p>
         </article>
       </section>
     </main>

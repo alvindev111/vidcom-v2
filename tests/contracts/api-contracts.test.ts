@@ -327,6 +327,7 @@ describe("API response contracts", () => {
     expect(ListProjectsResponseSchema.parse({ projects: [project] })).toEqual({ projects: [project] });
     expect(
       StudioSnapshotResponseSchema.parse({
+        eventCursor: 7,
         project,
         entryFile: file,
         tree: [{ path: "index.html", name: "index.html", kind: "file" }],

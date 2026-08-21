@@ -510,6 +510,8 @@ export const ProjectFileSchema = z.strictObject({
 });
 
 export const StudioSnapshotResponseSchema = z.strictObject({
+  /** Durable event cursor captured before the snapshot read begins. */
+  eventCursor: z.number().int().nonnegative(),
   project: ProjectSummarySchema,
   frameRate: z.number().finite().positive(),
   entryFile: ProjectFileSchema,

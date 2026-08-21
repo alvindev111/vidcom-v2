@@ -228,8 +228,13 @@ export function createProjectReadRoutes(dependencies: ProjectReadRouteDependenci
   }));
 
   routes.get("/v1/projects", async (c) => c.json({ projects: valueOf(await listProjects(dependencies)) }));
-  routes.get("/v1/projects/:id/studio-snapshot", async (c) =>
-    c.json(valueOf(await getStudioSnapshot(dependencies, projectId(c)))));
+  routes.get("/v1/projects/:id/studio-snapshot", async (c) => {
+    const id = projectId(c);
+    // Capture the cursor before reading files. A concurrent write is then
+    // either present in the snapshot or replayed by SSE, but never skipped.
+    const eventCursor = await dependencies.events.latestProjectSeq(id);
+    return c.json({ ...valueOf(await getStudioSnapshot(dependencies, id)), eventCursor });
+  });
   routes.get("/v1/projects/:id/tree", async (c) => {
     const parsed = ProjectTreeQuerySchema.safeParse({
       directory: c.req.query("directory"),

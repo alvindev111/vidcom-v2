@@ -137,7 +137,10 @@ function MountedStudio({
     const controller = new AbortController();
     let queued: ReturnType<typeof setTimeout> | null = null;
     let queuedChangeSeq: number | null = null;
-    let lastEventId: string | undefined;
+    // The snapshot already represents all events through this cursor. Starting
+    // at zero would replay stale writes and can falsely conflict with typing in
+    // a freshly loaded editor.
+    let lastEventId: string | undefined = String(snapshot.eventCursor);
     const refresh = (event: StudioEvent) => {
       try {
         const payload = JSON.parse(event.data) as { projectId?: string };
@@ -205,7 +208,7 @@ function MountedStudio({
       controller.abort();
       if (queued) clearTimeout(queued);
     };
-  }, [attached, loadSnapshot, projectId, studioInit]);
+  }, [attached, loadSnapshot, projectId, snapshot.eventCursor, studioInit]);
 
   const resetHistory = React.useCallback(async (reloadSource: boolean) => {
     setAttached(false);
