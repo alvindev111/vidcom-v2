@@ -3184,6 +3184,37 @@
             local skip, 2.671 test pass/5 skip; typecheck, boundaries, 150 spec paths, build và diff-check
             xanh; lint 0 error + 5 warning baseline. Fresh CI trên commit repair vẫn là authority.
           </p>
+          <p class="text-slate-400 text-sm">
+            Exact source <code>33d4539c3fbd464fc41cf1232bdbacec40cb5983</code> đã qua manual CI
+            <a class="text-cyan-300" href="https://github.com/alvindev111/vidcom-v2/actions/runs/32433101250">32433101250</a>
+            và PR CI <a class="text-cyan-300" href="https://github.com/alvindev111/vidcom-v2/actions/runs/32433097220">32433097220</a>:
+            ba OS, Browser Linux/Windows, packaged ba OS, CodeQL, OSV, secret, license đều success; không
+            có failed/cancelled/in-progress check. CI artifact clean exact SHA, packaged strict 14/14 và
+            OSV SARIF 0 result. Standalone Browser session
+            <a class="text-cyan-300" href="https://github.com/alvindev111/vidcom-v2/actions/runs/32435501197">32435501197</a>
+            success Linux/Windows; R4.1c lần lượt 208–291 ms và 225–330 ms, đều dưới 500 ms.
+          </p>
+          <p class="text-slate-400 text-sm">
+            Standalone Packaged smoke
+            <a class="text-cyan-300" href="https://github.com/alvindev111/vidcom-v2/actions/runs/32435848668">32435848668</a>
+            success Linux/macOS/Windows. Artifact tải về <code>/tmp/vidcom-p18-packaged-324358.0wnRwD</code>:
+            cả ba manifest trùng exact SHA, <code>dirty=false</code>, <code>strict=true</code>,
+            <code>evidenceError=null</code>, 14/14 step pass; cold/warm startup evaluation đều
+            <code>ok</code>. Workflow kéo dài 39 phút trên Windows nhưng nằm trong timeout 90 phút và kết
+            thúc xanh; không dùng <code>[!]</code> vì CI vẫn chạy được.
+          </p>
+          <p class="text-slate-400 text-sm">
+            P18.2 RED ngữ nghĩa tại Process supervision gate
+            <a class="text-cyan-300" href="https://github.com/alvindev111/vidcom-v2/actions/runs/32438250834">32438250834</a>:
+            bốn job Actions đều hiển thị success, gồm Windows real render, nhưng JSON log của job
+            <code>96643670604</code> trả <code>INCONCLUSIVE_ENGINE_NEVER_OBSERVED</code>. Script còn trỏ
+            tới <code>projects/warm-grain</code> đã không tồn tại, render thoát ngay và nhánh inconclusive
+            sai khi trả exit 0; vì vậy workflow xanh này không phải evidence P4/P7 và chuỗi dừng trước
+            VieNeu. Repair tối thiểu chuyển real render sang fixture hiện có <code>fixtures/preview</code>,
+            giữ stderr/exit diagnostics và buộc inconclusive exit 1. Local real-engine run sau sửa quan
+            sát 6 descendant, 5 process ngoài root group, capture 7 PID/2 group, ba sweep, không survivor,
+            verdict <code>TERMINATED_CLEAN</code>. Cần fresh Windows Actions trên commit repair.
+          </p>
         </article>
       </section>
     </main>
