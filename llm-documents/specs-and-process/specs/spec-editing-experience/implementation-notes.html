@@ -3285,6 +3285,44 @@
             ngoài diff. Không còn diagnostic tạm. Exact-source CI mới vẫn là authority trước khi tiếp tục
             Browser session, Packaged smoke, Process supervision gate và VieNeu real engine.
           </p>
+          <p class="text-slate-400 text-sm">
+            P18.2 exact source <code>2a363f4833db5be3da518d5aea6eeb8d4099cb70</code>: manual CI
+            <a class="text-cyan-300" href="https://github.com/alvindev111/vidcom-v2/actions/runs/32443100856">32443100856</a>
+            success toàn bộ; artifact tại <code>/private/tmp/vidcom-p18-ci-324431.Xtf7lV</code> có packaged
+            ba OS strict 14/14, exact commit/provenance, startup evaluation <code>ok</code> và OSV SARIF
+            0 result. PR CI <a class="text-cyan-300" href="https://github.com/alvindev111/vidcom-v2/actions/runs/32443094056">32443094056</a>
+            cũng success. Manual Browser session
+            <a class="text-cyan-300" href="https://github.com/alvindev111/vidcom-v2/actions/runs/32444934338">32444934338</a>
+            success Linux/Windows; R4.1c Linux 211/206/312/288 ms và Windows 263/248/336/331 ms, tất cả
+            dưới 500 ms.
+          </p>
+          <p class="text-slate-400 text-sm">
+            Manual Packaged smoke
+            <a class="text-cyan-300" href="https://github.com/alvindev111/vidcom-v2/actions/runs/32445214626">32445214626</a>
+            RED ở macOS identify; Linux đã success và Windows bị cancel ngay. Artifact macOS strict,
+            <code>evidenceError=null</code>, 13/14 step pass; ba startup sample là 10.352/7.718,
+            30.514/8.722 và 28.905/6.882 ms. Exact source này vừa đo 4.059/4.454 ms trong manual CI;
+            năm artifact Actions xanh gần nhất đo cold 3.458–6.492 ms và warm 3.444–5.869 ms. Trace của
+            run đỏ giữ hosted-runtime khoảng 3–4,9 giây, định vị variance ở hosted runner/SEA pre-JS chứ
+            không ở product startup phase. Repair không retry mù: thêm observation thật 28.905/7.718 ms
+            của job <code>96663430773</code> vào reviewed baseline cohort, nâng hard warm ceiling macOS
+            8.000→10.000 ms để sample 8.722 ms đi qua bounded confirmation; hard failure &gt;10.000 ms vẫn
+            không được confirm. Unit regression dùng đúng ba sample run đỏ và vẫn khóa catastrophic fail.
+          </p>
+          <p class="text-slate-400 text-sm">
+            Focused gate sau repair: startup-baseline + packaged-smoke 2 file/58 test PASS bằng Vitest;
+            typecheck và diff-check PASS; lint 0 error + 5 warning baseline. Lần gọi thử bằng native
+            <code>bun test</code> chạy startup unit 17/17 nhưng không load được built-in
+            <code>node:sqlite</code> của packaged suite; đây là sai runner vì script chuẩn của repo là
+            Vitest qua Node, đã được rerun đúng và không dùng lần gọi sai làm evidence.
+          </p>
+          <p class="text-slate-400 text-sm">
+            Fresh full local regression sau startup-gate repair PASS 323/324 file, 2.673/2.678 test;
+            1 file/5 test VieNeu-real skip đúng local profile. R4.1c 214/215/295/293 ms. Typecheck,
+            boundaries, schema drift, 150 spec paths, golden 11 file/45 test, build và diff-check đều
+            PASS; lint 0 error + 5 warning baseline. Fresh exact-source CI bắt buộc trước khi chạy lại
+            standalone Packaged smoke.
+          </p>
         </article>
       </section>
     </main>

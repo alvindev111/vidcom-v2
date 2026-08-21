@@ -150,6 +150,26 @@ describe("startup gates", () => {
     ])).toBe(false);
   });
 
+  it("classifies the reviewed macOS runner cohort as confirmable rather than catastrophic", async () => {
+    const committed = await readBaseline(LABEL);
+    expect(committed).not.toBeNull();
+    const observedSamples = [
+      { coldServe: 10_352, warmServe: 7_718 },
+      { coldServe: 30_514, warmServe: 8_722 },
+      { coldServe: 28_905, warmServe: 6_882 },
+    ];
+    expect(shouldConfirmStartup(evaluateStartup(LABEL, observedSamples[1], committed))).toBe(true);
+    expect(failingResults(evaluateStartup(
+      LABEL,
+      medianStartupMeasurements(observedSamples),
+      committed,
+    ))).toEqual([]);
+    expect(shouldConfirmStartup(evaluateStartup(LABEL, {
+      coldServe: 30_514,
+      warmServe: STARTUP_CEILINGS[LABEL].warmServe + 1,
+    }, committed))).toBe(false);
+  });
+
   it("passes a run inside both limits", () => {
     const results = evaluateStartup(LABEL, candidate(900), baseline([800, 810, 820, 830, 840]));
     expect(failingResults(results)).toEqual([]);
