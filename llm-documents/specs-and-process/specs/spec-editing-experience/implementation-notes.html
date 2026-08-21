@@ -3215,6 +3215,17 @@
             sát 6 descendant, 5 process ngoài root group, capture 7 PID/2 group, ba sweep, không survivor,
             verdict <code>TERMINATED_CLEAN</code>. Cần fresh Windows Actions trên commit repair.
           </p>
+          <p class="text-slate-400 text-sm">
+            P18.1 RED tiếp theo tại exact source <code>1677b3137f2f7ba6f14cb1d7eec326a5e56fa597</code>:
+            manual CI <a class="text-cyan-300" href="https://github.com/alvindev111/vidcom-v2/actions/runs/32438853203">32438853203</a>
+            có Linux main/browser, Windows browser, CodeQL, OSV, secret, license và packaged macOS success,
+            nhưng macOS main fail đúng một test <code>artifact-provenance.test.ts:294</code> vì timeout mặc
+            định 5 giây. Windows main/các packaged còn chạy bị cancel ngay sau khi phát hiện RED và không
+            dùng làm evidence. Test bị timeout là integration matrix tuần tự rebuild/verify ba archive,
+            bảy omission case cộng forbidden/malformed cases; assertions vẫn tiến triển, không có mismatch.
+            Repair giữ nguyên toàn bộ workload/assertion và đặt budget riêng 30 giây. Focused case stress
+            10/10 trên macOS local, mỗi vòng khoảng 0,8–0,9 giây test, đều PASS. Cần fresh exact-source CI.
+          </p>
         </article>
       </section>
     </main>
