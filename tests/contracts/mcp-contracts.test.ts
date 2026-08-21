@@ -102,7 +102,7 @@ describe("MCP contracts", () => {
         id: "project-1", slug: "project-1", title: "Project", width: 1920, height: 1080,
         duration: 1, updatedAt: "2026-08-02T00:00:00.000Z", sceneCount: 1, revision: 1,
       },
-      envelope: { projectRevision: 1, entityRevision: null, fileHashes: {}, diagnostics: [] },
+      envelope: { projectRevision: 1, entityRevision: null, fileHashes: {}, diagnostics: [], changeSeq: 1 },
     };
     expect(SetTextOutputSchema.safeParse({ ...base, narrationStale: false }).success).toBe(true);
     expect(SetTextOutputSchema.safeParse({ ...base, narrationStale: true }).success).toBe(true);
@@ -115,6 +115,7 @@ describe("MCP contracts", () => {
       entityRevision: null,
       fileHashes: { [path]: hash },
       diagnostics: [],
+      changeSeq: 1,
     });
     for (const path of [
       "/absolute.html",

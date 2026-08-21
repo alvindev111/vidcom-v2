@@ -20,6 +20,7 @@ import {
   type ResolvedPath,
 } from "@vidcom/core";
 
+const TEST_ORIGIN = { kind: "system", sessionId: null, label: null, historyAction: "ignore", historyOperation: null } as const;
 const projectId = "project_motion" as ProjectId;
 const ref: ProjectRef = {
   id: projectId,
@@ -62,6 +63,7 @@ function harness(options: {
             request.steps.filter((step) => step.kind === "write").map((step) => [step.path, writtenHash]),
           ) as Record<RelPath, ContentHash>,
           diagnostics: [],
+          changeSeq: 1,
         });
       },
     },
@@ -164,6 +166,7 @@ describe("installMotionLibrary", () => {
     if (!result.ok) return;
     expect(result.value.status).toBe("installed");
     expect(result.value.revision).toBe(7);
+    expect(result.value.changeSeq).toBe(1);
     expect(result.value.library.loader).toBe("module");
     expect(result.value.files.map(({ contentHash }) => contentHash)).toEqual([writtenHash, writtenHash]);
     expect(requests).toHaveLength(1);
@@ -185,12 +188,13 @@ describe("installMotionLibrary", () => {
       dependencies,
       { projectId, libraryId: "gsap" },
       "agent",
-      { toolAudit: null, noteUnchanged: () => { unchanged += 1; } },
+      { origin: TEST_ORIGIN, toolAudit: null, noteUnchanged: () => { unchanged += 1; } },
     );
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(result.value.status).toBe("already_installed");
     expect(result.value.revision).toBeNull();
+    expect(result.value.changeSeq).toBeNull();
     expect(result.value.files).toEqual([{ path: gsap.entry, contentHash: existingHash }]);
     expect(requests).toHaveLength(0);
     expect(unchanged).toBe(1);

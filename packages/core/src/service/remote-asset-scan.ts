@@ -1,4 +1,5 @@
 import type { RelPath } from "@vidcom/contracts";
+import postcss, { type ChildNode } from "postcss";
 
 export interface RemoteAssetViolation {
   url: string;
@@ -65,26 +66,134 @@ function scanCss(
   violations: RemoteAssetViolation[],
   seen: Set<string>,
 ): void {
-  const mediaCss = css
-    .replace(/@font-face\s*\{[\s\S]*?\}/giu, "")
-    .replace(/@import\s+(?:url\([^)]*\)|["'][^"']+["'])[^;]*;/giu, "");
-  for (const match of mediaCss.matchAll(/url\(\s*["']?([^"')\s]+)["']?\s*\)/giu)) {
-    addRemote(violations, seen, match[1]!, "css-url", reference);
+  for (const url of scanCssReferences(css).media) {
+    addRemote(violations, seen, url, "css-url", reference);
   }
 }
 
 function addCssDependencies(css: string, dependencies: Set<string>): void {
-  for (const declaration of [
-    ...css.matchAll(/@font-face\s*\{[\s\S]*?\}/giu),
-    ...css.matchAll(/@import\s+(?:url\([^)]*\)|["'][^"']+["'])[^;]*;/giu),
-  ]) {
-    for (const match of declaration[0].matchAll(
-      /url\(\s*["']?([^"')\s]+)["']?\s*\)|["']((?:https?:)?\/\/[^"']+)["']/giu,
-    )) {
-      const url = match[1] ?? match[2];
-      if (url && isRemote(url)) dependencies.add(url);
-    }
+  for (const url of scanCssReferences(css).dependencies) {
+    if (isRemote(url)) dependencies.add(url);
   }
+}
+
+interface CssReferences {
+  media: string[];
+  dependencies: string[];
+}
+
+function scanCssReferences(css: string): CssReferences {
+  const media: string[] = [];
+  const dependencies: string[] = [];
+  const fontFaceDeclarations = new WeakSet<ChildNode>();
+  const root = postcss.parse(css, { from: undefined });
+  root.walkAtRules((rule) => {
+    const name = rule.name.toLowerCase();
+    if (name === "font-face") {
+      rule.walkDecls((declaration) => {
+        fontFaceDeclarations.add(declaration);
+        dependencies.push(...readCssUrls(declaration.value));
+      });
+      return;
+    }
+    if (name === "import") {
+      const urls = readCssUrls(rule.params);
+      dependencies.push(...(urls.length > 0 ? urls : readLeadingCssString(rule.params)));
+      return;
+    }
+    media.push(...readCssUrls(rule.params));
+  });
+  root.walkDecls((declaration) => {
+    if (!fontFaceDeclarations.has(declaration)) media.push(...readCssUrls(declaration.value));
+  });
+  return { media, dependencies };
+}
+
+function readCssUrls(value: string): string[] {
+  const urls: string[] = [];
+  let index = 0;
+  while (index < value.length) {
+    if (value[index] === "/" && value[index + 1] === "*") {
+      const end = value.indexOf("*/", index + 2);
+      index = end < 0 ? value.length : end + 2;
+      continue;
+    }
+    if (value[index] === '"' || value[index] === "'") {
+      index = skipCssString(value, index);
+      continue;
+    }
+    const identifier = readCssIdentifier(value, index);
+    if (identifier.value !== "url") {
+      index = Math.max(index + 1, identifier.next);
+      continue;
+    }
+    index = identifier.next;
+    while (index < value.length && cssWhitespace(value[index]!)) index += 1;
+    if (value[index] !== "(") continue;
+    index += 1;
+    while (index < value.length && cssWhitespace(value[index]!)) index += 1;
+    const quote = value[index] === '"' || value[index] === "'" ? value[index++]! : null;
+    const start = index;
+    if (quote) {
+      index = skipCssString(value, index - 1) - 1;
+      if (index >= value.length || value[index] !== quote) break;
+      const url = value.slice(start, index).trim();
+      index += 1;
+      while (index < value.length && cssWhitespace(value[index]!)) index += 1;
+      if (value[index] === ")" && url) urls.push(url);
+      index += 1;
+      continue;
+    }
+    while (index < value.length && value[index] !== ")") index += 1;
+    if (index >= value.length) break;
+    const url = value.slice(start, index).trim();
+    if (url) urls.push(url);
+    index += 1;
+  }
+  return urls;
+}
+
+function readCssIdentifier(value: string, start: number): { value: string; next: number } {
+  let index = start;
+  while (index < value.length && cssIdentifierCharacter(value[index]!)) index += 1;
+  return { value: value.slice(start, index).toLowerCase(), next: index };
+}
+
+function cssIdentifierCharacter(character: string): boolean {
+  const code = character.charCodeAt(0);
+  return code >= 65 && code <= 90 || code >= 97 && code <= 122
+    || code >= 48 && code <= 57 || character === "_" || character === "-";
+}
+
+function cssWhitespace(character: string): boolean {
+  return character === " " || character === "\t" || character === "\r" || character === "\n" || character === "\f";
+}
+
+function skipCssString(css: string, start: number): number {
+  const quote = css[start]!;
+  let index = start + 1;
+  while (index < css.length) {
+    if (css[index] === "\\") index += 2;
+    else if (css[index++] === quote) break;
+  }
+  return Math.min(index, css.length);
+}
+
+function readLeadingCssString(value: string): string[] {
+  let index = 0;
+  while (index < value.length) {
+    if (value[index] === "/" && value[index + 1] === "*") {
+      const end = value.indexOf("*/", index + 2);
+      index = end < 0 ? value.length : end + 2;
+      continue;
+    }
+    if (cssWhitespace(value[index]!)) { index += 1; continue; }
+    const quote = value[index];
+    if (quote !== '"' && quote !== "'") return [];
+    const end = skipCssString(value, index) - 1;
+    return end < value.length && value[end] === quote ? [value.slice(index + 1, end)] : [];
+  }
+  return [];
 }
 
 function addRemote(
@@ -102,7 +211,8 @@ function addRemote(
 }
 
 function isRemote(url: string): boolean {
-  return /^(?:https?:)?\/\//iu.test(url.trim());
+  const normalized = url.trim().toLowerCase();
+  return normalized.startsWith("http://") || normalized.startsWith("https://") || normalized.startsWith("//");
 }
 
 function lineAt(value: string, index = 0): number {

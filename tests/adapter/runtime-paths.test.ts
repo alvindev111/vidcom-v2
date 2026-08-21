@@ -35,6 +35,30 @@ describe("runtime path resolution", () => {
     );
     expect(paths.nativeDependenciesRoot).toBe(path.join(VERSION_ROOT, "node"));
     expect(paths.bgmAssetRoot).toBe(path.join(VERSION_ROOT, "bgm"));
+    // The bundled catalog is staged inside the verified HyperFrames archive, so a
+    // packaged install can list and install templates with no network and no
+    // source tree.
+    expect(paths.catalogAssetRoot).toBe(path.join(VERSION_ROOT, "hyperframes", "catalog"));
+  });
+
+  it("treats an absent catalog as a bootstrap failure rather than an empty catalog", () => {
+    let error: RuntimeAssetError | undefined;
+    try {
+      resolveRuntimePaths(artifactInput({ node: COMPLETE_ARCHIVES.node }));
+    } catch (caught) {
+      error = caught as RuntimeAssetError;
+    }
+    expect((error?.details as { missing?: string[] } | undefined)?.missing)
+      .toContain("catalogAssetRoot");
+  });
+
+  it("points development mode at the frozen adapter catalog assets", () => {
+    const paths = resolveRuntimePaths({
+      mode: "development",
+      appDataRoot: APP_DATA,
+      resolve: (specifier) => path.join(APP_DATA, "node_modules", specifier),
+    });
+    expect(paths.catalogAssetRoot.split(path.sep).slice(-3)).toEqual(["adapter", "assets", "catalog"]);
   });
 
   it("never reaches require.resolve on the artifact path", () => {

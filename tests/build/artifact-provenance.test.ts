@@ -291,6 +291,11 @@ describe("artifact directory", () => {
 });
 
 describe("runtime payload provenance", () => {
+  // This is an archive integration matrix, not an in-memory unit test: it
+  // rebuilds and verifies all three payload archives across seven omission
+  // cases plus the forbidden/malformed cases. Hosted macOS exceeded Vitest's
+  // 5 s default while still making progress, so give the bounded workload its
+  // own budget instead of weakening any individual assertion.
   it("binds the exact staged entry set, archive bytes, and secondary bundle", async () => {
     const root = realpathSync(await mkdtemp(path.join(tmpdir(), "vidcom-runtime-verify-")));
     roots.push(root);
@@ -458,7 +463,7 @@ describe("runtime payload provenance", () => {
     await writeFile(path.join(assetRoot, "runtime-manifest.json"), JSON.stringify(manifest));
     await expect(verifyRuntimePayload(HOST_TAG, { assetRoot, stageRoot, secondaryBundle }))
       .rejects.toThrow();
-  });
+  }, 30_000);
 
   it("allows only exact motion catalogue files", () => {
     const allowed = new Set([
@@ -477,6 +482,21 @@ describe("runtime payload provenance", () => {
       "motion-libraries/gsap/extra.js",
       allowed,
     )).toThrow(/pinned product catalogue/u);
+  });
+
+  it("allows only the frozen catalog manifest and its package files", () => {
+    for (const allowed of [
+      "catalog/manifest.json",
+      "catalog/files/templates/title-card/scene.html",
+      "catalog/files/templates/title-card/preview.svg",
+    ]) {
+      expect(() => assertAllowedRuntimeEntry("hyperframes", HOST_TAG, allowed), allowed)
+        .not.toThrow();
+    }
+    for (const rejected of ["catalog/other.json", "catalog/files"]) {
+      expect(() => assertAllowedRuntimeEntry("hyperframes", HOST_TAG, rejected), rejected)
+        .toThrow(/frozen bundled snapshot/u);
+    }
   });
 });
 

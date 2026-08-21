@@ -1,4 +1,4 @@
-import { asc, gt, lt, max, sql } from "drizzle-orm";
+import { asc, eq, gt, lt, max, sql } from "drizzle-orm";
 
 import { HOST_DOMAIN_EVENT_TYPES, type DomainEvent, type ProjectId } from "@vidcom/contracts";
 import type { ClockPort, EventOutboxPort, StoredEvent } from "@vidcom/core";
@@ -66,5 +66,10 @@ export class SqliteEventOutbox implements EventOutboxPort {
 
   async latestSeq(): Promise<number> {
     return this.database.select({ latest: max(eventOutbox.seq) }).from(eventOutbox).get()?.latest ?? 0;
+  }
+
+  async latestProjectSeq(projectId: ProjectId): Promise<number> {
+    return this.database.select({ latest: max(eventOutbox.seq) }).from(eventOutbox)
+      .where(eq(eventOutbox.projectId, projectId)).get()?.latest ?? 0;
   }
 }

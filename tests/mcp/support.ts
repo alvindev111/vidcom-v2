@@ -1,3 +1,8 @@
+import { createHash } from "node:crypto";
+import { mkdtemp, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import nodePath from "node:path";
+
 import {
   type BgmProviderTrack,
   type ContentHash,
@@ -19,7 +24,9 @@ import {
   type MutationRequest,
   type ProjectRef,
   type ResolvedPath,
+  type CatalogMaterializedFile,
   type ToolAuditEntry,
+  type VerifiedCatalogItem,
 } from "@vidcom/core";
 import {
   registerVidcomTools,
@@ -116,6 +123,47 @@ export const CONTRACT_MATRIX_CASES: Record<string, Record<string, unknown>> = {
     expectedRevision: 2,
     grantId: "grant-contract-matrix",
   },
+  reorder_scenes: {
+    projectId: matrixProjectId,
+    sceneId: "scene-1",
+    toIndex: 0,
+    expectedContentHash: matrixHash,
+  },
+  move_scenes: {
+    projectId: matrixProjectId,
+    sceneIds: ["scene-1"],
+    deltaSeconds: 0,
+    expectedContentHash: matrixHash,
+  },
+  delete_scenes: {
+    projectId: matrixProjectId,
+    sceneIds: ["scene-1"],
+    expectedRevision: 2,
+    grantId: "grant-contract-matrix",
+  },
+  list_catalog_items: { kind: "template" },
+  install_catalog_item: {
+    projectId: matrixProjectId,
+    name: "lower-third",
+    version: "1.2.0",
+    mount: { kind: "new-scene", toIndex: 1 },
+    expectedRevision: 2,
+    grantId: "grant-contract-matrix",
+  },
+  generate_captions: {
+    projectId: matrixProjectId,
+    sceneId: "scene-9",
+    expectedContentHash: matrixHash,
+  },
+  mount_asset: {
+    projectId: matrixProjectId,
+    assetPath: "assets/clip.mp4",
+    assetContentHash: matrixHash,
+    atSeconds: 0,
+    trackIndex: 0,
+    expectedContentHash: matrixHash,
+    onOverflow: "extend-root",
+  },
   list_tts_voices: { projectId: matrixProjectId },
   start_tts: {
     projectId: matrixProjectId,
@@ -193,6 +241,68 @@ function createBaseRegistry(auditEntries: ToolAuditEntry[] = [], journalOwned = 
 }
 
 /** Registers every production descriptor against a deterministic successful project harness. */
+
+/** A verified, materialized package so `install_catalog_item` can be run for real. */
+const PACKAGE_ENTRY = "blocks/lower-third/index.html" as RelPath;
+const PACKAGE_STYLE = "blocks/lower-third/style.css" as RelPath;
+const PACKAGE_ENTRY_BYTES = "<section data-composition-id=\"lower-third\"><p>lower third</p></section>\n";
+const PACKAGE_STYLE_BYTES = ".lower-third { color: red }\n";
+const packageDigest = (content: string) =>
+  `sha256:${createHash("sha256").update(content).digest("hex")}` as ContentHash;
+
+function verifiedPackage(): VerifiedCatalogItem {
+  const item = {
+    name: "lower-third",
+    kind: "block",
+    title: "Lower third",
+    description: null,
+    tags: ["social"],
+    category: "Social",
+    version: "1.2.0",
+    integrity: {
+      algo: "sha256" as const,
+      // The manifest carries bare hex; the guard adds the `sha256:` prefix when
+      // it compares, so storing a prefixed digest here would double it.
+      files: {
+        [PACKAGE_ENTRY]: createHash("sha256").update(PACKAGE_ENTRY_BYTES).digest("hex"),
+        [PACKAGE_STYLE]: createHash("sha256").update(PACKAGE_STYLE_BYTES).digest("hex"),
+      },
+      manifest: "",
+    },
+    materialization: "verified" as const,
+    source: { registry: "bundled" as const, url: null, revision: null, committedAt: null },
+    dependencies: [],
+    compatibility: { aspectRatios: null, minWidth: null, fps: null, minHyperframesVersion: null },
+    durationSeconds: 4,
+    entry: PACKAGE_ENTRY,
+    preview: null,
+  } as VerifiedCatalogItem;
+  // Bare hex: the manifest digest travels without an algorithm prefix.
+  item.integrity.manifest = createHash("sha256").update(`${item.name}@${item.version}`).digest("hex");
+  return item;
+}
+
+/** Writes the package's bytes where the installer will read them from. */
+async function materializePackage(): Promise<CatalogMaterializedFile[]> {
+  const directory = await mkdtemp(nodePath.join(tmpdir(), "vidcom-matrix-package-"));
+  const entries: Array<[RelPath, string]> = [
+    [PACKAGE_ENTRY, PACKAGE_ENTRY_BYTES],
+    [PACKAGE_STYLE, PACKAGE_STYLE_BYTES],
+  ];
+  const files: CatalogMaterializedFile[] = [];
+  for (const [target, content] of entries) {
+    const sourcePath = nodePath.join(directory, nodePath.basename(target));
+    await writeFile(sourcePath, content, "utf8");
+    files.push({
+      path: target,
+      contentHash: packageDigest(content),
+      source: { sourcePath: sourcePath as AbsolutePath, contentHash: packageDigest(content) },
+      encoding: "utf8",
+    });
+  }
+  return files;
+}
+
 export function createContractMatrixRegistry(): ToolRegistry {
   const registry = createBaseRegistry([], true);
   const ref: ProjectRef = {
@@ -220,6 +330,33 @@ export function createContractMatrixRegistry(): ToolRegistry {
       revision: 0,
       updatedAt: "2026-08-02T00:00:00.000Z",
       staleSince: null,
+    })}\n`],
+    ["compositions/scene-9.html", "<section data-composition-id=\"scene-9\"></section>"],
+    // A second scene whose narration carries word timings: generate_captions
+    // plans cues from those, and scene-1 stays the scene without them.
+    ["narration/scene-9.json", `${JSON.stringify({
+      sceneId: "scene-9",
+      text: "Xin chào",
+      voice: "matrix-voice",
+      status: "mock",
+      audioPath: "narration/scene-9.wav",
+      revision: 0,
+      updatedAt: "2026-08-02T00:00:00.000Z",
+      staleSince: null,
+      cues: [{
+        cueId: "cue-1",
+        text: "Xin chào",
+        voice: "matrix-voice",
+        offsetSeconds: 0,
+        status: "mock",
+        audioPath: "narration/scene-9.wav",
+        staleSince: null,
+        wordTimingSource: "estimated",
+        words: [
+          { text: "Xin", startSeconds: 0, endSeconds: 0.4 },
+          { text: "chào", startSeconds: 0.4, endSeconds: 0.9 },
+        ],
+      }],
     })}\n`],
     // Neither file was written through a tool: they stand for media dropped into
     // the project directory and an artifact a render left behind.
@@ -274,6 +411,31 @@ export function createContractMatrixRegistry(): ToolRegistry {
         ],
       }],
       unresolvedEffects: 0,
+    }, {
+      // The scene generate_captions works on: same shape, narration with word
+      // timings, and no elements to distract the other tools.
+      id: "scene-9",
+      start: 4,
+      duration: 4,
+      trackIndex: 1,
+      src: "compositions/scene-9.html" as RelPath,
+      block: null,
+      isTransition: false,
+      media: [],
+      script: [],
+      narration: {
+        sceneId: "scene-9",
+        text: "Xin chào",
+        voice: "matrix-voice",
+        status: "mock" as const,
+        audioPath: "narration/scene-9.wav" as RelPath,
+        command: "",
+        revision: 0,
+        updatedAt: "2026-08-02T00:00:00.000Z",
+        staleSince: null,
+      },
+      elements: [],
+      unresolvedEffects: 0,
     }],
     rootTrack: null,
     diagnostics: [],
@@ -281,6 +443,11 @@ export function createContractMatrixRegistry(): ToolRegistry {
       { path: "index.html" as RelPath, contentHash: matrixHash, byteSize: entry.length },
       {
         path: "compositions/scene-1.html" as RelPath,
+        contentHash: matrixHash,
+        byteSize: sceneSource.length,
+      },
+      {
+        path: "compositions/scene-9.html" as RelPath,
         contentHash: matrixHash,
         byteSize: sceneSource.length,
       },
@@ -340,6 +507,7 @@ export function createContractMatrixRegistry(): ToolRegistry {
         contentHash: matrixNewHash,
         revision: 3,
         diagnostics: [],
+        changeSeq: 3,
       }),
       // install_bgm rides the staged-asset + preview-settings mutation, so the
       // matrix needs that seam too, not only mutateSource.
@@ -348,6 +516,7 @@ export function createContractMatrixRegistry(): ToolRegistry {
         contentHash: matrixNewHash,
         revision: 3,
         diagnostics: [],
+        changeSeq: 3,
         previewSettings: DEFAULT_PREVIEW_SETTINGS,
       }),
       mutateSource: async (request: CompositeRequest | MutationRequest) => {
@@ -372,11 +541,86 @@ export function createContractMatrixRegistry(): ToolRegistry {
           entityRevision: null,
           fileHashes,
           diagnostics: [],
+          changeSeq: 3,
           ...(request.backup ? { backupId: "backup-contract-matrix" } : {}),
         });
       },
     },
     clock: { now: () => new Date("2026-08-02T00:00:00.000Z") },
+    // The editing tools take the same capabilities the routes do; the matrix
+    // supplies the two the fake workspace above cannot stand in for.
+    catalog: {
+      list: async () => ({
+        items: [],
+        source: "bundled" as const,
+        stale: false,
+      }),
+    },
+    catalogInstall: {
+      workspace: {
+        readProjectRef: async (projectId: ProjectId) => projectId === matrixProjectId ? ref : null,
+        resolve: async (_ref: ProjectRef, path: RelPath) => ok(path as unknown as ResolvedPath),
+        readFile: async (path: ResolvedPath) => {
+          const content = files.get(path);
+          return content === undefined ? null : { content, contentHash: matrixHash };
+        },
+        readHash: async (path: ResolvedPath) => files.has(path) ? matrixHash : null,
+        exists: async (path: ResolvedPath) => files.has(path),
+      },
+      composition: {
+        parseProject: async () => model,
+        applyOps: async () => ok("<main data-composition-id=\"root\"></main>"),
+      },
+      journal: { latestRevision: async () => 2 },
+      catalog: {
+        materialize: async () => ok({
+          item: verifiedPackage(),
+          files: await materializePackage(),
+          release: async () => {},
+        }),
+      },
+      // Nothing of this package is installed yet, which is the case the matrix
+      // exercises: a first install, not a reinstall decision.
+      installedProvenance: async () => null,
+      // A real hasher here: the installer verifies every materialized file
+      // against the manifest, so a constant would only prove the constant.
+      hashContent: (content: string | Uint8Array) =>
+        `sha256:${createHash("sha256").update(content).digest("hex")}` as ContentHash,
+      // The guard compares this against the item's own manifest digest; the
+      // fixture states both from one place so they agree by construction.
+      manifestDigest: (candidate: VerifiedCatalogItem) => candidate.integrity.manifest,
+      clock: { now: () => new Date("2026-08-02T00:00:00.000Z") },
+      approval: { planReserve: async () => ok(undefined) },
+      authority: {
+        mutateSource: async () => ok({
+          projectRevision: 3, entityRevision: null, fileHashes: {}, diagnostics: [], changeSeq: 3,
+        }),
+      },
+    },
+    mount: {
+      workspace: {
+        readProjectRef: async (projectId: ProjectId) => projectId === matrixProjectId ? ref : null,
+        resolve: async (_ref: ProjectRef, path: RelPath) => ok(path as unknown as ResolvedPath),
+        readHash: async () => matrixHash,
+      },
+      composition: {
+        parseProject: async () => model,
+        applyOps: async () => ok("<main data-composition-id=\"root\"></main>"),
+      },
+      probe: {
+        probeMedia: async () => ok({
+          status: "ok" as const, kind: "media" as const, byteSize: 12,
+          durationSeconds: 3, width: 1920, height: 1080, codec: "h264",
+        }),
+      },
+      pendingMount: { lookup: async () => ({ state: "never-seen" as const }) },
+      authority: {
+        mutateSource: async () => ok({
+          projectRevision: 3, entityRevision: null, fileHashes: {}, diagnostics: [], changeSeq: 3,
+        }),
+      },
+      clock: { now: () => new Date("2026-08-02T00:00:00.000Z") },
+    },
     hashContent: () => matrixHash,
     approvals: { request: async () => "unused-approval" },
     tts: {

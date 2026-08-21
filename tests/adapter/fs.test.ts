@@ -82,6 +82,35 @@ describe("filesystem containment", () => {
       error: { reason: "symlink_escape" },
     });
   });
+
+  it("rejects every authored CRUD symlink leaf, parent and project root", async () => {
+    const internalDirectory = path.join(projectRoot, "internal");
+    await mkdir(internalDirectory);
+    await writeFile(path.join(internalDirectory, "scene.html"), "scene");
+    await symlink("index.html", path.join(projectRoot, "alias.html"));
+    await symlink(internalDirectory, path.join(projectRoot, "alias-dir"), process.platform === "win32" ? "junction" : "dir");
+    await symlink(projectRoot, path.join(workspace, "project-alias"), process.platform === "win32" ? "junction" : "dir");
+
+    await expect(resolveProjectPath(project, "alias.html", "authored-write")).resolves.toEqual({
+      ok: false,
+      error: { reason: "symlink_escape" },
+    });
+    await expect(resolveProjectPath(project, "alias-dir", "authored-write")).resolves.toEqual({
+      ok: false,
+      error: { reason: "symlink_escape" },
+    });
+    await expect(resolveProjectPath(project, "alias-dir/scene.html", "authored-write")).resolves.toEqual({
+      ok: false,
+      error: { reason: "symlink_escape" },
+    });
+    await expect(resolveProjectPath({
+      ...project,
+      root: path.join(workspace, "project-alias") as AbsolutePath,
+    }, "index.html", "authored-write")).resolves.toEqual({
+      ok: false,
+      error: { reason: "symlink_escape" },
+    });
+  });
 });
 
 describe("allowlist and workspace I/O", () => {
@@ -140,6 +169,76 @@ describe("allowlist and workspace I/O", () => {
     await adapter.deleteAtomic(resolved.value);
     expect(await adapter.exists(resolved.value)).toBe(false);
     await expect(adapter.deleteAtomic(resolved.value)).resolves.toBeUndefined();
+  });
+
+  it("excludes protected roots and pages direct children without recursive expansion", async () => {
+    await mkdir(path.join(projectRoot, ".vidcom", "cache"), { recursive: true });
+    await mkdir(path.join(projectRoot, ".private"));
+    await mkdir(path.join(projectRoot, "assets"));
+    await writeFile(path.join(projectRoot, ".vidcom", "cache", "secret.bin"), "secret");
+    await writeFile(path.join(projectRoot, ".private", "secret.txt"), "secret");
+    await writeFile(path.join(projectRoot, "package.json"), "{}");
+    await writeFile(path.join(projectRoot, "assets", "a.txt"), "a");
+    await writeFile(path.join(projectRoot, "assets", "b.txt"), "b");
+
+    const adapter = new WorkspaceFs(workspace as AbsolutePath);
+    const tree = await adapter.readTree(project);
+    expect(tree.map((entry) => entry.name)).not.toEqual(expect.arrayContaining([
+      ".vidcom", ".private", "hyperframes.json", "vidcom.json", "package.json",
+    ]));
+    const page = await (adapter as unknown as {
+      readTreePage(ref: ProjectRef, options: { directory: RelPath; cursor: string | null; limit: number }): Promise<unknown>;
+    }).readTreePage(project, { directory: "assets" as RelPath, cursor: null, limit: 1 });
+    expect(page).toEqual({ ok: true, value: {
+      directory: "assets",
+      entries: [{ path: "assets/a.txt", name: "a.txt", kind: "file" }],
+      nextCursor: "1",
+      totalEntries: 2,
+    } });
+  });
+
+  it("fails deterministically when a full tree crosses a production resource dimension", async () => {
+    await mkdir(path.join(projectRoot, "assets"));
+    await writeFile(path.join(projectRoot, "assets", "a.txt"), "a");
+    const adapter = new WorkspaceFs(workspace as AbsolutePath, {
+      treeLimits: {
+        maxDepth: 64,
+        maxNodes: 1,
+        maxEntriesPerDirectory: 2_000,
+        maxSerializedBytes: 8 * 1024 * 1024,
+        maxDurationMs: 5_000,
+      },
+    } as never);
+    await expect(adapter.readTree(project)).rejects.toMatchObject({
+      name: "WorkspaceResourceLimitError",
+      reason: "node_count",
+      limit: 1,
+    });
+  });
+
+  it("omits symlinks from the editable project tree", async () => {
+    const adapter = new WorkspaceFs(workspace as AbsolutePath);
+    await mkdir(path.join(projectRoot, "internal"));
+    await symlink("index.html", path.join(projectRoot, "alias.html"));
+    await symlink(
+      path.join(projectRoot, "internal"),
+      path.join(projectRoot, "alias-dir"),
+      process.platform === "win32" ? "junction" : "dir",
+    );
+
+    const names = (await adapter.readTree(project)).map((entry) => entry.name);
+    expect(names).not.toContain("alias.html");
+    expect(names).not.toContain("alias-dir");
+  });
+
+  itWithSymlinks("hashes only a no-follow regular-file capability", async () => {
+    const adapter = new WorkspaceFs(workspace as AbsolutePath);
+    const outside = path.join(temporaryRoot, "outside-hash.bin");
+    const linked = path.join(projectRoot, "linked-hash.bin");
+    await writeFile(outside, "outside");
+    await symlink(outside, linked);
+
+    await expect(adapter.readHash(linked as ResolvedPath)).rejects.toBeDefined();
   });
 
   it("preserves the old target when the process dies before rename", async () => {

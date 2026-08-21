@@ -6,12 +6,15 @@ export {
 export * from "./routes/system";
 export * from "./auth/nonce";
 export * from "./auth/session";
+export * from "./auth/preview-capability";
 export * from "./bridge/attachments";
 export * from "./listener";
+export * from "./service/mutation-history";
 export * from "./middleware/error-mapper";
 export * from "./middleware/perimeter";
 export * from "./routes/project-reads";
 export { createJobRoutes } from "./routes/jobs";
+export { createCatalogRoutes, type CatalogRouteDependencies } from "./routes/catalog";
 export {
   createBridgeRoutes,
   type BridgeRouteDependencies,
@@ -19,5 +22,8 @@ export {
 } from "./routes/bridge";
 export * from "./routes/mcp";
 export * from "./routes/events";
+export * from "./routes/history";
+export * from "./routes/studio-session";
 export * from "./routes/project-writes";
 export * from "./routes/narration";
+export * from "./routes/thumbnails";

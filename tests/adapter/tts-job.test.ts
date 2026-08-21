@@ -81,7 +81,7 @@ function dependencies(
     journal: {},
     authority: {
       mutateSource: async (): Promise<Result<WriteEnvelope, DomainError>> => ok({
-        projectRevision: 7, entityRevision: null, fileHashes: {}, diagnostics: [],
+        projectRevision: 7, entityRevision: null, fileHashes: {}, diagnostics: [], changeSeq: 7,
       } as WriteEnvelope),
     },
     clock: createFixedClock("2026-08-03T00:00:00.000Z"),
@@ -229,7 +229,7 @@ describe("tts job type", () => {
         authority: {
           mutateSource: async () => {
             seen.push("published");
-            return ok({ projectRevision: 1, entityRevision: null, fileHashes: {}, diagnostics: [] } as WriteEnvelope);
+            return ok({ projectRevision: 1, entityRevision: null, fileHashes: {}, diagnostics: [], changeSeq: 1 } as WriteEnvelope);
           },
         },
       } as unknown as SynthesizeNarrationDependencies,

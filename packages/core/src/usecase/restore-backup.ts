@@ -2,6 +2,7 @@ import { ErrorCode, type Actor, type DomainError, type PreviewSettingsPatchDto, 
 
 import { normalizePreviewSettings } from "../domain/preview-settings";
 import { err, type Result } from "../error/result";
+import { ignoredMutationOriginForActor } from "../port/mutation-observer";
 import type { BackupPort, CompositeMutationJournalPort, WorkspacePort } from "../port/ports";
 import type { BackupPayload, CompositeRequest, CompositeStep, WriteEnvelope } from "../port/types";
 
@@ -130,6 +131,7 @@ export async function restoreBackup(
   return dependencies.writes.mutateSource({
     ref,
     steps: restoreSteps,
+    origin: ignoredMutationOriginForActor(actor),
     toolAudit: null,
     commandAudit: { action: "cli:restore", detail: { backupId: input.backupId } },
     backup: false,

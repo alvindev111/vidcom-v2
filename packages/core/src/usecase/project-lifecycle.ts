@@ -4,6 +4,7 @@ import { inferPreset, rootCompositionSource, type PlatformConfig } from "../doma
 import { DEFAULT_PREVIEW_SETTINGS, serializePreviewSettings } from "../domain/preview-settings";
 import type { AbsolutePath, ProjectRef } from "../domain/models";
 import { err, ok, type Result } from "../error/result";
+import { ignoredMutationOriginForActor } from "../port/mutation-observer";
 import type { BackupPort, ClockPort, CompositionPort, IdPort, JobStorePort, MutationJournalPort, WorkspacePort } from "../port/ports";
 import type { BackupSource, GrantBinding, WriteInvocation } from "../port/types";
 import { canonicalizeJson } from "../service/canonical-json";
@@ -76,7 +77,7 @@ export class ProjectLifecycle {
   /** Validates a new project, journals its initial files, and commits one registry revision plus project event. */
   async create(
     input: { name: string; preset: PlatformConfig; actor?: Actor },
-    invocation: WriteInvocation = { toolAudit: null },
+    invocation: WriteInvocation = { origin: ignoredMutationOriginForActor(input.actor ?? "user"), toolAudit: null },
   ): Promise<Result<{ projectId: ProjectId; slug: string }, DomainError>> {
     const slug = slugify(input.name);
     if (!slug) return err({ code: ErrorCode.SchemaInvalid, message: "project name cannot produce a valid slug", field: "name" });
@@ -107,7 +108,7 @@ export class ProjectLifecycle {
   /** Adopts an unowned marker-backed folder by writing identity and committing its registry/event atomically. */
   async adopt(
     input: { slug: string; actor?: Actor },
-    invocation: WriteInvocation = { toolAudit: null },
+    invocation: WriteInvocation = { origin: ignoredMutationOriginForActor(input.actor ?? "user"), toolAudit: null },
   ): Promise<Result<{ projectId: ProjectId }, DomainError>> {
     const directories = await this.dependencies.workspace.listWorkspaceDirectories?.(this.dependencies.workspaceRoot) ?? [];
     const candidate = directories.find((entry) => entry.slug === input.slug);
@@ -247,7 +248,7 @@ export class ProjectLifecycle {
     locator: ProjectLocator,
     nextName: string,
     actor: Actor = "user",
-    invocation: WriteInvocation = { toolAudit: null },
+    invocation: WriteInvocation = { origin: ignoredMutationOriginForActor(actor), toolAudit: null },
   ): Promise<Result<{ slug: string }, DomainError>> {
     const ref = await this.project(locator);
     if (!ref.ok) return ref;
@@ -274,7 +275,7 @@ export class ProjectLifecycle {
   async remove(
     locator: ProjectLocator,
     authority: ProjectRemovalAuthority,
-    invocation: WriteInvocation = { toolAudit: null },
+    invocation: WriteInvocation = { origin: ignoredMutationOriginForActor(authority.actor), toolAudit: null },
   ): Promise<Result<{ backupId: string }, DomainError>> {
     if (!authority.confirmed) return err({
       code: ErrorCode.ConfirmationRequired,

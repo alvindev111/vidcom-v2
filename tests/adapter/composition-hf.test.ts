@@ -57,10 +57,56 @@ describe("CompositionHf", () => {
   });
 
   it("builds the only preview representation with runtime and settings", async () => {
-    const document = await buildCompositionDocument(ref, DEFAULT_PREVIEW_SETTINGS, { root: true });
+    const document = await buildCompositionDocument(ref, DEFAULT_PREVIEW_SETTINGS, {
+      mode: "preview",
+      root: true,
+      projectRevision: 12,
+      changeSeq: 34,
+    });
     expect(document).toContain('id="hf-preview-settings"');
     expect(document).toContain("/api/hf/runtime");
     expect(document.match(/id="hf-preview-settings"/g)).toHaveLength(1);
+    expect(document).toMatch(/<head[^>]*>\s*<meta data-vidcom-preview-security="csp"[^>]*>\s*<script data-vidcom-health="collector"/u);
+    expect(document).toContain('data-project-revision="12"');
+    expect(document).toContain('data-change-seq="34"');
+    expect(document.indexOf('data-vidcom-health="collector"')).toBeLessThan(document.indexOf("Old title"));
+  });
+
+  it("localizes the upstream GSAP compatibility tag on preview only", async () => {
+    const document = await buildCompositionDocument(ref, DEFAULT_PREVIEW_SETTINGS, {
+      mode: "preview",
+      root: true,
+      projectRevision: 1,
+      changeSeq: 1,
+      runtimeUrl: "/api/preview/v1/c/token/projects/project_hf/runtime",
+      fileBaseUrl: "/api/preview/v1/c/token/projects/project_hf/assets/",
+    });
+    expect(document).toContain("/api/preview/v1/c/token/projects/project_hf/vendor/gsap.js");
+    expect(document).not.toContain("cdn.jsdelivr.net/npm/gsap");
+  });
+
+  it("keeps the preview health collector out of render documents", async () => {
+    const document = await buildCompositionDocument(ref, DEFAULT_PREVIEW_SETTINGS, {
+      mode: "render",
+      root: true,
+    });
+    expect(document).not.toContain("data-vidcom-health");
+    expect(document).not.toContain("__vidcomHealth");
+  });
+
+  it("makes preview identity required and forbidden for render at compile time", () => {
+    if (false) {
+      // @ts-expect-error preview documents require both durable identity fields
+      void buildCompositionDocument(ref, DEFAULT_PREVIEW_SETTINGS, { mode: "preview", root: true });
+      // @ts-expect-error render documents cannot carry preview identity
+      void buildCompositionDocument(ref, DEFAULT_PREVIEW_SETTINGS, {
+        mode: "render",
+        root: true,
+        projectRevision: 1,
+        changeSeq: 1,
+      });
+    }
+    expect(true).toBe(true);
   });
 
   it("applies SDK operations in memory without writing the project", async () => {

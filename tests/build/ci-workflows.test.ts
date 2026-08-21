@@ -6,6 +6,7 @@ const CI_WORKFLOW = ".github/workflows/ci.yml";
 const BROWSER_WORKFLOW = ".github/workflows/phase4-browser-session.yml";
 const PROCESS_WORKFLOW = ".github/workflows/process-supervision.yml";
 const PACKAGED_SMOKE_WORKFLOW = ".github/workflows/packaged-smoke.yml";
+const RESOURCE_SOAK_WORKFLOW = ".github/workflows/resource-soak.yml";
 
 async function workflows(): Promise<{ ci: string; browser: string; process: string }> {
   const [ci, browser, process] = await Promise.all([
@@ -43,14 +44,31 @@ describe("GitHub Actions packaging gates", () => {
 
   it("keeps browser-only coverage runnable for every pull request", async () => {
     const { ci, browser } = await workflows();
+    const manifest = JSON.parse(await readFile("package.json", "utf8")) as {
+      scripts: Record<string, string>;
+    };
 
     expect(browser).toContain("pull_request:");
     expect(browser).not.toContain("github.head_ref");
     expect(browser).toContain("npm run test:browser-session");
+    expect(browser).toContain("bun run test:accessibility");
     expect(browser).toContain('VIDCOM_REQUIRE_BROWSER: "1"');
+    expect(manifest.scripts["test:browser-session"]).toContain(
+      "tests/frontend/caption-runtime-browser.test.ts",
+    );
+    expect(manifest.scripts["test:accessibility"]).toContain(
+      "tests/frontend/accessibility-browser.test.ts",
+    );
     expect(ci).toContain(
       "npm run test -- --exclude tests/adapter/remote-asset-browser.test.ts",
     );
+  });
+
+  it("includes the security suite in an exact-ref manual CI dispatch", async () => {
+    const { ci } = await workflows();
+
+    expect(ci).toContain("uses: ./.github/workflows/security.yml");
+    expect(ci).toContain("security-events: write");
   });
 
   it("reruns process supervision when dependency or test configuration changes", async () => {
@@ -111,5 +129,25 @@ describe("GitHub Actions packaging gates", () => {
     expect(ci).toContain("run: node scripts/normalize-node-pty-helper.mjs");
     const step = ci.slice(ci.indexOf("- name: Normalize the node-pty spawn helper"));
     expect(step.slice(0, step.indexOf("run:"))).toContain("if: runner.os == 'macOS'");
+  });
+
+  it("keeps presubmit bounded and release soak dispatchable with failure evidence", async () => {
+    const workflow = await readFile(RESOURCE_SOAK_WORKFLOW, "utf8");
+    const manifest = JSON.parse(await readFile("package.json", "utf8")) as {
+      scripts: Record<string, string>;
+    };
+
+    expect(workflow).toContain("pull_request:");
+    expect(workflow).toContain("workflow_dispatch:");
+    expect(workflow).toContain("workflow_call:");
+    expect(workflow).toContain("- name: Verify exact source revision");
+    expect(workflow).toContain("VIDCOM_EXPECTED_GIT_SHA:");
+    expect(workflow).toContain("scripts/run-resource-soak.mjs");
+    expect(workflow).toContain("--profile");
+    expect(workflow).toContain("if: always()");
+    expect(workflow).toContain("resource-soak-${{ env.VIDCOM_SOAK_PROFILE }}.json");
+    expect(workflow).toMatch(/uses: actions\/upload-artifact@[0-9a-f]{40}/u);
+    expect(manifest.scripts["test:soak"]).toContain("--profile presubmit");
+    expect(manifest.scripts["test:soak:release"]).toContain("--profile release");
   });
 });

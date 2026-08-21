@@ -69,14 +69,14 @@ describe("MCP domain error mapping", () => {
     });
   });
 
-  it("redacts every packaging-only code from public MCP error payloads", () => {
+  it("redacts every transport-private code from public MCP error payloads", () => {
     const publicCodes = new Set<ErrorCode>(MCP_PUBLIC_ERROR_CODES);
     const privateCodes = Object.values(ErrorCode).filter((code) => !publicCodes.has(code));
     // 15 since download_unavailable joined: Design §5.18 requires it and Phase A
     // shipped only download_tls_untrusted. It stays private, like every other
-    // packaging-only code. 21 since the two agent-terminal codes joined: that
-    // capability is the UI's, and an MCP caller can neither trigger nor fix it.
-    expect(privateCodes).toHaveLength(21);
+    // transport-private code. 24 since the two agent-terminal codes and the HTTP-only
+    // dependency graph/thumbnail codes joined; an MCP caller can neither trigger nor fix them.
+    expect(privateCodes).toHaveLength(24);
 
     for (const code of privateCodes) {
       const toolError = mcpToolError(error(code, { originalCode: code }), "modern");

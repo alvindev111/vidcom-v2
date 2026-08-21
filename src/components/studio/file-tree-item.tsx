@@ -6,6 +6,9 @@ import { cn } from "@/lib/utils";
 import type { FileNode } from "@/lib/studio/types";
 import { FileIcon } from "./file-icon";
 
+/** Drag payload for an asset headed to the timeline; the path is all it carries. */
+export const ASSET_DRAG_TYPE = "application/vidcom-asset-path";
+
 export function FileTreeItem({
   node,
   depth = 0,
@@ -14,6 +17,7 @@ export function FileTreeItem({
   expanded,
   onSelect,
   onToggle,
+  onManage,
 }: {
   node: FileNode;
   depth?: number;
@@ -23,15 +27,30 @@ export function FileTreeItem({
   expanded: boolean;
   onSelect: (path: string) => void;
   onToggle: (path: string) => void;
+  onManage?: (path: string) => void;
 }) {
   const isFolder = node.kind === "folder";
   const Chevron = expanded ? ChevronDownIcon : ChevronRightIcon;
+  // Only project assets can be dropped onto the timeline; a composition or a
+  // stylesheet has no place on a track.
+  const draggable = !isFolder && node.path.startsWith("assets/");
 
   return (
     <button
       type="button"
-      onClick={() => (isFolder ? onToggle(node.path) : onSelect(node.path))}
+      draggable={draggable || undefined}
+      onDragStart={draggable
+        ? (event) => {
+            event.dataTransfer.effectAllowed = "copy";
+            event.dataTransfer.setData(ASSET_DRAG_TYPE, node.path);
+          }
+        : undefined}
+      onClick={() => {
+        onManage?.(node.path);
+        if (isFolder) onToggle(node.path); else onSelect(node.path);
+      }}
       aria-expanded={isFolder ? expanded : undefined}
+      data-file-path={node.path}
       data-selected={selected || undefined}
       className={cn(
         "flex w-full items-center gap-1.5 rounded-sm py-1 pr-2 text-left text-xs",

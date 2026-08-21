@@ -1,10 +1,12 @@
 import { buildSubCompositionHtml } from "@hyperframes/studio-server";
 
-import type { PreviewSettings, ProjectRef } from "@vidcom/core";
+import type { CompositionDocumentOptions, PreviewSettings, ProjectRef } from "@vidcom/core";
+import { PREVIEW_DOCUMENT_CSP } from "@vidcom/contracts";
 
 import { readNarrationClips, type NarrationClip } from "./narration-clips";
 import {
   buildBgmHtml,
+  buildCaptionRuntimeScript,
   buildFxPauseScript,
   buildNarrationHtml,
   buildPreviewCss,
@@ -12,10 +14,33 @@ import {
   type RenderablePreviewSettings,
 } from "./preview-style";
 
-export interface DocumentOptions {
-  root: boolean;
-  runtimeUrl?: string;
-  fileBaseUrl?: string;
+export type DocumentOptions = CompositionDocumentOptions;
+
+/** Installed before any authored/runtime script so preflight observes parse-time failures too. */
+export function buildHealthCollectorScript(): string {
+  return `(()=>{const health={scriptErrors:0,rejections:0,resourceErrors:0};Object.defineProperty(window,"__vidcomHealth",{configurable:false,enumerable:false,value:health,writable:false});window.addEventListener("error",event=>{const target=event.target;if(target&&target!==window)health.resourceErrors+=1;else health.scriptErrors+=1},true);window.addEventListener("unhandledrejection",()=>{health.rejections+=1})})();`;
+}
+
+function injectPreviewHealthCollectorDocument(
+  html: string,
+  identity: { projectRevision: number; changeSeq: number },
+): string {
+  const head = html.match(/<head\b[^>]*>/iu);
+  if (!head || head.index === undefined) throw new Error("HyperFrames document has no head for the preview health collector");
+  const csp = PREVIEW_DOCUMENT_CSP.replaceAll("&", "&amp;").replaceAll('"', "&quot;");
+  const injection = `<meta data-vidcom-preview-security="csp" http-equiv="Content-Security-Policy" content="${csp}">\n`
+    + `<script data-vidcom-health="collector" data-project-revision="${identity.projectRevision}" data-change-seq="${identity.changeSeq}">${buildHealthCollectorScript()}</script>`;
+  const insertion = head.index + head[0].length;
+  return `${html.slice(0, insertion)}\n${injection}${html.slice(insertion)}`;
+}
+
+/** Replaces HyperFrames' compatibility CDN tag with the daemon's pinned, offline copy. */
+function localizePreviewRuntimeDependencies(html: string, runtimeUrl: string): string {
+  const gsapUrl = runtimeUrl.replace(/\/runtime$/u, "/vendor/gsap.js");
+  return html.replace(
+    /https:\/\/cdn\.jsdelivr\.net\/npm\/gsap@3(?:\.[^/"']*)?\/dist\/gsap\.min\.js/giu,
+    gsapUrl,
+  );
 }
 
 /** Inserts the runtime guard before every author-controlled head element. */
@@ -58,6 +83,7 @@ export function injectPreviewSettingsDocument(
     const body = buildToneOverlayHtml(settings)
       + buildBgmHtml(settings, options.fileBaseUrl)
       + buildNarrationHtml(options.narration ?? [], options.fileBaseUrl)
+      + buildCaptionRuntimeScript()
       + buildFxPauseScript(settings);
     output = output.includes("</body>") ? output.replace("</body>", `${body}\n</body>`) : output + body;
   }
@@ -72,8 +98,11 @@ export async function buildCompositionDocument(
 ): Promise<string> {
   const runtimeUrl = options.runtimeUrl ?? "/api/hf/runtime";
   const fileBaseUrl = options.fileBaseUrl ?? `/api/hf/${ref.slug}/files/`;
-  const html = buildHyperframesBaseDocument(ref.root, ref.entry, runtimeUrl, fileBaseUrl);
-  if (html === null) throw new Error("HyperFrames could not build the project preview document");
+  const base = buildHyperframesBaseDocument(ref.root, ref.entry, runtimeUrl, fileBaseUrl);
+  if (base === null) throw new Error("HyperFrames could not build the project preview document");
+  const html = options.mode === "preview"
+    ? injectPreviewHealthCollectorDocument(localizePreviewRuntimeDependencies(base, runtimeUrl), options)
+    : base;
   return injectPreviewSettingsDocument(html, settings, {
     root: options.root,
     fileBaseUrl,

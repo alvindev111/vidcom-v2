@@ -197,6 +197,7 @@ describe("ToolRegistry definitions", () => {
   });
 });
 
+const TEST_ORIGIN = { kind: "system", sessionId: null, label: null, historyAction: "ignore", historyOperation: null } as const;
 const request = {
   era: "modern" as const,
   protocolVersion: "2025-06-18",
@@ -410,7 +411,7 @@ describe("delete_scene approval flow", () => {
     grantId: null,
     credentialId: null,
     invocationId: "invoke-1",
-    writeInvocation: { toolAudit: null },
+    writeInvocation: { origin: TEST_ORIGIN, toolAudit: null },
     requestInput: async (input: ConstructorParameters<typeof InputRequiredSignal>[0]): Promise<never> => {
       throw new InputRequiredSignal(input);
     },
@@ -538,6 +539,30 @@ describe("complete tool descriptor contract", () => {
           },
           {
             "annotations": {
+              "destructiveHint": true,
+              "idempotentHint": false,
+              "openWorldHint": false,
+              "readOnlyHint": false,
+            },
+            "description": "Use when permanently removing a whole selection of scenes, their mounts, unique sources and narration, with one verified backup. Do not use to hide or reorder scenes, to delete a single scene when delete_scene already covers it, or when shared references must remain. Preconditions: sceneIds and expectedRevision come from current project context; omit grantId to create one approval request for the whole group, then retry once with the issued grantId and the identical selection. Side effects: after approval, deletes every owned artifact of the selection, updates the root duration, publishes one backup and commits one destructive revision. Errors/recovery: refresh context after write_conflict; request new approval after approval_invalid or approval_expired; on recovery_required stop and recover; never retry committed_response_error.",
+            "level": "destructive",
+            "name": "delete_scenes",
+            "title": "Delete several scenes",
+          },
+          {
+            "annotations": {
+              "destructiveHint": false,
+              "idempotentHint": false,
+              "openWorldHint": false,
+              "readOnlyHint": false,
+            },
+            "description": "Use when turning one scene's narration into on-screen captions timed to the words that were actually spoken. Do not use to write narration text, to synthesize audio, or on a scene that has no narration. Preconditions: sceneId and expectedContentHash come from read_composition or get_project_context; the scene's narration must exist, and word timings from the engine give better cues than estimated ones. Side effects: replaces the scene's whole caption block in one revision, so no cue from a previous run survives. Errors/recovery: scene_not_found means the id is stale; a scene without narration is refused rather than captioned from nothing; on write_conflict re-read the composition; never retry committed_response_error.",
+            "level": "write",
+            "name": "generate_captions",
+            "title": "Generate captions for one scene",
+          },
+          {
+            "annotations": {
               "destructiveHint": false,
               "idempotentHint": true,
               "openWorldHint": false,
@@ -627,6 +652,18 @@ describe("complete tool descriptor contract", () => {
               "openWorldHint": false,
               "readOnlyHint": false,
             },
+            "description": "Use when installing one packaged catalog item into the project and mounting it as a new scene or inside an existing one. Do not use to browse the catalog, to install several items at once, or to overwrite an existing copy without saying so. Preconditions: name, version, mount and expectedRevision come from list_catalog_items and get_project_context; omit grantId to plan and request approval, then retry once with the issued grantId and the identical intent, including existingPolicy. Side effects: after approval, writes the item's files and mounts it in one revision, and records where the package came from. Errors/recovery: precondition_required means the package is already installed and needs an explicit existingPolicy — choose one deliberately rather than assuming replace; refresh context after write_conflict; request new approval after approval_invalid or approval_expired; never retry committed_response_error.",
+            "level": "write",
+            "name": "install_catalog_item",
+            "title": "Install a catalog item",
+          },
+          {
+            "annotations": {
+              "destructiveHint": false,
+              "idempotentHint": false,
+              "openWorldHint": false,
+              "readOnlyHint": false,
+            },
             "description": "Use when a composition needs GSAP, Anime.js, Motion One, Lottie, or Three.js before referencing it in source; GSAP is the default for the multi-phase choreography required by story scenes. Do not use to add a CDN script tag, install an arbitrary npm package, write the composition markup itself, or substitute a library install for an actual motion map. Preconditions: projectId comes from list_projects; the library version is pinned by the studio and is not caller-selectable. Side effects: copies the pinned library into assets/vendor/ as one atomic mutation and commits one revision; re-running returns already_installed without a write. Errors/recovery: returns the paste-ready scriptTag and entry path to use; on write_conflict re-read and retry; storage_unavailable means the studio install is incomplete, so report it instead of falling back to a CDN.",
             "level": "write",
             "name": "install_motion_library",
@@ -643,6 +680,18 @@ describe("complete tool descriptor contract", () => {
             "level": "read",
             "name": "list_bgm_beds",
             "title": "List background music options",
+          },
+          {
+            "annotations": {
+              "destructiveHint": false,
+              "idempotentHint": true,
+              "openWorldHint": false,
+              "readOnlyHint": true,
+            },
+            "description": "Use when looking for a template, block or other packaged item to install, optionally filtered by kind, category, tags or a search term. Do not use to install one, to read project files, or to reach a registry directly. Preconditions: none; every filter is optional. Side effects: read-only. The listing says where it came from and whether it is stale, so an offline fallback is visible rather than silent. Errors/recovery: a stale listing is still usable; install_catalog_item revalidates the exact item before it writes anything.",
+            "level": "read",
+            "name": "list_catalog_items",
+            "title": "List catalog items",
           },
           {
             "annotations": {
@@ -711,6 +760,30 @@ describe("complete tool descriptor contract", () => {
               "openWorldHint": false,
               "readOnlyHint": false,
             },
+            "description": "Use when putting a file that is already in the project onto the timeline, wrapped in its own scene, or when finishing an upload that was left unmounted. Do not use to upload a file, to change an existing clip's timing, or to pass a duration — the daemon measures the file itself. Preconditions: for an asset in the project pass assetPath, assetContentHash, atSeconds and trackIndex; for a pending upload pass only its operationId, because the placement lives in the server-side record. expectedContentHash comes from read_composition. Side effects: writes one wrapper scene and its narration sidecar, mounts it in the entry composition, and commits one revision. onOverflow shrink trims the wrapper; extend-root grows the timeline instead. Errors/recovery: an asset that cannot be inspected is refused and stays in Media; write_conflict means the file changed since its hash was read; not_found on a retry means that operation has expired, so do not start a new one for the same bytes.",
+            "level": "write",
+            "name": "mount_asset",
+            "title": "Mount an asset on the timeline",
+          },
+          {
+            "annotations": {
+              "destructiveHint": false,
+              "idempotentHint": false,
+              "openWorldHint": false,
+              "readOnlyHint": false,
+            },
+            "description": "Use when shifting a whole selection of scenes by the same amount of time while keeping the gaps between them. Do not use to reorder one scene, to change durations, or to move scenes onto another track. Preconditions: sceneIds must be unique and current, deltaSeconds is the shift in seconds, and expectedContentHash comes from read_composition; pass extendRoot only after a root-overflow refusal that says it is allowed. Side effects: applies the whole shift in one revision or none of it, so a refused group leaves the timeline untouched. Errors/recovery: on write_conflict re-read the entry composition; timing_invalid or duration_overflow names what the group would have broken; on recovery_required stop writes and recover; never retry committed_response_error.",
+            "level": "write",
+            "name": "move_scenes",
+            "title": "Move several scenes together",
+          },
+          {
+            "annotations": {
+              "destructiveHint": false,
+              "idempotentHint": false,
+              "openWorldHint": false,
+              "readOnlyHint": false,
+            },
             "description": "Use when correcting the text, voice or offset of exactly one existing cue while its siblings keep their synthesis state. Do not use to add or remove cues, which replace_narration_cues owns, and do not use to synthesize audio. Preconditions: projectId, sceneId, cueId and expectedContentHash come from get_narration_cues, and at least one of text, voice or offsetSeconds must be present. Side effects: rewrites the sidecar as one journaled write and commits one revision; changing text or voice marks only that cue stale, while an offset change keeps its audio valid. Errors/recovery: not_found means that cueId is gone; write_conflict means the sidecar changed, so re-read it; re-run start_tts for cues whose staleSince is set.",
             "level": "write",
             "name": "patch_narration_cue",
@@ -751,6 +824,18 @@ describe("complete tool descriptor contract", () => {
             "level": "write",
             "name": "rename_project",
             "title": "Rename a project",
+          },
+          {
+            "annotations": {
+              "destructiveHint": false,
+              "idempotentHint": false,
+              "openWorldHint": false,
+              "readOnlyHint": false,
+            },
+            "description": "Use when moving one existing scene to a different position, or onto a different track, and letting the timeline close the gap it leaves. Do not use to change a scene's own start or duration, to move several scenes together, or to delete one. Preconditions: sceneId, toIndex and expectedContentHash come from read_composition or get_project_context; pass extendRoot only after a root-overflow refusal that says it is allowed. Side effects: rewrites the entry composition in one revision, shifting the scenes the move displaces and growing the root only when extendRoot was asked for. Errors/recovery: on write_conflict re-read the entry composition; a duration_overflow names the limit it hit; on recovery_required stop writes and recover; committed_response_error means the mutation committed, so do not retry it.",
+            "level": "write",
+            "name": "reorder_scenes",
+            "title": "Reorder one scene",
           },
           {
             "annotations": {

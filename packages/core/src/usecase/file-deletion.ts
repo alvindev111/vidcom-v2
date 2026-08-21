@@ -10,6 +10,7 @@ import {
 
 import { checkPathPurpose, checkPathSyntax } from "../domain/path-policy";
 import { err, ok, type Result } from "../error/result";
+import { ignoredMutationOriginForActor } from "../port/mutation-observer";
 import type { CompositionPort, MutationJournalPort, WorkspacePort } from "../port/ports";
 import type { CompositeRequest, GrantBinding, WriteEnvelope, WriteInvocation } from "../port/types";
 import { canonicalizeJson } from "../service/canonical-json";
@@ -95,7 +96,7 @@ export async function deleteFile(
   dependencies: DeleteFileDependencies,
   input: { projectId: ProjectId; plan: FileDeletionPlan; grantId: string },
   actor: Actor,
-  invocation: WriteInvocation = { toolAudit: null },
+  invocation: WriteInvocation = { origin: ignoredMutationOriginForActor(actor), toolAudit: null },
 ): Promise<Result<{ deleted: RelPath; envelope: WriteEnvelope; backupId: string }, DomainError>> {
   const prepared = await prepareFileDeletion(dependencies, {
     projectId: input.projectId,
@@ -132,6 +133,7 @@ export async function deleteFile(
       entityRevision: written.value.entityRevision,
       fileHashes: written.value.fileHashes,
       diagnostics: written.value.diagnostics,
+      changeSeq: written.value.changeSeq,
     },
     backupId,
   });

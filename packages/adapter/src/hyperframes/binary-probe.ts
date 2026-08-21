@@ -75,6 +75,15 @@ export interface NodeRenderBinaryProbeOptions {
   downloadCache?: DownloadCacheCoordinator;
   /** Test seam; production uses the bounded ten-minute first-run budget. */
   browserDownloadTimeoutMs?: number;
+  /**
+   * Whether a missing browser may trigger the managed first-run download.
+   *
+   * Render and snapshot jobs are long-running and explicitly requested, so they
+   * keep the default. Interactive derived caches such as timeline thumbnails
+   * must stay bounded: they report the browser as missing and render a
+   * placeholder rather than starting a multi-minute download from a scroll.
+   */
+  allowBrowserDownload?: boolean;
   /** Test seam for Node's process-wide SEA state. */
   isSea?: () => boolean;
 }
@@ -216,7 +225,7 @@ export class NodeRenderBinaryProbe implements BinaryProbePort {
     });
     let browserPath: string | null = resolvedBrowser?.path ?? null;
     let browserDownloadFailure: RuntimeAssetError | null = null;
-    if (!browserPath && cliPath) {
+    if (!browserPath && cliPath && this.options.allowBrowserDownload !== false) {
       try {
         const candidate = await this.ensureManagedBrowser(
           cliPath,

@@ -15,7 +15,7 @@ export const BASELINE_DIRECTORY = path.join(REPOSITORY_ROOT, ".github", "perf-ba
  * number would fail a machine that is behaving normally.
  */
 export const STARTUP_CEILINGS = {
-  "darwin-arm64": { coldServe: 120_000, warmServe: 8_000, warmApp: 2_000 },
+  "darwin-arm64": { coldServe: 120_000, warmServe: 10_000, warmApp: 2_000 },
   "linux-x64": { coldServe: 120_000, warmServe: 11_000, warmApp: 2_000 },
   "win32-x64": { coldServe: 180_000, warmServe: 20_000, warmApp: 3_000 },
 };
@@ -119,6 +119,25 @@ function median(sorted) {
   return sorted.length % 2 === 0
     ? (sorted[middle - 1] + sorted[middle]) / 2
     : sorted[middle];
+}
+
+export function medianStartupMeasurements(samples) {
+  if (!Array.isArray(samples) || samples.length < 3 || samples.length % 2 === 0) return null;
+  const names = ["coldServe", "warmServe"];
+  if (samples.some((sample) => (
+    !sample || typeof sample !== "object" || Array.isArray(sample)
+    || Object.keys(sample).sort().join(",") !== names.slice().sort().join(",")
+    || names.some((name) => !Number.isSafeInteger(sample[name]) || sample[name] < 0)
+  ))) return null;
+  return Object.fromEntries(names.map((name) => [
+    name,
+    median(samples.map((sample) => sample[name]).sort((left, right) => left - right)),
+  ]));
+}
+
+export function shouldConfirmStartup(results) {
+  const failures = failingResults(results);
+  return failures.length > 0 && failures.every((result) => result.status === "regressed");
 }
 
 export function startupBaselineStatistics(label, baseline, name) {

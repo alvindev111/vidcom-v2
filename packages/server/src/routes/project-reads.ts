@@ -1,7 +1,10 @@
 import {
   AssetParamsSchema,
+  AssetMetadataSchema,
   ErrorCode,
   ProjectParamsSchema,
+  ProjectTreeQuerySchema,
+  PREVIEW_DOCUMENT_CSP,
   ReadProjectFileQuerySchema,
   type ProjectId,
   type RelPath,
@@ -9,19 +12,29 @@ import {
 import {
   getPreviewSettings,
   getProjectPreview,
+  getProjectAssetMetadata,
+  getProjectTreePage,
+  getEntryExpectation,
   getStudioSnapshot,
   listProjects,
-  readAsset,
+  openAssetRange,
   readSourceFile,
   resolveProjectIdBySlug,
+  statAsset,
+  type EventOutboxPort,
   type ProjectReadDependencies,
+  type MediaProbePort,
+  type EntryCrudDependencies,
 } from "@vidcom/core";
 import { Hono, type Context } from "hono";
-
 import { HttpBoundaryError } from "../middleware/error-mapper";
 
 export interface ProjectReadRouteDependencies extends ProjectReadDependencies {
+  events: Pick<EventOutboxPort, "latestProjectSeq">;
+  probe?: MediaProbePort;
+  hashContent?(content: string | Uint8Array): import("@vidcom/contracts").ContentHash;
   runtimeSource(): string;
+  motionLibrarySource?(): Promise<string>;
   mimeFromPath(path: string): string | null;
 }
 
@@ -47,16 +60,51 @@ function assetPath(c: Context): RelPath {
     : fail({ code: ErrorCode.SchemaInvalid, message: "asset path is invalid", field: "path" });
 }
 
-function requestedRange(header: string | undefined, size: number): { start: number; end: number } | null {
-  const match = header?.match(/^bytes=(\d*)-(\d*)$/);
-  if (!match) return null;
+type ParsedRange =
+  | { kind: "none" }
+  | { kind: "invalid" }
+  | { kind: "requested"; start: number | null; end: number | null };
+
+type RequestedRange =
+  | { kind: "none" }
+  | { kind: "invalid" }
+  | { kind: "satisfiable"; start: number; end: number };
+
+function decimal(value: string): number | null {
+  const parsed = Number(value);
+  return Number.isSafeInteger(parsed) && parsed >= 0 ? parsed : null;
+}
+
+/** Parses syntax before any asset I/O; size-dependent satisfiability is resolved after stat. */
+function parseRange(header: string | undefined): ParsedRange {
+  if (header === undefined) return { kind: "none" };
+  const match = /^bytes=(\d*)-(\d*)$/.exec(header);
+  if (!match) return { kind: "invalid" };
   const rawStart = match[1] ?? "";
   const rawEnd = match[2] ?? "";
-  const start = rawStart === "" ? size - Number(rawEnd) : Number(rawStart);
-  const end = rawStart === "" || rawEnd === "" ? size - 1 : Number(rawEnd);
-  const from = Math.max(start, 0);
-  const to = Math.min(end, size - 1);
-  return Number.isFinite(from) && Number.isFinite(to) && from <= to ? { start: from, end: to } : null;
+  if (rawStart === "" && rawEnd === "") return { kind: "invalid" };
+  const start = rawStart === "" ? null : decimal(rawStart);
+  const end = rawEnd === "" ? null : decimal(rawEnd);
+  return (rawStart !== "" && start === null) || (rawEnd !== "" && end === null)
+    ? { kind: "invalid" }
+    : { kind: "requested", start, end };
+}
+
+function requestedRange(parsed: ParsedRange, size: number): RequestedRange {
+  if (parsed.kind !== "requested") return parsed;
+  if (size === 0) return { kind: "invalid" };
+  if (parsed.start === null) {
+    if (parsed.end === null || parsed.end === 0) return { kind: "invalid" };
+    return {
+      kind: "satisfiable",
+      start: Math.max(size - parsed.end, 0),
+      end: size - 1,
+    };
+  }
+  if (parsed.start >= size) return { kind: "invalid" };
+  const end = parsed.end ?? size - 1;
+  if (end < parsed.start) return { kind: "invalid" };
+  return { kind: "satisfiable", start: parsed.start, end: Math.min(end, size - 1) };
 }
 
 function foldableLines(content: string): number[] {
@@ -69,28 +117,67 @@ function foldableLines(content: string): number[] {
   }, []);
 }
 
-function assetResponse(c: Context, bytes: Uint8Array, contentHash: string, mime: string): Response {
-  const etag = `"${contentHash}"`;
+function ifNoneMatch(header: string | undefined, etag: string): boolean {
+  return header?.split(",").some((candidate) => candidate.trim() === "*" || candidate.trim() === etag) ?? false;
+}
+
+function ifRangeAllows(header: string | undefined, etag: string): boolean {
+  if (header === undefined) return true;
+  return !header.startsWith("W/") && !etag.startsWith("W/") && header === etag;
+}
+
+async function assetResponse(
+  c: Context,
+  dependencies: ProjectReadDependencies,
+  id: ProjectId,
+  path: RelPath,
+  mime: string,
+): Promise<Response> {
+  const parsedRange = parseRange(c.req.header("Range"));
+  const metadata = valueOf(await statAsset(dependencies, id, path));
+  const range = requestedRange(parsedRange, metadata.size);
   const headers = {
     "Accept-Ranges": "bytes",
     "Cache-Control": "no-cache",
     "Content-Type": mime,
-    ETag: etag,
+    ETag: metadata.etag,
   };
-  if (c.req.header("If-None-Match") === etag) return new Response(null, { status: 304, headers });
-  const range = requestedRange(c.req.header("Range"), bytes.byteLength);
-  if (!range) return new Response(Uint8Array.from(bytes).buffer, {
-    headers: { ...headers, "Content-Length": String(bytes.byteLength) },
-  });
-  const body = bytes.slice(range.start, range.end + 1);
-  return new Response(Uint8Array.from(body).buffer, {
-    status: 206,
-    headers: {
-      ...headers,
-      "Content-Length": String(body.byteLength),
-      "Content-Range": `bytes ${range.start}-${range.end}/${bytes.byteLength}`,
-    },
-  });
+  if (range.kind === "invalid") {
+    return new Response(null, {
+      status: 416,
+      headers: { ...headers, "Content-Length": "0", "Content-Range": `bytes */${metadata.size}` },
+    });
+  }
+  if (ifNoneMatch(c.req.header("If-None-Match"), metadata.etag)) {
+    return new Response(null, { status: 304, headers });
+  }
+  const partial = range.kind === "satisfiable"
+    && ifRangeAllows(c.req.header("If-Range"), metadata.etag);
+  const start = partial ? range.start : 0;
+  const end = partial ? range.end : metadata.size - 1;
+  const responseHeaders: Record<string, string> = {
+    ...headers,
+    "Content-Length": String(end - start + 1),
+  };
+  if (partial) responseHeaders["Content-Range"] = `bytes ${start}-${end}/${metadata.size}`;
+  if (metadata.size === 0) return new Response(null, { status: 200, headers: responseHeaders });
+  const opened = valueOf(await openAssetRange(dependencies, id, path, {
+    start,
+    end,
+    identity: metadata.identity,
+    signal: c.req.raw.signal,
+  }));
+  return new Response(opened.stream, { status: partial ? 206 : 200, headers: responseHeaders });
+}
+
+function previewHeaders(preview: { projectRevision: number; changeSeq: number }) {
+  return {
+    "Cache-Control": "no-store",
+    "Content-Security-Policy": PREVIEW_DOCUMENT_CSP,
+    "Referrer-Policy": "no-referrer",
+    "X-Vidcom-Project-Revision": String(preview.projectRevision),
+    "X-Vidcom-Change-Seq": String(preview.changeSeq),
+  };
 }
 
 async function legacyId(dependencies: ProjectReadDependencies, slug: string): Promise<ProjectId> {
@@ -102,6 +189,35 @@ async function legacyId(dependencies: ProjectReadDependencies, slug: string): Pr
 export function createProjectReadRoutes(dependencies: ProjectReadRouteDependencies): Hono {
   const routes = new Hono();
 
+  routes.get("/preview/v1/c/:cap/projects/:id/runtime", (c) => c.body(dependencies.runtimeSource(), 200, {
+    "Content-Type": "text/javascript; charset=utf-8",
+    "Cache-Control": "no-store",
+  }));
+  routes.get("/preview/v1/c/:cap/projects/:id/vendor/gsap.js", async (c) => {
+    if (!dependencies.motionLibrarySource) {
+      fail({ code: ErrorCode.StorageUnavailable, message: "preview motion runtime is unavailable" });
+    }
+    return c.body(await dependencies.motionLibrarySource(), 200, {
+      "Content-Type": "text/javascript; charset=utf-8",
+      "Cache-Control": "public, max-age=300, immutable",
+    });
+  });
+  routes.get("/preview/v1/c/:cap/projects/:id/preview", async (c) => {
+    const id = projectId(c);
+    const capabilityPath = `/api/preview/v1/c/${encodeURIComponent(c.req.param("cap"))}/projects/${id}`;
+    const preview = valueOf(await getProjectPreview(dependencies, id, {
+      runtimeUrl: `${capabilityPath}/runtime`,
+      fileBaseUrl: `${capabilityPath}/assets/`,
+    }));
+    return c.html(preview.html, 200, previewHeaders(preview));
+  });
+  routes.get("/preview/v1/c/:cap/projects/:id/assets/:path{.+}", async (c) => {
+    const path = assetPath(c);
+    const mime = dependencies.mimeFromPath(path);
+    if (!mime) fail({ code: ErrorCode.AssetNotAllowed, message: "asset type is not served" });
+    return assetResponse(c, dependencies, projectId(c), path, mime);
+  });
+
   routes.get("/v1/runtime", (c) => c.body(dependencies.runtimeSource(), 200, {
     "Content-Type": "text/javascript; charset=utf-8",
     "Cache-Control": "no-store",
@@ -112,14 +228,45 @@ export function createProjectReadRoutes(dependencies: ProjectReadRouteDependenci
   }));
 
   routes.get("/v1/projects", async (c) => c.json({ projects: valueOf(await listProjects(dependencies)) }));
-  routes.get("/v1/projects/:id/studio-snapshot", async (c) =>
-    c.json(valueOf(await getStudioSnapshot(dependencies, projectId(c)))));
+  routes.get("/v1/projects/:id/studio-snapshot", async (c) => {
+    const id = projectId(c);
+    // Capture the cursor before reading files. A concurrent write is then
+    // either present in the snapshot or replayed by SSE, but never skipped.
+    const eventCursor = await dependencies.events.latestProjectSeq(id);
+    return c.json({ ...valueOf(await getStudioSnapshot(dependencies, id)), eventCursor });
+  });
+  routes.get("/v1/projects/:id/tree", async (c) => {
+    const parsed = ProjectTreeQuerySchema.safeParse({
+      directory: c.req.query("directory"),
+      cursor: c.req.query("cursor"),
+      limit: c.req.query("limit"),
+    });
+    if (!parsed.success) fail({ code: ErrorCode.SchemaInvalid, message: "tree page query is invalid" });
+    return c.json(valueOf(await getProjectTreePage(dependencies, {
+      projectId: projectId(c),
+      directory: parsed.data.directory as RelPath | undefined ?? null,
+      cursor: parsed.data.cursor ?? null,
+      limit: parsed.data.limit,
+    })));
+  });
   routes.get("/v1/projects/:id/files", async (c) => {
     const path = c.req.query("path");
     if (!path) fail({ code: ErrorCode.PathRequired, message: "path is required", field: "path" });
     const parsed = ReadProjectFileQuerySchema.safeParse({ path });
     if (!parsed.success) fail({ code: ErrorCode.SchemaInvalid, message: "file path is invalid", field: "path" });
-    return c.json({ file: valueOf(await readSourceFile(dependencies, projectId(c), parsed.data.path as RelPath)) });
+    const id = projectId(c);
+    const source = await readSourceFile(dependencies, id, parsed.data.path as RelPath);
+    if (source.ok) {
+      return c.json({
+        file: source.value,
+        entry: { path: source.value.path, kind: "file", expectedContentHash: source.value.contentHash },
+      });
+    }
+    if (!dependencies.hashContent) fail(source.error);
+    return c.json({ entry: valueOf(await getEntryExpectation({
+      workspace: dependencies.workspace as EntryCrudDependencies["workspace"],
+      hashContent: dependencies.hashContent,
+    }, { projectId: id, path: parsed.data.path as RelPath })) });
   });
   routes.get("/v1/projects/:id/preview-settings", async (c) =>
     c.json(valueOf(await getPreviewSettings(dependencies, projectId(c)))));
@@ -157,7 +304,7 @@ export function createProjectReadRoutes(dependencies: ProjectReadRouteDependenci
       runtimeUrl: "/api/v1/runtime",
       fileBaseUrl: `/api/v1/projects/${id}/assets/`,
     }));
-    return c.html(preview.html, 200, { "Cache-Control": "no-store" });
+    return c.html(preview.html, 200, previewHeaders(preview));
   });
   routes.get("/hf/:slug/preview", async (c) => {
     const slug = c.req.param("slug");
@@ -166,15 +313,22 @@ export function createProjectReadRoutes(dependencies: ProjectReadRouteDependenci
       runtimeUrl: "/api/hf/runtime",
       fileBaseUrl: `/api/hf/${slug}/files/`,
     }));
-    return c.html(preview.html, 200, { "Cache-Control": "no-store" });
+    return c.html(preview.html, 200, previewHeaders(preview));
   });
 
+  routes.get("/v1/projects/:id/assets/:path{.+}/metadata", async (c) => {
+    const id = projectId(c);
+    if (!dependencies.probe) fail({ code: ErrorCode.StorageUnavailable, message: "asset metadata probe is unavailable" });
+    return c.json(AssetMetadataSchema.parse(valueOf(await getProjectAssetMetadata(
+      { workspace: dependencies.workspace, probe: dependencies.probe },
+      { projectId: id, path: assetPath(c) },
+    ))));
+  });
   routes.get("/v1/projects/:id/assets/:path{.+}", async (c) => {
     const path = assetPath(c);
     const mime = dependencies.mimeFromPath(path);
     if (!mime) fail({ code: ErrorCode.AssetNotAllowed, message: "asset type is not served" });
-    const asset = valueOf(await readAsset(dependencies, projectId(c), path));
-    return assetResponse(c, asset.bytes, asset.contentHash, mime);
+    return assetResponse(c, dependencies, projectId(c), path, mime);
   });
   routes.get("/hf/:slug/files/:path{.+}", async (c) => {
     const slug = c.req.param("slug");
@@ -184,8 +338,7 @@ export function createProjectReadRoutes(dependencies: ProjectReadRouteDependenci
     if (!parsed.success) fail({ code: ErrorCode.SchemaInvalid, message: "asset path is invalid", field: "path" });
     const mime = dependencies.mimeFromPath(path);
     if (!mime) fail({ code: ErrorCode.AssetNotAllowed, message: "asset type is not served" });
-    const asset = valueOf(await readAsset(dependencies, id, path));
-    return assetResponse(c, asset.bytes, asset.contentHash, mime);
+    return assetResponse(c, dependencies, id, path, mime);
   });
 
   return routes;

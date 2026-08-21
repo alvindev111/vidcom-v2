@@ -12,10 +12,22 @@ import { StdioClientTransport as LegacyMcpStdio } from "@modelcontextprotocol/sd
 import {
   evaluateStartup,
   failingResults,
+  medianStartupMeasurements,
   readBaseline,
   runnerLabel,
+  shouldConfirmStartup,
 } from "../measure-startup.mjs";
 import { withRunnerNetworkCut } from "./network-cut.mjs";
+
+export const PACKAGED_STUDIO_SESSION_ID = "01K30Y8Z7K0000000000000002";
+
+export function packagedStudioHeaders(serving, headers = {}) {
+  return {
+    Cookie: serving.cookie,
+    "x-vidcom-studio-session": serving.studioSessionId,
+    ...headers,
+  };
+}
 
 /**
  * Runs the packaged executable once and returns everything it said.
@@ -69,6 +81,31 @@ function packagedMcpSession(context, era) {
   };
 }
 
+/**
+ * Tools the editing experience publishes, checked inside the packaged artifact.
+ *
+ * A tool can exist in the repository and still be missing from a build, so the
+ * catalogue is asserted where it actually ships, and in both eras: a tool an
+ * older client cannot see is a tool half the hosts do not have.
+ */
+const EDITING_TOOLS = [
+  "reorder_scenes",
+  "move_scenes",
+  "delete_scenes",
+  "list_catalog_items",
+  "generate_captions",
+  "mount_asset",
+  "install_catalog_item",
+];
+
+function assertEditingToolsPublished(era, listed) {
+  const names = new Set((listed.tools ?? []).map((tool) => tool.name));
+  const missing = EDITING_TOOLS.filter((name) => !names.has(name));
+  if (missing.length > 0) {
+    throw new Error(`${era} catalogue omitted ${missing.join(", ")}`);
+  }
+}
+
 /** Runs both supported MCP SDK generations against the packaged stdio entry. */
 export async function exercisePackagedMcpStdioPair(context, input, dependencies = {}) {
   const createSession = dependencies.createSession ?? ((era) => packagedMcpSession(context, era));
@@ -85,6 +122,7 @@ export async function exercisePackagedMcpStdioPair(context, input, dependencies 
     if (!legacyTools.tools?.some((tool) => tool.name === "list_projects")) {
       throw new Error("legacy catalogue omitted list_projects");
     }
+    assertEditingToolsPublished("legacy", legacyTools);
     phase = "legacy list_projects";
     const projects = await legacy.callTool("list_projects", {});
     if (projects.isError === true
@@ -102,6 +140,7 @@ export async function exercisePackagedMcpStdioPair(context, input, dependencies 
     if (!modernTools.tools?.some((tool) => tool.name === "create_scene")) {
       throw new Error("modern catalogue omitted create_scene");
     }
+    assertEditingToolsPublished("modern", modernTools);
     phase = "modern create_scene";
     const written = await modern.callTool("create_scene", input.createScene);
     if (written.isError === true) throw new Error("modern create_scene returned a tool error");
@@ -412,6 +451,53 @@ export async function stopServing(serving) {
   }
 }
 
+const STARTUP_TRACE_PREFIX = "vidcom-startup-trace ";
+const STARTUP_TRACE_SCOPES = new Set(["hosted-runtime", "serve"]);
+
+/** Extracts duration-only startup diagnostics without forwarding arbitrary child stderr. */
+export function parseStartupTraces(output) {
+  const traces = [];
+  for (const line of output.split(/\r?\n/u)) {
+    if (!line.startsWith(STARTUP_TRACE_PREFIX)) continue;
+    try {
+      const value = JSON.parse(line.slice(STARTUP_TRACE_PREFIX.length));
+      if (!value || !STARTUP_TRACE_SCOPES.has(value.scope)
+        || !value.phases || typeof value.phases !== "object" || Array.isArray(value.phases)) continue;
+      const phases = Object.fromEntries(Object.entries(value.phases).filter(([name, durationMs]) => (
+        /^[a-z][a-z:-]*$/u.test(name)
+        && Number.isSafeInteger(durationMs)
+        && durationMs >= 0
+      )));
+      traces.push({ scope: value.scope, phases });
+    } catch {
+      // A malformed diagnostic line is ignored; product readiness still has its own hard gate.
+    }
+  }
+  return traces;
+}
+
+async function measureStartupPair(context, appDataRoot) {
+  const measuredContext = appDataRoot === undefined ? context : {
+    ...context,
+    environment: { ...context.environment, VIDCOM_APP_DATA: appDataRoot },
+  };
+  const coldStartedAt = Date.now();
+  const coldServing = await startServing(measuredContext);
+  const coldServe = Date.now() - coldStartedAt;
+  const coldTrace = parseStartupTraces(coldServing.output());
+  await stopServing(coldServing);
+
+  const warmStartedAt = Date.now();
+  const warmServing = await startServing(measuredContext);
+  const warmServe = Date.now() - warmStartedAt;
+  const warmTrace = parseStartupTraces(warmServing.output());
+  await stopServing(warmServing);
+  return {
+    measurements: { coldServe, warmServe },
+    trace: { cold: coldTrace, warm: warmTrace },
+  };
+}
+
 /**
  * A daemon plus an authenticated browser session.
  *
@@ -436,7 +522,17 @@ export async function startServingWithSession(context) {
     await stopServing(serving);
     throw new Error("nonce exchange omitted the session cookie");
   }
-  return { ...serving, cookie };
+  return { ...serving, cookie, studioSessionId: PACKAGED_STUDIO_SESSION_ID };
+}
+
+export async function attachPackagedStudioSession(serving, projectId, request = fetch) {
+  const response = await request(`${serving.baseUrl}/api/v1/projects/${projectId}/history/session`, {
+    method: "POST",
+    headers: packagedStudioHeaders(serving),
+  });
+  if (response.status !== 204) {
+    throw new Error(`studio session attach returned ${String(response.status)}`);
+  }
 }
 
 /** A RIFF/WAVE file of the requested size, so the upload is a real audio file. */
@@ -824,7 +920,10 @@ window.__timelines["scene-1"] = tl;
 }
 
 async function ensureMediaProject(context, serving) {
-  if (context.media) return context.media;
+  if (context.media) {
+    await attachPackagedStudioSession(serving, context.media.projectId);
+    return context.media;
+  }
   const projectRoot = path.join(context.workspace, "smoke-media");
   let projectId;
   let sceneContentHash = null;
@@ -838,6 +937,7 @@ async function ensureMediaProject(context, serving) {
     }));
     projectId = created.projectId;
   }
+  await attachPackagedStudioSession(serving, projectId);
   try {
     const existingScene = await readFile(path.join(projectRoot, "compositions", "scene-1.html"), "utf8");
     sceneContentHash = contentHash(existingScene);
@@ -847,7 +947,7 @@ async function ensureMediaProject(context, serving) {
       `${serving.baseUrl}/api/v1/projects/${projectId}/scenes`,
       {
         method: "POST",
-        headers: { Cookie: serving.cookie, "content-type": "application/json" },
+        headers: packagedStudioHeaders(serving, { "content-type": "application/json" }),
         body: JSON.stringify({
           title: "VidCom motion proof",
           duration: 8,
@@ -865,7 +965,7 @@ async function ensureMediaProject(context, serving) {
     `${serving.baseUrl}/api/v1/projects/${projectId}/motion-libraries`,
     {
       method: "POST",
-      headers: { Cookie: serving.cookie, "content-type": "application/json" },
+      headers: packagedStudioHeaders(serving, { "content-type": "application/json" }),
       body: JSON.stringify({ libraryId: "gsap" }),
     },
   ));
@@ -876,7 +976,7 @@ async function ensureMediaProject(context, serving) {
     `${serving.baseUrl}/api/v1/projects/${projectId}/files`,
     {
       method: "PUT",
-      headers: { Cookie: serving.cookie, "content-type": "application/json" },
+      headers: packagedStudioHeaders(serving, { "content-type": "application/json" }),
       body: JSON.stringify({
         path: "compositions/scene-1.html",
         content: mediaSceneSource(installed.library.entry),
@@ -924,7 +1024,7 @@ async function runMediaPipeline(context, options = {}) {
       {
         method: "POST",
         headers: {
-          Cookie: serving.cookie,
+          ...packagedStudioHeaders(serving),
           "content-type": "application/json",
           "Idempotency-Key": `smoke-tts-${randomUUID()}`,
         },
@@ -948,7 +1048,7 @@ async function runMediaPipeline(context, options = {}) {
         `${serving.baseUrl}/api/v1/projects/${media.projectId}/snapshots`,
         {
           method: "POST",
-          headers: { Cookie: serving.cookie, "content-type": "application/json" },
+          headers: packagedStudioHeaders(serving, { "content-type": "application/json" }),
           body: JSON.stringify({ idempotencyKey: `smoke-snapshot-${randomUUID()}` }),
         },
       ));
@@ -962,7 +1062,7 @@ async function runMediaPipeline(context, options = {}) {
       `${serving.baseUrl}/api/v1/projects/${media.projectId}/renders`,
       {
         method: "POST",
-        headers: { Cookie: serving.cookie, "content-type": "application/json" },
+        headers: packagedStudioHeaders(serving, { "content-type": "application/json" }),
         body: JSON.stringify({ idempotencyKey: `smoke-render-${randomUUID()}` }),
       },
     ));
@@ -1083,29 +1183,62 @@ export const STEP_BODIES = {
     const doctorWarmMs = Date.now() - doctorWarmStartedAt;
     assertRuntimeHealthy("warm doctor --deep", warm);
 
-    const coldServeStartedAt = Date.now();
-    const coldServing = await startServing(context);
-    const coldServe = Date.now() - coldServeStartedAt;
-    await stopServing(coldServing);
-    const warmServeStartedAt = Date.now();
-    const warmServing = await startServing(context);
-    const warmServe = Date.now() - warmServeStartedAt;
-    await stopServing(warmServing);
-
     const label = runnerLabel();
-    const startup = { coldServe, warmServe };
     const baseline = await readBaseline(label);
     if (baseline === null) {
       throw new Error(`required committed startup baseline is missing or invalid for ${label}`);
     }
-    const evaluation = evaluateStartup(label, startup, baseline);
-    const failures = failingResults(evaluation);
-    if (failures.length > 0) {
-      throw new Error(`startup gate failed: ${failures.map((result) => `${result.name}=${result.value}>${result.limit}`).join(", ")}`);
+    const first = await measureStartupPair(context);
+    const samples = [first.measurements];
+    const traces = [first.trace];
+    let evaluated = first.measurements;
+    let evaluation = evaluateStartup(label, evaluated, baseline);
+    if (shouldConfirmStartup(evaluation)) {
+      for (let index = 1; index < 3; index += 1) {
+        const confirmation = await measureStartupPair(
+          context,
+          path.join(context.root, `startup-confirm-${String(index)}-app-data`),
+        );
+        samples.push(confirmation.measurements);
+        traces.push(confirmation.trace);
+      }
+      evaluated = medianStartupMeasurements(samples);
+      if (evaluated === null) throw new Error("startup confirmation samples were invalid");
+      evaluation = evaluateStartup(label, evaluated, baseline);
     }
     context.measurements.doctor = { coldMs: doctorColdMs, warmMs: doctorWarmMs };
-    context.measurements.startup = { runner: label, ...startup, baselinePresent: true, evaluation };
-    return `version ${version.vidcom}/${version.runtimeManifest}; doctor ${String(doctorColdMs)}/${String(doctorWarmMs)}ms; serve ${String(coldServe)}/${String(warmServe)}ms`;
+    const startupEvidence = {
+      runner: label,
+      ...evaluated,
+      baselinePresent: true,
+      evaluation,
+    };
+    if (samples.length > 1) {
+      startupEvidence.initial = first.measurements;
+      startupEvidence.samples = samples;
+    }
+    context.measurements.startup = startupEvidence;
+    context.measurements.startupTrace = first.trace;
+    if (traces.length > 1) {
+      context.measurements.startupConfirmationTraces = traces.slice(1);
+    }
+    const immediateFailures = samples.flatMap((sample) => failingResults(
+      evaluateStartup(label, sample, baseline),
+    )).filter((result) => result.status === "over-ceiling" || result.status === "invalid");
+    const failures = immediateFailures.length > 0 ? immediateFailures : failingResults(evaluation);
+    if (failures.length > 0) {
+      throw new Error(
+        `startup gate failed: ${failures.map((result) => `${result.name}=${result.value}>${result.limit}`).join(", ")}`
+        + `; trace=${JSON.stringify({
+          initial: context.measurements.startupTrace,
+          confirmations: context.measurements.startupConfirmationTraces ?? [],
+        })}`,
+      );
+    }
+    const confirmed = samples.length > 1
+      ? `; confirmed median ${String(evaluated.coldServe)}/${String(evaluated.warmServe)}ms`
+      : "";
+    return `version ${version.vidcom}/${version.runtimeManifest}; doctor ${String(doctorColdMs)}/${String(doctorWarmMs)}ms; serve ${String(first.measurements.coldServe)}/${String(first.measurements.warmServe)}ms${confirmed}`;
   },
 
   async "ui-lifecycle"(context) {
@@ -1533,7 +1666,7 @@ export const STEP_BODIES = {
       return await withRunnerNetworkCut(async (plan) => {
         const result = await runMediaPipeline(context, { label: "offline", snapshot: false });
         return `${plan}; warm VieNeu and MP4 render succeeded offline (${result.report.format.duration}s)`;
-      });
+      }, { programs: [context.artifact], roots: [context.appData] });
     } finally {
       if (previousHf === undefined) delete context.environment.HF_HUB_OFFLINE;
       else context.environment.HF_HUB_OFFLINE = previousHf;
@@ -1654,6 +1787,143 @@ export const STEP_BODIES = {
       }
       clearLease();
     }
+  },
+
+  /**
+   * Bundled catalog inside the artifact (R7.6–7.7, R9.7–9.7c).
+   *
+   * Self-contained on purpose: it creates its own project rather than depending
+   * on `ui-lifecycle` or `render-media`, so `--step editing-experience-runtime`
+   * is independent evidence. Two boots prove the migration and the catalog are
+   * both idempotent, and the whole step runs with the runner's network cut, so a
+   * listing that appears can only have come from the artifact itself.
+   */
+  async "editing-experience-runtime"(context) {
+    const digests = new Set();
+    const seen = [];
+    let projectId = null;
+    let installedPath = null;
+    let sceneId = null;
+
+    return await withRunnerNetworkCut(async (plan) => {
+    for (const boot of ["first", "second"]) {
+      const serving = await startServingWithSession(context);
+      try {
+        const headers = packagedStudioHeaders(serving, { "content-type": "application/json" });
+        const listing = await jsonResponse(
+          `${boot} catalog listing`,
+          await fetch(`${serving.baseUrl}/api/v1/catalog`, { headers: { Cookie: serving.cookie } }),
+        );
+        // With the runner network cut, a registry refresh cannot succeed, so the
+        // only listing the daemon can serve is the artifact's own snapshot.
+        if (listing.source !== "bundled" && listing.source !== "cache") {
+          throw new Error(`${boot} boot listed the catalog from ${String(listing.source)} with the network cut`);
+        }
+        const templates = (listing.items ?? []).filter((item) => item.kind === "template");
+        if (templates.length === 0) throw new Error(`${boot} boot listed no bundled template`);
+        for (const template of templates) {
+          if (template.source?.registry !== "bundled") {
+            throw new Error(`${boot} boot listed template ${String(template.name)} from a non-bundled registry`);
+          }
+          if (template.materialization !== "verified" || typeof template.integrity?.manifest !== "string") {
+            throw new Error(`${boot} boot listed template ${String(template.name)} without a verified digest`);
+          }
+          digests.add(`${String(template.name)}@${String(template.version)}:${String(template.integrity.manifest)}`);
+        }
+        seen.push(`${boot} ${String(listing.source)} ${templates.length}`);
+
+        if (boot === "first") {
+          const template = templates[0];
+          const created = await jsonResponse("create catalog project", await fetch(`${serving.baseUrl}/api/v1/projects`, {
+            method: "POST",
+            headers: { "content-type": "application/json", Cookie: serving.cookie },
+            body: JSON.stringify({ name: "Catalog smoke", presetId: "vertical-shorts" }),
+          }));
+          // `lifecycle.create` answers `{projectId, slug}`; the other shapes are
+          // accepted only so a future response cannot make this step read an
+          // undefined id as if it had a project.
+          projectId = created.projectId ?? created.project?.id ?? created.id;
+          if (typeof projectId !== "string") {
+            throw new Error(`creating the catalog project returned no id: ${JSON.stringify(created).slice(0, 200)}`);
+          }
+          await attachPackagedStudioSession(serving, projectId);
+          const snapshot = await jsonResponse(
+            "read catalog project",
+            await fetch(
+              `${serving.baseUrl}/api/v1/projects/${projectId}/studio-snapshot`,
+              { headers: { Cookie: serving.cookie } },
+            ),
+          );
+          const intent = {
+            name: template.name,
+            version: template.version,
+            mount: { kind: "new-scene", toIndex: snapshot.scenes?.length ?? 0 },
+            expectedRevision: snapshot.project?.revision ?? 0,
+          };
+          const prepared = await jsonResponse("prepare catalog install", await fetch(
+            `${serving.baseUrl}/api/v1/projects/${projectId}/catalog-items/plans`,
+            { method: "POST", headers, body: JSON.stringify(intent) },
+          ));
+          if (prepared.status !== "ready") {
+            throw new Error(`preparing a fresh install returned ${String(prepared.status)}`);
+          }
+          const installed = await jsonResponse("execute catalog install", await fetch(
+            `${serving.baseUrl}/api/v1/projects/${projectId}/catalog-items/plans/${prepared.grantId}`,
+            { method: "POST", headers, body: JSON.stringify(intent) },
+          ));
+          if (installed.packageStatus !== "installed") {
+            throw new Error(`installing returned ${String(installed.packageStatus)}`);
+          }
+          if (installed.provenance?.integrity !== template.integrity.manifest) {
+            throw new Error("the installed provenance digest differs from the listed digest");
+          }
+          sceneId = installed.sceneId;
+          installedPath = prepared.plan?.mountTarget ?? null;
+          // Read the installed file back through the project, which answers for
+          // the file on disk. The studio snapshot only lists parsed composition
+          // sources, so it is the wrong question to ask about a package asset.
+          const read = await jsonResponse(
+            "read the installed package entry",
+            await fetch(
+              `${serving.baseUrl}/api/v1/projects/${projectId}/files?path=${encodeURIComponent(installedPath)}`,
+              { headers: { Cookie: serving.cookie } },
+            ),
+          );
+          const entryHash = read.file?.contentHash ?? read.entry?.expectedContentHash ?? null;
+          if (typeof entryHash !== "string") {
+            throw new Error(`the installed entry ${installedPath} is not in the project after install`);
+          }
+        } else {
+          // The second boot re-ran migrations against the same database and must
+          // still serve the identical package identity.
+          const snapshot = await jsonResponse(
+            "reread catalog project",
+            await fetch(
+              `${serving.baseUrl}/api/v1/projects/${projectId}/studio-snapshot`,
+              { headers: { Cookie: serving.cookie } },
+            ),
+          );
+          const kept = (snapshot.scenes ?? []).some((scene) => scene.id === sceneId);
+          if (!kept) throw new Error("the installed scene did not survive the restart");
+        }
+      } finally {
+        await stopServing(serving);
+      }
+    }
+
+    if (digests.size === 0) throw new Error("no bundled package identity was observed");
+    const identities = [...digests].sort();
+    if (identities.length !== new Set(identities.map((value) => value.split(":", 1)[0])).size) {
+      throw new Error(`the two boots disagreed about package identity: ${identities.join(" | ")}`);
+    }
+    // Nothing in this step may name the source tree: the artifact carries its own
+    // frozen snapshot, and reading the repository would make the evidence a lie.
+    const evidence = `${seen.join("; ")}; ${identities.join("; ")}; scene ${String(sceneId)}`;
+    if (evidence.includes("packages/adapter/assets")) {
+      throw new Error("catalog evidence names the source tree");
+    }
+    return `${plan}; ${evidence}; installed ${String(installedPath)} across two boots offline`;
+    }, { programs: [context.artifact], roots: [context.appData] });
   },
 
   async provenance(context) {

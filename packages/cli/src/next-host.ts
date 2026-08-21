@@ -4,11 +4,13 @@ import {
   AttachmentRegistry,
   createServerApp,
   InMemoryNonceStore,
+  InMemoryPreviewCapabilityStore,
   InMemorySessionStore,
   type ServerAppDependencies,
 } from "@vidcom/server";
 import {
   AppSettingsStore,
+  applyFontStyle,
   NodePtyAgentTerminals,
   WorkerFilesystemBrowser,
   ensureVidcomSettingsFile,
@@ -26,7 +28,7 @@ import { enqueueRenderJob, enqueueSnapshotJob } from "@vidcom/worker";
 import { createJobTypes, createMcpRegistry, createSystemClock, hashContent } from "./composition-root";
 import { startVidcomFoundation, type DaemonRuntime } from "./startup";
 import { BrowseTokenStore, FilesystemBrowserService } from "@vidcom/core";
-import { ErrorCode, SUPPORTED_REVISIONS } from "@vidcom/contracts";
+import { ErrorCode, MOTION_LIBRARIES, SUPPORTED_REVISIONS } from "@vidcom/contracts";
 import { agentMcpServer } from "./agent-mcp-server";
 import { BRIDGE_CREDENTIAL_SETTING } from "./bridge-credential";
 import { VIDCOM_VERSION } from "./commands/version";
@@ -76,6 +78,7 @@ interface HostedRuntimeState {
   readonly clock: ReturnType<typeof createSystemClock>;
   readonly nonces: InMemoryNonceStore;
   readonly sessions: InMemorySessionStore;
+  readonly previewCapabilities: InMemoryPreviewCapabilityStore;
   readonly instanceId: string;
   attachments?: AttachmentRegistry;
   /**
@@ -166,9 +169,20 @@ export async function startNextHostedRuntime(
     host?: HostedRuntimeHost;
   } = {},
 ): Promise<NextHostedRuntime> {
+  const traceEnabled = process.env.VIDCOM_STARTUP_TRACE === "1";
+  const trace: Record<string, number> = {};
+  let traceCheckpointAt = Date.now();
+  const checkpoint = (name: string) => {
+    if (!traceEnabled) return;
+    const now = Date.now();
+    trace[name] = now - traceCheckpointAt;
+    traceCheckpointAt = now;
+  };
   const clock = options.hostState?.clock ?? createSystemClock();
   const nonces = options.hostState?.nonces ?? new InMemoryNonceStore(clock);
   const sessions = options.hostState?.sessions ?? new InMemorySessionStore(clock);
+  const previewCapabilities = options.hostState?.previewCapabilities
+    ?? new InMemoryPreviewCapabilityStore(clock);
   // A workspace swap stays inside this daemon and keeps its identity; a fresh
   // process gets a fresh id so a stale handshake cannot bind to a restart.
   const instanceId = options.hostState?.instanceId ?? `daemon_${crypto.randomUUID()}`;
@@ -176,6 +190,7 @@ export async function startNextHostedRuntime(
     clock,
     nonces,
     sessions,
+    previewCapabilities,
     instanceId,
     activeRuntime: null,
     switching: false,
@@ -190,8 +205,10 @@ export async function startNextHostedRuntime(
   // Settings first: the file is allowed to say where application data lives, so
   // nothing that depends on that path can be computed before it is read.
   const settings = await readVidcomSettings();
+  checkpoint("settings-read");
   const appDataRoot = defaultAppDataRoot(settings);
   await ensureVidcomSettingsFile();
+  checkpoint("settings-ensure");
   let workspaceRoot: AbsolutePath;
   let boot = options.boot;
   if (boot) {
@@ -210,12 +227,14 @@ export async function startNextHostedRuntime(
     const prepared = await prepareRuntimeForCli(appDataRoot, {
       ...(options.migrate === undefined ? {} : { migrate: options.migrate }),
     });
+    checkpoint("runtime-prepare");
     try {
       workspaceRoot = await selectWorkspace({
         explicit: explicitWorkspace ?? process.env.VIDCOM_WORKSPACE ?? settings.workspaceRoot,
         appDataRoot,
         database: prepared.database,
       });
+      checkpoint("workspace-select");
       boot = { appDataRoot, runtimePaths: runtimePathsFor(appDataRoot, prepared) };
     } finally {
       await prepared.release();
@@ -263,13 +282,28 @@ export async function startNextHostedRuntime(
     },
   }, {
     migrationPrepared: true,
+    ...(traceEnabled ? {
+      onStartupStep: ({ step, durationMs }) => { trace[`foundation:${step}`] = durationMs; },
+    } : {}),
     ...(options.migrate === undefined ? {} : { migrate: options.migrate }),
   });
+  checkpoint("foundation-total");
   const origins = [`http://127.0.0.1:${port}`, `http://localhost:${port}`];
   const projectReads: NonNullable<ServerAppDependencies["projectReads"]> = {
     ...foundation.application.readDependencies,
     runtimeSource: foundation.infrastructure.runtimeSource,
     mimeFromPath: foundation.infrastructure.mimeFromPath,
+    probe: foundation.infrastructure.assetProbe,
+    hashContent,
+    motionLibrarySource: async () => {
+      const gsap = MOTION_LIBRARIES.find((library) => library.id === "gsap");
+      if (!gsap) throw new Error("pinned GSAP catalogue entry is unavailable");
+      const source = await foundation.infrastructure.motionLibraries.read(gsap);
+      if (!source.ok || !source.value[0]) {
+        throw new Error(source.ok ? "pinned GSAP source is unavailable" : source.error.message);
+      }
+      return source.value[0].content;
+    },
   };
   const projectWrites: NonNullable<ServerAppDependencies["projectWrites"]> = {
     ...foundation.application.writeDependencies,
@@ -277,8 +311,14 @@ export async function startNextHostedRuntime(
     bgmSynth: foundation.infrastructure.bgmSynth,
     bgmLibrary: foundation.infrastructure.bgmLibrary,
     bgmProviders: foundation.infrastructure.bgmProviders,
+    approvals: foundation.infrastructure.approvalRequests,
     hashContent,
     mimeFromPath: foundation.infrastructure.mimeFromPath,
+    staging: foundation.infrastructure.assetStaging,
+    sanitizer: foundation.infrastructure.assetSanitizer,
+    pendingMount: foundation.infrastructure.pendingMount,
+    probe: foundation.infrastructure.assetProbe,
+    styles: { apply: applyFontStyle },
   };
   const registry = createMcpRegistry(foundation.infrastructure, foundation.application);
   const mcp = createMcpHttpHandlers(registry);
@@ -299,6 +339,7 @@ export async function startNextHostedRuntime(
     foundation.infrastructure.credentials,
     port,
   );
+  checkpoint("agent-mcp");
   const workspaceOverview = async () => {
     const entries = await foundation.application.scanWorkspace();
     return {
@@ -434,6 +475,7 @@ export async function startNextHostedRuntime(
       );
       activateHostedRuntime(port, replacement);
       committed = true;
+      previewCapabilities.revokeAll();
       // Only after persistence, discovery and request routing all name the new
       // foundation. Until this point the old one stays authoritative and can be
       // restored without rebuilding it if any preparation step fails.
@@ -491,6 +533,7 @@ export async function startNextHostedRuntime(
       uiOrigins: origins,
       nonces,
       sessions,
+      previewCapabilities,
       mcpCredentials: foundation.infrastructure.credentials,
       mcp,
       bridge: {
@@ -542,8 +585,32 @@ export async function startNextHostedRuntime(
         ids: foundation.infrastructure.ids,
         hashContent,
       },
+      thumbnails: {
+        workspace: foundation.infrastructure.workspace,
+        service: foundation.infrastructure.thumbnailService,
+        scheduler: foundation.infrastructure.thumbnailScheduler,
+        cache: foundation.infrastructure.thumbnailCache,
+      },
+      catalog: {
+        catalog: foundation.infrastructure.catalog,
+        install: {
+          workspace: foundation.infrastructure.workspace,
+          composition: foundation.infrastructure.composition,
+          journal: foundation.infrastructure.journal,
+          catalog: foundation.infrastructure.catalog,
+          installedProvenance: foundation.infrastructure.installedProvenance,
+          hashContent,
+          manifestDigest: foundation.infrastructure.catalogManifestDigest,
+          clock: foundation.infrastructure.clock,
+          approval: foundation.infrastructure.approvalPlanner,
+          authority: foundation.application.writeDependencies.authority,
+        },
+        approval: foundation.infrastructure.approvalRequests,
+      },
       jobs: foundation.infrastructure.jobs,
       events: foundation.infrastructure.events,
+      history: foundation.infrastructure.mutationObserver,
+      browserSessionId: (request) => browserSessionId(sessions, request),
       system: {
         browser,
         sessionId: (request) => browserSessionId(sessions, request),
@@ -593,6 +660,7 @@ export async function startNextHostedRuntime(
     },
     workspaceActivation: activateSelection,
   });
+  checkpoint("server-apps");
   runtimeValue = {
     foundation,
     nonces,
@@ -650,6 +718,9 @@ export async function startNextHostedRuntime(
       }
     }
   };
+  if (traceEnabled) {
+    process.stderr.write(`vidcom-startup-trace ${JSON.stringify({ scope: "hosted-runtime", phases: trace })}\n`);
+  }
   return runtimeValue;
 }
 

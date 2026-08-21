@@ -72,6 +72,22 @@ describe("startup order", () => {
     expect(log).toEqual(ordered);
   });
 
+  it("reports bounded step timings without changing startup order", async () => {
+    const log: string[] = [];
+    const timings: Array<{ step: StartupStepName; durationMs: number }> = [];
+    await expect(runStartupSequence(steps(log), undefined, (timing) => timings.push(timing)))
+      .resolves.toBe("listener");
+    expect(timings.map(({ step }) => step)).toEqual(ordered);
+    expect(timings.every(({ durationMs }) => Number.isSafeInteger(durationMs) && durationMs >= 0)).toBe(true);
+  });
+
+  it("does not let a diagnostics sink alter startup", async () => {
+    const log: string[] = [];
+    await expect(runStartupSequence(steps(log), undefined, () => { throw new Error("sink failed"); }))
+      .resolves.toBe("listener");
+    expect(log).toEqual(ordered);
+  });
+
   it.each(ordered.slice(0, -1))("does not open listener when %s fails", async (failed) => {
     const log: string[] = [];
     await expect(runStartupSequence(steps(log, failed))).rejects.toMatchObject({
@@ -366,6 +382,44 @@ describe("startup order", () => {
     }
   });
 
+  it("drains the interactive thumbnail scheduler when the foundation stops", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "vidcom-startup-thumbnails-"));
+    const workspace = path.join(root, "workspace");
+    const project = path.join(workspace, "project");
+    await mkdir(project, { recursive: true });
+    await writeFile(path.join(project, "hyperframes.json"), "{}\n");
+    await writeFile(path.join(project, "vidcom.json"), '{"id":"project_startup_thumbnails"}\n');
+    await writeFile(path.join(project, "index.html"), '<main data-composition-id="root"></main>');
+    try {
+      const foundation = await startVidcomFoundation({
+        appDataRoot: path.join(root, "app-data"),
+        workspaceRoot: workspace as AbsolutePath,
+        holderId: "test:thumbnails",
+        clock: createFixedClock("2026-08-01T00:00:00.000Z"),
+        ids: createSequentialIdPort(),
+      }, {
+        async recoverJobs() {},
+        async startScheduler() { return { stop() {} }; },
+        async startWatcher() { return { close() {} }; },
+        async openListener() { return null; },
+      });
+      const scheduler = foundation.infrastructure.thumbnailScheduler;
+      expect(scheduler.status).toEqual({ active: 0, queued: 0 });
+      await foundation.stop();
+      await expect(scheduler.request(
+        {
+          id: "project_startup_thumbnails" as ProjectId,
+          slug: "project",
+          root: project as AbsolutePath,
+          entry: "index.html" as RelPath,
+        },
+        { sceneId: "root", atSeconds: [0.5], profile: "timeline-v1" },
+        new AbortController().signal,
+      )).rejects.toMatchObject({ name: "AbortError" });
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
   it("unwinds an acquired lease when abort arrives between startup phases", async () => {
     const root = await mkdtemp(path.join(tmpdir(), "vidcom-startup-abort-"));
     const workspace = path.join(root, "workspace");
@@ -426,8 +480,11 @@ describe("startup order", () => {
         async startWatcher() { return { close() { lifecycle.push("watcher.close"); } }; },
         async openListener() { return { close() { lifecycle.push("listener.close"); } }; },
       });
+      const history = runtime.infrastructure.mutationObserver as unknown as { dispose(): void };
+      const disposeHistory = history.dispose.bind(history);
+      history.dispose = () => { lifecycle.push("history.dispose"); disposeHistory(); };
       await runtime.stop();
-      expect(lifecycle).toEqual(["listener.close", "scheduler.stop", "watcher.close"]);
+      expect(lifecycle).toEqual(["listener.close", "scheduler.stop", "watcher.close", "history.dispose"]);
       const database = await initializeDatabase(path.join(root, "app-data"));
       expect(dbOne(database, "SELECT COUNT(*) AS count FROM workspace_lease"))
         .toEqual({ count: 0 });

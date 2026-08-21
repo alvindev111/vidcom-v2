@@ -45,6 +45,7 @@ export function smokeEnvironment(root, base = process.env, directories = {}) {
     // Strict turns a missing required component into a failure rather than a
     // skip, which is the whole point of running this in a job (R8.4).
     VIDCOM_DOCTOR_STRICT: "1",
+    ...(base.VIDCOM_STARTUP_TRACE === "1" ? { VIDCOM_STARTUP_TRACE: "1" } : {}),
     ...(base.VIDCOM_SMOKE_RELEASE === "1" ? { VIDCOM_SMOKE_RELEASE: "1" } : {}),
     ...(base.VIDCOM_SMOKE_EXPECTED_COMMIT
       ? { VIDCOM_SMOKE_EXPECTED_COMMIT: base.VIDCOM_SMOKE_EXPECTED_COMMIT }

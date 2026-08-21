@@ -33,13 +33,14 @@ const expectedSuccess: Record<string, object> = {
   },
   get_project_context: {
     project: { id: projectId, revision: 2 },
-    scenes: [{ id: "scene-1" }],
+    scenes: [{ id: "scene-1" }, { id: "scene-9" }],
     projectRevision: 2,
   },
-  list_scenes: { scenes: [{ id: "scene-1" }], projectRevision: 2 },
+  list_scenes: { scenes: [{ id: "scene-1" }, { id: "scene-9" }], projectRevision: 2 },
   read_composition: { path: "index.html", contentHash: matrixHash },
   create_scene: {
-    scene: { id: "scene-2", fileContentHash: matrixNewHash },
+    // scene-9 exists in the matrix project, so the next id is scene-10.
+    scene: { id: "scene-10", fileContentHash: matrixNewHash },
     envelope: { projectRevision: 3 },
   },
   set_scene_timing: {
@@ -66,6 +67,16 @@ const expectedSuccess: Record<string, object> = {
     deletedFile: "compositions/scene-1.html",
     backupId: "backup-contract-matrix",
     envelope: { projectRevision: 3 },
+  },
+  list_catalog_items: { source: "bundled", stale: false },
+  install_catalog_item: { packageStatus: "installed" },
+  generate_captions: { timingSource: "estimated" },
+  mount_asset: { replayed: false },
+  reorder_scenes: { changed: false },
+  move_scenes: { changed: false },
+  delete_scenes: {
+    backupId: "backup-contract-matrix",
+    deletedFiles: ["compositions/scene-1.html"],
   },
   list_tts_voices: { providers: [{ id: "matrix-tts", available: true }] },
   start_tts: { jobId: "job_matrix", status: "queued", pollWith: "get_job_status" },

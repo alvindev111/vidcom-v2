@@ -7,8 +7,10 @@ import {
   evaluateStartup,
   failingResults,
   isStartupBaseline,
+  medianStartupMeasurements,
   readBaseline,
   runnerLabel,
+  shouldConfirmStartup,
   startupBaselineStatistics,
 } from "../../scripts/measure-startup.mjs";
 import { describe, expect, it } from "vitest";
@@ -114,6 +116,60 @@ describe("startup ceilings", () => {
 });
 
 describe("startup gates", () => {
+  it("requires an odd confirmation cohort and derives its per-metric median", () => {
+    expect(medianStartupMeasurements([
+      { coldServe: 9_000, warmServe: 6_000 },
+      { coldServe: 6_000, warmServe: 8_000 },
+      { coldServe: 7_000, warmServe: 7_000 },
+    ])).toEqual({ coldServe: 7_000, warmServe: 7_000 });
+    expect(medianStartupMeasurements([
+      { coldServe: 1, warmServe: 1 },
+      { coldServe: 2, warmServe: 2 },
+    ])).toBeNull();
+    expect(medianStartupMeasurements([
+      { coldServe: 1, warmServe: 1 },
+      { coldServe: 2, warmServe: -1 },
+      { coldServe: 3, warmServe: 3 },
+    ])).toBeNull();
+  });
+
+  it("confirms only statistical regressions, never invalid or hard-ceiling failures", () => {
+    expect(shouldConfirmStartup([
+      { name: "coldServe", status: "regressed", value: 7_100, limit: 7_092 },
+      { name: "warmServe", status: "ok", value: 6_000, limit: 7_000 },
+    ])).toBe(true);
+    expect(shouldConfirmStartup([
+      { name: "coldServe", status: "regressed", value: 7_100, limit: 7_092 },
+      { name: "warmServe", status: "over-ceiling", value: 8_001, limit: 8_000 },
+    ])).toBe(false);
+    expect(shouldConfirmStartup([
+      { name: "measurements", status: "invalid", detail: "missing" },
+    ])).toBe(false);
+    expect(shouldConfirmStartup([
+      { name: "coldServe", status: "ok", value: 6_000, limit: 7_092 },
+    ])).toBe(false);
+  });
+
+  it("classifies the reviewed macOS runner cohort as confirmable rather than catastrophic", async () => {
+    const committed = await readBaseline(LABEL);
+    expect(committed).not.toBeNull();
+    const observedSamples = [
+      { coldServe: 10_352, warmServe: 7_718 },
+      { coldServe: 30_514, warmServe: 8_722 },
+      { coldServe: 28_905, warmServe: 6_882 },
+    ];
+    expect(shouldConfirmStartup(evaluateStartup(LABEL, observedSamples[1], committed))).toBe(true);
+    expect(failingResults(evaluateStartup(
+      LABEL,
+      medianStartupMeasurements(observedSamples),
+      committed,
+    ))).toEqual([]);
+    expect(shouldConfirmStartup(evaluateStartup(LABEL, {
+      coldServe: 30_514,
+      warmServe: STARTUP_CEILINGS[LABEL].warmServe + 1,
+    }, committed))).toBe(false);
+  });
+
   it("passes a run inside both limits", () => {
     const results = evaluateStartup(LABEL, candidate(900), baseline([800, 810, 820, 830, 840]));
     expect(failingResults(results)).toEqual([]);

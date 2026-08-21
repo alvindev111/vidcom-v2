@@ -17,6 +17,7 @@ import {
   type MotionLibraryLoader,
 } from "../domain/motion-libraries";
 import { err, ok, type Result } from "../error/result";
+import { ignoredMutationOriginForActor } from "../port/mutation-observer";
 import type { MotionLibraryFilesPort, WorkspacePort } from "../port/ports";
 import type { CompositeRequest, WriteEnvelope, WriteInvocation } from "../port/types";
 
@@ -43,6 +44,7 @@ export interface MotionLibraryInstallOutput {
   };
   files: Array<{ path: RelPath; contentHash: ContentHash | null }>;
   revision: number | null;
+  changeSeq: number | null;
 }
 
 interface VendoredFile {
@@ -74,7 +76,7 @@ export async function installMotionLibrary(
   dependencies: MotionLibraryInstallDependencies,
   input: { projectId: ProjectId; libraryId: string },
   actor: Actor,
-  invocation: WriteInvocation = { toolAudit: null },
+  invocation: WriteInvocation = { origin: ignoredMutationOriginForActor(actor), toolAudit: null },
 ): Promise<Result<MotionLibraryInstallOutput, DomainError>> {
   const library = findMotionLibrary(input.libraryId);
   if (!library) {
@@ -123,6 +125,7 @@ export async function installMotionLibrary(
       library: describe(library),
       files: vendored.map(({ path, currentHash }) => ({ path, contentHash: currentHash })),
       revision: null,
+      changeSeq: null,
     });
   }
 
@@ -141,5 +144,6 @@ export async function installMotionLibrary(
       contentHash: written.value.fileHashes[path] ?? currentHash,
     })),
     revision: written.value.projectRevision,
+    changeSeq: written.value.changeSeq,
   });
 }

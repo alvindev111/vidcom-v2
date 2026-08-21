@@ -1,0 +1,43 @@
+{
+  "schemaVersion": 1,
+  "categoryRuleVersion": 1,
+  "items": [
+    {
+      "name": "title-card",
+      "kind": "template",
+      "title": "Title card",
+      "description": "Centered headline and subhead on a dark card.",
+      "category": "Openers",
+      "tags": [
+        "intro",
+        "text"
+      ],
+      "version": "1.0.0",
+      "entry": "templates/title-card/scene.html",
+      "durationSeconds": 4,
+      "compatibility": {
+        "aspectRatios": [
+          "16:9"
+        ],
+        "minWidth": 1280,
+        "fps": null,
+        "minHyperframesVersion": null
+      },
+      "preview": {
+        "kind": "image",
+        "path": "templates/title-card/preview.svg"
+      },
+      "dependencies": [],
+      "upstream": null,
+      "integrity": {
+        "algo": "sha256",
+        "files": {
+          "templates/title-card/preview.svg": "23dc7cde6e627ca475be1f92fafbd621fb0c403ea8bacc130cc56dd5ad3af97f",
+          "templates/title-card/scene.css": "bc024f438e43e4bd02d7d48e7404b52619feeae27ada910e614d2bf110aa20d8",
+          "templates/title-card/scene.html": "a8cd5c28a96bf7043311fc738b1905a5e9677a792e30f5a56713a76eef855a46"
+        },
+        "manifest": "be4d282456194dce0bdde15b93c0ef76e02936c45ec2838558b04ddd792b36b8"
+      }
+    }
+  ]
+}

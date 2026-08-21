@@ -18,6 +18,7 @@ import {
 import {
   macNetworkCutRoutes,
   networkCutPlan,
+  windowsNetworkCutPrograms,
 } from "../../scripts/packaged-smoke/network-cut.mjs";
 import {
   canonicalSmokeDirectories,
@@ -28,13 +29,17 @@ import {
   DETACHED_RENDER_SMOKE_TIMEOUT_MS,
   DETACHED_RENDER_STAGE_TIMEOUT_MS,
   EXPECTED_DOCTOR_ITEM_IDS,
+  PACKAGED_STUDIO_SESSION_ID,
   PRIVATE_PATH_FORBIDDEN_TOOLS,
+  attachPackagedStudioSession,
   assertRuntimeHealthy,
   browsePathSegments,
   browseSegmentMatches,
   cleanupDetachedRenderFailure,
   exercisePackagedMcpStdioPair,
   mediaSceneSource,
+  parseStartupTraces,
+  packagedStudioHeaders,
   readLatestRenderJobSince,
   readJsonWithTransportRetry,
   runDetachedRenderWithDiagnostics,
@@ -57,14 +62,60 @@ function results(entries: Array<Partial<StepResult> & { id: string }>): StepResu
   return entries.map((entry) => ({ required: true, status: "passed", ...entry }));
 }
 
+const EDITING_TOOL_NAMES = [
+  "reorder_scenes", "move_scenes", "delete_scenes",
+  "list_catalog_items", "generate_captions", "mount_asset", "install_catalog_item",
+];
+
 describe("packaged smoke steps", () => {
+  it("extracts only duration-only startup traces from packaged stderr", () => {
+    expect(parseStartupTraces([
+      "private diagnostic that must not be copied",
+      'vidcom-startup-trace {"scope":"hosted-runtime","phases":{"settings-read":12,"secret":"token"}}',
+      'vidcom-startup-trace {"scope":"serve","phases":{"listener":4,"bad value":9}}',
+      'vidcom-startup-trace {"scope":"unknown","phases":{"listener":1}}',
+      "vidcom-startup-trace not-json",
+    ].join("\n"))).toEqual([
+      { scope: "hosted-runtime", phases: { "settings-read": 12 } },
+      { scope: "serve", phases: { listener: 4 } },
+    ]);
+  });
+
+  it("attaches a packaged studio session and reuses its header for project writes", async () => {
+    const serving = {
+      baseUrl: "http://127.0.0.1:4567",
+      cookie: "vidcom_session=smoke",
+      studioSessionId: PACKAGED_STUDIO_SESSION_ID,
+    };
+    const requests: Array<{ url: string; init: RequestInit }> = [];
+    await attachPackagedStudioSession(serving, "project_smoke", async (url, init) => {
+      requests.push({ url: String(url), init: init ?? {} });
+      return new Response(null, { status: 204 });
+    });
+
+    expect(requests).toEqual([{
+      url: "http://127.0.0.1:4567/api/v1/projects/project_smoke/history/session",
+      init: { method: "POST", headers: packagedStudioHeaders(serving) },
+    }]);
+    expect(packagedStudioHeaders(serving, { "content-type": "application/json" })).toEqual({
+      Cookie: "vidcom_session=smoke",
+      "x-vidcom-studio-session": PACKAGED_STUDIO_SESSION_ID,
+      "content-type": "application/json",
+    });
+  });
+
   it("keeps both packaged MCP eras connected and permits diagnostic stderr", async () => {
     const events: string[] = [];
     const closed: string[] = [];
     const session = (era: "legacy" | "modern") => ({
       connect: async () => { events.push(`${era}:connect`); },
       listTools: async () => ({
-        tools: [{ name: era === "legacy" ? "list_projects" : "create_scene" }],
+        // Both eras must publish the editing tools, so the fake catalogue does
+        // too — otherwise this suite would only prove the assertion is absent.
+        tools: [
+          { name: era === "legacy" ? "list_projects" : "create_scene" },
+          ...EDITING_TOOL_NAMES.map((name) => ({ name })),
+        ],
       }),
       callTool: async (name: string) => {
         events.push(`${era}:${name}`);
@@ -93,7 +144,7 @@ describe("packaged smoke steps", () => {
         events.push("coexistence");
         expect(closed).toEqual([]);
       },
-    })).resolves.toEqual({ legacyTools: 1, modernTools: 1 });
+    })).resolves.toEqual({ legacyTools: 8, modernTools: 8 });
 
     expect(events).toEqual([
       "legacy:connect",
@@ -113,7 +164,12 @@ describe("packaged smoke steps", () => {
     const session = (era: "legacy" | "modern") => ({
       connect: async () => undefined,
       listTools: async () => ({
-        tools: [{ name: era === "legacy" ? "list_projects" : "create_scene" }],
+        // Both eras must publish the editing tools, so the fake catalogue does
+        // too — otherwise this suite would only prove the assertion is absent.
+        tools: [
+          { name: era === "legacy" ? "list_projects" : "create_scene" },
+          ...EDITING_TOOL_NAMES.map((name) => ({ name })),
+        ],
       }),
       callTool: async (name: string) => name === "list_projects"
         ? { structuredContent: { projects: [{ projectId: "project_smoke" }] } }
@@ -516,8 +572,34 @@ describe("packaged smoke steps", () => {
       "render-cli",
       "offline",
       "lease-loss",
+      "editing-experience-runtime",
       "provenance",
     ]);
+  });
+
+  it("registers a self-contained editing-experience runtime step", async () => {
+    const step = SMOKE_STEPS.find((candidate) => candidate.id === "editing-experience-runtime");
+    expect(step).toMatchObject({ required: true });
+    const { STEP_BODIES: bodies } = await import("../../scripts/packaged-smoke/bodies.mjs");
+    const body = (bodies as Record<string, unknown>)["editing-experience-runtime"];
+    expect(typeof body).toBe("function");
+    const source = String(body);
+    // Independent evidence: it builds its own project and session instead of
+    // reading what `ui-lifecycle` or `render-media` left on the context.
+    expect(source).toContain("startServingWithSession");
+    expect(source).toContain("/api/v1/projects");
+    expect(source).not.toContain("context.session");
+    expect(source).not.toContain("context.media");
+    // Two boots, the bundled registry, a real install, and a refusal to name the
+    // source tree the artifact must never read.
+    expect(source).toContain("first");
+    expect(source).toContain("second");
+    expect(source).toContain("catalog-items/plans");
+    // The step cuts the runner network itself, so a listing it accepts cannot
+    // have come from the registry.
+    expect(source).toContain("withRunnerNetworkCut");
+    expect(source).toContain("packages/adapter/assets");
+    expect(source).toContain("catalog evidence names the source tree");
   });
 
   it("treats every step as required", () => {
@@ -690,10 +772,12 @@ describe("packaged smoke steps", () => {
     const environment = smokeEnvironment("/tmp/vidcom-smoke", {
       PATH: "/usr/bin",
       NODE_ENV: "test",
+      VIDCOM_STARTUP_TRACE: "1",
       VIDCOM_SMOKE_RELEASE: "1",
       VIDCOM_SMOKE_EXPECTED_COMMIT: "b".repeat(40),
     });
     expect(environment).toMatchObject({
+      VIDCOM_STARTUP_TRACE: "1",
       VIDCOM_SMOKE_RELEASE: "1",
       VIDCOM_SMOKE_EXPECTED_COMMIT: "b".repeat(40),
     });
@@ -764,6 +848,7 @@ describe("native packaged-smoke inputs", () => {
     expect(workflow).toContain("bun-version: 1.3.14");
     expect(workflow).toContain("bun run build:artifact --release");
     expect(workflow).toContain("VIDCOM_SMOKE_EXPECTED_COMMIT:");
+    expect(workflow).toContain('VIDCOM_STARTUP_TRACE: "1"');
     expect(workflow).toContain("VIDCOM_SMOKE_EVIDENCE_DIR:");
     expect(workflow).toContain("doctor-report.json");
     expect(workflow).toContain("ffprobe.json");
@@ -773,7 +858,7 @@ describe("native packaged-smoke inputs", () => {
 
   it("does not duplicate pull-request heavy workflows through the CI wrapper", async () => {
     const workflow = await readFile(".github/workflows/ci.yml", "utf8");
-    expect(workflow.match(/if: github\.event_name == 'workflow_dispatch'/gu)).toHaveLength(2);
+    expect(workflow.match(/if: github\.event_name == 'workflow_dispatch'/gu)).toHaveLength(3);
     expect(workflow).not.toContain(
       "github.event_name == 'workflow_dispatch' || github.event_name == 'pull_request'",
     );
@@ -814,13 +899,48 @@ describe("native packaged-smoke inputs", () => {
       expect(route.delete).not.toContain("-reject");
     }
   });
+
+  it("keeps the Windows Actions control process online while cutting every packaged executable", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "vidcom-windows-network-cut-"));
+    try {
+      const runtime = path.join(root, "app-data", "runtime");
+      const nested = path.join(runtime, "python", "Scripts");
+      const harness = path.join(root, "node.exe");
+      const artifact = path.join(root, "vidcom.exe");
+      await mkdir(nested, { recursive: true });
+      await Promise.all([
+        writeFile(harness, "harness"),
+        writeFile(artifact, "artifact"),
+        writeFile(path.join(runtime, "ffmpeg.exe"), "ffmpeg"),
+        writeFile(path.join(nested, "python.EXE"), "python"),
+        writeFile(path.join(runtime, "README.txt"), "not executable"),
+      ]);
+
+      const programs = await windowsNetworkCutPrograms({
+        harnessProgram: harness,
+        programs: [artifact, artifact],
+        roots: [path.join(root, "app-data")],
+      });
+
+      expect(programs).toEqual([
+        harness,
+        artifact,
+        path.join(runtime, "ffmpeg.exe"),
+        path.join(nested, "python.EXE"),
+      ].sort((left, right) => left.localeCompare(right)));
+      expect(programs).not.toContain(path.join(runtime, "README.txt"));
+      expect(programs.some((program) => /Runner\.(?:Worker|Listener)\.exe$/iu.test(program))).toBe(false);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
 });
 
 describe("packaged smoke selection", () => {
   it("runs one step, or everything from one step on", () => {
     expect(selectSteps({ step: "bridge" }).map((step) => step.id)).toEqual(["bridge"]);
     expect(selectSteps({ from: "offline" }).map((step) => step.id))
-      .toEqual(["offline", "lease-loss", "provenance"]);
+      .toEqual(["offline", "lease-loss", "editing-experience-runtime", "provenance"]);
     expect(selectSteps({})).toHaveLength(SMOKE_STEPS.length);
   });
 

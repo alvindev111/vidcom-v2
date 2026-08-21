@@ -19,6 +19,11 @@ export const SMOKE_STEPS = [
   { id: "render-cli", required: true, title: "render wait, detach, and cancel mid-render" },
   { id: "offline", required: true, title: "warm render and TTS with the network cut at the runner" },
   { id: "lease-loss", required: true, title: "lease loss: writes refused, discovery gone, both degrade paths" },
+  {
+    id: "editing-experience-runtime",
+    required: true,
+    title: "bundled catalog listed and installed from the artifact across two boots, offline",
+  },
   { id: "provenance", required: true, title: "artifact vicinity, app-data boundary, checksum and provenance" },
 ];
 

@@ -107,4 +107,27 @@ describe("static remote asset scan", () => {
       "https://cdn.example/voice.woff2",
     ]);
   });
+
+  it("scans CSS comments, strings and dependency at-rules without backtracking", () => {
+    const stylesheets = [{
+      path: rel("styles/adversarial.css"),
+      css: [
+        '@FONT-FACE { content: "}"; src: url("https://cdn.example/font.woff2") }',
+        '@IMPORT "https://cdn.example/base.css" screen;',
+        '.hero { background: url("https://cdn.example/hero.png") }',
+        '.quoted { content: "url(https://cdn.example/not-a-token.png)" }',
+        '/* url(https://cdn.example/not-a-comment-token.png) */',
+      ].join("\n"),
+    }];
+
+    expect(scanRemoteMedia([], stylesheets)).toEqual([{
+      url: "https://cdn.example/hero.png",
+      source: "css-url",
+      reference: "styles/adversarial.css",
+    }]);
+    expect(scanExternalDependencies([], stylesheets)).toEqual([
+      "https://cdn.example/base.css",
+      "https://cdn.example/font.woff2",
+    ]);
+  });
 });

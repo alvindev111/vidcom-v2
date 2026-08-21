@@ -10,10 +10,23 @@ import {
 } from "@vidcom/contracts";
 
 import { normalizePreviewSettings } from "../domain/preview-settings";
-import type { CompositionModel, FileNode, ProjectRef } from "../domain/models";
+import { checkPathPurpose, checkPathSyntax } from "../domain/path-policy";
+import {
+  WorkspaceResourceLimitError,
+  type CompositionModel,
+  type FileNode,
+  type FileTreePage,
+  type ProjectRef,
+} from "../domain/models";
 import { err, ok, type Result } from "../error/result";
-import type { CompositeMutationJournalPort, CompositionPort, MutationJournalPort, WorkspacePort } from "../port/ports";
-import type { PreviewSettings } from "../port/types";
+import type {
+  CompositeMutationJournalPort,
+  CompositionPort,
+  EventOutboxPort,
+  MutationJournalPort,
+  WorkspacePort,
+} from "../port/ports";
+import type { AssetFileIdentity, PreviewSettings } from "../port/types";
 import type { ProjectCache } from "../service/project-cache";
 
 export interface ProjectReadDependencies {
@@ -95,6 +108,16 @@ function sceneContexts(
 
 function storageError(message: string): Result<never, DomainError> {
   return err({ code: ErrorCode.StorageUnavailable, message });
+}
+
+function workspaceReadError(error: unknown, message: string): Result<never, DomainError> {
+  return error instanceof WorkspaceResourceLimitError
+    ? err({
+        code: ErrorCode.ResourceLimitExceeded,
+        message: "the project tree crossed a resource limit",
+        details: { reason: error.reason, limit: error.limit, actual: error.actual },
+      })
+    : storageError(message);
 }
 
 export async function listProjects(
@@ -265,6 +288,54 @@ export async function readAsset(
   }
 }
 
+/** Stats an allowlisted asset without reading or hashing its contents. */
+export async function statAsset(
+  dependencies: ProjectReadDependencies,
+  projectId: ProjectId,
+  path: RelPath,
+) {
+  try {
+    const found = await projectRef(dependencies, projectId);
+    if (!found.ok) return found;
+    const resolved = await dependencies.workspace.resolve(found.value, path, "read-asset");
+    if (!resolved.ok) return err({ code: ErrorCode.AssetNotAllowed, message: "asset path was rejected" });
+    const metadata = await dependencies.workspace.statAsset(resolved.value);
+    return metadata
+      ? ok({ path, ...metadata })
+      : err({ code: ErrorCode.NotFound, message: "asset was not found" });
+  } catch {
+    return storageError("asset metadata could not be read");
+  }
+}
+
+/** Opens an inclusive range only while the file still matches the identity returned by statAsset. */
+export async function openAssetRange(
+  dependencies: ProjectReadDependencies,
+  projectId: ProjectId,
+  path: RelPath,
+  input: { start: number; end: number; identity: AssetFileIdentity; signal?: AbortSignal },
+) {
+  try {
+    const found = await projectRef(dependencies, projectId);
+    if (!found.ok) return found;
+    const resolved = await dependencies.workspace.resolve(found.value, path, "read-asset");
+    if (!resolved.ok) return err({ code: ErrorCode.AssetNotAllowed, message: "asset path was rejected" });
+    const stream = await dependencies.workspace.openAssetRange(resolved.value, input);
+    return stream
+      ? ok({ stream })
+      : err({
+          code: ErrorCode.WriteConflict,
+          message: "asset changed before the requested range could be opened",
+          details: { path },
+        });
+  } catch (error) {
+    if ((error as Error).name === "AbortError") {
+      return err({ code: ErrorCode.WriteConflict, message: "asset range request was cancelled" });
+    }
+    return storageError("asset range could not be opened");
+  }
+}
+
 export async function getPreviewSettings(
   dependencies: ProjectReadDependencies,
   projectId: ProjectId,
@@ -302,21 +373,25 @@ export async function resolveProjectIdBySlug(
 }
 
 export async function getProjectPreview(
-  dependencies: ProjectReadDependencies,
+  dependencies: ProjectReadDependencies & { events: Pick<EventOutboxPort, "latestProjectSeq"> },
   projectId: ProjectId,
   options: { runtimeUrl: string; fileBaseUrl: string },
-): Promise<Result<{ html: string }, DomainError>> {
+): Promise<Result<{ html: string; projectRevision: number; changeSeq: number }, DomainError>> {
   try {
     const found = await projectRef(dependencies, projectId);
     if (!found.ok) return found;
-    const settings = await getPreviewSettings(dependencies, projectId);
+    const [settings, projectRevision, changeSeq] = await Promise.all([
+      getPreviewSettings(dependencies, projectId),
+      dependencies.journal.latestRevision(projectId),
+      dependencies.events.latestProjectSeq(projectId),
+    ]);
     if (!settings.ok) return settings;
     const html = await dependencies.composition.buildDocument(
       found.value,
       settings.value.previewSettings,
-      { root: true, ...options },
+      { mode: "preview", root: true, projectRevision: projectRevision ?? 0, changeSeq, ...options },
     );
-    return ok({ html });
+    return ok({ html, projectRevision: projectRevision ?? 0, changeSeq });
   } catch {
     return storageError("project preview could not be built");
   }
@@ -324,6 +399,7 @@ export async function getProjectPreview(
 
 export interface StudioSnapshot {
   project: CompositionModel["project"];
+  frameRate: number;
   entryFile: { path: RelPath; content: string; contentHash: string };
   tree: FileNode[];
   scenes: CompositionModel["scenes"];
@@ -336,6 +412,30 @@ export interface StudioSnapshot {
   fileHashes: Record<string, ContentHash>;
   recovery: Awaited<ReturnType<CompositeMutationJournalPort["readProjectRecoveryStatus"]>>;
   diagnostics: CompositionModel["diagnostics"];
+}
+
+export async function getProjectTreePage(
+  dependencies: ProjectReadDependencies,
+  input: { projectId: ProjectId; directory: RelPath | null; cursor: string | null; limit: number },
+): Promise<Result<FileTreePage, DomainError>> {
+  if (input.directory !== null
+    && (checkPathSyntax(input.directory) || checkPathPurpose(input.directory, "authored-write"))) {
+    return err({ code: ErrorCode.PathInvalid, message: "tree directory is not allowed", field: "directory" });
+  }
+  if (!/^\d+$/u.test(input.cursor ?? "0") || !Number.isInteger(input.limit) || input.limit < 1 || input.limit > 200) {
+    return err({ code: ErrorCode.SchemaInvalid, message: "tree page is invalid" });
+  }
+  const found = await projectRef(dependencies, input.projectId);
+  if (!found.ok) return found;
+  if (!dependencies.workspace.readTreePage) {
+    return storageError("project tree pagination is unavailable");
+  }
+  try {
+    const page = await dependencies.workspace.readTreePage(found.value, input);
+    return page.ok ? page : err(readPathError(page.error.reason));
+  } catch (error) {
+    return workspaceReadError(error, "project tree page could not be read");
+  }
 }
 
 export async function getStudioSnapshot(
@@ -359,6 +459,7 @@ export async function getStudioSnapshot(
     const fileHashes = Object.fromEntries(model.sources.map((source) => [source.path, source.contentHash]));
     return ok({
       project: { ...model.project, revision },
+      frameRate: model.frameRate ?? 30,
       entryFile: entry.value,
       tree,
       scenes: model.scenes,
@@ -372,7 +473,7 @@ export async function getStudioSnapshot(
       recovery,
       diagnostics: model.diagnostics,
     });
-  } catch {
-    return storageError("studio snapshot could not be built");
+  } catch (error) {
+    return workspaceReadError(error, "studio snapshot could not be built");
   }
 }

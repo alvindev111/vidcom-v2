@@ -34,6 +34,23 @@ import {
   SearchBgmOutputSchema,
 } from "./bgm";
 import { NarrationCueInputSchema } from "./delivery-loop-http";
+import {
+  CatalogInstallExecuteRequestSchema,
+  CatalogInstallResponseSchema,
+  CatalogListQuerySchema,
+  CatalogListResponseSchema,
+} from "./catalog";
+import {
+  DeleteScenesRequestSchema,
+  DeleteScenesResponseSchema,
+  MoveScenesRequestSchema,
+  GenerateCaptionsRequestSchema,
+  GenerateCaptionsResponseSchema,
+  MountAssetRequestSchema,
+  MountAssetResponseSchema,
+  ReorderScenesRequestSchema,
+  SceneOrderMutationResponseSchema,
+} from "./editing";
 import { ErrorCode } from "./errors";
 import { MotionLibraryIdSchema } from "./motion-libraries";
 import {
@@ -73,6 +90,7 @@ export const WriteEnvelopeSchema = z.strictObject({
   entityRevision: z.number().int().nonnegative().nullable(),
   fileHashes: z.record(CanonicalRelativePathSchema, ContentHashSchema),
   diagnostics: z.array(DiagnosticSchema),
+  changeSeq: z.number().int().positive().nullable(),
 });
 
 /** Compact scene state needed by an agent to plan its next mutation. */
@@ -250,6 +268,7 @@ export const InstallMotionLibraryOutputSchema = z.strictObject({
     contentHash: ContentHashSchema.nullable(),
   })),
   revision: z.number().int().nullable(),
+  changeSeq: z.number().int().nonnegative().nullable(),
 });
 
 /** Input for `delete_file`. */
@@ -337,12 +356,16 @@ export const MCP_PUBLIC_ERROR_CODES = [
   ErrorCode.IdempotencyKeyReused,
   ErrorCode.WorkspaceLeaseLost,
   ErrorCode.TimingInvalid,
+  ErrorCode.TimingNotFrameAligned,
   ErrorCode.DurationOverflow,
+  ErrorCode.InvariantViolated,
   ErrorCode.SceneNotFound,
   ErrorCode.SdkRejected,
   ErrorCode.NoFile,
   ErrorCode.TooLarge,
+  ErrorCode.ResourceLimitExceeded,
   ErrorCode.UnsupportedMedia,
+  ErrorCode.IntegrityMismatch,
   ErrorCode.Internal,
   ErrorCode.StorageUnavailable,
   ErrorCode.WorkspaceLeaseDenied,
@@ -483,6 +506,7 @@ export const SetPreviewSettingsOutputSchema = z.strictObject({
   previewSettings: PreviewSettingsSchema,
   revision: z.number().int().nonnegative(),
   diagnostics: z.array(DiagnosticSchema),
+  changeSeq: z.number().int().nonnegative().nullable(),
 });
 
 /** Authored and synthesis state of one narration cue, without engine word timings. */
@@ -566,6 +590,68 @@ export interface ToolSchemaEntry {
 }
 
 /** Canonical schema and authorization-level catalogue for every public MCP tool. */
+
+/**
+ * §7.2–§7.4 over MCP.
+ *
+ * The payloads are the HTTP ones plus the project the path carries there: one
+ * definition, imported by both surfaces, because two copies of a schema are two
+ * schemas that will disagree.
+ */
+export const ReorderScenesInputSchema = z.strictObject({
+  ...projectIdInput,
+  ...ReorderScenesRequestSchema.shape,
+});
+export const ReorderScenesOutputSchema = SceneOrderMutationResponseSchema;
+
+export const MoveScenesInputSchema = z.strictObject({
+  ...projectIdInput,
+  ...MoveScenesRequestSchema.shape,
+});
+export const MoveScenesOutputSchema = SceneOrderMutationResponseSchema;
+
+/** Without `grantId` this asks for approval; with it, the deletion runs. */
+export const DeleteScenesInputSchema = z.strictObject({
+  ...projectIdInput,
+  ...DeleteScenesRequestSchema.shape,
+  grantId,
+});
+export const DeleteScenesOutputSchema = DeleteScenesResponseSchema;
+
+
+/** §7.12 read tool: the same filter and the same `{items, source, stale}` listing. */
+export const ListCatalogItemsInputSchema = CatalogListQuerySchema;
+export const ListCatalogItemsOutputSchema = CatalogListResponseSchema;
+
+/** §7.11 over MCP. */
+export const GenerateCaptionsInputSchema = z.strictObject({
+  ...projectIdInput,
+  sceneId: IdentifierSchema,
+  ...GenerateCaptionsRequestSchema.shape,
+});
+export const GenerateCaptionsOutputSchema = GenerateCaptionsResponseSchema;
+
+/**
+ * §7.13a/b over MCP, in one tool.
+ *
+ * Without a grant this plans and asks; with one it installs exactly what was
+ * planned. A choice the plan requires stays a choice — it is never resolved
+ * into a silent replace.
+ */
+export const InstallCatalogItemInputSchema = z.strictObject({
+  ...projectIdInput,
+  ...CatalogInstallExecuteRequestSchema.shape,
+  grantId,
+});
+export const InstallCatalogItemOutputSchema = CatalogInstallResponseSchema;
+
+/** §7.14 over MCP: the same union, plus the project the path carries over HTTP. */
+export const MountAssetInputSchema = z.union([
+  z.strictObject({ ...projectIdInput, ...MountAssetRequestSchema.options[0].shape }),
+  z.strictObject({ ...projectIdInput, ...MountAssetRequestSchema.options[1].shape }),
+]);
+export const MountAssetOutputSchema = MountAssetResponseSchema;
+
 export const TOOL_SCHEMA_CATALOGUE = {
   adopt_project: {
     input: AdoptProjectInputSchema,
@@ -576,6 +662,16 @@ export const TOOL_SCHEMA_CATALOGUE = {
     input: CancelJobInputSchema,
     output: CancelJobOutputSchema,
     level: "job",
+  },
+  delete_scenes: {
+    input: DeleteScenesInputSchema,
+    output: DeleteScenesOutputSchema,
+    level: "destructive",
+  },
+  generate_captions: {
+    input: GenerateCaptionsInputSchema,
+    output: GenerateCaptionsOutputSchema,
+    level: "write",
   },
   import_bgm: {
     input: ImportBgmInputSchema,
@@ -591,6 +687,31 @@ export const TOOL_SCHEMA_CATALOGUE = {
     input: ListBgmBedsInputSchema,
     output: ListBgmBedsOutputSchema,
     level: "read",
+  },
+  install_catalog_item: {
+    input: InstallCatalogItemInputSchema,
+    output: InstallCatalogItemOutputSchema,
+    level: "write",
+  },
+  list_catalog_items: {
+    input: ListCatalogItemsInputSchema,
+    output: ListCatalogItemsOutputSchema,
+    level: "read",
+  },
+  mount_asset: {
+    input: MountAssetInputSchema,
+    output: MountAssetOutputSchema,
+    level: "write",
+  },
+  move_scenes: {
+    input: MoveScenesInputSchema,
+    output: MoveScenesOutputSchema,
+    level: "write",
+  },
+  reorder_scenes: {
+    input: ReorderScenesInputSchema,
+    output: ReorderScenesOutputSchema,
+    level: "write",
   },
   search_bgm: {
     input: SearchBgmInputSchema,

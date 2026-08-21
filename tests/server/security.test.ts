@@ -84,7 +84,7 @@ describe("Hono security perimeter", () => {
 
     expect(response.status).toBe(204);
     expect(trace).toEqual([
-      "requestId", "logger", "hostCheck", "cors", "auth", "bodyLimit", "validate", "route",
+      "requestId", "logger", "hostCheck", "cors", "browserRequestGuard", "auth", "bodyLimit", "validate", "route",
     ]);
 
     trace.length = 0;
@@ -104,6 +104,14 @@ describe("Hono security perimeter", () => {
     expect(trace).toEqual(["requestId", "logger", "hostCheck", "errorMapper"]);
   });
 
+  it("redacts preview bearer path segments from request logs", async () => {
+    const logs: string[] = [];
+    const fixture = appFixture({ logs });
+    await localRequest(fixture, "/api/preview/v1/c/secret-token/projects/project-a/runtime");
+    expect(logs).toEqual(["GET /api/preview/v1/c/[redacted]/projects/project-a/runtime"]);
+    expect(logs.join(" ")).not.toContain("secret-token");
+  });
+
   it("denies unlisted cross-origin requests without reflecting Origin", async () => {
     const fixture = appFixture();
     const response = await localRequest(fixture, "/api/v1/health", {
@@ -112,6 +120,22 @@ describe("Hono security perimeter", () => {
     expect(response.status).toBe(403);
     expect(response.headers.get("access-control-allow-origin")).toBeNull();
     expect(await response.json()).toMatchObject({ error: { code: "origin_not_allowed" } });
+  });
+
+  it("rejects browser requests whose Fetch Metadata is not same-origin", async () => {
+    const fixture = appFixture();
+    const cookie = cookieFrom(await exchange(fixture, fixture.nonces.issue()));
+    for (const site of ["cross-site", "same-site", "none"]) {
+      const response = await localRequest(fixture, "/api/v1/health", {
+        headers: { Cookie: cookie, "Sec-Fetch-Site": site, "Sec-Fetch-Mode": "cors" },
+      });
+      expect(response.status, site).toBe(403);
+      expect(await response.json()).toMatchObject({ error: { code: "origin_not_allowed" } });
+    }
+    const allowed = await localRequest(fixture, "/api/v1/health", {
+      headers: { Cookie: cookie, "Sec-Fetch-Site": "same-origin", "Sec-Fetch-Mode": "cors" },
+    });
+    expect(allowed.status).toBe(200);
   });
 
   it("emits the canonical configured origin for credentialed preflight", async () => {
@@ -131,7 +155,7 @@ describe("Hono security perimeter", () => {
     expect(response.headers.get("access-control-allow-methods"))
       .toBe("GET, HEAD, POST, PUT, PATCH, DELETE, OPTIONS");
     expect(response.headers.get("access-control-allow-headers"))
-      .toBe("Authorization, Content-Type, MCP-Protocol-Version, Mcp-Method, Mcp-Name");
+      .toBe("Authorization, Content-Type, Last-Event-ID, MCP-Protocol-Version, Mcp-Method, Mcp-Name, X-Vidcom-Studio-Session");
     expect(response.headers.get("vary"))
       .toBe("Origin, Access-Control-Request-Method, Access-Control-Request-Headers");
   });

@@ -47,6 +47,7 @@ function Scrubber({
 
 export function PlaybackBar({
   duration,
+  frameRate,
   paused,
   muted,
   playbackRate,
@@ -57,6 +58,7 @@ export function PlaybackBar({
   onPlaybackRateChange,
 }: {
   duration: number;
+  frameRate: number;
   paused: boolean;
   muted: boolean;
   playbackRate: number;
@@ -90,6 +92,7 @@ export function PlaybackBar({
 
       <TimeReadout
         duration={duration}
+        frameRate={frameRate}
         className="text-muted-foreground shrink-0 font-mono text-xs tabular-nums"
       />
 

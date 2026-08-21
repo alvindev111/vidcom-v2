@@ -9,7 +9,7 @@ import type { ContentHash, ProjectId } from "@vidcom/contracts";
 import { canonicalizeJobInput, jobExecutionOutcome, JobScheduler, type JobId } from "@vidcom/core";
 import { createEventRoutes, createServerApp, InMemoryNonceStore, InMemorySessionStore } from "@vidcom/server";
 import { Hono } from "hono";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { createSequentialIdPort } from "../support/deterministic";
 import { dbAll, dbRun } from "../support/database";
@@ -41,11 +41,129 @@ afterEach(async () => {
 });
 
 describe("durable SSE", () => {
+  it("does not poll or advance the cursor while the consumer is suspended", async () => {
+    let reads = 0;
+    const app = new Hono().route("/", createEventRoutes({
+      async append() { return 0; },
+      async readFrom(cursor) {
+        reads += 1;
+        return {
+          gap: false,
+          events: [{
+            seq: cursor + 1,
+            type: "file.changed",
+            projectId,
+            payload: { path: `scene-${cursor + 1}.html` },
+            createdAt: "2026-08-20T00:00:00.000Z",
+          }],
+        };
+      },
+      async latestSeq() { return reads; },
+      async latestProjectSeq() { return reads; },
+    }, { pollMs: 1, heartbeatMs: 60_000 }));
+    const response = await app.request("http://local/events");
+
+    await new Promise((resolve) => setTimeout(resolve, 25));
+
+    process.stdout.write(`P15_SSE_SUSPENDED_SAMPLE ${JSON.stringify({ reads })}\n`);
+    expect(reads).toBe(1);
+    await response.body!.cancel();
+  });
+
+  it("closes an oversized event batch with a typed queue-overflow frame", async () => {
+    let reads = 0;
+    const app = new Hono().route("/", createEventRoutes({
+      async append() { return 0; },
+      async readFrom() {
+        reads += 1;
+        return {
+          gap: false,
+          events: [{
+            seq: 1,
+            type: "file.changed",
+            projectId,
+            payload: { value: "x".repeat(1024 * 1024) },
+            createdAt: "2026-08-20T00:00:00.000Z",
+          }],
+        };
+      },
+      async latestSeq() { return 1; },
+      async latestProjectSeq() { return 1; },
+    }));
+    const response = await app.request("http://local/events");
+    const reader = response.body!.getReader();
+    const first = new TextDecoder().decode((await reader.read()).value);
+    const ended = await reader.read();
+
+    expect(first).toContain("event: error");
+    expect(first).toContain("resource_limit_exceeded");
+    expect(ended.done).toBe(true);
+    expect(reads).toBe(1);
+  });
+
+  it("leases an attached studio session for the lifetime of its SSE stream", async () => {
+    const isAttached = vi.fn(() => true);
+    const openEventLease = vi.fn(() => 7);
+    const closeEventLease = vi.fn();
+    const app = new Hono().route("/", createEventRoutes({
+      async append() { return 0; },
+      async readFrom() { return { events: [], gap: false }; },
+      async latestSeq() { return 0; },
+      async latestProjectSeq() { return 0; },
+    }, { pollMs: 50 }, {
+      history: { isAttached, openEventLease, closeEventLease } as never,
+      browserSessionId: () => "browser-events",
+    }));
+    const response = await app.request(`http://local/events?projectId=${projectId}`, {
+      headers: { "x-vidcom-studio-session": "01K1ABCDEFGHJKMNPQRSTVWXYZ" },
+    });
+    expect(response.status).toBe(200);
+    expect(isAttached).toHaveBeenCalledWith("browser-events", "01K1ABCDEFGHJKMNPQRSTVWXYZ", projectId);
+    expect(openEventLease).toHaveBeenCalledTimes(1);
+    await response.body!.cancel();
+    expect(closeEventLease).toHaveBeenCalledWith(
+      "browser-events",
+      "01K1ABCDEFGHJKMNPQRSTVWXYZ",
+      projectId,
+      7,
+    );
+  });
+
+  it("stops polling and closes the studio lease immediately on request abort", async () => {
+    let reads = 0;
+    const closeEventLease = vi.fn();
+    const app = new Hono().route("/", createEventRoutes({
+      async append() { return 0; },
+      async readFrom() { reads += 1; return { events: [], gap: false }; },
+      async latestSeq() { return 0; },
+      async latestProjectSeq() { return 0; },
+    }, { pollMs: 1_000 }, {
+      history: {
+        isAttached: () => true,
+        openEventLease: () => 9,
+        closeEventLease,
+      } as never,
+      browserSessionId: () => "browser-events",
+    }));
+    const abort = new AbortController();
+    const response = await app.request(`http://local/events?projectId=${projectId}`, {
+      signal: abort.signal,
+      headers: { "x-vidcom-studio-session": "01K1ABCDEFGHJKMNPQRSTVWXYZ" },
+    });
+    abort.abort();
+    await new Promise((resolve) => setTimeout(resolve, 5));
+
+    expect(closeEventLease).toHaveBeenCalledTimes(1);
+    expect(reads).toBeLessThanOrEqual(1);
+    await response.body?.cancel().catch(() => {});
+  });
+
   it("emits resync instead of replaying across a retention gap", async () => {
     const app = new Hono().route("/", createEventRoutes({
       async append() { return 42; },
       async readFrom() { return { events: [], gap: true }; },
       async latestSeq() { return 42; },
+      async latestProjectSeq() { return 42; },
     }, { pollMs: 50 }));
     const response = await app.request("http://local/events", { headers: { "Last-Event-ID": "1" } });
     const reader = response.body!.getReader();

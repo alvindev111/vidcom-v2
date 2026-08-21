@@ -2,20 +2,13 @@
 
 import * as React from "react";
 
+import {
+  createHyperframesPlayerEnvironment,
+  type HyperframesPreviewEngine,
+} from "./hyperframes-player-environment";
+import { PlayerHost, type PlayerHostMountResult } from "./player-host";
 import { createTimeStore, type TimeStore } from "./player-time";
-
-/** The slice of `<hyperframes-player>` this app drives. */
-interface HyperframesPlayerElement extends HTMLElement {
-  play(): void;
-  pause(): void;
-  seek(timeInSeconds: number): void;
-  currentTime: number;
-  duration: number;
-  paused: boolean;
-  ready: boolean;
-  playbackRate: number;
-  muted: boolean;
-}
+import type { PreviewReloadResult } from "./preview-buffer";
 
 export interface PlayerControls {
   toggle: () => void;
@@ -24,11 +17,6 @@ export interface PlayerControls {
   toggleMuted: () => void;
 }
 
-/**
- * Everything about the player *except* the clock, which lives in a `TimeStore`
- * — see `player-time.tsx`. Every field here changes a handful of times per
- * session, so a change to this object can safely re-render the studio.
- */
 export interface PlayerState {
   duration: number;
   paused: boolean;
@@ -48,129 +36,154 @@ const INITIAL: PlayerState = {
 };
 
 /**
- * Mounts the real HyperFrames player into `containerRef` and mirrors its state
- * into React. The element is created imperatively (rather than as JSX) so the
- * custom element only has to exist after its module registers it, and so the
- * instance is available for play/pause/seek without a JSX type shim.
+ * Keeps one stable project-scoped PlayerHost while its replaceable player
+ * engines reload through the preview buffer.
  */
-export function useHyperframesPlayer(previewUrl: string) {
+export function useHyperframesPlayer(projectId: string, previewUrl: string) {
   const containerRef = React.useRef<HTMLDivElement | null>(null);
-  const playerRef = React.useRef<HyperframesPlayerElement | null>(null);
+  const hostRef = React.useRef<PlayerHost<HyperframesPreviewEngine> | null>(null);
+  const mountPromiseRef = React.useRef<Promise<PlayerHostMountResult> | null>(null);
+  const mountedUrlRef = React.useRef<string | null>(null);
+  const visibleChangeSeqRef = React.useRef(0);
+  const desiredChangeSeqRef = React.useRef(0);
+  const previewUrlRef = React.useRef(previewUrl);
   const [state, setState] = React.useState<PlayerState>(INITIAL);
   const [timeStore] = React.useState<TimeStore>(createTimeStore);
 
   React.useEffect(() => {
+    previewUrlRef.current = previewUrl;
+  }, [previewUrl]);
+
+  const requestReload = React.useCallback(async (input: {
+    url: string;
+    targetChangeSeq: number;
+  }): Promise<PreviewReloadResult> => {
+    const host = hostRef.current;
+    if (!host) return { kind: "disposed" };
+    desiredChangeSeqRef.current = Math.max(desiredChangeSeqRef.current, input.targetChangeSeq);
+    const mounting = mountPromiseRef.current;
+    if (mounting) {
+      const mounted = await mounting;
+      if (hostRef.current !== host || mounted.kind !== "mounted") return { kind: "disposed" };
+    }
+    const result = await host.requestReload(input);
+    if (hostRef.current !== host) return { kind: "disposed" };
+    if (result.kind === "swapped") {
+      mountedUrlRef.current = input.url;
+      visibleChangeSeqRef.current = result.visibleChangeSeq;
+      // What the visible frame is showing, stated on the element itself: the
+      // preview is double-buffered, so "has it caught up yet" is otherwise only
+      // knowable from inside this hook.
+      if (containerRef.current) {
+        containerRef.current.dataset.previewChangeSeq = String(result.visibleChangeSeq);
+        delete containerRef.current.dataset.previewError;
+      }
+      desiredChangeSeqRef.current = Math.max(desiredChangeSeqRef.current, result.visibleChangeSeq);
+      setState((current) => ({ ...current, error: null }));
+    } else if (result.kind === "rejected") {
+      setState((current) => ({ ...current, error: result.reason }));
+      if (containerRef.current) containerRef.current.dataset.previewError = result.reason;
+    }
+    return result;
+  }, []);
+
+  React.useEffect(() => {
     let disposed = false;
-    let player: HyperframesPlayerElement | null = null;
+    let host: PlayerHost<HyperframesPreviewEngine> | null = null;
+    let hostContainer: HTMLDivElement | null = null;
 
     const mount = async () => {
-      // Registers <hyperframes-player>; import is client-only by design.
       await import("@hyperframes/player");
       const container = containerRef.current;
       if (disposed || !container) return;
-      // Reset after the await so switching projects starts from a clean state
-      // without a synchronous setState inside the effect body.
+      hostContainer = container;
       setState(INITIAL);
       timeStore.set(0);
 
-      player = document.createElement(
-        "hyperframes-player",
-      ) as HyperframesPlayerElement;
-      player.setAttribute("src", previewUrl);
-      player.style.position = "absolute";
-      player.style.inset = "0";
-
-      // Fires on every `timeupdate`. The clock goes to the store, and the rest
-      // only reaches React when it actually moved — otherwise a paused-state
-      // check ten times a second would re-render the studio anyway.
-      const sync = () => {
-        if (!player) return;
-        timeStore.set(player.currentTime);
-
-        const duration = player.duration || 0;
-        const { paused, muted, playbackRate } = player;
-        setState((current) =>
-          (duration === 0 || duration === current.duration) &&
-          paused === current.paused &&
-          muted === current.muted &&
-          playbackRate === current.playbackRate
-            ? current
-            : {
-                ...current,
-                duration: duration || current.duration,
-                paused,
-                muted,
-                playbackRate,
-              },
-        );
-      };
-
-      const onReady = () => {
-        setState((current) => ({ ...current, ready: true, error: null }));
-        // The runtime only applies per-clip visibility on a tick, so the very
-        // first painted frame has every scene visible at once — a 10s-in scene
-        // stacked on top of the opening one. One seek at the current time forces
-        // that tick and leaves the transport where it was.
-        player?.seek(player.currentTime);
-      };
-      const onError = (event: Event) =>
-        setState((current) => ({
-          ...current,
-          error:
-            (event as CustomEvent<{ message?: string }>).detail?.message ??
-            event.type,
-        }));
-
-      player.addEventListener("timeupdate", sync);
-      player.addEventListener("ready", onReady);
-      player.addEventListener("error", onError);
-      player.addEventListener("playbackerror", onError);
-      player.addEventListener("runtimeprotocolerror", onError);
-
-      container.appendChild(player);
-      playerRef.current = player;
-      // The runtime may already be ready before the listener attaches.
-      if (player.ready) onReady();
-      sync();
+      const environment = createHyperframesPlayerEnvironment({
+        container,
+        previewOrigin: new URL(previewUrlRef.current, window.location.href).origin,
+        onVisibleState: (player, error) => {
+          timeStore.set(player.currentTime);
+          const duration = player.duration || 0;
+          const { paused, muted, playbackRate, ready } = player;
+          setState((current) =>
+            (duration === 0 || duration === current.duration) &&
+            paused === current.paused &&
+            muted === current.muted &&
+            playbackRate === current.playbackRate &&
+            ready === current.ready &&
+            error === current.error
+              ? current
+              : {
+                  duration: duration || current.duration,
+                  paused,
+                  ready,
+                  muted,
+                  playbackRate,
+                  error,
+                },
+          );
+        },
+      });
+      host = new PlayerHost({ projectToken: projectId, environment });
+      hostRef.current = host;
+      container.dataset.playerHostId = host.id;
+      const mountedUrl = previewUrlRef.current;
+      const mountPromise = host.mount(mountedUrl);
+      mountPromiseRef.current = mountPromise;
+      const result = await mountPromise;
+      if (disposed || hostRef.current !== host) return;
+      if (result.kind === "rejected") {
+        setState((current) => ({ ...current, ready: false, error: result.reason }));
+        return;
+      }
+      if (result.kind !== "mounted") return;
+      mountedUrlRef.current = mountedUrl;
+      visibleChangeSeqRef.current = result.visibleChangeSeq;
+      desiredChangeSeqRef.current = result.visibleChangeSeq;
     };
 
     void mount();
-
     return () => {
       disposed = true;
-      player?.pause();
-      player?.remove();
-      playerRef.current = null;
+      host?.dispose();
+      if (hostRef.current === host) hostRef.current = null;
+      if (hostRef.current === null) mountPromiseRef.current = null;
+      if (hostContainer && host && hostContainer.dataset.playerHostId === host.id) {
+        delete hostContainer.dataset.playerHostId;
+      }
+      mountedUrlRef.current = null;
     };
-  }, [previewUrl, timeStore]);
+  }, [projectId, requestReload, timeStore]);
 
   const controls = React.useMemo<PlayerControls>(
     () => ({
       toggle: () => {
-        const player = playerRef.current;
-        if (!player) return;
-        if (player.paused) player.play();
-        else player.pause();
+        const host = hostRef.current;
+        if (!host) return;
+        if (host.transport().paused) host.play();
+        else host.pause();
         setState((current) => ({ ...current, paused: !current.paused }));
       },
       seek: (seconds: number) => {
-        playerRef.current?.seek(seconds);
+        hostRef.current?.seek(seconds);
         timeStore.set(seconds);
       },
       setPlaybackRate: (rate: number) => {
-        const player = playerRef.current;
-        if (player) player.playbackRate = rate;
+        hostRef.current?.setPlaybackRate(rate);
         setState((current) => ({ ...current, playbackRate: rate }));
       },
       toggleMuted: () => {
-        const player = playerRef.current;
-        if (!player) return;
-        player.muted = !player.muted;
-        setState((current) => ({ ...current, muted: player.muted }));
+        const host = hostRef.current;
+        if (!host) return;
+        const muted = !host.transport().muted;
+        host.setMuted(muted);
+        setState((current) => ({ ...current, muted }));
       },
     }),
     [timeStore],
   );
 
-  return { containerRef, state, controls, timeStore };
+  return { containerRef, state, controls, timeStore, requestReload };
 }

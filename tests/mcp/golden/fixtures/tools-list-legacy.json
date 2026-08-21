@@ -474,13 +474,26 @@
                   ],
                   "additionalProperties": false
                 }
+              },
+              "changeSeq": {
+                "anyOf": [
+                  {
+                    "type": "integer",
+                    "exclusiveMinimum": 0,
+                    "maximum": 9007199254740991
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
               }
             },
             "required": [
               "projectRevision",
               "entityRevision",
               "fileHashes",
-              "diagnostics"
+              "diagnostics",
+              "changeSeq"
             ],
             "additionalProperties": false
           },
@@ -698,13 +711,26 @@
                   ],
                   "additionalProperties": false
                 }
+              },
+              "changeSeq": {
+                "anyOf": [
+                  {
+                    "type": "integer",
+                    "exclusiveMinimum": 0,
+                    "maximum": 9007199254740991
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
               }
             },
             "required": [
               "projectRevision",
               "entityRevision",
               "fileHashes",
-              "diagnostics"
+              "diagnostics",
+              "changeSeq"
             ],
             "additionalProperties": false
           },
@@ -997,13 +1023,26 @@
                   ],
                   "additionalProperties": false
                 }
+              },
+              "changeSeq": {
+                "anyOf": [
+                  {
+                    "type": "integer",
+                    "exclusiveMinimum": 0,
+                    "maximum": 9007199254740991
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
               }
             },
             "required": [
               "projectRevision",
               "entityRevision",
               "fileHashes",
-              "diagnostics"
+              "diagnostics",
+              "changeSeq"
             ],
             "additionalProperties": false
           },
@@ -1041,6 +1080,468 @@
           "deletedFile",
           "keptFileReason",
           "backupId"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "delete_scenes",
+      "title": "Delete several scenes",
+      "description": "Use when permanently removing a whole selection of scenes, their mounts, unique sources and narration, with one verified backup. Do not use to hide or reorder scenes, to delete a single scene when delete_scene already covers it, or when shared references must remain. Preconditions: sceneIds and expectedRevision come from current project context; omit grantId to create one approval request for the whole group, then retry once with the issued grantId and the identical selection. Side effects: after approval, deletes every owned artifact of the selection, updates the root duration, publishes one backup and commits one destructive revision. Errors/recovery: refresh context after write_conflict; request new approval after approval_invalid or approval_expired; on recovery_required stop and recover; never retry committed_response_error.",
+      "inputSchema": {
+        "type": "object",
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "projectId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 255
+          },
+          "sceneIds": {
+            "minItems": 1,
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 255
+            }
+          },
+          "expectedRevision": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "grantId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 255
+          }
+        },
+        "required": [
+          "projectId",
+          "sceneIds",
+          "expectedRevision"
+        ],
+        "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": false
+      },
+      "outputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "project": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 255
+              },
+              "slug": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 255
+              },
+              "title": {
+                "type": "string"
+              },
+              "description": {
+                "type": "string"
+              },
+              "width": {
+                "type": "number"
+              },
+              "height": {
+                "type": "number"
+              },
+              "duration": {
+                "type": "number"
+              },
+              "updatedAt": {
+                "type": "string",
+                "format": "date-time",
+                "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+              },
+              "sceneCount": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              "revision": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              }
+            },
+            "required": [
+              "id",
+              "slug",
+              "title",
+              "width",
+              "height",
+              "duration",
+              "updatedAt",
+              "sceneCount",
+              "revision"
+            ],
+            "additionalProperties": false
+          },
+          "revision": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "diagnostics": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "severity": {
+                  "type": "string",
+                  "enum": [
+                    "error",
+                    "warning",
+                    "info"
+                  ]
+                },
+                "code": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "sceneId": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 255
+                },
+                "elementId": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 255
+                },
+                "effectId": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 255
+                },
+                "file": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 4096
+                },
+                "line": {
+                  "type": "integer",
+                  "exclusiveMinimum": 0,
+                  "maximum": 9007199254740991
+                },
+                "message": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "details": {
+                  "type": "object",
+                  "propertyNames": {
+                    "type": "string"
+                  },
+                  "additionalProperties": {}
+                },
+                "fix": {
+                  "type": "object",
+                  "properties": {
+                    "kind": {
+                      "type": "string",
+                      "const": "set-attribute"
+                    },
+                    "target": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "attribute": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "value": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "kind",
+                    "target",
+                    "attribute",
+                    "value"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "required": [
+                "severity",
+                "code",
+                "message"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "changeSeq": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "backupId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 255
+          },
+          "deletedFiles": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 4096
+            }
+          },
+          "keptFiles": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 4096
+            }
+          }
+        },
+        "required": [
+          "project",
+          "revision",
+          "diagnostics",
+          "changeSeq",
+          "backupId",
+          "deletedFiles",
+          "keptFiles"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "generate_captions",
+      "title": "Generate captions for one scene",
+      "description": "Use when turning one scene's narration into on-screen captions timed to the words that were actually spoken. Do not use to write narration text, to synthesize audio, or on a scene that has no narration. Preconditions: sceneId and expectedContentHash come from read_composition or get_project_context; the scene's narration must exist, and word timings from the engine give better cues than estimated ones. Side effects: replaces the scene's whole caption block in one revision, so no cue from a previous run survives. Errors/recovery: scene_not_found means the id is stale; a scene without narration is refused rather than captioned from nothing; on write_conflict re-read the composition; never retry committed_response_error.",
+      "inputSchema": {
+        "type": "object",
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "projectId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 255
+          },
+          "sceneId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 255
+          },
+          "expectedContentHash": {
+            "type": "string",
+            "pattern": "^sha256:[0-9a-f]{64}$"
+          }
+        },
+        "required": [
+          "projectId",
+          "sceneId",
+          "expectedContentHash"
+        ],
+        "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": false
+      },
+      "outputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "cues": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "start": {
+                  "type": "number",
+                  "minimum": 0
+                },
+                "end": {
+                  "type": "number",
+                  "minimum": 0
+                },
+                "words": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "text": {
+                        "type": "string"
+                      },
+                      "start": {
+                        "type": "number",
+                        "minimum": 0
+                      },
+                      "end": {
+                        "type": "number",
+                        "minimum": 0
+                      }
+                    },
+                    "required": [
+                      "text",
+                      "start",
+                      "end"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                "text": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "start",
+                "end",
+                "words",
+                "text"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "timingSource": {
+            "type": "string",
+            "enum": [
+              "engine",
+              "estimated"
+            ]
+          },
+          "revision": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "diagnostics": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "severity": {
+                  "type": "string",
+                  "enum": [
+                    "error",
+                    "warning",
+                    "info"
+                  ]
+                },
+                "code": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "sceneId": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 255
+                },
+                "elementId": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 255
+                },
+                "effectId": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 255
+                },
+                "file": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 4096
+                },
+                "line": {
+                  "type": "integer",
+                  "exclusiveMinimum": 0,
+                  "maximum": 9007199254740991
+                },
+                "message": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "details": {
+                  "type": "object",
+                  "propertyNames": {
+                    "type": "string"
+                  },
+                  "additionalProperties": {}
+                },
+                "fix": {
+                  "type": "object",
+                  "properties": {
+                    "kind": {
+                      "type": "string",
+                      "const": "set-attribute"
+                    },
+                    "target": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "attribute": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "value": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "kind",
+                    "target",
+                    "attribute",
+                    "value"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "required": [
+                "severity",
+                "code",
+                "message"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "changeSeq": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "cues",
+          "timingSource",
+          "revision",
+          "diagnostics",
+          "changeSeq"
         ],
         "additionalProperties": false
       }
@@ -1147,12 +1648,16 @@
                       "idempotency_key_reused",
                       "workspace_lease_lost",
                       "timing_invalid",
+                      "timing_not_frame_aligned",
                       "duration_overflow",
+                      "invariant_violated",
                       "scene_not_found",
                       "sdk_rejected",
                       "no_file",
                       "too_large",
+                      "resource_limit_exceeded",
                       "unsupported_media",
+                      "integrity_mismatch",
                       "internal",
                       "storage_unavailable",
                       "workspace_lease_denied",
@@ -3038,13 +3543,364 @@
             "type": "integer",
             "minimum": 0,
             "maximum": 9007199254740991
+          },
+          "changeSeq": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "required": [
           "track",
           "volume",
           "loop",
-          "revision"
+          "revision",
+          "changeSeq"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "install_catalog_item",
+      "title": "Install a catalog item",
+      "description": "Use when installing one packaged catalog item into the project and mounting it as a new scene or inside an existing one. Do not use to browse the catalog, to install several items at once, or to overwrite an existing copy without saying so. Preconditions: name, version, mount and expectedRevision come from list_catalog_items and get_project_context; omit grantId to plan and request approval, then retry once with the issued grantId and the identical intent, including existingPolicy. Side effects: after approval, writes the item's files and mounts it in one revision, and records where the package came from. Errors/recovery: precondition_required means the package is already installed and needs an explicit existingPolicy — choose one deliberately rather than assuming replace; refresh context after write_conflict; request new approval after approval_invalid or approval_expired; never retry committed_response_error.",
+      "inputSchema": {
+        "type": "object",
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "projectId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 255
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "version": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "mount": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "kind": {
+                    "type": "string",
+                    "const": "new-scene"
+                  },
+                  "toIndex": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 9007199254740991
+                  },
+                  "trackIndex": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 9007199254740991
+                  }
+                },
+                "required": [
+                  "kind",
+                  "toIndex"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "kind": {
+                    "type": "string",
+                    "const": "into-scene"
+                  },
+                  "sceneId": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 255
+                  }
+                },
+                "required": [
+                  "kind",
+                  "sceneId"
+                ],
+                "additionalProperties": false
+              }
+            ]
+          },
+          "existingPolicy": {
+            "type": "string",
+            "enum": [
+              "reuse",
+              "replace",
+              "skip"
+            ]
+          },
+          "expectedRevision": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "grantId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 255
+          }
+        },
+        "required": [
+          "projectId",
+          "name",
+          "version",
+          "mount",
+          "expectedRevision"
+        ],
+        "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": false
+      },
+      "outputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "packageStatus": {
+            "type": "string",
+            "enum": [
+              "installed",
+              "reused",
+              "replaced"
+            ]
+          },
+          "files": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "path": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 4096
+                },
+                "action": {
+                  "type": "string",
+                  "enum": [
+                    "create",
+                    "replace",
+                    "reuse"
+                  ]
+                }
+              },
+              "required": [
+                "path",
+                "action"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "provenance": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 128
+              },
+              "title": {
+                "type": "string",
+                "maxLength": 256
+              },
+              "description": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "maxLength": 2048
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "category": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 64
+              },
+              "tags": {
+                "maxItems": 32,
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "maxLength": 64
+                }
+              },
+              "registry": {
+                "type": "string",
+                "enum": [
+                  "bundled",
+                  "hyperframes"
+                ]
+              },
+              "version": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 128
+              },
+              "integrity": {
+                "type": "string",
+                "pattern": "^[0-9a-f]{64}$"
+              }
+            },
+            "required": [
+              "name",
+              "title",
+              "description",
+              "category",
+              "tags",
+              "registry",
+              "version",
+              "integrity"
+            ],
+            "additionalProperties": false
+          },
+          "sceneId": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 255
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "revision": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "diagnostics": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "severity": {
+                  "type": "string",
+                  "enum": [
+                    "error",
+                    "warning",
+                    "info"
+                  ]
+                },
+                "code": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "sceneId": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 255
+                },
+                "elementId": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 255
+                },
+                "effectId": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 255
+                },
+                "file": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 4096
+                },
+                "line": {
+                  "type": "integer",
+                  "exclusiveMinimum": 0,
+                  "maximum": 9007199254740991
+                },
+                "message": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "details": {
+                  "type": "object",
+                  "propertyNames": {
+                    "type": "string"
+                  },
+                  "additionalProperties": {}
+                },
+                "fix": {
+                  "type": "object",
+                  "properties": {
+                    "kind": {
+                      "type": "string",
+                      "const": "set-attribute"
+                    },
+                    "target": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "attribute": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "value": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "kind",
+                    "target",
+                    "attribute",
+                    "value"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "required": [
+                "severity",
+                "code",
+                "message"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "changeSeq": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "packageStatus",
+          "files",
+          "provenance",
+          "sceneId",
+          "revision",
+          "diagnostics",
+          "changeSeq"
         ],
         "additionalProperties": false
       }
@@ -3199,13 +4055,26 @@
                 "type": "null"
               }
             ]
+          },
+          "changeSeq": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "required": [
           "status",
           "library",
           "files",
-          "revision"
+          "revision",
+          "changeSeq"
         ],
         "additionalProperties": false
       }
@@ -3610,6 +4479,392 @@
           "tracks",
           "library",
           "defaultVolume"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "list_catalog_items",
+      "title": "List catalog items",
+      "description": "Use when looking for a template, block or other packaged item to install, optionally filtered by kind, category, tags or a search term. Do not use to install one, to read project files, or to reach a registry directly. Preconditions: none; every filter is optional. Side effects: read-only. The listing says where it came from and whether it is stale, so an offline fallback is visible rather than silent. Errors/recovery: a stale listing is still usable; install_catalog_item revalidates the exact item before it writes anything.",
+      "inputSchema": {
+        "type": "object",
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "template",
+              "block",
+              "motion-graphic",
+              "start-end",
+              "video"
+            ]
+          },
+          "category": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "tags": {
+            "maxItems": 32,
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64
+            }
+          },
+          "query": {
+            "type": "string",
+            "maxLength": 128
+          }
+        },
+        "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "outputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 128
+                },
+                "kind": {
+                  "type": "string",
+                  "enum": [
+                    "template",
+                    "block",
+                    "motion-graphic",
+                    "start-end",
+                    "video"
+                  ]
+                },
+                "title": {
+                  "type": "string",
+                  "maxLength": 256
+                },
+                "description": {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "maxLength": 2048
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "tags": {
+                  "maxItems": 32,
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "maxLength": 64
+                  }
+                },
+                "category": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 64
+                },
+                "version": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 128
+                },
+                "integrity": {
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "manifest": {
+                          "type": "string",
+                          "pattern": "^[0-9a-f]{64}$"
+                        },
+                        "files": {
+                          "type": "object",
+                          "propertyNames": {
+                            "type": "string"
+                          },
+                          "additionalProperties": {
+                            "type": "string",
+                            "pattern": "^[0-9a-f]{64}$"
+                          }
+                        }
+                      },
+                      "required": [
+                        "manifest",
+                        "files"
+                      ],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "materialization": {
+                  "type": "string",
+                  "enum": [
+                    "metadata",
+                    "verified"
+                  ]
+                },
+                "source": {
+                  "type": "object",
+                  "properties": {
+                    "registry": {
+                      "type": "string",
+                      "enum": [
+                        "bundled",
+                        "hyperframes"
+                      ]
+                    },
+                    "revision": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "pattern": "^[0-9a-f]{40}$"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "committedAt": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "maxLength": 64
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "registry",
+                    "revision",
+                    "committedAt"
+                  ],
+                  "additionalProperties": false
+                },
+                "dependencies": {
+                  "maxItems": 256,
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "maxLength": 128
+                  }
+                },
+                "compatibility": {
+                  "type": "object",
+                  "properties": {
+                    "aspectRatios": {
+                      "anyOf": [
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "string",
+                            "maxLength": 16
+                          }
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "minWidth": {
+                      "anyOf": [
+                        {
+                          "type": "integer",
+                          "exclusiveMinimum": 0,
+                          "maximum": 9007199254740991
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "fps": {
+                      "anyOf": [
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "number",
+                            "exclusiveMinimum": 0
+                          }
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "minHyperframesVersion": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "maxLength": 64
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "aspectRatios",
+                    "minWidth",
+                    "fps",
+                    "minHyperframesVersion"
+                  ],
+                  "additionalProperties": false
+                },
+                "durationSeconds": {
+                  "anyOf": [
+                    {
+                      "type": "number",
+                      "exclusiveMinimum": 0
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "entry": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 4096
+                },
+                "previewPath": {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 4096
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "compatibilityWarning": {
+                  "anyOf": [
+                    {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "status": {
+                              "type": "string",
+                              "const": "compatible"
+                            }
+                          },
+                          "required": [
+                            "status"
+                          ],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "status": {
+                              "type": "string",
+                              "const": "incompatible"
+                            },
+                            "required": {
+                              "type": "string",
+                              "maxLength": 64
+                            },
+                            "runtime": {
+                              "type": "string",
+                              "maxLength": 64
+                            }
+                          },
+                          "required": [
+                            "status",
+                            "required",
+                            "runtime"
+                          ],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "status": {
+                              "type": "string",
+                              "const": "unknown"
+                            },
+                            "required": {
+                              "type": "string",
+                              "maxLength": 64
+                            }
+                          },
+                          "required": [
+                            "status",
+                            "required"
+                          ],
+                          "additionalProperties": false
+                        }
+                      ]
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              },
+              "required": [
+                "name",
+                "kind",
+                "title",
+                "description",
+                "tags",
+                "category",
+                "version",
+                "integrity",
+                "materialization",
+                "source",
+                "dependencies",
+                "compatibility",
+                "durationSeconds",
+                "entry",
+                "previewPath",
+                "compatibilityWarning"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "source": {
+            "type": "string",
+            "enum": [
+              "bundled",
+              "cache",
+              "network"
+            ]
+          },
+          "stale": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "items",
+          "source",
+          "stale"
         ],
         "additionalProperties": false
       }
@@ -4698,6 +5953,458 @@
       }
     },
     {
+      "name": "mount_asset",
+      "title": "Mount an asset on the timeline",
+      "description": "Use when putting a file that is already in the project onto the timeline, wrapped in its own scene, or when finishing an upload that was left unmounted. Do not use to upload a file, to change an existing clip's timing, or to pass a duration — the daemon measures the file itself. Preconditions: for an asset in the project pass assetPath, assetContentHash, atSeconds and trackIndex; for a pending upload pass only its operationId, because the placement lives in the server-side record. expectedContentHash comes from read_composition. Side effects: writes one wrapper scene and its narration sidecar, mounts it in the entry composition, and commits one revision. onOverflow shrink trims the wrapper; extend-root grows the timeline instead. Errors/recovery: an asset that cannot be inspected is refused and stays in Media; write_conflict means the file changed since its hash was read; not_found on a retry means that operation has expired, so do not start a new one for the same bytes.",
+      "inputSchema": {
+        "type": "object",
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "anyOf": [
+          {
+            "type": "object",
+            "properties": {
+              "projectId": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 255
+              },
+              "assetPath": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 4096
+              },
+              "assetContentHash": {
+                "type": "string",
+                "pattern": "^sha256:[0-9a-f]{64}$"
+              },
+              "atSeconds": {
+                "type": "number",
+                "minimum": 0
+              },
+              "trackIndex": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              "expectedContentHash": {
+                "type": "string",
+                "pattern": "^sha256:[0-9a-f]{64}$"
+              },
+              "onOverflow": {
+                "type": "string",
+                "enum": [
+                  "shrink",
+                  "extend-root"
+                ]
+              }
+            },
+            "required": [
+              "projectId",
+              "assetPath",
+              "assetContentHash",
+              "atSeconds",
+              "trackIndex",
+              "expectedContentHash",
+              "onOverflow"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "projectId": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 255
+              },
+              "operationId": {
+                "type": "string",
+                "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$"
+              },
+              "expectedContentHash": {
+                "type": "string",
+                "pattern": "^sha256:[0-9a-f]{64}$"
+              },
+              "onOverflow": {
+                "type": "string",
+                "enum": [
+                  "shrink",
+                  "extend-root"
+                ]
+              }
+            },
+            "required": [
+              "projectId",
+              "operationId",
+              "expectedContentHash",
+              "onOverflow"
+            ],
+            "additionalProperties": false
+          }
+        ]
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": false
+      },
+      "outputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "sceneId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 255
+          },
+          "durationSeconds": {
+            "type": "number",
+            "exclusiveMinimum": 0
+          },
+          "replayed": {
+            "type": "boolean"
+          },
+          "revision": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "diagnostics": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "severity": {
+                  "type": "string",
+                  "enum": [
+                    "error",
+                    "warning",
+                    "info"
+                  ]
+                },
+                "code": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "sceneId": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 255
+                },
+                "elementId": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 255
+                },
+                "effectId": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 255
+                },
+                "file": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 4096
+                },
+                "line": {
+                  "type": "integer",
+                  "exclusiveMinimum": 0,
+                  "maximum": 9007199254740991
+                },
+                "message": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "details": {
+                  "type": "object",
+                  "propertyNames": {
+                    "type": "string"
+                  },
+                  "additionalProperties": {}
+                },
+                "fix": {
+                  "type": "object",
+                  "properties": {
+                    "kind": {
+                      "type": "string",
+                      "const": "set-attribute"
+                    },
+                    "target": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "attribute": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "value": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "kind",
+                    "target",
+                    "attribute",
+                    "value"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "required": [
+                "severity",
+                "code",
+                "message"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "changeSeq": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "sceneId",
+          "durationSeconds",
+          "replayed",
+          "revision",
+          "diagnostics",
+          "changeSeq"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "move_scenes",
+      "title": "Move several scenes together",
+      "description": "Use when shifting a whole selection of scenes by the same amount of time while keeping the gaps between them. Do not use to reorder one scene, to change durations, or to move scenes onto another track. Preconditions: sceneIds must be unique and current, deltaSeconds is the shift in seconds, and expectedContentHash comes from read_composition; pass extendRoot only after a root-overflow refusal that says it is allowed. Side effects: applies the whole shift in one revision or none of it, so a refused group leaves the timeline untouched. Errors/recovery: on write_conflict re-read the entry composition; timing_invalid or duration_overflow names what the group would have broken; on recovery_required stop writes and recover; never retry committed_response_error.",
+      "inputSchema": {
+        "type": "object",
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "projectId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 255
+          },
+          "sceneIds": {
+            "minItems": 1,
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 255
+            }
+          },
+          "deltaSeconds": {
+            "type": "number"
+          },
+          "extendRoot": {
+            "type": "boolean"
+          },
+          "expectedContentHash": {
+            "type": "string",
+            "pattern": "^sha256:[0-9a-f]{64}$"
+          }
+        },
+        "required": [
+          "projectId",
+          "sceneIds",
+          "deltaSeconds",
+          "expectedContentHash"
+        ],
+        "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": false
+      },
+      "outputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "changed": {
+            "type": "boolean"
+          },
+          "changes": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "sceneId": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 255
+                },
+                "start": {
+                  "type": "number",
+                  "minimum": 0
+                },
+                "trackIndex": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                }
+              },
+              "required": [
+                "sceneId"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "file": {
+            "type": "object",
+            "properties": {
+              "path": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 4096
+              },
+              "content": {
+                "type": "string"
+              },
+              "contentHash": {
+                "type": "string",
+                "pattern": "^sha256:[0-9a-f]{64}$"
+              }
+            },
+            "required": [
+              "path",
+              "content",
+              "contentHash"
+            ],
+            "additionalProperties": false
+          },
+          "revision": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "diagnostics": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "severity": {
+                  "type": "string",
+                  "enum": [
+                    "error",
+                    "warning",
+                    "info"
+                  ]
+                },
+                "code": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "sceneId": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 255
+                },
+                "elementId": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 255
+                },
+                "effectId": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 255
+                },
+                "file": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 4096
+                },
+                "line": {
+                  "type": "integer",
+                  "exclusiveMinimum": 0,
+                  "maximum": 9007199254740991
+                },
+                "message": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "details": {
+                  "type": "object",
+                  "propertyNames": {
+                    "type": "string"
+                  },
+                  "additionalProperties": {}
+                },
+                "fix": {
+                  "type": "object",
+                  "properties": {
+                    "kind": {
+                      "type": "string",
+                      "const": "set-attribute"
+                    },
+                    "target": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "attribute": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "value": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "kind",
+                    "target",
+                    "attribute",
+                    "value"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "required": [
+                "severity",
+                "code",
+                "message"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "changeSeq": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "changed",
+          "changes",
+          "file",
+          "revision",
+          "diagnostics",
+          "changeSeq"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
       "name": "patch_narration_cue",
       "title": "Update one narration cue",
       "description": "Use when correcting the text, voice or offset of exactly one existing cue while its siblings keep their synthesis state. Do not use to add or remove cues, which replace_narration_cues owns, and do not use to synthesize audio. Preconditions: projectId, sceneId, cueId and expectedContentHash come from get_narration_cues, and at least one of text, voice or offsetSeconds must be present. Side effects: rewrites the sidecar as one journaled write and commits one revision; changing text or voice marks only that cue stale, while an offset change keeps its audio valid. Errors/recovery: not_found means that cueId is gone; write_conflict means the sidecar changed, so re-read it; re-run start_tts for cues whose staleSince is set.",
@@ -5166,6 +6873,230 @@
       }
     },
     {
+      "name": "reorder_scenes",
+      "title": "Reorder one scene",
+      "description": "Use when moving one existing scene to a different position, or onto a different track, and letting the timeline close the gap it leaves. Do not use to change a scene's own start or duration, to move several scenes together, or to delete one. Preconditions: sceneId, toIndex and expectedContentHash come from read_composition or get_project_context; pass extendRoot only after a root-overflow refusal that says it is allowed. Side effects: rewrites the entry composition in one revision, shifting the scenes the move displaces and growing the root only when extendRoot was asked for. Errors/recovery: on write_conflict re-read the entry composition; a duration_overflow names the limit it hit; on recovery_required stop writes and recover; committed_response_error means the mutation committed, so do not retry it.",
+      "inputSchema": {
+        "type": "object",
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "projectId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 255
+          },
+          "sceneId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 255
+          },
+          "toIndex": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "toTrackIndex": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "extendRoot": {
+            "type": "boolean"
+          },
+          "expectedContentHash": {
+            "type": "string",
+            "pattern": "^sha256:[0-9a-f]{64}$"
+          }
+        },
+        "required": [
+          "projectId",
+          "sceneId",
+          "toIndex",
+          "expectedContentHash"
+        ],
+        "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": false
+      },
+      "outputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "changed": {
+            "type": "boolean"
+          },
+          "changes": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "sceneId": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 255
+                },
+                "start": {
+                  "type": "number",
+                  "minimum": 0
+                },
+                "trackIndex": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                }
+              },
+              "required": [
+                "sceneId"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "file": {
+            "type": "object",
+            "properties": {
+              "path": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 4096
+              },
+              "content": {
+                "type": "string"
+              },
+              "contentHash": {
+                "type": "string",
+                "pattern": "^sha256:[0-9a-f]{64}$"
+              }
+            },
+            "required": [
+              "path",
+              "content",
+              "contentHash"
+            ],
+            "additionalProperties": false
+          },
+          "revision": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "diagnostics": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "severity": {
+                  "type": "string",
+                  "enum": [
+                    "error",
+                    "warning",
+                    "info"
+                  ]
+                },
+                "code": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "sceneId": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 255
+                },
+                "elementId": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 255
+                },
+                "effectId": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 255
+                },
+                "file": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 4096
+                },
+                "line": {
+                  "type": "integer",
+                  "exclusiveMinimum": 0,
+                  "maximum": 9007199254740991
+                },
+                "message": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "details": {
+                  "type": "object",
+                  "propertyNames": {
+                    "type": "string"
+                  },
+                  "additionalProperties": {}
+                },
+                "fix": {
+                  "type": "object",
+                  "properties": {
+                    "kind": {
+                      "type": "string",
+                      "const": "set-attribute"
+                    },
+                    "target": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "attribute": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "value": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "kind",
+                    "target",
+                    "attribute",
+                    "value"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "required": [
+                "severity",
+                "code",
+                "message"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "changeSeq": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "changed",
+          "changes",
+          "file",
+          "revision",
+          "diagnostics",
+          "changeSeq"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
       "name": "replace_narration_cues",
       "title": "Replace scene narration cues",
       "description": "Use when writing or rewriting the complete spoken script of one scene before start_tts. Do not use to edit a single cue, to change on-screen text, or to synthesize audio. Preconditions: projectId and sceneId come from project context, cueIds must be unique, and expectedContentHash comes from get_narration_cues — null when that scene has no sidecar yet. Side effects: rewrites narration/<sceneId>.json as one journaled write, resets synthesis metadata for every cue, and commits one project revision; existing audio becomes stale. Errors/recovery: write_conflict means the sidecar changed, so re-read get_narration_cues; schema_invalid on cues means duplicate cueIds; run start_tts afterwards to produce audio again.",
@@ -5529,13 +7460,26 @@
                   ],
                   "additionalProperties": false
                 }
+              },
+              "changeSeq": {
+                "anyOf": [
+                  {
+                    "type": "integer",
+                    "exclusiveMinimum": 0,
+                    "maximum": 9007199254740991
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
               }
             },
             "required": [
               "projectRevision",
               "entityRevision",
               "fileHashes",
-              "diagnostics"
+              "diagnostics",
+              "changeSeq"
             ],
             "additionalProperties": false
           }
@@ -6529,12 +8473,25 @@
               ],
               "additionalProperties": false
             }
+          },
+          "changeSeq": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "required": [
           "previewSettings",
           "revision",
-          "diagnostics"
+          "diagnostics",
+          "changeSeq"
         ],
         "additionalProperties": false
       }
@@ -6841,13 +8798,26 @@
                   ],
                   "additionalProperties": false
                 }
+              },
+              "changeSeq": {
+                "anyOf": [
+                  {
+                    "type": "integer",
+                    "exclusiveMinimum": 0,
+                    "maximum": 9007199254740991
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
               }
             },
             "required": [
               "projectRevision",
               "entityRevision",
               "fileHashes",
-              "diagnostics"
+              "diagnostics",
+              "changeSeq"
             ],
             "additionalProperties": false
           },
@@ -7195,13 +9165,26 @@
                   ],
                   "additionalProperties": false
                 }
+              },
+              "changeSeq": {
+                "anyOf": [
+                  {
+                    "type": "integer",
+                    "exclusiveMinimum": 0,
+                    "maximum": 9007199254740991
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
               }
             },
             "required": [
               "projectRevision",
               "entityRevision",
               "fileHashes",
-              "diagnostics"
+              "diagnostics",
+              "changeSeq"
             ],
             "additionalProperties": false
           },

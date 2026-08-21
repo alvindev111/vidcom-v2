@@ -2,7 +2,10 @@
 
 ## 1. Nguyên tắc
 
-HTTP adapter là **consumer thứ hai** của use case, sau MCP (D1). Nếu một thao tác chỉ làm được qua HTTP mà không qua MCP, thiết kế sai.
+HTTP adapter là **consumer ngang hàng** với MCP của use case Core (D1). Operation có input biểu diễn an
+toàn trên cả hai transport MUST có parity HTTP/MCP và gọi cùng use case. Hai defer tường minh là thao
+tác theo phiên studio cục bộ (D7) và input file/blob cục bộ (D9); dù chỉ expose qua HTTP, nghiệp vụ vẫn
+MUST nằm ở Core và D9 không được biến thành tool MCP nhận absolute path.
 
 Adapter chỉ làm 5 việc: parse & validate input → gọi use case → map `Result` sang HTTP → stream nếu cần → audit. MUST NOT chứa nghiệp vụ.
 
@@ -104,7 +107,13 @@ Bản mock chỉ bảo "reload before saving" — người dùng mất toàn b�
 
 ## 4. Input
 
-- Body JSON, `content-type: application/json`, trừ upload (multipart).
+- Body JSON, `content-type: application/json`, trừ upload. Upload có thể dùng multipart hoặc raw binary stream
+  khi contract cần progress/cancel và payload lớn.
+- Upload raw MUST dùng `content-type: application/octet-stream`; metadata vẫn MUST đi qua schema contract
+  (query/header theo route), auth và validation trước khi đọc body. Media type này không phải bằng chứng loại file.
+- Mọi upload MUST có giới hạn theo số byte thật và giữ backpressure. Route được bỏ qua body-limit middleware
+  chung chỉ khi Core cùng staging adapter tự đếm byte; ngoại lệ đó MUST NOT biến thành body không giới hạn hoặc
+  nới giới hạn của route khác.
 - MUST validate bằng schema từ `contracts` (xem [06-validation](06-validation.md)).
 - Path param, query param cũng phải validate — không tin `c.req.param()`.
 - MUST đặt giới hạn kích thước tường minh cho mọi endpoint nhận body.
@@ -126,6 +135,13 @@ POST /api/v1/jobs/j_123/cancel      → 202
 ```
 
 Chi tiết: [08-jobs-and-queue](08-jobs-and-queue.md).
+
+Ngoại lệ duy nhất là **timeline thumbnail** tương tác: đây là derived-cache có thể huỷ, không phải
+artifact `snapshot` bền. Route MAY giữ request để stream tối đa 256 mốc của đúng một scene/profile
+khi và chỉ khi công việc đi qua scheduler chung toàn daemon có giới hạn `2 active` / `8 queued`,
+`AbortSignal` đi xuyên từ request tới cây process, và hết capacity trả failure hữu hạn
+`thumbnail_capacity` cho từng mốc thay vì tạo thêm promise/process. Kết quả chỉ được ghi vào cache
+app-data; MUST NOT ghi project, tăng source revision hoặc tạo artifact trong `snapshots/`.
 
 ## 7. Streaming (SSE)
 

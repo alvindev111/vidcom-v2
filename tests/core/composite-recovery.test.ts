@@ -70,6 +70,28 @@ describe("classifyCompositeStep", () => {
     expect(classifyCompositeStep(step, digest("other"))).toBe("unknown");
   });
 
+  it("classifies mkdir/rmdir from directory state and durable existedBefore", () => {
+    const mkdir: StepIntent = {
+      ordinal: 0,
+      kind: "mkdir",
+      path: "assets" as RelPath,
+      entity: null,
+      fromHash: null,
+      toHash: null,
+      previousContent: null,
+      existedBefore: false,
+    };
+    expect(classifyCompositeStep(mkdir, null, "directory")).toBe("landed");
+    expect(classifyCompositeStep(mkdir, null, "absent")).toBe("not_applied");
+    expect(classifyCompositeStep(mkdir, null, "other")).toBe("unknown");
+    expect(classifyCompositeStep({ ...mkdir, existedBefore: true }, null, "directory")).toBe("landed");
+    expect(classifyCompositeStep({ ...mkdir, existedBefore: true }, null, "absent")).toBe("unknown");
+
+    const rmdir: StepIntent = { ...mkdir, kind: "rmdir", existedBefore: true };
+    expect(classifyCompositeStep(rmdir, null, "absent")).toBe("landed");
+    expect(classifyCompositeStep(rmdir, null, "directory")).toBe("not_applied");
+  });
+
   it.each([
     [[], "orphan"],
     [["unknown"], "orphan"],
@@ -88,11 +110,16 @@ describe("classifyCompositeStep", () => {
     const operations: string[] = [];
     const workspace: WorkspacePort = {
       async resolve() { return ok(first); },
+      async resolveMutation() { return ok({ target: first, canonicalRoot: first, parents: [] }); },
+      async revalidateMutationPath() { return true; },
+      async refreshMutationPath(lease) { return lease; },
       async resolveWorkspace() { throw new Error("unused"); },
       async listProjects() { return []; },
       async readProjectRef() { return null; },
       async readFile() { return null; },
       async readBytes() { return null; },
+      async statAsset() { return null; },
+      async openAssetRange() { return null; },
       async readHash(target) { operations.push(`verify:${target}`); return hashes.get(target) ?? null; },
       async writeAtomic(target, content) {
         operations.push(`write:${target}:${String(content)}`);
@@ -106,6 +133,7 @@ describe("classifyCompositeStep", () => {
       async discardCapture() {},
       async readTree() { return []; },
       async stat() { return null; },
+      async readDirectory() { return []; },
     };
     const makeStep = (ordinal: number, path: RelPath): StepIntent => ({
       ordinal,
@@ -131,11 +159,16 @@ describe("classifyCompositeStep", () => {
     const target = "/workspace/project/index.html" as ResolvedPath;
     const workspace: WorkspacePort = {
       async resolve() { return ok(target); },
+      async resolveMutation() { return ok({ target, canonicalRoot: target, parents: [] }); },
+      async revalidateMutationPath() { return true; },
+      async refreshMutationPath(lease) { return lease; },
       async resolveWorkspace() { throw new Error("unused"); },
       async listProjects() { return []; },
       async readProjectRef() { return null; },
       async readFile() { return null; },
       async readBytes() { return null; },
+      async statAsset() { return null; },
+      async openAssetRange() { return null; },
       async readHash() { return next; },
       async writeAtomic() {},
       async exists() { return true; },
@@ -146,6 +179,7 @@ describe("classifyCompositeStep", () => {
       async discardCapture() {},
       async readTree() { return []; },
       async stat() { return null; },
+      async readDirectory() { return []; },
     };
     const step: StepIntent = {
       ordinal: 0,

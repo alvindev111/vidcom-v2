@@ -17,6 +17,30 @@ export const RelativePathSchema = relativePathSchema;
 /** Shared canonical SHA-256 schema for HTTP and MCP contracts. */
 export const ContentHashSchema = contentHashSchema;
 
+export const TimelineThumbnailRequestSchema = z.strictObject({
+  sceneId: identifierSchema,
+  atSeconds: z.array(z.number().finite().nonnegative()).min(1).max(256)
+    .refine((values) => new Set(values).size === values.length, "thumbnail marks must be unique"),
+  profile: z.literal("timeline-v1"),
+});
+
+export const ThumbnailImageParamsSchema = z.strictObject({
+  id: identifierSchema,
+  key: z.string().regex(/^[0-9a-f]{64}$/),
+});
+
+export const TimelineThumbnailLineSchema = z.discriminatedUnion("status", [
+  z.strictObject({ atSeconds: z.number().finite().nonnegative(), status: z.literal("ready"), url: z.string().min(1) }),
+  z.strictObject({
+    atSeconds: z.number().finite().nonnegative(),
+    status: z.literal("placeholder"),
+    reason: z.enum(ErrorCode),
+  }),
+]);
+
+export type TimelineThumbnailRequest = z.infer<typeof TimelineThumbnailRequestSchema>;
+export type TimelineThumbnailLine = z.infer<typeof TimelineThumbnailLineSchema>;
+
 /** Project write-gate state shared by HTTP snapshots and MCP project reads. */
 export const ProjectRecoveryStatusSchema = z.strictObject({
   writeStatus: z.enum(["ready", "recovery_required"]),
@@ -138,6 +162,8 @@ export const SceneSchema = z.strictObject({
       src: z.string(),
       start: z.number().finite().nullable(),
       duration: z.number().finite().nullable(),
+      /** The project file this clip points at is not on disk (R11.9). */
+      missing: z.boolean(),
     }),
   ),
   script: z.array(
@@ -484,7 +510,10 @@ export const ProjectFileSchema = z.strictObject({
 });
 
 export const StudioSnapshotResponseSchema = z.strictObject({
+  /** Durable event cursor captured before the snapshot read begins. */
+  eventCursor: z.number().int().nonnegative(),
   project: ProjectSummarySchema,
+  frameRate: z.number().finite().positive(),
   entryFile: ProjectFileSchema,
   tree: z.array(FileNodeSchema),
   scenes: z.array(SceneSchema),
@@ -499,6 +528,19 @@ export const StudioSnapshotResponseSchema = z.strictObject({
   diagnostics: z.array(DiagnosticSchema),
 });
 
+export const ProjectTreeQuerySchema = z.strictObject({
+  directory: relativePathSchema.optional(),
+  cursor: z.string().regex(/^\d+$/u).optional(),
+  limit: z.coerce.number().int().min(1).max(200).default(200),
+});
+
+export const ProjectTreeResponseSchema = z.strictObject({
+  directory: relativePathSchema.nullable(),
+  entries: z.array(FileNodeSchema).max(200),
+  nextCursor: z.string().regex(/^\d+$/u).nullable(),
+  totalEntries: z.number().int().nonnegative().max(2_000),
+});
+
 export const ReadProjectFileQuerySchema = z.strictObject({ path: relativePathSchema });
 export const ReadProjectFileResponseSchema = z.strictObject({ file: ProjectFileSchema });
 
@@ -511,6 +553,7 @@ export const PutProjectFileResponseSchema = z.strictObject({
   file: ProjectFileSchema,
   revision: z.number().int().nonnegative(),
   diagnostics: z.array(DiagnosticSchema),
+  changeSeq: z.number().int().nonnegative().nullable(),
 });
 
 export const WriteConflictResponseSchema = ErrorResponseSchema.extend({
@@ -529,6 +572,7 @@ export const PatchPreviewSettingsResponseSchema = z.strictObject({
   previewSettings: PreviewSettingsSchema,
   revision: z.number().int().nonnegative(),
   diagnostics: z.array(DiagnosticSchema),
+  changeSeq: z.number().int().nonnegative().nullable(),
 });
 
 /** Job states after which no further handler execution may settle the job. */
@@ -614,10 +658,12 @@ export const LegacySceneMutationRequestSchema = z.discriminatedUnion("action", [
 export const LegacyTtsResponseSchema = z.strictObject({
   ok: z.literal(true),
   narration: SceneSchema.shape.narration.unwrap(),
+  changeSeq: z.number().int().nonnegative().nullable(),
 });
 export const LegacyGenerateResponseSchema = z.strictObject({
   ok: z.literal(true),
   sceneId: identifierSchema,
+  changeSeq: z.number().int().nonnegative().nullable(),
   transcript: z.array(
     z.strictObject({
       kind: z.enum(["command", "output", "muted", "accent"]),
@@ -629,6 +675,7 @@ export const LegacyGenerateResponseSchema = z.strictObject({
 export type ProjectSummaryDto = z.infer<typeof ProjectSummarySchema>;
 export type SceneDto = z.infer<typeof SceneSchema>;
 export type StudioSnapshotResponse = z.infer<typeof StudioSnapshotResponseSchema>;
+export type ProjectTreeResponse = z.infer<typeof ProjectTreeResponseSchema>;
 export type PreviewSettingsDto = z.infer<typeof PreviewSettingsSchema>;
 export type PreviewSettingsPatchDto = z.infer<typeof PreviewSettingsPatchSchema>;
 export type JobDto = z.infer<typeof JobSchema>;

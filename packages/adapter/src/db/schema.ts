@@ -61,6 +61,7 @@ export const mutationJournal = sqliteTable("mutation_journal", {
   grantId: text("grant_id").references((): AnySQLiteColumn => approvalGrant.id, { onDelete: "set null" }),
   backupId: text("backup_id").references((): AnySQLiteColumn => backupManifest.id),
   toolAuditJson: text("tool_audit_json"),
+  pendingTransition: text("pending_transition"),
   createdAt: text("created_at").notNull(),
   settledAt: text("settled_at"),
 }, (table) => [
@@ -71,6 +72,10 @@ export const mutationJournal = sqliteTable("mutation_journal", {
   check("ck_journal_kind", sql`${table.kind} IN ('file', 'entity', 'composite')`),
   check("ck_journal_status", sql`${table.status} IN ('pending', 'committed', 'aborted', 'recovered', 'orphaned', 'rolled_back')`),
   check("ck_journal_tool_audit_json", sql`${table.toolAuditJson} IS NULL OR json_valid(${table.toolAuditJson})`),
+  check("ck_journal_pending_transition", sql`${table.pendingTransition} IS NULL OR json_valid(${table.pendingTransition})`),
+  index("idx_journal_pending_open_operation")
+    .on(sql`json_extract(${table.pendingTransition}, '$.operationId')`)
+    .where(sql`${table.pendingTransition} IS NOT NULL AND json_extract(${table.pendingTransition}, '$.kind') = 'open'`),
   check("ck_journal_actor", actorCheck(table.actor)),
   check("ck_journal_previous_size", sql`${table.previousByteSize} >= 0`),
 ]);
@@ -87,6 +92,36 @@ export const entityState = sqliteTable("entity_state", {
   primaryKey({ columns: [table.projectId, table.entity] }),
   index("idx_entity_backing").on(table.projectId, table.backingPath),
   check("ck_entity_actor", actorCheck(table.lastActor)),
+]);
+
+export const pendingMount = sqliteTable("pending_mount", {
+  operationId: text("operation_id").primaryKey(),
+  projectId: text("project_id").notNull().references(() => projectRegistry.id),
+  assetPath: text("asset_path").notNull(),
+  assetContentHash: text("asset_content_hash").notNull(),
+  uploadFingerprint: text("upload_fingerprint").notNull(),
+  atSeconds: real("at_seconds").notNull(),
+  trackIndex: integer("track_index").notNull(),
+  state: text({ enum: ["uploaded_unmounted", "mounted", "abandoned"] }).notNull().default("uploaded_unmounted"),
+  lastErrorCode: text("last_error_code"),
+  lastErrorMessage: text("last_error_message"),
+  mountedSceneId: text("mounted_scene_id"),
+  mountedRevision: integer("mounted_revision"),
+  createdAt: text("created_at").notNull(),
+  updatedAt: text("updated_at").notNull(),
+}, (table) => [
+  index("idx_pending_mount_project_state").on(table.projectId, table.state),
+  index("idx_pending_mount_state_updated").on(table.state, table.updatedAt),
+  check("ck_pending_mount_state", sql`${table.state} IN ('uploaded_unmounted', 'mounted', 'abandoned')`),
+  check("ck_pending_mount_position", sql`${table.atSeconds} >= 0 AND ${table.trackIndex} >= 0`),
+  check("ck_pending_mount_failure_pair", sql`(${table.lastErrorCode} IS NULL) = (${table.lastErrorMessage} IS NULL)`),
+  check("ck_pending_mount_shape", sql`(
+    (${table.state} = 'mounted' AND ${table.mountedSceneId} IS NOT NULL AND ${table.mountedRevision} IS NOT NULL
+      AND ${table.lastErrorCode} IS NULL AND ${table.lastErrorMessage} IS NULL)
+    OR (${table.state} = 'uploaded_unmounted' AND ${table.mountedSceneId} IS NULL AND ${table.mountedRevision} IS NULL)
+    OR (${table.state} = 'abandoned' AND ${table.mountedSceneId} IS NULL AND ${table.mountedRevision} IS NULL
+      AND ${table.lastErrorCode} IS NOT NULL AND ${table.lastErrorMessage} IS NOT NULL)
+  )`),
 ]);
 
 export const eventOutbox = sqliteTable("event_outbox", {
@@ -196,7 +231,7 @@ export const mutationStep = sqliteTable("mutation_step", {
   id: integer().primaryKey({ autoIncrement: true }),
   journalId: integer("journal_id").notNull().references(() => mutationJournal.id),
   ordinal: integer().notNull(),
-  kind: text({ enum: ["write", "delete", "entity"] }).notNull(),
+  kind: text({ enum: ["write", "delete", "entity", "mkdir", "rmdir"] }).notNull(),
   path: text(),
   entity: text(),
   fromHash: text("from_hash"),
@@ -206,24 +241,25 @@ export const mutationStep = sqliteTable("mutation_step", {
   previousByteSize: integer("previous_byte_size").notNull().default(0),
   rollbackPath: text("rollback_path"),
   capturedHash: text("captured_hash"),
+  existedBefore: integer("existed_before", { mode: "boolean" }),
   captureState: text("capture_state", { enum: ["pending", "captured"] }).notNull().default("pending"),
   status: text({ enum: ["pending", "written", "rolled_back"] }).notNull().default("pending"),
 }, (table) => [
   uniqueIndex("uq_step_journal_ordinal").on(table.journalId, table.ordinal),
   index("idx_step_journal").on(table.journalId, table.ordinal),
-  check("ck_step_kind", sql`${table.kind} IN ('write', 'delete', 'entity')`),
+  check("ck_step_kind", sql`${table.kind} IN ('write', 'delete', 'entity', 'mkdir', 'rmdir')`),
   check("ck_step_status", sql`${table.status} IN ('pending', 'written', 'rolled_back')`),
   check("ck_step_previous_size", sql`${table.previousByteSize} >= 0`),
   check("ck_step_capture_state", sql`${table.captureState} IN ('pending', 'captured')`),
-  check("ck_step_capture_shape", sql`(${table.captureState} = 'pending' OR ((${table.previousContent} IS NULL AND ${table.previousObjectHash} IS NULL AND ${table.capturedHash} IS NULL) OR ((${table.previousContent} IS NOT NULL OR ${table.previousObjectHash} IS NOT NULL) AND ${table.capturedHash} IS ${table.fromHash})))`),
-  check("ck_step_shape", sql`((${table.kind} = 'entity' AND ${table.path} IS NULL AND ${table.entity} IS NOT NULL) OR (${table.kind} IN ('write', 'delete') AND ${table.path} IS NOT NULL AND ${table.entity} IS NULL))`),
+  check("ck_step_capture_shape", sql`(${table.captureState} = 'pending' OR ${table.capturedHash} IS ${table.fromHash})`),
+  check("ck_step_shape", sql`((${table.kind} = 'entity' AND ${table.path} IS NULL AND ${table.entity} IS NOT NULL AND ${table.existedBefore} IS NULL) OR (${table.kind} IN ('write', 'delete') AND ${table.path} IS NOT NULL AND ${table.entity} IS NULL AND ${table.existedBefore} IS NULL) OR (${table.kind} IN ('mkdir', 'rmdir') AND ${table.path} IS NOT NULL AND ${table.entity} IS NULL AND ${table.fromHash} IS NULL AND ${table.toHash} IS NULL AND ${table.existedBefore} IS NOT NULL))`),
 ]);
 
 export const revisionStep = sqliteTable("revision_step", {
   id: integer().primaryKey({ autoIncrement: true }),
   revisionId: integer("revision_id").notNull().references(() => revision.id, { onDelete: "cascade" }),
   ordinal: integer().notNull(),
-  kind: text({ enum: ["write", "delete", "entity"] }).notNull(),
+  kind: text({ enum: ["write", "delete", "entity", "mkdir", "rmdir"] }).notNull(),
   path: text(),
   entity: text(),
   fromHash: text("from_hash"),
@@ -232,12 +268,13 @@ export const revisionStep = sqliteTable("revision_step", {
   previousObjectHash: text("previous_object_hash"),
   byteSize: integer("byte_size").notNull().default(0),
   backupId: text("backup_id").references(() => backupManifest.id),
+  existedBefore: integer("existed_before", { mode: "boolean" }),
 }, (table) => [
   uniqueIndex("uq_revision_step_ordinal").on(table.revisionId, table.ordinal),
   index("idx_revision_step").on(table.revisionId, table.ordinal),
-  check("ck_revision_step_kind", sql`${table.kind} IN ('write', 'delete', 'entity')`),
+  check("ck_revision_step_kind", sql`${table.kind} IN ('write', 'delete', 'entity', 'mkdir', 'rmdir')`),
   check("ck_revision_step_size", sql`${table.byteSize} >= 0`),
-  check("ck_revision_step_shape", sql`((${table.kind} = 'entity' AND ${table.path} IS NULL AND ${table.entity} IS NOT NULL) OR (${table.kind} IN ('write', 'delete') AND ${table.path} IS NOT NULL AND ${table.entity} IS NULL))`),
+  check("ck_revision_step_shape", sql`((${table.kind} = 'entity' AND ${table.path} IS NULL AND ${table.entity} IS NOT NULL AND ${table.existedBefore} IS NULL) OR (${table.kind} IN ('write', 'delete') AND ${table.path} IS NOT NULL AND ${table.entity} IS NULL AND ${table.existedBefore} IS NULL) OR (${table.kind} IN ('mkdir', 'rmdir') AND ${table.path} IS NOT NULL AND ${table.entity} IS NULL AND ${table.fromHash} IS NULL AND ${table.toHash} IS NULL AND ${table.existedBefore} IS NOT NULL))`),
 ]);
 
 export const revisionBlob = sqliteTable("revision_blob", {
@@ -371,6 +408,7 @@ export const schema = {
   projectRegistry,
   workspaceLease,
   mutationJournal,
+  pendingMount,
   entityState,
   eventOutbox,
   revision,

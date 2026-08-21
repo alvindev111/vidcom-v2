@@ -17,6 +17,7 @@ import {
   type WordTimingSource,
 } from "../domain/word-timings";
 import { err, ok, type Result } from "../error/result";
+import { ignoredMutationOriginForActor } from "../port/mutation-observer";
 import type { CompositeStep } from "../port/types";
 import {
   DEFAULT_NARRATION_SEED,
@@ -170,6 +171,7 @@ export async function synthesizeNarration(
   const written = await dependencies.authority.mutateSource({
     ref,
     steps,
+    origin: ignoredMutationOriginForActor(actor),
     toolAudit: null,
     backup: false,
   }, actor);

@@ -6,6 +6,7 @@ import {
   ResizablePanelGroup,
 } from "@/components/ui/resizable";
 import type { FileNode, SourceFile } from "@/lib/studio/types";
+import type { ProjectChanged } from "@/lib/studio/preview-reload";
 import { EditorPanel } from "./editor-panel";
 import { FileExplorer } from "./file-explorer";
 import { useSourceFiles } from "./use-source-files";
@@ -17,6 +18,7 @@ export function CodePane({
   tree,
   files,
   onProjectChanged,
+  projectRevision,
 }: {
   projectId: string;
   projectSlug: string;
@@ -24,7 +26,8 @@ export function CodePane({
   /** Files shipped with the page — the entry composition. */
   files: SourceFile[];
   /** Called after a save so the preview rebuilds against the new source. */
-  onProjectChanged: () => void;
+  onProjectChanged: ProjectChanged;
+  projectRevision: number;
 }) {
   const source = useSourceFiles(projectId, projectSlug, files);
 
@@ -32,10 +35,15 @@ export function CodePane({
     <ResizablePanelGroup orientation="horizontal">
       <ResizablePanel defaultSize="26" minSize="12">
         <FileExplorer
+          key={`${projectId}:${projectRevision}`}
           tree={tree}
           selectedPath={source.activePath}
           dirtyPaths={source.dirtyPaths}
           onSelect={(path) => void source.openPath(path)}
+          projectId={projectId}
+          projectRevision={projectRevision}
+          entryContentHash={files.find((file) => file.path === "index.html")?.version ?? null}
+          onProjectChanged={onProjectChanged}
         />
       </ResizablePanel>
 
@@ -53,7 +61,9 @@ export function CodePane({
           onClose={source.close}
           onEdit={(code) => source.edit(source.activePath, code)}
           onSave={() => void source.save(source.activePath, onProjectChanged)}
+          onRecreate={() => void source.recreate(source.activePath, onProjectChanged)}
           onRevert={() => source.revert(source.activePath)}
+          onResolve={(choice) => source.resolve(source.activePath, choice)}
         />
       </ResizablePanel>
     </ResizablePanelGroup>

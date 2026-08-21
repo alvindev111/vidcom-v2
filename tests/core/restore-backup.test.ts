@@ -80,6 +80,7 @@ function setup(options: {
             entityRevision: null,
             fileHashes: {},
             diagnostics: [],
+            changeSeq: 3,
           } satisfies WriteEnvelope,
         };
       },

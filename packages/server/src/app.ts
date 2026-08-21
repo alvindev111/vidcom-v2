@@ -2,15 +2,18 @@ import { bodyLimit } from "hono/body-limit";
 import { Hono } from "hono";
 
 import type { NonceSource } from "./auth/nonce";
+import type { PreviewCapabilityIssuer, PreviewCapabilityVerifier } from "./auth/preview-capability";
 import type { DomainError } from "@vidcom/contracts";
 import type { Result, SessionPort } from "@vidcom/core";
 import type { EventOutboxPort, JobStorePort } from "@vidcom/core";
 import { mapHttpError, HttpBoundaryError } from "./middleware/error-mapper";
 import {
   hostCheck,
+  browserRequestGuard,
   mcpBearerAuth,
   requestId,
   requestLogger,
+  previewCapabilityAuth,
   sessionAuth,
   strictCors,
   type McpAuthEnv,
@@ -27,6 +30,11 @@ import { createBridgeRoutes, type BridgeRouteDependencies } from "./routes/bridg
 import { createMcpRoutes, type McpRouteDependencies } from "./routes/mcp";
 import { createSystemRoutes, type SystemRouteDependencies } from "./routes/system";
 import { createDeliveryLoopRoutes, type DeliveryLoopRouteDependencies } from "./routes/delivery-loop";
+import type { MutationHistory } from "./service/mutation-history";
+import { createHistoryRoutes } from "./routes/history";
+import type { StudioRouteDependencies } from "./routes/studio-session";
+import { createCatalogRoutes, type CatalogRouteDependencies } from "./routes/catalog";
+import { createThumbnailRoutes, type ThumbnailRouteDependencies } from "./routes/thumbnails";
 import { ActivateWorkspaceRequestSchema, ErrorCode, MAX_BGM_BYTES, MAX_SOURCE_BYTES } from "@vidcom/contracts";
 
 export interface ServerAppDependencies {
@@ -34,6 +42,7 @@ export interface ServerAppDependencies {
   uiOrigins: readonly string[];
   nonces: NonceSource;
   sessions: SessionPort;
+  previewCapabilities?: PreviewCapabilityIssuer & PreviewCapabilityVerifier;
   mcpCredentials?: McpCredentialVerifier;
   mcp?: McpRouteDependencies;
   bridge?: BridgeRouteDependencies;
@@ -43,10 +52,16 @@ export interface ServerAppDependencies {
   projectReads?: ProjectReadRouteDependencies;
   jobs?: JobStorePort;
   events?: EventOutboxPort;
+  /** Workspace-foundation singleton consumed by the browser history routes added in P3.3. */
+  history?: MutationHistory;
+  /** Resolves the authenticated cookie to a non-secret browser binding. */
+  browserSessionId?(request: Request): string | undefined;
   projectWrites?: ProjectWriteRouteDependencies;
   narration?: NarrationRouteDependencies;
   deliveryLoop?: DeliveryLoopRouteDependencies;
   agentTerminal?: AgentTerminalRouteDependencies;
+  thumbnails?: ThumbnailRouteDependencies;
+  catalog?: CatalogRouteDependencies;
   /** Bootstrap-only workspace activation; active runtimes use `deliveryLoop`. */
   workspaceActivation?(selectionToken: string, sessionId?: string): Promise<Result<{
     workspaceRoot: string;
@@ -74,16 +89,23 @@ export function createServerApp(deps: ServerAppDependencies) {
   register("logger", requestLogger(deps.log ?? (() => {})));
   register("hostCheck", hostCheck(deps.port));
   register("cors", strictCors(deps.uiOrigins));
+  register("browserRequestGuard", browserRequestGuard());
   const browserAuth = sessionAuth(deps.sessions);
   const mcpAuth = mcpBearerAuth(deps.mcpCredentials ?? { verify: async () => null });
   // The bridge authenticates the same way MCP does — a bearer, not a browser
   // session — because the client is an agent host, not a page. Which bearer is
   // acceptable there is narrower, and the bridge routes enforce that
   // themselves.
-  app.use("*", observed("auth", (c, next) => c.req.path.startsWith("/api/mcp")
-    || c.req.path.startsWith("/api/bridge")
-    ? mcpAuth(c, next)
-    : browserAuth(c, next), deps.trace));
+  app.use("*", observed("auth", (c, next) => {
+    if (c.req.path.startsWith("/api/preview/")) {
+      return deps.previewCapabilities
+        ? previewCapabilityAuth(deps.previewCapabilities)(c, next)
+        : browserAuth(c, next);
+    }
+    return c.req.path.startsWith("/api/mcp") || c.req.path.startsWith("/api/bridge")
+      ? mcpAuth(c, next)
+      : browserAuth(c, next);
+  }, deps.trace));
   const limits = {
     regular: bodyLimit({ maxSize: 1_048_576, onError: bodyTooLarge }),
     source: bodyLimit({ maxSize: MAX_SOURCE_BYTES + 65_536, onError: bodyTooLarge }),
@@ -91,6 +113,7 @@ export function createServerApp(deps: ServerAppDependencies) {
   };
   app.use("*", observed("bodyLimit", async (c, next) => {
     const pathname = c.req.path;
+    if (c.req.method === "POST" && /\/v1\/projects\/[^/]+\/assets$/.test(pathname)) return next();
     const limiter = /\/v1\/projects\/[^/]+\/files$/.test(pathname)
       ? limits.source
       : /\/v1\/projects\/[^/]+\/assets\/bgm$/.test(pathname)
@@ -114,11 +137,24 @@ export function createServerApp(deps: ServerAppDependencies) {
   if (deps.system) app.route("/v1/system", createSystemRoutes(deps.system));
   if (deps.projectReads) app.route("/", createProjectReadRoutes(deps.projectReads));
   if (deps.jobs) app.route("/v1", createJobRoutes(deps.jobs));
-  if (deps.events) app.route("/v1", createEventRoutes(deps.events));
-  if (deps.projectWrites) app.route("/", createProjectWriteRoutes(deps.projectWrites));
+  const studio: StudioRouteDependencies | undefined = deps.history && deps.browserSessionId
+    ? {
+      history: deps.history,
+      browserSessionId: deps.browserSessionId,
+      ...(deps.previewCapabilities === undefined ? {} : {
+        previewCapabilities: deps.previewCapabilities,
+        previewOrigin: `http://preview.localhost:${deps.port}`,
+      }),
+    }
+    : undefined;
+  if (deps.events) app.route("/v1", createEventRoutes(deps.events, {}, studio));
+  if (deps.projectWrites) app.route("/", createProjectWriteRoutes(deps.projectWrites, studio));
+  if (deps.projectWrites && studio) app.route("/", createHistoryRoutes({ ...studio, writes: deps.projectWrites }));
   if (deps.narration) app.route("/", createNarrationRoutes(deps.narration));
-  if (deps.deliveryLoop) app.route("/", createDeliveryLoopRoutes(deps.deliveryLoop));
+  if (deps.deliveryLoop) app.route("/", createDeliveryLoopRoutes(deps.deliveryLoop, studio));
   if (deps.agentTerminal) app.route("/", createAgentTerminalRoutes(deps.agentTerminal));
+  if (deps.thumbnails) app.route("/", createThumbnailRoutes(deps.thumbnails));
+  if (deps.catalog) app.route("/", createCatalogRoutes(deps.catalog));
   if (deps.workspaceActivation) app.put("/v1/workspace/active", async (c) => {
     const parsed = ActivateWorkspaceRequestSchema.safeParse(await c.req.json().catch(() => null));
     if (!parsed.success) {

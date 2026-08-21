@@ -78,11 +78,19 @@ class FakeJournal implements MutationJournalPort {
 function workspace(actualHashes: Map<string, ContentHash | null>): WorkspacePort {
   return {
     async resolve(_ref, path) { return ok(`/workspace/project/${path}` as ResolvedPath); },
+    async resolveMutation(_ref, path) {
+      const target = `/workspace/project/${path}` as ResolvedPath;
+      return ok({ target, canonicalRoot: "/workspace/project" as ResolvedPath, parents: [] });
+    },
+    async revalidateMutationPath() { return true; },
+    async refreshMutationPath(lease) { return lease; },
     async resolveWorkspace() { throw new Error("unused"); },
     async listProjects() { return [ref]; },
     async readProjectRef() { return ref; },
     async readFile() { return null; },
     async readBytes() { return null; },
+    async statAsset() { return null; },
+    async openAssetRange() { return null; },
     async readHash(path) { return actualHashes.get(path) ?? null; },
     async writeAtomic() {},
     async exists(path) { return actualHashes.get(path) !== null && actualHashes.has(path); },
@@ -93,6 +101,7 @@ function workspace(actualHashes: Map<string, ContentHash | null>): WorkspacePort
     async discardCapture() {},
     async readTree() { return []; },
     async stat() { return null; },
+    async readDirectory() { return []; },
   };
 }
 

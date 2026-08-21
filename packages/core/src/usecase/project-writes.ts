@@ -10,11 +10,14 @@ import {
   type RelPath,
 } from "@vidcom/contracts";
 
-import type { ProjectRef } from "../domain/models";
+import { FrameGrid } from "../domain/frame-grid";
 import { detectTrackGapsAndOverlaps, planRipple, validateSceneTiming, type SceneClip } from "../domain/invariants";
+import type { ProjectRef } from "../domain/models";
+import { planSceneInsertion } from "../domain/plan-scene-order";
 import { checkPathPurpose, checkPathSyntax } from "../domain/path-policy";
 import { rootCompositionSource } from "../domain/platform-preset";
 import { err, ok, type Result } from "../error/result";
+import { ignoredMutationOriginForActor, type UndoContentPort } from "../port/mutation-observer";
 import type { ClockPort, CompositionPort, MutationJournalPort, WorkspacePort } from "../port/ports";
 import type { CompositeRequest, WriteInvocation } from "../port/types";
 import type { WriteAuthority } from "../service/write-authority";
@@ -27,6 +30,8 @@ export interface ProjectWriteDependencies {
   journal: MutationJournalPort;
   authority: Pick<WriteAuthority, "mutateSource"> & Partial<Pick<WriteAuthority, "uploadBgm">>;
   clock: ClockPort;
+  /** Live content resolver required only by applyMutationInverse. */
+  undoContent?: UndoContentPort;
   identity?: Pick<ProjectIdentityService, "read">;
 }
 
@@ -65,7 +70,7 @@ export async function saveSourceFile(
   dependencies: ProjectWriteDependencies,
   input: { projectId: ProjectId; path: RelPath; content: string; expectedContentHash: string | null },
   actor: Actor,
-  invocation: WriteInvocation = { toolAudit: null },
+  invocation: WriteInvocation = { origin: ignoredMutationOriginForActor(actor), toolAudit: null },
 ) {
   const ref = await findRef(dependencies, input.projectId);
   if (!ref.ok) return ref;
@@ -90,6 +95,7 @@ export async function saveSourceFile(
           entityRevision: null,
           fileHashes: { [input.path]: written.value.contentHash },
           diagnostics: written.value.diagnostics,
+          changeSeq: written.value.changeSeq ?? null,
         },
       })
     : written;
@@ -99,7 +105,7 @@ export async function patchPreviewSettings(
   dependencies: ProjectWriteDependencies,
   input: { projectId: ProjectId; patch: PreviewSettingsPatchDto; expectedRevision: number },
   actor: Actor,
-  invocation: WriteInvocation = { toolAudit: null },
+  invocation: WriteInvocation = { origin: ignoredMutationOriginForActor(actor), toolAudit: null },
 ) {
   const ref = await findRef(dependencies, input.projectId);
   if (!ref.ok) return ref;
@@ -115,6 +121,7 @@ export async function patchPreviewSettings(
         previewSettings: written.value.previewSettings!,
         revision: written.value.revision,
         diagnostics: written.value.diagnostics,
+        changeSeq: written.value.changeSeq ?? null,
       })
     : written;
 }
@@ -127,6 +134,7 @@ export async function uploadBgm(
   dependencies: ProjectWriteDependencies,
   input: { projectId: ProjectId; name: string; bytes: Uint8Array; expectedRevision: number },
   actor: Actor,
+  invocation: WriteInvocation = { origin: ignoredMutationOriginForActor(actor), toolAudit: null },
 ) {
   const ref = await findRef(dependencies, input.projectId);
   if (!ref.ok) return ref;
@@ -142,9 +150,14 @@ export async function uploadBgm(
     path,
     bytes: input.bytes,
     expectedRevision: input.expectedRevision,
-  }, actor);
+  }, actor, invocation);
   return written.ok
-    ? ok({ previewSettings: written.value.previewSettings!, revision: written.value.revision, diagnostics: written.value.diagnostics })
+    ? ok({
+        previewSettings: written.value.previewSettings!,
+        revision: written.value.revision,
+        diagnostics: written.value.diagnostics,
+        changeSeq: written.value.changeSeq ?? null,
+      })
     : written;
 }
 
@@ -170,7 +183,7 @@ export async function setSceneTiming(
     extendRoot?: boolean;
   },
   actor: Actor,
-  invocation: WriteInvocation = { toolAudit: null },
+  invocation: WriteInvocation = { origin: ignoredMutationOriginForActor(actor), toolAudit: null },
 ) {
   const ref = await findRef(dependencies, input.projectId);
   if (!ref.ok) return ref;
@@ -182,6 +195,7 @@ export async function setSceneTiming(
   const parsed = await parseForMutation(dependencies, ref.value);
   if (!parsed.ok) return parsed;
   const model = parsed.value;
+  const frameGrid = FrameGrid.fromFps(model.frameRate ?? 30);
   const scene = model.scenes.find((candidate) => candidate.id === input.sceneId);
   if (!scene) return err({ code: ErrorCode.NotFound, message: "scene was not found" });
   const next = {
@@ -192,6 +206,11 @@ export async function setSceneTiming(
   };
   const timingError = validateSceneTiming({ ...next, rootDuration: Number.POSITIVE_INFINITY });
   if (timingError) return err(timingError);
+  for (const [field, value] of [["start", input.timing.start], ["duration", input.timing.duration]] as const) {
+    if (value === undefined) continue;
+    const alignment = frameGrid.validate(value, field);
+    if (alignment) return err(alignment);
+  }
   if (input.ripple && next.trackIndex !== scene.trackIndex) {
     return err({ code: ErrorCode.TimingInvalid, message: "ripple cannot move a scene between tracks", field: "trackIndex" });
   }
@@ -203,13 +222,20 @@ export async function setSceneTiming(
     : null;
   if (ripple && !ripple.ok) return ripple;
   const moved = ripple?.ok ? ripple.value.moved : [];
+  for (const movement of moved) {
+    const alignment = frameGrid.validate(movement.toStart, "start");
+    if (alignment) return err(alignment);
+  }
   const changed = new Map(moved.map((item) => [item.sceneId, item.toStart]));
   changed.set(scene.id, next.start);
   const nextClips = clips.map((item) => item.sceneId === scene.id
     ? next
     : changed.has(item.sceneId) ? { ...item, start: changed.get(item.sceneId)! } : item);
   const rootDuration = nextClips.reduce((maximum, item) => Math.max(maximum, item.start + item.duration), 0);
-  if (rootDuration > MAX_PROJECT_DURATION_SECONDS) return err({
+  const temporalMutation = input.timing.start !== undefined
+    || input.timing.duration !== undefined
+    || moved.length > 0;
+  if (temporalMutation && rootDuration > MAX_PROJECT_DURATION_SECONDS) return err({
     code: ErrorCode.DurationOverflow,
     message: "project duration exceeds the VidCom runtime guard",
     field: "duration",
@@ -218,7 +244,7 @@ export async function setSceneTiming(
       maxSeconds: MAX_PROJECT_DURATION_SECONDS, extendRootAllowed: false,
     },
   });
-  if (rootDuration > model.project.duration && !input.extendRoot) return err({
+  if (temporalMutation && rootDuration > model.project.duration && !input.extendRoot) return err({
     code: ErrorCode.DurationOverflow,
     message: "scene timing exceeds the current root duration",
     field: "duration",
@@ -229,12 +255,17 @@ export async function setSceneTiming(
   });
   const source = await sourceForMutation(dependencies, ref.value, ref.value.entry);
   if (!source.ok) return source;
+  const writeRootDuration = temporalMutation && rootDuration !== model.project.duration;
+  if (writeRootDuration) {
+    const alignment = frameGrid.validate(rootDuration, "duration");
+    if (alignment) return err(alignment);
+  }
   const operations = [
     { kind: "setTiming" as const, target: input.sceneId, value: input.timing },
     ...moved.filter(({ sceneId }) => sceneId !== input.sceneId).map((item) => ({
       kind: "setTiming" as const, target: item.sceneId, value: { start: item.toStart },
     })),
-    ...(rootDuration !== model.project.duration
+    ...(writeRootDuration
       ? [{ kind: "setTiming" as const, target: "@root", value: { duration: rootDuration } }]
       : []),
   ];
@@ -287,6 +318,7 @@ export async function setSceneTiming(
       entityRevision: null,
       fileHashes: { [ref.value.entry]: written.value.contentHash },
       diagnostics: [...written.value.diagnostics, ...diagnostics],
+      changeSeq: written.value.changeSeq ?? null,
     },
     affectedTrackIndex: next.trackIndex,
     moved,
@@ -304,7 +336,7 @@ export async function setSceneScript(
     expectedContentHash: string;
   },
   actor: Actor,
-  invocation: WriteInvocation = { toolAudit: null },
+  invocation: WriteInvocation = { origin: ignoredMutationOriginForActor(actor), toolAudit: null },
 ) {
   const ref = await findRef(dependencies, input.projectId);
   if (!ref.ok) return ref;
@@ -404,6 +436,7 @@ export interface NarrationRecord {
   revision: number;
   updatedAt: string;
   staleSince: string | null;
+  changeSeq: number | null;
 }
 
 interface NarrationSidecarV2 {
@@ -430,7 +463,7 @@ function cueAudioPath(sceneId: string, cueId: string): string {
   return `narration/${sceneId}/${cueId}.wav`;
 }
 
-function initialCue(sceneId: string, text: string, cueId = sceneId): NarrationCue {
+export function initialCue(sceneId: string, text: string, cueId = sceneId): NarrationCue {
   const audioPath = cueAudioPath(sceneId, cueId);
   return {
     cueId,
@@ -445,7 +478,7 @@ function initialCue(sceneId: string, text: string, cueId = sceneId): NarrationCu
   };
 }
 
-function serializeNarrationSidecar(
+export function serializeNarrationSidecar(
   sceneId: string,
   cues: NarrationCue[],
   revision: number,
@@ -482,6 +515,7 @@ export async function regenerateNarration(
     voice?: string;
   },
   actor: Actor,
+  invocation: WriteInvocation = { origin: ignoredMutationOriginForActor(actor), toolAudit: null },
 ): Promise<Result<NarrationRecord, DomainError>> {
   const ref = await findRef(dependencies, input.projectId);
   if (!ref.ok) return ref;
@@ -517,7 +551,7 @@ export async function regenerateNarration(
   const nextCues = current
     ? cues.map((candidate) => candidate.cueId === cueId ? cue : candidate)
     : [...cues, cue];
-  const narration: NarrationRecord = {
+  const narration: Omit<NarrationRecord, "changeSeq"> = {
     sceneId: input.sceneId,
     text: input.text,
     voice,
@@ -539,8 +573,8 @@ export async function regenerateNarration(
       narration.updatedAt,
     ),
     expectedContentHash: previous?.contentHash ?? null,
-  }, actor);
-  return written.ok ? ok(narration) : written;
+  }, actor, invocation);
+  return written.ok ? ok({ ...narration, changeSeq: written.value.changeSeq ?? null }) : written;
 }
 
 function sceneSource(
@@ -573,7 +607,7 @@ export async function createScene(
     expectedContentHash: ContentHash | null;
   },
   actor: Actor,
-  invocation: WriteInvocation = { toolAudit: null },
+  invocation: WriteInvocation = { origin: ignoredMutationOriginForActor(actor), toolAudit: null },
 ) {
   const ref = await findRef(dependencies, input.projectId);
   if (!ref.ok) return ref;
@@ -588,6 +622,11 @@ export async function createScene(
     start: 0, duration, trackIndex: input.trackIndex ?? 0, rootDuration: Number.POSITIVE_INFINITY,
   });
   if (basicTiming) return err(basicTiming);
+  if (duration > MAX_PROJECT_DURATION_SECONDS) return err({
+    code: ErrorCode.DurationOverflow,
+    message: "scene duration exceeds the VidCom runtime guard",
+    field: "duration",
+  });
 
   if (!existingEntry) {
     if (input.index !== undefined && input.index !== 0) {
@@ -597,6 +636,8 @@ export async function createScene(
     if (!identity?.ok || !identity.identity.platform) {
       return err({ code: ErrorCode.ProjectInvalid, message: "empty project platform is unavailable" });
     }
+    const alignment = FrameGrid.fromFps(identity.identity.platform.fps).validate(duration, "duration");
+    if (alignment) return err(alignment);
     const trackIndex = input.trackIndex ?? 0;
     const sceneId = "scene-1";
     const scenePath = `compositions/${sceneId}.html` as RelPath;
@@ -647,6 +688,9 @@ export async function createScene(
   const parsed = await parseForMutation(dependencies, ref.value);
   if (!parsed.ok) return parsed;
   const model = parsed.value;
+  const frameGrid = FrameGrid.fromFps(model.frameRate ?? 30);
+  const durationAlignment = frameGrid.validate(duration, "duration");
+  if (durationAlignment) return err(durationAlignment);
   const scenes = model.scenes as Array<{ id: string; start: number; duration: number; trackIndex: number }>;
   const generated = scenes.flatMap((scene) => {
     const match = /^scene-(\d+)$/.exec(scene.id);
@@ -657,50 +701,46 @@ export async function createScene(
     ? model.scenes[model.scenes.length - 1] ?? null
     : model.scenes[input.index] ?? null;
   const trackIndex = input.trackIndex ?? reference?.trackIndex ?? 0;
-  const track = scenes.filter((scene) => scene.trackIndex === trackIndex)
-    .sort((left, right) => left.start - right.start || left.id.localeCompare(right.id));
-  const index = input.index ?? track.length;
-  if (!Number.isInteger(index) || index < 0 || index > track.length) {
-    return err({ code: ErrorCode.SchemaInvalid, message: "scene index is outside the target track", field: "index" });
-  }
-  const start = index === 0 ? 0 : track[index - 1]!.start + track[index - 1]!.duration;
-  const shifted = track.slice(index).map((scene) => ({
-    sceneId: scene.id, fromStart: scene.start, toStart: scene.start + duration,
-  }));
-  const timingError = validateSceneTiming({
-    start,
-    duration,
-    trackIndex,
-    rootDuration: Number.MAX_VALUE,
-  });
-  if (timingError) return err(timingError);
-  const projectDuration = Math.max(
-    start + duration,
-    ...scenes.map((scene) => (shifted.find(({ sceneId: id }) => id === scene.id)?.toStart ?? scene.start) + scene.duration),
+  const scenePath = `compositions/${sceneId}.html` as RelPath;
+  const insertion = planSceneInsertion(
+    scenes.map((scene) => ({
+      sceneId: scene.id,
+      start: scene.start,
+      duration: scene.duration,
+      trackIndex: scene.trackIndex,
+    })),
+    {
+      sceneId,
+      scenePath,
+      duration,
+      toIndex: input.index ?? scenes.filter((scene) => scene.trackIndex === trackIndex).length,
+      trackIndex,
+      rootDuration: model.project.duration,
+    },
+    frameGrid,
   );
-  if (projectDuration > MAX_PROJECT_DURATION_SECONDS) return err({
+  if (!insertion.ok) return insertion;
+  if (insertion.value.rootDuration > MAX_PROJECT_DURATION_SECONDS) return err({
     code: ErrorCode.DurationOverflow,
     message: "project duration exceeds the VidCom runtime guard",
     field: "duration",
     details: {
-      limitKind: "runtime", actualSeconds: projectDuration,
+      limitKind: "runtime", actualSeconds: insertion.value.rootDuration,
       maxSeconds: MAX_PROJECT_DURATION_SECONDS, extendRootAllowed: false,
     },
   });
-  const scenePath = `compositions/${sceneId}.html` as RelPath;
   const dimensions = { width: model.project.width, height: model.project.height };
-  const html = sceneMount(sceneId, scenePath, { start, duration, trackIndex }, dimensions);
-  const insertionReference = track[index];
-  const documentIndex = insertionReference
-    ? model.scenes.findIndex((scene) => scene.id === insertionReference.id)
+  const html = sceneMount(sceneId, scenePath, insertion.value.scene, dimensions);
+  const documentIndex = insertion.value.beforeSceneId
+    ? model.scenes.findIndex((scene) => scene.id === insertion.value.beforeSceneId)
     : -1;
   const applied = await dependencies.composition.applyOps(ref.value, ref.value.entry, [
     { kind: "addElement", target: "@root", value: { index: documentIndex, html } },
-    ...shifted.map((item) => ({
-      kind: "setTiming" as const, target: item.sceneId, value: { start: item.toStart },
+    ...insertion.value.changes.map((item) => ({
+      kind: "setTiming" as const, target: item.sceneId, value: { start: item.start },
     })),
-    ...projectDuration !== model.project.duration
-      ? [{ kind: "setTiming" as const, target: "@root", value: { duration: projectDuration } }]
+    ...insertion.value.rootDuration !== model.project.duration
+      ? [{ kind: "setTiming" as const, target: "@root", value: { duration: insertion.value.rootDuration } }]
       : [],
   ]);
   if (!applied.ok) return applied;
@@ -736,7 +776,7 @@ export async function createScene(
     scene: {
       id: sceneId,
       src: scenePath,
-      start,
+      start: insertion.value.scene.start,
       duration,
       trackIndex,
       isTransition: false,
@@ -747,14 +787,17 @@ export async function createScene(
     project: {
       ...model.project,
       id: input.projectId,
-      duration: projectDuration,
+      duration: insertion.value.rootDuration,
       updatedAt: dependencies.clock.now().toISOString(),
       sceneCount: model.project.sceneCount + 1,
       revision: written.value.projectRevision,
     },
     envelope: written.value,
     affectedTrackIndex: trackIndex,
-    moved: shifted,
+    moved: insertion.value.changes.map((change) => {
+      const previous = scenes.find((scene) => scene.id === change.sceneId)!;
+      return { sceneId: change.sceneId, fromStart: previous.start, toStart: change.start! };
+    }),
   });
 }
 
@@ -785,7 +828,7 @@ async function persistNarrationCues(
     expectedContentHash: ContentHash | null;
   },
   actor: Actor,
-  invocation: WriteInvocation = { toolAudit: null },
+  invocation: WriteInvocation = { origin: ignoredMutationOriginForActor(actor), toolAudit: null },
 ) {
   const ref = await findRef(dependencies, input.projectId);
   if (!ref.ok) return ref;
@@ -826,7 +869,7 @@ export function replaceNarrationCues(
     expectedContentHash: ContentHash | null;
   },
   actor: Actor,
-  invocation: WriteInvocation = { toolAudit: null },
+  invocation: WriteInvocation = { origin: ignoredMutationOriginForActor(actor), toolAudit: null },
 ) {
   return persistNarrationCues(dependencies, {
     ...input,
@@ -849,7 +892,7 @@ export async function patchNarrationCue(
     expectedContentHash: ContentHash;
   },
   actor: Actor,
-  invocation: WriteInvocation = { toolAudit: null },
+  invocation: WriteInvocation = { origin: ignoredMutationOriginForActor(actor), toolAudit: null },
 ) {
   const current = await readNarrationCues(dependencies, input);
   if (!current.ok) return current;

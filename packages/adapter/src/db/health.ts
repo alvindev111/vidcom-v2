@@ -17,6 +17,7 @@ const APPLICATION_TABLES = [
   "app_settings", "registry_cache", "approval_grant", "backup_manifest",
   "mcp_credential", "mutation_step", "revision_step",
   "workspace_operation", "workspace_operation_step",
+  "pending_mount",
 ] as const;
 
 /** Reads SQLite health through the native client owned by Drizzle. */

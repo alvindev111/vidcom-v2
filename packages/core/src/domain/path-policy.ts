@@ -94,6 +94,9 @@ export function checkPathPurpose(path: string, purpose: PathPurpose): PathReject
 
   let allowed = false;
   switch (purpose) {
+    case "authored-write":
+      allowed = true;
+      break;
     case "read-source":
       allowed = SOURCE_EXTENSIONS.has(extension(lower));
       break;
@@ -104,6 +107,12 @@ export function checkPathPurpose(path: string, purpose: PathPurpose): PathReject
       allowed =
         (lower === "index.html" || READ_ASSET_ROOTS.some((root) => lower.startsWith(root))) &&
         ASSET_EXTENSIONS.has(extension(lower));
+      break;
+    case "read-package-target":
+      // Catalog manifests may contain authored binary targets. This purpose
+      // still passes the global hidden/protected checks above and grants no
+      // browser-serving capability.
+      allowed = true;
       break;
     case "write-asset":
       allowed = WRITE_ASSET_ROOTS.some((root) => lower.startsWith(root));

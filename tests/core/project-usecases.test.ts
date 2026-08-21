@@ -12,6 +12,7 @@ import {
   listProjects,
   mergePreviewSettings,
   ok,
+  openAssetRange,
   patchPreviewSettings,
   readAsset,
   readComposition,
@@ -20,12 +21,14 @@ import {
   saveSourceFile,
   setSceneScript,
   setSceneTiming,
+  statAsset,
   uploadBgm,
   createScene,
   type AbsolutePath,
   type CompositionModel,
   type EntityState,
   type JournalId,
+  type MutationPathLease,
   type MutationRequest,
   type WriteResult,
   type Result,
@@ -41,6 +44,7 @@ import {
   type WriteInvocation,
 } from "@vidcom/core";
 
+const TEST_ORIGIN = { kind: "system", sessionId: null, label: null, historyAction: "ignore", historyOperation: null } as const;
 const projectId = "project-usecase" as ProjectId;
 const ref: ProjectRef = {
   id: projectId,
@@ -60,6 +64,7 @@ function setup(options: {
   tooLarge?: boolean;
   recoveryRequired?: boolean;
   withNarration?: boolean;
+  frameRate?: number;
   sceneTiming?: { start: number; duration: number; trackIndex: number };
 } = {}) {
   const files = new Map<string, string>([
@@ -77,6 +82,8 @@ function setup(options: {
     revision: 1,
     updatedAt: "2026-07-31T00:00:00.000Z",
     staleSince: null,
+    words: [{ text: "Title", startSeconds: 0, endSeconds: 0.6 }],
+    wordTimingSource: "engine" as const,
   };
   if (options.withNarration) files.set("narration/scene-1.json", `${JSON.stringify(narration, null, 2)}\n`);
   let revision = 2;
@@ -86,6 +93,7 @@ function setup(options: {
     backingPath: "preview-settings.json" as RelPath,
   };
   const model: CompositionModel = {
+    frameRate: options.frameRate ?? 30,
     project: {
       id: projectId,
       slug: "project",
@@ -120,6 +128,14 @@ function setup(options: {
       }
       return ok(path as ResolvedPath);
     },
+    async resolveMutation(ref: ProjectRef, path: string, purpose: string) {
+      const resolved = await this.resolve(ref, path, purpose);
+      return resolved.ok
+        ? ok({ target: resolved.value, canonicalRoot: ref.root as unknown as ResolvedPath, parents: [] })
+        : resolved;
+    },
+    async revalidateMutationPath() { return true; },
+    async refreshMutationPath(lease: MutationPathLease) { return lease; },
     async resolveWorkspace() { throw new Error("unused"); },
     async listProjects() { return options.missing ? [] : [ref]; },
     async readProjectRef() { return options.missing ? null : ref; },
@@ -131,6 +147,32 @@ function setup(options: {
     async readBytes(path: ResolvedPath) {
       const bytes = binaries.get(path);
       return bytes ? { bytes, contentHash: hash(bytes) } : null;
+    },
+    async statAsset(path: ResolvedPath) {
+      const bytes = binaries.get(path);
+      if (!bytes) return null;
+      return {
+        size: bytes.byteLength,
+        etag: `W/\"${bytes.byteLength}\"`,
+        identity: {
+          device: "fake",
+          inode: String(path),
+          size: bytes.byteLength,
+          modifiedAtNs: "1",
+          changedAtNs: "1",
+        },
+      };
+    },
+    async openAssetRange(path: ResolvedPath, input: { start: number; end: number }) {
+      const source = binaries.get(path);
+      if (!source) return null;
+      const body = source.slice(input.start, input.end + 1);
+      return new ReadableStream<Uint8Array>({
+        start(controller) {
+          controller.enqueue(body);
+          controller.close();
+        },
+      });
     },
     async readHash(path: ResolvedPath) {
       const content = files.get(path);
@@ -150,6 +192,7 @@ function setup(options: {
         ? { size: 2 * 1024 * 1024 + 1, modifiedAt: new Date(0), kind: "file" as const }
         : null;
     },
+    async readDirectory() { return []; },
   };
   const appliedOps: CompositionOp[][] = [];
   const composition = {
@@ -197,7 +240,7 @@ function setup(options: {
   async function mutateSource(
     request: MutationRequest | CompositeRequest,
     _actor?: string,
-    invocation: WriteInvocation = { toolAudit: null },
+    invocation: WriteInvocation = { origin: TEST_ORIGIN, toolAudit: null },
   ): Promise<Result<WriteResult | WriteEnvelope, DomainError>> {
       if ("steps" in request) {
         mutations.push(request);
@@ -212,7 +255,7 @@ function setup(options: {
             : hash(step.content);
         }
         revision += 1;
-        return ok({ projectRevision: revision, entityRevision: null, fileHashes, diagnostics: [] });
+        return ok({ projectRevision: revision, entityRevision: null, fileHashes, diagnostics: [], changeSeq: revision });
       }
       mutations.push(request);
       invocations.push(invocation);
@@ -223,12 +266,19 @@ function setup(options: {
         const content = `${JSON.stringify(settings, null, 2)}\n`;
         files.set("preview-settings.json", content);
         entityState = { ...entityState, revision: entityState.revision + 1, contentHash: hash(content) };
-        return ok({ path: null, contentHash: hash(content), revision: entityState.revision, diagnostics: [], previewSettings: settings });
+        return ok({
+          path: null,
+          contentHash: hash(content),
+          revision: entityState.revision,
+          diagnostics: [],
+          changeSeq: revision,
+          previewSettings: settings,
+        });
       }
       const content = request.content;
       if (typeof content === "string") files.set(request.path, content);
       else binaries.set(request.path, content);
-      return ok({ path: request.path, contentHash: hash(content), revision, diagnostics: [] });
+      return ok({ path: request.path, contentHash: hash(content), revision, diagnostics: [], changeSeq: revision });
   }
   const authority = {
     mutateSource,
@@ -237,7 +287,14 @@ function setup(options: {
       const settings = mergePreviewSettings(DEFAULT_PREVIEW_SETTINGS, {
         bgm: { enabled: true, track: { name: request.name, path: request.path } },
       });
-      return ok({ path: null, contentHash: hash(JSON.stringify(settings)), revision: 2, diagnostics: [], previewSettings: settings });
+      return ok({
+        path: null,
+        contentHash: hash(JSON.stringify(settings)),
+        revision: 2,
+        diagnostics: [],
+        changeSeq: 2,
+        previewSettings: settings,
+      });
     },
   };
   const deps: ProjectReadDependencies & ProjectWriteDependencies = {
@@ -422,6 +479,20 @@ describe("project read use cases without HTTP", () => {
       ok: true, value: { bytes: new Uint8Array([1, 2, 3]) },
     });
   });
+  it("stats and opens one bounded asset range", async () => {
+    const { deps } = setup();
+    const metadata = await statAsset(deps, projectId, "assets/poster.png" as RelPath);
+    if (!metadata.ok) throw new Error("asset metadata was not returned");
+    expect(metadata.value).toMatchObject({ size: 3, etag: 'W/"3"' });
+
+    const opened = await openAssetRange(deps, projectId, "assets/poster.png" as RelPath, {
+      start: 1,
+      end: 2,
+      identity: metadata.value.identity,
+    });
+    if (!opened.ok) throw new Error("asset range was not opened");
+    expect([...new Uint8Array(await new Response(opened.value.stream).arrayBuffer())]).toEqual([2, 3]);
+  });
   it("normalizes preview settings with entity revision", async () => {
     expect(await getPreviewSettings(setup().deps, projectId)).toMatchObject({
       ok: true, value: { revision: 1, previewSettings: DEFAULT_PREVIEW_SETTINGS },
@@ -431,6 +502,7 @@ describe("project read use cases without HTTP", () => {
     ["snapshot", (deps) => getStudioSnapshot(deps, projectId)],
     ["source", (deps) => readSourceFile(deps, projectId, "index.html" as RelPath)],
     ["asset", (deps) => readAsset(deps, projectId, "assets/poster.png" as RelPath)],
+    ["asset metadata", (deps) => statAsset(deps, projectId, "assets/poster.png" as RelPath)],
     ["settings", (deps) => getPreviewSettings(deps, projectId)],
   ];
   it.each(missingReads)("returns project_not_found for %s", async (_name, invoke) => {
@@ -482,13 +554,16 @@ describe("project write and legacy use cases without HTTP", () => {
   it("patches preview settings through the authority", async () => {
     expect(await patchPreviewSettings(setup().deps, {
       projectId, patch: { bgm: { volume: 0.7 } }, expectedRevision: 1,
-    }, "user")).toMatchObject({ ok: true, value: { previewSettings: { bgm: { volume: 0.7 } } } });
+    }, "user")).toMatchObject({
+      ok: true,
+      value: { previewSettings: { bgm: { volume: 0.7 } }, changeSeq: 3 },
+    });
   });
   it("uploads BGM before pointing settings at it", async () => {
     const runtime = setup();
     expect(await uploadBgm(runtime.deps, {
       projectId, name: "track one.mp3", bytes: new Uint8Array([9]), expectedRevision: 1,
-    }, "user")).toMatchObject({ ok: true });
+    }, "user")).toMatchObject({ ok: true, value: { changeSeq: 2 } });
     expect(runtime.mutations).toMatchObject([
       { kind: "composite", path: "preview-assets/bgm/track-one.mp3" },
     ]);
@@ -503,7 +578,7 @@ describe("project write and legacy use cases without HTTP", () => {
     };
     expect(await setSceneTiming(runtime.deps, {
       projectId, sceneId: "scene-1", timing: { duration: 6 }, expectedContentHash: hash("<main>old</main>"),
-    }, "user", { toolAudit })).toMatchObject({
+    }, "user", { origin: TEST_ORIGIN, toolAudit })).toMatchObject({
       ok: true,
       value: {
         scene: { id: "scene-1", duration: 6 },
@@ -511,7 +586,7 @@ describe("project write and legacy use cases without HTTP", () => {
         envelope: { projectRevision: 3, fileHashes: { "index.html": hash("serialized:setTiming") } },
       },
     });
-    expect(runtime.invocations).toEqual([{ toolAudit }]);
+    expect(runtime.invocations).toEqual([{ origin: TEST_ORIGIN, toolAudit }]);
   });
   it.each([
     [{ duration: 0 }, ErrorCode.TimingInvalid],
@@ -526,6 +601,58 @@ describe("project write and legacy use cases without HTTP", () => {
     }, "user")).resolves.toMatchObject({ ok: false, error: { code } });
     expect(runtime.mutations).toHaveLength(0);
   });
+  it("rejects a new sub-frame timing value but preserves legacy timing during a track-only write", async () => {
+    const rejected = setup();
+    await expect(setSceneTiming(rejected.deps, {
+      projectId,
+      sceneId: "scene-1",
+      timing: { start: 2.55 },
+      expectedContentHash: hash("<main>old</main>"),
+    }, "user")).resolves.toMatchObject({
+      ok: false,
+      error: {
+        code: ErrorCode.TimingNotFrameAligned,
+        field: "start",
+        details: { value: 2.55, fps: 30 },
+      },
+    });
+    expect(rejected.appliedOps).toHaveLength(0);
+    expect(rejected.mutations).toHaveLength(0);
+
+    const legacy = setup({ sceneTiming: { start: 2.55, duration: 4, trackIndex: 1 } });
+    await expect(setSceneTiming(legacy.deps, {
+      projectId,
+      sceneId: "scene-1",
+      timing: { trackIndex: 2 },
+      expectedContentHash: hash("<main>old</main>"),
+    }, "user")).resolves.toMatchObject({ ok: true, value: { scene: { start: 2.55, trackIndex: 2 } } });
+  });
+  it("uses the parsed project fps for direct timing and scene creation", async () => {
+    const at24 = setup({ frameRate: 24 });
+    await expect(setSceneTiming(at24.deps, {
+      projectId,
+      sceneId: "scene-1",
+      timing: { start: 1 / 24 },
+      expectedContentHash: hash("<main>old</main>"),
+    }, "user")).resolves.toMatchObject({ ok: true, value: { scene: { start: 1 / 24 } } });
+
+    const created = setup();
+    await expect(createScene(created.deps, {
+      projectId,
+      title: "Sub-frame",
+      duration: 2.55,
+      expectedContentHash: hash("<main>old</main>"),
+    }, "user")).resolves.toMatchObject({
+      ok: false,
+      error: {
+        code: ErrorCode.TimingNotFrameAligned,
+        field: "duration",
+        details: { value: 2.55, fps: 30 },
+      },
+    });
+    expect(created.appliedOps).toHaveLength(0);
+    expect(created.mutations).toHaveLength(0);
+  });
   it("sets scene script by serializing then writing through authority", async () => {
     const runtime = setup({ withNarration: true });
     const toolAudit: PendingToolAudit = {
@@ -536,7 +663,7 @@ describe("project write and legacy use cases without HTTP", () => {
     };
     expect(await setSceneScript(runtime.deps, {
       projectId, sceneId: "scene-1", file: "index.html" as RelPath, elementId: "hf-title", text: "new", expectedContentHash: hash("<main>old</main>"),
-    }, "user", { toolAudit })).toMatchObject({
+    }, "user", { origin: TEST_ORIGIN, toolAudit })).toMatchObject({
       ok: true,
       value: {
         scene: { id: "scene-1", narrationStale: true },
@@ -553,7 +680,12 @@ describe("project write and legacy use cases without HTTP", () => {
       ],
     }]);
     expect(JSON.parse(runtime.files.get("narration/scene-1.json") ?? "null"))
-      .toMatchObject({ staleSince: "2026-08-01T00:00:00.000Z", status: "generated" });
+      .toMatchObject({
+        staleSince: "2026-08-01T00:00:00.000Z",
+        status: "generated",
+        wordTimingSource: "engine",
+        words: [{ text: "Title", startSeconds: 0, endSeconds: 0.6 }],
+      });
   });
   it("returns narrationStale false and writes no sidecar when narration is absent", async () => {
     const runtime = setup();
@@ -579,7 +711,14 @@ describe("project write and legacy use cases without HTTP", () => {
   });
   it("regenerates the legacy mock narration through authority", async () => {
     expect(await regenerateNarration(setup().deps, { projectId, sceneId: "scene-1", text: "Hello" }, "user")).toMatchObject({
-      ok: true, value: { status: "mock", revision: 1, updatedAt: "2026-08-01T00:00:00.000Z", staleSince: null },
+      ok: true,
+      value: {
+        status: "mock",
+        revision: 1,
+        updatedAt: "2026-08-01T00:00:00.000Z",
+        staleSince: null,
+        changeSeq: 3,
+      },
     });
   });
   it("creates a scene, entry mount and narration sidecar in one composite", async () => {
@@ -601,7 +740,7 @@ describe("project write and legacy use cases without HTTP", () => {
       projectId,
       title: "Next",
       expectedContentHash: hash("<main>old</main>"),
-    }, "user", { toolAudit })).toMatchObject({
+    }, "user", { origin: TEST_ORIGIN, toolAudit })).toMatchObject({
       ok: true,
       value: {
         scene: { id: "scene-2", start: 4, duration: 4, narrationStale: false },

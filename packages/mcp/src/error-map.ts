@@ -87,17 +87,24 @@ function protocolCode(error: DomainError, era: Era): number {
     case ErrorCode.ProjectInvalid:
     case ErrorCode.IdentityParseError:
     case ErrorCode.CompositionParseError:
+    case ErrorCode.DependencyGraphUnavailable:
+    case ErrorCode.ThumbnailCapacity:
+    case ErrorCode.SourceChanging:
     case ErrorCode.NoComposition:
     case ErrorCode.NoScenes:
     case ErrorCode.SubTimelineReadinessTimeout:
     case ErrorCode.WriteConflict:
     case ErrorCode.IdempotencyKeyReused:
     case ErrorCode.TimingInvalid:
+    case ErrorCode.TimingNotFrameAligned:
     case ErrorCode.DurationOverflow:
+    case ErrorCode.InvariantViolated:
     case ErrorCode.SceneNotFound:
     case ErrorCode.SdkRejected:
     case ErrorCode.TooLarge:
+    case ErrorCode.ResourceLimitExceeded:
     case ErrorCode.UnsupportedMedia:
+    case ErrorCode.IntegrityMismatch:
     case ErrorCode.ApprovalRequired:
     case ErrorCode.ApprovalExpired:
     case ErrorCode.ApprovalInvalid:

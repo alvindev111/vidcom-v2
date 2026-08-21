@@ -10,6 +10,8 @@ import {
   type PreviewSettingsPatch,
   type SceneSettings,
 } from "@/lib/studio/preview-settings";
+import { mutationChangeSeq, type ProjectChanged } from "@/lib/studio/preview-reload";
+import { useStudioSession } from "./studio-session-context";
 
 /**
  * Owns the project's preview settings for the whole studio.
@@ -23,8 +25,9 @@ export function usePreviewSettings(
   projectId: string,
   initial: PreviewSettings,
   initialRevision: number,
-  onSaved: () => void,
+  onSaved: ProjectChanged,
 ) {
+  const studio = useStudioSession();
   const [settings, setSettings] = React.useState(initial);
   const [pending, setPending] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
@@ -76,6 +79,7 @@ export function usePreviewSettings(
           error?: { message?: string };
           previewSettings?: PreviewSettings;
           revision?: number;
+          changeSeq?: number | null;
         } | null;
 
         if (!response.ok) {
@@ -86,7 +90,7 @@ export function usePreviewSettings(
         if (payload?.revision !== undefined) revision.current = payload.revision;
         // The preview document is built with these values baked in, so it has
         // to be rebuilt for the change to show.
-        onSaved();
+        onSaved(mutationChangeSeq(payload));
       } catch (cause) {
         setError(cause instanceof Error ? cause.message : "save failed");
       } finally {
@@ -104,14 +108,14 @@ export function usePreviewSettings(
     (value: PreviewSettingsPatch) => {
       apply(mergePreviewSettings(latest.current, value));
       void save(() =>
-        fetchApi(`/api/v1/projects/${encodeURIComponent(projectId)}/preview-settings`, {
+        fetchApi(`/api/v1/projects/${encodeURIComponent(projectId)}/preview-settings`, studio.request({
           method: "PATCH",
           headers: { "content-type": "application/json" },
           body: JSON.stringify({ patch: value, expectedRevision: revision.current }),
-        }),
+        })),
       );
     },
-    [apply, projectId, save],
+    [apply, projectId, save, studio],
   );
 
   const patchScene = React.useCallback(
@@ -123,14 +127,14 @@ export function usePreviewSettings(
       };
       apply(mergePreviewSettings(latest.current, merged));
       void save(() =>
-        fetchApi(`/api/v1/projects/${encodeURIComponent(projectId)}/preview-settings`, {
+        fetchApi(`/api/v1/projects/${encodeURIComponent(projectId)}/preview-settings`, studio.request({
           method: "PATCH",
           headers: { "content-type": "application/json" },
           body: JSON.stringify({ patch: merged, expectedRevision: revision.current }),
-        }),
+        })),
       );
     },
-    [apply, projectId, save],
+    [apply, projectId, save, studio],
   );
 
   const uploadBgm = React.useCallback(
@@ -139,13 +143,13 @@ export function usePreviewSettings(
       body.append("file", file);
       body.append("expectedRevision", String(revision.current));
       void save(() =>
-        fetchApi(`/api/v1/projects/${encodeURIComponent(projectId)}/assets/bgm`, {
+        fetchApi(`/api/v1/projects/${encodeURIComponent(projectId)}/assets/bgm`, studio.request({
           method: "POST",
           body,
-        }),
+        })),
       );
     },
-    [projectId, save],
+    [projectId, save, studio],
   );
 
   /**

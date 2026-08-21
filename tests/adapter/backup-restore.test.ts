@@ -24,6 +24,7 @@ import {
 import { createFixedClock, createSequentialIdPort } from "../support/deterministic";
 import { dbAll, dbOne, dbRun } from "../support/database";
 
+const TEST_ORIGIN = { kind: "system", sessionId: null, label: null, historyAction: "ignore", historyOperation: null } as const;
 const now = "2026-08-02T00:00:00.000Z";
 const projectId = "project_backup_restore" as ProjectId;
 const hash = (content: string | Uint8Array): ContentHash =>
@@ -107,6 +108,7 @@ async function destructiveWrite() {
       content: "after destructive",
       expectedContentHash: hash("before destructive"),
     }],
+    origin: TEST_ORIGIN,
     toolAudit,
     backup: true,
   }, "agent");
@@ -158,6 +160,7 @@ describe("backup restore with real SQLite and filesystem", () => {
         content: "later edit",
         expectedContentHash: hash("after destructive"),
       }],
+      origin: TEST_ORIGIN,
       toolAudit: null,
       backup: false,
     }, "user");

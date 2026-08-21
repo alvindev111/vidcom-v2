@@ -8,9 +8,11 @@ import {
   ResizablePanelGroup,
 } from "@/components/ui/resizable";
 import { sceneSettings, type PreviewSettings } from "@/lib/studio/preview-settings";
+import { previewReloadRequest, type ProjectChanged } from "@/lib/studio/preview-reload";
 import { orderedScenes } from "@/lib/studio/scene-order";
 import type { FileNode, RootTrack, Scene, SourceFile } from "@/lib/studio/types";
 import { PlayerTimeProvider } from "./player-time";
+import { EditorInteractionProvider } from "./editor-interaction-context";
 import { PreviewPanel } from "./preview-panel";
 import { SourcePane } from "./source-pane";
 import { useHyperframesPlayer } from "./use-hyperframes-player";
@@ -22,12 +24,15 @@ export function StudioShell({
   previewUrl,
   aspectRatio,
   authoredDuration,
+  frameRate,
   tree,
   files,
   scenes,
   rootTrack,
   previewSettings,
   previewSettingsRevision,
+  projectRevision,
+  externalChangeSeq,
   onRefresh,
 }: {
   projectId: string;
@@ -35,38 +40,45 @@ export function StudioShell({
   previewUrl: string;
   aspectRatio: number;
   authoredDuration: number | null;
+  frameRate: number;
   tree: FileNode[];
   files: SourceFile[];
   scenes: Scene[];
   rootTrack: RootTrack | null;
   previewSettings: PreviewSettings;
   previewSettingsRevision: number;
+  projectRevision: number;
+  externalChangeSeq: number | null;
   onRefresh: () => Promise<void>;
 }) {
-  // Bumped after a scene edit: it changes the player's src, which remounts the
-  // player against the rewritten composition instead of the stale iframe.
-  const [revision, setRevision] = React.useState(0);
-
   // The player lives here, not in the preview pane: the Scene tab on the left
   // seeks it too, and both sides need the same currentTime.
-  const { containerRef, state, controls, timeStore } = useHyperframesPlayer(
-    revision === 0 ? previewUrl : `${previewUrl}?r=${revision}`,
+  const { containerRef, state, controls, timeStore, requestReload } = useHyperframesPlayer(
+    projectId,
+    previewUrl,
   );
   const duration = state.duration || authoredDuration || 0;
 
+  React.useEffect(() => {
+    const reload = previewReloadRequest(previewUrl, externalChangeSeq);
+    if (reload) void requestReload(reload);
+  }, [externalChangeSeq, previewUrl, requestReload]);
+
   // A source edit changes what the scenes *are*, so the page has to be re-read.
-  const handleProjectChanged = React.useCallback(() => {
-    setRevision((current) => current + 1);
+  const handleProjectChanged = React.useCallback<ProjectChanged>((changeSeq) => {
+    const reload = previewReloadRequest(previewUrl, changeSeq);
+    if (reload) void requestReload(reload);
     void onRefresh();
-  }, [onRefresh]);
+  }, [onRefresh, previewUrl, requestReload]);
 
   // A preview-settings edit does not: the values are baked into the preview
   // document, so the player has to reload, but the scenes, the file tree and
   // the root track on the server are untouched. Refreshing them too meant a
   // full re-parse of the project behind every colour change.
-  const rebuildPreview = React.useCallback(() => {
-    setRevision((current) => current + 1);
-  }, []);
+  const rebuildPreview = React.useCallback<ProjectChanged>((changeSeq) => {
+    const reload = previewReloadRequest(previewUrl, changeSeq);
+    if (reload) void requestReload(reload);
+  }, [previewUrl, requestReload]);
 
   const preview = usePreviewSettings(
     projectId,
@@ -108,7 +120,8 @@ export function StudioShell({
 
   return (
     <PlayerTimeProvider store={timeStore}>
-      <ResizablePanelGroup orientation="horizontal" className="min-h-0 flex-1">
+      <EditorInteractionProvider>
+        <ResizablePanelGroup orientation="horizontal" className="min-h-0 flex-1">
         <ResizablePanel defaultSize="38" minSize="20">
           <SourcePane
             projectId={projectId}
@@ -121,6 +134,7 @@ export function StudioShell({
             onSeek={controls.seek}
             onSelectScene={selectScene}
             onProjectChanged={handleProjectChanged}
+            projectRevision={projectRevision}
           />
         </ResizablePanel>
 
@@ -128,9 +142,13 @@ export function StudioShell({
 
         <ResizablePanel defaultSize="62" minSize="25">
           <PreviewPanel
+            projectId={projectId}
             containerRef={containerRef}
             aspectRatio={aspectRatio}
             duration={duration}
+            frameRate={frameRate}
+            entryContentHash={files.find((file) => file.path === "index.html")?.version ?? null}
+            projectRevision={projectRevision}
             state={state}
             controls={controls}
             scenes={scenes}
@@ -139,9 +157,11 @@ export function StudioShell({
             selectedId={selectedId}
             onSelectScene={selectScene}
             onToggleHidden={toggleHidden}
+            onProjectChanged={handleProjectChanged}
           />
         </ResizablePanel>
-      </ResizablePanelGroup>
+        </ResizablePanelGroup>
+      </EditorInteractionProvider>
     </PlayerTimeProvider>
   );
 }

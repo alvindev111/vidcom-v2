@@ -118,7 +118,9 @@ describe("MCP perimeter branch", () => {
       headers: { Host: "127.0.0.1:43123", Authorization: "Bearer vcmcp_valid" },
     });
     expect(accepted.status).toBe(404);
-    expect(trace).toEqual(["requestId", "logger", "hostCheck", "cors", "auth", "bodyLimit"]);
+    expect(trace).toEqual([
+      "requestId", "logger", "hostCheck", "cors", "browserRequestGuard", "auth", "bodyLimit",
+    ]);
   });
 
   it("dispatches entry, exact revision and latest with the verified credential ID", async () => {
@@ -256,7 +258,9 @@ describe("Hono MCP SDK boundary", () => {
         headers: { Authorization: "Bearer vcmcp_valid" },
       });
       expect(response.status).toBe(405);
-      expect(trace).toEqual(["requestId", "logger", "hostCheck", "cors", "auth", "bodyLimit"]);
+      expect(trace).toEqual([
+        "requestId", "logger", "hostCheck", "cors", "browserRequestGuard", "auth", "bodyLimit",
+      ]);
     } finally {
       await mcp.close();
     }

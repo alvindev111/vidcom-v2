@@ -1,11 +1,9 @@
-import { createHash } from "node:crypto";
 import { watch, type FSWatcher } from "node:fs";
-import { readFile } from "node:fs/promises";
 import path from "node:path";
 
 import { sql } from "drizzle-orm";
 import type { ContentHash, DomainEvent, ProjectId, RelPath } from "@vidcom/contracts";
-import type { ClockPort, EventOutboxPort, ProjectCache, ProjectRef, WorkspacePort } from "@vidcom/core";
+import type { ClockPort, EventOutboxPort, JournalId, MutationObserverPort, ProjectPathInvalidator, ProjectPathState, ProjectRef, TrackedProjectPathState, WorkspacePort, WrittenStateTrackerPort } from "@vidcom/core";
 
 import type { VidcomDatabase } from "../db/client";
 
@@ -21,25 +19,81 @@ function key(projectId: ProjectId, relativePath: RelPath): string {
   return `${projectId}\u0000${relativePath}`;
 }
 
-/** Shared own-write hash registry consumed once by filesystem notifications. */
-export class WrittenHashTracker {
-  private readonly hashes = new Map<string, ContentHash>();
-
-  record(projectId: ProjectId, relativePath: RelPath, hash: ContentHash): void {
-    this.hashes.set(key(projectId, relativePath), hash);
-  }
-
-  consume(projectId: ProjectId, relativePath: RelPath, hash: ContentHash | null): boolean {
-    const itemKey = key(projectId, relativePath);
-    const expected = this.hashes.get(itemKey);
-    if (expected === undefined) return false;
-    this.hashes.delete(itemKey);
-    return expected === hash;
-  }
+interface TrackedState extends TrackedProjectPathState {
+  journalId: JournalId;
+  outcome: "committed" | "rolled_back" | "unknown" | null;
+  settled: Promise<void>;
+  resolve: () => void;
 }
 
-function digest(bytes: Uint8Array): ContentHash {
-  return `sha256:${createHash("sha256").update(bytes).digest("hex")}` as ContentHash;
+function sameState(left: ProjectPathState, right: ProjectPathState): boolean {
+  return left.kind === right.kind
+    && (left.kind !== "file" || (right.kind === "file" && left.contentHash === right.contentHash));
+}
+
+/** Shared journal-correlated state registry consumed once after terminal settlement. */
+export class WrittenHashTracker implements WrittenStateTrackerPort {
+  private readonly states = new Map<string, TrackedState[]>();
+  private readonly byJournal = new Map<JournalId, TrackedState[]>();
+  private readonly terminal = new Map<string, ProjectPathState>();
+
+  record(projectId: ProjectId, relativePath: RelPath, state: ContentHash | ProjectPathState): void {
+    this.terminal.set(key(projectId, relativePath), typeof state === "string"
+      ? { kind: "file", contentHash: state }
+      : state);
+  }
+
+  arm(projectId: ProjectId, journalId: JournalId, states: readonly TrackedProjectPathState[]): void {
+    const journalStates: TrackedState[] = [];
+    for (const state of states) {
+      let resolve = () => {};
+      const settled = new Promise<void>((done) => { resolve = done; });
+      const tracked: TrackedState = { ...state, journalId, outcome: null, settled, resolve };
+      const itemKey = key(projectId, state.path);
+      this.states.set(itemKey, [...(this.states.get(itemKey) ?? []), tracked]);
+      journalStates.push(tracked);
+    }
+    this.byJournal.set(journalId, journalStates);
+  }
+
+  settle(journalId: JournalId, outcome: "committed" | "rolled_back" | "unknown"): void {
+    for (const state of this.byJournal.get(journalId) ?? []) {
+      state.outcome = outcome;
+      state.resolve();
+    }
+    this.byJournal.delete(journalId);
+  }
+
+  async sample(
+    projectId: ProjectId,
+    relativePath: RelPath,
+    read: () => Promise<ProjectPathState>,
+  ): Promise<{ ownWrite: boolean; state: ProjectPathState }> {
+    const itemKey = key(projectId, relativePath);
+    while (true) {
+      const tracked = this.states.get(itemKey) ?? [];
+      if (tracked.some(({ outcome }) => outcome === null)) {
+        await Promise.all(tracked.map(({ settled }) => settled));
+      }
+      const state = await read();
+      const current = this.states.get(itemKey) ?? [];
+      if (current.length !== tracked.length
+        || current.some((item, index) => item !== tracked[index] || item.outcome === null)) {
+        continue;
+      }
+      if (tracked.length > 0) {
+        this.states.delete(itemKey);
+        const latest = tracked.at(-1)!;
+        const expected = latest.outcome === "committed"
+          ? latest.after
+          : latest.outcome === "rolled_back" ? latest.before : null;
+        return { ownWrite: expected !== null && sameState(expected, state), state };
+      }
+      const expected = this.terminal.get(itemKey);
+      this.terminal.delete(itemKey);
+      return { ownWrite: expected !== undefined && sameState(expected, state), state };
+    }
+  }
 }
 
 function isMutationArtifact(basename: string): boolean {
@@ -52,18 +106,19 @@ export class WorkspaceWatcher {
   private readonly watchers: FSWatcher[] = [];
   private readonly pending = new Map<string, ReturnType<typeof setTimeout>>();
   private readonly restarts = new Set<ReturnType<typeof setTimeout>>();
-  private readonly observedHashes = new Map<string, ContentHash | null>();
+  private readonly observedStates = new Map<string, ProjectPathState>();
   private closed = false;
 
   constructor(
     private readonly workspace: WorkspacePort,
     private readonly database: VidcomDatabase,
     private readonly outbox: EventOutboxPort,
-    private readonly cache: ProjectCache,
+    private readonly invalidator: ProjectPathInvalidator,
     private readonly tracker: WrittenHashTracker,
     private readonly clock: ClockPort,
     private readonly debounceMs = WATCH_DEBOUNCE_MS,
     private readonly watchFactory: WatchFactory = watch,
+    private readonly observer?: MutationObserverPort,
   ) {}
 
   async start(): Promise<void> {
@@ -83,21 +138,41 @@ export class WorkspaceWatcher {
 
   /** Public deterministic seam used by integration tests after a real filesystem edit. */
   async observe(ref: ProjectRef, relativePath: RelPath): Promise<void> {
-    const absolute = path.join(ref.root, relativePath);
-    let hash: ContentHash | null = null;
-    try { hash = digest(await readFile(absolute)); }
-    catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
-    }
+    await this.observeCandidate(ref, relativePath);
+  }
+
+  private async observeCandidate(ref: ProjectRef, candidate: string): Promise<void> {
+    const purpose = candidate === "preview-settings.json" || candidate === "vidcom.json"
+      || (candidate.startsWith("narration/") && candidate.endsWith(".json"))
+      ? "system-write" as const
+      : "authored-write" as const;
+    const resolved = await this.workspace.resolve(ref, candidate, purpose);
+    if (!resolved.ok) return;
+    // The resolver has already canonicalized the target and rejected invalid syntax,
+    // traversal, and symlink escape. Preserve the validated project-relative spelling:
+    // ref.root may itself use a non-canonical alias such as macOS /var -> /private/var.
+    const relativePath = candidate as RelPath;
+    const readState = async (): Promise<ProjectPathState> => {
+      const metadata = await this.workspace.stat(resolved.value);
+      if (metadata === null) return { kind: "absent" };
+      if (metadata.kind === "directory") return { kind: "directory" };
+      if (metadata.kind !== "file") throw new Error("unsupported filesystem entry state");
+      const contentHash = await this.workspace.readHash(resolved.value);
+      return contentHash === null ? { kind: "absent" } : { kind: "file", contentHash };
+    };
+    const sampled = await this.tracker.sample(ref.id, relativePath, readState);
     const itemKey = key(ref.id, relativePath);
-    if (this.observedHashes.has(itemKey) && this.observedHashes.get(itemKey) === hash) return;
-    if (this.tracker.consume(ref.id, relativePath, hash)) {
-      this.observedHashes.set(itemKey, hash);
+    if (sampled.ownWrite) {
+      this.observedStates.set(itemKey, sampled.state);
       return;
     }
+    const previous = this.observedStates.get(itemKey);
+    if (previous && sameState(previous, sampled.state)) return;
 
     if (relativePath === "preview-settings.json") {
-      const persistedHash = hash ?? "sha256:deleted";
+      const persistedHash = sampled.state.kind === "file"
+        ? sampled.state.contentHash
+        : "sha256:deleted";
       const state = this.database.get<{ contentHash: string }>(sql`
         SELECT content_hash AS contentHash FROM entity_state
         WHERE project_id = ${ref.id} AND entity = 'preview-settings'
@@ -116,17 +191,18 @@ export class WorkspaceWatcher {
       payload: { path: relativePath, source: "external" },
     };
     await this.outbox.append(event);
-    this.observedHashes.set(itemKey, hash);
-    this.cache.handleEvent(event);
+    this.observedStates.set(itemKey, sampled.state);
+    try { this.invalidator.invalidate(ref.id, [relativePath]); } catch {}
+    try { this.observer?.observeExternalChange(ref.id, [relativePath]); } catch {}
   }
 
-  private debounce(ref: ProjectRef, relativePath: RelPath): void {
-    const itemKey = key(ref.id, relativePath);
+  private debounce(ref: ProjectRef, candidate: string): void {
+    const itemKey = `${ref.id}\u0000${candidate}`;
     const prior = this.pending.get(itemKey);
     if (prior) clearTimeout(prior);
     this.pending.set(itemKey, setTimeout(() => {
       this.pending.delete(itemKey);
-      void this.observe(ref, relativePath).catch(() => this.debounce(ref, relativePath));
+      void this.observeCandidate(ref, candidate).catch(() => this.debounce(ref, candidate));
     }, this.debounceMs));
   }
 
@@ -136,7 +212,7 @@ export class WorkspaceWatcher {
     try {
       watcher = this.watchFactory(ref.root, { recursive: true }, (_event, filename) => {
         if (!filename) return;
-        const relative = String(filename).split(path.sep).join("/") as RelPath;
+        const relative = String(filename).split(path.sep).join("/");
         if (relative === path.basename(ref.root)) return;
         if (relative.split("/").some((part) => [".git", ".hyperframes", "node_modules"].includes(part))) return;
         const basename = path.posix.basename(relative);

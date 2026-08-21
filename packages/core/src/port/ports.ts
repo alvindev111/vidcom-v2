@@ -17,7 +17,13 @@ import type {
   RelPath,
 } from "@vidcom/contracts";
 
-import type { AbsolutePath, BinaryContent, CompositionModel, CompositionOp, CompositionSource, FileContent, FileNode, FileStat, FontCompatibilityIssue, ProjectRef } from "../domain/models";
+import type { AbsolutePath, BinaryContent, CompositionModel, CompositionOp, CompositionSource, DirectoryEntry, FileContent, FileNode, FileStat, FileTreePage, FontCompatibilityIssue, ProjectRef } from "../domain/models";
+import type {
+  CatalogListFilter,
+  CatalogListing,
+  CatalogMaterializedFile,
+  VerifiedCatalogItem,
+} from "../domain/catalog";
 import type { MotionLibrary } from "../domain/motion-libraries";
 import type { Result } from "../error/result";
 import type {
@@ -39,23 +45,34 @@ import type {
   PreviewSettings,
   ResolvedPath,
   StoredEvent,
+  TrackedProjectPathState,
   CompositeIntent,
   CompositeResult,
   GrantTransition,
   PendingCompositeMutation,
   PendingMutationContext,
+  PendingMount,
+  PendingMountFailure,
+  PendingMountTransition,
   ProjectRecoveryStatus,
   StepIntent,
   ToolAuditEntry,
   WriteEnvelope,
   ApprovalGrantRecord,
+  AssetFileMetadata,
+  AssetRangeOpenOptions,
   BackupManifest,
   BackupPayload,
   BackupSource,
   GrantBinding,
   McpCredentialRecord,
   MutationCapture,
+  MutationCaptureExpectation,
+  MutationCaptureOptions,
+  MutationLandedState,
+  MutationPublishContent,
   MutationCaptureConflict,
+  MutationPathLease,
   MutationAuthority,
   PendingWorkspaceOperation,
   WorkspaceOperationId,
@@ -184,6 +201,48 @@ export interface FontCompatibilityPort {
   inspect(ref: ProjectRef, sources: readonly CompositionSource[]): Promise<FontCompatibilityIssue[]>;
 }
 
+/** Sanitizes an opaque, bounded staged SVG without exposing its path outside infrastructure. */
+export interface SvgSanitizerPort {
+  sanitize(source: StagedFileSource): Promise<Result<string, DomainError>>;
+}
+
+export type UnknownAssetMetadata = { status: "unknown"; byteSize: number | null; reason: string };
+export type MediaAssetMetadata = {
+  status: "ok";
+  kind: "media";
+  byteSize: number;
+  durationSeconds: number | null;
+  width: number | null;
+  height: number | null;
+  codec: string | null;
+};
+export type FontAssetMetadata = {
+  status: "ok";
+  kind: "font";
+  byteSize: number;
+  family: string;
+  style: string;
+};
+export type AssetProbeMetadata = MediaAssetMetadata | FontAssetMetadata | UnknownAssetMetadata;
+
+/** Best-effort inspection of an asset only after its project mutation has committed. */
+export interface MediaProbePort {
+  probeMedia(ref: ProjectRef, path: RelPath): Promise<Result<MediaAssetMetadata | UnknownAssetMetadata, DomainError>>;
+  probeFont(ref: ProjectRef, path: RelPath): Promise<Result<FontAssetMetadata | UnknownAssetMetadata, DomainError>>;
+}
+
+export interface FontStyleRequest {
+  family: string;
+  style: string;
+  fontPath: RelPath;
+  target: { kind: "document" } | { kind: "composition"; id: string };
+}
+
+/** Serializes one Core-approved project-local font reference into authored HTML. */
+export interface FontStylePort {
+  apply(source: string, request: FontStyleRequest): Promise<Result<string, DomainError>>;
+}
+
 /** Reads a pinned motion library's source from wherever the adapter installs it. */
 export interface MotionLibraryFilesPort {
   read(library: MotionLibrary): Promise<Result<Array<{ projectPath: RelPath; content: string }>, DomainError>>;
@@ -247,6 +306,19 @@ export interface WorkspacePort {
   listWorkspaceDirectories?(root: AbsolutePath): Promise<Array<{ slug: string; root: AbsolutePath }>>;
   /** Resolves and authorizes a path; supports missing targets and returns rejection without throwing. */
   resolve(ref: ProjectRef, path: string, purpose: PathPurpose): Promise<Result<ResolvedPath, PathRejection>>;
+  /** Resolves a write target together with its no-follow parent identity chain. */
+  resolveMutation(
+    ref: ProjectRef,
+    path: string,
+    purpose: PathPurpose,
+  ): Promise<Result<MutationPathLease, PathRejection>>;
+  /** Revalidates every parent immediately before a mutation seam. */
+  revalidateMutationPath(lease: MutationPathLease): Promise<boolean>;
+  /** Re-bases only the named parent after a journal-owned directory restore recreated it. */
+  refreshMutationPath(
+    lease: MutationPathLease,
+    restoredParent: ResolvedPath,
+  ): Promise<MutationPathLease | null>;
   /** Resolves an agent-kit path against the exact injected workspace root; only the workspace coordinator calls this. */
   resolveWorkspace(
     workspaceRoot: AbsolutePath,
@@ -261,8 +333,17 @@ export interface WorkspacePort {
   readFile(path: ResolvedPath): Promise<FileContent | null>;
   /** Reads arbitrary allowlisted bytes; `null` means the file does not exist. */
   readBytes(path: ResolvedPath): Promise<BinaryContent | null>;
+  /** Stats a regular asset without reading or hashing its contents. */
+  statAsset(path: ResolvedPath): Promise<AssetFileMetadata | null>;
+  /** Opens one identity-bound inclusive byte range as a bounded pull stream. */
+  openAssetRange(
+    path: ResolvedPath,
+    options: AssetRangeOpenOptions,
+  ): Promise<ReadableStream<Uint8Array> | null>;
   /** Hashes one resolved file; `null` means the file does not exist and hashing performs I/O. */
   readHash(path: ResolvedPath): Promise<ContentHash | null>;
+  /** Opens a Core-only, no-follow staged capability for bounded-memory rename/move. */
+  openStagedSource?(ref: ProjectRef, path: RelPath, expectedHash: ContentHash): Promise<StagedSourceHandle>;
   /** Atomically writes a resolved path; no precondition is checked by this method. */
   writeAtomic(path: ResolvedPath, content: string | Uint8Array): Promise<void>;
   /** Appends one already-serialized line durably without creating a project revision. */
@@ -274,20 +355,29 @@ export interface WorkspacePort {
   /** Moves the live target into a journal-owned rollback slot and verifies its hash at that exact boundary. */
   captureForMutation(
     path: ResolvedPath,
-    expectedHash: ContentHash | null,
+    expectation: MutationCaptureExpectation,
     journalId: JournalId | WorkspaceOperationId,
     ordinal: number,
+    options?: MutationCaptureOptions,
   ): Promise<Result<MutationCapture, MutationCaptureConflict>>;
   /** Publishes staged bytes without replacing a target created after capture; `null` verifies a delete remains absent. */
-  publishCaptured(capture: MutationCapture, content: string | Uint8Array | null): Promise<boolean>;
+  publishCaptured(capture: MutationCapture, content: MutationPublishContent): Promise<boolean>;
   /** Restores captured bytes only while the live target still matches the supplied landed hash. */
-  restoreCaptured(capture: MutationCapture, landedHash: ContentHash | null): Promise<boolean>;
+  restoreCaptured(capture: MutationCapture, landedState: MutationLandedState): Promise<boolean>;
   /** Removes a terminal mutation's rollback slot after SQLite commit or verified abort. */
   discardCapture(capture: MutationCapture): Promise<void>;
   /** Reads the complete project tree and may be expensive for large projects. */
   readTree(ref: ProjectRef): Promise<FileNode[]>;
+  /** Reads one sorted direct-child page without recursively expanding folders. */
+  readTreePage?(ref: ProjectRef, options: {
+    directory: RelPath | null;
+    cursor: string | null;
+    limit: number;
+  }): Promise<Result<FileTreePage, PathRejection>>;
   /** Reads metadata for a resolved path; `null` means the path does not exist. */
   stat(path: ResolvedPath): Promise<FileStat | null>;
+  /** Lists direct children without following symlinks; `null` means the directory is absent. */
+  readDirectory(path: ResolvedPath): Promise<DirectoryEntry[] | null>;
   /** Stats one scanner-owned marker without opening a general path-policy bypass. */
   statWorkspaceFile?(root: AbsolutePath, path: "vidcom.json" | "hyperframes.json" | "index.html"):
     Promise<{ size: number; modifiedAtMs: number } | null>;
@@ -303,6 +393,11 @@ export interface WorkspacePort {
   listBackupSources?(ref: ProjectRef): Promise<BackupSource[]>;
   /** Same closed read capability for a session-scoped recovery root that has no ProjectId. */
   listBackupSourcesAt?(root: AbsolutePath): Promise<BackupSource[]>;
+}
+
+export interface StagedSourceHandle {
+  source: StagedFileSource;
+  discard(): Promise<void>;
 }
 
 export interface StagedAsset {
@@ -321,8 +416,37 @@ export interface StagedAssetPort {
     targetPath: RelPath,
     sourcePath: AbsolutePath,
     expectedHash: ContentHash,
+    options?: { createParent?: boolean },
   ): Promise<StagedAsset>;
 }
+
+export class AssetStagingLimitError extends Error {
+  readonly name = "AssetStagingLimitError";
+
+  constructor(readonly limit: number, readonly actual: number) {
+    super(`asset staging exceeded ${limit} bytes at ${actual}`);
+  }
+}
+
+export interface StagedWriter {
+  write(chunk: Uint8Array): Promise<void>;
+  finalize(): Promise<StagedFileSource>;
+  discard(): Promise<void>;
+}
+
+/** Bounded streaming ingress; it stages bytes but has no authority to publish a project target. */
+export interface AssetStagingPort {
+  open(ref: ProjectRef, hint: { filename: string; maxBytes: number }): Promise<StagedWriter>;
+}
+
+export type CompositionDocumentOptions = {
+  root: boolean;
+  runtimeUrl?: string;
+  fileBaseUrl?: string;
+} & (
+  | { mode: "preview"; projectRevision: number; changeSeq: number }
+  | { mode: "render"; projectRevision?: never; changeSeq?: never }
+);
 
 /** HyperFrames parsing and mutation operations; parsing and document builds are expensive. */
 export interface CompositionPort {
@@ -332,12 +456,92 @@ export interface CompositionPort {
   buildDocument(
     ref: ProjectRef,
     settings: PreviewSettings,
-    options: { root: boolean; runtimeUrl?: string; fileBaseUrl?: string },
+    options: CompositionDocumentOptions,
   ): Promise<string>;
   /** Applies SDK operations in memory without writing the resulting HTML to disk. */
   applyOps(ref: ProjectRef, file: RelPath, ops: CompositionOp[]): Promise<Result<string, DomainError>>;
   /** Validates authored source in memory before the write authority persists it. */
   validateSource?(file: RelPath, content: string): Promise<Result<void, DomainError>>;
+}
+
+export interface CompositionDependency {
+  path: RelPath;
+  state: "present" | "missing";
+  contentHash: ContentHash | null;
+}
+
+/** Reads the complete local render dependency set for one scene without mutating the project. */
+export interface CompositionDependencyPort {
+  dependenciesOf(
+    ref: ProjectRef,
+    sceneId: string,
+  ): Promise<Result<CompositionDependency[], DomainError>>;
+}
+
+export type ThumbnailProfileName = "timeline-v1";
+
+export interface ResolvedThumbnailProfile {
+  width: number;
+  height: number;
+  fps: number;
+  runtimeDigest: string;
+  rendererVersion: string;
+}
+
+export interface ThumbnailKey {
+  sceneId: string;
+  fingerprint: ContentHash;
+  atSeconds: number;
+  profile: ResolvedThumbnailProfile;
+}
+
+export interface ThumbnailRenderResult {
+  key: ThumbnailKey;
+  result: Result<Uint8Array, DomainError>;
+}
+
+/** Project-namespaced derived thumbnail storage; implementations must treat misses as harmless. */
+export interface ThumbnailCachePort {
+  get(projectId: ProjectId, renderKey: string): Promise<Uint8Array | null>;
+  put(projectId: ProjectId, renderKey: string, bytes: Uint8Array): Promise<void>;
+}
+
+/** Infrastructure batch renderer; one call maps to one abortable snapshot process. */
+export interface ThumbnailPort {
+  renderBatch(
+    ref: ProjectRef,
+    keys: readonly ThumbnailKey[],
+    signal: AbortSignal,
+  ): Promise<readonly ThumbnailRenderResult[]>;
+}
+
+/**
+ * Catalog listing and package materialization (Design §5.16).
+ *
+ * `list` is metadata only: opening the catalog must never download or hash item
+ * payloads. `materialize` is the single seam that resolves the dependency
+ * closure at the same immutable revision, verifies digests and returns opaque
+ * staged capabilities — never payload arrays — so no package bytes reach Core,
+ * the transport or the UI.
+ */
+export interface CatalogPort {
+  list(filter: CatalogListFilter): Promise<CatalogListing>;
+  materialize(
+    name: string,
+    version: string,
+    signal: AbortSignal,
+  ): Promise<Result<{
+    item: VerifiedCatalogItem;
+    files: readonly CatalogMaterializedFile[];
+    /**
+     * Releases the verified-cache pin held for these files.
+     *
+     * Required in a `finally`: `prepare` releases before it returns to await
+     * approval, `execute` holds it until its mutation settles. Without it the
+     * global cache budget could reclaim a package mid-install.
+     */
+    release(): Promise<void>;
+  }, DomainError>>;
 }
 
 /** Durable unit of work joining mutation, revision, audit, entity and event records. */
@@ -399,6 +603,7 @@ export interface CompositeMutationJournalPort extends MutationJournalPort {
     context: PendingMutationContext,
     authority: MutationAuthority,
     grant?: Extract<GrantTransition, { kind: "reserve" }>,
+    pending?: PendingMountTransition,
   ): Promise<JournalId>;
   /** Persists the exact rollback slot and captured hash before a step can publish. */
   markStepCaptured(
@@ -579,6 +784,31 @@ export interface EventOutboxPort {
   readFrom(seq: number, limit: number): Promise<{ events: StoredEvent[]; gap: boolean }>;
   /** Reads the latest durable sequence; zero means no events have been stored. */
   latestSeq(): Promise<number>;
+  /** Latest durable sequence for one project only; zero means that project has no events. */
+  latestProjectSeq(projectId: ProjectId): Promise<number>;
+}
+
+/** Non-throwing project-path invalidation boundary shared by mutations and external watcher events. */
+export interface ProjectPathInvalidator {
+  invalidate(projectId: ProjectId, paths: readonly RelPath[]): void;
+}
+
+/** Journal-correlated own-write state consumed by the filesystem watcher after terminal settlement. */
+export interface WrittenStateTrackerPort {
+  arm(projectId: ProjectId, journalId: JournalId, states: readonly TrackedProjectPathState[]): void;
+  settle(journalId: JournalId, outcome: "committed" | "rolled_back" | "unknown"): void;
+}
+
+/** Query/status boundary; open/close/reopen are owned by the composite journal transaction. */
+export interface PendingMountPort {
+  lookup(projectId: ProjectId, operationId: string): Promise<
+    | { state: "active"; record: PendingMount }
+    | { state: "expired" }
+    | { state: "never-seen" }
+  >;
+  listPending(projectId: ProjectId): Promise<Array<PendingMount & { state: "uploaded_unmounted" }>>;
+  markFailed(projectId: ProjectId, operationId: string, failure: PendingMountFailure): Promise<void>;
+  abandon(projectId: ProjectId, operationId: string, reason: string): Promise<void>;
 }
 
 /** Durable job persistence used by the in-process scheduler. */

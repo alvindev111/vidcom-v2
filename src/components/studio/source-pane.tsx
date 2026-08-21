@@ -12,7 +12,9 @@ import {
 import { ModeToggle } from "@/components/mode-toggle";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import type { ProjectChanged } from "@/lib/studio/preview-reload";
 import type { FileNode, Scene, SourceFile } from "@/lib/studio/types";
+import { confirmDiscard } from "@/lib/studio/unsaved-guard";
 import { AiComposerPanel } from "./ai-composer-panel";
 import { CodePane } from "./code-pane";
 import { ScenePane } from "./scene-pane";
@@ -35,6 +37,7 @@ export function SourcePane({
   onSeek,
   onSelectScene,
   onProjectChanged,
+  projectRevision,
 }: {
   projectId: string;
   projectSlug: string;
@@ -45,7 +48,8 @@ export function SourcePane({
   selectedId: string;
   onSeek: (seconds: number) => void;
   onSelectScene: (scene: Scene) => void;
-  onProjectChanged: () => void;
+  onProjectChanged: ProjectChanged;
+  projectRevision: number;
 }) {
   const [tab, setTab] = React.useState("code");
 
@@ -63,7 +67,9 @@ export function SourcePane({
           className="size-8 shrink-0"
           aria-label="Back to projects"
         >
-          <Link href="/">
+          {/* Leaving the project is the third way a draft can be lost, so it
+              asks with the same question the other two do. */}
+          <Link href="/" onClick={(event) => { if (!confirmDiscard()) event.preventDefault(); }}>
             <ArrowLeftIcon className="size-4" />
           </Link>
         </Button>
@@ -98,6 +104,7 @@ export function SourcePane({
           tree={tree}
           files={files}
           onProjectChanged={onProjectChanged}
+          projectRevision={projectRevision}
         />
       </TabsContent>
       <TabsContent value="scene" className="min-h-0 flex-1 border-t">

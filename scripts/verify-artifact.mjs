@@ -459,6 +459,13 @@ export function assertAllowedRuntimeEntry(archiveKey, platform, pathname, allowe
     if (allowedMotionPaths.has(pathname)) return;
     fail("motion runtime path is outside the pinned product catalogue", { path: pathname });
   }
+  // The frozen bundled catalog. Only the manifest and the declared package files
+  // may ride along; the loader re-verifies every digest at boot.
+  if (archiveKey === "hyperframes" && parts[0] === "catalog") {
+    if (pathname === "catalog/manifest.json") return;
+    if (parts[1] === "files" && parts.length > 2 && !parts.includes("..")) return;
+    fail("catalog runtime path is outside the frozen bundled snapshot", { path: pathname });
+  }
   if (archiveKey === "bgm") {
     const productBgm = new Set([
       "alex-morgan-corporate-business-background.mp3",

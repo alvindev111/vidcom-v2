@@ -7,13 +7,19 @@ import {
   EyeIcon,
   EyeOffIcon,
   FilmIcon,
+  TriangleAlertIcon,
 } from "lucide-react";
 
 import { formatTimecode } from "@/lib/studio/format";
+import type { DragZone } from "@/lib/studio/editor-interaction";
+import { hitZone } from "@/lib/studio/snap";
+import { missingMediaPaths } from "@/lib/studio/scene-media";
 import { groupOf } from "@/lib/studio/snapshots";
 import type { RootTrack, Scene } from "@/lib/studio/types";
+import type { TimelineThumbnailViewport } from "@/lib/studio/timeline-thumbnail-layout";
 import { cn } from "@/lib/utils";
 import { TIMELINE_GUTTER_STYLE } from "./timeline-constants";
+import { TimelineThumbnailStrip } from "./timeline-thumbnails";
 
 const GROUP_STYLE: Record<string, string> = {
   scene: "bg-studio-accent/25 border-studio-accent/50",
@@ -96,9 +102,11 @@ export const TimelineRootLane = React.memo(function TimelineRootLane({
  * of all of them.
  */
 export const TimelineLane = React.memo(function TimelineLane({
+  projectId,
   scene,
   index,
   pixelsPerSecond,
+  thumbnailViewport,
   selected,
   live,
   hidden,
@@ -106,29 +114,58 @@ export const TimelineLane = React.memo(function TimelineLane({
   onSelect,
   onToggleHidden,
   onToggleExpanded,
+  onDragStart,
+  onDragMove,
+  onDragEnd,
+  onDragCancel,
+  reorderPlacement,
+  onReorderDragStart,
+  onReorderDragOver,
+  onReorderDrop,
+  onReorderDragEnd,
+  onReorderKeyDown,
 }: {
+  projectId: string;
   scene: Scene;
   /** Position in the storyboard, 1-based. */
   index: number;
   pixelsPerSecond: number;
+  thumbnailViewport: TimelineThumbnailViewport;
   selected: boolean;
   live: boolean;
   hidden: boolean;
   expanded: boolean;
-  onSelect: (scene: Scene) => void;
+  onSelect: (scene: Scene, modifiers: { shift?: boolean; additive?: boolean }) => void;
   onToggleHidden: (scene: Scene) => void;
   onToggleExpanded: (sceneId: string, expanded: boolean) => void;
+  onDragStart: (scene: Scene, zone: DragZone, pointerX: number) => void;
+  onDragMove: (scene: Scene, pointerX: number) => void;
+  onDragEnd: (scene: Scene, pointerX: number) => void;
+  onDragCancel: () => void;
+  reorderPlacement: "before" | "after" | null;
+  onReorderDragStart: (scene: Scene) => void;
+  onReorderDragOver: (scene: Scene, placement: "before" | "after") => void;
+  onReorderDrop: (scene: Scene, placement: "before" | "after") => void;
+  onReorderDragEnd: () => void;
+  onReorderKeyDown: (scene: Scene, direction: -1 | 1) => void;
 }) {
   const Icon = hidden ? EyeOffIcon : EyeIcon;
   const Chevron = expanded ? ChevronDownIcon : ChevronRightIcon;
   const group = groupOf(scene);
+  const missing = missingMediaPaths(scene);
   const end = scene.start + scene.duration;
   const inside = scene.elements.length + scene.unresolvedEffects;
 
   return (
     <div
+      data-timeline-row={scene.id}
+      data-reorder-placement={reorderPlacement ?? undefined}
       data-selected={selected || undefined}
-      className="data-selected:bg-studio-accent/5 flex h-10 shrink-0 border-b"
+      className={cn(
+        "data-selected:bg-studio-accent/5 flex h-10 shrink-0 border-b",
+        reorderPlacement === "before" && "border-t-2 border-t-sky-400",
+        reorderPlacement === "after" && "border-b-2 border-b-violet-400",
+      )}
     >
       <div
         style={TIMELINE_GUTTER_STYLE}
@@ -159,7 +196,32 @@ export const TimelineLane = React.memo(function TimelineLane({
         </span>
         <button
           type="button"
-          onClick={() => onSelect(scene)}
+          draggable
+          data-timeline-reorder-id={scene.id}
+          onClick={(event) => onSelect(scene, {
+            shift: event.shiftKey,
+            additive: event.metaKey || event.ctrlKey,
+          })}
+          onKeyDown={(event) => {
+            if (!event.altKey || (event.key !== "ArrowUp" && event.key !== "ArrowDown")) return;
+            event.preventDefault();
+            onReorderKeyDown(scene, event.key === "ArrowUp" ? -1 : 1);
+          }}
+          onDragStart={(event) => {
+            event.dataTransfer.effectAllowed = "move";
+            onReorderDragStart(scene);
+          }}
+          onDragOver={(event) => {
+            event.preventDefault();
+            const bounds = event.currentTarget.getBoundingClientRect();
+            onReorderDragOver(scene, event.clientY < bounds.top + bounds.height / 2 ? "before" : "after");
+          }}
+          onDrop={(event) => {
+            event.preventDefault();
+            const bounds = event.currentTarget.getBoundingClientRect();
+            onReorderDrop(scene, event.clientY < bounds.top + bounds.height / 2 ? "before" : "after");
+          }}
+          onDragEnd={onReorderDragEnd}
           title={`${scene.id} · ${scene.src ?? "index.html"}`}
           className={cn(
             "min-w-0 grow truncate text-left text-[11px]",
@@ -183,12 +245,36 @@ export const TimelineLane = React.memo(function TimelineLane({
       <div className="relative grow">
         <button
           type="button"
-          onClick={() => onSelect(scene)}
-          title={`${formatTimecode(scene.start)} → ${formatTimecode(end)}`}
+          data-timeline-scene-id={scene.id}
+          aria-pressed={selected}
+          onClick={(event) => {
+            if (event.detail === 0) onSelect(scene, {});
+          }}
+          onPointerDown={(event) => {
+            if (event.button !== 0) return;
+            const bounds = event.currentTarget.getBoundingClientRect();
+            onSelect(scene, {
+              shift: event.shiftKey,
+              additive: event.metaKey || event.ctrlKey,
+            });
+            onDragStart(scene, hitZone(event.clientX - bounds.left, bounds.width), event.clientX);
+          }}
+          onPointerMove={(event) => {
+            onDragMove(scene, event.clientX);
+          }}
+          onPointerUp={(event) => {
+            onDragEnd(scene, event.clientX);
+          }}
+          onPointerCancel={onDragCancel}
+          title={missing.length > 0
+            ? `${formatTimecode(scene.start)} → ${formatTimecode(end)} · missing source: ${missing.join(", ")}`
+            : `${formatTimecode(scene.start)} → ${formatTimecode(end)}`}
+          data-missing-source={missing.length > 0 || undefined}
           className={cn(
-            "absolute inset-y-1.5 flex items-center overflow-hidden rounded-sm border px-1.5 transition-colors",
+            "absolute inset-y-1.5 flex touch-none items-center overflow-hidden rounded-sm border px-1.5 transition-colors",
             GROUP_STYLE[group] ?? GROUP_STYLE.scene,
             selected && "ring-studio-accent ring-2",
+            missing.length > 0 && "border-red-500 bg-red-500/15",
             live && !selected && "border-studio-accent",
             hidden && "opacity-35",
           )}
@@ -198,7 +284,21 @@ export const TimelineLane = React.memo(function TimelineLane({
             width: Math.max(scene.duration * pixelsPerSecond, 6),
           }}
         >
-          <span className="text-foreground/85 truncate font-mono text-[10px]">
+          <TimelineThumbnailStrip
+            projectId={projectId}
+            scene={scene}
+            pixelsPerSecond={pixelsPerSecond}
+            viewport={thumbnailViewport}
+          />
+          {missing.length > 0 ? (
+            // The path is the point: without it the clip is just an empty box and
+            // the person has no way to know which file to restore.
+            <span className="relative z-10 flex min-w-0 items-center gap-1 truncate rounded-sm bg-red-600/80 px-1 text-[10px] text-white">
+              <TriangleAlertIcon className="size-3 shrink-0" />
+              <span className="truncate">Missing {missing.join(", ")}</span>
+            </span>
+          ) : null}
+          <span className="text-foreground/85 relative z-10 truncate rounded-sm bg-black/35 px-1 font-mono text-[10px]">
             {scene.duration}s
           </span>
         </button>

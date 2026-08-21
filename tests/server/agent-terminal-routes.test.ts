@@ -26,7 +26,16 @@ function fakeSession(spec: AgentTerminalSpec) {
       return () => listeners.delete(listener);
     },
   };
-  return { session, written, sizes, isClosed: () => closed };
+  return {
+    session,
+    written,
+    sizes,
+    isClosed: () => closed,
+    emit: (frame: AgentTerminalFrame) => {
+      for (const listener of listeners) listener(frame);
+    },
+    listenerCount: () => listeners.size,
+  };
 }
 
 function fixture() {
@@ -167,6 +176,55 @@ describe("agent terminal routes", () => {
 
     expect(first).toContain("event: data");
     expect(first).toContain(JSON.stringify({ type: "data", data: "banner\r\n" }));
+  });
+
+  it("caps a suspended PTY consumer, unsubscribes, and emits a typed overflow", async () => {
+    const { request, authenticate, opened } = fixture();
+    const cookie = await authenticate();
+    await start(request, cookie);
+    const stream = await request(`/api/v1/projects/${id}/agent-terminal/terminal_1/stream`, {
+      headers: { Cookie: cookie },
+    });
+    const before = process.memoryUsage();
+    for (let index = 0; index < 100_000; index += 1) {
+      opened[0]!.emit({ type: "data", data: `frame-${index.toString().padStart(6, "0")}................................................` });
+    }
+    const after = process.memoryUsage();
+    const listenerCountAfterFlood = opened[0]!.listenerCount();
+    const reader = stream.body!.getReader();
+    const text = `${new TextDecoder().decode((await reader.read()).value)}${new TextDecoder().decode((await reader.read()).value)}`;
+    await reader.cancel();
+    const sample = {
+      frames: 100_000,
+      listenerCount: listenerCountAfterFlood,
+      heapDeltaBytes: Math.max(0, after.heapUsed - before.heapUsed),
+      rssDeltaBytes: Math.max(0, after.rss - before.rss),
+    };
+    process.stdout.write(`P15_PTY_SUSPENDED_SAMPLE ${JSON.stringify(sample)}\n`);
+
+    expect(sample.listenerCount).toBe(0);
+    expect(text).toContain("event: error");
+    expect(text).toContain(ErrorCode.ResourceLimitExceeded);
+    expect(sample.heapDeltaBytes).toBeLessThan(32 * 1024 * 1024);
+    expect(sample.rssDeltaBytes).toBeLessThan(64 * 1024 * 1024);
+  });
+
+  it("unsubscribes a PTY stream immediately when the request aborts", async () => {
+    const { request, authenticate, opened } = fixture();
+    const cookie = await authenticate();
+    await start(request, cookie);
+    const abort = new AbortController();
+    const stream = await request(`/api/v1/projects/${id}/agent-terminal/terminal_1/stream`, {
+      signal: abort.signal,
+      headers: { Cookie: cookie },
+    });
+    expect(opened[0]!.listenerCount()).toBe(1);
+
+    abort.abort();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(opened[0]!.listenerCount()).toBe(0);
+    await stream.body?.cancel().catch(() => {});
   });
 
   it("routes typing and resizing to the session, and closes it on delete", async () => {

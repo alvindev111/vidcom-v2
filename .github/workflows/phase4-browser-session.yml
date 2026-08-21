@@ -41,17 +41,17 @@ jobs:
 
     steps:
       - name: Check out repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
 
       - name: Set up Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: 24.9.0
 
       - name: Set up Bun
-        uses: oven-sh/setup-bun@v2
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
         with:
           bun-version: 1.3.14
 
@@ -62,6 +62,16 @@ jobs:
       # measured curl answering differently — so this job exists to run a real
       # one. `hyperframes browser ensure` puts it in the same cache the
       # resolver already searches.
+      # The timeline-drop assertions mount a real asset, and the mount duration
+      # is probed rather than taken from the browser.
+      - name: Install FFmpeg (Linux)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y ffmpeg
+
+      - name: Install FFmpeg (Windows)
+        if: runner.os == 'Windows'
+        run: choco install ffmpeg --no-progress --yes
+
       - name: Install chrome-headless-shell
         run: node node_modules/hyperframes/bin/hyperframes.mjs browser ensure
 
@@ -73,4 +83,9 @@ jobs:
         env:
           # Set only where the browser was actually installed. Keying this on CI
           # itself would fail every job that never had one.
+          VIDCOM_REQUIRE_BROWSER: "1"
+
+      - name: Accessibility audit
+        run: bun run test:accessibility
+        env:
           VIDCOM_REQUIRE_BROWSER: "1"

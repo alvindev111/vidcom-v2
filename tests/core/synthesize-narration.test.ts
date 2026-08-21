@@ -90,6 +90,7 @@ function harness(options: {
             entityRevision: null,
             fileHashes: {},
             diagnostics: [],
+            changeSeq: 1,
           } as WriteEnvelope);
         },
         mutate: async () => { throw new Error("mutate must not be used for a batch"); },

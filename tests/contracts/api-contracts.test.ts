@@ -5,6 +5,8 @@ import {
   AssetResponseSchema,
   AuthExchangeRequestSchema,
   CancelJobResponseSchema,
+  CompactTrackRequestSchema,
+  DeleteScenesRequestSchema,
   DomainEventSchema,
   ErrorCode,
   ErrorResponseSchema,
@@ -15,6 +17,8 @@ import {
   LegacyGenerateResponseSchema,
   LegacySceneMutationRequestSchema,
   LegacyTtsResponseSchema,
+  PendingMountSchema,
+  PendingMountOperationIdSchema,
   ListProjectsResponseSchema,
   NoContentResponseSchema,
   PatchPreviewSettingsRequestSchema,
@@ -23,13 +27,18 @@ import {
   PatchSceneScriptResponseSchema,
   PatchSceneTimingRequestSchema,
   PatchSceneTimingResponseSchema,
+  PrepareDeleteScenesRequestSchema,
   ProjectParamsSchema,
   PutProjectFileRequestSchema,
   PutProjectFileResponseSchema,
+  ReorderScenesRequestSchema,
   ReadProjectFileQuerySchema,
   ReadProjectFileResponseSchema,
   StudioSnapshotResponseSchema,
+  MoveScenesRequestSchema,
   TERMINAL_JOB_STATUSES,
+  TimelineThumbnailRequestSchema,
+  ThumbnailImageParamsSchema,
   UploadBgmRequestSchema,
   UploadBgmResponseSchema,
   WriteConflictResponseSchema,
@@ -91,6 +100,76 @@ const previewSettings = {
 };
 
 describe("API request contracts", () => {
+  it("keeps timeline thumbnail requests single-scene, bounded and strict", () => {
+    expect(TimelineThumbnailRequestSchema.parse({
+      sceneId: "scene-1", atSeconds: [0, 1.5], profile: "timeline-v1",
+    })).toEqual({ sceneId: "scene-1", atSeconds: [0, 1.5], profile: "timeline-v1" });
+    expect(TimelineThumbnailRequestSchema.safeParse({
+      sceneId: "scene-1", atSeconds: [0, 0], profile: "timeline-v1",
+    }).success).toBe(false);
+    expect(TimelineThumbnailRequestSchema.safeParse({
+      sceneId: "scene-1", atSeconds: Array.from({ length: 257 }, (_, index) => index), profile: "timeline-v1",
+    }).success).toBe(false);
+    for (const invalid of [-1, Number.NaN, Number.POSITIVE_INFINITY]) {
+      expect(TimelineThumbnailRequestSchema.safeParse({
+        sceneId: "scene-1", atSeconds: [invalid], profile: "timeline-v1",
+      }).success).toBe(false);
+    }
+    expect(TimelineThumbnailRequestSchema.safeParse({
+      sceneId: "scene-1", atSeconds: [0], profile: { name: "timeline-v1" },
+    }).success).toBe(false);
+    expect(TimelineThumbnailRequestSchema.safeParse({
+      sceneId: "scene-1", atSeconds: [0], profile: "timeline-v1", width: 160,
+    }).success).toBe(false);
+    expect(ThumbnailImageParamsSchema.safeParse({ id: project.id, key: "A".repeat(64) }).success).toBe(false);
+    expect(ThumbnailImageParamsSchema.parse({ id: project.id, key: "a".repeat(64) }))
+      .toEqual({ id: project.id, key: "a".repeat(64) });
+  });
+
+  it("shares strict pending-mount primitives across editing boundaries", () => {
+    const operationId = "01K1ABCDEFGHJKMNPQRSTVWXYZ";
+    expect(PendingMountOperationIdSchema.parse(operationId)).toBe(operationId);
+    expect(PendingMountSchema.parse({
+      operationId,
+      projectId: project.id,
+      assetPath: "assets/video/upload.mp4",
+      assetContentHash: hash,
+      uploadFingerprint: hash,
+      atSeconds: 1.25,
+      trackIndex: 2,
+      state: "uploaded_unmounted",
+      lastFailure: { code: "interrupted", message: "Mount interrupted" },
+      mountedSceneId: null,
+      mountedRevision: null,
+      createdAt: now,
+      updatedAt: now,
+    })).toMatchObject({ operationId, state: "uploaded_unmounted" });
+    expect(PendingMountOperationIdSchema.safeParse("not-a-ulid").success).toBe(false);
+  });
+
+  it("shares strict scene order and bulk deletion request contracts", () => {
+    expect(ReorderScenesRequestSchema.parse({
+      sceneId: "scene-1", toIndex: 1, toTrackIndex: 2, extendRoot: true, expectedContentHash: hash,
+    })).toMatchObject({ sceneId: "scene-1", toIndex: 1, toTrackIndex: 2 });
+    expect(CompactTrackRequestSchema.parse({ expectedContentHash: hash })).toEqual({ expectedContentHash: hash });
+    expect(MoveScenesRequestSchema.parse({
+      sceneIds: ["scene-1", "scene-2"], deltaSeconds: -1.5, expectedContentHash: hash,
+    })).toMatchObject({ sceneIds: ["scene-1", "scene-2"], deltaSeconds: -1.5 });
+    expect(PrepareDeleteScenesRequestSchema.parse({ sceneIds: ["scene-1"], expectedRevision: 3 }))
+      .toEqual({ sceneIds: ["scene-1"], expectedRevision: 3 });
+    expect(DeleteScenesRequestSchema.parse({ sceneIds: ["scene-1"], expectedRevision: 3 }))
+      .toEqual({ sceneIds: ["scene-1"], expectedRevision: 3 });
+    expect(ReorderScenesRequestSchema.safeParse({
+      sceneId: "scene-1", toIndex: 1, expectedContentHash: hash, compact: true,
+    }).success).toBe(false);
+    expect(MoveScenesRequestSchema.safeParse({
+      sceneIds: [], deltaSeconds: 1, expectedContentHash: hash,
+    }).success).toBe(false);
+    expect(DeleteScenesRequestSchema.safeParse({
+      sceneIds: ["scene-1", "scene-1"], expectedRevision: 3,
+    }).success).toBe(false);
+  });
+
   it("accepts one representative request for every §7 input shape", () => {
     const upload = new File([new Uint8Array([0x49, 0x44, 0x33])], "music.mp3", {
       type: "audio/mpeg",
@@ -169,6 +248,7 @@ describe("API response contracts", () => {
       "credential_invalid",
       "daemon_identity_mismatch",
       "daemon_unavailable",
+      "dependency_graph_unavailable",
       "download_tls_untrusted",
       "download_unavailable",
       "duplicate_mutation_target",
@@ -176,7 +256,9 @@ describe("API response contracts", () => {
       "host_not_allowed",
       "idempotency_key_reused",
       "identity_parse_error",
+      "integrity_mismatch",
       "internal",
+      "invariant_violated",
       "no_composition",
       "no_file",
       "no_scenes",
@@ -197,15 +279,19 @@ describe("API response contracts", () => {
       "referenced_by_composition",
       "remote_asset_not_local",
       "render_binary_missing",
+      "resource_limit_exceeded",
       "rollback_payload_pruned",
       "runtime_extraction_incomplete",
       "runtime_manifest_invalid",
       "scene_not_found",
       "schema_invalid",
       "sdk_rejected",
+      "source_changing",
       "storage_unavailable",
       "sub_timeline_readiness_timeout",
+      "thumbnail_capacity",
       "timing_invalid",
+      "timing_not_frame_aligned",
       "too_large",
       "tool_not_available_in_era",
       "tts_credential_missing",
@@ -225,7 +311,7 @@ describe("API response contracts", () => {
   });
 
   it("locks every JSON success response shape", () => {
-    const mutation = { previewSettings, revision: 4, diagnostics };
+    const mutation = { previewSettings, revision: 4, diagnostics, changeSeq: 9 };
     const narration = {
       sceneId: "scene-1",
       text: "Hello",
@@ -241,11 +327,13 @@ describe("API response contracts", () => {
     expect(ListProjectsResponseSchema.parse({ projects: [project] })).toEqual({ projects: [project] });
     expect(
       StudioSnapshotResponseSchema.parse({
+        eventCursor: 7,
         project,
         entryFile: file,
         tree: [{ path: "index.html", name: "index.html", kind: "file" }],
         scenes: [],
         rootTrack: null,
+        frameRate: 30,
         previewSettings,
         previewSettingsRevision: 2,
         revision: 3,
@@ -257,13 +345,14 @@ describe("API response contracts", () => {
       }),
     ).toMatchObject({ project, revision: 3, diagnostics });
     expect(ReadProjectFileResponseSchema.parse({ file })).toEqual({ file });
-    expect(PutProjectFileResponseSchema.parse({ file, revision: 4, diagnostics })).toEqual({
+    expect(PutProjectFileResponseSchema.parse({ file, revision: 4, diagnostics, changeSeq: 9 })).toEqual({
       file,
       revision: 4,
       diagnostics,
+      changeSeq: 9,
     });
-    expect(PatchSceneTimingResponseSchema.parse({ file, revision: 4, diagnostics })).toMatchObject({ file });
-    expect(PatchSceneScriptResponseSchema.parse({ file, revision: 4, diagnostics })).toMatchObject({ file });
+    expect(PatchSceneTimingResponseSchema.parse({ file, revision: 4, diagnostics, changeSeq: 9 })).toMatchObject({ file });
+    expect(PatchSceneScriptResponseSchema.parse({ file, revision: 4, diagnostics, changeSeq: 9 })).toMatchObject({ file });
     expect(PatchPreviewSettingsResponseSchema.parse(mutation)).toEqual(mutation);
     expect(UploadBgmResponseSchema.parse(mutation)).toEqual(mutation);
     expect(
@@ -304,11 +393,13 @@ describe("API response contracts", () => {
       finishedAt: now,
     }).warnings).toEqual(warnings);
     expect(TERMINAL_JOB_STATUSES).toEqual(["succeeded", "partial", "failed", "cancelled"]);
-    expect(LegacyTtsResponseSchema.parse({ ok: true, narration })).toEqual({ ok: true, narration });
+    expect(LegacyTtsResponseSchema.parse({ ok: true, narration, changeSeq: 9 }))
+      .toEqual({ ok: true, narration, changeSeq: 9 });
     expect(
       LegacyGenerateResponseSchema.parse({
         ok: true,
         sceneId: "scene-2",
+        changeSeq: 10,
         transcript: [{ kind: "command", text: "generate" }],
       }),
     ).toMatchObject({ ok: true, sceneId: "scene-2" });

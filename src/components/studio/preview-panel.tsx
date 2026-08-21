@@ -8,6 +8,7 @@ import {
   ResizablePanelGroup,
 } from "@/components/ui/resizable";
 import type { PreviewSettings } from "@/lib/studio/preview-settings";
+import type { ProjectChanged } from "@/lib/studio/preview-reload";
 import type { RootTrack, Scene } from "@/lib/studio/types";
 import { PlaybackBar } from "./playback-bar";
 import { PreviewCanvas } from "./preview-canvas";
@@ -15,9 +16,13 @@ import { Timeline } from "./timeline";
 import type { PlayerControls, PlayerState } from "./use-hyperframes-player";
 
 export function PreviewPanel({
+  projectId,
   containerRef,
   aspectRatio,
   duration,
+  frameRate,
+  entryContentHash,
+  projectRevision,
   state,
   controls,
   scenes,
@@ -26,10 +31,15 @@ export function PreviewPanel({
   selectedId,
   onSelectScene,
   onToggleHidden,
+  onProjectChanged,
 }: {
+  projectId: string;
   containerRef: React.Ref<HTMLDivElement>;
   aspectRatio: number;
   duration: number;
+  frameRate: number;
+  entryContentHash: string | null;
+  projectRevision: number;
   state: PlayerState;
   controls: PlayerControls;
   scenes: Scene[];
@@ -38,6 +48,7 @@ export function PreviewPanel({
   selectedId: string;
   onSelectScene: (scene: Scene) => void;
   onToggleHidden: (scene: Scene) => void;
+  onProjectChanged: ProjectChanged;
 }) {
   return (
     <ResizablePanelGroup orientation="vertical">
@@ -50,6 +61,7 @@ export function PreviewPanel({
             error={state.error}
           />
           <PlaybackBar
+            frameRate={frameRate}
             duration={duration}
             paused={state.paused}
             muted={state.muted}
@@ -67,14 +79,20 @@ export function PreviewPanel({
 
       <ResizablePanel defaultSize="38" minSize="15">
         <Timeline
+          projectId={projectId}
           scenes={scenes}
           rootTrack={rootTrack}
           settings={settings}
           duration={duration}
+          frameRate={frameRate}
+          entryContentHash={entryContentHash}
+          projectRevision={projectRevision}
           selectedId={selectedId}
           onScrub={controls.seek}
+          onTogglePlay={controls.toggle}
           onSelect={onSelectScene}
           onToggleHidden={onToggleHidden}
+          onProjectChanged={onProjectChanged}
         />
       </ResizablePanel>
     </ResizablePanelGroup>

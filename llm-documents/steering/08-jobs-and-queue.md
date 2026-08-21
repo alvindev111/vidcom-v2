@@ -16,6 +16,18 @@ Bất cứ thao tác nào **không** chắc chắn xong trong một HTTP request
 
 MUST NOT chạy những thứ trên trong request handler. Không có job infrastructure thì phần lớn yêu cầu chức năng ở doc 13 không làm được.
 
+### 1.1 Ngoại lệ derived-cache cho timeline thumbnail
+
+`snapshot` trong bảng là artifact bền của project: có bản ghi job, có thể `partial`, và publish vào
+`snapshots/`. **Timeline thumbnail** là derived-cache tương tác khác loại và MUST NOT enqueue/reuse
+snapshot job. Một request được chạy đúng một batch tối đa 256 mốc của cùng scene/profile qua scheduler
+chung toàn daemon, tối đa `2 active` và `8 queued`. `AbortSignal` MUST đi xuyên route → Core service →
+adapter → process; disconnect/abort phải rút queued batch ngay hoặc kill process đang chạy theo §6.1.
+Queue đầy MUST trả `thumbnail_capacity` hữu hạn cho từng mốc, không tạo hàng đợi/promise/process ẩn.
+PNG tạm và WebP cuối chỉ nằm trong cache app-data; pipeline MUST NOT ghi project, tăng source revision
+hoặc tạo artifact trong `snapshots/`. Vì không phải job bền, nó không có retry/recovery vô hạn: cache
+mất là vô hại và client chỉ yêu cầu lại khi ô còn trong vùng nhìn.
+
 ## 2. Vòng đời
 
 ```

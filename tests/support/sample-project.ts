@@ -35,6 +35,14 @@ export interface SampleProjectOptions {
   duration?: number;
   /** Text of the editable heading, which scene-script edits target. */
   headline?: string;
+  /**
+   * Write a composition the runtime builds a timeline for.
+   *
+   * Off by default, which keeps every existing fixture byte-identical. A
+   * preview reload only completes once the runtime has posted its timeline, so
+   * anything measuring or asserting a reload needs this on.
+   */
+  withTimeline?: boolean;
 }
 
 export interface SampleProject {
@@ -50,7 +58,7 @@ const SCENE_ID = "scene-1";
 const ELEMENT_ID = "headline";
 
 function rootDocument(options: Required<Pick<SampleProjectOptions,
-  "width" | "height" | "fps" | "duration">>): string {
+  "width" | "height" | "fps" | "duration" | "withTimeline">>): string {
   return `<!doctype html>
 <html>
   <head><meta charset="UTF-8" /></head>
@@ -62,7 +70,7 @@ function rootDocument(options: Required<Pick<SampleProjectOptions,
       data-fps="${options.fps}"
       data-duration="${options.duration}"
       data-start="0"
-      data-no-timeline
+      ${options.withTimeline ? "" : "data-no-timeline"}
     >
       <div
         class="clip"
@@ -79,14 +87,14 @@ function rootDocument(options: Required<Pick<SampleProjectOptions,
 }
 
 function sceneDocument(options: Required<Pick<SampleProjectOptions,
-  "width" | "height" | "duration" | "headline">>): string {
+  "width" | "height" | "duration" | "headline" | "withTimeline">>): string {
   return `<template id="${SCENE_ID}-template">
   <div
     data-composition-id="${SCENE_ID}"
     data-width="${options.width}"
     data-height="${options.height}"
     data-duration="${options.duration}"
-    data-no-timeline
+    ${options.withTimeline ? "" : "data-no-timeline"}
   >
     <h1 id="${ELEMENT_ID}">${options.headline}</h1>
     <style>
@@ -135,6 +143,7 @@ export async function writeSampleProject(
     fps: options.fps ?? 30,
     duration: options.duration ?? 6,
     headline: options.headline ?? "Sample project",
+    withTimeline: options.withTimeline ?? false,
   };
   const root = path.join(workspaceRoot, options.slug);
   await mkdir(path.join(root, "compositions"), { recursive: true });

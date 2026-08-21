@@ -13,6 +13,9 @@ const eslintConfig = defineConfig([
     "spikes/phase-0/next-route-precedence/.next/**",
     "out/**",
     "build/**",
+    // Produced by `bun run build` from src/preview-host/entry.ts: a minified
+    // bundle, not source this repository reviews.
+    "public/preview-host.js",
     "next-env.d.ts",
     // Pinned third-party motion libraries vendored into a project by
     // install_motion_library. They are minified upstream builds, not our source.

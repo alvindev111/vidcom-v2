@@ -28,6 +28,9 @@ export const PACKAGED_RUNTIME_MIGRATION_ENTRIES = [
   "drizzle/20260804180557_spotty_catseye/migration.sql",
   "drizzle/20260807144527_amazing_kitty_pryde/migration.sql",
   "drizzle/20260808073614_normal_stature/migration.sql",
+  "drizzle/20260817153223_small_power_pack/migration.sql",
+  "drizzle/20260817162114_solid_daredevil/migration.sql",
+  "drizzle/20260818060948_loose_kabuki/migration.sql",
 ] as const;
 const PACKAGED_RUNTIME_MIGRATION_ENTRY_SET = new Set<string>(PACKAGED_RUNTIME_MIGRATION_ENTRIES);
 
@@ -50,6 +53,12 @@ const REQUIRED_HYPERFRAMES_ENTRIES = [
   "bin/commands/layout-audit.browser.js",
   "bin/commands/motion-sample.browser.js",
   "bin/commands/contrast-audit.browser.js",
+  // One stable contract path for the frozen catalog. The individual package files
+  // are not listed here on purpose: their exact set is data that changes whenever
+  // a snapshot is curated, and `loadBundledCatalog` already fails closed on a
+  // missing file or a digest drift. Requiring the manifest keeps a catalog-less
+  // artifact from booting at all.
+  "catalog/manifest.json",
 ] as const;
 
 const REQUIRED_BGM_ENTRIES = [

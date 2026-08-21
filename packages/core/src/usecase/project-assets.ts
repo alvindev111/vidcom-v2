@@ -8,9 +8,9 @@ import {
 } from "@vidcom/contracts";
 
 import { checkPathPurpose, checkPathSyntax } from "../domain/path-policy";
-import type { FileNode } from "../domain/models";
+import { WorkspaceResourceLimitError, type FileNode } from "../domain/models";
 import { err, ok, type Result } from "../error/result";
-import type { JobStorePort } from "../port/ports";
+import type { AssetProbeMetadata, JobStorePort, MediaProbePort, WorkspacePort } from "../port/ports";
 import type { JobId } from "../port/types";
 import { getPreviewSettings, type ProjectReadDependencies } from "./project-reads";
 
@@ -39,6 +39,24 @@ export function assetExtension(path: string): string {
   const name = path.slice(path.lastIndexOf("/") + 1);
   const index = name.lastIndexOf(".");
   return index < 0 ? "" : name.slice(index + 1).toLowerCase();
+}
+
+/** Probes one contained project asset; Core owns the font/media dispatch decision. */
+export async function getProjectAssetMetadata(
+  dependencies: {
+    workspace: Pick<WorkspacePort, "readProjectRef">;
+    probe: MediaProbePort;
+  },
+  input: { projectId: ProjectId; path: RelPath },
+): Promise<Result<AssetProbeMetadata, DomainError>> {
+  if (checkPathSyntax(input.path) || checkPathPurpose(input.path, "read-asset")) {
+    return err({ code: ErrorCode.AssetNotAllowed, message: "asset path is not allowed", field: "path" });
+  }
+  const ref = await dependencies.workspace.readProjectRef(input.projectId);
+  if (!ref) return err({ code: ErrorCode.ProjectNotFound, message: "project was not found" });
+  return KINDS.find(([kind, extensions]) => kind === "font" && extensions.has(assetExtension(input.path)))
+    ? dependencies.probe.probeFont(ref, input.path)
+    : dependencies.probe.probeMedia(ref, input.path);
 }
 
 function assetKind(path: string): ProjectAssetKind {
@@ -76,8 +94,14 @@ export async function listProjectAssets(
   let candidates: RelPath[];
   try {
     candidates = flatten(await dependencies.workspace.readTree(ref));
-  } catch {
-    return err({ code: ErrorCode.StorageUnavailable, message: "the project tree could not be read" });
+  } catch (error) {
+    return error instanceof WorkspaceResourceLimitError
+      ? err({
+          code: ErrorCode.ResourceLimitExceeded,
+          message: "the project asset tree crossed a resource limit",
+          details: { reason: error.reason, limit: error.limit, actual: error.actual },
+        })
+      : err({ code: ErrorCode.StorageUnavailable, message: "the project tree could not be read" });
   }
   const allowed = candidates
     .filter((path) => !checkPathSyntax(path) && !checkPathPurpose(path, "read-asset"))

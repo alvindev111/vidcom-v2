@@ -140,7 +140,11 @@ async function localStylesheets(
   ref: ProjectRef,
   document: string,
 ): Promise<Array<{ path: RelPath; css: string }>> {
-  const queue = [...document.matchAll(/<link\b[^>]*\brel\s*=\s*["'][^"']*stylesheet[^"']*["'][^>]*>/giu)]
+  const queue = [...document.matchAll(/<link\b[^>]*>/giu)]
+    .filter((tag) => {
+      const rel = tag[0].match(/\brel\s*=\s*["']([^"']+)["']/iu)?.[1] ?? "";
+      return rel.toLowerCase().split(/\s+/u).includes("stylesheet");
+    })
     .flatMap((tag) => [...tag[0].matchAll(/\bhref\s*=\s*["']([^"']+)["']/giu)]
       .map((match) => ({ href: match[1]!, base: path.posix.dirname(ref.entry) })));
   const loaded: Array<{ path: RelPath; css: string }> = [];
@@ -179,7 +183,7 @@ export async function preflightRenderDocument(
     const document = await dependencies.composition.buildDocument(
       prepared.ref,
       prepared.previewSettings,
-      { root: true, runtimeUrl: "./.vidcom-runtime.js", fileBaseUrl: "./" },
+      { mode: "render", root: true, runtimeUrl: "./.vidcom-runtime.js", fileBaseUrl: "./" },
     );
     const stylesheets = await localStylesheets(dependencies, prepared.ref, document);
     const violations = scanRemoteMedia([{ path: prepared.ref.entry, html: document }], stylesheets);

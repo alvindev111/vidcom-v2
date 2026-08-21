@@ -39,7 +39,7 @@ const clock = { now: () => new Date("2026-08-04T18:00:00.000Z") };
 // with process-tree tests that regularly occupy the CPU for 20+ seconds. Keep
 // the budget finite, but large enough that scheduler contention is not reported
 // as a delivery-loop failure.
-const CONTENDED_INTEGRATION_TIMEOUT_MS = 30_000;
+const CONTENDED_INTEGRATION_TIMEOUT_MS = 60_000;
 
 function qualifiedSceneSource(sceneId: string, duration: number): string {
   return `<!doctype html><html><body><template>
@@ -196,13 +196,15 @@ describe("project delivery HTTP routes on real SQLite and filesystem", () => {
     const value = await fixture();
     try {
       const cases = [
-        [ErrorCode.SchemaInvalid, 400], [ErrorCode.PreconditionRequired, 409],
+        [ErrorCode.SchemaInvalid, 400], [ErrorCode.PreconditionRequired, 400],
         [ErrorCode.ProjectInvalid, 409], [ErrorCode.NoComposition, 422],
         [ErrorCode.NoScenes, 422], [ErrorCode.RemoteAssetNotLocal, 422],
         [ErrorCode.AssetNotAllowed, 403], [ErrorCode.PathOutsideProject, 403],
         [ErrorCode.RenderBinaryMissing, 503], [ErrorCode.ProcessTerminationUnverified, 500],
         [ErrorCode.ApprovalRequired, 403], [ErrorCode.ConfirmationRequired, 403],
         [ErrorCode.StorageUnavailable, 500], [ErrorCode.Internal, 500],
+        [ErrorCode.InvariantViolated, 422], [ErrorCode.IntegrityMismatch, 422],
+        [ErrorCode.TooLarge, 413], [ErrorCode.UnsupportedMedia, 415],
       ] as const;
       for (const [code, status] of cases) {
         value.setActivationError(code);
@@ -466,11 +468,52 @@ describe("project delivery HTTP routes on real SQLite and filesystem", () => {
       };
       expect(httpResult).toMatchObject(expected);
       expect(mcpResult.value).toMatchObject(expected);
+      const [httpAfterValid, mcpAfterValid] = await Promise.all([
+        value.infrastructure.workspace.readWorkspaceFile!(httpProject.ref.root, "index.html"),
+        value.infrastructure.workspace.readWorkspaceFile!(mcpProject.ref.root, "index.html"),
+      ]);
+      if (!httpAfterValid || !mcpAfterValid) throw new Error("timing parity entry disappeared");
+      const rejectedHttp = await value.request(
+        `/api/v1/projects/${httpProject.projectId}/scenes/scene-1/timing`,
+        {
+          method: "PATCH", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            duration: 2.55,
+            ripple: false,
+            expectedContentHash: httpAfterValid.contentHash,
+          }),
+        },
+      );
+      expect(rejectedHttp.status).toBe(422);
+      expect(await rejectedHttp.json()).toMatchObject({
+        error: {
+          code: ErrorCode.TimingNotFrameAligned,
+          field: "duration",
+          details: { value: 2.55, fps: 30 },
+        },
+      });
+      await expect(registry.invoke("set_scene_timing", {
+        projectId: mcpProject.projectId,
+        sceneId: "scene-1",
+        duration: 2.55,
+        expectedContentHash: mcpAfterValid.contentHash,
+      }, {
+        era: "modern", protocolVersion: "2026-07-28", credentialId: "delivery-parity-test",
+        requestInput: async (): Promise<never> => { throw new Error("input was not expected"); },
+      })).resolves.toMatchObject({
+        ok: false,
+        error: {
+          code: ErrorCode.TimingNotFrameAligned,
+          field: "duration",
+          details: { value: 2.55, fps: 30 },
+        },
+      });
       const [httpEntry, mcpEntry] = await Promise.all([
         readFile(path.join(httpProject.ref.root, "index.html"), "utf8"),
         readFile(path.join(mcpProject.ref.root, "index.html"), "utf8"),
       ]);
       expect(httpEntry).toBe(mcpEntry);
+      expect(httpEntry).toBe(httpAfterValid.content);
       expect(await value.infrastructure.journal.latestRevision(httpProject.projectId)).toEqual(expect.any(Number));
       expect(await value.infrastructure.journal.latestRevision(mcpProject.projectId)).toEqual(expect.any(Number));
     } finally {

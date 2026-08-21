@@ -550,6 +550,7 @@ export const InstallBgmOutputSchema = z.strictObject({
   volume: z.number().min(0).max(1),
   loop: z.boolean(),
   revision: z.number().int().nonnegative(),
+  changeSeq: z.number().int().nonnegative().nullable(),
 });
 
 /** Input for `import_bgm`; the source is an asset already inside the project. */

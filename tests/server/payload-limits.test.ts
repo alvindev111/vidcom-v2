@@ -28,7 +28,16 @@ function fixture() {
     authority: {
       async mutateSource(request: unknown) {
         writes.push(request);
-        return ok({ path: "index.html", contentHash, revision: 1, diagnostics: [] });
+        return ok({
+          path: "index.html",
+          contentHash,
+          revision: 1,
+          diagnostics: [],
+          changeSeq: 12,
+          ...((request as { kind?: string }).kind === "entity"
+            ? { previewSettings: DEFAULT_PREVIEW_SETTINGS }
+            : {}),
+        });
       },
       async uploadBgm(request: unknown) {
         writes.push(request);
@@ -37,6 +46,7 @@ function fixture() {
           contentHash,
           revision: 1,
           diagnostics: [],
+          changeSeq: 12,
           previewSettings: DEFAULT_PREVIEW_SETTINGS,
         });
       },
@@ -71,6 +81,7 @@ describe("advertised payload limits", () => {
       body: JSON.stringify({ path: "index.html", content: "x".repeat(MAX_SOURCE_BYTES), expectedContentHash: null }),
     });
     expect(exact.status).toBe(200);
+    expect(await exact.json()).toMatchObject({ changeSeq: 12 });
     expect(writes).toHaveLength(1);
 
     const oversized = await request(`/api/v1/projects/${projectId}/files`, {
@@ -95,6 +106,7 @@ describe("advertised payload limits", () => {
     };
     const exact = await request(`/api/v1/projects/${projectId}/assets/bgm`, { method: "POST", body: body(MAX_BGM_BYTES, "0") });
     expect(exact.status).toBe(200);
+    expect(await exact.json()).toMatchObject({ changeSeq: 12 });
     expect(writes).toHaveLength(1);
 
     const oversized = await request(`/api/v1/projects/${projectId}/assets/bgm`, { method: "POST", body: body(MAX_BGM_BYTES + 1, "0") });
@@ -103,9 +115,20 @@ describe("advertised payload limits", () => {
 
     for (const revision of [null, ""]) {
       const missing = await request(`/api/v1/projects/${projectId}/assets/bgm`, { method: "POST", body: body(3, revision) });
-      expect(missing.status).toBe(409);
+      expect(missing.status).toBe(400);
       expect(await missing.json()).toMatchObject({ error: { code: "precondition_required" } });
     }
     expect(writes).toHaveLength(1);
+  });
+
+  it("returns the exact change sequence for preview-settings writes", async () => {
+    const { request } = fixture();
+    const response = await request(`/api/v1/projects/${projectId}/preview-settings`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ patch: { bgm: { volume: 0.4 } }, expectedRevision: 0 }),
+    });
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({ changeSeq: 12 });
   });
 });

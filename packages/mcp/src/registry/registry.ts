@@ -7,7 +7,7 @@ import {
   type ToolLevel,
   type ToolSchemaEntry,
 } from "@vidcom/contracts";
-import type { ToolAuditEntry } from "@vidcom/core";
+import { ignoredMutationOriginForActor, type ToolAuditEntry } from "@vidcom/core";
 
 import type {
   ToolAnnotations,
@@ -199,7 +199,11 @@ export class ToolRegistry {
       grantId: definition.level === "destructive" ? grantIdOf(input) : null,
       credentialId: request.credentialId,
       invocationId,
-      writeInvocation: { toolAudit: pending, noteUnchanged: () => { unchanged = true; } },
+      writeInvocation: {
+        origin: ignoredMutationOriginForActor("agent"),
+        toolAudit: pending,
+        noteUnchanged: () => { unchanged = true; },
+      },
       requestInput: request.requestInput,
     };
 

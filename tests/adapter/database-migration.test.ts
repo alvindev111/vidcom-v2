@@ -9,6 +9,8 @@ import { dbAll, dbOne, dbRun } from "../support/database";
 
 const HOST_EVENT_MIGRATION = "20260807144527_amazing_kitty_pryde";
 const PROJECT_IMPORT_MIGRATION = "20260808073614_normal_stature";
+const DIRECTORY_STEP_MIGRATION = "20260817153223_small_power_pack";
+const PENDING_MOUNT_MIGRATION = "20260817162114_solid_daredevil";
 
 let root: string;
 let appData: string;
@@ -50,6 +52,74 @@ function databaseBeforeHostEvents() {
 }
 
 describe("Drizzle migrations", () => {
+  it("preserves journal rows and foreign keys while adding pending mounts", async () => {
+    const database = await databaseBefore(PENDING_MOUNT_MIGRATION, "prior-pending-mount-migrations");
+    const now = "2026-08-17T00:00:00.000Z";
+    try {
+      insertProject(database, "p-pending", "pending");
+      dbRun(database, `INSERT INTO mutation_journal
+        (project_id, kind, path, from_hash, to_hash, status, actor, created_at)
+        VALUES ('p-pending', 'file', 'index.html', 'sha256:old', 'sha256:new', 'committed', 'agent', ?)`, now);
+
+      await migrateDatabase(database);
+      await migrateDatabase(database);
+
+      expect(dbOne(database, `SELECT id, project_id AS projectId, status, pending_transition AS transition
+        FROM mutation_journal WHERE id = 1`)).toEqual({
+        id: 1,
+        projectId: "p-pending",
+        status: "committed",
+        transition: null,
+      });
+      expect(() => dbRun(database, `INSERT INTO pending_mount
+        (operation_id, project_id, asset_path, asset_content_hash, upload_fingerprint,
+         at_seconds, track_index, state, created_at, updated_at)
+        VALUES ('operation-1', 'missing', 'assets/a.mp4', 'sha256:a', 'sha256:b', 0, 0,
+          'uploaded_unmounted', ?, ?)`, now, now)).toThrow();
+      expect(dbOne(database, "SELECT count(*) AS violations FROM pragma_foreign_key_check"))
+        .toEqual({ violations: 0 });
+    } finally {
+      await database.destroy();
+    }
+  });
+
+  it("preserves old steps while adding durable directory step state", async () => {
+    const database = await databaseBefore(DIRECTORY_STEP_MIGRATION, "prior-directory-step-migrations");
+    const now = "2026-08-17T00:00:00.000Z";
+    try {
+      insertProject(database, "p-directory", "directory");
+      dbRun(database, `INSERT INTO mutation_journal
+        (project_id, kind, path, from_hash, to_hash, status, actor, created_at)
+        VALUES ('p-directory', 'file', 'index.html', 'sha256:old', 'sha256:new', 'pending', 'agent', ?)`, now);
+      dbRun(database, `INSERT INTO mutation_step
+        (journal_id, ordinal, kind, path, from_hash, to_hash, status)
+        VALUES (1, 0, 'write', 'index.html', 'sha256:old', 'sha256:new', 'pending')`);
+      dbRun(database, `INSERT INTO revision
+        (project_id, kind, path, content_hash, actor, created_at)
+        VALUES ('p-directory', 'file', 'index.html', 'sha256:new', 'agent', ?)`, now);
+      dbRun(database, `INSERT INTO revision_step
+        (revision_id, ordinal, kind, path, from_hash, to_hash)
+        VALUES (1, 0, 'write', 'index.html', 'sha256:old', 'sha256:new')`);
+
+      await migrateDatabase(database);
+
+      expect(dbOne(database, "SELECT kind, existed_before AS existedBefore FROM mutation_step WHERE id = 1"))
+        .toEqual({ kind: "write", existedBefore: null });
+      expect(dbOne(database, "SELECT kind, existed_before AS existedBefore FROM revision_step WHERE id = 1"))
+        .toEqual({ kind: "write", existedBefore: null });
+      expect(() => dbRun(database, `INSERT INTO mutation_step
+        (journal_id, ordinal, kind, path, existed_before, status)
+        VALUES (1, 1, 'mkdir', 'assets', 0, 'pending')`)).not.toThrow();
+      expect(() => dbRun(database, `INSERT INTO mutation_step
+        (journal_id, ordinal, kind, path, status)
+        VALUES (1, 2, 'rmdir', 'assets', 'pending')`)).toThrow();
+      expect(dbOne(database, "SELECT count(*) AS violations FROM pragma_foreign_key_check"))
+        .toEqual({ violations: 0 });
+    } finally {
+      await database.destroy();
+    }
+  });
+
   it("preserves existing outbox rows and sequence when adding host lifecycle events", async () => {
     const database = await databaseBeforeHostEvents();
     const now = "2026-08-07T00:00:00.000Z";
@@ -143,6 +213,7 @@ describe("Drizzle migrations", () => {
           "mutation_journal.grant_id->approval_grant.id",
           "mutation_journal.project_id->project_registry.id",
           "mutation_step.journal_id->mutation_journal.id",
+          "pending_mount.project_id->project_registry.id",
           "revision.parent_revision->revision.id",
           "revision.project_id->project_registry.id",
           "revision_blob.revision_id->revision.id",
@@ -163,6 +234,7 @@ describe("Drizzle migrations", () => {
           "mcp_credential",
           "mutation_journal",
           "mutation_step",
+          "pending_mount",
           "project_registry",
           "registry_cache",
           "revision",
@@ -201,6 +273,35 @@ describe("Drizzle migrations", () => {
     try {
       insertProject(database, "p1", "one");
       insertProject(database, "p2", "two");
+
+      const insertPendingMount = (
+        operationId: string,
+        state: string,
+        errorCode: string | null,
+        errorMessage: string | null,
+        sceneId: string | null,
+        revision: number | null,
+      ) => dbRun(database, `INSERT INTO pending_mount
+        (operation_id, project_id, asset_path, asset_content_hash, upload_fingerprint,
+         at_seconds, track_index, state, last_error_code, last_error_message,
+         mounted_scene_id, mounted_revision, created_at, updated_at)
+        VALUES (?, 'p1', 'assets/a.mp4', ?, ?, 0, 0, ?, ?, ?, ?, ?, ?, ?)`,
+      operationId, hash, hash, state, errorCode, errorMessage, sceneId, revision, now, now);
+      expect(() => insertPendingMount("pending-ok", "uploaded_unmounted", "interrupted", "retry", null, null))
+        .not.toThrow();
+      expect(() => insertPendingMount("pending-bad-pair", "uploaded_unmounted", "interrupted", null, null, null))
+        .toThrow();
+      expect(() => insertPendingMount("mounted-ok", "mounted", null, null, "scene-1", 1))
+        .not.toThrow();
+      expect(() => insertPendingMount("mounted-bad-error", "mounted", "failed", "bad", "scene-1", 1))
+        .toThrow();
+      expect(() => insertPendingMount("abandoned-ok", "abandoned", "abandoned", "ignored", null, null))
+        .not.toThrow();
+      expect(() => insertPendingMount("abandoned-no-reason", "abandoned", null, null, null, null))
+        .toThrow();
+      expect(() => dbRun(database, `INSERT INTO mutation_journal
+        (project_id, kind, status, actor, pending_transition, created_at)
+        VALUES ('p1', 'composite', 'pending', 'agent', '{bad-json', ?)` , now)).toThrow();
 
       expect(() => dbRun(database, `INSERT INTO mutation_journal
         (project_id, kind, path, to_hash, actor, created_at) VALUES ('p1','invalid','index.html','hash','user',?)`, now)).toThrow();

@@ -133,6 +133,9 @@ ${motionLibraryScriptTag(gsap)}
     entry: "index.html" as RelPath,
   };
   const html = await buildCompositionDocument(ref, DEFAULT_PREVIEW_SETTINGS, {
+    mode: "preview",
+    projectRevision: 0,
+    changeSeq: 0,
     root: true,
     runtimeUrl: "/runtime.js",
     fileBaseUrl: "/files/",

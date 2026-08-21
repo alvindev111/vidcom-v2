@@ -1,32 +1,48 @@
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { constants } from "node:fs";
-import { lstat, mkdir, open, readFile, readdir, realpath, stat } from "node:fs/promises";
+import { link, lstat, mkdir, open, readFile, readdir, realpath, rm, stat } from "node:fs/promises";
 import path from "node:path";
 
 import type { ContentHash, ProjectId, RelPath } from "@vidcom/contracts";
 import {
+  DEFAULT_WORKSPACE_TREE_LIMITS,
+  WorkspaceResourceLimitError,
   type AbsolutePath,
+  type AssetFileIdentity,
+  type AssetFileMetadata,
+  type AssetRangeOpenOptions,
   type BackupSource,
   type FileContent,
   type FileNode,
   type FileStat,
+  type FileTreePage,
   type JournalId,
   type WorkspaceOperationId,
   type MutationCapture,
+  type MutationPathLease,
   type PathPurpose,
   type PathRejection,
   type ProjectRef,
   type ResolvedPath,
   type Result,
+  type StagedSourceHandle,
   type WorkspacePort,
+  type WorkspaceTreeLimits,
   type ProjectCandidate,
   type ProjectRegistration,
 } from "@vidcom/core";
 
 import { writeAtomic } from "./atomic-write";
+import { openRegularFileNoFollow } from "./regular-file";
 import { deleteAtomic } from "./atomic-delete";
 import { syncDirectory } from "./durability";
-import { resolveProjectPath, resolveWorkspacePath } from "./resolve";
+import {
+  resolveMutationPath,
+  resolveProjectPath,
+  resolveWorkspacePath,
+  refreshMutationPath,
+  revalidateMutationPath,
+} from "./resolve";
 import {
   captureForMutation,
   discardCapture,
@@ -34,7 +50,143 @@ import {
   restoreCaptured,
 } from "./mutation-capture";
 
-const IGNORED_TREE_ENTRIES = new Set(["node_modules", ".git", ".hyperframes"]);
+const IGNORED_TREE_ENTRIES = new Set([
+  "node_modules",
+  ".git",
+  ".hyperframes",
+  ".vidcom",
+  "package.json",
+  "agents.md",
+  "claude.md",
+  "hyperframes.json",
+  "vidcom.json",
+  "preview-settings.json",
+]);
+const ASSET_STREAM_BUFFER_BYTES = 64 * 1024;
+const DEFAULT_ASSET_STREAM_CONCURRENCY = 8;
+
+interface AssetStreamObserver {
+  open?(): void;
+  read?(bytes: number): void;
+  close?(): void;
+}
+
+function observe(callback: (() => void) | undefined): void {
+  try { callback?.(); } catch { /* Diagnostic callbacks must not affect I/O ownership. */ }
+}
+
+function observeRead(callback: ((bytes: number) => void) | undefined, bytes: number): void {
+  try { callback?.(bytes); } catch { /* Diagnostic callbacks must not affect I/O ownership. */ }
+}
+
+export interface WorkspaceFsOptions {
+  assetStreamConcurrency?: number;
+  /** Test/diagnostic counters only; no file contents or paths are exposed. */
+  assetStreamObserver?: AssetStreamObserver;
+  /** Diagnostic override; production always uses the exported bounded defaults. */
+  treeLimits?: WorkspaceTreeLimits;
+  treeNow?: () => number;
+}
+
+function visibleTreeEntry(name: string): boolean {
+  const lower = name.toLowerCase();
+  return !name.startsWith(".") && !IGNORED_TREE_ENTRIES.has(lower);
+}
+
+interface AssetStreamWaiter {
+  signal?: AbortSignal;
+  resolve(release: () => void): void;
+  reject(error: Error): void;
+  abort?(): void;
+}
+
+function abortError(): Error {
+  const error = new Error("asset stream was aborted");
+  error.name = "AbortError";
+  return error;
+}
+
+class AssetStreamSemaphore {
+  private active = 0;
+  private readonly waiters: AssetStreamWaiter[] = [];
+
+  constructor(private readonly limit: number) {
+    if (!Number.isInteger(limit) || limit < 1) throw new TypeError("asset stream concurrency must be positive");
+  }
+
+  acquire(signal?: AbortSignal): Promise<() => void> {
+    if (signal?.aborted) return Promise.reject(abortError());
+    if (this.active < this.limit) {
+      this.active += 1;
+      return Promise.resolve(this.releaseOnce());
+    }
+    return new Promise((resolve, reject) => {
+      const waiter: AssetStreamWaiter = { signal, resolve, reject };
+      if (signal) {
+        waiter.abort = () => {
+          const index = this.waiters.indexOf(waiter);
+          if (index >= 0) this.waiters.splice(index, 1);
+          reject(abortError());
+        };
+        signal.addEventListener("abort", waiter.abort, { once: true });
+      }
+      this.waiters.push(waiter);
+    });
+  }
+
+  private releaseOnce(): () => void {
+    let released = false;
+    return () => {
+      if (released) return;
+      released = true;
+      while (this.waiters.length > 0) {
+        const waiter = this.waiters.shift()!;
+        if (waiter.abort) waiter.signal?.removeEventListener("abort", waiter.abort);
+        if (waiter.signal?.aborted) continue;
+        waiter.resolve(this.releaseOnce());
+        return;
+      }
+      this.active -= 1;
+    };
+  }
+}
+
+function assetIdentity(metadata: Awaited<ReturnType<Awaited<ReturnType<typeof open>>["stat"]>>): AssetFileIdentity {
+  const value = metadata as unknown as {
+    dev: bigint;
+    ino: bigint;
+    size: bigint;
+    mtimeNs: bigint;
+    ctimeNs: bigint;
+    isFile(): boolean;
+  };
+  const size = Number(value.size);
+  if (!value.isFile() || !Number.isSafeInteger(size) || size < 0) {
+    throw new TypeError("asset is not a supported regular file");
+  }
+  return {
+    device: value.dev.toString(),
+    inode: value.ino.toString(),
+    size,
+    modifiedAtNs: value.mtimeNs.toString(),
+    changedAtNs: value.ctimeNs.toString(),
+  };
+}
+
+function sameAssetIdentity(left: AssetFileIdentity, right: AssetFileIdentity): boolean {
+  return left.device === right.device
+    && left.inode === right.inode
+    && left.size === right.size
+    && left.modifiedAtNs === right.modifiedAtNs
+    && left.changedAtNs === right.changedAtNs;
+}
+
+function weakAssetEtag(identity: AssetFileIdentity): string {
+  const digest = createHash("sha256")
+    .update(JSON.stringify(identity))
+    .digest("base64url");
+  return `W/"${digest}"`;
+}
 
 function sha256(content: string | Uint8Array): ContentHash {
   return `sha256:${createHash("sha256").update(content).digest("hex")}` as ContentHash;
@@ -63,13 +215,46 @@ async function readProjectRefAt(directory: string, slug: string): Promise<Projec
   }
 }
 
+async function hashRegularFile(pathname: string): Promise<ContentHash> {
+  const handle = await openRegularFileNoFollow(pathname, "hash target is not a regular file");
+  try {
+    const metadata = await handle.stat();
+    if (!metadata.isFile()) throw new TypeError("hash target is not a regular file");
+    const digest = createHash("sha256");
+    // Tree mutations may hash hundreds of small files before V8 collects their
+    // backing stores. Keep each streaming allocation bounded so file count does
+    // not become an RSS multiplier while large files still use one fixed buffer.
+    const buffer = Buffer.allocUnsafe(16 * 1024);
+    let position = 0;
+    while (true) {
+      const { bytesRead } = await handle.read(buffer, 0, buffer.byteLength, position);
+      if (bytesRead === 0) break;
+      digest.update(buffer.subarray(0, bytesRead));
+      position += bytesRead;
+    }
+    return `sha256:${digest.digest("hex")}` as ContentHash;
+  } finally {
+    await handle.close();
+  }
+}
+
 /** Node filesystem implementation scoped to one injected workspace root. */
 export class WorkspaceFs implements WorkspacePort {
   private readonly directProjectRootChecks = new Map<AbsolutePath, Promise<string>>();
   private readonly workspaceRootCanonical: Promise<string>;
+  private readonly assetStreams: AssetStreamSemaphore;
+  private readonly assetStreamObserver: AssetStreamObserver;
+  private readonly treeLimits: WorkspaceTreeLimits;
+  private readonly treeNow: () => number;
 
-  constructor(private readonly workspaceRoot: AbsolutePath) {
+  constructor(private readonly workspaceRoot: AbsolutePath, options: WorkspaceFsOptions = {}) {
     this.workspaceRootCanonical = realpath(workspaceRoot);
+    this.assetStreams = new AssetStreamSemaphore(
+      options.assetStreamConcurrency ?? DEFAULT_ASSET_STREAM_CONCURRENCY,
+    );
+    this.assetStreamObserver = options.assetStreamObserver ?? {};
+    this.treeLimits = options.treeLimits ?? DEFAULT_WORKSPACE_TREE_LIMITS;
+    this.treeNow = options.treeNow ?? Date.now;
   }
 
   private async directProjectRoot(root: AbsolutePath): Promise<string> {
@@ -139,6 +324,25 @@ export class WorkspaceFs implements WorkspacePort {
     purpose: PathPurpose,
   ): Promise<Result<ResolvedPath, PathRejection>> {
     return resolveProjectPath(ref, relativePath, purpose);
+  }
+
+  resolveMutation(
+    ref: ProjectRef,
+    relativePath: string,
+    purpose: PathPurpose,
+  ): Promise<Result<MutationPathLease, PathRejection>> {
+    return resolveMutationPath(ref, relativePath, purpose);
+  }
+
+  revalidateMutationPath(lease: MutationPathLease): Promise<boolean> {
+    return revalidateMutationPath(lease);
+  }
+
+  refreshMutationPath(
+    lease: MutationPathLease,
+    restoredParent: ResolvedPath,
+  ): Promise<MutationPathLease | null> {
+    return refreshMutationPath(lease, restoredParent);
   }
 
   async resolveWorkspace(
@@ -223,14 +427,165 @@ export class WorkspaceFs implements WorkspacePort {
     }
   }
 
+  async statAsset(pathname: ResolvedPath): Promise<AssetFileMetadata | null> {
+    let handle: Awaited<ReturnType<typeof open>> | null = null;
+    try {
+      handle = await openRegularFileNoFollow(pathname, "asset is not a regular file");
+      const identity = assetIdentity(await handle.stat({ bigint: true }));
+      return { size: identity.size, etag: weakAssetEtag(identity), identity };
+    } catch (error) {
+      if (["ENOENT", "ELOOP"].includes((error as NodeJS.ErrnoException).code ?? "")) return null;
+      throw error;
+    } finally {
+      await handle?.close();
+    }
+  }
+
+  async openAssetRange(
+    pathname: ResolvedPath,
+    options: AssetRangeOpenOptions,
+  ): Promise<ReadableStream<Uint8Array> | null> {
+    if (!Number.isSafeInteger(options.start) || !Number.isSafeInteger(options.end)
+      || options.start < 0 || options.end < options.start || options.end >= options.identity.size) {
+      throw new RangeError("asset byte range is invalid");
+    }
+    const release = await this.assetStreams.acquire(options.signal);
+    let handle: Awaited<ReturnType<typeof open>> | null = null;
+    try {
+      handle = await openRegularFileNoFollow(pathname, "asset is not a regular file");
+      const current = assetIdentity(await handle.stat({ bigint: true }));
+      if (!sameAssetIdentity(current, options.identity)) {
+        await handle.close();
+        release();
+        return null;
+      }
+    } catch (error) {
+      await handle?.close().catch(() => undefined);
+      release();
+      if (["ENOENT", "ELOOP"].includes((error as NodeJS.ErrnoException).code ?? "")) return null;
+      throw error;
+    }
+    const ownedHandle = handle;
+    const observer = this.assetStreamObserver;
+    let position = options.start;
+    let settled = false;
+    let abortListener: (() => void) | null = null;
+    observe(observer.open);
+    const settle = async () => {
+      if (settled) return;
+      settled = true;
+      if (abortListener) options.signal?.removeEventListener("abort", abortListener);
+      await ownedHandle.close().catch(() => undefined);
+      observe(observer.close);
+      release();
+    };
+    let stream: ReadableStream<Uint8Array>;
+    try {
+      stream = new ReadableStream<Uint8Array>({
+        start(controller) {
+          if (!options.signal) return;
+          abortListener = () => {
+            controller.error(abortError());
+            void settle();
+          };
+          options.signal.addEventListener("abort", abortListener, { once: true });
+          if (options.signal.aborted) abortListener();
+        },
+        async pull(controller) {
+          if (settled) return;
+          if (options.signal?.aborted) {
+            controller.error(abortError());
+            await settle();
+            return;
+          }
+          const length = Math.min(ASSET_STREAM_BUFFER_BYTES, options.end - position + 1);
+          const buffer = new Uint8Array(length);
+          try {
+            const { bytesRead } = await ownedHandle.read(buffer, 0, length, position);
+            observeRead(observer.read, bytesRead);
+            if (bytesRead === 0) {
+              await settle();
+              controller.close();
+              return;
+            }
+            position += bytesRead;
+            controller.enqueue(bytesRead === buffer.byteLength ? buffer : buffer.subarray(0, bytesRead));
+            if (position > options.end) {
+              await settle();
+              controller.close();
+            }
+          } catch (error) {
+            controller.error(error);
+            await settle();
+          }
+        },
+        async cancel() {
+          await settle();
+        },
+      }, { highWaterMark: 1 });
+    } catch (error) {
+      await settle();
+      throw error;
+    }
+    return stream;
+  }
+
   /** Streams file bytes through sha256; `null` means the file is absent. */
   async readHash(pathname: ResolvedPath): Promise<ContentHash | null> {
     try {
-      return sha256(await readFile(pathname));
+      return await hashRegularFile(pathname);
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code === "ENOENT") return null;
       throw error;
     }
+  }
+
+  async openStagedSource(
+    ref: ProjectRef,
+    sourcePath: RelPath,
+    expectedHash: ContentHash,
+  ): Promise<StagedSourceHandle> {
+    const project = await this.directProjectRoot(ref.root);
+    const resolved = await this.resolveMutation(ref, sourcePath, "authored-write");
+    if (!resolved.ok) throw new TypeError("staged source path is not allowed");
+    if (!(await this.revalidateMutationPath(resolved.value))) {
+      throw new TypeError("staged source parent identity changed");
+    }
+    const sourceMetadata = await lstat(resolved.value.target);
+    if (!sourceMetadata.isFile() || sourceMetadata.isSymbolicLink()) {
+      throw new TypeError("staged source is not a regular file");
+    }
+    const stateRoot = path.join(project, ".vidcom");
+    const temporaryRoot = path.join(stateRoot, "tmp");
+    for (const directory of [stateRoot, temporaryRoot]) {
+      try { await mkdir(directory, { mode: 0o700 }); }
+      catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+      }
+      const metadata = await lstat(directory);
+      if (!metadata.isDirectory() || metadata.isSymbolicLink()) {
+        throw new TypeError("staged source directory is unsafe");
+      }
+    }
+    const temporary = path.join(temporaryRoot, `entry-${randomUUID()}.tmp`) as AbsolutePath;
+    await link(resolved.value.target, temporary);
+    let discarded = false;
+    try {
+      if (await hashRegularFile(temporary) !== expectedHash) throw new TypeError("staged source hash changed");
+      await syncDirectory(temporaryRoot);
+    } catch (error) {
+      await rm(temporary, { force: true });
+      throw error;
+    }
+    return {
+      source: { sourcePath: temporary, contentHash: expectedHash },
+      async discard() {
+        if (discarded) return;
+        await rm(temporary, { force: true });
+        await syncDirectory(temporaryRoot);
+        discarded = true;
+      },
+    };
   }
 
   /** Atomically replaces one resolved target without checking a write precondition. */
@@ -328,23 +683,30 @@ export class WorkspaceFs implements WorkspacePort {
   }
 
   /** Moves the live target into a journal-owned rollback slot and verifies its hash at that boundary. */
-  captureForMutation(
+  async captureForMutation(
     pathname: ResolvedPath,
-    expectedHash: ContentHash | null,
+    expectation: Parameters<WorkspacePort["captureForMutation"]>[1],
     journalId: JournalId | WorkspaceOperationId,
     ordinal: number,
+    options?: Parameters<WorkspacePort["captureForMutation"]>[4],
   ) {
-    return captureForMutation(pathname, expectedHash, journalId, ordinal);
+    if (options?.lease
+      && (options.lease.target !== pathname || !await this.revalidateMutationPath(options.lease))) {
+      return { ok: false as const, error: { actualState: "other" as const } };
+    }
+    return captureForMutation(pathname, expectation, journalId, ordinal, options);
   }
 
   /** Publishes bytes without replacing a target created after capture. */
-  publishCaptured(capture: MutationCapture, content: string | Uint8Array | null): Promise<boolean> {
+  async publishCaptured(capture: MutationCapture, content: Parameters<WorkspacePort["publishCaptured"]>[1]): Promise<boolean> {
+    if (capture.lease && !(await this.revalidateMutationPath(capture.lease))) return false;
     return publishCaptured(capture, content);
   }
 
   /** Restores captured bytes only while the live target still matches the landed mutation hash. */
-  restoreCaptured(capture: MutationCapture, landedHash: ContentHash | null): Promise<boolean> {
-    return restoreCaptured(capture, landedHash);
+  async restoreCaptured(capture: MutationCapture, landedState: Parameters<WorkspacePort["restoreCaptured"]>[1]): Promise<boolean> {
+    if (capture.lease && !(await this.revalidateMutationPath(capture.lease))) return false;
+    return restoreCaptured(capture, landedState);
   }
 
   /** Removes a terminal mutation's rollback slot. */
@@ -354,35 +716,145 @@ export class WorkspaceFs implements WorkspacePort {
 
   /** Reads a deterministic project-relative tree without following directory symlinks. */
   async readTree(ref: ProjectRef): Promise<FileNode[]> {
-    const walk = async (directory: string): Promise<FileNode[]> => {
+    const startedAt = this.treeNow();
+    let nodeCount = 0;
+    let serializedBytes = 2;
+    const assertDeadline = () => {
+      const elapsed = this.treeNow() - startedAt;
+      if (elapsed > this.treeLimits.maxDurationMs) {
+        throw new WorkspaceResourceLimitError("deadline", this.treeLimits.maxDurationMs, elapsed);
+      }
+    };
+    const account = (node: FileNode) => {
+      nodeCount += 1;
+      if (nodeCount > this.treeLimits.maxNodes) {
+        throw new WorkspaceResourceLimitError("node_count", this.treeLimits.maxNodes, nodeCount);
+      }
+      serializedBytes += new TextEncoder().encode(JSON.stringify({
+        path: node.path,
+        name: node.name,
+        kind: node.kind,
+      })).byteLength + 1;
+      if (serializedBytes > this.treeLimits.maxSerializedBytes) {
+        throw new WorkspaceResourceLimitError(
+          "serialized_bytes",
+          this.treeLimits.maxSerializedBytes,
+          serializedBytes,
+        );
+      }
+    };
+    const walk = async (directory: string, depth: number): Promise<FileNode[]> => {
+      assertDeadline();
+      if (depth > this.treeLimits.maxDepth) {
+        throw new WorkspaceResourceLimitError("depth", this.treeLimits.maxDepth, depth);
+      }
       const entries = (await readdir(directory, { withFileTypes: true }))
-        .filter((entry) => !IGNORED_TREE_ENTRIES.has(entry.name))
+        .filter((entry) => visibleTreeEntry(entry.name))
+        .filter((entry) => entry.isDirectory() || entry.isFile())
         .sort((left, right) => {
           if (left.isDirectory() !== right.isDirectory()) return left.isDirectory() ? -1 : 1;
           return left.name.localeCompare(right.name);
         });
-      return Promise.all(
-        entries.map(async (entry): Promise<FileNode> => {
-          const absolute = path.join(directory, entry.name);
-          const relative = path.relative(ref.root, absolute).split(path.sep).join("/") as RelPath;
-          return entry.isDirectory()
-            ? { path: relative, name: entry.name, kind: "folder", children: await walk(absolute) }
-            : { path: relative, name: entry.name, kind: "file" };
-        }),
-      );
+      if (entries.length > this.treeLimits.maxEntriesPerDirectory) {
+        throw new WorkspaceResourceLimitError(
+          "directory_entries",
+          this.treeLimits.maxEntriesPerDirectory,
+          entries.length,
+        );
+      }
+      const nodes: FileNode[] = [];
+      for (const entry of entries) {
+        assertDeadline();
+        const absolute = path.join(directory, entry.name);
+        const relative = path.relative(ref.root, absolute).split(path.sep).join("/") as RelPath;
+        const node: FileNode = entry.isDirectory()
+          ? { path: relative, name: entry.name, kind: "folder" }
+          : { path: relative, name: entry.name, kind: "file" };
+        account(node);
+        if (entry.isDirectory()) node.children = await walk(absolute, depth + 1);
+        nodes.push(node);
+      }
+      return nodes;
     };
-    return walk(ref.root);
+    return walk(ref.root, 0);
+  }
+
+  async readTreePage(
+    ref: ProjectRef,
+    options: { directory: RelPath | null; cursor: string | null; limit: number },
+  ): Promise<Result<FileTreePage, PathRejection>> {
+    const resolved = options.directory === null
+      ? { ok: true as const, value: ref.root as unknown as ResolvedPath }
+      : await resolveProjectPath(ref, options.directory, "authored-write");
+    if (!resolved.ok) return resolved;
+    const metadata = await this.stat(resolved.value);
+    if (!metadata || metadata.kind !== "directory") return { ok: false, error: { reason: "not_allowed_for_purpose" } };
+    const entries = (await readdir(resolved.value, { withFileTypes: true }))
+      .filter((entry) => visibleTreeEntry(entry.name))
+      .filter((entry) => entry.isDirectory() || entry.isFile())
+      .sort((left, right) => {
+        if (left.isDirectory() !== right.isDirectory()) return left.isDirectory() ? -1 : 1;
+        return left.name.localeCompare(right.name);
+      });
+    if (entries.length > this.treeLimits.maxEntriesPerDirectory) {
+      throw new WorkspaceResourceLimitError(
+        "directory_entries",
+        this.treeLimits.maxEntriesPerDirectory,
+        entries.length,
+      );
+    }
+    const offset = options.cursor === null ? 0 : Number(options.cursor);
+    const page = entries.slice(offset, offset + options.limit).map((entry): FileNode => {
+      const relative = options.directory === null
+        ? entry.name
+        : `${options.directory}/${entry.name}`;
+      return {
+        path: relative as RelPath,
+        name: entry.name,
+        kind: entry.isDirectory() ? "folder" : "file",
+      };
+    });
+    const nextOffset = offset + page.length;
+    return {
+      ok: true,
+      value: {
+        directory: options.directory,
+        entries: page,
+        nextCursor: nextOffset < entries.length ? String(nextOffset) : null,
+        totalEntries: entries.length,
+      },
+    };
   }
 
   /** Reads portable metadata; `null` means the resolved path is absent. */
   async stat(pathname: ResolvedPath): Promise<FileStat | null> {
     try {
-      const value = await stat(pathname);
+      const value = await lstat(pathname);
       return {
         size: value.size,
         modifiedAt: value.mtime,
-        kind: value.isDirectory() ? "directory" : "file",
+        kind: value.isDirectory()
+          ? "directory"
+          : value.isFile()
+            ? "file"
+            : value.isSymbolicLink() ? "symlink" : "other",
       };
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") return null;
+      throw error;
+    }
+  }
+
+  async readDirectory(pathname: ResolvedPath) {
+    try {
+      return (await readdir(pathname, { withFileTypes: true })).map((entry) => ({
+        name: entry.name,
+        kind: entry.isDirectory()
+          ? "directory" as const
+          : entry.isFile()
+            ? "file" as const
+            : entry.isSymbolicLink() ? "symlink" as const : "other" as const,
+      }));
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code === "ENOENT") return null;
       throw error;

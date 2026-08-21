@@ -34,6 +34,8 @@ export interface SceneMedia {
   src: string;
   start: number | null;
   duration: number | null;
+  /** The referenced project file is gone; the clip is shown as missing its source. */
+  missing: boolean;
 }
 
 /** One GSAP tween authored against an element, read statically from the source. */

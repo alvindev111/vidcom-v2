@@ -27,6 +27,7 @@ import {
   type GrantTransition,
   type PendingMutationContext,
   type PendingCompositeMutation,
+  type PendingMountTransition,
   type PendingToolAudit,
   type PendingCommandAudit,
   type StepIntent,
@@ -62,14 +63,25 @@ function assertOrderedSteps(steps: StepIntent[]): void {
 }
 
 function compositeManifestHash(steps: StepIntent[]): ContentHash {
-  const manifest = steps.map(({ ordinal, kind, path, entity, toHash }) => ({
-    ordinal,
-    kind,
-    path,
-    entity,
-    toHash,
+  const manifest = steps.map((step) => ({
+    ordinal: step.ordinal,
+    kind: step.kind,
+    path: step.path,
+    entity: step.entity,
+    toHash: step.toHash,
+    ...(step.kind === "mkdir" || step.kind === "rmdir" ? { existedBefore: step.existedBefore } : {}),
   }));
   return `sha256:${createHash("sha256").update(canonicalizeJson(manifest)).digest("hex")}` as ContentHash;
+}
+
+function parsePendingMountTransition(value: string | null): PendingMountTransition | null {
+  if (value === null) return null;
+  const parsed = JSON.parse(value) as Partial<PendingMountTransition>;
+  if (!parsed || typeof parsed !== "object" || typeof parsed.operationId !== "string"
+    || !["open", "close", "reopen"].includes(String(parsed.kind))) {
+    throw new TypeError("stored pending mount transition is invalid");
+  }
+  return parsed as PendingMountTransition;
 }
 
 function isDerivedPath(path: RelPath | null): boolean {
@@ -87,13 +99,14 @@ function isDerivedComposite(result: CompositeResult): boolean {
 
 interface StoredStepRow {
   ordinal: number;
-  kind: "write" | "delete" | "entity";
+  kind: "write" | "delete" | "entity" | "mkdir" | "rmdir";
   path: string | null;
   entity: "preview-settings" | null;
   fromHash: string | null;
   toHash: string | null;
   previousContent: Uint8Array | null;
   previousObjectHash: string | null;
+  existedBefore: number | null;
 }
 
 function storedStepIntent(row: StoredStepRow, previousContent: Uint8Array | null): StepIntent {
@@ -127,6 +140,16 @@ function storedStepIntent(row: StoredStepRow, previousContent: Uint8Array | null
       path: row.path as RelPath,
       entity: null,
       toHash: row.toHash as ContentHash,
+    };
+  }
+  if ((row.kind === "mkdir" || row.kind === "rmdir") && row.path && row.existedBefore !== null) {
+    return {
+      ...common,
+      kind: row.kind,
+      path: row.path as RelPath,
+      entity: null,
+      toHash: null,
+      existedBefore: row.existedBefore === 1,
     };
   }
   throw new Error("stored mutation step violates its canonical shape");
@@ -206,10 +229,12 @@ export class MutationJournal implements MutationJournalPort, CompositeMutationJo
     context: PendingMutationContext,
     authority: MutationAuthority,
     grant?: Extract<GrantTransition, { kind: "reserve" }>,
+    pending?: PendingMountTransition,
   ): Promise<JournalId> {
     assertOrderedSteps(steps);
     const preparedSteps = await Promise.all(steps.map((step) => this.preparePrevious(step.previousContent)));
     const now = this.clock.now().toISOString();
+    const pendingJson = pending ? canonicalizeJson(pending) : null;
     if (context.toolAudit && context.commandAudit) {
       throw new TypeError("a composite mutation cannot own both tool and command audit context");
     }
@@ -309,12 +334,12 @@ export class MutationJournal implements MutationJournalPort, CompositeMutationJo
         INSERT INTO mutation_journal (
           project_id, kind, path, entity, from_hash, previous_content, previous_object_hash, previous_byte_size,
           staged_tmp_path, staged_target_path, staged_content_hash, to_hash, status, actor,
-          grant_id, backup_id, tool_audit_json, created_at, settled_at
+          grant_id, backup_id, tool_audit_json, pending_transition, created_at, settled_at
         ) VALUES (
           ${intent.projectId}, ${kind}, ${single?.path ?? null}, ${single?.entity ?? null},
           ${single?.fromHash ?? null}, ${previous?.inline ?? null}, ${previous?.objectHash ?? null}, ${previous?.byteSize ?? 0},
           NULL, NULL, NULL, ${single?.toHash ?? null}, 'pending', ${intent.actor},
-          ${grant?.grantId ?? null}, NULL, ${auditJson}, ${now}, NULL
+          ${grant?.grantId ?? null}, NULL, ${auditJson}, ${pendingJson}, ${now}, NULL
         ) RETURNING id
       `);
       if (!journal) throw new Error("composite mutation journal insert returned no id");
@@ -323,10 +348,11 @@ export class MutationJournal implements MutationJournalPort, CompositeMutationJo
         transaction.run(sql`
           INSERT INTO mutation_step (
             journal_id, ordinal, kind, path, entity, from_hash, to_hash,
-            previous_content, previous_object_hash, previous_byte_size, status
+            previous_content, previous_object_hash, previous_byte_size, existed_before, status
           ) VALUES (
             ${journal.id}, ${step.ordinal}, ${step.kind}, ${step.path}, ${step.entity},
-            ${step.fromHash}, ${step.toHash}, ${stepPrevious.inline}, ${stepPrevious.objectHash}, ${stepPrevious.byteSize}, 'pending'
+            ${step.fromHash}, ${step.toHash}, ${stepPrevious.inline}, ${stepPrevious.objectHash}, ${stepPrevious.byteSize},
+            ${step.kind === "mkdir" || step.kind === "rmdir" ? Number(step.existedBefore) : null}, 'pending'
           )
         `);
       }
@@ -347,8 +373,7 @@ export class MutationJournal implements MutationJournalPort, CompositeMutationJo
       UPDATE mutation_step
       SET rollback_path = ${rollbackPath}, captured_hash = ${capturedHash}, capture_state = 'captured'
       WHERE journal_id = ${id} AND ordinal = ${ordinal} AND capture_state = 'pending'
-        AND ((previous_content IS NULL AND previous_object_hash IS NULL AND ${capturedHash} IS NULL)
-          OR ((previous_content IS NOT NULL OR previous_object_hash IS NOT NULL) AND from_hash IS ${capturedHash}))
+        AND from_hash IS ${capturedHash}
         AND EXISTS (
           SELECT 1 FROM mutation_journal
           WHERE mutation_journal.id = mutation_step.journal_id
@@ -442,9 +467,11 @@ export class MutationJournal implements MutationJournalPort, CompositeMutationJo
         grantId: string | null;
         backupId: string | null;
         auditJson: string | null;
+        pendingTransition: string | null;
       }>(sql`
         SELECT project_id AS projectId, actor, grant_id AS grantId,
-          backup_id AS backupId, tool_audit_json AS auditJson
+          backup_id AS backupId, tool_audit_json AS auditJson,
+          pending_transition AS pendingTransition
         FROM mutation_journal WHERE id = ${id} AND status = ${sourceStatus}
       `);
       if (!journal || journal.projectId !== result.projectId
@@ -475,6 +502,63 @@ export class MutationJournal implements MutationJournalPort, CompositeMutationJo
       `);
       if (!revision) throw new Error("composite revision insert returned no id");
 
+      const pending = parsePendingMountTransition(journal.pendingTransition);
+      if (pending?.kind === "open") {
+        const record = pending.record;
+        transaction.run(sql`
+          INSERT OR IGNORE INTO pending_mount (
+            operation_id, project_id, asset_path, asset_content_hash, upload_fingerprint,
+            at_seconds, track_index, state, last_error_code, last_error_message,
+            mounted_scene_id, mounted_revision, created_at, updated_at
+          ) VALUES (
+            ${pending.operationId}, ${result.projectId}, ${record.assetPath}, ${record.assetContentHash},
+            ${record.uploadFingerprint}, ${record.atSeconds}, ${record.trackIndex}, 'uploaded_unmounted',
+            NULL, NULL, NULL, NULL, ${now}, ${now}
+          )
+        `);
+        const stored = transaction.get<{
+          projectId: string; assetPath: string; assetContentHash: string; uploadFingerprint: string;
+          atSeconds: number; trackIndex: number;
+        }>(sql`
+          SELECT project_id AS projectId, asset_path AS assetPath, asset_content_hash AS assetContentHash,
+            upload_fingerprint AS uploadFingerprint, at_seconds AS atSeconds, track_index AS trackIndex
+          FROM pending_mount WHERE operation_id = ${pending.operationId}
+        `);
+        if (!stored || canonicalizeJson(stored) !== canonicalizeJson({
+          projectId: result.projectId,
+          assetPath: record.assetPath,
+          assetContentHash: record.assetContentHash,
+          uploadFingerprint: record.uploadFingerprint,
+          atSeconds: record.atSeconds,
+          trackIndex: record.trackIndex,
+        })) {
+          throw new JournalTransactionError(ErrorCode.WriteConflict, "pending mount open conflicts with an existing operation");
+        }
+      } else if (pending?.kind === "close") {
+        const failure = pending.previousFailure;
+        const closed = transaction.get<{ operationId: string }>(sql`
+          UPDATE pending_mount SET state = 'mounted', last_error_code = NULL, last_error_message = NULL,
+            mounted_scene_id = ${pending.sceneId}, mounted_revision = ${revision.id}, updated_at = ${now}
+          WHERE operation_id = ${pending.operationId} AND project_id = ${result.projectId}
+            AND state = 'uploaded_unmounted'
+            AND last_error_code IS ${failure?.code ?? null}
+            AND last_error_message IS ${failure?.message ?? null}
+          RETURNING operation_id AS operationId
+        `);
+        if (!closed) throw new JournalTransactionError(ErrorCode.WriteConflict, "pending mount close precondition changed");
+      } else if (pending?.kind === "reopen") {
+        const failure = pending.restoreFailure;
+        const reopened = transaction.get<{ operationId: string }>(sql`
+          UPDATE pending_mount SET state = 'uploaded_unmounted',
+            last_error_code = ${failure?.code ?? null}, last_error_message = ${failure?.message ?? null},
+            mounted_scene_id = NULL, mounted_revision = NULL, updated_at = ${now}
+          WHERE operation_id = ${pending.operationId} AND project_id = ${result.projectId}
+            AND state = 'mounted' AND mounted_scene_id = ${pending.expectedSceneId}
+          RETURNING operation_id AS operationId
+        `);
+        if (!reopened) throw new JournalTransactionError(ErrorCode.WriteConflict, "pending mount reopen precondition changed");
+      }
+
       let entityRevision: number | null = null;
       const fileHashes: Record<RelPath, ContentHash> = {};
       for (const step of result.steps) {
@@ -482,10 +566,11 @@ export class MutationJournal implements MutationJournalPort, CompositeMutationJo
         transaction.run(sql`
           INSERT INTO revision_step (
             revision_id, ordinal, kind, path, entity, from_hash, to_hash,
-            previous_content, previous_object_hash, byte_size, backup_id
+            previous_content, previous_object_hash, byte_size, backup_id, existed_before
           ) VALUES (
             ${revision.id}, ${step.ordinal}, ${step.kind}, ${step.path}, ${step.entity},
-            ${step.fromHash}, ${step.toHash}, ${previous.inline}, ${previous.objectHash}, ${previous.byteSize}, ${journal.backupId}
+            ${step.fromHash}, ${step.toHash}, ${previous.inline}, ${previous.objectHash}, ${previous.byteSize}, ${journal.backupId},
+            ${step.kind === "mkdir" || step.kind === "rmdir" ? Number(step.existedBefore) : null}
           )
         `);
         transaction.run(sql`
@@ -582,10 +667,12 @@ export class MutationJournal implements MutationJournalPort, CompositeMutationJo
           )
         `);
       }
-      transaction.run(sql`
+      const event = transaction.get<{ seq: number }>(sql`
         INSERT INTO event_outbox (type, project_id, payload, created_at)
         VALUES (${result.event.type}, ${result.event.projectId}, ${canonicalizeJson(result.event.payload)}, ${now})
+        RETURNING seq
       `);
+      if (!event) throw new Error("composite event insert returned no sequence");
       if (sourceStatus === "pending" && grant) {
         const consumed = transaction.get<{ id: string }>(sql`
           UPDATE approval_grant SET status = 'consumed', consumed_at = ${now}
@@ -615,6 +702,7 @@ export class MutationJournal implements MutationJournalPort, CompositeMutationJo
         entityRevision,
         fileHashes,
         diagnostics: result.diagnostics,
+        changeSeq: event.seq,
       };
     });
     if (!advancesSource && this.largeContent?.cleanupUnreferenced) {
@@ -771,7 +859,8 @@ export class MutationJournal implements MutationJournalPort, CompositeMutationJo
   async readSteps(id: JournalId): Promise<StepIntent[]> {
     const rows = this.database.all<StoredStepRow>(sql`
       SELECT ordinal, kind, path, entity, from_hash AS fromHash, to_hash AS toHash,
-        previous_content AS previousContent, previous_object_hash AS previousObjectHash
+        previous_content AS previousContent, previous_object_hash AS previousObjectHash,
+        existed_before AS existedBefore
       FROM mutation_step WHERE journal_id = ${id} ORDER BY ordinal
     `);
     return Promise.all(rows.map(async (row) => storedStepIntent(row, await this.hydratePrevious(row))));
@@ -781,7 +870,8 @@ export class MutationJournal implements MutationJournalPort, CompositeMutationJo
   async readBackupRevisionSteps(backupId: string, revisionId: number): Promise<StepIntent[]> {
     const rows = this.database.all<StoredStepRow>(sql`
       SELECT ordinal, kind, path, entity, from_hash AS fromHash, to_hash AS toHash,
-        previous_content AS previousContent, previous_object_hash AS previousObjectHash
+        previous_content AS previousContent, previous_object_hash AS previousObjectHash,
+        existed_before AS existedBefore
       FROM revision_step
       WHERE backup_id = ${backupId} AND revision_id = ${revisionId}
       ORDER BY ordinal
@@ -870,9 +960,11 @@ export class MutationJournal implements MutationJournalPort, CompositeMutationJo
       grantId: string | null;
       backupId: string | null;
       auditJson: string | null;
+      pendingTransition: string | null;
     }>(sql`
       SELECT project_id AS projectId, actor, status, grant_id AS grantId,
-        backup_id AS backupId, tool_audit_json AS auditJson
+        backup_id AS backupId, tool_audit_json AS auditJson,
+        pending_transition AS pendingTransition
       FROM mutation_journal WHERE id = ${id} AND status IN ('pending', 'orphaned')
     `);
     if (!row) return null;
@@ -885,6 +977,7 @@ export class MutationJournal implements MutationJournalPort, CompositeMutationJo
       context: storedMutationContext(row.auditJson),
       grantId: row.grantId,
       backupId: row.backupId,
+      pendingMountTransition: parsePendingMountTransition(row.pendingTransition),
     };
   }
 

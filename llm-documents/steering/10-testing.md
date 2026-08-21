@@ -78,13 +78,13 @@ Với mỗi tool: input schema, output schema, và **mức quyền đã khai bá
 
 MUST có test khoá tool contract. Đổi contract làm hỏng mọi AI host đang dùng — test phải là thứ chặn lại, không phải người review.
 
-MUST test: tool write từ chối khi thiếu `expectedRevision`; tool destructive từ chối khi thiếu xác nhận.
+MUST test: tool write từ chối khi thiếu `expectedRevision`; tool destructive từ chối khi thiếu daemon-issued approval grant hợp lệ.
 
 **Chạy hai lần, một lần cho mỗi thế hệ protocol** (xem [13-mcp-protocol-compatibility](13-mcp-protocol-compatibility.md) §7):
 
 | Test | Legacy | Modern `2026-07-28` |
 |---|---|---|
-| Từ chối destructive khi chưa xác nhận | thiếu `confirm` | chưa qua vòng MRTR |
+| Từ chối destructive khi thiếu grant | trả `approval_required`; `confirm: true` không thay thế grant | MRTR chỉ dẫn tới bước lấy grant; bản thân MRTR không phải bằng chứng duyệt |
 | Hình dạng result | không có `resultType` | có `resultType` |
 | List result | không có `ttlMs`/`cacheScope` | **có**, `cacheScope: "private"` |
 | Resource not found | `-32002` | `-32602` |

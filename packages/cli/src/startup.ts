@@ -3,6 +3,7 @@ import {
   projectRegistrationLocationExists,
   reconcileStagedAssets,
   scavengeTtsScratch,
+  sweepPendingMounts,
   WORKSPACE_LEASE_RENEW_MS,
 } from "@vidcom/adapter";
 import {
@@ -20,6 +21,7 @@ import { canonicalWorkspaceRoot } from "./workspace-selection";
  * a working day.
  */
 const TTS_SCRATCH_GRACE_MS = 60 * 60 * 1_000;
+const ASSET_STAGING_GRACE_MS = 24 * 60 * 60 * 1_000;
 
 export type StartupStepName =
   | "migration"
@@ -49,10 +51,26 @@ export interface StartupSteps<Listener = unknown> {
   listener(): Promise<Listener>;
 }
 
+export interface StartupStepTiming {
+  step: StartupStepName;
+  durationMs: number;
+}
+
+function reportStartupTiming(
+  observer: ((timing: StartupStepTiming) => void) | undefined,
+  timing: StartupStepTiming,
+): void {
+  try { observer?.(timing); }
+  catch {
+    // Diagnostics are observational: a broken sink must never change startup.
+  }
+}
+
 /** Executes the reviewed startup DAG as a strict sequence; no listener is opened early. */
 export async function runStartupSequence<Listener>(
   steps: StartupSteps<Listener>,
   signal?: AbortSignal,
+  onStepComplete?: (timing: StartupStepTiming) => void,
 ): Promise<Listener> {
   const ordered: Array<[StartupStepName, () => Promise<unknown>]> = [
     ["migration", steps.migration],
@@ -65,13 +83,17 @@ export async function runStartupSequence<Listener>(
   ];
   for (const [name, step] of ordered) {
     signal?.throwIfAborted();
+    const startedAt = Date.now();
     try { await step(); }
     catch (cause) { throw new StartupError(name, { cause }); }
+    reportStartupTiming(onStepComplete, { step: name, durationMs: Date.now() - startedAt });
     signal?.throwIfAborted();
   }
   signal?.throwIfAborted();
+  const listenerStartedAt = Date.now();
   try {
     const listener = await steps.listener();
+    reportStartupTiming(onStepComplete, { step: "listener", durationMs: Date.now() - listenerStartedAt });
     signal?.throwIfAborted();
     return listener;
   }
@@ -137,6 +159,34 @@ async function recoverJobsAndRenderRoots(
   if (errors.length > 0) throw new AggregateError(errors, "VidCom job recovery failed");
 }
 
+async function cleanupExpiredAssetStaging(
+  infrastructure: ReturnType<typeof createInfrastructure>,
+): Promise<void> {
+  let projects;
+  try {
+    projects = await infrastructure.workspace.listProjects();
+  } catch (error) {
+    infrastructure.logger.warn("asset staging cleanup failed", {
+      code: "asset_staging_cleanup_failed",
+      scope: "workspace",
+      reason: error instanceof Error ? error.message : "unknown error",
+    });
+    return;
+  }
+  const olderThan = new Date(infrastructure.clock.now().getTime() - ASSET_STAGING_GRACE_MS);
+  for (const project of projects) {
+    try {
+      await infrastructure.assetStaging.cleanupExpired(project, olderThan);
+    } catch (error) {
+      infrastructure.logger.warn("asset staging cleanup failed", {
+        code: "asset_staging_cleanup_failed",
+        projectId: project.id,
+        reason: error instanceof Error ? error.message : "unknown error",
+      });
+    }
+  }
+}
+
 async function closeListener(listener: unknown): Promise<void> {
   if (listener && typeof (listener as { close?: unknown }).close === "function") {
     await (listener as { close(): Promise<void> | void }).close();
@@ -175,6 +225,8 @@ export async function startVidcomFoundation<Listener>(
     migrationPrepared?: boolean;
     /** Test seam used to count the real migration call across the whole boot. */
     migrate?: typeof migrateDatabase;
+    /** Optional diagnostics observer; it cannot alter the reviewed startup order. */
+    onStartupStep?: (timing: StartupStepTiming) => void;
   } = {},
 ) {
   const effectiveConfig = {
@@ -240,8 +292,12 @@ export async function startVidcomFoundation<Listener>(
   // instead of re-derived at each call site.
   const lifecycle = createLifecycleHandle([
     { name: "listener", run: closeListenerOnce },
+    // Interactive thumbnail batches own real snapshot children under app-data,
+    // so they must be aborted and awaited before the workspace is released.
+    { name: "thumbnails", run: () => infrastructure.thumbnailScheduler.stop() },
     { name: "scheduler", run: stopSchedulerOnce },
     { name: "watcher", run: closeWatcherOnce },
+    { name: "mutation-history", run: () => infrastructure.mutationObserver.dispose() },
     { name: "lease", run: releaseLeaseOnce },
     // Recovery entry ids are session-scoped capabilities. Once this foundation
     // stops, keeping them resolvable would let a stale UI address the workspace
@@ -279,7 +335,13 @@ export async function startVidcomFoundation<Listener>(
           workspaceRoot: effectiveConfig.workspaceRoot,
           resolveProjectRef: infrastructure.resolveProjectRef,
           recordFailure: (audit, reason) => infrastructure.toolAudit.recordPendingFailure(audit, reason),
+          observer: infrastructure.mutationObserver,
+          clock: infrastructure.clock,
         });
+        await cleanupExpiredAssetStaging(infrastructure);
+        // Retention runs here and nowhere else: the previous daemon's history is
+        // gone by now, so no live undo receipt can point at a row this deletes.
+        await sweepPendingMounts(infrastructure.database, infrastructure.clock.now());
         await infrastructure.largeContent.cleanupUnreferenced(
           await infrastructure.journal.listPreviousObjectHashes(),
           new Date(infrastructure.clock.now().getTime()
@@ -328,7 +390,7 @@ export async function startVidcomFoundation<Listener>(
       scheduler: async () => { schedulerHandle = await hooks.startScheduler({ infrastructure, application, leaseId }) ?? null; },
       watcher: async () => { watcherHandle = await hooks.startWatcher({ infrastructure, application, leaseId }) ?? null; },
       listener: async () => { listenerHandle = await hooks.openListener({ infrastructure, application, leaseId }); return listenerHandle; },
-    }, options.signal);
+    }, options.signal, options.onStartupStep);
     return {
       infrastructure,
       application: application!,

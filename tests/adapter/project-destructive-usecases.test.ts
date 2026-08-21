@@ -18,7 +18,9 @@ import {
   createScene,
   DEFAULT_PREVIEW_SETTINGS,
   deleteScene,
+  deleteScenes,
   prepareFileDeletion,
+  prepareDeleteScenes,
   prepareSceneDeletion,
   ProjectIdentityService,
   reconcileCompositeMutation,
@@ -38,6 +40,7 @@ import {
   AppDataBackupStore,
   CompositionHf,
   initializeDatabase,
+  LargePreviousContentStore,
   MutationJournal,
   SqliteApprovalGrantStore,
   SqliteToolAuditRepository,
@@ -45,10 +48,12 @@ import {
   WorkspaceLease,
 } from "@vidcom/adapter";
 import { ToolRegistry } from "@vidcom/mcp";
+import { MutationHistory } from "../../packages/server/src/service/mutation-history";
 
 import { createFixedClock, createSequentialIdPort } from "../support/deterministic";
 import { dbAll, dbOne, dbRun } from "../support/database";
 
+const TEST_ORIGIN = { kind: "system", sessionId: null, label: null, historyAction: "ignore", historyOperation: null } as const;
 const now = "2026-08-02T00:00:00.000Z";
 const projectId = "project_destructive_usecases" as ProjectId;
 const hashContent = (content: string | Uint8Array): ContentHash =>
@@ -163,11 +168,16 @@ function targetMatches(target: string, suffix: string | undefined): boolean {
 function authorityWithFailure(options: { writePath?: string; deletePath?: string }): WriteAuthority {
   const proxy: WorkspacePort = {
     resolve: workspace.resolve.bind(workspace),
+    resolveMutation: workspace.resolveMutation.bind(workspace),
+    revalidateMutationPath: workspace.revalidateMutationPath.bind(workspace),
+    refreshMutationPath: workspace.refreshMutationPath.bind(workspace),
     resolveWorkspace: workspace.resolveWorkspace.bind(workspace),
     listProjects: workspace.listProjects.bind(workspace),
     readProjectRef: workspace.readProjectRef.bind(workspace),
     readFile: workspace.readFile.bind(workspace),
     readBytes: workspace.readBytes.bind(workspace),
+    statAsset: workspace.statAsset.bind(workspace),
+    openAssetRange: workspace.openAssetRange.bind(workspace),
     readHash: workspace.readHash.bind(workspace),
     async writeAtomic(target, content) {
       if (targetMatches(target, options.writePath)) throw new Error("injected write failure");
@@ -192,6 +202,7 @@ function authorityWithFailure(options: { writePath?: string; deletePath?: string
     discardCapture: workspace.discardCapture.bind(workspace),
     readTree: workspace.readTree.bind(workspace),
     stat: workspace.stat.bind(workspace),
+    readDirectory: workspace.readDirectory.bind(workspace),
   };
   return new WriteAuthority({
     workspace: proxy,
@@ -239,7 +250,7 @@ describe("Phase J use cases with real SQLite and filesystem", () => {
       projectId,
       title: "Scene two",
       expectedContentHash: hashContent(indexSource),
-    }, "agent", { toolAudit: audit("create_scene", "write") });
+    }, "agent", { origin: TEST_ORIGIN, toolAudit: audit("create_scene", "write") });
     expect(created).toMatchObject({ ok: true, value: { scene: { id: "scene-2" }, envelope: { projectRevision: 1 } } });
     expect(await missing(path.join(projectRoot, "compositions/scene-2.html"))).toBe(false);
     expect(await missing(path.join(projectRoot, "narration/scene-2.json"))).toBe(false);
@@ -253,7 +264,7 @@ describe("Phase J use cases with real SQLite and filesystem", () => {
       path: "notes.txt" as RelPath,
       content: "notes new",
       expectedContentHash: hashContent("notes old"),
-    }, "agent", { toolAudit: audit("save_file", "write") });
+    }, "agent", { origin: TEST_ORIGIN, toolAudit: audit("save_file", "write") });
     expect(saved).toMatchObject({ ok: true, value: { envelope: { projectRevision: 2 } } });
     expect(dbOne(database, `SELECT revision_id AS revisionId FROM audit_entry
       WHERE action = 'tool:save_file'`)).toEqual({ revisionId: 2 });
@@ -491,7 +502,7 @@ describe("Phase J use cases with real SQLite and filesystem", () => {
       projectId,
       title: "Must roll back",
       expectedContentHash: hashContent(indexSource),
-    }, "agent", { toolAudit: audit("create_scene", "write") });
+    }, "agent", { origin: TEST_ORIGIN, toolAudit: audit("create_scene", "write") });
     expect(created).toMatchObject({ ok: false, error: { code: "storage_unavailable" } });
     expect(await missing(path.join(projectRoot, "compositions/scene-2.html"))).toBe(true);
     expect(await readFile(path.join(projectRoot, "index.html"), "utf8")).toBe(indexSource);
@@ -507,7 +518,7 @@ describe("Phase J use cases with real SQLite and filesystem", () => {
       projectId,
       title: "Landed before T2",
       expectedContentHash: hashContent(indexSource),
-    }, "agent", { toolAudit: audit("create_scene", "write") });
+    }, "agent", { origin: TEST_ORIGIN, toolAudit: audit("create_scene", "write") });
     expect(created).toMatchObject({ ok: false, error: { code: "recovery_required" } });
     expect(await missing(path.join(projectRoot, "compositions/scene-2.html"))).toBe(false);
     expect(dbOne(database, "SELECT status FROM mutation_journal WHERE id = 1")).toEqual({ status: "pending" });
@@ -552,7 +563,7 @@ describe("Phase J use cases with real SQLite and filesystem", () => {
       sceneId: "scene-1",
       expectedRevision: 0,
       grantId: "grant_scene_failure",
-    }, "agent", { toolAudit: audit("delete_scene", "destructive") });
+    }, "agent", { origin: TEST_ORIGIN, toolAudit: audit("delete_scene", "destructive") });
 
     expect(deleted).toMatchObject({ ok: false, error: { code: "storage_unavailable" } });
     expect(await readFile(path.join(projectRoot, "index.html"), "utf8")).toBe(indexSource);
@@ -586,7 +597,7 @@ describe("Phase J use cases with real SQLite and filesystem", () => {
       sceneId: "scene-1",
       expectedRevision: 0,
       grantId: "grant_scene_delete",
-    }, "agent", { toolAudit: audit("delete_scene", "destructive") });
+    }, "agent", { origin: TEST_ORIGIN, toolAudit: audit("delete_scene", "destructive") });
     expect(deleted).toMatchObject({
       ok: true,
       value: {
@@ -619,6 +630,7 @@ describe("Phase J use cases with real SQLite and filesystem", () => {
         content: `${afterDelete}\n<!-- later edit -->`,
         expectedContentHash: hashContent(afterDelete),
       }],
+      origin: TEST_ORIGIN,
       toolAudit: null,
       backup: false,
     }, "user");
@@ -628,5 +640,102 @@ describe("Phase J use cases with real SQLite and filesystem", () => {
       backupId: "backup_scene_delete",
     }, "cli-external")).resolves.toMatchObject({ ok: false, error: { code: "write_conflict" } });
     expect(dbAll(database, "PRAGMA foreign_key_check")).toEqual([]);
+  });
+
+  it("deletes multiple scenes through one revision, backup and undo item", async () => {
+    const undoContent = new LargePreviousContentStore(appData);
+    const history = new MutationHistory(undoContent);
+    history.attach("browser-group", "studio-group", projectId);
+    const twoScenes = `<!doctype html><html><body>
+<main data-hf-id="root" data-composition-id="root" data-width="1920" data-height="1080" data-duration="8">
+  <div data-hf-id="scene-1-host" data-composition-id="scene-1" data-composition-src="compositions/scene-1.html" data-start="0" data-duration="4" data-track-index="1"></div>
+  <div data-hf-id="scene-2-host" data-composition-id="scene-2" data-composition-src="compositions/scene-2.html" data-start="4" data-duration="4" data-track-index="1"></div>
+</main></body></html>`;
+    await writeFile(path.join(projectRoot, "index.html"), twoScenes);
+    await writeFile(path.join(projectRoot, "compositions/scene-2.html"), sceneSource.replaceAll("scene-1", "scene-2"));
+    await writeFile(path.join(projectRoot, "narration/scene-2.json"), `${JSON.stringify({
+      sceneId: "scene-2", text: "Scene two", voice: "af_heart", status: "generated",
+      audioPath: "narration/scene-2.wav", command: "tts", revision: 1, updatedAt: now, staleSince: null,
+    }, null, 2)}\n`);
+    await writeFile(path.join(projectRoot, "narration/scene-2.wav"), new Uint8Array([82, 73, 70, 70, 2]));
+    const settings = serializePreviewSettings({
+      ...DEFAULT_PREVIEW_SETTINGS,
+      scenes: {
+        "scene-1": { transitionSound: "minimal", revealSound: "ping", hidden: false },
+        "scene-2": { transitionSound: "gong", revealSound: "pop", hidden: false },
+      },
+    });
+    await writeFile(path.join(projectRoot, "preview-settings.json"), settings);
+    dbRun(database, `UPDATE entity_state SET content_hash = ?
+      WHERE project_id = ? AND entity = 'preview-settings'`, hashContent(settings), projectId);
+
+    const prepared = await prepareDeleteScenes({ workspace, composition, journal, hashContent }, {
+      projectId,
+      sceneIds: ["scene-2", "scene-1"],
+      expectedRevision: 0,
+    });
+    if (!prepared.ok) throw new Error(prepared.error.message);
+    const approvals = new ApprovalService({
+      grants: new SqliteApprovalGrantStore(database),
+      clock,
+      ids: { newId: () => "grant_scenes_delete" },
+    });
+    await approvals.request(prepared.value.binding, "Delete scene group");
+    await expect(approvals.issue("grant_scenes_delete", "cli")).resolves.toMatchObject({ ok: true });
+
+    const observedAuthority = new WriteAuthority({
+      workspace,
+      journal,
+      compositeJournal: journal,
+      lease,
+      leaseId,
+      hashContent,
+      invalidate() {},
+      notifyEvents() {},
+      backups,
+      clock,
+      observer: history,
+      undoContent,
+    });
+    const deleted = await deleteScenes({
+      workspace,
+      composition,
+      journal,
+      authority: observedAuthority,
+      clock,
+      hashContent,
+    }, {
+      projectId,
+      sceneIds: ["scene-2", "scene-1"],
+      expectedRevision: 0,
+      grantId: "grant_scenes_delete",
+    }, "user", {
+      origin: { kind: "ui", sessionId: "studio-group", label: "Delete 2 scenes", historyAction: "record", historyOperation: null },
+      toolAudit: null,
+    });
+
+    expect(deleted).toMatchObject({
+      ok: true,
+      value: { project: { duration: 0, sceneCount: 0, revision: 1 }, backupId: "backup_scene_delete" },
+    });
+    expect(dbOne(database, "SELECT COUNT(*) AS count FROM revision")).toEqual({ count: 1 });
+    expect(history.state("studio-group", projectId)).toMatchObject({
+      depth: 1,
+      canUndo: true,
+      nextUndoLabel: "Delete 2 scenes",
+    });
+    expect(history.begin("studio-group", projectId, "undo")).toMatchObject({
+      ok: true,
+      value: {
+        receipt: {
+          id: "journal:1",
+          projectRevision: 1,
+          origin: { sessionId: "studio-group", label: "Delete 2 scenes" },
+        },
+      },
+    });
+    expect(await missing(path.join(projectRoot, "compositions/scene-1.html"))).toBe(true);
+    expect(await missing(path.join(projectRoot, "compositions/scene-2.html"))).toBe(true);
+    expect(await backups.verify("backup_scene_delete")).toBe(true);
   });
 });

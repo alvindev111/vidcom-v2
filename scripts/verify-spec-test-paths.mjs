@@ -7,17 +7,24 @@ const matrices = [
   {
     label: "MCP server",
     path: "llm-documents/specs-and-process/specs/spec-mcp-server/spec-mcp-server-implementation-checklist.md",
-    phases: "ABCDEFGHIJKLMNOP",
+    phases: [..."ABCDEFGHIJKLMNOP"],
   },
   {
     label: "project delivery loop",
     path: "llm-documents/specs-and-process/specs/spec-project-delivery-loop/spec-project-delivery-loop-implementation-checklist.md",
-    phases: "ABCDEFGHIJKLMNOPQRS",
+    phases: [..."ABCDEFGHIJKLMNOPQRS"],
   },
   {
     label: "packaging & distribution",
     path: "llm-documents/specs-and-process/specs/spec-packaging-and-distribution/spec-packaging-and-distribution-implementation-checklist.md",
-    phases: "ABCDEFGHIJKLM",
+    phases: [..."ABCDEFGHIJKLM"],
+  },
+  {
+    label: "editing experience",
+    path: "llm-documents/specs-and-process/specs/spec-editing-experience/spec-editing-experience-implementation-checklist.md",
+    // Multi-character ids, which is why phases is a list rather than a string of
+    // single letters: "P1" and "P11" are different rows and must stay so.
+    phases: ["S0", "P0", "P1", "P2", "P3", "P4", "P5", "P6", "P7", "P8", "P9", "P10", "P11"],
   },
 ];
 
@@ -27,8 +34,8 @@ for (const item of matrices) {
   const matrix = checklist.split("## Phase Verification Matrix\n", 2)[1]?.split("## Task Status Legend\n", 1)[0];
   if (!matrix) throw new Error(`${item.label} Phase Verification Matrix section was not found`);
 
-  const phases = [...matrix.matchAll(/^\| ([A-Z]) \|/gm)].map((match) => match[1]);
-  if (phases.join("") !== item.phases) {
+  const phases = [...matrix.matchAll(/^\| ([A-Z][A-Z0-9]*) \|/gm)].map((match) => match[1]);
+  if (phases.join(",") !== item.phases.join(",")) {
     throw new Error(`${item.label} Phase Verification Matrix rows drifted: ${phases.join(",")}`);
   }
 

@@ -22,14 +22,15 @@ import {
 
 const repo = path.resolve(import.meta.dirname, "../..");
 const cli = path.join(repo, "node_modules/hyperframes/bin/hyperframes.mjs");
+const renderFixture = path.join(repo, "fixtures/preview");
 
 function startRender(outputPath) {
   return spawn(process.execPath, [
-    cli, "render", path.join(repo, "projects/warm-grain"),
-    "-c", "compositions/intro.html",
+    cli, "render", renderFixture,
+    "-c", "index.html",
     "-o", outputPath,
     "--quality", "draft", "--workers", "1",
-  ], { cwd: repo, detached: !isWindows, stdio: ["ignore", "ignore", "ignore"] });
+  ], { cwd: repo, detached: !isWindows, stdio: ["ignore", "ignore", "pipe"] });
 }
 
 /** Poll until the render has actually reached its multi-process stage. */
@@ -50,18 +51,35 @@ const scratch = await mkdtemp(path.join(tmpdir(), "vidcom-s1f-"));
 const child = startRender(path.join(scratch, "probe.mp4"));
 const rootPid = child.pid;
 let running = true;
-child.once("close", () => { running = false; });
+let stderr = "";
+child.stderr.setEncoding("utf8");
+child.stderr.on("data", (chunk) => {
+  stderr = `${stderr}${chunk}`.slice(-4_000);
+});
+const closed = new Promise((resolve) => {
+  child.once("close", (code, signal) => {
+    running = false;
+    resolve({ code, signal });
+  });
+});
 
 const observed = await waitForEngine(rootPid, () => running);
 if (observed === null) {
+  killGroup(rootPid); killPid(rootPid);
+  const exit = await Promise.race([
+    closed,
+    sleep(5_000).then(() => ({ code: null, signal: "cleanup-timeout" })),
+  ]);
   console.log(JSON.stringify({
     spike: "S1f",
     platform: osIdentity(),
     verdict: "INCONCLUSIVE_ENGINE_NEVER_OBSERVED",
+    renderFixture,
+    exit,
+    stderr,
     note: "The render finished or never reached a multi-process stage. Nothing can be concluded about descendant containment from this run.",
   }, null, 2));
-  killGroup(rootPid); killPid(rootPid);
-  process.exit(0);
+  process.exit(1);
 }
 
 // Ground truth recorded WHILE alive. After the parent dies these pids are

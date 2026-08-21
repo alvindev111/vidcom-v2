@@ -1,3 +1,4 @@
+import path from "node:path";
 import { createHash, randomUUID } from "node:crypto";
 import { basename, join } from "node:path";
 
@@ -12,6 +13,7 @@ import {
   LargePreviousContentStore,
   LegacyHyperframesProjects,
   MutationJournal,
+  SqlitePendingMountStore,
   WorkspaceOperationJournal,
   SqliteJobStore,
   SqliteEventOutbox,
@@ -35,6 +37,16 @@ import {
   DownloadCacheCoordinator,
   NodeHyperframesDiagnosticsLint,
   FontkitCompatibilityInspector,
+  FsAssetStaging,
+  DomSvgSanitizer,
+  HyperframesCompositionDependencyGraph,
+  HyperframesRegistryCatalog,
+  catalogManifestDigest,
+  createInstalledProvenanceReader,
+  loadBundledCatalog,
+  HyperframesThumbnailRenderer,
+  ThumbnailCacheAdapter,
+  NodeAssetProbe,
   BgmLibraryStore,
   BgmProviderRegistry,
   CcMixterBgmProvider,
@@ -62,11 +74,16 @@ import {
   DiagnosticsService,
   FontCompatibilityService,
   ThumbnailResolver,
+  ThumbnailBatchScheduler,
+  ThumbnailService,
+  getPreviewSettings,
+  HYPERFRAMES_EXPECTED_VERSION,
   ProjectStateStore,
   scanWorkspace,
   WriteAuthority,
   WorkspaceMutationCoordinator,
   ProjectCache,
+  ProjectPathInvalidatorFanout,
   type AbsolutePath,
   type ClockPort,
   type IdPort,
@@ -78,6 +95,7 @@ import {
   type ProjectRef,
 } from "@vidcom/core";
 import { registerVidcomTools, ToolRegistry } from "@vidcom/mcp";
+import { MutationHistory } from "@vidcom/server";
 import {
   createNoopProbeJobType,
   enqueueRenderJob,
@@ -261,7 +279,9 @@ export function createInfrastructure(config: CompositionRootConfig) {
     ?? downloads.componentRoot(DOWNLOAD_CACHE_COMPONENTS.browser)) as AbsolutePath;
   const workspace = new WorkspaceFs(config.workspaceRoot);
   const largeContent = new LargePreviousContentStore(config.appDataRoot);
+  const mutationObserver = new MutationHistory(largeContent);
   const journal = new MutationJournal(database, clock, largeContent);
+  const pendingMount = new SqlitePendingMountStore(database, clock);
   const workspaceOperations = new WorkspaceOperationJournal(database, clock, largeContent);
   const lease = new WorkspaceLease(database, clock, ids);
   const jobs = new SqliteJobStore(database, clock);
@@ -278,6 +298,9 @@ export function createInfrastructure(config: CompositionRootConfig) {
     caBundlePath,
   });
   const processes = config.processes ?? new NodeProcessRunner(undefined, caBundlePath);
+  const assetStaging = new FsAssetStaging();
+  const assetProbe = new NodeAssetProbe(processes, binaries.ffprobePath);
+  const assetSanitizer = new DomSvgSanitizer();
   const ttsProcesses = withAudioBinaryPaths(processes, binaries);
   const renderGuard = new LoopbackRuntimeAssetGuard();
   // The probe falls back to require.resolve when a path is absent, which cannot
@@ -296,13 +319,108 @@ export function createInfrastructure(config: CompositionRootConfig) {
     processes,
     downloadCache: downloads,
   });
+  // Same toolchain, different budget: a timeline scroll may not start the
+  // managed Chromium download, so thumbnails report a missing browser and draw
+  // placeholders while render jobs keep the first-run download.
+  const thumbnailBinaries = new NodeRenderBinaryProbe({
+    ...binaries,
+    browserCacheRoot,
+    ...config.runtimePaths ? {
+      hyperframesCliPath: config.runtimePaths.hyperframesCliPath as AbsolutePath,
+      hyperframesPackagePath: config.runtimePaths.hyperframesPackagePath as AbsolutePath,
+    } : {},
+  }, {
+    appDataRoot: config.appDataRoot,
+    caBundlePath,
+    processes,
+    downloadCache: downloads,
+    allowBrowserDownload: false,
+  });
   const events = new SqliteEventOutbox(database, clock);
   const cache = new ProjectCache();
+  const dependencyGraph = new HyperframesCompositionDependencyGraph();
+  const pathInvalidator = new ProjectPathInvalidatorFanout([cache, dependencyGraph], () => {
+    logger.warn("project path invalidator consumer failed");
+    metrics.increment("project_path_invalidator_error");
+  });
   const writtenHashes = new WrittenHashTracker();
-  const watcher = new WorkspaceWatcher(workspace, database, events, cache, writtenHashes, clock);
+  const watcher = new WorkspaceWatcher(
+    workspace,
+    database,
+    events,
+    pathInvalidator,
+    writtenHashes,
+    clock,
+    undefined,
+    undefined,
+    mutationObserver,
+  );
   const stagedAssets = new AppDataAssetStager(config.appDataRoot);
   const backups = new AppDataBackupStore(config.appDataRoot, database, clock, ids);
   const composition = new CompositionHf();
+  const thumbnailRuntimeSource = hyperframesRuntimeSource();
+  const thumbnailService = new ThumbnailService({
+    workspace,
+    composition,
+    dependencies: dependencyGraph,
+    hashContent,
+    runtimeDigest: hashContent(thumbnailRuntimeSource),
+    rendererVersion: HYPERFRAMES_EXPECTED_VERSION,
+  });
+  const thumbnailCache = new ThumbnailCacheAdapter(config.appDataRoot);
+  const thumbnailRenderer = new HyperframesThumbnailRenderer({
+    process: renderProcess,
+    roots: renderRoots,
+    renderProjects,
+    binaries: thumbnailBinaries,
+    guard: renderGuard,
+    ids,
+    runtimeSource: () => thumbnailRuntimeSource,
+    injectGuard: injectRuntimeAssetGuardDocument,
+    async buildDocument(ref) {
+      const settingsResult = await getPreviewSettings({ workspace, composition, journal }, ref.id);
+      if (!settingsResult.ok) throw new Error(settingsResult.error.message);
+      return composition.buildDocument(ref, settingsResult.value.previewSettings, {
+        mode: "render",
+        root: true,
+        runtimeUrl: "./.vidcom-runtime.js",
+        fileBaseUrl: "./",
+      });
+    },
+  });
+  const thumbnailScheduler = new ThumbnailBatchScheduler(thumbnailService, thumbnailRenderer, {
+    cache: thumbnailCache,
+  });
+  // Catalog: bundled snapshot plus the pinned-commit registry, cached under
+  // app-data. A missing or drifted snapshot throws rather than presenting an
+  // empty template rail, which would read as an offline failure.
+  const catalogAssetRoot = config.runtimePaths?.catalogAssetRoot
+    ?? path.join(config.appDataRoot, "catalog");
+  const catalog = new HyperframesRegistryCatalog({
+    cacheRoot: path.join(config.appDataRoot, "cache", "catalog"),
+    bundledFilesRoot: path.join(catalogAssetRoot, "files"),
+    bundled: async () => {
+      const loaded = await loadBundledCatalog(catalogAssetRoot);
+      if (!loaded.ok) {
+        throw new Error(`bundled catalog is unusable: ${loaded.error.code}${loaded.error.name ? ` (${loaded.error.name})` : ""}`);
+      }
+      return loaded.value.items;
+    },
+  });
+  const installedProvenance = createInstalledProvenanceReader({
+    documents: async (ref) => {
+      const model = await composition.parseProject(ref);
+      const scenes = (model.scenes as unknown as { src?: string | null }[])
+        .flatMap((scene) => (scene.src ? [scene.src] : []));
+      return [ref.entry as string, ...scenes];
+    },
+    read: async (ref, target) => {
+      const resolved = await workspace.resolve(ref, target as never, "read-source");
+      if (!resolved.ok) return null;
+      const file = await workspace.readFile(resolved.value);
+      return file?.content ?? null;
+    },
+  });
   const grants = new SqliteApprovalGrantStore(database);
   const approvals = new ApprovalService({
     grants,
@@ -380,6 +498,8 @@ export function createInfrastructure(config: CompositionRootConfig) {
     workspace,
     largeContent,
     journal,
+    pendingMount,
+    mutationObserver,
     workspaceOperations,
     projectDirectories: new FsProjectDirectoryAdapter(config.workspaceRoot),
     lease,
@@ -392,16 +512,28 @@ export function createInfrastructure(config: CompositionRootConfig) {
     renderBinaries,
     events,
     cache,
+    dependencyGraph,
+    pathInvalidator,
     writtenHashes,
     watcher,
     stagedAssets,
     backups,
     composition,
+    thumbnailService,
+    thumbnailCache,
+    thumbnailRenderer,
+    thumbnailScheduler,
+    catalog,
+    catalogManifestDigest,
+    installedProvenance,
     grants,
     credentialStore,
     credentials,
     settings,
     processes,
+    assetStaging,
+    assetProbe,
+    assetSanitizer,
     diagnosticLint,
     fontInspector,
     tts,
@@ -409,7 +541,10 @@ export function createInfrastructure(config: CompositionRootConfig) {
     toolAudit,
     logger,
     metrics,
-    approvalRequests: { request: approvals.request.bind(approvals) },
+    approvalRequests: {
+      request: approvals.request.bind(approvals),
+      issue: approvals.issue.bind(approvals),
+    },
     approvalAdmin: {
       issue: approvals.issue.bind(approvals),
       revoke: approvals.revoke.bind(approvals),
@@ -470,6 +605,29 @@ export function createMcpRegistry(
     approvals: infrastructure.approvalRequests,
     hashContent,
     reads: application.readDependencies,
+    // The editing tools call the same use cases the routes do, so they take the
+    // same capabilities rather than a second assembly of them.
+    mount: {
+      workspace: infrastructure.workspace,
+      composition: infrastructure.composition,
+      probe: infrastructure.assetProbe,
+      pendingMount: infrastructure.pendingMount,
+      authority: application.writeDependencies.authority,
+      clock: infrastructure.clock,
+    },
+    catalog: infrastructure.catalog,
+    catalogInstall: {
+      workspace: infrastructure.workspace,
+      composition: infrastructure.composition,
+      journal: infrastructure.journal,
+      catalog: infrastructure.catalog,
+      installedProvenance: infrastructure.installedProvenance,
+      hashContent,
+      manifestDigest: infrastructure.catalogManifestDigest,
+      clock: infrastructure.clock,
+      approval: infrastructure.approvalPlanner,
+      authority: application.writeDependencies.authority,
+    },
     jobs: infrastructure.jobs,
     tts: infrastructure.tts,
     bgmSynth: infrastructure.bgmSynth,
@@ -537,17 +695,25 @@ export function createApplication(
         : Promise.resolve({ ok: true as const, value: undefined });
     },
     invalidate(projectId) { infrastructure.cache.invalidate(projectId); },
+    pathInvalidator: infrastructure.pathInvalidator,
+    writtenStates: infrastructure.writtenHashes,
+    pendingMount: infrastructure.pendingMount,
     recordWrittenHash(projectId, relativePath, hash) {
       infrastructure.writtenHashes.record(projectId, relativePath, hash);
     },
     notifyEvents() {},
+    clock: infrastructure.clock,
     stagedAssets: infrastructure.stagedAssets,
     workspaceCoordinator,
     backups: infrastructure.backups,
+    observer: infrastructure.mutationObserver,
+    undoContent: infrastructure.largeContent,
     reconcileJournal: (journalId) => reconcileCompositeMutation({
       workspace: infrastructure.workspace,
       journal: infrastructure.journal,
       resolveProjectRef: infrastructure.resolveProjectRef,
+      observer: infrastructure.mutationObserver,
+      clock: infrastructure.clock,
     }, journalId),
   });
   recoverImportedProject = async (root, slug) => {
@@ -571,6 +737,7 @@ export function createApplication(
     workspace: infrastructure.workspace,
     composition: infrastructure.composition,
     journal: infrastructure.journal,
+    events: infrastructure.events,
     cache: infrastructure.cache,
   };
   const identity = new ProjectIdentityService({
@@ -583,6 +750,7 @@ export function createApplication(
     ...readDependencies,
     authority,
     clock: infrastructure.clock,
+    undoContent: infrastructure.largeContent,
     identity,
     motionLibraries: infrastructure.motionLibraries,
   };

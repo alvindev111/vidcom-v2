@@ -1,14 +1,16 @@
 # Execution Goal — spec-editing-experience
 
-**Goal**: chạy hết [checklist](./spec-editing-experience-implementation-checklist.md) theo thứ tự
-`S0 → P0 → P3 → P4 → P1 → P2 → P5 → P6 → P7 → P8 → P9 → P10 → P11`. Xong = mọi task + AC `[x]`, mỗi phase
-có `PASS` trong Execution Log, coverage kín R1–R12, spec `inprocess` → `complete`.
+**Goal hiện tại**: giữ nguyên evidence lịch sử `S0 → … → P11`, rồi chạy remediation theo thứ tự
+`P12 → P13 → P14 → P15 → P16 → P17 → P18`. Xong = mọi finding C/H/M/L/G có code + boundary test +
+exact-source artifact, mọi task + AC mới `[x]`, mỗi phase có `PASS`, coverage kín R1–R15, spec
+`inprocess` → `complete`.
 
 **Thẩm quyền**: Goals bản 7 → Design bản 12 → steering → code hiện tại → diff nhỏ nhất. Theo nguyên văn
-"Mười luật bất biến" + "Autonomous Execution Contract" của checklist (L1 ghi qua
+"Mười luật bất biến" + "Autonomous Execution Contract" + remediation Design bản 13 của checklist (L1 ghi qua
 `WriteAuthority.mutateSource`, L4 nội dung quyết ở Core, L5 test `environment: "node"`).
 
-**Mỗi phiên**: đọc `git status --short` + Execution Log + cuối `implementation-notes.html`. Có `[/]` ⇒
+**Mỗi phiên**: đọc `git status --short` + Execution Log + cuối `implementation-notes.html`. Historical
+S0–P11 không được mở checkbox chỉ vì review mới; có `[/]` trong P12–P18 ⇒
 resume trước; không thì task `[ ]` đầu tiên đủ prerequisite (`[!]`/`NOT EXECUTED`/Deliverables trống = chưa
 đóng). Đọc skill + "Read first" của phase trước khi sửa; task `<n>.0` sửa steering làm trước code.
 
