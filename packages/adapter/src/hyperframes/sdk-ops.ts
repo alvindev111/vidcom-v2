@@ -3,6 +3,7 @@ import { existsSync, readFileSync, statSync } from "node:fs";
 import { resolveWithinProject } from "@hyperframes/core";
 import { openComposition, type Composition, type EditOp, type HyperFramesElement } from "@hyperframes/sdk";
 import { parseHTML } from "linkedom";
+import postcss, { type Rule } from "postcss";
 
 import { ErrorCode, type DomainError, type RelPath } from "@vidcom/contracts";
 import { err, ok, type CompositionOp, type ProjectRef, type Result } from "@vidcom/core";
@@ -39,7 +40,7 @@ function rootTarget(composition: Composition): string | null {
   return visit(composition.getRootElements());
 }
 
-type SdkCompositionOp = Exclude<CompositionOp, { kind: "replaceCaptions" }>;
+type SdkCompositionOp = Exclude<CompositionOp, { kind: "replaceCaptions" | "setLayoutOffset" }>;
 
 function editOp(composition: Composition, operation: SdkCompositionOp): EditOp {
   switch (operation.kind) {
@@ -97,7 +98,10 @@ function replaceCaptions(
   for (const existing of [...host.querySelectorAll(".captions")]) existing.remove();
 
   const container = document.createElement("div");
-  container.setAttribute("class", "captions");
+  container.setAttribute("class", "captions clip");
+  container.setAttribute("data-hf-id", `captions-${operation.target}`);
+  container.setAttribute("data-start", "0");
+  container.setAttribute("data-duration", String(operation.value.cues.at(-1)?.end ?? 0));
   container.setAttribute("data-caption-timing", operation.value.timingSource);
   for (const cue of operation.value.cues) {
     const paragraph = document.createElement("p");
@@ -116,6 +120,61 @@ function replaceCaptions(
     container.append(paragraph);
   }
   host.append(container);
+  return ok(document.toString());
+}
+
+function setLayoutOffset(
+  raw: string,
+  operation: Extract<CompositionOp, { kind: "setLayoutOffset" }>,
+): Result<string, DomainError> {
+  const { document } = parseHTML(raw);
+  let ownerTemplate: HTMLTemplateElement | null = null;
+  let element = [...document.querySelectorAll("[data-hf-id]")]
+    .find((candidate) => candidate.getAttribute("data-hf-id") === operation.target);
+  if (!element) {
+    for (const template of [...document.querySelectorAll<HTMLTemplateElement>("template")]) {
+      element = [...template.content.querySelectorAll("[data-hf-id]")]
+        .find((candidate) => candidate.getAttribute("data-hf-id") === operation.target);
+      if (element) {
+        ownerTemplate = template;
+        break;
+      }
+    }
+  }
+  if (!element) return err({ code: ErrorCode.SdkRejected, message: "layout target was not found" });
+  const ownsOffset = element.hasAttribute("data-vidcom-layout-offset");
+  const style = element.getAttribute("style") ?? "";
+  let rule: Rule;
+  try {
+    const root = postcss.parse(`x{${style}}`, { from: undefined });
+    const first = root.first;
+    if (!first || first.type !== "rule") {
+      return err({ code: ErrorCode.SdkRejected, message: "layout target style is invalid" });
+    }
+    rule = first;
+  } catch {
+    return err({ code: ErrorCode.SdkRejected, message: "layout target style is invalid" });
+  }
+  if (!ownsOffset && rule.nodes?.some((node) => node.type === "decl" && node.prop.toLowerCase() === "translate")) {
+    return err({ code: ErrorCode.SdkRejected, message: "authored translate locks this layout target" });
+  }
+  rule.walkDecls(/^--vidcom-layout-(?:x|y)$/u, (declaration) => { declaration.remove(); });
+  const zero = operation.value.x === 0 && operation.value.y === 0;
+  if (zero) {
+    element.removeAttribute("data-vidcom-layout-offset");
+  } else {
+    rule.append({ prop: "--vidcom-layout-x", value: `${operation.value.x}px` });
+    rule.append({ prop: "--vidcom-layout-y", value: `${operation.value.y}px` });
+    element.setAttribute("data-vidcom-layout-offset", "");
+  }
+  const serialized = rule.nodes?.length ? rule.nodes.map((node) => node.type === "decl"
+    ? `${node.prop}: ${node.value}${node.important ? " !important" : ""};`
+    : node.toString()).join(" ") : "";
+  if (serialized) element.setAttribute("style", serialized);
+  else element.removeAttribute("style");
+  if (ownerTemplate) {
+    ownerTemplate.innerHTML = [...ownerTemplate.content.childNodes].map((node) => node.toString()).join("");
+  }
   return ok(document.toString());
 }
 
@@ -162,15 +221,17 @@ export async function applyCompositionOps(
   };
   if (operations.length === 0) return applySdkOps(raw, []);
   for (const operation of operations) {
-    if (operation.kind !== "replaceCaptions") {
+    if (operation.kind !== "replaceCaptions" && operation.kind !== "setLayoutOffset") {
       sdkOperations.push(operation);
       continue;
     }
     const flushed = await flushSdkOperations();
     if (!flushed.ok) return flushed;
-    const replaced = replaceCaptions(raw, operation);
-    if (!replaced.ok) return replaced;
-    raw = replaced.value;
+    const applied = operation.kind === "replaceCaptions"
+      ? replaceCaptions(raw, operation)
+      : setLayoutOffset(raw, operation);
+    if (!applied.ok) return applied;
+    raw = applied.value;
   }
   const flushed = await flushSdkOperations();
   return flushed.ok ? ok(raw) : flushed;

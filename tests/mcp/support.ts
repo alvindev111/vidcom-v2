@@ -97,6 +97,14 @@ export const CONTRACT_MATRIX_CASES: Record<string, Record<string, unknown>> = {
   set_scene_timing: {
     projectId: matrixProjectId, sceneId: "scene-1", duration: 4, expectedContentHash: matrixHash,
   },
+  set_element_position: {
+    projectId: matrixProjectId,
+    sceneId: "scene-1",
+    elementId: "hero",
+    offsetX: 24,
+    offsetY: -12,
+    expectedContentHash: matrixHash,
+  },
   set_text: {
     projectId: matrixProjectId,
     sceneId: "scene-1",
@@ -381,6 +389,8 @@ export function createContractMatrixRegistry(): ToolRegistry {
       duration: 4,
       trackIndex: 1,
       src: "compositions/scene-1.html" as RelPath,
+      sourceFile: "compositions/scene-1.html" as RelPath,
+      role: "story",
       block: null,
       isTransition: false,
       media: [],
@@ -400,11 +410,14 @@ export function createContractMatrixRegistry(): ToolRegistry {
       },
       elements: [{
         id: "hero",
+        authoredId: "hero",
         label: "Hero",
         kind: "element",
         start: null,
         duration: null,
         src: null,
+        layoutOffset: null,
+        positionEditable: true,
         effects: [
           { id: "build", method: "fromTo", start: 0.2, duration: 0.6, ease: "expo.out", propertyGroup: "scale" },
           { id: "payoff", method: "to", start: 1.4, duration: 0.8, ease: "sine.inOut", propertyGroup: "rotation" },
@@ -419,6 +432,8 @@ export function createContractMatrixRegistry(): ToolRegistry {
       duration: 4,
       trackIndex: 1,
       src: "compositions/scene-9.html" as RelPath,
+      sourceFile: "compositions/scene-9.html" as RelPath,
+      role: "story",
       block: null,
       isTransition: false,
       media: [],
@@ -524,6 +539,7 @@ export function createContractMatrixRegistry(): ToolRegistry {
           return ok({
             path: request.kind === "file" ? request.path : null,
             contentHash: matrixNewHash,
+            projectRevision: 3,
             revision: 3,
             diagnostics: [],
             ...(request.kind === "entity" ? {

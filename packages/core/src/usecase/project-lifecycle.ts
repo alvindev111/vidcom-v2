@@ -97,7 +97,10 @@ export class ProjectLifecycle {
       ...invocation,
       files: [
         { path: "vidcom.json" as RelPath, content: identity },
-        { path: "hyperframes.json" as RelPath, content: "{}\n" },
+        {
+          path: "hyperframes.json" as RelPath,
+          content: input.actor === "agent" ? '{"vidcomAgentKitVersion":9}\n' : "{}\n",
+        },
         { path: "preview-settings.json" as RelPath, content: serializePreviewSettings(DEFAULT_PREVIEW_SETTINGS) },
         { path: "index.html" as RelPath, content: index },
       ],

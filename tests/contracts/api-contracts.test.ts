@@ -311,7 +311,7 @@ describe("API response contracts", () => {
   });
 
   it("locks every JSON success response shape", () => {
-    const mutation = { previewSettings, revision: 4, diagnostics, changeSeq: 9 };
+    const mutation = { previewSettings, projectRevision: 7, revision: 4, diagnostics, changeSeq: 9 };
     const narration = {
       sceneId: "scene-1",
       text: "Hello",

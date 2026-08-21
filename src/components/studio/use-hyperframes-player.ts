@@ -6,6 +6,8 @@ import {
   createHyperframesPlayerEnvironment,
   type HyperframesPreviewEngine,
 } from "./hyperframes-player-environment";
+import type { PreviewArrangeTarget } from "../../lib/studio/preview-bridge";
+import type { PreviewAudioState } from "../../lib/studio/preview-bridge";
 import { PlayerHost, type PlayerHostMountResult } from "./player-host";
 import { createTimeStore, type TimeStore } from "./player-time";
 import type { PreviewReloadResult } from "./preview-buffer";
@@ -15,6 +17,10 @@ export interface PlayerControls {
   seek: (seconds: number) => void;
   setPlaybackRate: (rate: number) => void;
   toggleMuted: () => void;
+  setArrangeMode: (enabled: boolean) => void;
+  hitTest: (xRatio: number, yRatio: number) => Promise<PreviewArrangeTarget | null>;
+  previewOffset: (sceneId: string, hfId: string, offsetX: number, offsetY: number) => void;
+  resetOffset: (sceneId: string, hfId: string) => void;
 }
 
 export interface PlayerState {
@@ -24,6 +30,8 @@ export interface PlayerState {
   muted: boolean;
   playbackRate: number;
   error: string | null;
+  audioState: PreviewAudioState;
+  audioError: string | null;
 }
 
 const INITIAL: PlayerState = {
@@ -33,6 +41,8 @@ const INITIAL: PlayerState = {
   muted: false,
   playbackRate: 1,
   error: null,
+  audioState: "ready",
+  audioError: null,
 };
 
 /**
@@ -47,6 +57,8 @@ export function useHyperframesPlayer(projectId: string, previewUrl: string) {
   const visibleChangeSeqRef = React.useRef(0);
   const desiredChangeSeqRef = React.useRef(0);
   const previewUrlRef = React.useRef(previewUrl);
+  const arrangeModeRef = React.useRef(false);
+  const arrangedEnginesRef = React.useRef(new WeakSet<HyperframesPreviewEngine>());
   const [state, setState] = React.useState<PlayerState>(INITIAL);
   const [timeStore] = React.useState<TimeStore>(createTimeStore);
 
@@ -104,15 +116,21 @@ export function useHyperframesPlayer(projectId: string, previewUrl: string) {
         container,
         previewOrigin: new URL(previewUrlRef.current, window.location.href).origin,
         onVisibleState: (player, error) => {
+          if (arrangeModeRef.current && !arrangedEnginesRef.current.has(player)) {
+            arrangedEnginesRef.current.add(player);
+            player.setArrangeMode(true);
+          }
           timeStore.set(player.currentTime);
           const duration = player.duration || 0;
-          const { paused, muted, playbackRate, ready } = player;
+          const { paused, muted, playbackRate, ready, audioState, audioError } = player;
           setState((current) =>
             (duration === 0 || duration === current.duration) &&
             paused === current.paused &&
             muted === current.muted &&
             playbackRate === current.playbackRate &&
             ready === current.ready &&
+            audioState === current.audioState &&
+            audioError === current.audioError &&
             error === current.error
               ? current
               : {
@@ -121,6 +139,8 @@ export function useHyperframesPlayer(projectId: string, previewUrl: string) {
                   ready,
                   muted,
                   playbackRate,
+                  audioState,
+                  audioError,
                   error,
                 },
           );
@@ -164,7 +184,6 @@ export function useHyperframesPlayer(projectId: string, previewUrl: string) {
         if (!host) return;
         if (host.transport().paused) host.play();
         else host.pause();
-        setState((current) => ({ ...current, paused: !current.paused }));
       },
       seek: (seconds: number) => {
         hostRef.current?.seek(seconds);
@@ -172,15 +191,25 @@ export function useHyperframesPlayer(projectId: string, previewUrl: string) {
       },
       setPlaybackRate: (rate: number) => {
         hostRef.current?.setPlaybackRate(rate);
-        setState((current) => ({ ...current, playbackRate: rate }));
       },
       toggleMuted: () => {
         const host = hostRef.current;
         if (!host) return;
         const muted = !host.transport().muted;
         host.setMuted(muted);
-        setState((current) => ({ ...current, muted }));
       },
+      setArrangeMode: (enabled: boolean) => {
+        arrangeModeRef.current = enabled;
+        const engine = hostRef.current?.currentEngine();
+        engine?.setArrangeMode(enabled);
+        if (enabled) setState((current) => ({ ...current, paused: true }));
+      },
+      hitTest: (xRatio: number, yRatio: number) =>
+        hostRef.current?.currentEngine()?.hitTest(xRatio, yRatio) ?? Promise.resolve(null),
+      previewOffset: (sceneId: string, hfId: string, offsetX: number, offsetY: number) =>
+        hostRef.current?.currentEngine()?.previewOffset(sceneId, hfId, offsetX, offsetY),
+      resetOffset: (sceneId: string, hfId: string) =>
+        hostRef.current?.currentEngine()?.resetOffset(sceneId, hfId),
     }),
     [timeStore],
   );

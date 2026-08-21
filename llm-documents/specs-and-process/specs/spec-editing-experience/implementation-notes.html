@@ -3380,6 +3380,339 @@
           </p>
         </article>
       </section>
+      <section class="mt-8 rounded-2xl border border-cyan-500/30 bg-slate-900/80 p-6 shadow-xl">
+        <article class="space-y-4">
+          <div class="flex flex-wrap items-center justify-between gap-3">
+            <h2 class="text-xl font-semibold text-cyan-200">2026-08-21 — P19.0 mở lại R16–R20</h2>
+            <span class="rounded-full bg-emerald-400/10 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-emerald-300">Pass</span>
+          </div>
+          <p class="text-slate-300">
+            Người dùng đã duyệt riêng implementation checklist P19–P25 sau khi Goals bản 9 và Design
+            bản 14 được duyệt. Main spec chuyển từ <code>complete</code> sang <code>inprocess</code>;
+            toàn bộ evidence P0–P18 được giữ nguyên như lịch sử, không được dùng để đóng R16–R20.
+          </p>
+          <p class="text-slate-400 text-sm">
+            Baseline trước khi mở lại: HEAD
+            <code>6475521b03f69c1aa5f73be0b64a27e559549c93</code>, source digest
+            <code>00a0f89492cb1666f97ff28094adae9b4f472a32c53110dd39cdb30c226a3fac</code>.
+            Hai thay đổi source đã tồn tại và được bảo toàn là
+            <code>packages/cli/src/next-host.ts</code> cùng
+            <code>tests/cli/preview-runtime-wiring.test.ts</code>; Goals/Design là thay đổi tài liệu của
+            R16–R20. Không stash/reset/stage/commit/push.
+          </p>
+          <p class="text-slate-400 text-sm">
+            P19–P25 được đăng ký vào validator spec-path như một matrix addendum riêng để không viết
+            lại matrix lịch sử S0–P11. Gate bootstrap là
+            <code>bun run test:spec-paths</code>, kiểm link trạng thái main spec và
+            <code>git diff --check</code>; kết quả PASS với 164 test path qua 5 matrix/spec, link hiện
+            hành chỉ vào <code>-inprocess.md</code> và diff-check sạch. P19.1 được mở sau gate này.
+          </p>
+        </article>
+      </section>
+      <section class="mt-8 rounded-2xl border border-cyan-500/30 bg-slate-900/80 p-6 shadow-xl">
+        <article class="space-y-4">
+          <div class="flex flex-wrap items-center justify-between gap-3">
+            <h2 class="text-xl font-semibold text-cyan-200">2026-08-21 — P21 vị trí element đi qua authority thật</h2>
+            <span class="rounded-full bg-emerald-400/10 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-emerald-300">Pass</span>
+          </div>
+          <p class="text-slate-300">
+            Mutation mới không nhận đường dẫn source hoặc selector từ client. Server đối chiếu
+            <code>sceneId</code>, source owner và exact <code>data-hf-id</code> từ projection hiện tại,
+            rồi ghi đúng hai custom property VidCom sở hữu. Offset dùng CSS <code>translate</code> riêng,
+            nên GSAP/CSS <code>transform</code> authored vẫn nguyên vẹn; offset 0 xoá sạch marker sở hữu.
+            Caption sinh tự động nay có ID ổn định và clip window để dùng cùng đường chỉnh vị trí.
+          </p>
+          <p class="text-slate-400 text-sm">
+            Matrix SQLite/filesystem thật bao phủ inline, mounted và caption, một receipt undo/redo,
+            no-op không revision, stale hash không ghi và rollback khi publish bị inject lỗi. HTTP và
+            MCP dùng chung schema/use case; matrix P21 đạt 97/97, MCP contract 94/94, golden 49/49;
+            typecheck, lint, boundaries, schema drift và build đều xanh. Đây là nền bắt buộc để P22
+            kéo-thả trên canvas chỉ giữ draft khi pointermove và commit đúng một lần lúc pointerup.
+          </p>
+        </article>
+      </section>
+      <section class="mt-8 rounded-2xl border border-cyan-500/30 bg-slate-900/80 p-6 shadow-xl">
+        <article class="space-y-4">
+          <div class="flex flex-wrap items-center justify-between gap-3">
+            <h2 class="text-xl font-semibold text-cyan-200">2026-08-21 — P19.1 khóa contract RED</h2>
+            <span class="rounded-full bg-rose-400/10 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-rose-300">RED được chứng minh</span>
+          </div>
+          <p class="text-slate-300">
+            Test parser hiện có được mở rộng trước production code. Một fixture chứa scene inline và
+            mounted khóa <code>sourceFile</code>, role, exact <code>data-hf-id</code>, offset do VidCom
+            sở hữu, structural target read-only và authored translate bị khóa. Fixture media giữ nguyên
+            authored <code>src</code> nhưng yêu cầu lookup file bỏ query/fragment và decode đúng tên file.
+          </p>
+          <p class="text-slate-400 text-sm">
+            Lệnh đúng của repository là <code>bun run test -- tests/golden/parse.test.ts</code>: 13 test
+            pass, 2 test fail đúng nguyên nhân dự kiến. Failure thứ nhất thiếu <code>sourceFile</code> và
+            <code>role</code>; failure thứ hai tạo URL chứa <code>?v=2#focus</code> và báo
+            <code>missing:true</code> dù file tồn tại. Lệnh thử trực tiếp <code>bun test</code> không được
+            dùng làm evidence vì Bun runner không hỗ trợ built-in <code>node:sqlite</code> của suite này.
+          </p>
+          <p class="text-slate-400 text-sm">
+            Quyết định triển khai P19.2: projection chỉ thêm các field đã duyệt và suy ra chúng phía
+            server. Test media vẫn cố ý đỏ cho tới P19.4; P19.2 chỉ được đóng khi assertion projection
+            cùng strict <code>SceneSchema</code> xanh theo tên test riêng.
+          </p>
+        </article>
+      </section>
+      <section class="mt-8 rounded-2xl border border-cyan-500/30 bg-slate-900/80 p-6 shadow-xl">
+        <article class="space-y-4">
+          <div class="flex flex-wrap items-center justify-between gap-3">
+            <h2 class="text-xl font-semibold text-cyan-200">2026-08-21 — P19.2 projection có định danh ổn định</h2>
+            <span class="rounded-full bg-emerald-400/10 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-emerald-300">Pass</span>
+          </div>
+          <p class="text-slate-300">
+            Scene DTO nay mang file project-relative thực sự sở hữu markup và role tường minh; scene
+            inline không còn phải bị đoán từ <code>src</code>. Element DTO tách exact authored
+            <code>data-hf-id</code> khỏi structural path, đọc offset do VidCom sở hữu và khóa target
+            structural, tween-only, marker hỏng hoặc authored CSS <code>translate</code>.
+          </p>
+          <p class="text-slate-400 text-sm">
+            Focused projection 1/1 pass, strict schema parse pass và <code>bun run typecheck</code> pass.
+            Sau cập nhật năm golden element hiện có, parse suite đạt 14/15; failure duy nhất vẫn là
+            query/fragment media của P19.4. Không có absolute path, raw HTML hay selector đoán được thêm
+            vào projection.
+          </p>
+        </article>
+      </section>
+      <section class="mt-8 rounded-2xl border border-cyan-500/30 bg-slate-900/80 p-6 shadow-xl">
+        <article class="space-y-4">
+          <div class="flex flex-wrap items-center justify-between gap-3">
+            <h2 class="text-xl font-semibold text-cyan-200">2026-08-21 — P19.3–P19.4 dùng lại thumbnail pipeline</h2>
+            <span class="rounded-full bg-emerald-400/10 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-emerald-300">Pass focused</span>
+          </div>
+          <p class="text-slate-300">
+            Frame đại diện là một mark scene-local tại 55%, lượng tử theo fps và clamp trước frame cuối.
+            Request vẫn là <code>timeline-v1</code>; repeated request không sinh thêm snapshot/FFmpeg
+            process và đọc đúng cache hiện có. Joined thumbnail suites đạt 10/10.
+          </p>
+          <p class="text-slate-400 text-sm">
+            Media local được phân tích bằng URL giả có prefix project, strip query/fragment và decode
+            đúng một lần trước contained lookup. Authored <code>src</code> không đổi. Parse suite 17/17
+            pass cho PNG tiếng Việt percent-encoded, JPEG/WebP, remote/data/blob, absolute/traversal và
+            symlink thoát project. Lần hardening đầu đỏ 17/17 do parameter che khuất hàm
+            <code>path.relative</code>; alias được sửa và full suite rerun xanh, không giảm assertion.
+          </p>
+        </article>
+      </section>
+      <section class="mt-8 rounded-2xl border border-cyan-500/30 bg-slate-900/80 p-6 shadow-xl">
+        <article class="space-y-4">
+          <div class="flex flex-wrap items-center justify-between gap-3">
+            <h2 class="text-xl font-semibold text-cyan-200">2026-08-21 — P19 gate</h2>
+            <span class="rounded-full bg-emerald-400/10 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-emerald-300">Pass</span>
+          </div>
+          <p class="text-slate-300">
+            Matrix P19 đạt 14/14; typecheck, boundaries, schema 32 migration, spec-path 164 đường dẫn
+            và diff-check đều xanh. Lint có 0 lỗi, 5 warning baseline ở spike/test cũ.
+          </p>
+          <p class="text-slate-400 text-sm">
+            Golden lần đầu có 47 pass và 2 failure đúng vì MCP schema legacy/modern chưa nhận ba field
+            element mới. Hai deterministic snapshot được cập nhật rồi full golden đạt 49/49. Diff-check
+            lần đầu cũng bắt trailing whitespace trong addendum; cleanup format xong rerun PASS. Hai
+            failure đều được sửa trước khi mở P20, không bị đổi nhãn hay che khỏi Execution Log.
+          </p>
+        </article>
+      </section>
+      <section class="mt-8 rounded-2xl border border-cyan-500/30 bg-slate-900/80 p-6 shadow-xl">
+        <article class="space-y-4">
+          <div class="flex flex-wrap items-center justify-between gap-3">
+            <h2 class="text-xl font-semibold text-cyan-200">2026-08-21 — P20.1 browser RED, P20.2 bắt đầu</h2>
+            <span class="rounded-full bg-amber-400/10 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-amber-300">Đang thực hiện</span>
+          </div>
+          <p class="text-slate-300">
+            Sau khi build lại static UI, browser fixture tạo hai scene thật và mở đúng tab Video Scene.
+            Test chờ 15 giây rồi đỏ tại lifecycle attribute: card hiện hữu nhưng không phát request
+            thumbnail nào, xác nhận nguyên nhân R16 là phụ thuộc snapshot thủ công. Các failure trước đó
+            do bundle <code>out/</code> cũ và click tab giả lập được phân loại là lỗi harness, không dùng
+            làm bằng chứng sản phẩm.
+          </p>
+          <p class="text-slate-400 text-sm">
+            Implementation mới dùng cùng endpoint/profile <code>timeline-v1</code>, frame đại diện 55%
+            dùng chung qua contracts, IntersectionObserver với biên một viewport, in-flight dedupe,
+            ready-only LRU 512 entry, abort khi không còn consumer và generation guard chống response
+            cũ. Card bỏ terminal instruction nhưng vẫn giữ drag, chọn và Alt+Arrow reorder; nút Retry là
+            sibling có lớp tương tác riêng, không tạo button lồng button. Typecheck đầu tiên PASS.
+          </p>
+        </article>
+      </section>
+      <section class="mt-8 rounded-2xl border border-cyan-500/30 bg-slate-900/80 p-6 shadow-xl">
+        <article class="space-y-4">
+          <div class="flex flex-wrap items-center justify-between gap-3">
+            <h2 class="text-xl font-semibold text-cyan-200">2026-08-21 — P20.2–P20.4 Storyboard tự sinh thumbnail</h2>
+            <span class="rounded-full bg-emerald-400/10 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-emerald-300">Pass browser</span>
+          </div>
+          <p class="text-slate-300">
+            Card không còn đọc <code>snapshots/*.png</code> hay yêu cầu người dùng chạy terminal.
+            Mỗi card gần viewport đi qua trạng thái idle, loading, ready hoặc failed; failure được giữ
+            tới khi người dùng bấm Retry để React Strict Mode không vô tình retry thay họ. Selection,
+            drag và Alt+Arrow vẫn dùng đúng scene id sau reorder; nút retry không lồng trong nút chọn.
+          </p>
+          <p class="text-slate-400 text-sm">
+            Browser contract auto-load/error/retry/reorder đạt 1/1. Fixture 100 scene đo được 20 scene
+            phát request, tối đa 10 active, 10 stale request bị abort, top window 10; quay lại scene đầu
+            không tăng count khỏi 1 nhờ ready cache. Hai lần đỏ trước GREEN là lỗi harness thật và đã
+            được ghi: Timeline request dùng chung endpoint làm sai attempt counter, và interception
+            cài trước navigation giữ shell 100 scene. Cả hai được sửa trong test, không giảm assertion.
+          </p>
+        </article>
+      </section>
+      <section class="mt-8 rounded-2xl border border-cyan-500/30 bg-slate-900/80 p-6 shadow-xl">
+        <article class="space-y-4">
+          <div class="flex flex-wrap items-center justify-between gap-3">
+            <h2 class="text-xl font-semibold text-cyan-200">2026-08-21 — P20.5 sửa lỗi chỉ xuất hiện trên artifact thật</h2>
+            <span class="rounded-full bg-emerald-400/10 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-emerald-300">Pass artifact thật</span>
+          </div>
+          <p class="text-slate-300">
+            Artifact Odyssey thật phát hiện ba khe hở mà fixture trước chưa mô phỏng: FFmpeg không có
+            encoder WebP/decoder PNG, Fetch Metadata chặn request <code>Sec-Fetch-Dest: image</code>,
+            và nhiều scene inline dùng chung <code>index.html</code> bị trùng fingerprint nên nhận cùng
+            URL thumbnail. Mỗi lỗi đều có test RED riêng trước khi sửa.
+          </p>
+          <p class="text-slate-400 text-sm">
+            Media release nay pin libwebp và zlib, kiểm cả encoder/decoder trước đóng gói. Perimeter chỉ
+            cho GET/HEAD <code>no-cors</code> cùng-origin tới thumbnail hoặc asset với destination media;
+            health và mutation vẫn 403. Fingerprint scene nay chứa <code>sceneId</code>, vì source hash
+            của file inline không đủ phân biệt scene. Focused gate đạt 45/45; artifact rebuild PASS.
+            Trên Odyssey thật, 18/18 card đạt ready với 18 URL riêng và ảnh 160×90 tải hoàn chỉnh.
+            Bằng chứng lưu tại <code>evidence/p20-odyssey-storyboard.jpg</code>; retry lỗi chủ động được
+            khóa trong browser contract Chromium thật trước khi P20 đóng.
+          </p>
+        </article>
+      </section>
+      <section class="mt-8 rounded-2xl border border-cyan-500/30 bg-slate-900/80 p-6 shadow-xl">
+        <article class="space-y-4">
+          <div class="flex flex-wrap items-center justify-between gap-3">
+            <h2 class="text-xl font-semibold text-cyan-200">2026-08-22 — P22 kéo thả trực tiếp trên Preview</h2>
+            <span class="rounded-full bg-emerald-400/10 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-emerald-300">Pass local</span>
+          </div>
+          <p class="text-slate-300">
+            Preview nay có Arrange mode thật: hit-test chỉ trả descriptor đóng, màn hình đổi sang tọa độ
+            composition với snap 8 px và clamp, kéo chỉ hiển thị draft còn pointerup mới gửi đúng một
+            mutation. Bàn phím, Escape, target bị khóa, caption có ID ổn định và trạng thái ARIA dùng cùng
+            planner. Transport dừng khi vào Arrange và không tự phát lại.
+          </p>
+          <p class="text-slate-400 text-sm">
+            Browser thật đo pointerup tới frame authoritative 187 ms. Hai lỗi production đã được test bắt:
+            element có <code>data-hf-id</code> nhưng không có timing/effect từng bị bỏ khỏi projection, và
+            mutation bên trong <code>template.content</code> từng không đi vào HTML serialize. Cả hai được
+            sửa ở adapter thay vì né trong UI. Bằng chứng Linux/Windows vẫn phải đến từ P25.
+          </p>
+        </article>
+      </section>
+      <section class="mt-8 rounded-2xl border border-cyan-500/30 bg-slate-900/80 p-6 shadow-xl">
+        <article class="space-y-4">
+          <div class="flex flex-wrap items-center justify-between gap-3">
+            <h2 class="text-xl font-semibold text-cyan-200">2026-08-22 — P23 bốn tab tạo thay đổi quan sát được</h2>
+            <span class="rounded-full bg-emerald-400/10 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-emerald-300">Pass local</span>
+          </div>
+          <p class="text-slate-300">
+            Các tab được đổi thành ngôn ngữ theo tác vụ và có hướng dẫn luôn nhìn thấy. Look &amp; subtitles
+            đổi tone trong frame và lưu settings; Motion &amp; sound áp dụng trực tiếp recipe drift/focus/
+            pulse/wipe vào preview lẫn render; Add scene cài template rồi tăng số scene; Music tạo và gắn
+            WAV nền. Browser test đi xuyên cả bốn tab, kiểm cả frame thật lẫn bytes/settings trên đĩa.
+          </p>
+          <p class="text-slate-400 text-sm">
+            Audio không còn suy đoán từ nút Play: preview host xác nhận ready/playing/paused/error. WAV thật
+            phát không mute và currentTime tăng; autoplay bị chặn hiện nút Enable audio trong đúng principal;
+            decode/resource error giữ paused và retry minh bạch. Chuỗi thao tác liên tab còn phát hiện revision
+            409 thật: entity revision và project revision được tách xuyên HTTP/MCP/UI. Accessibility audit bắt
+            nút Retry Storyboard nhỏ hơn 24 px; target đã được sửa trước khi full browser gate 21/21 xanh.
+          </p>
+          <p class="text-slate-400 text-sm">
+            Golden đầu tiên đỏ đúng hai tools/list snapshot vì contract thêm motion preset và projectRevision.
+            Cập nhật deterministic bằng test runner rồi full golden đạt 50/50; schema drift, build và spec-path
+            169 đường dẫn đều PASS. Screenshot hướng dẫn và proof Linux/Windows thuộc P25, chưa được gọi là xong.
+          </p>
+        </article>
+      </section>
+      <section class="mt-8 rounded-2xl border border-cyan-500/30 bg-slate-900/80 p-6 shadow-xl">
+        <article class="space-y-4">
+          <div class="flex flex-wrap items-center justify-between gap-3">
+            <h2 class="text-xl font-semibold text-cyan-200">2026-08-22 — P24.1 checkpoint story-motion v9</h2>
+            <span class="rounded-full bg-amber-400/10 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-amber-300">Đang thực hiện</span>
+          </div>
+          <p class="text-slate-300">
+            Gate cũ chỉ đòi hai tween scale/rotation cách nhau 0,1 giây, bỏ toàn bộ inline scene khỏi
+            validate/render và snapshot chưa kiểm motion. Vì vậy một video có thể lặp cùng entrance,
+            đặt loop ở root hoặc dùng <code>data-no-timeline</code> mà vẫn qua một phần pipeline.
+          </p>
+          <p class="text-slate-400 text-sm">
+            P24 sẽ gom bằng chứng thành StoryMotionProfile: role, pattern, seam, ba phần thời gian,
+            meaningful groups, unresolved effects và narration seconds. Một hàm Core dùng chung sẽ
+            phục vụ validate, snapshot và render; legacy chỉ nhận warning khi thiếu metadata nhưng
+            shallow/unverified vẫn là lỗi. Agent-kit source được nâng trước, bundle chỉ sinh bằng builder.
+          </p>
+        </article>
+      </section>
+      <section class="mt-8 rounded-2xl border border-cyan-500/30 bg-slate-900/80 p-6 shadow-xl">
+        <article class="space-y-4">
+          <div class="flex flex-wrap items-center justify-between gap-3">
+            <h2 class="text-xl font-semibold text-cyan-200">2026-08-22 — P24 story-motion và agent-kit v9</h2>
+            <span class="rounded-full bg-emerald-400/10 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-emerald-300">Pass</span>
+          </div>
+          <p class="text-slate-300">
+            StoryMotionProfile nay giữ role, duration, pattern, seam, phase starts, meaningful groups,
+            unresolved effects và narration seconds. Một gate Core duy nhất kiểm ba phần đầu/giữa/cuối,
+            rolling-four có ít nhất ba pattern, seam cụ thể, scene 6–10 giây, scene tĩnh quá 10 giây và
+            narration union ít nhất 75%; validate, snapshot và render đều gọi cùng gate này.
+          </p>
+          <p class="text-slate-400 text-sm">
+            Parser đọc metadata từ đúng root inline hoặc mounted. Root script với selector tĩnh được gán
+            vào scene sở hữu target; loop/dynamic selector không được nhân thành evidence cho mọi scene.
+            <code>data-no-timeline</code> không tham gia miễn trừ. Fixture v9 gồm 18 inline scene 15 giây,
+            một root loop fade+y và narration thấp bị chặn trước enqueue với đủ 18 scene ID.
+          </p>
+          <p class="text-slate-400 text-sm">
+            Agent-kit source nâng lên v9; project do agent tạo nhận
+            <code>vidcomAgentKitVersion: 9</code>. Legacy thiếu metadata chỉ warning nhưng shallow/unverified
+            vẫn blocking. Builder canonical chạy hai lần cho cùng SHA-256: CLAUDE
+            <code>0d140967ce202b56fa6ecd9e4278cffaabed3aa15984eea1602049ef86299e73</code>, bundle
+            <code>97a4cb6cb2503d39838fd4cd404efec8ea73eca54a7c37e6e317eddf58487a3c</code>.
+            P24 matrix 72/72 và packaged agent-kit/catalogue 37/37 đều PASS.
+          </p>
+        </article>
+      </section>
+      <section class="mt-8 rounded-2xl border border-cyan-500/30 bg-slate-900/80 p-6 shadow-xl">
+        <article class="space-y-4">
+          <div class="flex flex-wrap items-center justify-between gap-3">
+            <h2 class="text-xl font-semibold text-cyan-200">2026-08-22 — P25.1 regression trên worktree</h2>
+            <span class="rounded-full bg-emerald-400/10 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-emerald-300">Pass source; artifact qua CI</span>
+          </div>
+          <p class="text-slate-300">
+            Toàn bộ profile local chính đã xanh trên HEAD
+            <code>6475521b03f69c1aa5f73be0b64a27e559549c93</code> cộng dirty digest
+            <code>fc8f77f571ded65bdbfad0e80016674953caffd1d751448ddd0e68ad5761f501</code>.
+            Browser session chạy tuần tự 12 file/27 test, không skip; bốn phép đo R4.1c là
+            214/185/271/274 ms. Main CI-profile bắt buộc FFmpeg đạt 329 file và 2.716 test; MCP
+            contract 94/94, golden 51/51, schema, spec-path 172 đường dẫn, build và runtime-smoke đều PASS.
+          </p>
+          <p class="text-slate-400 text-sm">
+            Regression đã tìm và sửa các lỗi thật thay vì nới gate: fixture plumbing được gắn role
+            utility để không giả làm story v9; catalogue hợp lệ có 43 tool; drag Storyboard dùng điểm
+            trước rõ ràng và có fallback dragend không ghi lặp; frame double-buffer bị detach không làm
+            test flake; 99 seed write của case 100 scene không bắn event vào Studio đang mở. Audio test
+            kiểm đúng mô hình HyperFrames: parent proxy sở hữu output hoặc runtime graph sở hữu output,
+            còn media authored trong iframe được mute có chủ đích.
+          </p>
+          <p class="text-slate-400 text-sm">
+            Một full-suite không theo profile CI từng đo 582 ms vì Chrome tranh tài nguyên với hơn 2.700
+            test; đây không phải authority R4.1c. Gate browser chuyên dụng chạy ngay sau đó vẫn dưới 500 ms.
+            Hai file đã dirty trước addendum — <code>packages/cli/src/next-host.ts</code> và
+            <code>tests/cli/preview-runtime-wiring.test.ts</code> — không nằm trong commit và vẫn nguyên ở
+            worktree gốc. Clean worktree của commit <code>bc7bb8d05844e61c3b03d9bf5c46c4fb680afc77</code>
+            đã typecheck/build và browser 27/27 xanh, R4.1c 188/188/268/268 ms.
+          </p>
+          <p class="text-slate-400 text-sm">
+            Full test trên fresh <code>bun install</code> chạy tới 2.720 test nhưng đỏ 10 case native/artifact:
+            Bun làm mất executable bit của <code>node-pty/spawn-helper</code>; Homebrew Node fixture mang
+            dylink không portable; SEA binary không có fuse mà injector đòi. Đây là thiếu/drift prerequisite
+            local có bằng chứng trực tiếp, nên contract chuyển authority sang CI và Packaged smoke, không ghi
+            <code>[!]</code>. Nếu Actions đỏ thì P25.3 vẫn bị khóa.
+          </p>
+        </article>
+      </section>
     </main>
   </body>
 </html>

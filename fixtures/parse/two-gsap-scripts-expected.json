@@ -2,11 +2,14 @@
   "elements": [
     {
       "id": "#target",
+      "authoredId": null,
       "label": "#target",
       "kind": "element",
       "start": null,
       "duration": null,
       "src": null,
+      "layoutOffset": null,
+      "positionEditable": false,
       "effects": [
         {
           "id": "0:#target-to-0-position",

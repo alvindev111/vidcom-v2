@@ -7,7 +7,7 @@ import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
 import { REPOSITORY_ROOT } from "./artifact-layout.mjs";
-import { assertEncoders } from "./build-ffmpeg.mjs";
+import { assertDecoders, assertEncoders } from "./build-ffmpeg.mjs";
 import { readReleaseMediaProvenance } from "./build-release-media.mjs";
 import { writeRuntimeInputs } from "./build-runtime-inputs.mjs";
 import { hostPlatformTag } from "./stage-artifact-runtime.mjs";
@@ -232,6 +232,7 @@ export async function preparePackagedRuntime(options = {}) {
     await chmod(ffprobePath, 0o755);
   }
   assertEncoders(ffmpegPath);
+  assertDecoders(ffmpegPath);
 
   return writeRuntimeInputs({
     artifactVersion,

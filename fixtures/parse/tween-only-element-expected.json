@@ -2,11 +2,14 @@
   "elements": [
     {
       "id": "#motion-only",
+      "authoredId": null,
       "label": "#motion-only",
       "kind": "element",
       "start": null,
       "duration": null,
       "src": null,
+      "layoutOffset": null,
+      "positionEditable": false,
       "effects": [
         {
           "id": "0:#motion-only-from-1250-position",

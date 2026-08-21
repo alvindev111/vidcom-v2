@@ -1,16 +1,14 @@
 "use client";
 
 import * as React from "react";
-import { EyeOffIcon, ImageOffIcon, SparkleIcon } from "lucide-react";
+import { EyeOffIcon, SparkleIcon } from "lucide-react";
 
+import type { ApiRequestInit } from "@/lib/api/services";
 import { cn } from "@/lib/utils";
 import { formatTimecode } from "@/lib/studio/format";
 import type { Scene } from "@/lib/studio/types";
-import {
-  frameUrl,
-  groupOf,
-  type SnapshotFrame,
-} from "@/lib/studio/snapshots";
+import { groupOf } from "@/lib/studio/snapshots";
+import { StoryboardThumbnail } from "./storyboard-thumbnail";
 
 /**
  * Memoized: the playhead crossing a scene boundary re-renders the storyboard,
@@ -20,8 +18,10 @@ import {
 export const SceneCard = React.memo(function SceneCard({
   scene,
   index,
-  frame,
-  projectSlug,
+  projectId,
+  projectRevision,
+  frameRate,
+  requestInit,
   selected,
   live,
   hidden,
@@ -36,8 +36,10 @@ export const SceneCard = React.memo(function SceneCard({
   scene: Scene;
   /** Position in the storyboard, 1-based. */
   index: number;
-  frame: SnapshotFrame | null;
-  projectSlug: string;
+  projectId: string;
+  projectRevision: number;
+  frameRate: number;
+  requestInit: ApiRequestInit;
   selected: boolean;
   live: boolean;
   /** Hidden from the preview by the scene's preview settings. */
@@ -52,6 +54,13 @@ export const SceneCard = React.memo(function SceneCard({
 }) {
   const end = scene.start + scene.duration;
   const group = groupOf(scene);
+  const thumbnailRequest = React.useMemo(() => ({
+    projectId,
+    projectRevision,
+    sceneId: scene.id,
+    duration: scene.duration,
+    frameRate,
+  }), [frameRate, projectId, projectRevision, scene.duration, scene.id]);
 
   return (
     <div
@@ -93,46 +102,34 @@ export const SceneCard = React.memo(function SceneCard({
           event.preventDefault();
           onReorderKeyDown(scene, event.key === "ArrowLeft" ? -1 : 1);
         }}
-        className="flex w-full flex-col text-left"
+        className="absolute inset-0 z-10 rounded-md text-left focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-studio-accent"
         aria-label={`Select ${scene.id}; drag or press Alt+Arrow to reorder`}
-      >
+      />
       <span
         className={cn(
           "relative block aspect-video overflow-hidden bg-black",
           hidden && "opacity-40 grayscale",
         )}
       >
-        {frame ? (
-          // Frame captured by `hyperframes snapshot`, served from the project.
-          // eslint-disable-next-line @next/next/no-img-element
-          <img
-            src={frameUrl(projectSlug, frame)}
-            alt={`Frame at ${frame.seconds}s`}
-            className="h-full w-full object-cover"
-          />
-        ) : (
-          <span className="text-muted-foreground absolute inset-0 grid place-items-center gap-1 text-center">
-            <ImageOffIcon className="mx-auto size-4" />
-          </span>
-        )}
+        <StoryboardThumbnail request={thumbnailRequest} requestInit={requestInit} />
 
-        <span className="absolute top-1 left-1 rounded bg-black/70 px-1.5 py-0.5 font-mono text-[10px] text-white">
+        <span className="pointer-events-none absolute top-1 left-1 z-30 rounded bg-black/70 px-1.5 py-0.5 font-mono text-[10px] text-white">
           {index}
         </span>
 
         {group !== "scene" ? (
-          <span className="bg-studio-accent/85 text-studio-accent-foreground absolute top-1 right-1 flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-medium">
+          <span className="bg-studio-accent/85 text-studio-accent-foreground pointer-events-none absolute top-1 right-1 z-30 flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-medium">
             <SparkleIcon className="size-2.5" />
             {group}
           </span>
         ) : null}
 
         {live ? (
-          <span className="bg-studio-accent absolute bottom-1 right-1 size-2 rounded-full ring-2 ring-black/40" />
+          <span className="bg-studio-accent pointer-events-none absolute bottom-1 right-1 z-30 size-2 rounded-full ring-2 ring-black/40" />
         ) : null}
       </span>
 
-      <span className="flex flex-col gap-0.5 px-2 py-1.5">
+      <span className="pointer-events-none flex flex-col gap-0.5 px-2 py-1.5">
         <span className="flex items-center gap-1.5 truncate text-xs font-medium">
           {hidden ? (
             <EyeOffIcon className="text-muted-foreground size-3 shrink-0" />
@@ -144,7 +141,6 @@ export const SceneCard = React.memo(function SceneCard({
           {scene.duration}s
         </span>
       </span>
-      </button>
     </div>
   );
 });

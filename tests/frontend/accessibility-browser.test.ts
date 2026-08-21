@@ -82,6 +82,10 @@ describe("studio accessibility gate", () => {
 
       await activateTab(page, "Video Scene");
       await audit(page, "scene editor");
+      for (const inspector of ["Look & subtitles", "Motion & sound", "Add scene", "Music"]) {
+        await activateTab(page, inspector);
+        await audit(page, `scene inspector: ${inspector}`);
+      }
       await activateTab(page, "AI Composer");
       await audit(page, "AI composer");
     });

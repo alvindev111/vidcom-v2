@@ -40,6 +40,8 @@ function model(): CompositionModel {
     scenes: [{
       id: "scene-1",
       src: "compositions/scene-1.html",
+      sourceFile: "compositions/scene-1.html",
+      role: "story",
       start: 4,
       duration: 5,
       trackIndex: 1,

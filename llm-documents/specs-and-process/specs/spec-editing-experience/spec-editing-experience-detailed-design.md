@@ -1,8 +1,14 @@
-# Spec Editing Experience — Detail Design (bản 13)
+# Spec Editing Experience — Detail Design (bản 14)
 
-> **Reference**: [Detailed Goals](./spec-editing-experience-detailed-goal.md) — **bản 8, Approved 2026-08-20 cho remediation** (R1–R12 giữ nguyên; R13–R15 đóng deep review)
-> **Next**: [Implementation Checklist](./spec-editing-experience-implementation-checklist.md) — remediation P12–P18 Approved 2026-08-20
+> **Reference**: [Detailed Goals](./spec-editing-experience-detailed-goal.md) — **bản 9, Approved 2026-08-21 cho runtime UX remediation** (R1–R15 giữ nguyên; thêm R16–R20)
+> **Next**: [Implementation Checklist](./spec-editing-experience-implementation-checklist.md) — P19–P25 đã được lập cho R16–R20, đang chờ duyệt riêng trước code execution
 > **Tham chiếu UX**: [`reference-editor/`](./reference-editor/README.md)
+>
+> **Bản 14** (2026-08-21). Bằng chứng chạy thật của project Odyssey cho thấy storyboard không tự dùng
+> pipeline thumbnail, canvas không có edit bridge, 19 audio đã decode nhưng bị silent fallback sau
+> lệnh Play qua `postMessage`, inspector đặt tên theo implementation và motion gate bỏ qua toàn bộ
+> inline story scene qua điều kiện `scene.src !== null`. Bản này thêm §26–§34 cho R16–R20, giữ nguyên
+> trust boundary bản 13: UI không được đọc authored DOM trực tiếp và mọi ghi vẫn qua `WriteAuthority`.
 >
 > **Bản 13** (2026-08-20). Deep review hậu triển khai phát hiện một trust boundary Critical, bốn lỗi
 > High ở filesystem/range serving, bảy lỗi Medium, một lỗi Low và ba governance gaps. Bản này thêm
@@ -84,7 +90,8 @@ caption cue, planner thumbnail); mọi thao tác file đi qua **use case Core** 
 
 **Links to Requirements**: §17 là ma trận đầy đủ **theo từng AC**. Bản đồ nhanh:
 R1 → §5.1–5.2 · R2 → §5.3–5.4 · R3 → §5.5–5.7 · R4 → §5.8–5.9 · R5 → §5.10–5.12 ·
-R6 → §5.13–5.15 · R7 + R9 → §5.16–5.17 · R8 → §5.18–5.19 · R10 → §5.20 · R11 → §5.21 · R12 → §5.22.
+R6 → §5.13–5.15 · R7 + R9 → §5.16–5.17 · R8 → §5.18–5.19 · R10 → §5.20 · R11 → §5.21 · R12 → §5.22 ·
+R13–R15 → §18–§25 · R16–R20 → §26–§34.
 
 ## 2. Design Scope
 
@@ -96,6 +103,9 @@ R6 → §5.13–5.15 · R7 + R9 → §5.16–5.17 · R8 → §5.18–5.19 · R10
 - Contract tập trung ở `packages/contracts`; bề mặt expose cả HTTP **và** MCP dùng chung đúng một
   schema, còn ngoại lệ browser-only D7/D9 vẫn không định nghĩa shape riêng trong route.
 - Lớp UI: reducer tương tác timeline (kéo, snap, chọn nhiều), storyboard, draft/conflict model, phím tắt, timecode theo khung.
+- Storyboard thumbnail dùng lại scheduler/cache R10; canvas Arrange qua bridge bounded + mutation Core;
+  audio có autoplay delegation và fallback user-activation trong preview principal; inspector có guidance
+  theo outcome; authoring kit + validator kiểm phase, seam, pattern diversity và narration coverage.
 
 ### Out of Scope
 - AI Composer trong app, render cloud, auto-update — Giai đoạn 6.
@@ -103,6 +113,9 @@ R6 → §5.13–5.15 · R7 + R9 → §5.16–5.17 · R8 → §5.18–5.19 · R10
 - Undo cho thao tác filesystem (upload, tạo/đổi tên/xoá từ cây file) — Goals R3.
 - Sort "Popular" / Favorites trong catalog.
 - Bảng SQLite mới cho lịch sử undo — OQ-2.
+- Resize/rotate/text/group/keyframe edit trên preview canvas; R17 chỉ đổi vị trí x/y.
+- Cho UI đọc `contentDocument` hoặc nhận file/source path từ authored preview; R13 vẫn là bất biến.
+- Một image similarity/AI visual judge chạy ngầm trong validator; review contact sheet vẫn là gate tường minh.
 
 ## 3. Research Summary
 
@@ -129,6 +142,29 @@ R6 → §5.13–5.15 · R7 + R9 → §5.16–5.17 · R8 → §5.18–5.19 · R10
 ### Finding 6: steering đã chốt map mã lỗi và luật cache registry
 - **Key insight**: [04-api-design §3.3](../../../steering/04-api-design.md) — invariant nghiệp vụ là **422**, quá lớn **413**, chưa hỗ trợ loại **415**, xung đột hash **409**, và bảng map nằm **một chỗ ở middleware**. [07-data-and-storage §7](../../../steering/07-data-and-storage.md) — registry cache phải persist trong `<app-data>/cache`, **có TTL**, **không** cache negative vô hạn, và offline **không được chờ mạng**.
 - **Impact**: §8 và §5.16 viết theo đúng hai luật này (blocker 8 và 10).
+
+### Finding 7: storyboard và timeline đang dùng hai nguồn thumbnail khác nhau
+- **Key insight**: `SceneStoryboard` chỉ quét `snapshots/frame-*-at-*.png` từ `tree`, trong khi
+  `TimelineThumbnailStrip` gọi route NDJSON `/thumbnails` đã có scheduler, fingerprint, cache, abort và
+  placeholder typed. Vì vậy snapshot sinh xong nhưng tree chưa refresh vẫn để toàn bộ card đen.
+- **Impact**: §26 bỏ snapshot-file khỏi storyboard và tái sử dụng nguyên pipeline R10; không thêm job,
+  cache hay profile ảnh thứ hai.
+
+### Finding 8: user activation mất qua bridge lồng hai iframe
+- **Key insight**: `hyperframes-player` 0.7.86 đã tạo inner iframe với `allow="autoplay; fullscreen"`
+  và có parent-media proxy + `playbackerror`; bridge frame ngoài ở
+  `hyperframes-player-environment.ts` lại không delegate autoplay. Lệnh Play từ UI đi qua
+  `postMessage`, nên không còn synchronous user activation. Trong project Odyssey, 19 audio đều
+  `readyState=4`, không lỗi decode, nhưng sau Play media active thành `muted:true, paused:true`.
+- **Impact**: §28 thêm `allow="autoplay"` ở outer frame, surface `playbackerror`, pause fail-closed và
+  fallback `Enable audio` nhận click ngay trong preview principal.
+
+### Finding 9: `scene.src !== null` đang là proxy sai cho “story scene”
+- **Key insight**: diagnostics hiện chỉ gọi `storyMotionDiagnostics` cho mounted sub-composition.
+  Inline content scene bị loại cùng root/utility scene; `data-no-timeline` + root loop vì thế có thể
+  cho UI báo “no timed elements” mà render gate không chặn.
+- **Impact**: §30 thêm `sourceFile`, `role` và authoring profile tường minh; motion evidence được gán
+  theo owner scene, không suy ra story-ness từ việc có file `src` riêng hay không.
 
 ## 4. Architecture
 
@@ -2362,3 +2398,548 @@ trước I/O cuối phải zero escape.
 - **Confirmed by**: người dùng yêu cầu `/goal Fix các review` và khóa CI runner/evidence contract.
 - **Scope**: C-01, H-01–H-04, M-01–M-07, L-01, G-01–G-03; không hạ severity/không defer gate.
 - **Execution**: P12–P18 được phép chạy; design drift material cập nhật phần này trước code tiếp.
+
+## 26. Runtime UX remediation architecture (bản 14)
+
+### 26.1 System overview
+
+Không thêm editor engine hoặc nguồn state thứ hai. Năm remediation treo vào bốn capability đã có:
+
+```mermaid
+flowchart LR
+  SB[Storyboard cards] --> TR[Thumbnail route R10]
+  TR --> TS[Bounded scheduler + fingerprint cache]
+
+  UI[Studio UI principal] --> AO[Arrange overlay + pure planner]
+  AO -->|bounded bridge v2| PH[preview.localhost host]
+  PH --> AD[Authored document]
+  AO -->|one commit| EP[setElementPosition use case]
+  EP --> WA[WriteAuthority + receipt/undo]
+
+  PB[Playback bar] -->|play command| PH
+  PH --> HP[HyperFrames player + parent media proxy]
+  HP -->|playbackerror| PH
+
+  AK[Agent-kit v9] --> MP[Story motion profile]
+  MP --> DG[Diagnostics + render gate]
+  IR[Inspector rail metadata] --> UI
+```
+
+- **R16** chỉ thêm một consumer UI cho thumbnail service R10.
+- **R17** thêm read-only arrange bridge và đúng một authored mutation mới.
+- **R18** sửa quyền autoplay/feedback của bridge; không tự trộn lại soundtrack.
+- **R19** là metadata + component composition ở UI, không đổi dữ liệu project.
+- **R20** mở rộng parser/diagnostics và agent-kit; render vẫn dùng source HyperFrames hiện tại.
+
+### 26.2 Main flows
+
+```mermaid
+sequenceDiagram
+  participant User
+  participant Overlay as Arrange overlay (UI)
+  participant Host as Preview host
+  participant Core
+  participant WA as WriteAuthority
+  User->>Overlay: bật Arrange, click frame
+  Overlay->>Host: hit-test(normalized point)
+  Host-->>Overlay: sceneId + data-hf-id + rect only
+  Overlay->>Overlay: cross-check server Scene model
+  User->>Overlay: drag
+  Overlay->>Host: preview-offset (rAF, bounded)
+  User->>Overlay: pointerup
+  Overlay->>Core: set position + expectedContentHash
+  Core->>WA: one composition operation
+  WA-->>Overlay: file + revision + changeSeq
+  Overlay->>Host: normal double-buffer reload
+```
+
+```mermaid
+stateDiagram-v2
+  [*] --> AudioReady
+  AudioReady --> Playing: Play + media succeeds
+  Playing --> Paused: Pause
+  AudioReady --> ActivationRequired: playbackerror/NotAllowed
+  ActivationRequired --> Playing: click Enable audio inside preview host
+  ActivationRequired --> Paused: cancel/leave preview
+  Playing --> AudioError: decode/resource failure
+  AudioError --> AudioReady: source fixed + healthy reload
+```
+
+## 27. Storyboard thumbnails (R16)
+
+### 27.1 Components
+
+`SceneStoryboard` không còn nhận `tree` để tìm `snapshots/*.png`. Nó render một
+`StoryboardThumbnail` cho từng content scene:
+
+```ts
+interface StoryboardThumbnailProps {
+  projectId: string;
+  scene: Pick<Scene, "id" | "duration">;
+  onStateChange?: (state: StoryboardThumbnailState) => void;
+}
+type StoryboardThumbnailState =
+  | { kind: "idle" | "loading" }
+  | { kind: "ready"; url: string; atSeconds: number }
+  | { kind: "placeholder" | "error"; reason: string; retryable: boolean };
+
+function representativeSceneTime(duration: number, fps: number): number;
+```
+
+- Thời điểm mặc định là **55% scene**, lượng tử theo frame và clamp vào frame hợp lệ cuối. 55% tránh
+  frame mở đầu/entrance nhưng vẫn nằm trước phần hold cuối; hàm thuần và deterministic.
+- Request giữ `profile:"timeline-v1"`, một mark scene-local, đọc cùng NDJSON contract. Không có
+  `storyboard-v1`, snapshot job hoặc file ảnh trong project.
+- `IntersectionObserver` root theo pane storyboard, `rootMargin:"100% 0px"`: chỉ card visible cộng
+  một viewport trước/sau mới request. Ra ngoài vùng đệm abort `fetch`; response generation cũ không
+  được ghi state mới.
+- `ready` dùng immutable URL từ route. `placeholder` giữ `reason`; capacity/source-changing có Retry.
+  Network/parse error thành error card, không dùng `<img>` hỏng làm feedback.
+- Source/media/font/runtime invalidation vẫn do fingerprint §5.20; card mới request lại khi
+  `project changeSeq` hoặc scene timing đổi. UI không tự sáng tạo cache key.
+
+### 27.2 Canonical media reference
+
+Adapter canonicalize local `src` trước khi tạo `SceneMedia`: strip query/fragment bằng URL parser trên
+base project giả, decode đúng một lần, rồi đưa path qua resolver project. `src` authored vẫn giữ để
+serialize; `url/path/missing` dùng canonical file path. Remote/data/blob URL không đi vào project file
+lookup. Nhờ đó `assets/image.jpg#trap` và `assets/image.jpg?v=2` không thành missing giả (R16.6).
+
+## 28. Preview bridge v2: Arrange + audio (R17, R18, R13)
+
+### 28.1 Security boundary và protocol
+
+Bridge tăng `PREVIEW_BRIDGE_VERSION` từ 1 lên 2; v1 và v2 không trộn trong cùng frame. UI vẫn không
+đọc `contentDocument`. Mọi payload dùng closed schema, finite numbers, string ≤255 ký tự, và tối đa
+một target/request.
+
+```ts
+interface PreviewArrangeTarget {
+  sceneId: string;
+  hfId: string;
+  kind: "element" | "caption";
+  rect: { x: number; y: number; width: number; height: number };
+  canvas: { width: number; height: number };
+  editable: boolean;
+  reason: "missing_id" | "locked" | "non_axis_aligned" | "authored_translate" | null;
+}
+
+type PreviewParentCommandV2 = PreviewParentCommandV1
+  | { type: "set-arrange-mode"; enabled: boolean; requestId: string; /* envelope */ }
+  | { type: "hit-test"; xRatio: number; yRatio: number; requestId: string; /* envelope */ }
+  | { type: "preview-offset"; sceneId: string; hfId: string;
+      offsetX: number; offsetY: number; requestId: string; /* envelope */ }
+  | { type: "reset-offset"; sceneId: string; hfId: string; requestId: string; /* envelope */ };
+
+type PreviewHostMessageV2 = PreviewHostMessageV1
+  | { type: "arrange-target"; requestId: string; target: PreviewArrangeTarget | null; /* envelope */ }
+  | { type: "audio-state"; requestId: string | null;
+      state: "ready" | "playing" | "paused" | "activation-required" | "error";
+      error: string | null; /* envelope */ };
+```
+
+- Hit-test chạy trong trusted preview host qua `player.iframeElement`, lấy `elementFromPoint`, rồi đi
+  lên ancestor gần nhất có `data-hf-id`. Host chỉ trả geometry + IDs; không trả text, HTML, selector,
+  source path hay URL.
+- UI chỉ chấp nhận target nếu `{sceneId,hfId}` tồn tại trong `Scene` model do server parse. File owner
+  lấy từ model đó, không lấy từ authored message. Target mismatch thành locked, không có mutation.
+- Arrange mode đặt overlay UI `pointer-events:auto`; authored frame không nhận click/drag. Preview
+  host chỉ áp draft custom properties cho exact target đã hit-test trong request generation hiện tại.
+- `preview-offset` được rAF-throttle, clamp số hữu hạn trong ±2 lần canvas dimension; không tạo source
+  write, không vào audit và bị reset khi Esc/mode off/reload/dispose.
+
+### 28.2 Coordinate and snap planner
+
+```ts
+interface CanvasDragInput {
+  pointerStart: { x: number; y: number };
+  pointerNow: { x: number; y: number };
+  viewport: { x: number; y: number; width: number; height: number };
+  canvas: { width: number; height: number };
+  targetRect: { x: number; y: number; width: number; height: number };
+  existingOffset: { x: number; y: number };
+  snap: boolean;
+}
+interface CanvasDragPlan {
+  offsetX: number;
+  offsetY: number;
+  absoluteX: number;
+  absoluteY: number;
+  guides: Array<"left" | "center-x" | "right" | "top" | "center-y" | "bottom" | "safe">;
+  changed: boolean;
+}
+```
+
+Pure planner chuyển screen delta qua scale `canvas.width / viewport.width`, snap theo 8 px màn hình,
+clamp toàn rect trong canvas. Arrow dùng delta authored 1 px; Shift 10 px. Non-axis-aligned/3D
+matrix hoặc element đã authored `translate` mà chưa do VidCom sở hữu bị lock, tránh ghi offset không
+thể round-trip.
+
+### 28.3 Audio delegation và fail-closed playback
+
+- Outer bridge iframe được đặt `allow="autoplay"` **trước** `src`; inner player đã có cùng policy.
+- Preview host lắng `playbackerror`, `error`, `play`, `pause`, `volumechange` từ
+  `hyperframes-player`. Khi Play gây playback error, host gọi `pause()` ngay, phát
+  `audio-state:activation-required` và hiện button **Enable audio** bên trong preview host. Vì click
+  diễn ra cùng principal/call stack với parent-media proxy, `player.muted=false; player.play()` nhận
+  user activation thật.
+- UI không được báo `paused:false, muted:false` nếu host đang activation-required/error. Playback bar
+  lấy state hợp nhất từ bridge, không tự optimistic-flip trước ACK.
+- Decode/resource failure tăng preview health resource error như cũ và surface track/scene từ
+  server-owned media manifest; message từ authored script không được tự đặt lỗi hiển thị.
+- Double-buffer chỉ swap candidate khi visual health đạt. Candidate không tự play audio trong
+  preflight; sau swap transport được áp, audio failure giữ candidate paused và hiện recovery, không
+  để hình chạy câm.
+
+## 29. Authored element position mutation (R17)
+
+### 29.1 Parsed model additions
+
+```ts
+interface SceneDto {
+  // existing fields...
+  sourceFile: RelPath;
+  role: "root" | "story" | "transition" | "overlay" | "credit" | "utility";
+}
+interface SceneElementDto {
+  // existing fields...
+  authoredId: string | null; // exact data-hf-id; structural DOM path is read-only
+  layoutOffset: { x: number; y: number } | null;
+  positionEditable: boolean;
+}
+```
+
+`sourceFile` là file thật sở hữu host: entry cho scene inline, sub-composition path cho scene mounted.
+`role` ưu tiên authored `data-scene-role`; nếu thiếu thì root/transition/overlay suy ra như hiện tại,
+content còn lại là story. Generated caption container nhận stable `data-hf-id="captions-<sceneId>"`.
+
+### 29.2 Core/adapter operation
+
+```ts
+type CompositionOp = ExistingCompositionOp | {
+  kind: "setLayoutOffset";
+  target: string; // data-hf-id, not CSS selector
+  value: { x: number; y: number };
+};
+
+interface SetElementPositionInput {
+  projectId: ProjectId;
+  sceneId: string;
+  sourceFile: RelPath;
+  elementId: string;
+  offsetX: number;
+  offsetY: number;
+  expectedContentHash: ContentHash;
+}
+```
+
+Use case parse current composition, cross-check scene role/source and exact `authoredId`, validate
+finite/clamped coordinates, rồi gọi adapter operation. Adapter chỉ được đặt marker
+`data-vidcom-layout-offset` và sửa hai CSS custom properties allowlisted trên inline style:
+
+```css
+--vidcom-layout-x: 120px;
+--vidcom-layout-y: -24px;
+```
+
+Document builder inject cùng rule vào **preview và render**:
+
+```css
+[data-vidcom-layout-offset] {
+  translate: var(--vidcom-layout-x, 0px) var(--vidcom-layout-y, 0px);
+}
+```
+
+Individual `translate` không ghi đè GSAP `transform`, nên choreography giữ nguyên. Target đã dùng
+authored `translate` bị lock trừ khi marker đã là VidCom-owned. Adapter dùng CSS parser/serializer
+hiện có, không nối chuỗi style. Zero delta xoá marker + hai property và không để style rỗng.
+
+Mutation là một `WriteAuthority.mutateSource` với expected hash, receipt + undo như setText/timing.
+Không có save trong lúc drag. Reload, conflict và latest-wins dùng R4/R8 hiện có.
+
+## 30. Story motion profile and gate (R20)
+
+### 30.1 Authoring metadata
+
+Agent-kit v9 và materializer phải author trên mỗi story scene:
+
+```html
+<section data-composition-id="s03"
+  data-scene-role="story"
+  data-story-pattern="state-transformation"
+  data-seam-kind="transform"
+  data-seam-token="red-thread">
+</section>
+```
+
+- `data-story-pattern`: identifier bounded; skill chọn từ catalog pattern hiện có hoặc một tên
+  content-specific ổn định, không được dùng `fade`, `slide`, `cards` như primary pattern.
+- `data-seam-kind`: `carry | transform | contrast`; scene đầu không cần seam.
+- `data-seam-token`: object/shape/color/direction/question cụ thể, không phải “smooth transition”.
+- `data-scene-role=credit|utility|overlay|transition` loại scene khỏi narration/diversity gate nhưng
+  không miễn các diagnostic timing/security chung.
+
+### 30.2 Evidence extraction
+
+```ts
+interface StoryMotionProfile {
+  sceneId: string;
+  role: SceneDto["role"];
+  duration: number;
+  pattern: string | null;
+  seam: { kind: "carry" | "transform" | "contrast"; token: string } | null;
+  phaseStarts: number[];
+  meaningfulGroups: string[];
+  unresolvedEffects: number;
+  narrationSeconds: number;
+}
+
+function storyCompositionDiagnostics(
+  scenes: readonly SceneDto[],
+  profile: { strictAgentStory: boolean },
+): Diagnostic[];
+```
+
+- Parser gán root GSAP tween về owner scene khi selector statically resolve. Tween loop/dynamic target
+  không resolve là unresolved, **không** trở thành evidence cho mọi scene.
+- `data-no-timeline` chỉ ẩn row UI; parser motion evidence không lọc theo attribute này.
+- Story scene cần ít nhất ba phase có start khác nhau ≥0.1 s, trải qua first/middle/final third; ít
+  nhất hai phase phải có group `scale|rotation|other` hoặc structural state change. Opacity/position
+  riêng không meaningful.
+- Scene >10 s thiếu generated narration hoặc state change ở middle/final third trả
+  `story-scene-static-too-long`.
+- Rolling window bốn story scene cần ≥3 pattern; adjacent duplicate chỉ qua khi seam cùng token và
+  kind `transform|carry`, nếu không trả `story-pattern-repeated`.
+- Scene sau scene đầu thiếu seam trả `story-seam-missing` ở strict agent story.
+- Narration coverage lấy union của generated, non-stale narration windows đã clamp vào scene; mẫu số
+  là union duration của role story, bỏ credit/utility. <75% trả `story-narration-sparse`.
+- `strictAgentStory` đến từ materializer/agent-kit project marker version ≥9. Legacy project vẫn bị
+  per-scene shallow/unverified gate (kể cả inline) nhưng metadata thiếu chỉ warning, tránh biến project
+  thủ công cũ thành không render được vì chưa có seam/pattern fields.
+
+### 30.3 Skill and bundle
+
+- Bump `x-vidcom-agent-kit` 8 → 9.
+- Strengthen `AGENTS.md`, `CLAUDE.md`, `vidcom-motion`, `vidcom-scene`, `vidcom-render`: beat map trước
+  source; scene 6–10 s; three-phase distribution; rolling-four diversity; seam token; narration
+  coverage; contact-sheet comparison.
+- Generated bundle chỉ sinh bằng script canonical của package; không hand-edit JSON string.
+- `validate_project`, snapshot, render đều chạy cùng Core diagnostics. `bestEffort` không bypass.
+- Fixture bắt buộc: 18 inline scene, mỗi scene 8.5 s, root `forEach` cùng một loop, children
+  `data-no-timeline`; expected block gồm scene IDs thay vì warning chung ở root.
+
+## 31. Inspector information architecture (R19)
+
+Rail dùng một config duy nhất cho visible label, help, scope và primary action:
+
+```ts
+interface InspectorPaneDefinition {
+  id: "scene" | "look" | "motion" | "templates" | "music";
+  label: "Scene" | "Look & subtitles" | "Motion & sound" | "Add scene" | "Music";
+  description: string;
+  scope: "selected-scene" | "project";
+  primaryAction: string | null;
+}
+```
+
+- `Preview editor` đổi thành `Look & subtitles`; `Motion` thành `Motion & sound`; `Templates` thành
+  `Add scene`. URL/state nội bộ có thể giữ ID cũ qua migration alias, visible/ARIA label dùng tên mới.
+- Mỗi panel bắt đầu bằng `InspectorGuide`: heading focusable, mô tả “thay đổi scene hay toàn project”,
+  current state và next action. Tabs có `aria-controls`, arrow-key navigation, focus heading khi đổi tab.
+- Scene detail nhóm `Timing / Media / Sound / Script / Narration`; mỗi section có một câu outcome.
+  `Test transition/reveal` hiển thị playing/stopped và tên sound; disabled có `aria-describedby` reason.
+- Không hướng người dùng chạy CLI trong empty state nếu UI có capability. Thumbnail/transition/template
+  dùng Retry/Browse/Add action tương ứng.
+- Onboarding không là tour/modal mới; guidance ở ngay panel để luôn còn sau lần đầu.
+
+## 32. Persistence, API, errors and non-functional constraints
+
+### 32.1 Persistence
+
+- **SQLite**: không thêm/sửa bảng, không migration/backfill.
+- **Project source**: chỉ R17 ghi hai custom property vào file sở hữu target; existing receipt/audit/
+  undo transaction bao trọn write.
+- **Derived cache**: R16 dùng cache thumbnail 512 MB hiện có; không thêm retention.
+- **Agent-kit**: source skills + generated bundle version 9 là artifact code, không phải project data.
+- **Preview/inspector state**: arrange selection/draft/audio activation/tab guidance chỉ trong phiên.
+
+### 32.2 HTTP and MCP contracts
+
+Không thêm endpoint thumbnail/audio/inspector. Thêm đúng một source mutation:
+
+`PUT /v1/projects/:id/scenes/:sceneId/elements/:elementId/position`
+
+```ts
+const SetElementPositionRequestSchema = z.strictObject({
+  sourceFile: RelativePathSchema,
+  offsetX: z.number().finite(),
+  offsetY: z.number().finite(),
+  expectedContentHash: ContentHashSchema,
+});
+const SetElementPositionResponseSchema = z.strictObject({
+  changed: z.boolean(),
+  file: ProjectFileSchema,
+  revision: z.number().int().nonnegative(),
+  diagnostics: z.array(DiagnosticSchema),
+  changeSeq: z.number().int().nonnegative().nullable(),
+});
+```
+
+- HTTP session/project ownership như mutation source khác; Origin/Fetch-Metadata R13 áp dụng.
+- MCP `set_element_position` dùng cùng schema/use case để không mở logic route thứ hai. Input được lấy
+  từ current `list_scenes/read_composition`, không nhận selector hay absolute path.
+- Idempotent no-change: cùng offset hiện tại trả `changed:false`, không revision/receipt mới.
+
+### 32.3 Error surfaces
+
+| Error | Domain/HTTP | UI recovery |
+|---|---:|---|
+| thumbnail capacity/source changing | placeholder/200 NDJSON | Retry khi card còn visible |
+| thumbnail process/dependency fail | placeholder/200 NDJSON | reason per card; scene khác tiếp tục |
+| arrange target không mapped/không editable | local locked | hướng dẫn thêm `data-hf-id` hoặc bỏ authored translate |
+| position ngoài canvas/NaN | validation/422 | giữ draft, field/guide message |
+| source hash đổi | write conflict/409 | Reload/Cancel, không ghi đè |
+| audio activation blocked | bridge state, không HTTP | pause + Enable audio trong host |
+| audio resource/decode fail | preview unhealthy | nêu scene/track, sửa asset rồi reload |
+| story phase/pattern/seam/coverage fail | diagnostic error | scene IDs + rule + hướng sửa |
+
+Không log token/capability, authored text, raw HTML hoặc local absolute path. Audio playback error log chỉ
+gồm stable reason + project/scene ID đã redacted theo logger hiện có.
+
+### 32.4 Performance, security, accessibility
+
+- Storyboard: 100 scene chỉ mount/request visible ±1 viewport; abort ra khỏi range; không quá scheduler
+  global 2 running/8 queued đã có.
+- Arrange: pointermove tối đa một bridge message/animation frame; hit-test/descriptor <500 ms;
+  mutation chỉ pointerup. Overlay không làm `setState` theo playhead tick.
+- Audio: play ACK/activation-required trong 500 ms; A/V settle ≤1 frame sau seek/rate.
+- Bridge malicious tests thử fake scene/source/id, oversized payload, NaN, stale nonce, cross origin;
+  tất cả bị reject trước mutation.
+- Keyboard: Arrange mode, Tab selection, arrows 1/10 px, Esc cancel; rail arrow navigation và heading
+  focus; Retry/Enable audio có accessible name/status live region.
+
+## 33. Decisions, testing and traceability
+
+### Decision 16 — Reuse timeline thumbnail pipeline for storyboard
+**Context**: snapshot files là stale projection và cần terminal/tree refresh.
+
+**Options**: giữ snapshot files · tạo storyboard job/profile · dùng route R10.
+
+**Decision**: dùng route/profile/cache R10 với một representative mark và card virtualization.
+
+**Rationale**: chỉ pipeline R10 đã có fingerprint, project isolation, abort, bounds và typed failure.
+
+**Implications**: bỏ `tree/collectFrames` khỏi storyboard; test UI mới, không backend/cache mới.
+
+### Decision 17 — Canvas edits through bounded hit-test bridge and semantic offset op
+**Context**: UI principal không được đọc DOM, nhưng cần chọn đúng element và không phá GSAP transform.
+
+**Options**: đọc DOM trực tiếp · overlay DOM mirror · bounded hit-test + CSS custom-property offset.
+
+**Decision**: preview host hit-test; UI cross-check server model; Core `setLayoutOffset` ghi hai custom
+properties và shared render rule.
+
+**Rationale**: giữ R13, single-writer, undo và tách base offset khỏi animation transform.
+
+**Implications**: chỉ target `data-hf-id` + axis-aligned an toàn editable; resize/rotate/keyframe defer.
+
+### Decision 18 — Delegate autoplay and recover inside preview principal
+**Context**: postMessage không truyền user activation; cùng-origin UI would break preview isolation.
+
+**Options**: đưa preview về UI origin · parent-own toàn soundtrack · autoplay delegation + in-frame
+activation fallback.
+
+**Decision**: outer `allow=autoplay`, surface player `playbackerror`, pause fail-closed, button Enable
+audio trong preview host.
+
+**Rationale**: tận dụng parent-media proxy upstream, không duplicate scheduler/mixer, giữ R13.
+
+**Implications**: bridge v2/audio state + real-browser media assertions bắt buộc.
+
+### Decision 19 — Explicit scene role/source and strict agent-story profile
+**Context**: `src !== null` vừa mất inline story scene vừa lẫn file ownership/role.
+
+**Options**: giữ heuristic · chặn mọi scene như nhau · thêm source/role + strict marker.
+
+**Decision**: parser xuất `sourceFile`/`role`; per-scene gate áp cho mọi story scene, cross-scene
+metadata gate bắt buộc với agent-kit/materializer v9 và warning cho legacy thiếu metadata.
+
+**Rationale**: bắt đúng video agent tạo mà không làm utility/legacy project bất ngờ không render được.
+
+**Implications**: contract/model fixtures đổi; bundle version bump; diagnostics mới.
+
+### Decision 20 — Inline contextual guidance, no modal tour
+**Context**: tab hiện đặt tên theo implementation và người dùng không biết hành động tạo kết quả gì.
+
+**Options**: tooltip-only · onboarding tour · pane metadata + inline guide.
+
+**Decision**: config rail duy nhất + guide luôn hiện + disabled reason/actionable empty state.
+
+**Rationale**: discoverable ở đúng thời điểm, test accessibility được, không tạo state/tour mới.
+
+**Implications**: browser usability path và snapshot UI copy trở thành contract.
+
+### 33.1 Testing strategy
+
+| Level | Must cover | Tool/evidence |
+|---|---|---|
+| Unit | representative time, viewport range, media canonicalization; canvas coordinate/snap/clamp; bridge v2 strict parser; role/source/profile, phase/diversity/coverage diagnostics | Vitest node |
+| Adapter | `setLayoutOffset` CSS round-trip/no-op/remove; inline/mounted source ownership; root tween attribution; audio bridge events | Vitest + real temp filesystem |
+| Core/integration | position mutation expected hash, one receipt/undo/audit, no-change; thumbnail same cache/fingerprint; agent-kit v9 bundle sync | real SQLite + real filesystem, no `node:fs` mock |
+| Browser | card auto thumbnail/retry/abort; select/drag/keyboard/subtitle/conflict; malicious descriptor rejected; Play audible, seek/rate/mute/reload and activation fallback; inspector novice path | `Browser session`, Linux + Windows Chrome |
+| CI/static | typecheck, lint, boundaries, unit/integration, contracts, golden, schema drift, spec paths, build, runtime smoke | `CI`, 3 OS, FFmpeg required |
+| Visual/production | 18-scene repeated-loop fixture blocked; corrected video contact sheet covers opening/middle/payoff; VieNeu narration coverage and final MP4 | Actions artifacts + human review |
+
+Browser audio test kiểm **media thật** trong nested player: active narration/BGM có `paused=false`,
+`muted=false`, `currentTime` tăng; chỉ nhìn nút Pause hoặc transport time không được tính PASS. Canvas
+test đo pointerup→paint <500 ms và assert UI không đọc authored `contentDocument`.
+
+### 33.2 Traceability R16–R20
+
+| Requirement | Design | Verification |
+|---|---|---|
+| R16.1–16.5 | §27.1, Decision 16 | unit time/state; browser auto load/retry/no broken image |
+| R16.6 | §27.2 | adapter query/fragment fixtures + browser media card |
+| R16.7 | §27.1, §32.4 | 100-scene virtualization/abort test |
+| R17.1–17.2 | §28.1–28.2 | bridge + browser hit-test/drag/pause |
+| R17.3–17.4, 17.9 | §29.2, §32.2 | real FS/SQLite receipt/no-op/conflict/undo |
+| R17.5, 17.10 | §28.2 | pure snap/keyboard + browser guides/focus |
+| R17.6–17.8, 17.11 | §29.1–29.2 | caption stable id, transform-preserving render, locked-target cases |
+| R18.1–18.5 | §28.3, §32.3 | real browser audible/blocked/resource failure |
+| R18.6 | §33.1 | Browser session Linux + Windows artifact |
+| R19.1–19.5 | §31 | component/ARIA unit + browser keyboard |
+| R19.6 | §33.1 | browser novice task path without terminal |
+| R20.1–20.6 | §30.1–30.2 | Core fixtures phase/pattern/seam/root-loop |
+| R20.7 | §30.3, §33.1 | contact sheet + submitted human review |
+| R20.8 | §30.2 | duration/static/coverage unit + VieNeu artifact |
+| R20.9 | §30.3 | agent-kit sync/version + 18-scene regression fixture |
+
+### 33.3 Quality checklist
+
+**Completeness**
+- [x] R16–R20 đều có component, interface, failure/recovery và test owner.
+- [x] Persistence nêu rõ: không DDL; position ghi source qua `WriteAuthority`; cache giữ nguyên.
+- [x] HTTP + MCP position contract exact; bridge v2 closed schema; error map đầy đủ.
+
+**Clarity / feasibility**
+- [x] Mermaid có component, canvas flow và audio lifecycle.
+- [x] Không yêu cầu UI đọc authored DOM; không tạo editor engine/audio mixer/cache thứ hai.
+- [x] Coordinate, snap 8 px, bridge bounds, scene role và strict/legacy behavior đều xác định.
+
+**Decision discipline / traceability**
+- [x] Decision 16–20 có Context/Options/Decision/Rationale/Implications.
+- [x] Mọi AC R16–R20 map tới design + evidence trong §33.2; không có design orphan.
+
+## 34. Approval Gate bản 14
+
+> Không sửa implementation checklist cho R16–R20 và không viết production code trước khi gate này
+> được xác nhận tường minh.
+
+- **Status**: **Approved**
+- **Confirmed by**: người dùng (reply `approve`)
+- **Confirmation date**: 2026-08-21
+- **Scope**: §26–§33, R16–R20; R1–R15 và bằng chứng lịch sử không bị viết lại.
+- **Checklist authority**: được phép thêm phase R16–R20, skill/read-first, dependency order,
+  RED→GREEN gates và exact-source Actions evidence. Approval này **không** cho phép viết production
+  code cho đến khi addendum của implementation checklist được duyệt riêng. Không được đánh dấu PASS
+  bằng unit test cho canvas/audio/visual motion.

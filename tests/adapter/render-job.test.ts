@@ -166,7 +166,13 @@ async function addProject(
   await writeFile(path.join(projectRoot, "vidcom.json"), `${JSON.stringify({ id })}\n`);
   const previewSettings = `${JSON.stringify(DEFAULT_PREVIEW_SETTINGS)}\n`;
   await writeFile(path.join(projectRoot, "preview-settings.json"), previewSettings);
-  if (entry !== null) await writeFile(path.join(projectRoot, "index.html"), entry);
+  if (entry !== null) {
+    const authored = slug.startsWith("story-motion-")
+      ? entry
+      : entry.replace(/data-composition-id="(scene-[^"]+)"/gu,
+        'data-composition-id="$1" data-scene-role="utility"');
+    await writeFile(path.join(projectRoot, "index.html"), authored);
+  }
   dbRun(fixture.database, `INSERT INTO project_registry
     (id, workspace_root, slug, first_seen_at, last_seen_at) VALUES (?, ?, ?, ?, ?)`,
   id, fixture.workspaceRoot, slug, now, now);
@@ -486,8 +492,45 @@ describe("render job with real SQLite and filesystem", () => {
 
       await writeFile(path.join(project.projectRoot, "compositions/scene-1.html"), source(`
         tl.fromTo("#hero", { scale: 0.7 }, { scale: 1, duration: 0.6, ease: "expo.out" }, 0.2);
-        tl.to("#hero", { rotation: 8, duration: 0.6, ease: "sine.inOut" }, 1.2);`));
+        tl.to("#hero", { rotation: 8, duration: 0.6, ease: "sine.inOut" }, 1.2);
+        tl.to("#hero", { scale: 1.2, duration: 0.4, ease: "back.out" }, 2.2);`));
       await expect(enqueue(fixture, project.id)).resolves.toMatchObject({ ok: true });
+    } finally {
+      await fixture.database.destroy();
+    }
+  });
+
+  it("blocks all 18 inline data-no-timeline scenes hidden behind one repeated root loop", async () => {
+    const fixture = await baseFixture();
+    try {
+      const sceneIds = Array.from({ length: 18 }, (_, index) => `s${String(index + 1).padStart(2, "0")}`);
+      const sections = sceneIds.map((id, index) => `
+        <section data-composition-id="${id}" data-scene-role="story" data-story-pattern="repeated-loop"
+          data-seam-kind="contrast" data-seam-token="same-loop" data-no-timeline
+          data-start="${index * 15}" data-duration="15"><div class="card">${id}</div></section>`).join("");
+      const project = await addProject(fixture, "story-motion-repeated-18", `<!doctype html><html><body>
+        <main data-composition-id="main" data-width="320" data-height="180" data-duration="270">
+          ${sections}
+          <script>const tl = gsap.timeline({ paused: true });
+            document.querySelectorAll(".card").forEach((card) => {
+              tl.fromTo(card, { opacity: 0, y: 24 }, { opacity: 1, y: 0, duration: 0.4 });
+            });
+            window.__timelines = window.__timelines || {}; window.__timelines.main = tl;</script>
+        </main></body></html>`);
+      await writeFile(path.join(project.projectRoot, "hyperframes.json"), '{"vidcomAgentKitVersion":9}\n');
+
+      const result = await enqueue(fixture, project.id);
+      expect(result).toMatchObject({
+        ok: false,
+        error: {
+          code: ErrorCode.ProjectInvalid,
+          details: {
+            reason: "story-motion-shallow",
+            sceneIds: expect.arrayContaining(sceneIds),
+          },
+        },
+      });
+      expect(dbOne(fixture.database, "SELECT COUNT(*) AS count FROM job")).toEqual({ count: 0 });
     } finally {
       await fixture.database.destroy();
     }

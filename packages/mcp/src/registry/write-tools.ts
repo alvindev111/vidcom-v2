@@ -7,6 +7,8 @@ import {
   InstallMotionLibraryOutputSchema,
   SetSceneTimingInputSchema,
   SetSceneTimingOutputSchema,
+  SetElementPositionInputSchema,
+  SetElementPositionOutputSchema,
   SetTextInputSchema,
   SetTextOutputSchema,
   SaveFileInputSchema,
@@ -21,6 +23,7 @@ import {
   saveSourceFile,
   setSceneScript,
   setSceneTiming,
+  setElementPosition,
   type MotionLibraryInstallDependencies,
   type ProjectWriteDependencies,
 } from "@vidcom/core";
@@ -91,9 +94,36 @@ export function setSceneTimingTool(
   };
 }
 
+export function setElementPositionTool(
+  dependencies: WriteToolDependencies,
+): ToolDefinition<z.infer<typeof SetElementPositionInputSchema>, z.infer<typeof SetElementPositionOutputSchema>> {
+  return {
+    name: "set_element_position",
+    title: "Set element position",
+    level: "write",
+    description: [
+      "Use when moving one selected authored element or generated caption group by a base x/y offset.",
+      "Do not use for resize, rotation, motion keyframes, selectors, source paths, or elements reported as positionEditable=false.",
+      "Preconditions: sceneId, elementId and expectedContentHash must come from current list_scenes/read_composition state for the exact source owner.",
+      "Side effects: writes only VidCom-owned layout offset metadata, preserves authored transform motion, and commits at most one revision; an unchanged offset returns changed=false.",
+      "Errors/recovery: refresh on not_found or write_conflict; a position_locked invariant requires an authored data-hf-id without authored translate.",
+    ].join(" "),
+    input: SetElementPositionInputSchema,
+    output: SetElementPositionOutputSchema,
+    annotations: annotationsForLevel("write"),
+    availableInLegacy: true,
+    projectIdOf: (input) => input.projectId as ProjectId,
+    handler: async (context, input) => setElementPosition(dependencies, {
+      ...input,
+      projectId: input.projectId as ProjectId,
+    }, context.actor, context.writeInvocation),
+  };
+}
+
 export function registerSceneWriteTools(registry: ToolRegistry, dependencies: WriteToolDependencies): void {
   registry.register(createSceneTool(dependencies));
   registry.register(setSceneTimingTool(dependencies));
+  registry.register(setElementPositionTool(dependencies));
 }
 
 export function setTextTool(

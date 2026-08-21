@@ -6,7 +6,7 @@ import { missingMediaPaths } from "@/lib/studio/scene-media";
 import type { Scene } from "@/lib/studio/types";
 
 const scene = (media: Scene["media"]): Scene => ({
-  id: "scene-1", src: "compositions/scene-1.html", start: 0, duration: 4, trackIndex: 0,
+  id: "scene-1", src: "compositions/scene-1.html", sourceFile: "compositions/scene-1.html", role: "story", start: 0, duration: 4, trackIndex: 0,
   block: null, isTransition: false, media, script: [], narration: null, elements: [], unresolvedEffects: 0,
 });
 

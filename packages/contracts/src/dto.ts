@@ -124,11 +124,17 @@ export const SceneEffectSchema = z.strictObject({
 
 export const SceneElementSchema = z.strictObject({
   id: identifierSchema,
+  authoredId: identifierSchema.nullable(),
   label: z.string(),
   kind: z.enum(["image", "video", "audio", "element"]),
   start: z.number().finite().nullable(),
   duration: z.number().finite().nullable(),
   src: z.string().nullable(),
+  layoutOffset: z.strictObject({
+    x: z.number().finite(),
+    y: z.number().finite(),
+  }).nullable(),
+  positionEditable: z.boolean(),
   effects: z.array(SceneEffectSchema),
 });
 
@@ -142,6 +148,13 @@ export const RootTrackSchema = z.strictObject({
 export const SceneSchema = z.strictObject({
   id: identifierSchema,
   src: relativePathSchema.nullable(),
+  sourceFile: relativePathSchema,
+  role: z.enum(["root", "story", "transition", "overlay", "credit", "utility"]),
+  storyPattern: identifierSchema.nullable().optional(),
+  seam: z.strictObject({
+    kind: z.enum(["carry", "transform", "contrast"]),
+    token: z.string().min(1).max(80),
+  }).nullable().optional(),
   start: z.number().finite(),
   duration: z.number().finite(),
   trackIndex: z.number().int(),
@@ -247,6 +260,7 @@ const revealSoundSchema = z.enum([
   "blip",
   "snap",
 ]);
+export const SceneMotionPresetSchema = z.enum(["none", "drift", "focus", "pulse", "wipe"]);
 const themeVariablesSchema = z.strictObject({
   "--primary": z.string(),
   "--primary-light": z.string(),
@@ -294,6 +308,7 @@ export const SubtitleSettingsSchema = z.strictObject({
 export const SceneSettingsSchema = z.strictObject({
   transitionSound: transitionSoundSchema,
   revealSound: revealSoundSchema,
+  motionPreset: SceneMotionPresetSchema.optional(),
   hidden: z.boolean(),
 });
 
@@ -570,6 +585,7 @@ export const PatchPreviewSettingsRequestSchema = z.strictObject({
 });
 export const PatchPreviewSettingsResponseSchema = z.strictObject({
   previewSettings: PreviewSettingsSchema,
+  projectRevision: z.number().int().nonnegative(),
   revision: z.number().int().nonnegative(),
   diagnostics: z.array(DiagnosticSchema),
   changeSeq: z.number().int().nonnegative().nullable(),

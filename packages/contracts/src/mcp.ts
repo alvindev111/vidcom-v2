@@ -44,6 +44,9 @@ import {
   DeleteScenesRequestSchema,
   DeleteScenesResponseSchema,
   MoveScenesRequestSchema,
+  SetElementPositionRequestSchema,
+  SetElementPositionResponseSchema,
+  AuthoredElementIdSchema,
   GenerateCaptionsRequestSchema,
   GenerateCaptionsResponseSchema,
   MountAssetRequestSchema,
@@ -215,6 +218,16 @@ export const SetSceneTimingOutputSchema = z.strictObject({
   affectedTrackIndex: z.number().int().nonnegative(),
   moved: z.array(SceneRippleMoveSchema),
 });
+
+/** Input for `set_element_position`; the server resolves the owning source. */
+export const SetElementPositionInputSchema = z.strictObject({
+  ...projectIdInput,
+  sceneId: IdentifierSchema,
+  elementId: AuthoredElementIdSchema,
+  ...SetElementPositionRequestSchema.shape,
+});
+/** Output for `set_element_position`. */
+export const SetElementPositionOutputSchema = SetElementPositionResponseSchema;
 
 /** Input for `set_text`. */
 export const SetTextInputSchema = z.strictObject({
@@ -504,6 +517,7 @@ export const SetPreviewSettingsInputSchema = z.strictObject({
 /** Output for `set_preview_settings`. */
 export const SetPreviewSettingsOutputSchema = z.strictObject({
   previewSettings: PreviewSettingsSchema,
+  projectRevision: z.number().int().nonnegative(),
   revision: z.number().int().nonnegative(),
   diagnostics: z.array(DiagnosticSchema),
   changeSeq: z.number().int().nonnegative().nullable(),
@@ -836,6 +850,11 @@ export const TOOL_SCHEMA_CATALOGUE = {
   set_scene_timing: {
     input: SetSceneTimingInputSchema,
     output: SetSceneTimingOutputSchema,
+    level: "write",
+  },
+  set_element_position: {
+    input: SetElementPositionInputSchema,
+    output: SetElementPositionOutputSchema,
     level: "write",
   },
   set_text: {

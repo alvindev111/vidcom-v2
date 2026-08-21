@@ -5,6 +5,7 @@ import { describe, expect, it } from "vitest";
 import { ErrorCode, type ContentHash, type ProjectId, type RelPath } from "@vidcom/contracts";
 import {
   ok,
+  representativeSceneTime,
   sampleTimelineThumbnailTimes,
   thumbnailRenderKey,
   ThumbnailService,
@@ -123,6 +124,16 @@ describe("timeline thumbnail planning", () => {
     expect(sampleTimelineThumbnailTimes(0.1, 3, 30)).toEqual([1 / 30, 2 / 30, 2 / 30]);
   });
 
+  it("selects the deterministic 55% representative frame and handles empty or invalid scenes", () => {
+    expect(representativeSceneTime(2, 30)).toBe(1.1);
+    expect(representativeSceneTime(2, 29.97)).toBe(33 / 29.97);
+    expect(representativeSceneTime(0.01, 30)).toBe(0);
+    expect(representativeSceneTime(0, 30)).toBe(0);
+    expect(() => representativeSceneTime(-1, 30)).toThrow(TypeError);
+    expect(() => representativeSceneTime(Number.NaN, 30)).toThrow(TypeError);
+    expect(() => representativeSceneTime(2, 0)).toThrow(TypeError);
+  });
+
   it("uses canonical dependency order and changes on dependency, source or profile identity", async () => {
     const a = { path: "a.css" as RelPath, state: "present" as const, contentHash: hash("a") };
     const b = { path: "b.css" as RelPath, state: "present" as const, contentHash: hash("b") };
@@ -146,6 +157,28 @@ describe("timeline thumbnail planning", () => {
     expect(landscapePlan).toMatchObject({ ok: true, value: { profile: { width: 160, height: 90 } } });
     expect(first.ok && landscapePlan.ok && landscapePlan.value.fingerprint)
       .not.toBe(first.ok ? first.value.fingerprint : "");
+  });
+
+  it("keeps inline scenes in one source file as distinct thumbnail identities", async () => {
+    const inline = harness({
+      composition: model({
+        project: { ...model().project, sceneCount: 2 },
+        scenes: [
+          { id: "scene-a", src: null, start: 0, duration: 2, trackIndex: 0 },
+          { id: "scene-b", src: null, start: 2, duration: 2, trackIndex: 0 },
+        ] as never,
+      }),
+    });
+
+    const [a, b] = await Promise.all(["scene-a", "scene-b"].map((sceneId) => inline.service.plan(ref, {
+      sceneId,
+      atSeconds: [1],
+      profile: "timeline-v1",
+    })));
+
+    expect(a.ok && b.ok && b.value.fingerprint).not.toBe(a.ok ? a.value.fingerprint : "");
+    if (!a.ok || !b.ok) return;
+    expect(thumbnailRenderKey(a.value.keys[0]!, hash)).not.toBe(thumbnailRenderKey(b.value.keys[0]!, hash));
   });
 
   it("rejects a client-selected profile and unavailable scene source", async () => {

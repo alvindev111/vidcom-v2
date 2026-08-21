@@ -17,6 +17,7 @@ import {
   JobCancelledError,
   JobFailureError,
   ok,
+  storyCompositionDiagnostics,
   type BinaryProbePort,
   type ClockPort,
   type CompositeMutationJournalPort,
@@ -136,6 +137,18 @@ export async function prepareSnapshot(
       details: { reason: ErrorCode.CompositionParseError },
     });
   }
+  const storyErrors = storyCompositionDiagnostics(model.scenes, {
+    strictAgentStory: (model.agentKitVersion ?? 0) >= 9,
+  }).filter(({ severity }) => severity === "error");
+  if (storyErrors.length > 0) return err({
+    code: ErrorCode.ProjectInvalid,
+    message: "story scenes require verified motion and narration before snapshot",
+    details: {
+      reason: storyErrors[0]?.code ?? "story-motion-shallow",
+      diagnosticCodes: [...new Set(storyErrors.map(({ code }) => code))],
+      sceneIds: [...new Set(storyErrors.flatMap(({ sceneId }) => sceneId ? [sceneId] : []))],
+    },
+  });
   const fontCompatibility = await checkFontCompatibility(dependencies.fonts, ref, model.sources);
   if (!fontCompatibility.ok) return fontCompatibility;
   const settings = await getPreviewSettings({

@@ -9,7 +9,7 @@ import {
 } from "@/components/ui/resizable";
 import type { PreviewSettings } from "@/lib/studio/preview-settings";
 import type { ProjectChanged } from "@/lib/studio/preview-reload";
-import type { RootTrack, Scene } from "@/lib/studio/types";
+import type { RootTrack, Scene, SourceFile } from "@/lib/studio/types";
 import { PlaybackBar } from "./playback-bar";
 import { PreviewCanvas } from "./preview-canvas";
 import { Timeline } from "./timeline";
@@ -26,6 +26,7 @@ export function PreviewPanel({
   state,
   controls,
   scenes,
+  files,
   rootTrack,
   settings,
   selectedId,
@@ -43,6 +44,7 @@ export function PreviewPanel({
   state: PlayerState;
   controls: PlayerControls;
   scenes: Scene[];
+  files: SourceFile[];
   rootTrack: RootTrack | null;
   settings: PreviewSettings;
   selectedId: string;
@@ -59,6 +61,12 @@ export function PreviewPanel({
             aspectRatio={aspectRatio}
             ready={state.ready}
             error={state.error}
+            projectId={projectId}
+            scenes={scenes}
+            files={files}
+            controls={controls}
+            onSelectScene={onSelectScene}
+            onProjectChanged={onProjectChanged}
           />
           <PlaybackBar
             frameRate={frameRate}
@@ -71,6 +79,8 @@ export function PreviewPanel({
             onSeek={controls.seek}
             onToggleMuted={controls.toggleMuted}
             onPlaybackRateChange={controls.setPlaybackRate}
+            audioState={state.audioState}
+            audioError={state.audioError}
           />
         </div>
       </ResizablePanel>

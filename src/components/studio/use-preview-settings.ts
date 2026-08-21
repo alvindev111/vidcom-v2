@@ -25,6 +25,7 @@ export function usePreviewSettings(
   projectId: string,
   initial: PreviewSettings,
   initialRevision: number,
+  initialProjectRevision: number,
   onSaved: ProjectChanged,
 ) {
   const studio = useStudioSession();
@@ -32,6 +33,7 @@ export function usePreviewSettings(
   const [pending, setPending] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
   const revision = React.useRef(initialRevision);
+  const projectRevision = React.useRef(initialProjectRevision);
   const queue = React.useRef(Promise.resolve());
   const pendingCount = React.useRef(0);
 
@@ -59,7 +61,8 @@ export function usePreviewSettings(
 
   React.useEffect(() => {
     revision.current = initialRevision;
-  }, [initial, initialRevision]);
+    projectRevision.current = initialProjectRevision;
+  }, [initial, initialProjectRevision, initialRevision]);
 
   // Mirrors state rather than being written during render; `apply` keeps the two
   // in step synchronously for edits that arrive in the same batch.
@@ -79,6 +82,7 @@ export function usePreviewSettings(
           error?: { message?: string };
           previewSettings?: PreviewSettings;
           revision?: number;
+          projectRevision?: number;
           changeSeq?: number | null;
         } | null;
 
@@ -88,6 +92,7 @@ export function usePreviewSettings(
         }
         if (payload?.previewSettings) apply(payload.previewSettings);
         if (payload?.revision !== undefined) revision.current = payload.revision;
+        if (payload?.projectRevision !== undefined) projectRevision.current = payload.projectRevision;
         // The preview document is built with these values baked in, so it has
         // to be rebuilt for the change to show.
         onSaved(mutationChangeSeq(payload));
@@ -160,6 +165,16 @@ export function usePreviewSettings(
    * would be a render for nobody to see.
    */
   const currentRevision = React.useCallback(() => revision.current, []);
+  const currentProjectRevision = React.useCallback(() => projectRevision.current, []);
 
-  return { settings, pending, error, patch, patchScene, uploadBgm, currentRevision };
+  return {
+    settings,
+    pending,
+    error,
+    patch,
+    patchScene,
+    uploadBgm,
+    currentRevision,
+    currentProjectRevision,
+  };
 }

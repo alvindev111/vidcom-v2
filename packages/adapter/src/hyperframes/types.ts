@@ -22,11 +22,14 @@ export interface SceneEffect {
 
 export interface SceneElement {
   id: string;
+  authoredId: string | null;
   label: string;
   kind: "image" | "video" | "audio" | "element";
   start: number | null;
   duration: number | null;
   src: string | null;
+  layoutOffset: { x: number; y: number } | null;
+  positionEditable: boolean;
   effects: SceneEffect[];
 }
 
@@ -67,6 +70,10 @@ export interface Narration {
 export interface Scene {
   id: string;
   src: string | null;
+  sourceFile: string;
+  role: "root" | "story" | "transition" | "overlay" | "credit" | "utility";
+  storyPattern?: string | null;
+  seam?: { kind: "carry" | "transform" | "contrast"; token: string } | null;
   start: number;
   duration: number;
   trackIndex: number;

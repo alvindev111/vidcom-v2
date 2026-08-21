@@ -7,6 +7,7 @@ import {
   Volume2Icon,
   VolumeXIcon,
 } from "lucide-react";
+import type { PreviewAudioState } from "@/lib/studio/preview-bridge";
 
 import { Button } from "@/components/ui/button";
 import { Slider } from "@/components/ui/slider";
@@ -56,6 +57,8 @@ export function PlaybackBar({
   onSeek,
   onToggleMuted,
   onPlaybackRateChange,
+  audioState,
+  audioError,
 }: {
   duration: number;
   frameRate: number;
@@ -67,6 +70,8 @@ export function PlaybackBar({
   onSeek: (seconds: number) => void;
   onToggleMuted: () => void;
   onPlaybackRateChange: (rate: number) => void;
+  audioState: PreviewAudioState;
+  audioError: string | null;
 }) {
   const cycleRate = () => {
     const index = RATES.indexOf(playbackRate as (typeof RATES)[number]);
@@ -95,6 +100,14 @@ export function PlaybackBar({
         frameRate={frameRate}
         className="text-muted-foreground shrink-0 font-mono text-xs tabular-nums"
       />
+
+      {audioState === "activation-required" || audioState === "error" ? (
+        <span className="max-w-52 truncate text-[10px] text-amber-500" role="status" title={audioError ?? undefined}>
+          {audioState === "activation-required"
+            ? "Click Enable audio in the preview"
+            : `${audioError ?? "Preview audio failed"}. Fix the media or reload, then press Play.`}
+        </span>
+      ) : null}
 
       <Scrubber duration={duration} disabled={disabled} onSeek={onSeek} />
 

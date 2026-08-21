@@ -12,6 +12,7 @@ import {
   FFMPEG_SOURCES,
   X265_CMAKE_ARGS,
   X265_POLICY_SUBSTITUTIONS,
+  assertDecoders,
   assertEncoders,
   fetchPinnedSource,
   ffmpegBuildEnvironment,
@@ -282,6 +283,16 @@ export async function buildReleaseMedia(options = {}) {
     step("install libvpx", "make", ["install"], { cwd: source, env: environment });
   });
 
+  await stage("libwebp", async (source) => {
+    step("configure libwebp", "./configure", [
+      `--prefix=${prefix}`, "--disable-shared", "--enable-static",
+      "--disable-sdl", "--disable-gl", "--disable-png", "--disable-jpeg",
+      "--disable-tiff", "--disable-gif",
+    ], { cwd: source, env: environment });
+    step("build libwebp", "make", ["-j", jobs], { cwd: source, env: environment });
+    step("install libwebp", "make", ["install"], { cwd: source, env: environment });
+  });
+
   await stage("ffmpeg", async (source) => {
     step("configure ffmpeg", "./configure", ffmpegConfigureArgs(prefix), {
       cwd: source,
@@ -308,6 +319,7 @@ export async function buildReleaseMedia(options = {}) {
     media[name] = { path: target, sha256: await sha256Of(target) };
   }
   assertEncoders(media.ffmpeg.path);
+  assertDecoders(media.ffmpeg.path);
 
   const provenance = {
     schemaVersion: RELEASE_MEDIA_SCHEMA_VERSION,

@@ -21,8 +21,9 @@ import { REPOSITORY_ROOT } from "./artifact-layout.mjs";
  * is byte-stable rather than regenerated per request.
  *
  * The codec set is not a preference: HyperFrames asks FFmpeg for `libx264`,
- * `libx265`, `libvpx`, `libopus` and the native AAC encoder, and a build
- * missing any one of them fails at render time rather than at build time.
+ * `libx265`, `libvpx`, `libopus` and the native AAC encoder, while VidCom's
+ * derived-thumbnail pipeline asks for `libwebp`. A build missing any one of
+ * them fails at runtime rather than at build time.
  */
 export const FFMPEG_SOURCES = Object.freeze({
   nasm: {
@@ -54,6 +55,11 @@ export const FFMPEG_SOURCES = Object.freeze({
     version: "1.14.1",
     url: "https://github.com/webmproject/libvpx/archive/refs/tags/v1.14.1.tar.gz",
     sha256: "sha256:901747254d80a7937c933d03bd7c5d41e8e6c883e0665fadcb172542167c7977",
+  },
+  libwebp: {
+    version: "1.5.0",
+    url: "https://storage.googleapis.com/downloads.webmproject.org/releases/webp/libwebp-1.5.0.tar.gz",
+    sha256: "sha256:7d6fab70cf844bf6769077bd5d7a74893f8ffd4dfb42861745750c63c2a5c92c",
   },
   ffmpeg: {
     version: "7.1.1",
@@ -170,6 +176,8 @@ export function ffmpegConfigureArgs(prefix) {
     "--enable-libx265",
     "--enable-libvpx",
     "--enable-libopus",
+    "--enable-libwebp",
+    "--enable-zlib",
     "--disable-debug",
     "--disable-doc",
     "--disable-ffplay",
@@ -214,7 +222,15 @@ export const X265_CMAKE_ARGS = Object.freeze([
   "-DCMAKE_BUILD_TYPE=Release",
 ]);
 
-export const REQUIRED_ENCODERS = Object.freeze(["libx264", "libx265", "libvpx-vp9", "libopus", "aac"]);
+export const REQUIRED_ENCODERS = Object.freeze([
+  "libx264",
+  "libx265",
+  "libvpx-vp9",
+  "libopus",
+  "libwebp",
+  "aac",
+]);
+export const REQUIRED_DECODERS = Object.freeze(["png"]);
 
 /**
  * Confirms the binary can actually do the work the render pipeline asks for.
@@ -229,6 +245,15 @@ export function assertEncoders(ffmpegPath, encoders = REQUIRED_ENCODERS) {
   const missing = encoders.filter((encoder) => !new RegExp(`\\b${encoder}\\b`, "u").test(result.stdout));
   if (missing.length > 0) fail("the built ffmpeg is missing required encoders", { missing });
   return encoders;
+}
+
+/** Confirms the packaged binary can decode the PNG frames emitted by snapshots. */
+export function assertDecoders(ffmpegPath, decoders = REQUIRED_DECODERS) {
+  const result = spawnSync(ffmpegPath, ["-hide_banner", "-decoders"], { encoding: "utf8" });
+  if (result.status !== 0) fail("the built ffmpeg would not list its decoders", { ffmpegPath });
+  const missing = decoders.filter((decoder) => !new RegExp(`\\b${decoder}\\b`, "u").test(result.stdout));
+  if (missing.length > 0) fail("the built ffmpeg is missing required decoders", { missing });
+  return decoders;
 }
 
 const invokedAsScript = process.argv[1]

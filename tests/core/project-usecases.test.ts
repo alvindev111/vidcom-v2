@@ -21,6 +21,7 @@ import {
   saveSourceFile,
   setSceneScript,
   setSceneTiming,
+  setElementPosition,
   statAsset,
   uploadBgm,
   createScene,
@@ -66,6 +67,7 @@ function setup(options: {
   withNarration?: boolean;
   frameRate?: number;
   sceneTiming?: { start: number; duration: number; trackIndex: number };
+  positionElements?: boolean;
 } = {}) {
   const files = new Map<string, string>([
     ["index.html", "<main>old</main>"],
@@ -110,9 +112,21 @@ function setup(options: {
       start: options.sceneTiming?.start ?? 0,
       duration: options.sceneTiming?.duration ?? 4,
       trackIndex: options.sceneTiming?.trackIndex ?? 1,
-      src: null, block: null, isTransition: false, media: [],
+      src: null, sourceFile: "index.html", role: "story", block: null, isTransition: false, media: [],
       script: [{ id: "hf-title", text: "Title", file: "index.html" }],
-      narration: options.withNarration ? narration : null, elements: [], unresolvedEffects: 0,
+      narration: options.withNarration ? narration : null,
+      elements: options.positionElements ? [
+        {
+          id: "#hero-title", authoredId: "hero-title", label: "hero-title", kind: "element",
+          start: 0, duration: 4, src: null, layoutOffset: { x: 12, y: -8 }, positionEditable: true,
+          effects: [{ id: "motion-1", method: "to", start: 0, duration: 1, ease: null, propertyGroup: "transform" }],
+        },
+        {
+          id: "#locked", authoredId: "locked", label: "locked", kind: "element",
+          start: 0, duration: 4, src: null, layoutOffset: null, positionEditable: false, effects: [],
+        },
+      ] : [],
+      unresolvedEffects: 0,
     }],
     rootTrack: null,
     diagnostics: [],
@@ -304,7 +318,7 @@ function setup(options: {
     authority,
     clock: { now: () => new Date("2026-08-01T00:00:00.000Z") },
   };
-  return { deps, files, binaries, mutations, invocations, reads, appliedOps };
+  return { deps, files, binaries, mutations, invocations, reads, appliedOps, model };
 }
 
 describe("project read use cases without HTTP", () => {
@@ -708,6 +722,60 @@ describe("project write and legacy use cases without HTTP", () => {
     }]);
     expect((runtime.mutations[0] as CompositeRequest).steps).toHaveLength(1);
     expect(runtime.files.has("narration/scene-1.json")).toBe(false);
+  });
+  it("sets an authoritative element layout offset through exactly one source mutation", async () => {
+    const runtime = setup({ positionElements: true });
+    await expect(setElementPosition(runtime.deps, {
+      projectId,
+      sceneId: "scene-1",
+      elementId: "hero-title",
+      offsetX: 120,
+      offsetY: -24,
+      expectedContentHash: hash("<main>old</main>"),
+    }, "user")).resolves.toMatchObject({
+      ok: true,
+      value: {
+        changed: true,
+        file: { path: "index.html", content: "serialized:setLayoutOffset" },
+        revision: 3,
+        diagnostics: [],
+        changeSeq: 3,
+      },
+    });
+    expect(runtime.appliedOps).toEqual([[{
+      kind: "setLayoutOffset",
+      target: "hero-title",
+      value: { x: 120, y: -24 },
+    }]]);
+    expect(runtime.mutations).toMatchObject([{
+      kind: "file",
+      path: "index.html",
+      expectedContentHash: hash("<main>old</main>"),
+    }]);
+  });
+  it("does not serialize or write an unchanged layout offset", async () => {
+    const runtime = setup({ positionElements: true });
+    await expect(setElementPosition(runtime.deps, {
+      projectId, sceneId: "scene-1", elementId: "hero-title",
+      offsetX: 12, offsetY: -8, expectedContentHash: hash("<main>old</main>"),
+    }, "user")).resolves.toMatchObject({
+      ok: true,
+      value: { changed: false, file: { path: "index.html", content: "<main>old</main>" }, revision: 2 },
+    });
+    expect(runtime.appliedOps).toHaveLength(0);
+    expect(runtime.mutations).toHaveLength(0);
+  });
+  it.each([
+    ["unknown", "missing", ErrorCode.NotFound],
+    ["locked", "locked", ErrorCode.InvariantViolated],
+  ])("rejects %s element position targets before serialization", async (_case, elementId, code) => {
+    const runtime = setup({ positionElements: true });
+    await expect(setElementPosition(runtime.deps, {
+      projectId, sceneId: "scene-1", elementId,
+      offsetX: 1, offsetY: 1, expectedContentHash: hash("<main>old</main>"),
+    }, "user")).resolves.toMatchObject({ ok: false, error: { code } });
+    expect(runtime.appliedOps).toHaveLength(0);
+    expect(runtime.mutations).toHaveLength(0);
   });
   it("regenerates the legacy mock narration through authority", async () => {
     expect(await regenerateNarration(setup().deps, { projectId, sceneId: "scene-1", text: "Hello" }, "user")).toMatchObject({

@@ -47,9 +47,9 @@ function model(): CompositionModel {
       revision: 7,
     },
     scenes: [
-      { id: "a", src: "compositions/shared.html" as RelPath, start: 2, duration: 3, trackIndex: 1, block: null, isTransition: false, media: [], script: [], narration: null, elements: [], unresolvedEffects: 0 },
-      { id: "b", src: "compositions/shared.html" as RelPath, start: 7, duration: 2, trackIndex: 1, block: null, isTransition: false, media: [], script: [], narration: null, elements: [], unresolvedEffects: 0 },
-      { id: "c", src: "compositions/c.html" as RelPath, start: 12, duration: 4, trackIndex: 2, block: null, isTransition: false, media: [], script: [], narration: null, elements: [], unresolvedEffects: 0 },
+      { id: "a", src: "compositions/shared.html" as RelPath, sourceFile: "compositions/shared.html" as RelPath, role: "story", start: 2, duration: 3, trackIndex: 1, block: null, isTransition: false, media: [], script: [], narration: null, elements: [], unresolvedEffects: 0 },
+      { id: "b", src: "compositions/shared.html" as RelPath, sourceFile: "compositions/shared.html" as RelPath, role: "story", start: 7, duration: 2, trackIndex: 1, block: null, isTransition: false, media: [], script: [], narration: null, elements: [], unresolvedEffects: 0 },
+      { id: "c", src: "compositions/c.html" as RelPath, sourceFile: "compositions/c.html" as RelPath, role: "story", start: 12, duration: 4, trackIndex: 2, block: null, isTransition: false, media: [], script: [], narration: null, elements: [], unresolvedEffects: 0 },
     ],
     rootTrack: null,
     diagnostics: [],

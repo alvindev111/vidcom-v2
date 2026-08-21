@@ -25,6 +25,8 @@ function scene(id: string, narrationText: string | null): SceneDto {
   return {
     id,
     src: `compositions/${id}.html`,
+    sourceFile: `compositions/${id}.html`,
+    role: "story",
     start: 0,
     duration: 5,
     trackIndex: 0,

@@ -94,6 +94,8 @@ export type MutationRequest = SingleSourceMutationRequest;
 export interface WriteResult {
   path: RelPath | null;
   contentHash: ContentHash;
+  /** Project journal revision; distinct from an entity revision after source edits. */
+  projectRevision?: number;
   revision: number;
   diagnostics: Diagnostic[];
   /** Exact durable outbox sequence when this result was projected from a composite write. */
@@ -1787,6 +1789,7 @@ export class WriteAuthority {
       return ok({
         path: request.path,
         contentHash: composite.value.fileHashes[request.path] ?? this.dependencies.hashContent(request.content),
+        projectRevision: composite.value.projectRevision,
         revision: composite.value.projectRevision,
         diagnostics: composite.value.diagnostics,
         changeSeq: composite.value.changeSeq,
@@ -1802,6 +1805,7 @@ export class WriteAuthority {
     return ok({
       path: null,
       contentHash: composite.value.fileHashes[state.backingPath] ?? state.contentHash,
+      projectRevision: composite.value.projectRevision,
       revision: composite.value.entityRevision ?? state.revision,
       diagnostics: composite.value.diagnostics,
       changeSeq: composite.value.changeSeq,

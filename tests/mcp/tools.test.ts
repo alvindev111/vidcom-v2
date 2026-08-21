@@ -171,6 +171,10 @@ describe("all registered tool handlers", () => {
       read_composition: { projectId, path: "index.html" },
       create_scene: { projectId, title: "Scene", expectedContentHash: digest("1") },
       set_scene_timing: { projectId, sceneId: "scene-1", duration: 4, expectedContentHash: digest("1") },
+      set_element_position: {
+        projectId, sceneId: "scene-1", elementId: "hero",
+        offsetX: 24, offsetY: -12, expectedContentHash: digest("1"),
+      },
       set_text: {
         projectId, sceneId: "scene-1", file: "index.html", elementId: "title",
         text: "Hello", expectedContentHash: digest("1"),
@@ -316,6 +320,8 @@ function writeDependencies(
     scenes: [{
       id: "scene-1",
       src: null,
+      sourceFile: "index.html",
+      role: "story",
       start: 0,
       duration: 4,
       trackIndex: 1,

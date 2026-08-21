@@ -37,6 +37,8 @@ function model(references: CompositionReference[] = []): CompositionModel {
     scenes: [{
       id: "scene-1",
       src: null,
+      sourceFile: "index.html",
+      role: "story",
       start: 0,
       duration: 4,
       trackIndex: 1,

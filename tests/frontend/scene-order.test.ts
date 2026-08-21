@@ -6,7 +6,7 @@ import { keyboardReorderIntent, reorderDropIntent } from "../../src/lib/studio/s
 import type { Scene } from "../../src/lib/studio/types";
 
 const scene = (id: string, start: number, trackIndex = 1, isTransition = false): Scene => ({
-  id, start, duration: 1, trackIndex, isTransition, src: null, block: null,
+  id, start, duration: 1, trackIndex, isTransition, src: null, sourceFile: "index.html", role: isTransition ? "transition" : "story", block: null,
   media: [], script: [], narration: null, elements: [], unresolvedEffects: 0,
 });
 const scenes = [scene("a", 0), scene("b", 2), scene("c", 4), scene("other", 1, 2), scene("transition", 3, 1, true)];

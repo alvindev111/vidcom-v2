@@ -1,6 +1,7 @@
 import {
   BgmLicenseSchema,
   ApplyFontRequestSchema,
+  AuthoredElementIdSchema,
   ApplyFontResponseSchema,
   GenerateCaptionsRequestSchema,
   GenerateCaptionsResponseSchema,
@@ -38,6 +39,8 @@ import {
   ReorderScenesRequestSchema,
   SearchBgmInputSchema,
   SearchBgmOutputSchema,
+  SetElementPositionRequestSchema,
+  SetElementPositionResponseSchema,
   SceneOrderMutationResponseSchema,
   TrackIndexParamsSchema,
   IdentifierSchema,
@@ -73,6 +76,7 @@ import {
   searchBgmSources,
   setSceneScript,
   setSceneTiming,
+  setElementPosition,
   moveScenes,
   mountAsset,
   uploadBgm,
@@ -647,6 +651,22 @@ export function createProjectWriteRoutes(
       diagnostics: timed.envelope.diagnostics,
       changeSeq: timed.envelope.changeSeq,
     });
+  });
+  routes.put("/v1/projects/:id/scenes/:sceneId/elements/:elementId/position", async (c) => {
+    const parsed = SetElementPositionRequestSchema.safeParse(await json(c));
+    if (!parsed.success) fail({ code: ErrorCode.SchemaInvalid, message: "element position payload is invalid" });
+    const sceneId = IdentifierSchema.safeParse(c.req.param("sceneId"));
+    const elementId = AuthoredElementIdSchema.safeParse(c.req.param("elementId"));
+    if (!sceneId.success) fail({ code: ErrorCode.SchemaInvalid, message: "scene id is invalid", field: "sceneId" });
+    if (!elementId.success) fail({ code: ErrorCode.SchemaInvalid, message: "element id is invalid", field: "elementId" });
+    const id = projectId(c);
+    const positioned = valueOf(await setElementPosition(dependencies, {
+      projectId: id,
+      sceneId: sceneId.data,
+      elementId: elementId.data,
+      ...parsed.data,
+    }, "user", studioWriteInvocation(studio, c, id, "Move element")));
+    return c.json(SetElementPositionResponseSchema.parse(positioned));
   });
   routes.patch("/v1/projects/:id/scenes/:sceneId/script", async (c) => {
     const parsed = PatchSceneScriptRequestSchema.safeParse(await json(c));

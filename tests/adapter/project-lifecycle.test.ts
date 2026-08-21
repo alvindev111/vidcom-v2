@@ -61,9 +61,26 @@ describe("ProjectLifecycle on real SQLite and filesystem", () => {
         readFile(path.join(projectRoot, "preview-settings.json"), "utf8"),
         readFile(path.join(projectRoot, "index.html"), "utf8"),
       ])).resolves.toHaveLength(4);
+      await expect(readFile(path.join(projectRoot, "hyperframes.json"), "utf8")).resolves.toBe("{}\n");
       expect(dbOne(value.infrastructure.database, "SELECT COUNT(*) AS count FROM revision")).toEqual({ count: 1 });
       expect(dbOne(value.infrastructure.database, "SELECT COUNT(*) AS count FROM project_registry WHERE deleted_at IS NULL"))
         .toEqual({ count: 1 });
+    } finally {
+      await value.infrastructure.database.destroy();
+    }
+  }, INTEGRATION_TIMEOUT_MS);
+
+  it("marks agent-created projects for the strict v9 story profile", async () => {
+    const value = await fixture();
+    try {
+      const result = await value.application.lifecycle.create({
+        name: "Agent Story",
+        preset: PLATFORM_PRESETS[0]!,
+        actor: "agent",
+      });
+      expect(result).toMatchObject({ ok: true });
+      await expect(readFile(path.join(value.workspaceRoot, "agent-story", "hyperframes.json"), "utf8"))
+        .resolves.toBe('{"vidcomAgentKitVersion":9}\n');
     } finally {
       await value.infrastructure.database.destroy();
     }

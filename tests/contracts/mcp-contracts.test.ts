@@ -20,6 +20,8 @@ import {
   SaveFileOutputSchema,
   SetSceneTimingInputSchema,
   SetSceneTimingOutputSchema,
+  SetElementPositionInputSchema,
+  SetElementPositionOutputSchema,
   SetTextInputSchema,
   SetTextOutputSchema,
   SUPPORTED_REVISIONS,
@@ -40,6 +42,8 @@ const TOOL_SCHEMAS = [
   CreateSceneOutputSchema,
   SetSceneTimingInputSchema,
   SetSceneTimingOutputSchema,
+  SetElementPositionInputSchema,
+  SetElementPositionOutputSchema,
   SetTextInputSchema,
   SetTextOutputSchema,
   SaveFileInputSchema,
@@ -88,6 +92,43 @@ describe("MCP contracts", () => {
     for (const timing of [{ start: 0 }, { duration: 1 }, { trackIndex: 0 }]) {
       expect(SetSceneTimingInputSchema.safeParse({ ...base, ...timing }).success).toBe(true);
     }
+  });
+
+  it("keeps set_element_position strict, bounded, finite, and source-path free", () => {
+    const base = {
+      projectId: "project-1",
+      sceneId: "scene-1",
+      elementId: "hero-title",
+      offsetX: 120,
+      offsetY: -24,
+      expectedContentHash: `sha256:${"1".repeat(64)}`,
+    };
+    expect(SetElementPositionInputSchema.safeParse(base).success).toBe(true);
+    for (const invalid of [
+      { ...base, sourceFile: "compositions/scene-1.html" },
+      { ...base, elementId: "#hero-title" },
+      { ...base, elementId: "hero title" },
+      { ...base, offsetX: Number.NaN },
+      { ...base, offsetY: Number.POSITIVE_INFINITY },
+      { ...base, offsetX: 100_001 },
+      { ...base, expectedContentHash: "stale" },
+    ]) expect(SetElementPositionInputSchema.safeParse(invalid).success).toBe(false);
+  });
+
+  it("returns the exact position mutation envelope including idempotent no-change", () => {
+    const output = {
+      changed: false,
+      file: {
+        path: "compositions/scene-1.html",
+        content: '<div data-hf-id="hero-title"></div>',
+        contentHash: `sha256:${"2".repeat(64)}`,
+      },
+      revision: 3,
+      diagnostics: [],
+      changeSeq: null,
+    };
+    expect(SetElementPositionOutputSchema.safeParse(output).success).toBe(true);
+    expect(SetElementPositionOutputSchema.safeParse({ ...output, sourceFile: output.file.path }).success).toBe(false);
   });
 
   it("allows set_text to report narration present-stale or absent-not-stale", () => {

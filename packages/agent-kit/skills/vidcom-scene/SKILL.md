@@ -1,14 +1,16 @@
 ---
 name: vidcom-scene
 description: Create story beats and change scene timing or text through VidCom MCP. Use for a video's value-first narrative spine, beat ordering, tracks, duration, and script edits. Do not use for motion choreography, tone, subtitles, BGM, narration generation, or rendering.
-x-vidcom-agent-kit: 8
+x-vidcom-agent-kit: 9
 ---
 
 # VidCom scene
 
-Start with `get_project_context`; never guess `sceneId`, track, timing, or hashes. Use `create_scene`, `set_scene_timing`, or `set_text` with the latest `expectedContentHash`. A script edit may stale its matching narration cue. On conflict, re-read and merge.
+Start with `get_project_context`; never guess `sceneId`, track, timing, element identity, or hashes. Use `create_scene`, `set_scene_timing`, `set_element_position`, or `set_text` with the latest `expectedContentHash`. `set_element_position` accepts only the exact authored `data-hf-id` returned by the current scene projection; it never accepts a selector or source path. A script edit may stale its matching narration cue. On conflict, re-read and merge.
 
-Before creating scenes, state `This video tells [audience] that [message]`. Build a value-first spine: hook in outcome language, land the value claim by beat two, develop it through tension/evidence, then resolve it with a payoff. For each beat specify its narrative role, what the viewer experiences, the meaningful visual change, its motion phases, and its handoff to the next beat. Cut any beat whose role cannot be traced to the message.
+Before creating scenes, state `This video tells [audience] that [message]`. Build a value-first spine: hook in outcome language, land the value claim by beat two, develop it through tension/evidence, then resolve it with a payoff. For each beat specify its narrative role, what the viewer experiences, a content-specific primary pattern, the meaningful visual change, setup/development/payoff, and its concrete handoff to the next beat. Cut any beat whose role cannot be traced to the message.
+
+Mark agent-authored projects with `vidcomAgentKitVersion: 9` in `hyperframes.json`. Time each generated story scene to 6–10 seconds. Author `data-scene-role="story"` and `data-story-pattern` on every story root; after the first scene add `data-seam-kind="carry|transform|contrast"` plus a concrete `data-seam-token` naming the object, shape, color, direction, or question passed across the cut. Plan at least three primary patterns in every rolling four scenes. `fade`, `slide`, and `cards` are not primary pattern names.
 
 After scene structure and text are in place, route every story scene through `/vidcom-motion`. A scene is not complete merely because its text fades or slides into view.
 

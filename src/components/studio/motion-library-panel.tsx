@@ -10,6 +10,7 @@ import {
 } from "@vidcom/contracts";
 import { Button } from "@/components/ui/button";
 import { fetchApi } from "@/lib/api/services";
+import { MOTION_PRESETS, type MotionPreset, type SceneSettings } from "@/lib/studio/preview-settings";
 import { mutationChangeSeq, type ProjectChanged } from "@/lib/studio/preview-reload";
 import type { FileNode } from "@/lib/studio/types";
 import { useStudioSession } from "./studio-session-context";
@@ -52,10 +53,20 @@ export function MotionLibraryPanel({
   projectId,
   tree,
   onProjectChanged,
+  selectedSceneId,
+  sceneSettings,
+  settingsPending,
+  settingsError,
+  onSaveSettings,
 }: {
   projectId: string;
   tree: FileNode[];
   onProjectChanged: ProjectChanged;
+  selectedSceneId: string | null;
+  sceneSettings: SceneSettings | null;
+  settingsPending: boolean;
+  settingsError: string | null;
+  onSaveSettings: (patch: Partial<SceneSettings>) => void;
 }) {
   const studio = useStudioSession();
   const [pending, setPending] = React.useState<MotionLibraryId | null>(null);
@@ -102,6 +113,46 @@ export function MotionLibraryPanel({
 
   return (
     <div className="flex flex-col gap-3">
+      <section className="rounded-md border border-studio-accent/35 bg-studio-accent/5 p-3" aria-label="Scene motion recipes">
+        <h3 className="text-xs font-medium">Apply motion to {selectedSceneId ?? "the selected scene"}</h3>
+        <p className="text-muted-foreground mt-1 text-[11px]">
+          These recipes change both preview and rendered video. Pick one to save it immediately;
+          None removes only the recipe added here.
+        </p>
+        <div className="mt-2 grid grid-cols-5 gap-1.5">
+          {MOTION_PRESETS.map((preset) => (
+            <Button
+              key={preset}
+              type="button"
+              size="sm"
+              variant={sceneSettings?.motionPreset === preset ? "default" : "outline"}
+              className="h-8 px-2 text-[11px] capitalize"
+              aria-pressed={sceneSettings?.motionPreset === preset}
+              disabled={!selectedSceneId || !sceneSettings || settingsPending}
+              title={!selectedSceneId ? "Select a scene in the storyboard first" : `Apply ${preset} motion`}
+              onClick={() => onSaveSettings({ motionPreset: preset as MotionPreset })}
+            >
+              {preset}
+            </Button>
+          ))}
+        </div>
+        {sceneSettings ? (
+          <p className="mt-2 text-[11px]" role="status">
+            {settingsPending ? <Loader2Icon className="mr-1 inline size-3 animate-spin" /> : null}
+            {settingsPending ? "Saving" : "Current result"}: <strong className="capitalize">{sceneSettings.motionPreset}</strong>
+            {sceneSettings.motionPreset === "none" ? " — source motion only." : " — saved as a renderable scene treatment."}
+          </p>
+        ) : (
+          <p className="text-muted-foreground mt-2 text-[11px]">Select a storyboard card to enable recipes.</p>
+        )}
+        {settingsError ? (
+          <p className="text-destructive mt-2 text-[11px]" role="alert">
+            Motion could not be saved: {settingsError}. Try the recipe again after the preview reloads.
+          </p>
+        ) : null}
+      </section>
+
+      <h3 className="text-[11px] font-medium tracking-wide uppercase">Advanced motion libraries</h3>
       <p className="text-muted-foreground text-[11px]">
         Libraries are copied into <code className="font-mono">assets/vendor/</code> at a pinned
         version. Loading one from a CDN instead costs the render its reproducible flag and resolves

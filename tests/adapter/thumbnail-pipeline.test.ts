@@ -21,6 +21,7 @@ import {
 import { ErrorCode, type ContentHash, type ProjectId, type RelPath } from "@vidcom/contracts";
 import {
   DEFAULT_PREVIEW_SETTINGS,
+  representativeSceneTime,
   ThumbnailBatchScheduler,
   ThumbnailService,
   sampleTimelineThumbnailTimes,
@@ -304,7 +305,7 @@ describe("thumbnail renderer, cache and scheduler over real temp projects", () =
 
   it("serves the cache without a process and misses when a dependency appears or runtime identity changes", async () => {
     const harness = await fixture();
-    const marks = sampleTimelineThumbnailTimes(2, 2, 30);
+    const marks = [representativeSceneTime(2, 30)];
     const first = await harness.scheduler.request(
       harness.projects.alpha!,
       request(marks),
@@ -317,9 +318,9 @@ describe("thumbnail renderer, cache and scheduler over real temp projects", () =
       request(marks),
       new AbortController().signal,
     );
-    expect(cached.map((item) => item.result.ok)).toEqual([true, true]);
+    expect(cached.map((item) => item.result.ok)).toEqual([true]);
     expect(harness.processes.calls).toHaveLength(2);
-    expect(await harness.cachedFiles()).toHaveLength(2);
+    expect(await harness.cachedFiles()).toHaveLength(1);
 
     await mkdir(path.join(harness.projects.alpha!.root, "styles"), { recursive: true });
     await writeFile(path.join(harness.projects.alpha!.root, "styles", "a.css"), ".hero { color: red }\n", "utf8");
@@ -331,7 +332,7 @@ describe("thumbnail renderer, cache and scheduler over real temp projects", () =
     );
     expect(present[0]!.key.fingerprint).not.toBe(first[0]!.key.fingerprint);
     expect(harness.processes.calls).toHaveLength(4);
-    expect(await harness.cachedFiles()).toHaveLength(4);
+    expect(await harness.cachedFiles()).toHaveLength(2);
 
     const renamedRuntime = new ThumbnailService({
       workspace: harness.workspace,

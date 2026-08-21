@@ -11,6 +11,7 @@ import {
   readCompositionTool,
   createSceneTool,
   setSceneTimingTool,
+  setElementPositionTool,
   setTextTool,
   saveFileTool,
   deleteSceneTool,
@@ -151,6 +152,7 @@ describe("ToolRegistry definitions", () => {
   it.each([
     [createSceneTool, "create_scene", "entry-file expectedContentHash"],
     [setSceneTimingTool, "set_scene_timing", "expectedContentHash"],
+    [setElementPositionTool, "set_element_position", "expectedContentHash"],
   ] as const)("defines write tool %s with precondition and complete-output guidance", (factory, name, phrase) => {
     const tool = factory(null as unknown as Parameters<typeof factory>[0]);
     expect(tool).toMatchObject({ name, level: "write", annotations: annotationsForLevel("write") });
@@ -880,7 +882,19 @@ describe("complete tool descriptor contract", () => {
               "openWorldHint": false,
               "readOnlyHint": false,
             },
-            "description": "Use when applying a bundled color palette by theme.paletteId, changing individual tone or theme colors, styling subtitles, setting per-scene sounds, or attaching background music already in the project. Do not use to edit composition source, to upload bytes, or to change scene timing. Preconditions: projectId and expectedRevision come from get_project_context; a bgm.track path must name an existing mp3, wav, ogg or m4a asset listed by list_project_assets, and setting bgm.track to null detaches the music. Side effects: merges the patch into preview-settings.json as one journaled entity mutation, returning the complete settings and their new revision; a palette id applies all semantic colors atomically, while an individual color override clears the preset id. Errors/recovery: no_file or unsupported_media means the track is missing or not audio, so run list_project_assets; write_conflict means expectedRevision is stale, so re-read get_project_context; never retry a committed_response_error mutation.",
+            "description": "Use when moving one selected authored element or generated caption group by a base x/y offset. Do not use for resize, rotation, motion keyframes, selectors, source paths, or elements reported as positionEditable=false. Preconditions: sceneId, elementId and expectedContentHash must come from current list_scenes/read_composition state for the exact source owner. Side effects: writes only VidCom-owned layout offset metadata, preserves authored transform motion, and commits at most one revision; an unchanged offset returns changed=false. Errors/recovery: refresh on not_found or write_conflict; a position_locked invariant requires an authored data-hf-id without authored translate.",
+            "level": "write",
+            "name": "set_element_position",
+            "title": "Set element position",
+          },
+          {
+            "annotations": {
+              "destructiveHint": false,
+              "idempotentHint": false,
+              "openWorldHint": false,
+              "readOnlyHint": false,
+            },
+            "description": "Use when applying a bundled color palette by theme.paletteId, changing individual tone or theme colors, styling subtitles, setting per-scene sounds, or attaching background music already in the project. Do not use to edit composition source, to upload bytes, or to change scene timing. Preconditions: projectId and expectedRevision come from get_project_context.project.id and get_project_context.previewSettingsRevision; a bgm.track path must name an existing mp3, wav, ogg or m4a asset listed by list_project_assets, and setting bgm.track to null detaches the music. Side effects: merges the patch into preview-settings.json as one journaled entity mutation, returning the complete settings, their entity revision and the new projectRevision; a palette id applies all semantic colors atomically, while an individual color override clears the preset id. Errors/recovery: no_file or unsupported_media means the track is missing or not audio, so run list_project_assets; write_conflict means expectedRevision is stale, so re-read get_project_context; never retry a committed_response_error mutation.",
             "level": "write",
             "name": "set_preview_settings",
             "title": "Patch preview settings",

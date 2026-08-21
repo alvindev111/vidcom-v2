@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { parseHTML } from "linkedom";
 
 import { ErrorCode, type ProjectId, type RelPath } from "@vidcom/contracts";
 import {
@@ -120,6 +121,60 @@ describe("CompositionHf", () => {
       expect(result.value).toContain('data-duration="7"');
     }
     expect(await readFile(path.join(root, "index.html"), "utf8")).toBe(source);
+  });
+
+  it("serializes an owned layout offset without overwriting authored transform motion", async () => {
+    const authored = source.replace(
+      '<h1 data-hf-id="hf-title">',
+      '<h1 data-hf-id="hf-title" style="color: red; transform: scale(1.2)">',
+    );
+    await writeFile(path.join(root, "index.html"), authored);
+    const moved = await applyCompositionOps(ref, "index.html" as RelPath, [{
+      kind: "setLayoutOffset", target: "hf-title", value: { x: 120, y: -24 },
+    }]);
+    expect(moved).toMatchObject({ ok: true });
+    if (!moved.ok) return;
+    const node = parseHTML(moved.value).document.querySelector('[data-hf-id="hf-title"]');
+    expect(node?.hasAttribute("data-vidcom-layout-offset")).toBe(true);
+    expect(node?.getAttribute("style")).toContain("color: red");
+    expect(node?.getAttribute("style")).toContain("transform: scale(1.2)");
+    expect(node?.getAttribute("style")).toContain("--vidcom-layout-x: 120px");
+    expect(node?.getAttribute("style")).toContain("--vidcom-layout-y: -24px");
+    expect(await readFile(path.join(root, "index.html"), "utf8")).toBe(authored);
+
+    await writeFile(path.join(root, "index.html"), moved.value);
+    const reset = await applyCompositionOps(ref, "index.html" as RelPath, [{
+      kind: "setLayoutOffset", target: "hf-title", value: { x: 0, y: 0 },
+    }]);
+    if (!reset.ok) throw new Error(JSON.stringify(reset.error));
+    const resetNode = parseHTML(reset.value).document.querySelector('[data-hf-id="hf-title"]');
+    expect(resetNode?.hasAttribute("data-vidcom-layout-offset")).toBe(false);
+    expect(resetNode?.getAttribute("style")).toContain("color: red");
+    expect(resetNode?.getAttribute("style")).toContain("transform: scale(1.2)");
+    expect(resetNode?.getAttribute("style")).not.toContain("--vidcom-layout-");
+  });
+
+  it("locks authored translate until VidCom owns the layout offset", async () => {
+    await writeFile(path.join(root, "index.html"), source.replace(
+      '<h1 data-hf-id="hf-title">',
+      '<h1 data-hf-id="hf-title" style="translate: 10px 20px">',
+    ));
+    await expect(applyCompositionOps(ref, "index.html" as RelPath, [{
+      kind: "setLayoutOffset", target: "hf-title", value: { x: 5, y: 6 },
+    }])).resolves.toMatchObject({ ok: false, error: { code: ErrorCode.SdkRejected } });
+  });
+
+  it("injects the shared layout-offset rule into preview and render documents", async () => {
+    const [preview, render] = await Promise.all([
+      buildCompositionDocument(ref, DEFAULT_PREVIEW_SETTINGS, {
+        mode: "preview", root: true, projectRevision: 1, changeSeq: 1,
+      }),
+      buildCompositionDocument(ref, DEFAULT_PREVIEW_SETTINGS, { mode: "render", root: true }),
+    ]);
+    for (const document of [preview, render]) {
+      expect(document).toContain("[data-vidcom-layout-offset]");
+      expect(document).toContain("translate: var(--vidcom-layout-x, 0px) var(--vidcom-layout-y, 0px)");
+    }
   });
 
   it("maps an SDK rejection to the stable domain error", async () => {

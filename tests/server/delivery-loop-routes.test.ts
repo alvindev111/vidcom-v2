@@ -44,7 +44,7 @@ const CONTENDED_INTEGRATION_TIMEOUT_MS = 60_000;
 function qualifiedSceneSource(sceneId: string, duration: number): string {
   return `<!doctype html><html><body><template>
     <style>#${sceneId}{width:1920px;height:1080px}</style>
-    <section id="${sceneId}" data-composition-id="${sceneId}" data-width="1920" data-height="1080" data-duration="${duration}">
+    <section id="${sceneId}" data-composition-id="${sceneId}" data-scene-role="utility" data-width="1920" data-height="1080" data-duration="${duration}">
       <div id="hero">Opening</div>
       <script>
         const tl = gsap.timeline({ paused: true });

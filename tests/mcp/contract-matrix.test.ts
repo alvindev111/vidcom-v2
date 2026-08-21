@@ -47,6 +47,11 @@ const expectedSuccess: Record<string, object> = {
     scene: { id: "scene-1", duration: 4, fileContentHash: matrixNewHash },
     envelope: { projectRevision: 3 },
   },
+  set_element_position: {
+    changed: true,
+    file: { path: "compositions/scene-1.html", contentHash: matrixNewHash },
+    revision: 3,
+  },
   set_text: {
     scene: { id: "scene-1", fileContentHash: matrixNewHash },
     // The matrix scene now carries narration, so editing its text marks that
@@ -108,6 +113,7 @@ const expectedSuccess: Record<string, object> = {
     truncated: false,
   },
   set_preview_settings: {
+    projectRevision: 3,
     revision: 3,
     diagnostics: [],
     previewSettings: {

@@ -144,7 +144,7 @@ function fixture(initialProjectChangeSeq = 8) {
         return {
           project,
           scenes: [{
-            id: "scene-1", src: null, start: 0, duration: 4, trackIndex: 1,
+            id: "scene-1", src: null, sourceFile: "index.html", role: "story" as const, start: 0, duration: 4, trackIndex: 1,
             block: null, isTransition: false, media: [], script: [], narration: null,
             elements: [], unresolvedEffects: 0,
           }],

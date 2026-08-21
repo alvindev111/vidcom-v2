@@ -174,8 +174,8 @@ async function enqueueAndRun(
 
 const twoScenes = `<!doctype html><html><head></head><body>
   <main data-composition-id="main" data-width="320" data-height="180" data-duration="2">
-    <section data-composition-id="scene-a" data-start="0" data-duration="1"></section>
-    <section data-composition-id="scene-b" data-start="1" data-duration="1"></section>
+    <section data-composition-id="scene-a" data-scene-role="utility" data-start="0" data-duration="1"></section>
+    <section data-composition-id="scene-b" data-scene-role="utility" data-start="1" data-duration="1"></section>
   </main>
 </body></html>`;
 
@@ -229,7 +229,7 @@ describe("snapshot job with real SQLite and filesystem", () => {
     }
     const invalid = await fixture(`<!doctype html><html><body>
       <main data-composition-id="main" data-duration="1">
-        <section data-composition-id="scene-bad" data-start="1" data-duration="2"></section>
+        <section data-composition-id="scene-bad" data-scene-role="utility" data-start="1" data-duration="2"></section>
       </main></body></html>`);
     try {
       await expect(enqueueAndRun(invalid, processPort)).resolves.toMatchObject({
@@ -239,6 +239,35 @@ describe("snapshot job with real SQLite and filesystem", () => {
       expect(spawns).toBe(0);
     } finally {
       await invalid.database.destroy();
+    }
+  });
+
+  it("blocks a shallow inline story scene before snapshot enqueue", async () => {
+    const value = await fixture(`<!doctype html><html><body>
+      <main data-composition-id="main" data-duration="9">
+        <section data-composition-id="story" data-start="0" data-duration="9" data-no-timeline>
+          <h1 id="title">Static story</h1>
+        </section>
+      </main></body></html>`);
+    try {
+      await expect(enqueueSnapshotJob({
+        workspace: value.workspace,
+        composition: new CompositionHf(),
+        journal: value.journal,
+        jobs: value.jobs,
+        ids: value.ids,
+        hashContent,
+        binaries: value.binaries,
+        fonts: value.fonts,
+      }, { projectId: value.projectId })).resolves.toMatchObject({
+        ok: false,
+        error: {
+          code: ErrorCode.ProjectInvalid,
+          details: { reason: "story-motion-shallow", sceneIds: ["story"] },
+        },
+      });
+    } finally {
+      await value.database.destroy();
     }
   });
 

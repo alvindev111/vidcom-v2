@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { ChevronDownIcon, ChevronRightIcon, CameraIcon } from "lucide-react";
+import { ChevronDownIcon, ChevronRightIcon } from "lucide-react";
 
 import {
   sceneSettings,
@@ -14,8 +14,7 @@ import { selectClip } from "@/lib/studio/editor-interaction";
 import { fetchApi } from "@/lib/api/services";
 import type { ProjectChanged } from "@/lib/studio/preview-reload";
 import { mutationChangeSeq } from "@/lib/studio/preview-reload";
-import type { FileNode, Scene } from "@/lib/studio/types";
-import { collectFrames, frameForScene } from "@/lib/studio/snapshots";
+import type { Scene } from "@/lib/studio/types";
 import { useLiveScenes } from "./player-time";
 import { SceneCard } from "./scene-card";
 import { useEditorInteraction } from "./editor-interaction-context";
@@ -28,9 +27,9 @@ import { useStudioSession } from "./studio-session-context";
  */
 export function SceneStoryboard({
   projectId,
-  projectSlug,
   scenes,
-  tree,
+  projectRevision,
+  frameRate,
   settings,
   selectedId,
   onSelect,
@@ -38,9 +37,9 @@ export function SceneStoryboard({
   onProjectChanged,
 }: {
   projectId: string;
-  projectSlug: string;
   scenes: Scene[];
-  tree: FileNode[];
+  projectRevision: number;
+  frameRate: number;
   settings: PreviewSettings;
   selectedId: string;
   onSelect: (scene: Scene) => void;
@@ -51,13 +50,14 @@ export function SceneStoryboard({
   const { interaction, interactionRef, applyInteraction } = useEditorInteraction();
   const [showLayers, setShowLayers] = React.useState(false);
   const draggedId = React.useRef<string | null>(null);
+  const dropRef = React.useRef<{ sceneId: string; placement: "before" | "after" } | null>(null);
   const [drop, setDrop] = React.useState<{ sceneId: string; placement: "before" | "after" } | null>(null);
   const [issue, setIssue] = React.useState<string | null>(null);
   const [announcement, setAnnouncement] = React.useState("");
   const [pending, setPending] = React.useState(false);
   const entryHashRef = React.useRef(entryContentHash);
-  const frames = React.useMemo(() => collectFrames(tree), [tree]);
   const liveScenes = useLiveScenes(scenes);
+  const requestInit = React.useMemo(() => studio.request(), [studio]);
 
   React.useEffect(() => {
     if (entryContentHash !== null) entryHashRef.current = entryContentHash;
@@ -65,10 +65,6 @@ export function SceneStoryboard({
 
   // Shared with the timeline so a card and a lane carry the same number.
   const { content: contentScenes, layers } = splitScenes(scenes);
-  const missingFrames = contentScenes.filter(
-    ({ scene }) => frameForScene(frames, scene) === null,
-  ).length;
-
   const clips = React.useMemo(() => scenes.map((scene) => ({
     sceneId: scene.id,
     start: scene.start,
@@ -123,8 +119,10 @@ export function SceneStoryboard({
       key={scene.id}
       scene={scene}
       index={index}
-      frame={frameForScene(frames, scene)}
-      projectSlug={projectSlug}
+      projectId={projectId}
+      projectRevision={projectRevision}
+      frameRate={frameRate}
+      requestInit={requestInit}
       selected={interaction.selection.size > 0 ? interaction.selection.has(scene.id) : scene.id === selectedId}
       live={liveScenes.has(scene.id)}
       hidden={sceneSettings(settings, scene.id).hidden}
@@ -134,7 +132,10 @@ export function SceneStoryboard({
         draggedId.current = dragged.id;
         setIssue(null);
       }}
-      onDragOver={(target, placement) => setDrop({ sceneId: target.id, placement })}
+      onDragOver={(target, placement) => {
+        dropRef.current = { sceneId: target.id, placement };
+        setDrop(dropRef.current);
+      }}
       onDrop={(target, placement) => {
         if (draggedId.current) {
           const intent = reorderDropIntent(scenes, draggedId.current, target.id, placement);
@@ -142,10 +143,18 @@ export function SceneStoryboard({
           else if (intent.kind === "rejected") setIssue(intent.message);
         }
         draggedId.current = null;
+        dropRef.current = null;
         setDrop(null);
       }}
       onDragEnd={() => {
+        const fallback = dropRef.current;
+        if (draggedId.current && fallback) {
+          const intent = reorderDropIntent(scenes, draggedId.current, fallback.sceneId, fallback.placement);
+          if (intent.kind === "ready") void saveIntent(intent);
+          else if (intent.kind === "rejected") setIssue(intent.message);
+        }
         draggedId.current = null;
+        dropRef.current = null;
         setDrop(null);
       }}
       onReorderKeyDown={reorderByKeyboard}
@@ -158,13 +167,6 @@ export function SceneStoryboard({
         <span className="text-muted-foreground text-[11px] font-medium tracking-widest uppercase">
           Storyboard · {contentScenes.length}
         </span>
-        {missingFrames > 0 ? (
-          <span className="text-muted-foreground ml-auto flex items-center gap-1.5 font-mono text-[10px]">
-            <CameraIcon className="size-3" />
-            {missingFrames} without a frame — run{" "}
-            <code>hyperframes snapshot</code>
-          </span>
-        ) : null}
       </header>
 
       <span className="sr-only" aria-live="polite">{announcement}</span>

@@ -1,12 +1,13 @@
 # Spec Editing Experience — Detailed Goals
 
-> **Reference**: [Main Spec File](./spec-editing-experience-complete.md)
+> **Reference**: [Main Spec File](./spec-editing-experience-inprocess.md)
 > **Backlog**: [15-build-order §Giai đoạn 5](../../../product-features/15-build-order.md) — 5.1–5.9
-> **Trạng thái**: **Bản 8 — Approved 2026-08-20 cho remediation**. Bản 8 giữ nguyên R1–R12 bản 7 và
-> bổ sung R13–R15 từ deep review hậu triển khai; yêu cầu “Fix các review” là xác nhận tường minh để
-> thực thi các AC remediation, không phải quyền hạ severity hoặc bỏ finding. Bản 7 đã đồng bộ AC R4.5:
-> preview settings đi qua cùng double-buffer như mọi cập nhật preview khác. Bản 6 đã đổi R4 sang
-> `PlayerHost` + double-buffer; bản 5 sửa R9.9 và thêm R10–R12.
+> **Trạng thái**: **Bản 9 — Approved 2026-08-21 cho runtime UX remediation**. Bản 9 giữ
+> nguyên R1–R15 đã duyệt và bổ sung R16–R20 từ bằng chứng chạy thật: storyboard không có thumbnail,
+> canvas không chỉnh trực tiếp được, preview mất tiếng, inspector khó hiểu và authoring motion lặp/lười.
+> Bản 8 đã bổ sung R13–R15 từ deep review hậu triển khai; yêu cầu “Fix các review” là xác nhận tường
+> minh để thực thi các AC remediation đó, không phải quyền hạ severity hoặc bỏ finding. Bản 7 đã đồng
+> bộ AC R4.5; bản 6 đã đổi R4 sang `PlayerHost` + double-buffer; bản 5 sửa R9.9 và thêm R10–R12.
 
 ## Spec Goal
 
@@ -67,6 +68,9 @@ R5 → `rail-media.jpg`, R7 → `rail-templates.jpg`.
   - SQLite app-data: journal thao tác workspace, audit ghi, job store — **không thêm bảng nào cho undo**. OQ-2 đã chốt undo là **phiên làm việc, 50 bước, trong bộ nhớ**; lịch sử undo không phải dữ liệu được lưu.
   - Cache catalog registry/template trên máy người dùng — **bắt buộc có** theo OQ-4 (bundled + cache), không phải tuỳ chọn của Design.
   - **Cache thumbnail timeline (R10)** — dữ liệu dẫn xuất thuần: phải vô hiệu hoá được theo từng clip bị ảnh hưởng (R10.6), phải có **giới hạn tăng trưởng** và cơ chế loại bỏ, và mất cache phải là chuyện vô hại (sinh lại được). Nằm ở bộ nhớ hay trên đĩa app-data, và thuật toán loại bỏ, là việc của Design.
+  - **Vị trí element/caption chỉnh trên canvas (R17)** — là nội dung authored, phải được ghi vào đúng
+    source composition đang sở hữu target; drag draft chỉ sống trong phiên và không phải nguồn chân lý.
+    Thumbnail storyboard (R16) vẫn là dữ liệu dẫn xuất, không tạo một nguồn ảnh đại diện thứ hai.
   - Narration sidecar + word timing đã sinh ở Core ([`word-timings.ts`](../../../../packages/core/src/domain/word-timings.ts)).
 - **Data ownership**: project (file nguồn, asset, narration) · workspace (journal, audit) · máy người dùng (cache catalog registry/template).
 - **Lifecycle**: create/update/delete file & asset trong phạm vi project; **lịch sử undo sống và chết cùng phiên studio** (tối đa 50 mục, không persist); cache catalog làm mới khi có mạng và luôn có bản bundled làm đáy; backup theo cơ chế destructive đã có ở GĐ 3.
@@ -515,6 +519,126 @@ và policy repository cưỡng chế, để local green hoặc historical artifa
    packaged/process/TTS artifacts SHALL được tải và kiểm, branch policy SHALL active, và main spec mới
    được đổi `inprocess` → `complete`.
 
+### Requirement 16 — Storyboard luôn có thumbnail thật
+
+**User Story:** Là người dựng video, tôi muốn mỗi thẻ storyboard hiện một frame đại diện của scene,
+để nhận biết mạch hình bằng mắt mà không phải phát lần lượt hoặc chạy lệnh ngoài editor.
+
+#### Acceptance Criteria
+1. WHEN storyboard mở hoặc source revision đổi THEN hệ thống SHALL tự yêu cầu frame đại diện cho mọi
+   content scene đang nhìn thấy; người dùng SHALL NOT phải chạy `hyperframes snapshot` bằng terminal.
+2. WHEN frame đang được sinh THEN thẻ SHALL hiện skeleton/progress có nghĩa; WHEN frame sẵn sàng THEN
+   thẻ SHALL thay tại chỗ bằng ảnh thật mà không reload toàn trang.
+3. WHEN chọn thời điểm đại diện THEN hệ thống SHALL lấy một thời điểm nằm trong scene và tránh đúng
+   frame mở đầu nếu frame đó chưa thể hiện nội dung; cùng source revision SHALL cho cùng kết quả.
+4. WHEN source, asset, font, motion dependency hoặc timing của scene đổi THEN thumbnail cũ SHALL bị
+   invalidated theo đúng render identity; hệ thống SHALL NOT trình bày frame stale như bằng chứng hiện tại.
+5. WHEN chỉ một scene sinh thumbnail thất bại THEN các scene khác SHALL vẫn hiện frame; scene lỗi SHALL
+   hiện lý do ngắn + nút Retry, không hiện biểu tượng ảnh hỏng không giải thích.
+6. WHEN scene/media URL có query hoặc fragment dùng cho authored identity THEN hệ thống SHALL vẫn đọc
+   đúng file project tương ứng và không báo thiếu asset giả.
+7. WHEN project có ít nhất 100 scene THEN storyboard SHALL chỉ yêu cầu/render vùng nhìn thấy cộng một
+   vùng đệm hữu hạn; thao tác cuộn SHALL không tạo batch hay DOM tăng vô hạn.
+
+### Requirement 17 — Chọn và kéo element/subtitle trực tiếp trên preview canvas
+
+**User Story:** Là người dựng video, tôi muốn bấm vào element hoặc subtitle đang thấy rồi kéo nó tới
+vị trí mới ngay trên canvas, để chỉnh bố cục theo hình thay vì phải tìm và sửa CSS bằng tay.
+
+#### Acceptance Criteria
+1. WHEN bật chế độ `Arrange` và bấm một element có định danh authored ổn định THEN hệ thống SHALL hiện
+   selection outline, tên target, toạ độ và guide; playback SHALL tự pause trong phiên chỉnh.
+2. WHILE kéo target THEN hệ thống SHALL cập nhật draft ở tốc độ tương tác, SHALL NOT ghi source, và
+   SHALL quy đổi chính xác từ toạ độ canvas đã scale về không gian authored của composition.
+3. WHEN thả target tại vị trí mới THEN hệ thống SHALL gửi đúng một mutation tới source sở hữu target,
+   kèm `expectedContentHash`; mutation SHALL đi qua `WriteAuthority` và tạo đúng một mục undo.
+4. WHEN nhấn `Esc` trong lúc kéo hoặc thả về vị trí cũ THEN hệ thống SHALL khôi phục draft ban đầu và
+   SHALL NOT ghi source hay tạo undo.
+5. WHEN kéo gần tâm, biên canvas hoặc safe-area guide trong **8 px màn hình** THEN target SHALL snap và
+   hiện guide; IF giữ phím modifier bỏ snap THEN vị trí SHALL đi tự do nhưng vẫn kẹp trong canvas.
+6. WHEN chọn caption/subtitle group THEN người dùng SHALL kéo được vị trí ngang và dọc; thay đổi SHALL
+   áp nhất quán cho preview và render, không phá word timing hoặc active-word highlighting.
+7. WHEN target đang có motion transform THEN chỉnh vị trí SHALL thay đổi layout/base position mà không
+   ghi đè keyframe/tween; playback sau commit SHALL giữ nguyên choreography quanh vị trí mới.
+8. IF target không có định danh ổn định, thuộc runtime động, bị khoá, hoặc không thể ghi an toàn THEN
+   hệ thống SHALL không cho kéo và SHALL nêu rõ cách làm target editable; SHALL NOT đoán selector.
+9. WHEN source đổi bởi agent/editor khác trong lúc kéo THEN commit SHALL bị chặn với “nguồn đã đổi”,
+   draft SHALL được giữ để đối chiếu và người dùng SHALL có hành động Reload/Cancel rõ ràng.
+10. WHEN target đang selected THEN phím mũi tên SHALL dịch 1 authored pixel, `Shift` + mũi tên SHALL
+    dịch 10 pixel; focus, outline và thông báo trợ năng SHALL theo cùng target.
+11. Scope của R17 chỉ gồm **chọn + đổi vị trí x/y** cho element và subtitle. Resize, rotate, sửa text,
+    sửa keyframe/tween/path và group/ungroup SHALL không được ngầm kéo vào remediation này.
+
+### Requirement 18 — Preview phát âm thanh đúng với transport
+
+**User Story:** Là người dựng video, tôi muốn nghe narration, BGM và sound cue khi bấm Play, để duyệt
+nhịp kể chuyện trong editor thay vì chỉ nhìn chuyển động câm.
+
+#### Acceptance Criteria
+1. WHEN preview ready, nút Mute đang tắt và người dùng bấm Play THEN mọi audio clip đang active SHALL
+   phát được nghe thấy; visual transport chạy nhưng media bị `paused`/`muted` ngầm SHALL là lỗi.
+2. WHEN người dùng seek hoặc đổi playback rate THEN narration/BGM SHALL bám transport trong sai số tối
+   đa **một frame** sau khi ổn định; pause SHALL dừng cả hình và âm.
+3. WHEN người dùng mute/unmute THEN nhãn, icon, trạng thái bridge và media thật SHALL thống nhất; reload
+   double-buffer SHALL giữ muted/rate/play-state như R4.
+4. IF browser chặn audio vì user activation hoặc permissions policy THEN hệ thống SHALL giữ playback
+   paused, hiện hành động `Enable audio`, và SHALL NOT âm thầm chạy hình trong khi báo unmuted.
+5. WHEN một audio resource không tải/giải mã được THEN preview SHALL nêu đúng track/scene lỗi và lý do;
+   audio lỗi SHALL tham gia health gate thay vì bị che bởi visual-ready.
+6. Browser evidence SHALL kiểm narration + BGM thật trên ít nhất Linux và Windows, gồm play, pause,
+   seek, mute/unmute, reload khi đang phát và kiểm trạng thái media bên trong player.
+
+### Requirement 19 — Inspector tự giải thích được và đặt đúng tên
+
+**User Story:** Là người lần đầu dùng editor, tôi muốn hiểu mỗi tab và công cụ dưới storyboard thay đổi
+gì, tác động ở phạm vi nào và bước tiếp theo là gì, để không phải thử mò hoặc đoán thuật ngữ nội bộ.
+
+#### Acceptance Criteria
+1. WHEN hiển thị rail dưới storyboard THEN mỗi tab SHALL dùng nhãn theo kết quả người dùng nhận được:
+   `Scene`, `Look & subtitles`, `Motion & sound`, `Add scene`, `Music`; `Preview editor` SHALL không còn
+   là tên của panel chỉ chỉnh palette/subtitle/BGM.
+2. WHEN người dùng mở một tab THEN đầu panel SHALL có một câu mô tả phạm vi, trạng thái hiện tại và một
+   primary action hoặc next step; thuật ngữ như transition, reveal, mounted block SHALL có tooltip/help.
+3. WHEN chọn scene THEN panel Scene SHALL nhóm rõ `Timing`, `Media`, `Sound`, `Script`, `Narration` và
+   nói thay đổi nào là authored, preview-only, hay test sound; nút test SHALL cho feedback đang phát.
+4. IF hành động chưa áp dụng được cho scene hiện tại THEN control SHALL disabled kèm lý do tại chỗ,
+   không để nút bấm im lặng hoặc chỉ ghi hướng dẫn CLI.
+5. WHEN người dùng chuyển tab hoặc scene THEN selection/context SHALL được giữ hợp lý; focus SHALL đi
+   vào heading panel mới và mọi control SHALL có accessible name + keyboard path.
+6. Browser usability evidence SHALL chứng minh người mới có thể: tìm chỗ đổi subtitle, test sound,
+   thêm scene từ template và chọn BGM mà không dùng terminal hoặc đọc source.
+
+### Requirement 20 — Authoring skill tạo storytelling có diễn tiến, không lặp motion cho có
+
+**User Story:** Là người yêu cầu agent dựng video, tôi muốn từng scene có hành động kể chuyện riêng và
+các scene nối nhau bằng biến đổi có chủ đích, để video không thành chuỗi card fade/slide lặp lại vô hồn.
+
+#### Acceptance Criteria
+1. BEFORE materialization THEN skill SHALL lập beat plan cho từng scene gồm setup → development →
+   payoff → hold và ghi rõ visual state đầu/cuối; một entrance rồi đứng yên SHALL không đạt.
+2. WHEN scene dài 6–10 giây THEN scene SHALL có ít nhất ba semantic motion phases trải qua phần đầu,
+   giữa và cuối; scene >10 giây SHALL có narration hoặc state change tiếp diễn giải thích thời lượng.
+3. WHEN hai scene liền nhau THEN authoring plan SHALL khai báo `seamFromPrevious`: carry/transform một
+   object, shape, color, direction hoặc visual question; IF cố ý hard cut THEN SHALL ghi rõ tương phản
+   kể chuyện thay vì dùng cùng một transition mặc định.
+4. WITHIN bất kỳ bốn story scene liên tiếp THEN SHALL có ít nhất ba animation pattern hoặc visual
+   structures khác nhau; cùng pattern ở hai scene liền nhau chỉ hợp lệ khi scene sau tiếp tục và biến
+   đổi trạng thái của scene trước.
+5. WHEN validator đánh giá story scene THEN `data-no-timeline`, tween tạo trong loop, dynamic selector
+   hoặc motion chỉ tồn tại ở root SHALL NOT được dùng để miễn kiểm tra scene; mỗi scene SHALL có target
+   phân giải được và motion phase kiểm chứng được.
+6. WHEN scene chỉ fade/rise/drop/float/pulse, chỉ đổi opacity/position, hoặc layout/card giống scene kế
+   bên mà không có state transformation THEN validate/materialize SHALL trả diagnostic blocking với
+   scene id và hướng sửa cụ thể.
+7. BEFORE approval THEN visual review SHALL xem contact sheet toàn video cùng opening/middle/payoff của
+   từng scene và SHALL từ chối repetition, idle frame, caption che nội dung hoặc visual không giải thích
+   narration; một frame đẹp đơn lẻ SHALL không đủ để duyệt motion.
+8. FOR video kể chuyện 2–3 phút THEN mặc định SHALL dùng scene 6–10 giây, không có scene tĩnh >10 giây
+   nếu không có lý do nội dung; narration có nghĩa SHALL phủ ít nhất **75%** thời lượng không tính credit,
+   và khoảng im lặng >2.5 giây SHALL có hành động hình/sound được nêu trong beat plan.
+9. WHEN agent-kit được cập nhật THEN cả bundle cài cho Codex/Claude, skill nguồn, validator và contract
+   tests SHALL cùng version; test SHALL có fixture “18 scene cùng một motion loop” và chứng minh bị chặn.
+
 ## Ước lượng sơ bộ (lịch sử R1–R12; remediation R13–R15 được gate riêng)
 
 | # | Requirement | Build-order | ID | SP bản 1 | **SP bản 5** | Vì sao đổi |
@@ -550,6 +674,8 @@ phải 7–8 như bản 4. Ghi ra đây để lần sau không ai đọc "3–4 
 | Multi-user, collaborative editing, CRDT | Local-first một người dùng một máy |
 | PR-11 hot-reload **từng** sub-composition (chuyển từ R4.1a bản 5) | Spike đo được swap DOM tại chỗ hỏng URL asset, không chạy script như đường nạp gốc, và không gỡ được side effect. Double-buffer thay thế; PR-11 để lại Giai đoạn 6 |
 | Sửa trực tiếp keyframe/tween trên timeline (row element) | Timeline hiện chỉ *hiện* tween; sửa tween là bề mặt riêng, chưa có requirement |
+| Resize, rotate, sửa text, group/ungroup hoặc sửa keyframe/tween trực tiếp trên preview canvas | R17 chỉ mở bề mặt chọn và đổi vị trí x/y; các thao tác này cần interaction/serialization semantics riêng |
+| Kéo target runtime động không có authored id ổn định | Không được biến selector đoán thành đường ghi; R17.8 yêu cầu nêu cách làm target editable |
 | Trim/re-speed clip **media** trên timeline | R1 và R12 chỉ áp cho clip **scene** (sub-composition). Kéo mép một clip video có thể mang nghĩa đổi tốc độ chứ không phải cắt — đó là ngữ nghĩa riêng, cần requirement riêng |
 | Safe margin và style preset cho caption | R6 chỉ sinh cue và nhịp; trình bày caption là bề mặt thiết kế riêng |
 | Đóng nốt AC còn mở của Giai đoạn 4 (render MP4 từ production release artifact) | Thuộc spec Packaging & Distribution, không kéo sang đây |
@@ -594,31 +720,39 @@ quyết định sản phẩm rơi vào tay người đang viết code.
 - [x] Mọi hạng mục 5.1–5.9 của build-order có ít nhất một requirement
 - [x] Có ca lỗi và ca biên (hash lệch, vượt duration, offline, probe fail, không còn undo)
 - [x] Data and Persistence Scope đã điền
-- [x] Approval Gate ghi đúng trạng thái `Approved (bản 8)` và ngày xác nhận remediation
+- [x] Runtime feedback 2026-08-21 được map đầy đủ thành R16–R20, gồm error/empty/loading/conflict state
+- [x] Approval Gate ghi đúng trạng thái `Approved (bản 9)`
 
 **Clarity**
 - [x] EARS dùng nhất quán (WHEN/IF/THEN/SHALL)
 - [x] Ngưỡng của R10–R12 có giá trị: mật độ 1 khung/80 px, biên virtualization 1 khung nhìn, thời lượng ảnh mặc định 4 giây
 - [x] Requirement viết từ góc người dùng; chi tiết kỹ thuật để lại cho Design
 - [x] **Mọi ngưỡng người dùng nhìn thấy đã có giá trị**: 50 bước undo (OQ-2) · bảng giới hạn/allowlist upload (OQ-6) · snap 8 px kẹp [1 khung, 0.5 s] và làm tròn theo khung (OQ-9) · cue 84 ký tự / 7 giây / sàn 1.2 giây / im lặng 0.6 giây (OQ-10)
+- [x] R16–R20 chốt được ranh giới người dùng nhìn thấy: thumbnail tự sinh · canvas chỉ position x/y ·
+  audio không silent-fallback · nhãn inspector theo outcome · motion density/pattern/narration coverage
 
 **Testability**
 - [x] Ràng buộc "một mutation duy nhất" (R1.4, R2.4) đo được bằng đếm lời gọi ghi
 - [x] R4 có tiêu chí quan sát được (`PlayerHost` giữ danh tính, engine/root mới chỉ được swap sau
   preflight, `currentTime` lệch ≤ 1 khung, play/pause/rate/muted được giữ, 500 ms)
-- [x] **Mọi AC đều test được với giá trị đang có trong tài liệu**, gồm cả R10–R12 mới. **Ba** câu Loại B còn lại (OQ-3, OQ-7, OQ-11) là lựa chọn cách làm, không đổi AC nào; OQ-12 đã đóng bằng cách sửa R9.9.
+- [x] **Mọi AC đều test được với giá trị đang có trong tài liệu**, gồm browser-observable state cho
+  thumbnail/canvas/audio/inspector và fixture blocking cho motion repetition. **Ba** câu Loại B còn
+  lại (OQ-3, OQ-7, OQ-11) là lựa chọn cách làm, không đổi AC nào; OQ-12 đã đóng bằng cách sửa R9.9.
 
 ## Approval Gate
 
 > Không bắt đầu detailed design cho tới khi mục này được xác nhận tường minh.
 
-- **Status**: **Approved (bản 8)**
-- **Confirmed by**: người dùng (chủ dự án) — yêu cầu `/goal Fix các review` ngày 2026-08-20
-- **Confirmation date**: 2026-08-15 (bản 5) · 2026-08-16 (bản 6–7) · **2026-08-20 (bản 8 remediation)**
+- **Status**: **Approved (bản 9)**
+- **Confirmed by**: người dùng (chủ dự án) — trả lời `Approve` cho R16–R20 ngày 2026-08-21
+- **Confirmation date**: 2026-08-15 (bản 5) · 2026-08-16 (bản 6–7) · 2026-08-20 (bản 8 remediation) · **2026-08-21 (bản 9 runtime UX remediation)**
 - **Remediation authority**: R13–R15 lấy nguyên finding/closure boundary từ deep review. Việc duyệt
   cho phép sửa code, workflow, test và spec trong repo; không tự hạ security, không bỏ finding, không
   giả evidence. External repository policy chỉ được đổi theo gate R15 và phải ghi exact setting/evidence.
-- **Notes / required revisions before design**: **không còn câu hỏi nào chặn.** Bảy quyết định phạm vi và ngưỡng đã chốt (OQ-2, 4, 5, 6, 8, 9, 10). Ba câu còn lại (OQ-3 cách lưu undo · OQ-7 công cụ probe · OQ-11 cơ chế integrity của registry) là lựa chọn cách làm, **bắt buộc** vào Design dưới dạng Decision Record và không đổi AC nào. OQ-12 đã đóng ở bản 5 bằng cách sửa R9.9.
+- **Notes / required revisions before design**: **không còn câu hỏi sản phẩm nào chặn.** R17 chỉ
+  position x/y; R20 chốt scene 6–10 giây, ba phase, rolling-four diversity và narration coverage 75%.
+  Design phải chọn bridge an toàn cho canvas/audio mà không phá trust boundary R13, và tái sử dụng
+  thumbnail pipeline hữu hạn của R10.
 - **Vòng review 7 — đồng bộ quyết định R4 bản 6 (2026-08-16)**: R4.5 còn giữ câu “preview settings không tải lại toàn bộ composition”, trái R4.1a và quyết định “double-buffer cho mọi cập nhật preview”. Bản 7 bỏ ngoại lệ đó: preview settings dùng cùng buffer, cùng transport và cùng ngân sách R4.1c; build-order bỏ “hot-reload preview settings”.
 - **Vòng review 1 (2026-08-15)**: bản 1 bị chặn ở 7 điểm — R6 thiếu phần *sinh* caption, R9 thiếu mount, R3 chưa định nghĩa phạm vi undo, R5 thiếu luật upload bắt buộc và thiếu font, R8 chưa phủ hai đường mất draft đang có thật trong code, R2 chưa chốt semantics gap/ranh giới nhóm/bàn phím, và OQ mâu thuẫn với AC. Bản 2 sửa cả 7.
 - **Vòng review 6 — dọn nhất quán Goals bản 5 (2026-08-15)**: không còn blocker kiến trúc. Đã dọn: bảng phạm vi undo khớp R9.9 mới và thêm hai dòng còn thiếu (thả asset tạo scene bọc R11, áp font R5.6c); blockquote không còn cắt đôi bảng Markdown; R11.8 nói rõ undo **xoá cả scene wrapper và sidecar** chứ không chỉ gỡ mount, tránh để lại file mồ côi; R10.7 và dòng ước lượng bỏ nốt dấu vết `sourceRevision`, chuyển sang định danh render/dấu vân phụ thuộc; R10.9 nói rõ virtualization áp tới **từng ô thumbnail** trong một clip dài; bảng ước lượng map R10/R11/R12 sang 5.10/5.11/5.12; R12.1b chốt hành vi `Shift`-click sang track khác (chọn đúng clip đó, đặt làm anchor mới); main spec đồng bộ tóm tắt R9.9 và số vòng review.

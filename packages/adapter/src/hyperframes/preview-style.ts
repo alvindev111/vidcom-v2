@@ -22,6 +22,12 @@ const FX_KEYFRAMES = `
 @keyframes hf-fx-rings { to { transform: scale(1.9); opacity: 0; } }
 @keyframes hf-fx-spin { to { transform: rotate(360deg); } }
 `;
+const MOTION_KEYFRAMES = `
+@keyframes hf-scene-drift { from { translate: -1.2% 0; scale: 1.015; } to { translate: 1.2% -0.8%; scale: 1.045; } }
+@keyframes hf-scene-focus { from { scale: 1.08; filter: blur(7px) brightness(.82); } to { scale: 1; filter: blur(0) brightness(1); } }
+@keyframes hf-scene-pulse { 0%, 100% { scale: 1; } 48% { scale: 1.035; } 58% { scale: 1.012; } }
+@keyframes hf-scene-wipe { from { clip-path: inset(0 100% 0 0 round 18px); } 28% { clip-path: inset(0 0 0 0 round 0); } to { clip-path: inset(0 0 0 0 round 0); } }
+`;
 
 function hexToRgba(value: string, alpha: number): string {
   const match = /^#[0-9a-f]{6}$/i.test(value) ? value.slice(1) : "000000";
@@ -92,6 +98,18 @@ export function buildPreviewCss(settings: RenderablePreviewSettings): string {
     .filter(([, value]) => value.hidden)
     .map(([id]) => `[data-composition-id="${cssString(id)}"]`)
     .join(",\n");
+  const motion = Object.entries(settings.scenes)
+    .filter(([, value]) => (value.motionPreset ?? "none") !== "none")
+    .map(([id, value]) => {
+      const selector = `[data-composition-id="${cssString(id)}"]`;
+      const name = value.motionPreset === "drift" ? "hf-scene-drift"
+        : value.motionPreset === "focus" ? "hf-scene-focus"
+          : value.motionPreset === "pulse" ? "hf-scene-pulse"
+            : "hf-scene-wipe";
+      const timing = value.motionPreset === "wipe" ? "3.2s cubic-bezier(.16,1,.3,1) both" : "6s ease-in-out infinite alternate";
+      return `${selector} { animation: ${name} ${timing}; transform-origin: center; will-change: translate, scale, filter, clip-path; }`;
+    })
+    .join("\n");
 
   return `:root {
 ${variables}
@@ -111,6 +129,10 @@ ${variables}
   --subtitle-bottom: ${subtitles.bottom}px;
 }
 
+[data-vidcom-layout-offset] {
+  translate: var(--vidcom-layout-x, 0px) var(--vidcom-layout-y, 0px);
+}
+${motion ? `\n${MOTION_KEYFRAMES}\n${motion}\n` : ""}
 ${subtitles.override ? `/* Take over caption styling. Compositions hard-code their caption colour
    and size in their own stylesheet, so nothing short of !important reaches
    them — which is exactly what the override switch is asking for. */

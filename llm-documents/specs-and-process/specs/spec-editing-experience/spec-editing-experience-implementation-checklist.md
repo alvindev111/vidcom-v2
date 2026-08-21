@@ -1,8 +1,8 @@
 # Spec Editing Experience — Implementation Checklist
 
-> **Reference**: [Detailed Goals](./spec-editing-experience-detailed-goal.md) — bản 8, Approved 2026-08-20 cho remediation
-> **Design**: [Detailed Design](./spec-editing-experience-detailed-design.md) — bản 13, Approved 2026-08-20 cho remediation
-> **Main spec**: [spec-editing-experience-complete.md](./spec-editing-experience-complete.md)
+> **Reference**: [Detailed Goals](./spec-editing-experience-detailed-goal.md) — bản 9, Approved 2026-08-21 cho R16–R20
+> **Design**: [Detailed Design](./spec-editing-experience-detailed-design.md) — bản 14, Approved 2026-08-21 cho R16–R20
+> **Main spec**: [spec-editing-experience-inprocess.md](./spec-editing-experience-inprocess.md)
 > **Deep review**: [2026-08-20](./spec-editing-experience-deep-review-2026-08-20.md) — source của P12–P18
 > **Spike evidence**: [`spikes/phase-5/README.md`](../../../../spikes/phase-5/README.md) — 24 probe hợp lệ PASS + 1 superseded
 
@@ -92,8 +92,10 @@ Mục này là chỉ dẫn tường minh để agent có thể chạy liên tụ
    **trước**, thêm Decision/erratum, đồng bộ checklist và log; tiếp tục mà không hỏi nếu thay đổi chỉ
    là kỹ thuật nội bộ và vẫn giữ nguyên AC/security/scope.
 9. Chỉ dừng để hỏi khi lựa chọn sẽ đổi hành vi người dùng/AC, mở rộng scope, hạ security hoặc cần một
-   hành động ngoài repo chưa được uỷ quyền. Môi trường thiếu Chrome/network không chặn task độc lập:
-   ghi `[!]` cho đúng evidence, tiếp tục nhánh không phụ thuộc, tuyệt đối không fake PASS.
+   hành động ngoài repo chưa được uỷ quyền. Môi trường thiếu Chrome/network không chặn task độc lập.
+   Với P0–P18 giữ policy lịch sử; với P19–P25, thiếu Chrome/FFmpeg/artifact **ở local** phải chuyển
+   sang Actions ở P25 và chưa được ghi `[!]`. Chỉ ghi `[!]` khi CI tương ứng cũng không chạy được sau
+   retry có log; tuyệt đối không fake PASS.
 10. Test đỏ do diff hiện tại ⇒ sửa trước khi đi tiếp. Test đỏ có sẵn ⇒ chứng minh bằng baseline, ghi
    log và không disable/đổi assertion để che lỗi.
 11. Không tự làm sạch/stash/reset worktree, commit, push, mở PR hoặc cập nhật hệ thống ngoài repo nếu
@@ -105,8 +107,9 @@ Mục này là chỉ dẫn tường minh để agent có thể chạy liên tụ
 13. Nếu thiếu `node_modules`, chạy `bun install --frozen-lockfile`; không sửa lockfile để “cho qua”.
     Nếu thiếu Chromium và network có sẵn, dùng đúng bootstrap của workflow:
     `node node_modules/hyperframes/bin/hyperframes.mjs browser ensure` để cài vào cache mà resolver
-    hiện tại đọc; không đổi sang cache Playwright khác. Nếu network không có thì ghi `[!]` cho đúng
-    browser evidence và tiếp tục task độc lập, không hỏi lại và không giả PASS.
+    hiện tại đọc; không đổi sang cache Playwright khác. Riêng addendum P19–P25, local network/Chrome
+    thiếu phải lấy evidence từ `Browser session`; `[!]` chỉ hợp lệ nếu workflow đó cũng không chạy
+    được, kèm URL/kết luận cụ thể.
 
 ## Approval Gate
 
@@ -120,6 +123,19 @@ Mục này là chỉ dẫn tường minh để agent có thể chạy liên tụ
   R5 ở trên. **Remediation addendum Approved 2026-08-20** theo yêu cầu `/goal Fix các review`:
   Goals bản 8, Design bản 13 và P12–P18 được phép thực thi; không hạ severity, không bỏ finding và
   không dùng historical/local green thay exact-source boundary evidence.
+
+### R16–R20 Implementation Addendum Approval Gate
+
+> Gate lịch sử ở trên vẫn có hiệu lực cho P0–P18. Gate này chỉ quản lý code execution của P19–P25;
+> Design bản 14 đã được duyệt nhưng chưa đồng nghĩa checklist addendum đã được duyệt.
+
+- **Status**: **Approved**
+- **Confirmed by**: người dùng (reply `approve` sau yêu cầu `Approve checklist`)
+- **Confirmation date**: 2026-08-21
+- **Scope**: P19–P25 triển khai R16–R20 và dựng lại Odyssey bằng editor đã sửa.
+- **Notes / required revisions before code execution**: Không viết production code, test code hoặc
+  sửa project Odyssey cho tới khi người dùng duyệt gate này. Sau khi được duyệt, P19.0 mở lại main
+  spec `complete` → `inprocess`; mọi evidence P18 chỉ là baseline lịch sử, không đóng gate mới.
 
 ## Sequencing Strategy
 
@@ -143,6 +159,13 @@ P3 + P4         → P6
 P2 + P3 + P5    → P9
 P0 + P2 + P3 + P4 → P10
 P1…P10          → P11
+P18             → P19
+P19             → P20
+P19             → P21
+P21             → P22
+P22             → P23
+P19 + P21       → P24
+P20 + P22 + P23 + P24 → P25
 ```
 
 **Recommended execution order**: S0 → P0 → P3 → P4 → P1 → P2 → P5 → P6 → P7 → P8 → P9 → P10 → P11.
@@ -150,6 +173,11 @@ P1…P10          → P11
 **Deep-review remediation order**: historical S0–P11 stays closed; execute
 `P12 → P13 → P14 → P15 → P16 → P17 → P18`. P17 repository-contained hardening may begin only after
 P12–P16 are green; P18 owns exact-source Actions and external repository policy.
+
+**R16–R20 addendum order**: historical P0–P18 stays closed; execute
+`P19 → P20 → P21 → P22 → P23 → P24 → P25`. P19 creates the shared read model used by storyboard
+and position authority. P25 is locked until every product slice is green; any red local/Actions gate
+must be repaired and rerun before the next dependent task.
 
 **Parallelizable**: checklist mặc định cho **một agent tuần tự**. Nếu nhiều agent được người dùng cho
   phép tường minh, sau P0 làm P3; sau P3 có thể tách P4 · P1 · P5, P2 cũng chờ P3;
@@ -185,6 +213,13 @@ P6 chờ P3 + P4; P7 chờ thêm safe-CSS seam của P5; còn P9/P10/P11 giữ d
 | P16 Draft + frame grid | `.agents/skills/bun/SKILL.md` | Deep review M-04/M-05; Design §23; `draft-store.ts`, `use-source-files.ts`, editor UI; snap/interaction; Core timing/order use cases |
 | P17 Hardening + workflow | `.agents/skills/bun/SKILL.md` + `.agents/skills/hono/SKILL.md` | Deep review G-02/G-03; Design §24; CRUD dialogs; browser tests; workflows/package scripts; dependency/security configuration |
 | P18 CI/governance closeout | `.agents/skills/bun/SKILL.md` | Goals R15; all workflow YAML; source identity; Execution Log; GitHub branch policy current state |
+| P19 Projection + thumbnail foundation | `.agents/skills/bun/SKILL.md`; global `hyperframes-cli` | Design §27, §29.1; `packages/adapter/src/hyperframes/parse.ts`; `packages/core/src/usecase/timeline-thumbnails.ts`; `packages/server/src/routes/thumbnails.ts`; `src/lib/studio/{types,timeline-thumbnail-layout}.ts`; `src/components/studio/{scene-storyboard,scene-card,timeline-thumbnails}.tsx` |
+| P20 Storyboard thumbnail UX | `.agents/skills/bun/SKILL.md`; global `browser:control-in-app-browser` for evidence | P19 deliverables; `src/components/studio/{scene-storyboard,scene-card}.tsx`; `tests/frontend/{timeline-thumbnail-layout,timeline-thumbnail-browser,editing-experience-browser}.test.ts`; browser harness |
+| P21 Position mutation authority | `.agents/skills/bun/SKILL.md` + `.agents/skills/hono/SKILL.md` + `.agents/skills/mcp-builder/SKILL.md` | Design §29, §32.1–§32.3; `packages/contracts/src/{dto,editing,mcp}.ts`; `packages/core/src/{port/types.ts,usecase/project-writes.ts,service/write-authority.ts}`; `packages/adapter/src/hyperframes/{parse,sdk-ops,preview-style}.ts`; HTTP/MCP editing registries |
+| P22 Arrange bridge + canvas | `.agents/skills/bun/SKILL.md`; global `browser:control-in-app-browser` | Design §28.1–§28.2; `src/lib/studio/preview-bridge.ts`; `src/preview-host/entry.ts`; `src/components/studio/{preview-canvas,studio-shell}.tsx`; `src/components/studio/use-hyperframes-player.ts`; P21 DTO/use case |
+| P23 Preview audio + inspector guidance | `.agents/skills/bun/SKILL.md`; global `browser:control-in-app-browser` | Design §28.3, §31, §32.3; `src/components/studio/{hyperframes-player-environment,use-hyperframes-player}.ts`; `src/components/studio/{preview-controls,scene-pane}.tsx`; `src/preview-host/entry.ts`; `src/lib/studio/{preview-bridge,preview-sounds}.ts` |
+| P24 Story-motion gate + agent kit v9 | `.agents/skills/bun/SKILL.md`; global `hyperframes` then `hyperframes-animation` | Design §30, Decisions 18–19; `packages/core/src/domain/story-motion.ts`; `packages/core/src/usecase/diagnostics.ts`; `packages/worker/src/render-job.ts`; `packages/adapter/src/hyperframes/{parse,check}.ts`; `packages/agent-kit/{AGENTS.md,CLAUDE.md,skills/**,scripts/build.mjs,src/generated-bundle.ts}` |
+| P25 Exact-source evidence + Odyssey production | `.agents/skills/bun/SKILL.md`; global `hyperframes`, `general-video`, `media-use`, `hyperframes-cli`, `hyperframes-audio`, `browser:control-in-app-browser` | All P19–P24 deliverables; user CI contract; five workflow YAMLs; project `project_d650b815-9c0d-4c20-b866-8e9dace5a6c8`; source identity; render/approval evidence rules |
 
 **Lưu ý về template**: template checklist nhắc tới `backend-docs/` và `frontend-docs/` — hai thư mục đó **không tồn tại** trong repo này. Luật code nằm ở
 `llm-documents/steering/11-code-style.md`; đọc nó một lần trước P0.
@@ -220,6 +255,24 @@ fails the build if one goes missing.
 - `[/]` — đang làm
 - `[x]` — xong (đã implement, có test, đã validate)
 - `[!]` — bị chặn (kèm ghi chú nêu rõ vì sao)
+
+---
+
+## R16–R20 Addendum Verification Commands
+
+> Bảng `Phase Verification Matrix` lịch sử đã được `scripts/verify-spec-test-paths.mjs` đăng ký cho
+> S0–P11. Task 19.0 đăng ký P19–P25 vào validator trước production code của addendum; bảng mới vẫn
+> tách riêng để không viết lại authority lịch sử.
+
+| Phase | Focused verification command |
+|---|---|
+| P19 | `bunx vitest run tests/core/timeline-thumbnails.test.ts tests/adapter/thumbnail-pipeline.test.ts tests/frontend/timeline-thumbnail-layout.test.ts` |
+| P20 | `bunx vitest run tests/frontend/timeline-thumbnail-browser.test.ts tests/frontend/editing-experience-browser.test.ts` |
+| P21 | `bunx vitest run tests/core/write-authority.test.ts tests/adapter/composition-hf.test.ts tests/server/project-routes.test.ts tests/mcp/contract-matrix.test.ts` |
+| P22 | `bunx vitest run tests/frontend/preview-bridge.test.ts tests/frontend/canvas-drag.test.ts tests/frontend/arrange-browser.test.ts tests/frontend/editing-experience-browser.test.ts` |
+| P23 | `bunx vitest run tests/frontend/preview-bridge.test.ts tests/frontend/preview-audio-browser.test.ts tests/frontend/inspector-actions-browser.test.ts tests/frontend/accessibility-browser.test.ts tests/frontend/editing-experience-browser.test.ts` |
+| P24 | `bunx vitest run tests/core/story-motion.test.ts tests/golden/parse.test.ts tests/adapter/diagnostics-thumbnail.test.ts tests/adapter/snapshot-job.test.ts tests/adapter/render-job.test.ts tests/adapter/project-lifecycle.test.ts tests/agent-kit/sync.test.ts` |
+| P25 | Local focused rows P19–P24, then exact-source `CI`, `Browser session`, `Packaged smoke`, `Process supervision gate`, `VieNeu real engine`; download and inspect all required artifacts |
 
 ---
 
@@ -1700,6 +1753,427 @@ Rows cite the narrowest boundary proof; the full exact-source CI remains the reg
 
 ---
 
+## Phase 19: Projection model + shared thumbnail foundation
+
+**Addresses**: R16.1–R16.7; R17.6–R17.8, R17.11; nền cho R20.1–R20.9
+**Design reference**: §27, §29.1, §32.1, Decision 16
+**Files affected**: contracts scene DTO; HyperFrames parse/model; thumbnail sampling/cache request;
+Studio scene types; spec/main state
+**Prerequisite**: R16–R20 addendum Approval Gate `Approved`; historical P18 remains PASS
+**Skills**: Bun + global `hyperframes-cli` row above
+**Read first**: toàn bộ Design §27 + §29.1; full current source named in P19 skill row; CodeGraph callers
+of `SceneCard`, `sampleTimelineThumbnailTimes`, `parseComposition`
+
+**Tasks**:
+- [x] 19.0 Reopen execution state without rewriting historical evidence
+  - Record baseline HEAD, staged/unstaged/untracked/deleted/symlink identity and existing user-owned
+    dirty files; rename main spec `complete` → `inprocess`; create/update Vietnamese Tailwind
+    `implementation-notes.html` before production code.
+  - Register P19–P25 in `scripts/verify-spec-test-paths.mjs`, run `bun run test:spec-paths`, and require
+    every referenced focused test path to exist before starting 19.1.
+  - Do not stage, stash, reset, commit or push as part of this task.
+  - _Requirements: process addendum_ — _Design: §34_
+- [x] 19.1 RED: lock projection and canonical media contracts
+  - Extend existing parse/DTO tests first for `sourceFile`, scene `role`, element `authoredId`,
+    `layoutOffset`, `positionEditable`, and media references whose query/fragment must not become a
+    filesystem path.
+  - Assert inline root scenes are represented explicitly rather than inferred from `src !== null`.
+  - _Requirements: R16.6, R17.6–R17.8, R17.11, R20.1_ — _Design: §27.2, §29.1, §30.3_
+- [x] 19.2 Implement the bounded scene/element projection
+  - Add only the approved fields to shared contracts and the HyperFrames adapter; derive source
+    ownership and editability server-side from authored markup. Never expose absolute paths or raw
+    authored HTML through preview messages.
+  - Preserve backward-compatible reads for projects without R20 metadata.
+  - _Requirements: R17.6–R17.8, R17.11, R20.1–R20.2_ — _Design: §29.1, §30.1, §32.1_
+- [x] 19.3 RED→GREEN representative storyboard sampling
+  - Add a pure scene-local representative-time helper: 55% of scene duration, frame-quantized and
+    clamped to the last valid frame. Reuse the existing `timeline-v1` thumbnail request, scheduler,
+    renderer, fingerprint and cache; create no second profile/cache/job type.
+  - Cover 0/invalid duration, fractional fps boundaries and repeated request cache hits.
+  - _Requirements: R16.1–R16.5_ — _Design: §27.1, Decision 16_
+- [x] 19.4 Harden media path canonicalization
+  - Strip query/fragment before contained project resolution while preserving the authored URL for
+    display/runtime; reject remote/absolute/traversal/symlink candidates through existing typed
+    boundaries.
+  - Add PNG/JPEG/WebP and percent-encoded Vietnamese filename fixtures.
+  - _Requirements: R16.6_ — _Design: §27.2, §32.3_
+- [x] 19.5 Run the P19 focused/static gate and log exact evidence
+  - Run the P19 matrix plus typecheck, lint, boundaries, golden/schema checks touched by DTO changes,
+    and diff-check. Any red caused by this source is repaired before P20.
+  - _Requirements: R16.1–R16.6, R17.6–R17.8, R20.1_ — _Design: §33.1–§33.2_
+
+**Acceptance Criteria**:
+- [x] Storyboard sampling reaches the existing thumbnail pipeline/cache with no new renderer profile
+- [x] Scene/element projection exposes stable identity and editability without source path leakage
+- [x] Query/fragment media references resolve to the correct contained asset
+- [x] P19 gate is `PASS`; P20 remains locked on any red
+
+**Deliverables Created / Modified**:
+- `packages/contracts/src/dto.ts`, `packages/contracts/src/editing.ts` — bounded scene/element projection
+- `packages/adapter/src/hyperframes/parse.ts` — role/source/element/media canonicalization
+- `packages/core/src/usecase/timeline-thumbnails.ts` — representative sample plan through existing profile
+- `src/lib/studio/types.ts` — browser projection types only
+
+---
+
+## Phase 20: Automatic, virtualized Storyboard thumbnails
+
+**Addresses**: R16.1–R16.7
+**Design reference**: §27.1–§27.3, §32.3–§32.4
+**Files affected**: `scene-storyboard.tsx`, `scene-card.tsx`, a small thumbnail state/controller helper,
+existing thumbnail browser tests
+**Prerequisite**: P19 PASS
+**Skills**: Bun + global in-app browser row above
+**Read first**: P19 deliverables; full `scene-storyboard.tsx`, `scene-card.tsx`,
+`timeline-thumbnails.tsx`; browser harness thumbnail request interception
+
+**Tasks**:
+- [x] 20.1 RED: prove current cards do not auto-load derived thumbnails
+  - Extend current browser tests with a project that has scenes/media but no pre-generated snapshot
+    files. Require cards to request the representative frame without a terminal instruction.
+  - Cover success, typed missing-media failure, retry, selection and reordered scene identity.
+  - _Requirements: R16.1–R16.5_ — _Design: §27.1, §27.3_
+- [x] 20.2 Implement `StoryboardThumbnail` state and request lifecycle
+  - Use IntersectionObserver at viewport + 100% root margin; batch/dedupe by project + revision +
+    scene + representative time; abort off-window/stale revision requests; accept only matching
+    response generation.
+  - State is `idle | loading | ready | failed`; broken `<img>` is never the failure UI.
+  - _Requirements: R16.1–R16.5, R16.7_ — _Design: §27.1, §32.3_
+- [x] 20.3 Replace snapshot-file lookup in Storyboard cards
+  - Remove `collectFrames/frameForScene` as the card’s primary source while keeping any unrelated
+    snapshot utilities used elsewhere. Render skeleton, real WebP, actionable error/retry and stable
+    accessible label; selection/reorder affordances must not regress.
+  - _Requirements: R16.1–R16.5_ — _Design: §27.1, Decision 16_
+- [x] 20.4 Verify 100-scene viewport bounds and cache reuse
+  - Instrument active requests, abort count and cache hit: only viewport ± one viewport cards may
+    render; scrolling cancels stale work; returning to a card reuses immutable cached WebP.
+  - _Requirements: R16.5, R16.7_ — _Design: §27.1, §32.4_
+- [x] 20.5 Run real browser acceptance
+  - In the Odyssey project, capture a screenshot showing visible Storyboard thumbnails, scroll to a
+    second window, retry one induced failure and confirm no terminal step is required.
+  - Record browser URL, project revision, screenshot path and request/count measurements.
+  - _Requirements: R16.1–R16.7_ — _Design: §33.1–§33.2_
+
+**Acceptance Criteria**:
+- [x] Every visible card independently reaches ready or actionable failed state
+- [x] 100-scene test proves bounded active work and stale aborts
+- [x] Selection/reorder remain usable and card labels remain accessible
+- [x] Real Odyssey screenshot visibly contains thumbnails, not placeholders
+
+**Deliverables Created / Modified**:
+- `src/components/studio/scene-storyboard.tsx`, `src/components/studio/scene-card.tsx`
+- `tests/frontend/timeline-thumbnail-browser.test.ts`, `tests/frontend/editing-experience-browser.test.ts`
+
+---
+
+## Phase 21: Element position authority, persistence and transport parity
+
+**Addresses**: R17.3–R17.9, R17.11
+**Design reference**: §29.2, §32.1–§32.3, Decision 17
+**Files affected**: shared editing/MCP contracts; CompositionOp; project write use case; safe
+HyperFrames source serialization; HTTP route; MCP registry; production wiring
+**Prerequisite**: P19 PASS
+**Skills**: Bun + Hono + MCP Builder row above
+**Read first**: full P21 skill row; existing `setSceneTiming` route/use case and
+`applyCompositionOps`; current HTTP/MCP shared-schema parity tests
+
+**Tasks**:
+- [x] 21.1 RED: define strict position mutation behavior
+  - Add contract tests for `SetElementPositionInput` and `set_element_position`: bounded finite x/y,
+    strict keys, project/scene/element IDs, expected source hash, same typed errors over HTTP/MCP.
+  - Cover unknown/cross-scene ID, locked target, caption target, malicious ID and stale hash.
+  - _Requirements: R17.3–R17.9, R17.11_ — _Design: §29.2, §32.2–§32.3_
+- [x] 21.2 Add Core `setLayoutOffset` use case through WriteAuthority
+  - Resolve the authoritative scene/source/element from the server projection; reject client source
+    paths; plan exactly one source write with hash precondition; return `changed:false` for same offset.
+  - Preserve one receipt/audit/undo item and the existing studio-session ownership rules.
+  - _Requirements: R17.3–R17.4, R17.6–R17.9, R17.11_ — _Design: §29.2, Decision 17_
+- [x] 21.3 Serialize offsets without overwriting authored motion
+  - Add/remove `data-vidcom-layout-offset` and owned `--vidcom-layout-x/y` declarations through the
+    parsed adapter. Inject the approved `translate` rule into both preview and render documents;
+    do not rewrite GSAP/CSS `transform` or reorder unrelated markup.
+  - Zero offset removes owned metadata; authored translate is locked unless already VidCom-owned.
+  - _Requirements: R17.4, R17.6–R17.8, R17.11_ — _Design: §29.2, §32.2_
+- [x] 21.4 Expose HTTP and MCP through the same contract/use case
+  - Add `PUT /v1/projects/:id/scenes/:sceneId/elements/:elementId/position` and
+    `set_element_position`; both use server-owned invocation and the same Core dependency.
+  - Update tool catalogue/agent-kit reference only after shared contract and route tests are green.
+  - _Requirements: R17.3–R17.9_ — _Design: §32.2–§32.3_
+- [x] 21.5 Real SQLite + filesystem mutation matrix
+  - Prove write/read round-trip, one receipt, undo/redo, no-op zero revision, stale conflict zero write,
+    inline root and mounted scene ownership, caption stable ID and rollback after injected publish fail.
+  - Do not mock `node:fs`; assert final source bytes and rendered computed offset.
+  - _Requirements: R17.3–R17.9, R17.11_ — _Design: §29.2, §33.1_
+- [x] 21.6 Run P21 contract/static gate
+  - Run P21 matrix, `test:mcp-contract`, typecheck, lint, boundaries, golden, schema drift and build.
+    Red blocks P22.
+  - _Requirements: R17.3–R17.9, R17.11_ — _Design: §33.1–§33.2_
+
+**Acceptance Criteria**:
+- [x] One position gesture maps to one source mutation/receipt/undo item
+- [x] HTTP/MCP reject the same invalid requests and never accept source paths from clients
+- [x] Preview and render preserve authored motion while applying the same offset
+- [x] Persistence failure rolls back real source bytes and journal state
+
+**Deliverables Created / Modified**:
+- `packages/contracts/src/{editing,mcp}.ts`
+- `packages/core/src/usecase/project-writes.ts`
+- `packages/adapter/src/hyperframes/{sdk-ops,preview-style}.ts`
+- `packages/server/src/routes/project-writes.ts`, `packages/mcp/src/registry/editing-tools.ts`
+
+---
+
+## Phase 22: Arrange mode, closed preview bridge and direct canvas interaction
+
+**Addresses**: R17.1–R17.5, R17.9–R17.10
+**Design reference**: §28.1–§28.2, §32.3–§32.4, Decision 17
+**Files affected**: preview bridge schemas; preview host hit-testing; canvas planner/overlay; Studio UI;
+real-browser tests
+**Prerequisite**: P21 PASS
+**Skills**: Bun + global in-app browser row above
+**Read first**: full bridge/preview files in P22 row; P21 projection/mutation; existing C-01 malicious
+preview tests and R4.1c measurement harness
+
+**Tasks**:
+- [x] 22.1 RED: close bridge v2 and coordinate planner contracts
+  - Test only approved commands/events: arrange mode, bounded hit-test descriptors, preview offset,
+    reset and mutation result. Reject extra keys, wrong nonce/origin/window, NaN/huge geometry,
+    arbitrary selectors/source paths and descriptors not present in the server projection.
+  - Add pure canvas→composition coordinate, 8 px snap, clamp and zoom/DPR fixtures.
+  - _Requirements: R17.1–R17.2, R17.5, R17.10_ — _Design: §28.1–§28.2_
+- [x] 22.2 Implement preview-host bounded hit testing
+  - The untrusted principal returns only `{sceneId,hfId,role,rect,editable}` for the topmost approved
+    element; UI cross-checks it against the authoritative model. No `contentDocument`, selector or
+    authored path crosses the trust boundary.
+  - Pause transport on arrange entry and restore only through explicit user control.
+  - _Requirements: R17.1–R17.2, R17.6–R17.8_ — _Design: §28.1, §32.2_
+- [x] 22.3 Build `CanvasDrag` planner and overlay
+  - Pointer drag shows preview-only offset, 8 px guides and clamp; pointerup sends exactly one P21
+    mutation. Esc/cancel sends none; conflict resets preview offset and exposes reload/keep choice.
+  - Add arrow-key movement, Shift coarse step, visible focus/selection/locked state and ARIA status.
+  - _Requirements: R17.1–R17.5, R17.9–R17.10_ — _Design: §28.2, §31_
+- [x] 22.4 Keep subtitles positionable through stable authored IDs
+  - Select caption wrapper as a bounded element, move it with the same planner/mutation and preserve
+    cue timing/style. Reject generated/runtime-only spans without stable IDs.
+  - _Requirements: R17.1, R17.6, R17.9_ — _Design: §29.1–§29.2_
+- [/] 22.5 Real browser security/performance matrix on Linux + Windows
+  - Test mouse drag, keyboard move, Esc, locked target, caption, conflict, reload and malicious
+    descriptor. Measure pointerup→first authoritative painted frame <500 ms and assert no UI access to
+    iframe authored DOM.
+  - Preserve R4.1c measurements and preview origin/CSP tests.
+  - _Requirements: R17.1–R17.10_ — _Design: §32.4, §33.1_
+
+**Acceptance Criteria**:
+- [x] Users can select and reposition supported elements/subtitles directly on Preview
+- [x] One completed gesture causes one mutation; cancel/no-op causes none
+- [x] Closed bridge and server cross-check reject malicious descriptors
+- [ ] Linux + Windows browser evidence shows <500 ms pointerup→paint
+
+**Deliverables Created / Modified**:
+- `src/lib/studio/preview-bridge.ts`
+- `src/preview-host/entry.ts`
+- `src/lib/studio/canvas-drag.ts`
+- `src/components/studio/{canvas-arrange-overlay,preview-canvas,studio-shell}.tsx`
+- `src/components/studio/{hyperframes-player-environment,player-host,use-hyperframes-player}.ts{x,}`
+- `packages/adapter/src/hyperframes/{elements,sdk-ops}.ts`
+- `tests/frontend/{preview-bridge,canvas-drag,arrange-browser,editing-experience-browser,preview-security-browser}.test.ts`
+
+---
+
+## Phase 23: Audible preview + discoverable inspector
+
+**Addresses**: R18.1–R18.6; R19.1–R19.6
+**Design reference**: §28.3, §31, §32.3–§32.4, Decision 20
+**Files affected**: outer preview iframe environment; bridge audio state/error; preview controls;
+inspector tab config/guide/groups; browser/accessibility tests
+**Prerequisite**: P22 PASS
+**Skills**: Bun + global in-app browser row above
+**Read first**: P23 skill row; current nested iframe creation order; player runtime audio events;
+`scene-pane.tsx` tabs/sections; existing accessibility browser tests
+
+**Tasks**:
+- [x] 23.1 RED: require media truth, not transport appearance
+  - Browser fixture includes real narration + BGM. After user Play, assert active media
+    `paused=false`, `muted=false`, `currentTime` increases; transport button/time alone is not PASS.
+  - Add blocked-autoplay, decode/resource failure, seek/rate/mute/reload and double-buffer replacement.
+  - _Requirements: R18.1–R18.6_ — _Design: §28.3, §33.1_
+- [x] 23.2 Fix nested-frame permission and playback acknowledgements
+  - Set outer iframe `allow="autoplay"` before `src`; propagate `audiostate` and `playbackerror` through
+    strict bridge schemas. If play is rejected, remain paused and expose an `Enable audio` button in
+    the preview principal so the next gesture occurs in the correct activation context.
+  - Do not auto-mute as silent fallback; retain explicit user mute state across accepted reloads.
+  - _Requirements: R18.1–R18.5_ — _Design: §28.3, §32.3_
+- [x] 23.3 Make playback controls reflect acknowledged state
+  - Play/Pause/rate/mute UI updates from bridge acknowledgements, shows actionable audio/resource
+    failure, and never claims playing while media is paused. Preserve keyboard/focus behavior.
+  - _Requirements: R18.2–R18.5_ — _Design: §28.3, §31_
+- [x] 23.4 Replace inspector implementation labels with task labels
+  - Centralize config for `Scene`, `Look & subtitles`, `Motion & sound`, `Add scene`, `Music`; group
+    fields by user intent and show an always-visible `InspectorGuide` describing outcome and first
+    action. Every disabled control has a reason and recovery action.
+  - Keep one panel; do not add a modal tour or hidden duplicate navigation.
+  - _Requirements: R19.1–R19.5_ — _Design: §31, Decision 20_
+- [/] 23.5 Run novice + accessibility browser path
+  - Starting from a selected Odyssey scene, a novice must identify timing, image/media, motion,
+    transition/reveal, narration and music controls without terminal help; verify keyboard tab order,
+    focus restoration, ARIA relationships and no critical/serious violations.
+  - Capture screenshots of guide, grouped controls and actionable disabled/failure state.
+  - _Requirements: R19.1–R19.6_ — _Design: §31, §33.1_
+- [/] 23.6 Run P23 browser/static gate
+  - Run P23 focused tests, full browser suite locally when available, typecheck/lint/boundaries/build.
+    Missing local Chrome is not `[!]`: defer authoritative browser proof to P25 Actions.
+  - _Requirements: R18.1–R18.6, R19.1–R19.6_ — _Design: §33.1–§33.2_
+
+**Acceptance Criteria**:
+- [ ] Real nested media is audible and advances after Play on Linux + Windows
+- [ ] Autoplay denial and resource failure are visible, recoverable and never reported as playing
+- [x] Inspector labels/guidance explain task and result; novice path needs no terminal instructions
+- [x] Accessibility browser gate remains zero critical/serious violations locally
+
+**Deliverables Created / Modified**:
+- `src/components/studio/hyperframes-player-environment.ts`
+- `src/components/studio/{playback-bar,scene-pane,motion-library-panel}.tsx`
+- `src/components/studio/{studio-shell,use-hyperframes-player,use-preview-settings}.ts{x,}`
+- `src/lib/studio/{preview-bridge,preview-settings}.ts`, `src/preview-host/entry.ts`
+- `packages/{adapter,contracts,core,mcp,server}/**/*preview-settings*`
+- `tests/frontend/{preview-bridge,preview-audio-browser,inspector-actions-browser,editing-experience-browser,accessibility-browser}.test.ts`
+
+---
+
+## Phase 24: Story-motion quality gate + agent-kit v9
+
+**Addresses**: R20.1–R20.9
+**Design reference**: §30.1–§30.3, §32.3, Decisions 18–19
+**Files affected**: Core story-motion domain/diagnostics; HyperFrames parse attribution; render gate;
+agent-kit source + generated bundle; fixtures/tests
+**Prerequisite**: P19 and P21 PASS
+**Skills**: Bun; read global `hyperframes` then `hyperframes-animation`
+**Read first**: full P24 row; current `storyMotionDiagnostic`; adapter model/effect extraction;
+render/snapshot validation; agent-kit build/sync ownership
+
+**Tasks**:
+- [x] 24.1 RED: model explicit story metadata and three-phase evidence
+  - Add fixtures for `data-scene-role`, `data-story-pattern`, `data-seam-kind`, `data-seam-token` and
+    StoryMotionProfile. A non-transition story scene must show meaningful setup/development/payoff
+    across first/middle/final thirds; opacity-only or repeated translate entrance fails.
+  - Attribute root-loop effects to the active scene and do not let `data-no-timeline` exempt checks.
+  - _Requirements: R20.1–R20.3, R20.6, R20.9_ — _Design: §30.1–§30.3_
+- [x] 24.2 Add sequence diversity and seam validation
+  - Over every rolling four story scenes require at least three primary patterns; adjacent duplicate is
+    allowed only for an explicit continuation seam with matching token and a visible state handoff.
+  - Check scene length 6–10 s for the generated-video profile and narration coverage ≥75% of total.
+  - _Requirements: R20.2–R20.6, R20.8–R20.9_ — _Design: §30.1–§30.2, Decision 18_
+- [x] 24.3 Apply strict marker compatibility and render enforcement
+  - Agent-produced v9 projects use strict metadata/gates; legacy projects missing metadata receive a
+    warning but per-scene shallow/unverified render gates still run for inline and mounted scenes.
+  - `bestEffort` bypasses neither story-motion nor narration-coverage errors.
+  - _Requirements: R20.1–R20.3, R20.8–R20.9_ — _Design: §30.3, Decision 19_
+- [x] 24.4 Upgrade agent-kit source and generated bundle to v9
+  - Teach storyboard role/pattern/seam planning, 6–10 s pacing, setup/development/payoff, cross-scene
+    transformations, rolling-four diversity, narration coverage and validate/snapshot repair loop.
+  - Update canonical source markers first, regenerate with `packages/agent-kit/scripts/build.mjs`, and
+    prove source/generated/packaged catalogue synchronization; never hand-edit generated output.
+  - _Requirements: R20.1–R20.9_ — _Design: §30.3, Decision 19_
+- [x] 24.5 Add the 18-scene repeated-loop regression fixture
+  - Fixture intentionally uses inline scenes, root infinite loops, `data-no-timeline`, repeated
+    opacity+y entrances, 15 s static holds and low narration coverage. Validation/render must block
+    with scene/sequence-specific diagnostics, then pass only after distinct patterns/seams/coverage.
+  - _Requirements: R20.1–R20.6, R20.8–R20.9_ — _Design: §30.3, §33.1_
+- [x] 24.6 Run P24 focused/golden/packaging gate
+  - Run story-motion, diagnostics, render-job, agent-kit sync, tool catalogue, golden and packaged
+    runtime tests plus static gates. Diff-generated bundle twice to prove deterministic generation.
+  - _Requirements: R20.1–R20.9_ — _Design: §33.1–§33.2_
+
+**Acceptance Criteria**:
+- [x] Inline/mounted/root-loop story scenes cannot evade per-scene or sequence gates
+- [x] Repeated-loop 18-scene fixture is blocked for the intended typed reasons
+- [x] Agent-kit v9 source, generated bundle and packaged catalogue are byte-synchronized
+- [x] Legacy projects remain readable while shallow motion still cannot render
+
+**Deliverables Created / Modified**:
+- `packages/core/src/domain/story-motion.ts`, `packages/core/src/usecase/diagnostics.ts`
+- `packages/adapter/src/hyperframes/parse.ts`, `packages/worker/src/render-job.ts`
+- `packages/agent-kit/{AGENTS.md,CLAUDE.md,skills/**,src/generated-bundle.ts}`
+- `tests/{core/story-motion,adapter/diagnostics-thumbnail,adapter/render-job,agent-kit/sync}.test.ts`
+
+---
+
+## Phase 25: Exact-source Actions, real browser evidence and corrected Odyssey delivery
+
+**Addresses**: R16–R20 integrated acceptance; user CI and deliverable contract
+**Design reference**: §33.1–§33.3, §34
+**Files affected**: workflow/test fixes only when a gate exposes a source defect; checklist/notes;
+Odyssey project source/assets/narration/render evidence; main spec closeout
+**Prerequisite**: P20, P22, P23 and P24 PASS
+**Skills**: activate P25 row in order; `hyperframes` is mandatory entry point before editing/rendering
+video; use `media-use` for every Internet image/audio asset
+**Read first**: user CI contract verbatim; five workflow YAMLs; source identity script; all P19–P24
+Execution Log entries; active Odyssey project context/revision/assets; video approval rules
+
+**Tasks**:
+- [x] 25.1 Freeze exact source and run full local regression
+  - Record HEAD plus staged/unstaged/untracked/deleted/symlink digest. Run focused P19–P24 rows,
+    typecheck, lint, boundaries, full test with FFmpeg required, mcp-contract, golden, schema-drift,
+    spec-paths, build and runtime-smoke.
+  - Local missing Chrome/FFmpeg/artifact is not a waiver; continue to exact-source Actions. Any red
+    caused by the source is repaired, fully rerun and logged before 25.2.
+  - _Requirements: R16–R20_ — _Design: §33.1_
+- [ ] 25.2 Dispatch, watch and download the five authoritative workflows
+  - Load `.env` without printing it; map shell-local `GH_KEY` → `GH_TOKEN`; never persist token in
+    command output, notes or artifacts. Use `gh workflow run "<name>" --ref <branch>`,
+    `gh run watch`, then `gh run download` for each run.
+  - `CI`: typecheck·lint·boundaries·test (FFmpeg mandatory)·mcp-contract·golden·schema-drift·
+    spec-paths·build·runtime-smoke on Linux/macOS/Windows.
+  - `Browser session`: storyboard/Arrange/preview audio/inspector plus R4.1c and pointerup→paint
+    <500 ms on Linux + Windows.
+  - `Packaged smoke`: P8 catalogue in artifact and 11.5d three tags on three OS.
+  - `Process supervision gate`: render/kill P4+P7. `VieNeu real engine`: real P6 TTS/caption.
+  - Record run URL, exact SHA, every OS conclusion, artifact directory and inspected verdict in
+    Execution Log. A red/cancelled/partial required job blocks the next task; `[!]` is allowed only
+    if CI itself cannot run after documented retries, never because local prerequisites are absent.
+  - _Requirements: R16.7, R17.10, R18.6, R19.6, R20.7–R20.9_ — _Design: §33.1_
+- [ ] 25.3 Re-author the Odyssey project through VidCom/Editor authority
+  - Use the existing project ID and preserve licensed/provenanced assets. Replace 15 s static beats
+    with 18 distinct 6–10 s scenes across ~2–3 minutes; narration covers ≥75% and uses real VieNeu.
+  - Give every scene role + setup/development/payoff, at least three primary patterns per rolling four,
+    deliberate seam tokens/shape handoffs and non-repeating meaningful elements. Use editor/MCP
+    single-writer paths with current preconditions; no host-side direct project-file edits.
+  - Validate after each slice; any story-motion/audio/font/media error blocks snapshot/render.
+  - _Requirements: R20.1–R20.9_ — _Design: §30, §33.1_
+- [ ] 25.4 Capture real UX and visual-story evidence
+  - Capture screenshots showing: Storyboard with real thumbnails; Arrange selection/drag guides and
+    subtitle movement; audible Preview state; renamed inspector with guide; opening/middle/payoff
+    frames/contact sheet proving visual diversity and cross-scene handoffs.
+  - Submit contact sheet/final preview for explicit human review; record `human_reviewed` against the
+    exact project revision and MP4 candidate. Unit/diagnostic success alone cannot close R20.7.
+  - _Requirements: R16, R17, R18, R19, R20.7_ — _Design: §33.1–§33.2_
+- [ ] 25.5 Render and inspect the exact approved MP4
+  - Render only after validation and human review of the same revision. Download/locate the VidCom
+    artifact, then inspect checksum, ffprobe duration/video/audio streams, Vietnamese caption frames,
+    narration/BGM audibility and first/middle/final frames; no re-render after approval without a new
+    review binding.
+  - Deliver absolute clickable paths for screenshots and final MP4.
+  - _Requirements: R18.1–R18.6, R20.7–R20.9_ — _Design: §33.1_
+- [ ] 25.6 Council closeout and spec state
+  - SM audits every P19–P25 task/AC/Execution Log and exact-source run; PO confirms the five reported
+    UX failures are visibly closed; Dev/Security confirms source authority, bridge, persistence and
+    artifacts. Rename `inprocess` → `complete` only when all are PASS and no required `[!]` remains.
+  - _Requirements: process closeout_ — _Design: §33.3–§34_
+
+**Acceptance Criteria**:
+- [ ] Five required workflows are green on one exact source identity with artifacts inspected
+- [ ] Linux/Windows browser evidence proves thumbnails, Arrange <500 ms, audible media and inspector UX
+- [ ] Corrected Odyssey has 18 scenes at 6–10 s, narration coverage ≥75%, diverse motion/seams and real images
+- [ ] Exact human-reviewed MP4 passes ffprobe/frame/audio inspection and is delivered with screenshots
+- [ ] Spec returns to `complete` only after SM/PO/Dev council PASS
+
+**Deliverables Created / Modified**:
+- Exact-source workflow URLs/artifact verdicts in this Execution Log and `implementation-notes.html`
+- Project `project_d650b815-9c0d-4c20-b866-8e9dace5a6c8` through VidCom authority
+- Final screenshots/contact sheet and human-reviewed MP4 with checksum/ffprobe evidence
+
+---
+
 ## Files Changed Summary
 
 Each phase records its own files under its **Deliverables** heading; this is the shape of the whole change.
@@ -1712,6 +2186,14 @@ Each phase records its own files under its **Deliverables** heading; this is the
 - **UI**: `src/lib/studio/{mount-drop,draft-store,transport-keys,unsaved-guard,scene-media,format,asset-manager,studio-session}.ts`; `src/components/studio/**` (drop surface, pending mounts, conflict UI, shortcut sheet, missing-source lane); `src/app/projects/[slug]/composer-client.tsx`.
 - **Tests**: `tests/{core,adapter,server,contracts,mcp,cli,frontend,build}/**` as listed per phase and in the Phase Verification Matrix.
 - **Tooling/CI**: `scripts/{source-identity,verify-spec-test-paths}.mjs`, `scripts/packaged-smoke/bodies.mjs`, `.github/workflows/phase4-browser-session.yml`, `package.json`.
+- **R16–R17 addendum**: scene/element projection, shared storyboard thumbnail consumer,
+  `setLayoutOffset` Core/Adapter/HTTP/MCP path and closed Arrange bridge/canvas.
+- **R18–R19 addendum**: outer iframe autoplay permission, acknowledged media state/error recovery,
+  task-labelled inspector config and inline guidance.
+- **R20 addendum**: story role/pattern/seam diagnostics, render enforcement, agent-kit v9 source +
+  deterministic generated bundle and 18-scene regression fixture.
+- **Integrated delivery**: exact-source five-workflow evidence plus corrected Odyssey screenshots,
+  contact sheet and approved MP4; project mutations remain outside host-side direct writes.
 
 ## Validation Commands and Evidence Policy
 
@@ -1725,10 +2207,14 @@ Each phase records its own files under its **Deliverables** heading; this is the
 | Artifact — Editing step | **P11 bắt buộc** | strict `--step editing-experience-runtime` với `VIDCOM_SMOKE_NETWORK_CUT=1` trên runner có quyền, hoặc cùng step trong workflow exact-identity | Private PATH + network cut; boot migration, bundled catalog, MCP catalogue; không đọc source tree |
 | Artifact — full regression | P11 sau step riêng | full strict packaged smoke | Failure mới chặn spec. Chỉ failure khớp baseline S0 và đúng AC production-release còn mở của Giai đoạn 4 được ghi `OUT-OF-SCOPE BASELINE`; không được gọi PASS hay dùng spec này để đóng nợ Packaging |
 | Full local | P11 | Tất cả lệnh ở task 11.5b–11.5e | Cùng exact source identity; worktree sạch thì identity đó ánh xạ đúng HEAD; không lấy run cũ thay thế |
-| Remote CI | Khi có PR/workflow | URL run + SHA + matrix result | Chỉ evidence bổ sung; mọi required job ở cùng exact HEAD |
+| Remote CI — historical P0–P11 | Khi có PR/workflow | URL run + SHA + matrix result | Evidence bổ sung cho phase lịch sử; mọi required job ở cùng exact HEAD |
+| Actions authority — P19–P25 | P25 bắt buộc; sớm hơn khi local thiếu Chrome/FFmpeg/artifact | `gh workflow run`, `gh run watch`, `gh run download`; năm workflow user chỉ định | **Runner chính**, không chỉ đa OS. URL + exact SHA + từng OS conclusion + artifact verdict; red/cancelled/partial chặn task kế; không dùng run cũ |
+| Browser evidence — P20/P22/P23/P25 | Khi feature UI hoàn tất | `Browser session` Linux + Windows và screenshot project thật | Thumbnail thật; pointerup→paint <500 ms; media thật paused/muted/currentTime; novice inspector path. DOM/button-only assertion không đủ |
+| Video production — P25 | Sau exact-source CI green | VieNeu artifact + validate/snapshot/contact sheet/human review/render/ffprobe | Project revision, `human_reviewed`, MP4 hash phải cùng lineage; re-render cần review mới |
 
-Nếu một lệnh không chạy được, ghi `NOT EXECUTED` hoặc `[!]` cùng nguyên nhân và tiếp tục task độc lập;
-không đổi thành PASS từ suy luận, artifact cũ hoặc test gần giống.
+Nếu một lệnh không chạy được, ghi `NOT EXECUTED` cùng nguyên nhân và tiếp tục task độc lập; không đổi
+thành PASS từ suy luận, artifact cũ hoặc test gần giống. Với P19–P25, `[!]` chỉ dùng sau khi CI chính
+cũng không chạy được; thiếu Chrome/FFmpeg/artifact local tự động chuyển sang Actions P25.
 
 ## Requirements Coverage Matrix
 
@@ -1781,6 +2267,20 @@ không đổi thành PASS từ suy luận, artifact cũ hoặc test gần giốn
 | R12.4–4e | 1.1, 2.1–2.5b | anchor snap, no ripple, all-or-nothing/root/cap/no reorder |
 | R12.5–8 | 2.2–2.5b, 3.1a | destructive group delete, one undo, count/Esc, track preserved |
 | steering D1 — MCP parity | 11.3a–11.3d | shared schema + same Core use case; legacy/modern contract, grant policy, agent-kit và packaged catalogue |
+| R16.1–R16.5 | 19.3, 20.1–20.3 | representative-time/cache unit + real browser auto load/retry/no broken image |
+| R16.6–R16.7 | 19.4, 20.4–20.5 | canonical media fixtures + 100-scene viewport/abort + Odyssey screenshot |
+| R17.1–R17.2 | 22.1–22.2 | closed bridge/hit-test security + browser select/pause |
+| R17.3–R17.4, R17.9 | 21.1–21.5, 22.3 | real FS/SQLite one mutation/receipt/no-op/conflict/undo + pointer gesture |
+| R17.5, R17.10 | 22.1, 22.3, 22.5 | pure snap/clamp + keyboard/guides + Linux/Windows <500 ms |
+| R17.6–R17.8, R17.11 | 19.1–19.2, 21.2–21.5, 22.4 | stable ID/source ownership + transform-preserving render + locked/caption cases |
+| R18.1–R18.5 | 23.1–23.3 | real nested media audible/advance + blocked/resource failure/reload matrix |
+| R18.6 | 23.5–23.6, 25.2 | Browser session Linux + Windows artifact inspected |
+| R19.1–R19.5 | 23.3–23.5 | config/guide/disabled-reason component + accessibility browser |
+| R19.6 | 23.5, 25.4 | novice Odyssey task path + screenshots without terminal guidance |
+| R20.1–R20.6 | 24.1–24.3, 24.5 | phase/pattern/seam/root-loop and rolling-four fixtures |
+| R20.7 | 25.4–25.5 | contact sheet + explicit human review bound to exact MP4 revision |
+| R20.8 | 24.2–24.3, 25.2–25.5 | duration/static/coverage gate + VieNeu artifact + ffprobe/audio review |
+| R20.9 | 24.1–24.6, 25.3 | agent-kit v9 sync + 18-scene regression + corrected Odyssey validation |
 
 ## Deferred Items Reference (Giai đoạn 6)
 
@@ -2146,6 +2646,31 @@ caption · D7 tool MCP undo/redo · **D8 PR-11 hot-reload từng sub-composition
 | 2026-08-21 12:34 +07 | 18.2 process and real-engine evidence | Process supervision P4/P7; VieNeu P6 narration artifact | [`Process supervision gate` 32450453353](https://github.com/alvindev111/vidcom-v2/actions/runs/32450453353) `success`: real-render Windows, contract Windows, Linux and macOS all success; real log verdict `TERMINATED_CLEAN`, `survivors=[]`. [`VieNeu real engine` 32450780804](https://github.com/alvindev111/vidcom-v2/actions/runs/32450780804) Linux CPU `success`, engine 3.2.4, resolved model `2da0efab622a1722125991736524f080b751ef5b`, 14 real voices, selected `vieneu-v3-minh-duc`; 3/3 integration tests pass. Downloaded `/private/tmp/vidcom-p18-vieneu-32450780804/vieneu-narration/intro.wav`: PCM s16le, 44.1 kHz mono, 3.621769 s, 319,518 bytes, SHA-256 `c98000c07f42bfd37b36c1be9ca2a5648f7f3d73cd7d90044327a2f598c14a39` | `PASS` | Workflow green was not accepted until the real process verdict and WAV metadata/provenance were inspected | 18.3 |
 | 2026-08-21 12:37 +07 | 18.3 main protection | GitHub `main` branch protection and post-write query | Initial query returned unprotected 404/rulesets `[]`. First PUT returned 422 because personal repositories reject organization-only `dismissal_restrictions`; post-failure query confirmed no partial change. Corrected PUT + GET prove `strict=true`; required GitHub Actions checks are static Linux/macOS/Windows, `browser-session /` Linux/Windows and `packaged-smoke /` Linux/macOS/Windows; one approval, dismiss stale, require last-push approval, conversation resolution and admin enforcement enabled; force-push/deletion disabled | `PASS` | PR #4 is now deliberately `BLOCKED` with `REVIEW_REQUIRED`; that is the policy working, not a CI failure. No credential entered logs or notes | 18.4 council |
 | 2026-08-21 12:37 +07 | 18.4 / P18 council closeout | Sixteen-row C/H/M/L/G matrix; review disposition; main spec state | Matrix above maps every finding to production code, boundary test, exact-source run/artifact and `CLOSED`; zero required skip. **SM**: P12–P18 tasks/AC and evidence are complete, earlier red runs remain visible, source authority is separated from docs-only closeout. **PO**: malicious preview, filesystem failure, range/resource, deletion/frame-grid, accessibility and real caption engine outcomes meet R13–R15. **Dev/Security**: exact-source CI plus artifact inspection and active branch policy close the audit; informational Node action deprecation and separate default-branch Dependabot advisories are not misreported as zero-risk | `PASS` | Main spec may move `inprocess` → `complete`; PR still requires an independent human approval under the newly enforced policy | Rename main spec, run docs integrity gates, commit/push closeout |
+| 2026-08-21 | Design v14 approval + R16–R20 checklist authoring | Detailed Design §34; checklist P19–P25/dependency/skills/coverage/evidence policy | User replied `approve` to Design v14. Documentation-only authoring; no production/test code, Odyssey mutation, commit, push or workflow dispatch. `git diff --check` is the authoring gate | `APPROVED` | Historical P0–P18 evidence remains immutable. Existing user-owned dirty source files are preserved for P19.0 reconciliation. User later replied `approve` after the explicit `Approve checklist` prompt | P19.0 |
+| 2026-08-21 21:56 +07 | 19.0 checkpoint | Main spec state; spec-path registration; checklist; implementation notes | Baseline HEAD `6475521b03f69c1aa5f73be0b64a27e559549c93`, digest `00a0f89492cb1666f97ff28094adae9b4f472a32c53110dd39cdb30c226a3fac`; changed source paths: Goals, Design, `packages/cli/src/next-host.ts`, `tests/cli/preview-runtime-wiring.test.ts`. Planned `bun run test:spec-paths` + state/link search + `git diff --check` | `IN PROGRESS` | Preserve every dirty path; main spec `complete` → `inprocess`; P19–P25 registration must not rewrite historical S0–P11 matrix | Finish bootstrap gate before 19.1 RED |
+| 2026-08-21 21:58 +07 | 19.0 | Main spec `complete` → `inprocess`; Goals/checklist/build-order links; spec-path addendum registration; notes | `bun run test:spec-paths` PASS: 164 paths across 5 matrices/specs; stale current `-complete.md` link search outside historical checklist returned empty; current `-inprocess.md` links present; `git diff --check` PASS. Post-bootstrap digest `b3f6e56b8ec048ec59a3651269539d63e5439f755baa55fa8a33f8202186ac14` | `PASS` | Historical S0–P18 evidence untouched. Source identity intentionally includes deletion of former `-complete.md`; current `-inprocess.md`, checklist and notes are evidence-only exclusions. No stash/reset/stage/commit/push | 19.1 RED |
+| 2026-08-21 21:59 +07 | 19.1 checkpoint | Projection/DTO/parse contract tests | Baseline HEAD `6475521b03f69c1aa5f73be0b64a27e559549c93`; post-bootstrap digest `b3f6e56b8ec048ec59a3651269539d63e5439f755baa55fa8a33f8202186ac14`. Planned focused RED: existing parse/DTO/golden tests under Vitest Node, extended for source ownership, role, stable authored ID, layout offset/editability and query/fragment media refs | `IN PROGRESS` | Must preserve legacy reads and never expose absolute/source paths through preview messages. Inline scenes require explicit role/source representation, not `src !== null` inference | Add failing contract/adapter fixtures before production implementation |
+| 2026-08-21 22:03 +07 | 19.1 RED | `tests/golden/parse.test.ts`; existing `inline-scene`/`project-references` harness | `bun run test -- tests/golden/parse.test.ts`: 13 pass, 2 expected fail. Projection failure shows `sourceFile`/`role` absent; media failure shows authored `?v=2#focus` leaks into route/file lookup and produces `missing:true`. An initial direct `bun test` invocation hit Bun's unsupported `node:sqlite`; the repository Vitest script is the authoritative focused command | `PASS (RED)` | Fixtures also pin exact `data-hf-id`, VidCom-owned offset, structural read-only target, authored-translate lock, inline `src:null` with explicit entry ownership, and `SceneSchema` acceptance. No production code changed before these failures | 19.2 projection GREEN; media case remains RED until 19.4 |
+| 2026-08-21 22:03 +07 | 19.2 checkpoint | contracts + adapter + browser projection types | Start from the two honest P19.1 failures; implement only approved DTO fields and server-derived role/ownership/editability. Focused projection assertion and schema parse must turn green without weakening the still-red media canonicalization assertion | `IN PROGRESS` | No raw HTML or absolute path enters the DTO; legacy markup without role/layout metadata must parse deterministically | Implement bounded projection, then run the projection test by name |
+| 2026-08-21 22:08 +07 | 19.2 | `packages/contracts/src/dto.ts`; adapter `types.ts`/`elements.ts`/`parse.ts`; Studio types; typed test fixtures + five golden element files | Projection test by name 1/1 PASS; `bun run typecheck` PASS. Full parse suite is 14/15 PASS with only the intentionally deferred P19.4 media case red | `PASS` | Inline ownership is explicit `index.html`; mounted ownership is the resolved scene file. Authored role wins, legacy content falls back to existing transition/overlay grouping then story. Exact `data-hf-id` is required for writes; structural/tween-only rows stay read-only; malformed owned offset and authored CSS `translate` stay locked. DTO contains project-relative source only, never absolute path/HTML | 19.3 RED→GREEN representative time |
+| 2026-08-21 22:08 +07 | 19.3 checkpoint | existing timeline thumbnail helper/request/cache | Preserve `profile:"timeline-v1"` and existing batch/cache identity. Add one pure scene-local 55% helper with frame quantization/last-frame clamp and tests for invalid/zero duration, fractional fps and deterministic repeated requests | `IN PROGRESS` | P19.4 media assertion remains separately red and does not authorize a second thumbnail subsystem | Inspect current helper/callers, write focused RED first |
+| 2026-08-21 22:11 +07 | 19.3 | `representativeSceneTime` in existing Core timeline-thumbnail module; Core + real temp-project pipeline tests | RED 2/2 `representativeSceneTime is not a function`; GREEN focused 2/2, then full joined thumbnail suites 10/10 | `PASS` | One mark at 55% is scene-local, frame-rounded and clamped before scene end; zero duration returns 0 while negative/non-finite duration or invalid fps is rejected. The repeated request test proves the second request adds no snapshot/FFmpeg process and reuses the same `timeline-v1` cache; profile/scheduler/fingerprint are unchanged | 19.4 canonical media |
+| 2026-08-21 22:11 +07 | 19.4 checkpoint | `parse.ts` local media resolver + parse fixtures | Existing RED now expanded to percent-encoded Vietnamese PNG plus JPEG/WebP query/fragment cases. Implement one URL-parser canonicalizer, preserve authored `src`, and keep remote/data/blob outside project lookup; harden contained file lookup for traversal/absolute/symlink escape | `IN PROGRESS` | No URL string splitting may reintroduce query/fragment as filesystem characters; invalid local candidates remain typed missing, not project file routes | Finish boundary fixtures and full parse gate |
+| 2026-08-21 22:14 +07 | 19.4 | URL-parser canonicalizer + canonical contained file lookup; `tests/golden/parse.test.ts` | Focused query/fragment 1/1 PASS; full parse 17/17 PASS. Coverage: percent-encoded Vietnamese PNG, JPEG, WebP, remote HTTPS, data, blob, absolute, traversal and POSIX escaping symlink | `PASS` | Authored `src` remains byte-for-byte for runtime/display; project lookup strips query/fragment, decodes once and requires the synthetic project URL prefix before filesystem resolution. A first hardening run failed 17/17 because parameter `relativePath` shadowed the imported function; renamed alias fixed the real cause and the full suite reran green. Windows does not create the symlink fixture without Developer Mode, while the platform-neutral absolute/traversal assertions still run there | 19.5 full P19 gate |
+| 2026-08-21 22:14 +07 | 19.5 checkpoint | P19 matrix + typecheck/lint/boundaries/golden/schema/spec-path/diff | Run every command from the addendum matrix plus DTO/static regression gates. Any source-caused red blocks P20 | `IN PROGRESS` | Local P19 evidence is not a substitute for P25 exact-source Actions | Run and record exact counts/warnings |
+| 2026-08-21 22:16 +07 | 19.5 / P19 gate | P19 matrix; typecheck/lint/boundaries/golden/schema/spec-path/diff | P19 matrix 3 files/14 tests PASS; typecheck PASS; boundaries PASS; schema 32 migrations in sync; spec-path 164 paths/5 specs PASS; lint 0 errors/5 baseline warnings. First golden run: 47 pass, 2 expected MCP `tools/list` schema snapshots red; deterministic update then full golden 11 files/49 tests PASS. First diff-check exposed checklist trailing spaces from addendum authoring; mechanical whitespace cleanup then `git diff --check` PASS | `PASS` | Golden was repaired before P20, not relabeled. New DTO shape is now reflected in both legacy and modern MCP schemas. No second profile/cache/job exists; local gate does not replace P25 Actions | 20.1 RED |
+| 2026-08-21 22:16 +07 | 20.1 checkpoint | Storyboard cards + existing thumbnail browser harness | P19 PASS unlocks P20. Extend browser fixture with content scenes and no `snapshots/*.png`; require automatic representative-frame request, loading/ready/error/retry, selection and reorder identity | `IN PROGRESS` | Must retain existing card interaction affordances and virtualize requests; no terminal instruction as primary UX | Inspect current card/controller and browser interception, then write failing browser contract |
+| 2026-08-21 22:26 +07 | 20.1 RED / 20.2 checkpoint | `editing-experience-browser.test.ts`; Storyboard card/controller | After a clean static build, the real browser opened two Storyboard cards then timed out after 15 s waiting for `data-storyboard-thumbnail-state`; no derived request existed because cards still depended on snapshot files. Earlier stale-`out` schema and synthetic tab-click failures were harness setup failures, not counted as R16 RED. Implement shared representative-time import, viewport lifecycle, ready-only LRU, in-flight dedupe, abort, generation guard and typed retry | `RED PROVED` / `IN PROGRESS` | Production implementation began only after the browser reached the intended missing-lifecycle failure. Preserve selection and Alt+Arrow reorder with a non-nested overlay control | Typecheck, build current static UI, rerun focused browser contract to GREEN |
+| 2026-08-21 22:48 +07 | 20.2–20.4 / 20.5 checkpoint | shared thumbnail controller/component; Storyboard card/threaded revision+fps; two real-browser contracts | Typecheck and artifact build PASS. Auto-load/error/retry/selection/reorder browser test 1/1 PASS after separating Storyboard requests from pre-existing Timeline requests and persisting typed failure until explicit Retry. 100-scene browser test PASS: 20 scenes requested, max 10 active, 10 stale requests aborted, top window 10; revisiting first card stayed at one request through ready cache | `PASS` / `IN PROGRESS` | First 100-scene runs exposed two harness issues (interception before navigation and too-short navigation timeout); interception now starts only after the shell loads. Existing port 43121 served the old in-memory artifact, so P20.5 requires replacing that process with the just-built exact dirty-source artifact and a fresh local bootstrap session | Restart exact artifact after the prior lease TTL, then inspect/capture the real Odyssey Storyboard |
+| 2026-08-21 23:17 +07 | 20.5 artifact-runtime repair | Release FFmpeg capabilities; browser Fetch Metadata perimeter; inline-scene thumbnail identity | Real artifact exposed missing WebP encoder/PNG decoder, blocked same-origin image requests, and identical thumbnail keys for inline scenes sharing `index.html`. RED was reproduced in `ffmpeg-capabilities`, server perimeter/route, and Core identity tests; source-built FFmpeg conversion now succeeds and joined Core/adapter/server focused gate is 5 files/45 tests PASS | `IN PROGRESS` | Perimeter exception is limited to authenticated same-origin GET/HEAD `no-cors` media routes; unrelated health and mutation with passive destination remain 403. Scene ID now participates in fingerprint and deliberately invalidates ambiguous old cache entries | Rebuild artifact, restart exact source, require distinct loaded Odyssey images, scroll/retry, then capture evidence |
+| 2026-08-21 23:23 +07 | 20.5 / P20 gate | Exact dirty-source artifact `0.1.0-p20-webp`; real Odyssey project `project_d650b815-9c0d-4c20-b866-8e9dace5a6c8`; browser `http://127.0.0.1:43123/projects/...`; `evidence/p20-odyssey-storyboard.jpg` | Artifact build/typecheck PASS. First window loaded 14 independent WebP images at natural 160×90 with 14 distinct immutable URLs; selecting the final scene scrolled the Storyboard and all 18 cards reached ready with 18 distinct URLs. Screenshot is 1280×720 JPEG, 81,325 bytes, SHA-256 `231eda1e00bfdb18ecafc9b8279dab8eb047bc4c7b951e31de7e308ddfc3f4ee` and visibly contains scene imagery. Focused real-browser contract separately proves typed induced failure → explicit Retry → ready, plus selection/reorder identity | `PASS` | Real artifact required the three runtime repairs above; no broken-image screenshot was accepted. Browser retry fixture is a real Chromium session against the Studio server, while the unmodified Odyssey run proves the production transport/cache/image path | P21.1 RED |
+| 2026-08-21 23:40 +07 | P21 gate | Strict shared position contract; Core authoritative owner resolution; parsed offset serializer; HTTP/MCP; real SQLite/filesystem history | RED contract/Core imports proved the capability absent. GREEN focused matrix 9 files/97 tests; MCP contract 9 files/94 tests; golden 11 files/49 tests; typecheck, lint (0 errors/5 baseline warnings), boundaries, schema drift and production build PASS. Real matrix proves inline/mounted/caption targets, unchanged zero offset creates no revision, one UI receipt supports undo/redo, stale hash writes zero bytes, and injected publish failure restores source/journal. Preview and render both carry the shared `translate` rule while authored `transform` survives | `PASS` | Client cannot submit `sourceFile` or selectors; server resolves exact `sceneId` + authored `data-hf-id`. The extra local `test:agent-kit` command correctly sees intended generated-file diffs against uncommitted HEAD; canonical build was run and deterministic, while its release gate will be authoritative after the final source is committed for P25 | P22.1 RED |
+| 2026-08-22 00:34 +07 | P22.1–P22.4 / P22.5 local gate | Closed preview bridge v2; canvas planner/overlay; stable authored target retention; template-fragment source mutation; real-browser arrange path | Combined browser gate 8 files/21 tests PASS. Mouse arrange produces exactly one persisted mutation and the authoritative frame paints in 187 ms; cancel/no-op and malicious bridge inputs remain rejected. Preview/settings R4.1c regression measures 186 ms/264 ms and source mutation measures 187 ms/266 ms. Typecheck, lint (0 errors/5 baseline warnings), boundaries and production build PASS | `PASS LOCAL` / `IN PROGRESS CI` | Two real defects found and fixed before proceeding: stable `data-hf-id` elements without timing/effects were missing from the projection, and mounted scene elements inside `<template>.content` were not serialized after mutation. Linux/Windows <500 ms evidence remains owned by P25 `Browser session` | P23 local; P22.5 closes in P25 |
+| 2026-08-22 00:34 +07 | P23.1–P23.4 / P23.5–P23.6 local gate | Nested media acknowledgements and recovery; task-labelled inspector; direct Look/Motion/Template/Music actions; revision separation; accessibility | Real-browser audio matrix 3/3 PASS: WAV is unmuted and advances only after acknowledgement; simulated autoplay denial recovers through preview-principal `Enable audio`; resource failure stays paused and explicit retry plays. Inspector action browser 1/1 PASS: Look changes rendered tone and disk, Motion renders selected recipe and persists, Templates mounts a scene and increases Storyboard count, Music installs a generated WAV and renders BGM. Accessibility browser PASS across every inspector tab, combined P22/P23 browser gate 8 files/21 tests PASS. MCP contract 9 files/94 tests, golden 11 files/50 tests, schema drift, spec-path 169 paths/5 specs and build PASS | `PASS LOCAL` / `IN PROGRESS CI` | The browser path exposed a real stale-revision 409 when Templates followed a preview-settings write; entity `revision` and aggregate `projectRevision` are now separate end-to-end. Storyboard Retry also failed target-size audit and now keeps a 24 px minimum. Golden initially failed only on the intentional strict schema/description delta; both deterministic legacy/modern fixtures were updated and full golden reran green. Required screenshots and Linux/Windows audible/failure proof remain P23.5/P25 | P24.1 RED; P23 cross-OS closes in P25 |
+| 2026-08-22 00:36 +07 | 24.1 checkpoint | StoryMotionProfile + parser metadata/root attribution + shared validate/snapshot/render gate + agent-kit v9 | Read full P24 row, Design §30, current Core diagnostic, adapter extraction, snapshot/render gates and canonical agent-kit builder. Planned RED starts in `tests/core/story-motion.test.ts`, then parser/render integration | `IN PROGRESS` | `hyperframes` and `hyperframes-animation` skills require deterministic seek-safe phase evidence rather than decorative entrance presets. Current code proves only two separated scale/rotation starts, filters inline scenes from validation/render, leaves snapshot ungated and keeps root effects separate; these are the exact gaps P24 must close | Write failing three-phase/profile/sequence/coverage tests before production code |
+| 2026-08-22 00:51 +07 | P24 gate | StoryMotionProfile, v9 metadata/parser, three-phase + sequence + narration gates, shared validate/snapshot/render enforcement, agent-kit v9 | RED Core 4/7 failed on missing profile/composition API and thirds logic; parser RED 2/2 on absent marker/metadata/root attribution; snapshot regression RED exposed the formerly ungated path. GREEN P24 matrix 7 files/72 tests; agent-kit/package matrix 3 files/37 tests; tool catalogue 2/2; golden 11 files/51 tests; typecheck, lint (0 errors/5 baseline warnings), boundaries, schema drift, spec-path 169/5, production build and diff-check PASS. Canonical builder ran twice: `CLAUDE.md` SHA-256 `0d140967ce202b56fa6ecd9e4278cffaabed3aa15984eea1602049ef86299e73`, generated bundle `97a4cb6cb2503d39838fd4cd404efec8ea73eca54a7c37e6e317eddf58487a3c` both times | `PASS` | Parser projects bounded pattern/seam metadata from inline or mounted roots and assigns statically resolved root-script targets to the owning inline scene; dynamic root loops remain unresolved rather than evidence for all scenes. Core checks first/middle/final thirds, rolling-four ≥3 patterns, explicit seams, 6–10 s, static >10 s and narration union ≥75%. Strict marker is `hyperframes.json.vidcomAgentKitVersion >= 9`; agent-created projects receive it, legacy missing metadata is warning while shallow/unverified remains blocking. The 18-scene v9 root-loop fixture with `data-no-timeline`, 15 s holds and fade+y is rejected before queue with all 18 IDs | P25.1 exact-source freeze and full regression |
+| 2026-08-22 01:32 +07 | 25.1 worktree regression | P19–P24 integrated source at `HEAD=6475521b03f69c1aa5f73be0b64a27e559549c93`, dirty digest `fc8f77f571ded65bdbfad0e80016674953caffd1d751448ddd0e68ad5761f501` (124 changed source paths; checklist/notes/state marker excluded by the identity script) | Dedicated `bun run test:browser-session`: 12 files/27 tests PASS, zero skip, R4.1c 214/185/271/274 ms; Storyboard 100-scene sample requested 20, max active 10, aborted 10, top window 10. Main CI-profile test with `CI=true VIDCOM_REQUIRE_FFMPEG=1`: 329 files PASS + 1 workflow-owned skip, 2716 tests PASS + 5 intentional workflow-owned skips. Typecheck PASS; lint 0 errors/5 baseline warnings; boundaries PASS; MCP contract 9 files/94 tests; golden 11 files/51 tests; schema drift PASS; spec paths 172 paths/5 specs; build and runtime smoke PASS | `PASS (WORKTREE); COMMIT IDENTITY OPEN` | Repaired source-caused reds before continuation: utility fixtures no longer impersonate v9 story scenes; tool catalogue count is 43; Storyboard drag uses an unambiguous target quarter and dragend fallback; detached preview frames are tolerated; 100-scene seed writes run away from the live Studio event stream; audio assertions follow HyperFrames parent/runtime ownership; bridge-render fixture is utility. The first opportunistic non-CI full suite measured 582 ms while 2700+ tests contended for the same browser; it is not the configured browser authority and was followed by the serialized dedicated 27/27 gate. Two pre-existing user-owned paths remain outside commit authority, so 25.1 stays open until the exact pushed commit is rerun in a clean worktree | Stage only goal-owned paths, create exact commit, rerun the same gates from a clean worktree, then dispatch five workflows |
+| 2026-08-22 01:47 +07 | 25.1 exact-commit gate | Clean detached worktree at `bc7bb8d05844e61c3b03d9bf5c46c4fb680afc77`; two pre-existing user-owned paths are absent from the commit and remain untouched in the original worktree | Typecheck and production build PASS. Dedicated browser rerun: 12 files/27 tests PASS, R4.1c 188/188/268/268 ms; inspector action focused rerun 1/1 PASS. A first cold full-browser pass had catalog timeout plus 641 ms contention, then both focused cases and the unchanged full matrix passed. CI-profile full test on a fresh `bun install` ran 2,720 tests but 10 artifact/native cases failed: Bun install removed execute bits from both `node-pty` `spawn-helper` binaries; the local Homebrew Node used as a fixture has non-portable dylinks; the local SEA injection binary lacks the expected fuse. Source checkout with the already prepared native/artifact tree had passed 2,716 tests immediately before commit | `PASS; NATIVE/ARTIFACT AUTHORITY → CI` | The fresh-install failures are concrete local prerequisite drift, not waived or relabelled green: `spawn-helper` is `-rw-r--r--` in the fresh tree versus `-rwxr-xr-x` in the prepared tree, and five artifact-stage cases fail before their intended assertion on the same Homebrew-library preflight. Per the user contract, these exact-source gates transfer to `CI`/`Packaged smoke` rather than `[!]`. Lint 0 errors/5 baseline warnings and boundaries PASS before the full run. Any Actions red still blocks 25.3 | Amend evidence-only docs, push exact commit, dispatch all five workflows and inspect artifacts |
 
 ## Final Authoring-Readiness Audit
 
@@ -2173,3 +2698,18 @@ caption · D7 tool MCP undo/redo · **D8 PR-11 hot-reload từng sub-composition
 - [x] Link Markdown đã được kiểm trực tiếp; `bun run test:spec-paths` xanh nhưng chỉ là regression cho
   ba spec cũ, không bị trình bày sai như evidence của Editing Experience. Task 11.5a sở hữu việc đăng ký spec này.
 - [x] Approval Gate đã được người dùng chuyển sang `Approved`; S0 đã PASS, task kế tiếp là P0
+
+### R16–R20 Addendum Authoring-Readiness Audit
+
+- [x] Goals bản 9 và Design bản 14 đã `Approved` 2026-08-21; Design approval không bị dùng như code approval
+- [x] Dependency graph P19–P25 giữ P0–P18 history đóng và khóa P25 sau bốn product slice
+- [x] Mỗi phase mới có prerequisite, Skill, Read first, task RED→GREEN, Requirements/Design trace và Deliverables
+- [x] R16–R20 coverage matrix map mọi AC tới task và evidence browser/persistence/visual thật
+- [x] P21 có logic test + SQLite/temp filesystem thật; HTTP/MCP dùng cùng Core/contract/authority
+- [x] P20/P22/P23 không được đóng bằng unit test: cần project/browser thật; P22 có <500 ms Linux + Windows
+- [x] P24 có inline/root-loop/`data-no-timeline`/18-scene fixture và agent-kit v9 deterministic bundle gate
+- [x] P25 ghi đúng năm workflow, GH_KEY→GH_TOKEN redaction, URL + per-OS conclusion + artifact download/inspection
+- [x] Local thiếu Chrome/FFmpeg/artifact chuyển sang Actions; `[!]` chỉ khi CI cũng không chạy được; red chặn task kế
+- [x] Odyssey closeout ràng buộc 18 scene 6–10 s, narration ≥75%, motion/seam diversity, screenshot/contact sheet,
+  explicit `human_reviewed`, exact MP4 hash + ffprobe
+- [x] R16–R20 Implementation Addendum Approval Gate được người dùng chuyển sang `Approved`

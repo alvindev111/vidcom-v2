@@ -57,6 +57,8 @@ describe("caption composition operations", () => {
     const { document } = parseHTML(result.value);
     expect(document.querySelectorAll('[data-composition-id="scene-1"] .captions')).toHaveLength(1);
     expect(document.querySelector(".captions")?.getAttribute("data-caption-timing")).toBe("engine");
+    expect(document.querySelector(".captions")?.getAttribute("data-hf-id")).toBe("captions-scene-1");
+    expect(document.querySelector(".captions")?.classList.contains("clip")).toBe(true);
     const paragraph = document.querySelector(".caption");
     expect(paragraph?.classList.contains("clip")).toBe(true);
     expect(paragraph?.getAttribute("data-start")).toBe("0.25");

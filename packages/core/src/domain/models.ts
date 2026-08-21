@@ -123,6 +123,8 @@ export interface CompositionModel {
   project: ProjectSummaryDto;
   /** Authored root frame rate; adapters use the HyperFrames default when the attribute is absent. */
   frameRate?: number;
+  /** Project authoring contract marker; version 9 enables strict generated-story gates. */
+  agentKitVersion?: number | null;
   scenes: SceneDto[];
   rootTrack: unknown | null;
   diagnostics: Diagnostic[];
@@ -152,6 +154,11 @@ export type CompositionOp =
   | {
       kind: "removeElement";
       target: string;
+    }
+  | {
+      kind: "setLayoutOffset";
+      target: string;
+      value: { x: number; y: number };
     }
   | {
       kind: "replaceCaptions";

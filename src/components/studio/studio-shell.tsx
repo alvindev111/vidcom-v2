@@ -84,6 +84,7 @@ export function StudioShell({
     projectId,
     previewSettings,
     previewSettingsRevision,
+    projectRevision,
     rebuildPreview,
   );
 
@@ -135,6 +136,7 @@ export function StudioShell({
             onSelectScene={selectScene}
             onProjectChanged={handleProjectChanged}
             projectRevision={projectRevision}
+            frameRate={frameRate}
           />
         </ResizablePanel>
 
@@ -152,6 +154,7 @@ export function StudioShell({
             state={state}
             controls={controls}
             scenes={scenes}
+            files={files}
             rootTrack={rootTrack}
             settings={preview.settings}
             selectedId={selectedId}

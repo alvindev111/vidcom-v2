@@ -48,8 +48,8 @@ function setup(options: { metadata?: { status: "ok"; kind: "font"; byteSize: num
         return {
           project: { id: projectId, slug: ref.slug, title: ref.slug, width: 1920, height: 1080, duration: 8, updatedAt: new Date(0).toISOString(), sceneCount: 2, revision: 0 },
           scenes: [
-            { id: "inline", src: null, start: 0, duration: 4, trackIndex: 0, block: null, isTransition: false, media: [], script: [], narration: null, elements: [], unresolvedEffects: 0 },
-            { id: "linked", src: "compositions/linked.html", start: 4, duration: 4, trackIndex: 0, block: null, isTransition: false, media: [], script: [], narration: null, elements: [], unresolvedEffects: 0 },
+            { id: "inline", src: null, sourceFile: "index.html", role: "story" as const, start: 0, duration: 4, trackIndex: 0, block: null, isTransition: false, media: [], script: [], narration: null, elements: [], unresolvedEffects: 0 },
+            { id: "linked", src: "compositions/linked.html", sourceFile: "compositions/linked.html", role: "story" as const, start: 4, duration: 4, trackIndex: 0, block: null, isTransition: false, media: [], script: [], narration: null, elements: [], unresolvedEffects: 0 },
           ],
           rootTrack: null,
           diagnostics: [],

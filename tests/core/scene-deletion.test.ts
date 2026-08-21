@@ -24,6 +24,8 @@ function scene(id: string, options: { src?: string | null; start?: number; durat
   return {
     id,
     src: (options.src === undefined ? `compositions/${id}.html` : options.src) as RelPath | null,
+    sourceFile: (options.src === null ? "index.html" : options.src ?? `compositions/${id}.html`) as RelPath,
+    role: "story",
     start: options.start ?? 0,
     duration: options.duration ?? 4,
     trackIndex: 1,

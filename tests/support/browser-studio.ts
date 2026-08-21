@@ -7,7 +7,7 @@ import { startNextHostedRuntime } from "@vidcom/cli";
 import type { Browser, Page } from "puppeteer-core";
 
 import { requireBrowser } from "./browser-harness";
-import { writeSampleProject } from "./sample-project";
+import { writeSampleProject, type SampleProject } from "./sample-project";
 
 /**
  * One real studio in one real browser.
@@ -94,6 +94,7 @@ export interface StudioBrowser {
 export async function withStudioBrowser(
   label: string,
   scenario: (studio: StudioBrowser) => Promise<void>,
+  prepareProject?: (project: SampleProject) => Promise<void>,
 ): Promise<boolean> {
   const available = await requireBrowser();
   if (!available.run) {
@@ -111,6 +112,7 @@ export async function withStudioBrowser(
   const project = await writeSampleProject(workspace, {
     slug: label, id: projectId, duration: 8, withTimeline: true,
   });
+  await prepareProject?.(project);
   const prior = {
     appData: process.env.VIDCOM_APP_DATA,
     workspace: process.env.VIDCOM_WORKSPACE,

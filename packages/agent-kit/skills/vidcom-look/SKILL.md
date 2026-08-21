@@ -1,7 +1,7 @@
 ---
 name: vidcom-look
 description: Adjust VidCom tone, palette, subtitle presentation, transitions, and BGM through preview settings. Use for visual or audio-bed direction. Do not use for scene structure, narration speech, diagnostics repair, or final rendering.
-x-vidcom-agent-kit: 8
+x-vidcom-agent-kit: 9
 ---
 
 # VidCom look

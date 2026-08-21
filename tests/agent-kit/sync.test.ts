@@ -101,5 +101,16 @@ describe("agent-kit source and contract synchronization", () => {
     expect(descriptions.get("save_file")).toContain("fade, gentle rise/drop");
     expect(descriptions.get("install_motion_library")).toContain("multi-phase choreography");
     expect(descriptions.get("start_render")).toContain("setup/development/payoff/hold");
+    expect(AGENT_KIT_VERSION).toBe(9);
+    expect(agents).toContain("vidcomAgentKitVersion");
+    expect(agents).toContain("6–10 seconds");
+    expect(agents).toContain("at least three primary patterns");
+    expect(agents).toContain("75% of story time");
+    expect(motion).toContain("data-story-pattern");
+    expect(motion).toContain("data-seam-kind");
+    expect(motion).toContain("first, middle, and final thirds");
+    expect(render).toContain("story-pattern-diversity");
+    expect(render).toContain("story-narration-sparse");
+    expect(render).toContain("contact sheet");
   });
 });

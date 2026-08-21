@@ -26,6 +26,7 @@ const TRANSITION_SOUNDS = [
 const REVEAL_SOUNDS = [
   "ping", "pop", "chime", "click", "bubble", "woosh", "sparkle", "drop", "tick", "bell", "blip", "snap",
 ] as const;
+const MOTION_PRESETS = ["none", "drift", "focus", "pulse", "wipe"] as const;
 const THEME_VARIABLES = [
   "--primary", "--primary-light", "--accent", "--accent-light", "--background", "--surface",
   "--text", "--text-muted", "--success", "--info",
@@ -143,6 +144,7 @@ export function normalizePreviewSettings(raw: unknown): PreviewSettingsDto {
         return [id, {
           transitionSound: oneOf(scene.transitionSound, TRANSITION_SOUNDS, "minimal"),
           revealSound: oneOf(scene.revealSound, REVEAL_SOUNDS, "ping"),
+          motionPreset: oneOf(scene.motionPreset, MOTION_PRESETS, "none"),
           hidden: bool(scene.hidden, false),
         }];
       }),

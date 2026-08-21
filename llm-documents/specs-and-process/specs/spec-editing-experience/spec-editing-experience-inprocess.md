@@ -1,4 +1,4 @@
-# Spec Editing Experience (Giai đoạn 5) — COMPLETE
+# Spec Editing Experience (Giai đoạn 5) — IN PROCESS
 
 > **Related Documents**:
 > - [Detailed Goals](./spec-editing-experience-detailed-goal.md)
@@ -89,14 +89,17 @@ trên timeline, undo/redo, preview không giật khi ghi, quản lý file/asset 
   contract/failure-cleanup gate của Design bản 12; S0 bắt đầu thực thi sau khi gate được duyệt
 - **Deep-review remediation**: **Approved and complete 2026-08-21** — Goals bản 8, Design bản 13 và
   checklist P12–P18 đóng đủ C-01, H-01–H-04, M-01–M-07, L-01 và G-01–G-03.
+- **Runtime UX remediation**: **Goals bản 9, Design bản 14 và checklist P19–P25 Approved 2026-08-21**
+  — mở lại spec cho R16–R20; code execution bắt đầu ở P19.0.
 
 ## During Spec
-- **Standups**: 2026-08-16 — S0 chạy: spec chuyển `pending` → `inprocess`, `implementation-notes.html` tạo, baseline ghi vào Execution Log của checklist. 2026-08-20 — audit hậu triển khai mở lại spec: C-01, H-01–H-04, M-01–M-07, L-01 và G-01–G-03 trở thành remediation gate bắt buộc trước merge/release. 2026-08-21 — P18 exact-source Actions, artifact inspection, branch protection và council đều PASS.
-- **Impediments**: Không còn blocker trong phạm vi spec. PR #4 vẫn cần một human approval theo branch protection mới; đây là merge authorization, không phải product/CI defect.
+- **Standups**: 2026-08-16 — S0 chạy: spec chuyển `pending` → `inprocess`, `implementation-notes.html` tạo, baseline ghi vào Execution Log của checklist. 2026-08-20 — audit hậu triển khai mở lại spec: C-01, H-01–H-04, M-01–M-07, L-01 và G-01–G-03 trở thành remediation gate bắt buộc trước merge/release. 2026-08-21 — P18 exact-source Actions, artifact inspection, branch protection và council đều PASS; cùng ngày bằng chứng chạy project Odyssey mở R16–R20 và người dùng duyệt checklist P19–P25.
+- **Impediments**: Không có blocker khi bắt đầu P19.0. PR #4 vẫn cần một human approval theo branch protection mới; đây là merge authorization, không phải product/CI defect.
 - **Adjustments**:
   - Giữ nguyên toàn bộ checkbox/evidence lịch sử của S0–P11; không sửa quá khứ thành “chưa chạy”.
   - Bổ sung R13–R15, Design bản 13 và P12–P18 để xử lý độc lập các finding mới.
   - Trạng thái `COMPLETE` ngày 2026-08-19 là mốc hoàn tất phạm vi checklist cũ, không còn là release verdict sau audit 2026-08-20.
+  - Mở lại trạng thái `IN PROCESS` cho R16–R20/P19–P25; bằng chứng P18 vẫn là lịch sử và không được dùng để đóng gate mới.
 
 ## Spec Review
 - **Completed**: R1–R15, checklist S0–P18 và toàn bộ 16 finding deep-review đã đóng; production evidence authority là `03a2df5659552ad9638d05888f08b3a0fba38f2f`.

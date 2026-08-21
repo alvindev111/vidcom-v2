@@ -124,6 +124,9 @@ export class PlayerHost<Engine extends PreviewBufferEngine> {
     };
   }
 
+  /** Returns the bounded engine API; authored DOM remains behind the preview bridge. */
+  currentEngine(): Engine | null { return this.visible; }
+
   seek(seconds: number): void { this.visible?.seek(seconds); }
   play(): void { this.visible?.play(); }
   pause(): void { this.visible?.pause(); }

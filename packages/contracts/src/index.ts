@@ -13,4 +13,5 @@ export * from "./mcp";
 export * from "./motion-libraries";
 export * from "./settings";
 export * from "./timeline-diagnostics";
+export * from "./thumbnail-time";
 export * from "./tts";

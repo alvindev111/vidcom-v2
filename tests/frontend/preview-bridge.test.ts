@@ -7,6 +7,7 @@ import {
   acceptPreviewBridgeEvent,
   createPreviewBridgeNonce,
   parsePreviewHostMessage,
+  parsePreviewParentCommand,
 } from "../../src/lib/studio/preview-bridge";
 
 const nonce = "n".repeat(43);
@@ -16,7 +17,7 @@ describe("preview postMessage protocol", () => {
     const source = {};
     const other = {};
     expect(Buffer.from(createPreviewBridgeNonce((bytes) => bytes.fill(7)), "base64url")).toHaveLength(32);
-    const data = { channel: "vidcom-preview", version: 1, nonce, type: "ready" };
+    const data = { channel: "vidcom-preview", version: 2, nonce, type: "ready" };
 
     expect(acceptPreviewBridgeEvent(
       { source, origin: "http://preview.localhost:43123", data },
@@ -39,7 +40,7 @@ describe("preview postMessage protocol", () => {
   it("rejects undeclared fields, oversized scene lists and non-finite transport state", () => {
     const base = {
       channel: "vidcom-preview",
-      version: 1,
+      version: 2,
       nonce,
       type: "snapshot",
       requestId: null,
@@ -73,5 +74,51 @@ describe("preview postMessage protocol", () => {
       ...base,
       state: { ...base.state, duration: Number.POSITIVE_INFINITY },
     }, nonce)).toBeNull();
+  });
+
+  it("accepts only the closed arrange command vocabulary", () => {
+    const base = { channel: "vidcom-preview", version: 2, nonce, requestId: "request-1" };
+    const commands = [
+      { ...base, type: "set-arrange-mode", enabled: true },
+      { ...base, type: "hit-test", xRatio: 0.25, yRatio: 0.75 },
+      { ...base, type: "preview-offset", sceneId: "scene-1", hfId: "hero", offsetX: 24, offsetY: -8 },
+      { ...base, type: "reset-offset", sceneId: "scene-1", hfId: "hero" },
+    ];
+    for (const command of commands) {
+      expect(parsePreviewParentCommand(command, nonce)).toEqual(command);
+    }
+    expect(parsePreviewParentCommand({ ...commands[1], selector: "body" }, nonce)).toBeNull();
+    expect(parsePreviewParentCommand({ ...commands[2], sourceFile: "index.html" }, nonce)).toBeNull();
+    expect(parsePreviewParentCommand({ ...commands[1], xRatio: Number.NaN }, nonce)).toBeNull();
+    expect(parsePreviewParentCommand({ ...commands[2], offsetX: 1_000_000_000 }, nonce)).toBeNull();
+  });
+
+  it("accepts bounded arrange targets and rejects leaked or malformed descriptors", () => {
+    const base = { channel: "vidcom-preview", version: 2, nonce, type: "arrange-target", requestId: "request-1" };
+    const target = {
+      sceneId: "scene-1",
+      hfId: "hero",
+      kind: "element",
+      rect: { x: 10, y: 20, width: 300, height: 120 },
+      canvas: { width: 1920, height: 1080 },
+      editable: true,
+      reason: null,
+    };
+    expect(parsePreviewHostMessage({ ...base, target }, nonce)).toEqual({ ...base, target });
+    expect(parsePreviewHostMessage({ ...base, target: null }, nonce)).toEqual({ ...base, target: null });
+    expect(parsePreviewHostMessage({ ...base, target: { ...target, selector: "#hero" } }, nonce)).toBeNull();
+    expect(parsePreviewHostMessage({ ...base, target: { ...target, rect: { ...target.rect, width: Infinity } } }, nonce)).toBeNull();
+    expect(parsePreviewHostMessage({ ...base, target: { ...target, canvas: { width: 1_000_000_000, height: 1080 } } }, nonce)).toBeNull();
+  });
+
+  it("accepts only closed, actionable audio states", () => {
+    const base = { channel: "vidcom-preview", version: 2, nonce, type: "audio-state", requestId: "play-1" };
+    expect(parsePreviewHostMessage({ ...base, state: "playing", error: null }, nonce)).toEqual({
+      ...base, state: "playing", error: null,
+    });
+    expect(parsePreviewHostMessage({ ...base, state: "activation-required", error: "Click Enable audio" }, nonce)).not.toBeNull();
+    expect(parsePreviewHostMessage({ ...base, state: "pretending", error: null }, nonce)).toBeNull();
+    expect(parsePreviewHostMessage({ ...base, state: "error", error: "x".repeat(513) }, nonce)).toBeNull();
+    expect(parsePreviewHostMessage({ ...base, state: "error", error: null, src: "secret.wav" }, nonce)).toBeNull();
   });
 });

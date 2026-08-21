@@ -45,6 +45,13 @@ export const PREVIEW_DOCUMENT_CSP = [
 ].join("; ");
 
 const expectedSource = { expectedContentHash: ContentHashSchema } as const;
+/** Absolute guard against oversized or malicious layout-offset payloads. */
+export const MAX_LAYOUT_OFFSET_PX = 100_000;
+/** Stable authored element identity accepted by the position mutation. */
+export const AuthoredElementIdSchema = IdentifierSchema.regex(
+  /^[A-Za-z][A-Za-z0-9_-]*$/u,
+  "elementId must be an authored data-hf-id",
+);
 const sceneIds = z.array(IdentifierSchema).min(1).superRefine((values, context) => {
   if (new Set(values).size !== values.length) {
     context.addIssue({ code: "custom", message: "sceneIds must be unique" });
@@ -80,6 +87,22 @@ export const MoveScenesRequestSchema = z.strictObject({
   deltaSeconds: z.number().finite(),
   extendRoot: z.boolean().optional(),
   ...expectedSource,
+});
+
+/** Shared HTTP body for one authored element base-position mutation. */
+export const SetElementPositionRequestSchema = z.strictObject({
+  offsetX: z.number().finite().min(-MAX_LAYOUT_OFFSET_PX).max(MAX_LAYOUT_OFFSET_PX),
+  offsetY: z.number().finite().min(-MAX_LAYOUT_OFFSET_PX).max(MAX_LAYOUT_OFFSET_PX),
+  ...expectedSource,
+});
+
+/** Shared HTTP/MCP result for one authored element base-position mutation. */
+export const SetElementPositionResponseSchema = z.strictObject({
+  changed: z.boolean(),
+  file: ProjectFileSchema,
+  revision: z.number().int().nonnegative(),
+  diagnostics: z.array(DiagnosticSchema),
+  changeSeq: z.number().int().nonnegative().nullable(),
 });
 
 export const PrepareDeleteScenesRequestSchema = z.strictObject({

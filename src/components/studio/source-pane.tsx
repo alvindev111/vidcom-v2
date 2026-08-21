@@ -38,6 +38,7 @@ export function SourcePane({
   onSelectScene,
   onProjectChanged,
   projectRevision,
+  frameRate,
 }: {
   projectId: string;
   projectSlug: string;
@@ -50,6 +51,7 @@ export function SourcePane({
   onSelectScene: (scene: Scene) => void;
   onProjectChanged: ProjectChanged;
   projectRevision: number;
+  frameRate: number;
 }) {
   const [tab, setTab] = React.useState("code");
 
@@ -119,6 +121,8 @@ export function SourcePane({
           onSeek={onSeek}
           onSelectScene={onSelectScene}
           onProjectChanged={onProjectChanged}
+          projectRevision={projectRevision}
+          frameRate={frameRate}
         />
       </TabsContent>
       <TabsContent value="ai" className="min-h-0 flex-1 border-t">

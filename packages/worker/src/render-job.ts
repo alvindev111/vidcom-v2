@@ -21,7 +21,7 @@ import {
   ok,
   scanExternalDependencies,
   scanRemoteMedia,
-  storyMotionDiagnostics,
+  storyCompositionDiagnostics,
   type BinaryProbePort,
   type ClockPort,
   type CompositeMutationJournalPort,
@@ -306,7 +306,9 @@ export async function prepareRender(
     });
   }
   if (model.scenes.length === 0) return err({ code: ErrorCode.NoScenes, message: "project has no scenes" });
-  const shallowMotion = storyMotionDiagnostics(model.scenes.filter((scene) => scene.src !== null));
+  const shallowMotion = storyCompositionDiagnostics(model.scenes, {
+    strictAgentStory: (model.agentKitVersion ?? 0) >= 9,
+  }).filter(({ severity }) => severity === "error");
   if (shallowMotion.length > 0) return err({
     code: ErrorCode.ProjectInvalid,
     message: "story scenes require meaningful multi-phase motion before render",

@@ -1,5 +1,6 @@
 import {
   ErrorCode,
+  MAX_LAYOUT_OFFSET_PX,
   MAX_PROJECT_DURATION_SECONDS,
   MAX_SOURCE_BYTES,
   type Actor,
@@ -120,6 +121,7 @@ export async function patchPreviewSettings(
     ? ok({
         previewSettings: written.value.previewSettings!,
         revision: written.value.revision,
+        projectRevision: written.value.projectRevision ?? written.value.revision,
         diagnostics: written.value.diagnostics,
         changeSeq: written.value.changeSeq ?? null,
       })
@@ -155,6 +157,7 @@ export async function uploadBgm(
     ? ok({
         previewSettings: written.value.previewSettings!,
         revision: written.value.revision,
+        projectRevision: written.value.projectRevision ?? written.value.revision,
         diagnostics: written.value.diagnostics,
         changeSeq: written.value.changeSeq ?? null,
       })
@@ -424,6 +427,81 @@ export async function setSceneScript(
     envelope: written.value,
     narrationStale,
   });
+}
+
+/** Changes one server-resolved authored element's base position without touching animation transforms. */
+export async function setElementPosition(
+  dependencies: ProjectWriteDependencies,
+  input: {
+    projectId: ProjectId;
+    sceneId: string;
+    elementId: string;
+    offsetX: number;
+    offsetY: number;
+    expectedContentHash: string;
+  },
+  actor: Actor,
+  invocation: WriteInvocation = { origin: ignoredMutationOriginForActor(actor), toolAudit: null },
+) {
+  const ref = await findRef(dependencies, input.projectId);
+  if (!ref.ok) return ref;
+  if (!Number.isFinite(input.offsetX) || !Number.isFinite(input.offsetY)
+    || Math.abs(input.offsetX) > MAX_LAYOUT_OFFSET_PX || Math.abs(input.offsetY) > MAX_LAYOUT_OFFSET_PX) {
+    return err({
+      code: ErrorCode.InvariantViolated,
+      message: `layout offsets must be finite and within ${MAX_LAYOUT_OFFSET_PX} pixels`,
+      field: !Number.isFinite(input.offsetX) || Math.abs(input.offsetX) > MAX_LAYOUT_OFFSET_PX ? "offsetX" : "offsetY",
+    });
+  }
+  const parsed = await parseForMutation(dependencies, ref.value);
+  if (!parsed.ok) return parsed;
+  const scene = parsed.value.scenes.find((candidate) => candidate.id === input.sceneId);
+  if (!scene) return err({ code: ErrorCode.NotFound, message: "scene was not found", field: "sceneId" });
+  const element = scene.elements.find((candidate) => candidate.authoredId === input.elementId);
+  if (!element) {
+    return err({ code: ErrorCode.NotFound, message: "authored element does not belong to this scene", field: "elementId" });
+  }
+  if (!element.positionEditable) {
+    return err({
+      code: ErrorCode.InvariantViolated,
+      message: "element position is locked; add a stable data-hf-id and remove authored translate",
+      field: "elementId",
+      details: { reason: "position_locked" },
+    });
+  }
+  const path = scene.sourceFile as RelPath;
+  const source = await sourceForMutation(dependencies, ref.value, path);
+  if (!source.ok) return source;
+  const previous = element.layoutOffset ?? { x: 0, y: 0 };
+  if (previous.x === input.offsetX && previous.y === input.offsetY) {
+    return ok({
+      changed: false,
+      file: { path, content: source.value.content, contentHash: source.value.contentHash },
+      revision: (await dependencies.journal.latestRevision(input.projectId)) ?? 0,
+      diagnostics: parsed.value.diagnostics,
+      changeSeq: null,
+    });
+  }
+  const applied = await dependencies.composition.applyOps(ref.value, path, [{
+    kind: "setLayoutOffset",
+    target: input.elementId,
+    value: { x: input.offsetX, y: input.offsetY },
+  }]);
+  if (!applied.ok) return applied;
+  const written = await dependencies.authority.mutateSource({
+    kind: "file",
+    ref: ref.value,
+    path,
+    content: applied.value,
+    expectedContentHash: input.expectedContentHash as ContentHash,
+  }, actor, invocation);
+  return written.ok ? ok({
+    changed: true,
+    file: { path, content: applied.value, contentHash: written.value.contentHash },
+    revision: written.value.revision,
+    diagnostics: written.value.diagnostics,
+    changeSeq: written.value.changeSeq ?? null,
+  }) : written;
 }
 
 export interface NarrationRecord {

@@ -1,6 +1,6 @@
-import { existsSync, readFileSync, statSync } from "node:fs";
+import { existsSync, readFileSync, realpathSync, statSync } from "node:fs";
 import { createHash } from "node:crypto";
-import { join, posix } from "node:path";
+import { isAbsolute, join, posix, relative as pathRelative, sep } from "node:path";
 
 import { parseNumeric, readClipTiming, resolveWithinProject } from "@hyperframes/core";
 import { resolveBlockCategory } from "@hyperframes/core/registry";
@@ -36,6 +36,12 @@ import type {
 const REGISTRY_MARKER = /<!--\s*hyperframes-registry-item:\s*([\w-]+)\s*-->/;
 const MEDIA_TAGS: Record<string, SceneMedia["kind"]> = { IMG: "image", VIDEO: "video", AUDIO: "audio" };
 const blockCache = new Map<string, SceneBlock | null>();
+const SCENE_ROLES = new Set<Scene["role"]>(["root", "story", "transition", "overlay", "credit", "utility"]);
+const STORY_PATTERNS_EXCLUDED = new Set(["fade", "slide", "cards"]);
+const STORY_PATTERN = /^[a-z][a-z0-9-]{0,63}$/u;
+const SEAM_KINDS = new Set<NonNullable<Scene["seam"]>["kind"]>(["carry", "transform", "contrast"]);
+const PROJECT_URL_ROOT = new URL("https://vidcom.invalid/__project__/");
+const PROJECT_URL_PREFIX = PROJECT_URL_ROOT.pathname;
 
 function sourceFromRaw(path: RelPath, raw: string): CompositionSource {
   return {
@@ -47,11 +53,24 @@ function sourceFromRaw(path: RelPath, raw: string): CompositionSource {
 
 function canonicalProjectReference(owner: RelPath, raw: string | null): RelPath | null {
   if (!raw) return null;
-  const value = raw.trim().split(/[?#]/, 1)[0]?.split("\\").join("/") ?? "";
+  const value = raw.trim().split("\\").join("/");
   if (!value || value.startsWith("/") || value.startsWith("//")
     || value.startsWith("#") || /^[a-z][a-z0-9+.-]*:/i.test(value)) return null;
-  const resolved = posix.normalize(posix.join(posix.dirname(owner), value)).replace(/^\.\//, "");
-  return resolved === ".." || resolved.startsWith("../") ? null : resolved as RelPath;
+  try {
+    const base = new URL(owner, PROJECT_URL_ROOT);
+    const parsed = new URL(value, base);
+    if (parsed.origin !== PROJECT_URL_ROOT.origin || !parsed.pathname.startsWith(PROJECT_URL_PREFIX)) return null;
+    const pathname = decodeURIComponent(parsed.pathname.slice(PROJECT_URL_PREFIX.length));
+    const resolved = posix.normalize(pathname).replace(/^\.\//, "");
+    return !resolved || resolved === ".." || resolved.startsWith("../") ? null : resolved as RelPath;
+  } catch {
+    return null;
+  }
+}
+
+function isExternalMediaReference(raw: string): boolean {
+  const value = raw.trim();
+  return value.startsWith("//") || /^(?:https?|data|blob):/iu.test(value);
 }
 
 function collectProjectReferences(
@@ -88,7 +107,17 @@ function readJson(filename: string): Record<string, unknown> | null {
 
 function safeProjectFile(ref: ProjectRef, relativePath: string): string | null {
   const target = resolveWithinProject(ref.root, relativePath);
-  return target && existsSync(target) && statSync(target).isFile() ? target : null;
+  if (!target || !existsSync(target)) return null;
+  try {
+    const root = realpathSync(ref.root);
+    const canonical = realpathSync(target);
+    const relative = pathRelative(root, canonical);
+    const contained = relative === ""
+      || (!relative.startsWith(`..${sep}`) && relative !== ".." && !isAbsolute(relative));
+    return contained && statSync(canonical).isFile() ? canonical : null;
+  } catch {
+    return null;
+  }
 }
 
 function compositionHosts(authoredRoot: ParentNode): { root: Element | null; hosts: CompositionHost[] } {
@@ -159,18 +188,17 @@ function collectMedia(ref: ProjectRef, hostFile: string, root: ParentNode): Scen
     const src = node.getAttribute("src");
     if (!kind || !src) return [];
     const timing = readClipTiming(owner);
-    const hostDirectory = posix.dirname(hostFile.split("\\").join("/"));
-    const relative = posix.normalize(posix.join(hostDirectory, src)).replace(/^\.\//, "");
-    const external = /^(https?:)?\/\//.test(src) || src.startsWith("data:");
+    const external = isExternalMediaReference(src);
+    const relative = external ? null : canonicalProjectReference(hostFile as RelPath, src);
     return [{
       kind,
       src,
-      url: external ? src : `/api/hf/${ref.slug}/files/${relative}`,
+      url: external || relative === null ? src : `/api/hf/${ref.slug}/files/${relative}`,
       start: timing.start,
       duration: timing.duration ?? timing.end,
       // Only a file this project owns can be missing; a remote source is not
       // ours to find, and saying it is gone would be a false alarm.
-      missing: !external && safeProjectFile(ref, relative) === null,
+      missing: !external && (relative === null || safeProjectFile(ref, relative) === null),
     }];
   });
 }
@@ -243,6 +271,7 @@ async function readBlock(baseUrl: string | null, raw: string): Promise<SceneBloc
 async function parseScenes(
   ref: ProjectRef,
   entryRaw: string,
+  authoredRoot: ParentNode,
   hosts: CompositionHost[],
   registryBaseUrl: string | null,
   recordSource: (path: RelPath, raw: string) => void,
@@ -270,18 +299,43 @@ async function parseScenes(
       const scriptFile = host.src ? (hostFile === host.src ? hostFile : null) : ref.entry;
       const composition = scriptFile ? await open(scriptFile, raw) : null;
       const block = await readBlock(registryBaseUrl, raw);
+      const isTransition = block?.category === "transitions" || (block?.tags.includes("transition") ?? false);
+      const metadata = root.querySelector?.(`[data-composition-id="${host.id}"]`) ?? host.element;
+      const authoredRole = metadata.getAttribute("data-scene-role") as Scene["role"] | null;
+      const role = authoredRole && SCENE_ROLES.has(authoredRole)
+        ? authoredRole
+        : isTransition
+          ? "transition"
+          : block?.tags.includes("overlay") || /overlay/iu.test(host.id)
+            ? "overlay"
+            : "story";
+      const authoredPattern = metadata.getAttribute("data-story-pattern");
+      const storyPattern = authoredPattern && STORY_PATTERN.test(authoredPattern)
+          && !STORY_PATTERNS_EXCLUDED.has(authoredPattern)
+        ? authoredPattern
+        : null;
+      const authoredSeamKind = metadata.getAttribute("data-seam-kind") as NonNullable<Scene["seam"]>["kind"] | null;
+      const authoredSeamToken = metadata.getAttribute("data-seam-token")?.trim() ?? "";
+      const seam = authoredSeamKind && SEAM_KINDS.has(authoredSeamKind)
+          && authoredSeamToken.length > 0 && authoredSeamToken.length <= 80
+        ? { kind: authoredSeamKind, token: authoredSeamToken }
+        : null;
       return {
         id: host.id,
         src: host.src,
+        sourceFile: hostFile,
+        role,
+        storyPattern,
+        seam,
         start: host.start,
         duration: host.duration,
         trackIndex: host.trackIndex,
         block,
-        isTransition: block?.category === "transitions" || (block?.tags.includes("transition") ?? false),
+        isTransition,
         media: collectMedia(ref, hostFile, root),
         script: composition && scriptFile ? sceneScriptLines(composition, scriptFile, host) : [],
         narration: readNarration(ref, host.id),
-        ...readSceneElements(root, host.id),
+        ...readSceneElements(root, host.id, () => true, host.src ? undefined : authoredRoot),
       };
     }));
   } finally {
@@ -354,6 +408,7 @@ export class CompositionHf implements CompositionPort {
     const scenes = await parseScenes(
       ref,
       entryRaw,
+      authoredRoot,
       hosts,
       typeof config?.registry === "string" ? config.registry.replace(/\/$/, "") : null,
       recordSource,
@@ -378,6 +433,10 @@ export class CompositionHf implements CompositionPort {
         revision: 0,
       },
       frameRate: root ? parseNumeric(root.getAttribute("data-fps")) ?? 30 : 30,
+      agentKitVersion: Number.isSafeInteger(config?.vidcomAgentKitVersion)
+        && Number(config?.vidcomAgentKitVersion) >= 0
+        ? Number(config?.vidcomAgentKitVersion)
+        : null,
       scenes,
       rootTrack,
       diagnostics: [],

@@ -46,6 +46,7 @@ function settingsFor(
       "scene-a": {
         transitionSound: "minimal",
         revealSound: "ping",
+        motionPreset: "none",
         hidden: sceneHidden,
       },
     },
@@ -108,6 +109,40 @@ describe("preview settings matrix", () => {
     expect(Object.keys(matrix)).toHaveLength(60);
     await expect(`${JSON.stringify(matrix, null, 2)}\n`).toMatchFileSnapshot(
       "../../fixtures/preview/preview-matrix-expected.json",
+    );
+  });
+
+  it("turns every scene motion recipe into renderable composition CSS", () => {
+    const recipes = {
+      drift: "hf-scene-drift",
+      focus: "hf-scene-focus",
+      pulse: "hf-scene-pulse",
+      wipe: "hf-scene-wipe",
+    } as const;
+
+    for (const [motionPreset, animationName] of Object.entries(recipes)) {
+      const settings = mergePreviewSettings(DEFAULT_PREVIEW_SETTINGS, {
+        scenes: {
+          "scene-a": {
+            transitionSound: "minimal",
+            revealSound: "ping",
+            motionPreset: motionPreset as keyof typeof recipes,
+            hidden: false,
+          },
+        },
+      });
+      const css = buildPreviewCss(settings);
+      const rendered = injectPreviewSettingsDocument(BASE_HTML, settings, {
+        root: true,
+        fileBaseUrl: "/api/hf/preview-fixture/files/",
+      });
+
+      expect(css).toContain(`[data-composition-id="scene-a"] { animation: ${animationName}`);
+      expect(rendered).toContain(`@keyframes ${animationName}`);
+    }
+
+    expect(buildPreviewCss(settingsFor("off", "none", false, false))).not.toContain(
+      "@keyframes hf-scene-",
     );
   });
 });

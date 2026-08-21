@@ -3,10 +3,11 @@
 import { readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 
-import type { Page } from "puppeteer-core";
+import type { HTTPRequest, Page } from "puppeteer-core";
 import { describe, expect, it } from "vitest";
 
-import type { ProjectId, RelPath } from "@vidcom/contracts";
+import { ErrorCode, representativeSceneTime, type ProjectId, type RelPath } from "@vidcom/contracts";
+import { createScene, getStudioSnapshot } from "@vidcom/core";
 
 import { withStudioBrowser } from "../support/browser-studio";
 
@@ -142,6 +143,276 @@ async function clickExactButton(page: Page, label: string): Promise<void> {
 }
 
 describe("editing experience in a browser", () => {
+  it("auto-loads storyboard thumbnails, retries typed failures, and preserves scene identity", async () => {
+    await withStudioBrowser("storyboard-thumbnails", async ({ page, projectId, runtime }) => {
+      const before = await getStudioSnapshot(runtime.foundation.application.readDependencies, projectId as ProjectId);
+      if (!before.ok) throw new Error(`storyboard seed snapshot failed: ${JSON.stringify(before.error)}`);
+      const created = await createScene(runtime.foundation.application.writeDependencies, {
+        projectId: projectId as ProjectId,
+        title: "Second beat",
+        duration: 4,
+        expectedContentHash: before.value.fileHashes[before.value.entryFile.path] ?? null,
+      }, "system");
+      if (!created.ok) throw new Error(`storyboard scene seed failed: ${JSON.stringify(created.error)}`);
+      const seeded = await getStudioSnapshot(runtime.foundation.application.readDependencies, projectId as ProjectId);
+      if (!seeded.ok || seeded.value.scenes.length < 2) {
+        throw new Error(`storyboard seed did not produce two scenes: ${JSON.stringify(seeded)}`);
+      }
+      const sceneIds = seeded.value.scenes.slice(0, 2).map((scene) => scene.id);
+      const failedSceneId = sceneIds[1]!;
+      const attempts = new Map<string, number>();
+      const requests: Array<{ sceneId: string; atSeconds: number[]; profile: string }> = [];
+
+      await page.setRequestInterception(true);
+      page.on("request", (request) => {
+        const url = new URL(request.url());
+        const thumbnails = `/api/v1/projects/${encodeURIComponent(projectId)}/thumbnails`;
+        if (request.method() === "POST" && url.pathname === thumbnails) {
+          const payload = JSON.parse(request.postData() ?? "{}") as {
+            sceneId: string; atSeconds: number[]; profile: string;
+          };
+          const scene = seeded.value.scenes.find((candidate) => candidate.id === payload.sceneId)!;
+          const representative = representativeSceneTime(scene.duration, seeded.value.frameRate);
+          const storyboardRequest = payload.atSeconds.length === 1 && payload.atSeconds[0] === representative;
+          const count = storyboardRequest ? (attempts.get(payload.sceneId) ?? 0) + 1 : 0;
+          if (storyboardRequest) {
+            requests.push(payload);
+            attempts.set(payload.sceneId, count);
+          }
+          const lines = payload.atSeconds.map((atSeconds) =>
+            storyboardRequest && payload.sceneId === failedSceneId && count === 1
+              ? { atSeconds, status: "placeholder", reason: ErrorCode.NotFound }
+              : {
+                  atSeconds,
+                  status: "ready",
+                  url: `${thumbnails}/${payload.sceneId === failedSceneId ? "b".repeat(64) : "a".repeat(64)}`,
+                });
+          void request.respond({
+            status: 200,
+            contentType: "application/x-ndjson; charset=utf-8",
+            body: `${lines.map((line) => JSON.stringify(line)).join("\n")}\n`,
+          });
+          return;
+        }
+        if (request.method() === "GET" && /^\/api\/v1\/projects\/[^/]+\/thumbnails\/[a-f0-9]{64}$/u.test(url.pathname)) {
+          void request.respond({
+            status: 200,
+            contentType: "image/svg+xml",
+            body: '<svg xmlns="http://www.w3.org/2000/svg" width="160" height="90"><rect width="160" height="90" fill="#0f766e"/><circle cx="80" cy="45" r="24" fill="#fbbf24"/></svg>',
+          });
+          return;
+        }
+        void request.continue();
+      });
+
+      await page.reload({ waitUntil: "domcontentloaded", timeout: 90_000 });
+      await page.waitForSelector("[data-timeline-viewport]", { timeout: 30_000 });
+      const videoSceneTab = (await Promise.all((await page.$$('[role="tab"]')).map(async (tab) => ({
+        tab,
+        text: await tab.evaluate((node) => node.textContent?.trim()),
+      })))).find(({ text }) => text === "Video Scene")?.tab;
+      if (!videoSceneTab) throw new Error("Video Scene tab was not found");
+      await videoSceneTab.click();
+      await new Promise<void>((resolve) => setTimeout(resolve, 250));
+      const tabState = await page.evaluate(() => ({
+        body: document.body.innerText.slice(0, 800),
+        tabs: [...document.querySelectorAll('[role="tab"]')].map((tab) => ({
+          text: tab.textContent?.trim(),
+          state: tab.getAttribute("data-state"),
+          selected: tab.getAttribute("aria-selected"),
+        })),
+      }));
+      if (!tabState.body.toLowerCase().includes("storyboard")) {
+        throw new Error(`Video Scene tab did not open: ${JSON.stringify(tabState)}`);
+      }
+      await page.waitForSelector(`[data-storyboard-scene-id="${sceneIds[0]}"]`);
+      await page.waitForFunction((ids) => ids.every((id) =>
+        document.querySelector(`[data-storyboard-scene-id="${id}"] [data-storyboard-thumbnail-state]`) !== null),
+      { timeout: 15_000 }, sceneIds);
+      await page.waitForFunction((id) =>
+        document.querySelector(`[data-storyboard-scene-id="${id}"] [data-storyboard-thumbnail-state="ready"]`) !== null,
+      { timeout: 15_000 }, sceneIds[0]);
+      try {
+        await page.waitForFunction((id) =>
+          document.querySelector(`[data-storyboard-scene-id="${id}"] [data-storyboard-thumbnail-state="failed"]`) !== null,
+        { timeout: 15_000 }, failedSceneId);
+      } catch (cause) {
+        const states = await page.$$eval("[data-storyboard-scene-id]", (cards) => cards.map((card) => ({
+          sceneId: card.getAttribute("data-storyboard-scene-id"),
+          state: card.querySelector("[data-storyboard-thumbnail-state]")?.getAttribute("data-storyboard-thumbnail-state"),
+          text: card.textContent?.trim(),
+        })));
+        throw new Error(`failed thumbnail did not settle: ${JSON.stringify({ requests, states })}`, { cause });
+      }
+
+      expect(requests).toHaveLength(2);
+      expect(requests.map(({ sceneId }) => sceneId).sort()).toEqual([...sceneIds].sort());
+      expect(requests.every(({ profile, atSeconds }) => profile === "timeline-v1" && atSeconds.length === 1)).toBe(true);
+      for (const request of requests) {
+        const scene = seeded.value.scenes.find((candidate) => candidate.id === request.sceneId)!;
+        expect(request.atSeconds[0]).toBe(representativeSceneTime(scene.duration, seeded.value.frameRate));
+      }
+      expect(await page.$eval("body", (body) => body.innerText.includes("hyperframes snapshot"))).toBe(false);
+
+      await page.click(`[data-storyboard-scene-id="${sceneIds[0]}"] button`);
+      expect(await page.$eval(`[data-storyboard-scene-id="${sceneIds[0]}"]`, (node) => node.hasAttribute("data-selected")))
+        .toBe(true);
+      await page.click(`[aria-label="Retry thumbnail for ${failedSceneId}"]`);
+      await page.waitForFunction((id) =>
+        document.querySelector(`[data-storyboard-scene-id="${id}"] [data-storyboard-thumbnail-state="ready"]`) !== null,
+      { timeout: 15_000 }, failedSceneId);
+      expect(attempts.get(failedSceneId)).toBe(2);
+
+      const reordered = page.waitForResponse((response) => response.request().method() === "PATCH"
+        && new URL(response.url()).pathname.endsWith("/scenes/order"));
+      await page.focus(`[data-storyboard-scene-id="${failedSceneId}"] button`);
+      await page.keyboard.down("Alt");
+      await page.keyboard.press("ArrowLeft");
+      await page.keyboard.up("Alt");
+      expect((await reordered).ok()).toBe(true);
+      await page.waitForFunction((id) =>
+        document.querySelector("[data-storyboard-scene-id]")?.getAttribute("data-storyboard-scene-id") === id,
+      { timeout: 15_000 }, failedSceneId);
+      await page.waitForFunction((id) =>
+        document.querySelector(`[data-storyboard-scene-id="${id}"] [data-storyboard-thumbnail-state="ready"]`) !== null,
+      { timeout: 15_000 }, failedSceneId);
+      expect(await page.$eval(`[data-storyboard-scene-id="${failedSceneId}"] img`, (image) => image.getAttribute("alt")))
+        .toBe(`Thumbnail for ${failedSceneId}`);
+    });
+  }, 180_000);
+
+  it("bounds 100-scene storyboard work, aborts stale requests, and reuses ready frames", async () => {
+    await withStudioBrowser("storyboard-virtualization", async ({ page, projectId, runtime }) => {
+      const studioUrl = page.url();
+      // Keep the open studio from processing 99 intermediate project-change
+      // events while this fixture is being assembled. The behavior under test
+      // starts from the completed 100-scene project, not from its seed loop.
+      await page.goto("about:blank");
+      const initial = await getStudioSnapshot(runtime.foundation.application.readDependencies, projectId as ProjectId);
+      if (!initial.ok) throw new Error(`100-scene seed snapshot failed: ${JSON.stringify(initial.error)}`);
+      let expectedContentHash = initial.value.fileHashes[initial.value.entryFile.path] ?? null;
+      for (let index = initial.value.scenes.length; index < 100; index += 1) {
+        const created = await createScene(runtime.foundation.application.writeDependencies, {
+          projectId: projectId as ProjectId,
+          title: `Beat ${index + 1}`,
+          duration: 1,
+          expectedContentHash,
+        }, "system");
+        if (!created.ok) throw new Error(`scene ${index + 1} seed failed: ${JSON.stringify(created.error)}`);
+        expectedContentHash = created.value.envelope.fileHashes[initial.value.entryFile.path] ?? null;
+      }
+      const seeded = await getStudioSnapshot(runtime.foundation.application.readDependencies, projectId as ProjectId);
+      if (!seeded.ok || seeded.value.scenes.length !== 100) {
+        throw new Error(`100-scene seed failed: ${JSON.stringify(seeded)}`);
+      }
+      const scenes = new Map(seeded.value.scenes.map((scene) => [scene.id, scene]));
+      const requestCounts = new Map<string, number>();
+      const active = new Set<HTTPRequest>();
+      let maxActive = 0;
+      let abortCount = 0;
+
+      let intercepting = false;
+      page.on("requestfailed", (request) => {
+        if (active.delete(request)) abortCount += 1;
+      });
+      page.on("request", (request) => {
+        if (!intercepting) return;
+        const url = new URL(request.url());
+        const thumbnails = `/api/v1/projects/${encodeURIComponent(projectId)}/thumbnails`;
+        if (request.method() === "POST" && url.pathname === thumbnails) {
+          const payload = JSON.parse(request.postData() ?? "{}") as {
+            sceneId: string; atSeconds: number[]; profile: string;
+          };
+          const scene = scenes.get(payload.sceneId);
+          const storyboardRequest = scene !== undefined
+            && payload.atSeconds.length === 1
+            && payload.atSeconds[0] === representativeSceneTime(scene.duration, seeded.value.frameRate);
+          if (!storyboardRequest) {
+            const lines = payload.atSeconds.map((atSeconds) => ({
+              atSeconds,
+              status: "ready",
+              url: `${thumbnails}/${"c".repeat(64)}`,
+            }));
+            void request.respond({
+              status: 200,
+              contentType: "application/x-ndjson; charset=utf-8",
+              body: `${lines.map((line) => JSON.stringify(line)).join("\n")}\n`,
+            });
+            return;
+          }
+          requestCounts.set(payload.sceneId, (requestCounts.get(payload.sceneId) ?? 0) + 1);
+          active.add(request);
+          maxActive = Math.max(maxActive, active.size);
+          setTimeout(() => {
+            if (!active.delete(request)) return;
+            void request.respond({
+              status: 200,
+              contentType: "application/x-ndjson; charset=utf-8",
+              body: `${JSON.stringify({
+                atSeconds: payload.atSeconds[0],
+                status: "ready",
+                url: `${thumbnails}/${"d".repeat(64)}`,
+              })}\n`,
+            }).catch(() => { abortCount += 1; });
+          }, 800);
+          return;
+        }
+        if (request.method() === "GET" && /^\/api\/v1\/projects\/[^/]+\/thumbnails\/[a-f0-9]{64}$/u.test(url.pathname)) {
+          void request.respond({
+            status: 200,
+            contentType: "image/svg+xml",
+            body: '<svg xmlns="http://www.w3.org/2000/svg" width="160" height="90"><rect width="160" height="90" fill="#172554"/></svg>',
+          });
+          return;
+        }
+        void request.continue();
+      });
+
+      // Seeding 100 scenes emits 100 project-change events. Navigate cleanly to
+      // the canonical URL so this test cancels any queued reload instead of
+      // waiting behind that obsolete preview work.
+      await page.goto(studioUrl, { waitUntil: "domcontentloaded", timeout: 60_000 });
+      await page.waitForSelector("[data-timeline-viewport]", { timeout: 30_000 });
+      await page.setRequestInterception(true);
+      intercepting = true;
+      const videoSceneTab = (await Promise.all((await page.$$('[role="tab"]')).map(async (tab) => ({
+        tab,
+        text: await tab.evaluate((node) => node.textContent?.trim()),
+      })))).find(({ text }) => text === "Video Scene")?.tab;
+      if (!videoSceneTab) throw new Error("Video Scene tab was not found");
+      await videoSceneTab.click();
+      await page.waitForFunction(() => document.querySelectorAll("[data-storyboard-scene-id]").length === 100,
+        { timeout: 30_000 });
+
+      const firstSceneId = seeded.value.scenes[0]!.id;
+      const lastSceneId = seeded.value.scenes.at(-1)!.id;
+      await page.waitForFunction((id) =>
+        document.querySelector(`[data-storyboard-scene-id="${id}"] [data-storyboard-thumbnail-state="ready"]`) !== null,
+      { timeout: 15_000 }, firstSceneId);
+      expect(requestCounts.get(firstSceneId)).toBe(1);
+      const topWindowCount = requestCounts.size;
+      expect(topWindowCount).toBeGreaterThan(0);
+      expect(topWindowCount).toBeLessThan(100);
+
+      await page.$eval(`[data-storyboard-scene-id="${lastSceneId}"]`, (card) => card.scrollIntoView({ block: "end" }));
+      await page.waitForFunction((id) =>
+        document.querySelector(`[data-storyboard-scene-id="${id}"] [data-storyboard-thumbnail-state="loading"]`) !== null,
+      { timeout: 10_000 }, lastSceneId);
+      await page.$eval(`[data-storyboard-scene-id="${firstSceneId}"]`, (card) => card.scrollIntoView({ block: "start" }));
+      await page.waitForFunction((id) =>
+        document.querySelector(`[data-storyboard-scene-id="${id}"] [data-storyboard-thumbnail-state="ready"]`) !== null,
+      { timeout: 10_000 }, firstSceneId);
+      await new Promise<void>((resolve) => setTimeout(resolve, 1_000));
+
+      expect(requestCounts.get(firstSceneId)).toBe(1);
+      expect(requestCounts.has(lastSceneId)).toBe(true);
+      expect(requestCounts.size).toBeLessThan(100);
+      expect(maxActive).toBeLessThan(100);
+      expect(abortCount).toBeGreaterThan(0);
+      process.stdout.write(`Storyboard 100 scenes: requested=${requestCounts.size}, maxActive=${maxActive}, aborted=${abortCount}, topWindow=${topWindowCount}\n`);
+    });
+  }, 240_000);
+
   it("shows this tab's own write in the preview within the R4.1c budget", async () => {
     await withStudioBrowser("perf-write", async ({ page }) => {
       await install(page);

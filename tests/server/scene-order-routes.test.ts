@@ -9,6 +9,7 @@ import {
   ErrorCode,
   PrepareDeleteScenesResponseSchema,
   SceneOrderMutationResponseSchema,
+  SetElementPositionResponseSchema,
   type ContentHash,
   type ProjectId,
   type RelPath,
@@ -19,6 +20,7 @@ import {
   serializePreviewSettings,
   type AbsolutePath,
   type CompositeRequest,
+  type MutationRequest,
   type ProjectRef,
   type ResolvedPath,
   type UndoContentPort,
@@ -62,6 +64,8 @@ function fixture() {
   });
   const files = new Map<string, string>([["index.html", entry], ["preview-settings.json", settings]]);
   const requests: CompositeRequest[] = [];
+  const positionRequests: MutationRequest[] = [];
+  const positionInvocations: unknown[] = [];
   const approvals: Array<{ binding: unknown; summary: string }> = [];
   const approvalsIssued: string[] = [];
   const workspace = {
@@ -90,7 +94,15 @@ function fixture() {
           revision: 7,
         },
         scenes: [
-          { id: "a", src: null, start: 2, duration: 3, trackIndex: 1, block: null, isTransition: false, media: [], script: [], narration: null, elements: [], unresolvedEffects: 0 },
+          {
+            id: "a", src: null, sourceFile: "index.html", role: "story" as const,
+            start: 2, duration: 3, trackIndex: 1, block: null, isTransition: false,
+            media: [], script: [], narration: null,
+            elements: [{
+              id: "#hero", authoredId: "hero", label: "Hero", kind: "element" as const,
+              start: 0, duration: 3, src: null, layoutOffset: null, positionEditable: true, effects: [],
+            }], unresolvedEffects: 0,
+          },
           { id: "b", src: null, start: 7, duration: 2, trackIndex: 1, block: null, isTransition: false, media: [], script: [], narration: null, elements: [], unresolvedEffects: 0 },
           { id: "c", src: null, start: 12, duration: 4, trackIndex: 2, block: null, isTransition: false, media: [], script: [], narration: null, elements: [], unresolvedEffects: 0 },
         ],
@@ -111,7 +123,18 @@ function fixture() {
     async readProjectRecoveryStatus() { return { writeStatus: "ready" as const, unresolved: [] }; },
   };
   const authority = {
-    async mutateSource(request: CompositeRequest) {
+    async mutateSource(request: CompositeRequest | MutationRequest, _actor?: unknown, invocation?: unknown) {
+      if (!("steps" in request)) {
+        positionRequests.push(request);
+        positionInvocations.push(invocation);
+        return ok({
+          path: request.kind === "file" ? request.path : null,
+          contentHash: hash("updated entry"),
+          revision: 8,
+          diagnostics: [],
+          changeSeq: 8,
+        });
+      }
       requests.push(request);
       return ok({
         projectRevision: 8,
@@ -161,7 +184,7 @@ function fixture() {
     method: "POST",
     headers: { "x-vidcom-studio-session": studioId },
   });
-  return { request, attach, requests, approvals, approvalsIssued };
+  return { request, attach, requests, positionRequests, positionInvocations, approvals, approvalsIssued };
 }
 
 const jsonHeaders = {
@@ -170,6 +193,37 @@ const jsonHeaders = {
 };
 
 describe("scene order and group deletion routes", () => {
+  it("moves an authored element through the strict HTTP contract and server-owned history", async () => {
+    const runtime = fixture();
+    expect((await runtime.attach()).status).toBe(204);
+    const response = await runtime.request(`/api/v1/projects/${projectId}/scenes/a/elements/hero/position`, {
+      method: "PUT",
+      headers: jsonHeaders,
+      body: JSON.stringify({ offsetX: 24, offsetY: -12, expectedContentHash: hash(entry) }),
+    });
+    expect(response.status).toBe(200);
+    expect(SetElementPositionResponseSchema.parse(await response.json())).toMatchObject({
+      changed: true,
+      file: { path: "index.html", content: "updated entry" },
+      revision: 8,
+    });
+    expect(runtime.positionRequests).toMatchObject([{
+      kind: "file", path: "index.html", expectedContentHash: hash(entry),
+    }]);
+    expect(runtime.positionInvocations).toMatchObject([{
+      origin: { sessionId: studioId, label: "Move element", historyAction: "record" },
+    }]);
+
+    const rejected = await runtime.request(`/api/v1/projects/${projectId}/scenes/a/elements/hero/position`, {
+      method: "PUT",
+      headers: jsonHeaders,
+      body: JSON.stringify({
+        sourceFile: "index.html", offsetX: 1, offsetY: 1, expectedContentHash: hash(entry),
+      }),
+    });
+    expect(rejected.status).toBe(400);
+    expect(runtime.positionRequests).toHaveLength(1);
+  });
   it("dispatches reorder, compact and move with strict payloads and server-owned history", async () => {
     const runtime = fixture();
     expect((await runtime.attach()).status).toBe(204);

@@ -2,6 +2,9 @@
   "elements": [
     {
       "id": "#a-roll",
+      "authoredId": null,
+      "layoutOffset": null,
+      "positionEditable": false,
       "label": "a-roll",
       "kind": "video",
       "start": 0,

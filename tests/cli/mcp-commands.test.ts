@@ -307,7 +307,7 @@ describe("VidCom CLI dispatch", () => {
         startStdio: async (registry, _dependencies, options) => {
           expect(options?.pinnedRevision).toBe("2025-11-25");
           expect(options?.invoker).toBeDefined();
-          expect(registry.list("legacy").map((tool) => tool.name)).toHaveLength(42);
+          expect(registry.list("legacy").map((tool) => tool.name)).toHaveLength(43);
           await expect(options?.invoker?.invoke("list_projects", {}, {
             era: "legacy",
             protocolVersion: "2025-11-25",

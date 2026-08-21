@@ -25,6 +25,9 @@ const CORS_HEADERS = [
   "X-Vidcom-Studio-Session",
 ] as const;
 const CORS_HEADER_NAMES = new Set(CORS_HEADERS.map((header) => header.toLowerCase()));
+const PASSIVE_ASSET_DESTINATIONS = new Set(["audio", "font", "image", "video"]);
+const THUMBNAIL_IMAGE_PATH = /^\/api\/v1\/projects\/[^/]+\/thumbnails\/[0-9a-f]{64}$/u;
+const PROJECT_ASSET_PATH = /^\/api\/v1\/projects\/[^/]+\/assets\/.+/u;
 
 function reject(code: ErrorCode, message: string): never {
   throw new HttpBoundaryError({ code, message });
@@ -116,10 +119,17 @@ export function browserRequestGuard(): MiddlewareHandler {
     const site = c.req.header("Sec-Fetch-Site");
     const mode = c.req.header("Sec-Fetch-Mode");
     const destination = c.req.header("Sec-Fetch-Dest");
+    const passiveMediaRequest = ["GET", "HEAD"].includes(c.req.method)
+      && mode === "no-cors"
+      && destination !== undefined
+      && (
+        (destination === "image" && THUMBNAIL_IMAGE_PATH.test(pathname))
+        || (PASSIVE_ASSET_DESTINATIONS.has(destination) && PROJECT_ASSET_PATH.test(pathname))
+      );
     if (
       (site !== undefined && site !== "same-origin")
       || mode === "navigate"
-      || (destination !== undefined && destination !== "empty")
+      || (destination !== undefined && destination !== "empty" && !passiveMediaRequest)
       || (site !== undefined && !["GET", "HEAD", "OPTIONS"].includes(c.req.method) && !c.req.header("Origin"))
     ) {
       reject(ErrorCode.OriginNotAllowed, "browser request context is not allowed");

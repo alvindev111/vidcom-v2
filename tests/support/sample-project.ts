@@ -96,7 +96,7 @@ function sceneDocument(options: Required<Pick<SampleProjectOptions,
     data-duration="${options.duration}"
     ${options.withTimeline ? "" : "data-no-timeline"}
   >
-    <h1 id="${ELEMENT_ID}">${options.headline}</h1>
+    <h1 id="${ELEMENT_ID}" data-hf-id="${ELEMENT_ID}">${options.headline}</h1>
     <style>
       [data-composition-id="${SCENE_ID}"] {
         width: ${options.width}px;

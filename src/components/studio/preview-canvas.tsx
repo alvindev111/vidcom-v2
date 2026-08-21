@@ -1,6 +1,10 @@
 "use client";
 
 import type * as React from "react";
+import type { ProjectChanged } from "@/lib/studio/preview-reload";
+import type { Scene, SourceFile } from "@/lib/studio/types";
+import { CanvasArrangeOverlay } from "./canvas-arrange-overlay";
+import type { PlayerControls } from "./use-hyperframes-player";
 
 /**
  * Letterboxes the real player to the composition's aspect ratio. The player
@@ -13,11 +17,23 @@ export function PreviewCanvas({
   aspectRatio,
   ready,
   error,
+  projectId,
+  scenes,
+  files,
+  controls,
+  onSelectScene,
+  onProjectChanged,
 }: {
   containerRef: React.Ref<HTMLDivElement>;
   aspectRatio: number;
   ready: boolean;
   error: string | null;
+  projectId: string;
+  scenes: Scene[];
+  files: SourceFile[];
+  controls: PlayerControls;
+  onSelectScene: (scene: Scene) => void;
+  onProjectChanged: ProjectChanged;
 }) {
   return (
     <div
@@ -44,6 +60,16 @@ export function PreviewCanvas({
           <span className="absolute inset-0 z-10 grid place-items-center px-6 text-center font-mono text-xs text-red-400">
             {error}
           </span>
+        ) : null}
+        {ready && !error ? (
+          <CanvasArrangeOverlay
+            projectId={projectId}
+            scenes={scenes}
+            files={files}
+            controls={controls}
+            onSelectScene={onSelectScene}
+            onProjectChanged={onProjectChanged}
+          />
         ) : null}
       </div>
     </div>

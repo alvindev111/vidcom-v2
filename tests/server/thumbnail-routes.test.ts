@@ -158,7 +158,13 @@ describe("timeline thumbnail routes", () => {
   it("serves only project-namespaced lowercase cache keys as immutable WebP", async () => {
     const runtime = fixture();
     const key = "b".repeat(64);
-    const hit = await runtime.request(`/api/v1/projects/${projectId}/thumbnails/${key}`);
+    const hit = await runtime.request(`/api/v1/projects/${projectId}/thumbnails/${key}`, {
+      headers: {
+        "Sec-Fetch-Site": "same-origin",
+        "Sec-Fetch-Mode": "no-cors",
+        "Sec-Fetch-Dest": "image",
+      },
+    });
     expect(hit.status).toBe(200);
     expect(hit.headers.get("content-type")).toBe("image/webp");
     expect(hit.headers.get("cache-control")).toContain("immutable");

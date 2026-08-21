@@ -35,6 +35,8 @@ function narratedScene(id: string) {
   return {
     id,
     src: null,
+    sourceFile: "index.html",
+    role: "story" as const,
     start: 0,
     duration: 5,
     trackIndex: 0,

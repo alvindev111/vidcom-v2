@@ -2,6 +2,9 @@
   "elements": [
     {
       "id": "#poster",
+      "authoredId": null,
+      "layoutOffset": null,
+      "positionEditable": false,
       "label": "poster",
       "kind": "image",
       "start": 0,

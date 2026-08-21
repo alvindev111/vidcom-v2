@@ -69,6 +69,8 @@ export type LightIntensityKey = keyof typeof LIGHT_INTENSITIES;
 export type BackgroundFxKey = keyof typeof BACKGROUND_FX;
 export type TransitionSound = (typeof TRANSITION_SOUNDS)[number];
 export type RevealSound = (typeof REVEAL_SOUNDS)[number];
+export const MOTION_PRESETS = ["none", "drift", "focus", "pulse", "wipe"] as const;
+export type MotionPreset = (typeof MOTION_PRESETS)[number];
 
 export interface ToneSettings {
   /**
@@ -121,6 +123,7 @@ export interface SubtitleSettings {
 export interface SceneSettings {
   transitionSound: TransitionSound;
   revealSound: RevealSound;
+  motionPreset: MotionPreset;
   /** Hidden scenes stay in the source but are not drawn in the preview. */
   hidden: boolean;
 }
@@ -191,6 +194,7 @@ export const DEFAULT_PREVIEW_SETTINGS: PreviewSettings = {
 export const DEFAULT_SCENE_SETTINGS: SceneSettings = {
   transitionSound: "minimal",
   revealSound: "ping",
+  motionPreset: "none",
   hidden: false,
 };
 
@@ -309,6 +313,11 @@ export function normalizePreviewSettings(raw: unknown): PreviewSettings {
               scene.revealSound,
               REVEAL_SOUNDS,
               DEFAULT_SCENE_SETTINGS.revealSound,
+            ),
+            motionPreset: oneOf(
+              scene.motionPreset,
+              MOTION_PRESETS,
+              DEFAULT_SCENE_SETTINGS.motionPreset,
             ),
             hidden: bool(scene.hidden, DEFAULT_SCENE_SETTINGS.hidden),
           },

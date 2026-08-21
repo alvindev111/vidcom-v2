@@ -55,6 +55,8 @@ export interface SceneEffect {
 export interface SceneElement {
   /** Element id or the tween's target selector — unique within the scene. */
   id: string;
+  /** Exact authored data-hf-id. Structural paths remain read-only. */
+  authoredId: string | null;
   label: string;
   kind: "image" | "video" | "audio" | "element";
   /** Own clip timing relative to the scene, when the element carries one. */
@@ -62,6 +64,9 @@ export interface SceneElement {
   duration: number | null;
   /** `src` for a media element, so a lane can name the file it plays. */
   src: string | null;
+  /** VidCom-owned base-position offset; null for untouched or read-only targets. */
+  layoutOffset: { x: number; y: number } | null;
+  positionEditable: boolean;
   effects: SceneEffect[];
 }
 
@@ -124,6 +129,9 @@ export interface Scene {
   id: string;
   /** Sub-composition file, or null for a scene authored inline in index.html. */
   src: string | null;
+  /** Project-relative file that owns this scene's authored elements. */
+  sourceFile: string;
+  role: "root" | "story" | "transition" | "overlay" | "credit" | "utility";
   start: number;
   duration: number;
   trackIndex: number;

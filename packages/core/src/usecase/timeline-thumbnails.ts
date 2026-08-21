@@ -1,4 +1,9 @@
-import { ErrorCode, type ContentHash, type DomainError, type RelPath } from "@vidcom/contracts";
+import {
+  ErrorCode,
+  type ContentHash,
+  type DomainError,
+  type RelPath,
+} from "@vidcom/contracts";
 
 import type { ProjectRef } from "../domain/models";
 import { canonicalizeJson } from "../service/canonical-json";
@@ -71,6 +76,8 @@ export function sampleTimelineThumbnailTimes(duration: number, count: number, fp
   return Array.from({ length: count }, (_, index) =>
     Math.min(lastFrame, Math.round((((index + 0.5) * duration) / count) * fps) / fps));
 }
+
+export { representativeSceneTime } from "@vidcom/contracts";
 
 /** Hashes the unambiguous canonical cache identity; storage namespaces it by project separately. */
 export function thumbnailRenderKey(
@@ -169,7 +176,7 @@ export class ThumbnailService {
       const graph = await this.dependencies.dependencies.dependenciesOf(ref, sceneId);
       if (!graph.ok) return graph;
       const fingerprint = this.dependencies.hashContent(canonicalizeJson({
-        scene: { path: sourcePath, contentHash: sourceHash },
+        scene: { id: sceneId, path: sourcePath, contentHash: sourceHash },
         dependencies: orderedDependencies(graph.value),
         profile,
       }));

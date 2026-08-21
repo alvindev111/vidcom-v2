@@ -1,7 +1,7 @@
 ---
 name: vidcom-project
 description: Create, adopt, list, or orient VidCom projects through MCP. Use when selecting a workspace project or establishing project structure. Do not use for scene content, visual styling, narration, or rendering.
-x-vidcom-agent-kit: 8
+x-vidcom-agent-kit: 9
 ---
 
 # VidCom project

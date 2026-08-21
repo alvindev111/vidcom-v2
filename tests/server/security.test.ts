@@ -138,6 +138,40 @@ describe("Hono security perimeter", () => {
     expect(allowed.status).toBe(200);
   });
 
+  it("allows same-origin passive media destinations only on immutable/read-only media routes", async () => {
+    const fixture = appFixture();
+    const cookie = cookieFrom(await exchange(fixture, fixture.nonces.issue()));
+    const passiveHeaders = {
+      Cookie: cookie,
+      "Sec-Fetch-Site": "same-origin",
+      "Sec-Fetch-Mode": "no-cors",
+      "Sec-Fetch-Dest": "image",
+    };
+
+    const thumbnail = await localRequest(
+      fixture,
+      `/api/v1/projects/project-a/thumbnails/${"a".repeat(64)}`,
+      { headers: passiveHeaders },
+    );
+    expect(thumbnail.status).not.toBe(403);
+
+    const asset = await localRequest(fixture, "/api/v1/projects/project-a/assets/assets/poster.png", {
+      headers: passiveHeaders,
+    });
+    expect(asset.status).not.toBe(403);
+
+    const unrelated = await localRequest(fixture, "/api/v1/health", { headers: passiveHeaders });
+    expect(unrelated.status).toBe(403);
+    expect(await unrelated.json()).toMatchObject({ error: { code: "origin_not_allowed" } });
+
+    const mutation = await localRequest(fixture, "/api/v1/projects/project-a/assets/bgm", {
+      method: "POST",
+      headers: passiveHeaders,
+    });
+    expect(mutation.status).toBe(403);
+    expect(await mutation.json()).toMatchObject({ error: { code: "origin_not_allowed" } });
+  });
+
   it("emits the canonical configured origin for credentialed preflight", async () => {
     const fixture = appFixture();
     const response = await localRequest(fixture, "/api/v1/health", {

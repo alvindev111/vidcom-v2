@@ -136,7 +136,9 @@ async function dragReorderHandle(page: Page, sourceSelector: string, targetSelec
   await page.mouse.down();
   await page.mouse.move(sourceBox.x + sourceBox.width / 2 + 8, sourceBox.y + sourceBox.height / 2, { steps: 3 });
   await new Promise((resolve) => setTimeout(resolve, 50));
-  await page.mouse.move(targetBox.x + targetBox.width / 2, targetBox.y + targetBox.height / 2, { steps: 12 });
+  // Stay clearly inside the "before" half. The exact midpoint is intentionally
+  // the boundary and sub-pixel rounding can turn this gesture into a valid no-op.
+  await page.mouse.move(targetBox.x + targetBox.width / 4, targetBox.y + targetBox.height / 2, { steps: 12 });
   const markerHandle = await page.waitForFunction((selector) => {
     const node = document.querySelector(selector);
     return node?.closest("[data-reorder-placement]")?.getAttribute("data-reorder-placement") ?? false;

@@ -146,7 +146,7 @@ D1 là quyết định số một, nhưng nó cần nền móng ở giai đoạn
 
 ## Giai đoạn 5 — Trải nghiệm editing (re-baseline 9–11 tuần)
 
-> **Spec hoàn tất remediation 2026-08-21** — [spec Editing Experience](../specs-and-process/specs/spec-editing-experience/spec-editing-experience-complete.md). R1–R15/S0–P18 và toàn bộ C-01, H-01–H-04, M-01–M-07, L-01, G-01–G-03 có closure evidence; production-source authority là `03a2df5659552ad9638d05888f08b3a0fba38f2f`.
+> **Spec đã mở lại 2026-08-21 cho R16–R20** — [spec Editing Experience](../specs-and-process/specs/spec-editing-experience/spec-editing-experience-inprocess.md). R1–R15/S0–P18 và toàn bộ C-01, H-01–H-04, M-01–M-07, L-01, G-01–G-03 vẫn có closure evidence tại production-source authority `03a2df5659552ad9638d05888f08b3a0fba38f2f`; P19–P25 xử lý thumbnail Storyboard, Arrange canvas, preview audio, inspector và story-motion/agent-kit rồi dựng lại Odyssey.
 
 | # | Việc | ID |
 |---|---|---|

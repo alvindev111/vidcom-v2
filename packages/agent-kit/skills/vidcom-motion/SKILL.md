@@ -1,7 +1,7 @@
 ---
 name: vidcom-motion
 description: Choreograph meaningful multi-phase motion for every VidCom story scene with GSAP or another vendored runtime. Use when motion must reveal meaning, transform visual state, demonstrate cause/effect, direct the camera, or hand off between beats. Do not use for scene timing and text, tone and BGM, narration, or rendering; fade-only entrances never satisfy this skill.
-x-vidcom-agent-kit: 8
+x-vidcom-agent-kit: 9
 ---
 
 # VidCom motion
@@ -21,13 +21,15 @@ Motion is the storytelling mechanism, not decoration. Before writing source, mak
 | Motion verbs | A specific verb for every moving element |
 | Handoff | How motion carries attention into the next beat |
 
+Write that plan into each story root: `data-scene-role="story"`, a content-specific `data-story-pattern`, and after the first scene a `data-seam-kind` of `carry`, `transform`, or `contrast` plus a concrete `data-seam-token`. Never label the primary pattern `fade`, `slide`, or `cards`. Over every rolling four story scenes use at least three primary patterns; an adjacent repeat is valid only when both scenes share a visible carry/transform token.
+
 For every non-trivial story scene:
 
 - Compose 2-4 complementary motion patterns on one paused timeline. At least one primary action must be spatial, structural, illustrative, data-driven, camera-driven, or a visible state transformation tied to the beat's meaning.
-- Use distinct phases: establish the visual world, develop or reveal the idea, land one clear payoff, then hold long enough to read. Overlap actions so the scene feels directed rather than sequentially faded.
+- Use distinct phases across the first, middle, and final thirds: establish the visual world, develop or reveal the idea, land one clear payoff, then hold long enough to read. At least two phases need a statically verifiable scale, rotation, structural, or other meaningful state change. Overlap actions so the scene feels directed rather than sequentially faded.
 - Vary verbs, directions, depth, and eases across scenes. Every element gets a concrete verb such as draws, assembles, counts, tracks, pushes, morphs, or locks; “animates in” is not direction.
 - Treat fades, gentle rises/drops, and `opacity + y` as secondary transition polish only. A lone fade or repeated entrance recipe is shallow motion and must be redesigned before render.
-- Make at least two meaningful phases statically resolvable by VidCom. Dynamic selectors fail closed. The current gate reads parsed GSAP actions; when Lottie, Three.js, Anime.js, CSS, or WAAPI carries the primary effect, also choreograph a real GSAP-controlled container, camera, or state handoff across two phases. It must reinforce the beat rather than act as a dummy validator bypass.
+- Make setup, development, and payoff statically resolvable by VidCom. Dynamic selectors fail closed. Root `forEach` loops do not become evidence for every scene, and `data-no-timeline` never bypasses validation. The current gate reads parsed GSAP actions; when Lottie, Three.js, Anime.js, CSS, or WAAPI carries the primary effect, also choreograph a real GSAP-controlled container, camera, or state handoff across the three phases. It must reinforce the beat rather than act as a dummy validator bypass.
 
 ## Pick the library
 
