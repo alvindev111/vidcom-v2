@@ -107,24 +107,24 @@ async function openTreeSource(page: Page, relativePath: string): Promise<void> {
 /** Selects a tree entry for rename/delete without requiring it to open in the editor. */
 async function selectTreeEntry(page: Page, relativePath: string): Promise<void> {
   const segments = relativePath.split("/");
-  for (const segment of segments.slice(0, -1)) {
-    await page.waitForFunction((label) => [...document.querySelectorAll("button")]
-      .some((button) => button.textContent?.trim() === label), { timeout: 10_000 }, segment);
-    await page.evaluate((label) => {
-      const button = [...document.querySelectorAll("button")]
-        .find((candidate) => candidate.textContent?.trim() === label) as HTMLButtonElement | undefined;
+  for (const [index] of segments.slice(0, -1).entries()) {
+    const folderPath = segments.slice(0, index + 1).join("/");
+    await page.waitForFunction((path) => [...document.querySelectorAll("button[data-file-path]")]
+      .some((button) => button.getAttribute("data-file-path") === path), { timeout: 10_000 }, folderPath);
+    await page.evaluate((path) => {
+      const button = [...document.querySelectorAll("button[data-file-path]")]
+        .find((candidate) => candidate.getAttribute("data-file-path") === path) as HTMLButtonElement | undefined;
       if (button?.getAttribute("aria-expanded") !== "true") button?.click();
-    }, segment);
+    }, folderPath);
   }
-  const filename = segments.at(-1);
-  if (!filename) throw new Error(`managed path has no filename: ${relativePath}`);
-  await page.waitForFunction((label) => [...document.querySelectorAll("button")]
-    .some((button) => button.textContent?.trim() === label), { timeout: 10_000 }, filename);
-  await page.evaluate((label) => {
-    const button = [...document.querySelectorAll("button")]
-      .find((candidate) => candidate.textContent?.trim() === label) as HTMLButtonElement | undefined;
+  if (!segments.at(-1)) throw new Error(`managed path has no filename: ${relativePath}`);
+  await page.waitForFunction((path) => [...document.querySelectorAll("button[data-file-path]")]
+    .some((button) => button.getAttribute("data-file-path") === path), { timeout: 10_000 }, relativePath);
+  await page.evaluate((path) => {
+    const button = [...document.querySelectorAll("button[data-file-path]")]
+      .find((candidate) => candidate.getAttribute("data-file-path") === path) as HTMLButtonElement | undefined;
     button?.click();
-  }, filename);
+  }, relativePath);
   await page.waitForFunction(() => {
     const rename = document.querySelector('button[aria-label="Rename selected entry"]') as HTMLButtonElement | null;
     return rename !== null && !rename.disabled;

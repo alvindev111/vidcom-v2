@@ -50,6 +50,7 @@ export function FileTreeItem({
         if (isFolder) onToggle(node.path); else onSelect(node.path);
       }}
       aria-expanded={isFolder ? expanded : undefined}
+      data-file-path={node.path}
       data-selected={selected || undefined}
       className={cn(
         "flex w-full items-center gap-1.5 rounded-sm py-1 pr-2 text-left text-xs",

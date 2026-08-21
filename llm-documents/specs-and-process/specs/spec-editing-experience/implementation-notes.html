@@ -3167,6 +3167,23 @@
             paths và diff-check xanh; lint 0 error + 5 warning baseline; R4.1c 188–292 ms. Fresh Actions
             trên commit sửa vẫn là authority trước khi mở workflow kế.
           </p>
+          <p class="text-slate-400 text-sm">
+            P18.2 RED tại exact source <code>e05bfdee4d0a870061e3a21b2fb21dc225a3d771</code>.
+            Manual CI <a class="text-cyan-300" href="https://github.com/alvindev111/vidcom-v2/actions/runs/32430548680">32430548680</a>
+            và PR CI <a class="text-cyan-300" href="https://github.com/alvindev111/vidcom-v2/actions/runs/32430540731">32430540731</a>
+            đều success; CI artifact tải về <code>/tmp/vidcom-p18-ci-324305.qxu8h9</code> có packaged
+            3 OS strict 14/14, clean exact SHA và OSV SARIF 0 result. Standalone Browser session tạo nhầm
+            duplicate <a class="text-cyan-300" href="https://github.com/alvindev111/vidcom-v2/actions/runs/32432290179">32432290179</a>
+            bị concurrency cancel; run được ưu tiên
+            <a class="text-cyan-300" href="https://github.com/alvindev111/vidcom-v2/actions/runs/32432317315">32432317315</a>
+            có Linux success nhưng Windows fail CRUD rename: helper chọn tree row theo text toàn trang nên
+            không giữ exact path identity sau refresh. Run đỏ chặn workflow kế. Repair thêm seam không hiển
+            thị <code>data-file-path</code> vào tree row và helper chọn từng cumulative path, không tăng
+            timeout hay retry. Sau rebuild, case CRUD stress 10/10 và full browser 9 file/20 test PASS;
+            R4.1c local 187–301 ms. Full regression tiếp theo PASS 323/324 file với một VieNeu-real
+            local skip, 2.671 test pass/5 skip; typecheck, boundaries, 150 spec paths, build và diff-check
+            xanh; lint 0 error + 5 warning baseline. Fresh CI trên commit repair vẫn là authority.
+          </p>
         </article>
       </section>
     </main>
