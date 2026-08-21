@@ -128,7 +128,7 @@ export function FileExplorer({
   );
 
   return (
-    <div className="flex h-full flex-col bg-sidebar">
+    <div className="flex h-full flex-col bg-sidebar" data-project-revision={projectRevision}>
       <div className="flex h-8 items-center gap-1 border-b pr-1 pl-2">
         <span className="text-muted-foreground grow text-[11px] font-medium tracking-widest uppercase">
           Files

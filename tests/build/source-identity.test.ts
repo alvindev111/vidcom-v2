@@ -104,7 +104,10 @@ describe("source identity", () => {
     expect(both.paths).toEqual(["src/link.ts", "src/secret.ts"]);
     expect(both.digest).not.toBe(linked.digest);
     expect(before.digest).not.toBe(linked.digest);
-  });
+  // This integration case initializes and commits a repository, then launches
+  // the identity script three times. Loaded CI/full-suite hosts can legitimately
+  // exceed Vitest's generic 5 s unit budget without any assertion stalling.
+  }, 30_000);
 
   // Windows has no executable bit for Git to notice, so this case is only
   // meaningful where the filesystem actually carries one.

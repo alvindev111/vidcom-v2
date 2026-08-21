@@ -97,6 +97,14 @@ export interface StudioSourceEvent {
   paths: string[];
 }
 
+/** Prevents an older overlapping snapshot response from rolling UI state back. */
+export function monotonicStudioSnapshot<Value extends { eventCursor: number }>(
+  current: Value | null,
+  incoming: Value,
+): Value {
+  return current !== null && current.eventCursor > incoming.eventCursor ? current : incoming;
+}
+
 /**
  * The paths one durable event touched, or `null` when it is not this project's.
  *

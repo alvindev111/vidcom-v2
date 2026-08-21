@@ -56,6 +56,7 @@ export function EditorFooter({
           <Button
             size="sm"
             className="h-6 gap-1.5 text-xs"
+            aria-label={`Save ${path}`}
             disabled={saving || saveBlocked}
             onClick={onSave}
           >

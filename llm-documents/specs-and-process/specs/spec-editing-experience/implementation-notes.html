@@ -3241,6 +3241,50 @@
             paths, golden 11 file/45 test, build và diff-check xanh; lint 0 error + 5 warning baseline;
             R4.1c 183–293 ms. Fresh exact-source Actions vẫn là authority trước workflow kế.
           </p>
+          <p class="text-slate-400 text-sm">
+            P18.1 RED tại exact source <code>d2904906461c912498b6309a9229c673df0f3988</code>:
+            manual CI <a class="text-cyan-300" href="https://github.com/alvindev111/vidcom-v2/actions/runs/32440902378">32440902378</a>
+            có CodeQL, OSV, secret và license success nhưng Browser Linux fail ở lần source save đầu tiên:
+            helper thấy một button chứa chữ <code>Save</code> enabled rồi lại click button đầu tiên chứa cùng
+            chuỗi, có thể là control khác hoặc disabled; không có proof PUT source tương ứng và Undo không
+            bật. Run bị hủy, mọi job cancel không phải evidence. Điều tra tiếp với exact PUT/history/SSE cho
+            thấy snapshot refresh sau save nâng cursor trước khi stream cũ consume own-write event, rồi effect
+            restart từ cursor mới và bỏ qua history refresh. Repair giữ cursor đã consume trong ref, chỉ seed
+            từ snapshot khi mount; reconnect/reset tiếp tục từ event cuối thực nhận. Source Save đồng thời có
+            accessible label exact path, test click atomically đúng enabled control, xác nhận PUT 2xx và GET
+            history trả <code>Edit source</code>. Focused browser 5/5 và stress 10/10 PASS sau rebuild.
+          </p>
+          <p class="text-slate-400 text-sm">
+            Local full regression sau repair đỏ đúng một case
+            <code>source-identity.test.ts</code> symlink-target do timeout mặc định 5 giây khi nhiều artifact
+            integration chạy song song. Focused toàn file 7/7 stress 10/10, mỗi vòng khoảng 1,45 giây và không
+            có assertion mismatch. Case này tạo/commit Git repository và spawn identity script ba lần; repair
+            giữ nguyên workload/assertion, cấp budget integration riêng 30 giây. Cần fresh full regression.
+          </p>
+          <p class="text-slate-400 text-sm">
+            Full regression kế tiếp qua source-identity nhưng đỏ browser CRUD khi exact renamed path render
+            quá wait 10 giây dưới tải toàn suite; request PATCH 2xx và exact refreshed snapshot đã tới trước
+            bước này, không có mismatch dữ liệu. Dedicated/focused browser trước đó chạy ổn và R4.1c không
+            liên quan CRUD budget. Repair giữ exact path assertion, tăng riêng wait render tree lên 30 giây;
+            test-level timeout 180 giây không đổi. Cần focused stress và fresh full regression.
+          </p>
+          <p class="text-slate-400 text-sm">
+            Full regression thứ ba vẫn đỏ cùng exact renamed path sau đủ 30 giây, nên giả thuyết budget bị
+            bác bỏ và wait được trả về 10 giây. Root cause là các snapshot request từ mutation callback và
+            SSE debounce có thể overlap; response cũ hoàn tất sau response mới rồi rollback React state về
+            tree trước rename. Repair parse contract ở client và chỉ nhận snapshot có
+            <code>eventCursor</code> không thấp hơn current; equal cursor vẫn nhận refresh mới. Unit regression
+            khóa stale/current/equal/null ordering. Cần focused browser và full regression mới.
+          </p>
+          <p class="text-slate-400 text-sm">
+            Repair snapshot monotonic đã qua focused contract/server/session 39/39, source-save browser
+            stress 10/10 và CRUD browser stress 20/20. Fresh full local regression PASS 323/324 file,
+            2.672/2.677 test; 1 file/5 test VieNeu-real skip đúng vì engine chỉ được yêu cầu ở workflow
+            Actions riêng. R4.1c trong full suite 185–289 ms. Typecheck, boundaries, schema drift, 150 spec
+            paths, golden 11 file/45 test, build và diff-check đều xanh; lint 0 error + 5 warning baseline
+            ngoài diff. Không còn diagnostic tạm. Exact-source CI mới vẫn là authority trước khi tiếp tục
+            Browser session, Packaged smoke, Process supervision gate và VieNeu real engine.
+          </p>
         </article>
       </section>
     </main>

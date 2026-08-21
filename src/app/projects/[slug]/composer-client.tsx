@@ -4,6 +4,7 @@ import * as React from "react";
 import { usePathname } from "next/navigation";
 import {
   PreviewCapabilityResponseSchema,
+  StudioSnapshotResponseSchema,
   type PreviewCapabilityResponse,
   type StudioSnapshotResponse,
 } from "@vidcom/contracts";
@@ -19,6 +20,7 @@ import {
   historyPath,
   isStudioResync,
   latestStudioChangeSeq,
+  monotonicStudioSnapshot,
   studioEventChangeSeq,
   studioEventPath,
   studioEventPaths,
@@ -69,6 +71,10 @@ function MountedStudio({
   const [shellGeneration, setShellGeneration] = React.useState(0);
   const [sourceEvent, setSourceEvent] = React.useState<StudioSourceEvent | null>(null);
   const [resyncSeq, setResyncSeq] = React.useState(0);
+  // Unlike the refreshed snapshot cursor, this advances only after the stream
+  // has actually delivered an event. It therefore cannot skip an own-write
+  // event when that write refreshes the snapshot before SSE catches up.
+  const consumedEventCursor = React.useRef(String(snapshot.eventCursor));
 
   // Closing the browser is one of the three ways a draft can be lost, and the
   // only one the app cannot intercept itself.
@@ -140,7 +146,7 @@ function MountedStudio({
     // The snapshot already represents all events through this cursor. Starting
     // at zero would replay stale writes and can falsely conflict with typing in
     // a freshly loaded editor.
-    let lastEventId: string | undefined = String(snapshot.eventCursor);
+    let lastEventId: string | undefined = consumedEventCursor.current;
     const refresh = (event: StudioEvent) => {
       try {
         const payload = JSON.parse(event.data) as { projectId?: string };
@@ -187,10 +193,16 @@ function MountedStudio({
           );
           await requireOk(response);
           const consumed = await consumeStudioEvents(response, (event) => {
-            if (event.id !== null) lastEventId = event.id;
+            if (event.id !== null) {
+              lastEventId = event.id;
+              consumedEventCursor.current = event.id;
+            }
             refresh(event);
           });
-          if (consumed !== null) lastEventId = consumed;
+          if (consumed !== null) {
+            lastEventId = consumed;
+            consumedEventCursor.current = consumed;
+          }
         } catch {
           if (controller.signal.aborted) return;
         }
@@ -208,7 +220,7 @@ function MountedStudio({
       controller.abort();
       if (queued) clearTimeout(queued);
     };
-  }, [attached, loadSnapshot, projectId, snapshot.eventCursor, studioInit]);
+  }, [attached, loadSnapshot, projectId, studioInit]);
 
   const resetHistory = React.useCallback(async (reloadSource: boolean) => {
     setAttached(false);
@@ -298,7 +310,8 @@ export default function ComposerClient() {
       { cache: "no-store" },
     );
     if (!response.ok) throw new Error(await apiError(response));
-    setSnapshot(await response.json() as StudioSnapshotResponse);
+    const incoming = StudioSnapshotResponseSchema.parse(await response.json());
+    setSnapshot((current) => monotonicStudioSnapshot(current, incoming));
     setError(null);
   }, [projectId]);
 

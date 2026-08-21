@@ -5,6 +5,7 @@ import {
   consumeStudioEvents,
   historyPath,
   latestStudioChangeSeq,
+  monotonicStudioSnapshot,
   studioEventChangeSeq,
   studioRequestInit,
 } from "../../src/lib/studio/studio-session";
@@ -71,5 +72,14 @@ describe("studio session identity", () => {
       type: "file.changed",
       data: JSON.stringify({ projectId: "project-1", payload: { path: "preview-settings.json" } }),
     }, "project-1")).toBe(44);
+  });
+
+  it("does not let an older overlapping snapshot response roll state back", () => {
+    const current = { eventCursor: 14, tree: ["assets/dialog-renamed.txt"] };
+    const stale = { eventCursor: 13, tree: ["assets/dialog-file.txt"] };
+    const sameCursorRefresh = { eventCursor: 14, tree: ["assets/dialog-renamed.txt", "assets/new.txt"] };
+    expect(monotonicStudioSnapshot(current, stale)).toBe(current);
+    expect(monotonicStudioSnapshot(current, sameCursorRefresh)).toBe(sameCursorRefresh);
+    expect(monotonicStudioSnapshot(null, stale)).toBe(stale);
   });
 });

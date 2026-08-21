@@ -70,11 +70,32 @@ async function appendSourceAndSave(page: Page, marker: string): Promise<void> {
     const state = await page.evaluate(() => ({ url: location.href, text: document.body.innerText.slice(0, 1_000) }));
     throw new Error(`source editor did not mount: ${JSON.stringify(state)}`, { cause });
   }
-  const current = await page.$eval(".cm-content", (element) => element.textContent ?? "");
-  await page.locator(".cm-content").fill(`${current}\n<!-- ${marker} -->`);
-  await page.waitForFunction(() => [...document.querySelectorAll("button")]
-    .some((button) => button.textContent?.includes("Save") && !button.hasAttribute("disabled")));
-  await clickText(page, "button", "Save");
+  const editor = await page.$eval(".cm-content", (element) => ({
+    code: element.textContent ?? "",
+    path: element.getAttribute("aria-label")?.replace(/^Code editor for /u, "") ?? "",
+  }));
+  if (!editor.path) throw new Error("source editor has no active path identity");
+  await page.locator(".cm-content").fill(`${editor.code}\n<!-- ${marker} -->`);
+  await page.waitForFunction((path) => [...document.querySelectorAll("button")]
+    .some((button) => button.getAttribute("aria-label") === `Save ${path}` && !button.hasAttribute("disabled")),
+  {}, editor.path);
+  const saved = page.waitForResponse((response) => response.request().method() === "PUT"
+    && /^\/api\/v1\/projects\/[^/]+\/files$/u.test(new URL(response.url()).pathname));
+  const historyReloaded = page.waitForResponse((response) => response.request().method() === "GET"
+    && /^\/api\/v1\/projects\/[^/]+\/history$/u.test(new URL(response.url()).pathname));
+  await page.evaluate((path) => {
+    const button = [...document.querySelectorAll("button")]
+      .find((candidate) => candidate.getAttribute("aria-label") === `Save ${path}` && !candidate.hasAttribute("disabled"));
+    if (!(button instanceof HTMLButtonElement)) throw new Error(`enabled source Save for ${path} was not found`);
+    button.click();
+  }, editor.path);
+  const response = await saved;
+  if (!response.ok()) throw new Error(`source save failed (${response.status()}): ${await response.text()}`);
+  const historyResponse = await historyReloaded;
+  const history = await historyResponse.json() as { canUndo?: boolean; nextUndoLabel?: string | null };
+  if (!historyResponse.ok() || history.canUndo !== true || history.nextUndoLabel !== "Edit source") {
+    throw new Error(`source save did not enter browser history: ${JSON.stringify(history)}`);
+  }
   await page.waitForFunction(() => {
     const button = document.querySelector('button[aria-label="Undo Edit source"]');
     return button instanceof HTMLButtonElement && !button.disabled;

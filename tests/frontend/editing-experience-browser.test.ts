@@ -391,9 +391,25 @@ describe("editing experience in a browser", () => {
       if (!renamedResponse.ok()) {
         throw new Error(`rename failed (${renamedResponse.status()}): ${await renamedResponse.text()}`);
       }
-      expect((await renamedSnapshot)?.ok()).toBe(true);
+      const renamedPayload = await renamedResponse.json() as { revision?: number; changeSeq?: number | null };
+      const renamedSnapshotResponse = await renamedSnapshot;
+      expect(renamedSnapshotResponse?.ok()).toBe(true);
+      const renamedSnapshotPayload = await renamedSnapshotResponse?.json() as {
+        eventCursor?: number;
+        projectRevision?: number;
+      } | undefined;
 
-      await selectTreeEntry(page, "assets/dialog-renamed.txt");
+      try {
+        await selectTreeEntry(page, "assets/dialog-renamed.txt");
+      } catch (cause) {
+        const rendered = await page.evaluate(() => ({
+          projectRevision: document.querySelector("[data-project-revision]")?.getAttribute("data-project-revision"),
+          paths: [...document.querySelectorAll("button[data-file-path]")]
+            .map((button) => button.getAttribute("data-file-path")),
+          error: document.querySelector('[role="alert"]')?.textContent?.trim() ?? null,
+        }));
+        throw new Error(`renamed tree did not render: ${JSON.stringify({ renamedPayload, renamedSnapshotPayload, rendered })}`, { cause });
+      }
       await page.click('button[aria-label="Delete selected entry"]');
       await page.waitForFunction(() => document.body.innerText.includes("Delete dialog-renamed.txt?"));
       expect(await page.$eval('[role="dialog"]', (element) => element.getAttribute("aria-describedby"))).toBeTruthy();
