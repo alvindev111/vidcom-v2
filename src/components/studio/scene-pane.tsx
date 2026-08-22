@@ -81,6 +81,7 @@ export function ScenePane({
   // through the same handler a storyboard click uses.
   const pendingSceneId = React.useRef<string | null>(null);
   const hashes = React.useRef(fileVersionMap(files));
+  const submitQueue = React.useRef<Promise<void>>(Promise.resolve());
 
   React.useEffect(() => {
     hashes.current = fileVersionMap(files);
@@ -99,7 +100,7 @@ export function ScenePane({
     scenes.find((scene) => scene.id === selectedId) ?? scenes[0] ?? null;
   const transitions = scenes.filter((scene) => scene.isTransition);
 
-  const submit = async (edit: Edit) => {
+  const performSubmit = async (edit: Edit) => {
     setPending(true);
     setError(null);
     try {
@@ -141,6 +142,16 @@ export function ScenePane({
     } finally {
       setPending(false);
     }
+  };
+
+  const submit = (edit: Edit): Promise<void> => {
+    // Blur can enqueue the next script line before the snapshot carrying the
+    // first write arrives. Serialize inspector mutations so the second write
+    // reads the hash published by the first instead of racing it with a stale
+    // expectedContentHash.
+    const current = submitQueue.current.then(() => performSubmit(edit));
+    submitQueue.current = current.catch(() => undefined);
+    return current;
   };
 
   const busy = pending || preview.pending;

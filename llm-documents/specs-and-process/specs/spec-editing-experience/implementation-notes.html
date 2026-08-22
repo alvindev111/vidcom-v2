@@ -3412,6 +3412,35 @@
       <section class="mt-8 rounded-2xl border border-cyan-500/30 bg-slate-900/80 p-6 shadow-xl">
         <article class="space-y-4">
           <div class="flex flex-wrap items-center justify-between gap-3">
+            <h2 class="text-xl font-semibold text-cyan-200">2026-08-22 — P25.2 Actions exact-source đang chạy</h2>
+            <span class="rounded-full bg-emerald-400/10 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-emerald-300">Pass exact-source</span>
+          </div>
+          <p class="text-slate-300">
+            Tất cả workflow được dispatch bằng <code>GH_TOKEN</code> map từ <code>GH_KEY</code> nhưng token
+            không xuất hiện trong log/notes. Source chung là
+            <code>345b0144a33ead4c312ae193b5240425e9c979e0</code>. Browser session xanh Linux/Windows;
+            Process supervision xanh Linux/macOS/Windows và real render Windows; VieNeu real engine xanh
+            trên Linux CPU.
+          </p>
+          <p class="text-slate-400 text-sm">
+            VieNeu artifact đã tải về và kiểm: PCM s16le mono 44.1 kHz, 3,733651 giây, SHA-256
+            <code>2e4b9d3a73754646a2923e8e7edded16a2deb21bc608345c80259e3e2ea801f9</code>.
+            Browser và Process không khai báo artifact nên <code>gh run download</code> trả đúng
+            <code>no valid artifacts found</code>; conclusion từng job vẫn được giữ làm evidence.
+          </p>
+          <p class="text-slate-400 text-sm">
+            CI đầu tiên bị cancel hai browser job lồng vì workflow Browser session độc lập có concurrency ưu
+            tiên cao hơn nên không được dùng làm PASS. Retry CI
+            <code>32518420665</code> chạy một mình trên cùng SHA đã overall success: main ba OS, browser hai
+            OS, packaged ba OS và security đều xanh. Artifact retry cho thấy strict evidence không có required
+            failure, packaged MCP 43/43, catalog bundled chạy hai boot khi network-cut và provenance đúng
+            commit <code>345b014</code>. P25.3 được mở.
+          </p>
+        </article>
+      </section>
+      <section class="mt-8 rounded-2xl border border-cyan-500/30 bg-slate-900/80 p-6 shadow-xl">
+        <article class="space-y-4">
+          <div class="flex flex-wrap items-center justify-between gap-3">
             <h2 class="text-xl font-semibold text-cyan-200">2026-08-21 — P21 vị trí element đi qua authority thật</h2>
             <span class="rounded-full bg-emerald-400/10 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-emerald-300">Pass</span>
           </div>
@@ -3710,6 +3739,121 @@
             dylink không portable; SEA binary không có fuse mà injector đòi. Đây là thiếu/drift prerequisite
             local có bằng chứng trực tiếp, nên contract chuyển authority sang CI và Packaged smoke, không ghi
             <code>[!]</code>. Nếu Actions đỏ thì P25.3 vẫn bị khóa.
+          </p>
+        </article>
+      </section>
+      <section class="mt-8 rounded-2xl border border-cyan-500/30 bg-slate-900/80 p-6 shadow-xl">
+        <article class="space-y-4">
+          <div class="flex flex-wrap items-center justify-between gap-3">
+            <h2 class="text-xl font-semibold text-cyan-200">2026-08-22 — Preview thật và Catalog append trên dự án Odyssey</h2>
+            <span class="rounded-full bg-amber-400/10 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-amber-300">Pass local; chờ CI mới</span>
+          </div>
+          <p class="text-slate-300">
+            Khi thao tác trực tiếp trên Odyssey, editor từng báo preview unhealthy dù preview host hiện tại
+            dùng protocol v2. CDP chỉ dùng để chẩn đoán đã chứng minh iframe còn lấy JavaScript v1 từ cache.
+            Host HTML nay gắn version vào URL script, hai tài nguyên preview được phục vụ no-store, URL source
+            tương đối được resolve trong isolated origin và warm spare được giải phóng khi player dispose.
+            Sau rebuild, frame thật hiện nội dung “Mười năm để trở về”, nút Play khả dụng và trạng thái healthy.
+          </p>
+          <p class="text-slate-400 text-sm">
+            Lần click Add scene đầu tiên cũng tìm ra lỗi production: UI gửi slot storyboard 18 nhưng Core đưa
+            thẳng số đó vào track cuối chỉ có một scene, nên trả 422 “toIndex is outside the target track”.
+            Parser còn trả scene theo thứ tự ngược, vì vậy lấy phần tử cuối không đồng nghĩa scene cuối timeline.
+            Core nay sort storyboard theo start, kiểm slot toàn cục rồi ánh xạ sang slot cục bộ của track.
+            Unit + integration dùng CompositionHf, SQLite và filesystem thật đạt 17/17; planner trên chính
+            Odyssey đặt title card ở 153 giây, track 18 và kéo root duration thành 157 giây.
+          </p>
+          <p class="text-slate-400 text-sm">
+            Matrix tập trung của preview + catalog hiện đạt 44/44, typecheck và build PASS; lint không có error,
+            chỉ còn 5 warning baseline ngoài phạm vi. UI interaction, screenshot revision mới và toàn bộ workflow
+            Actions sẽ được ghi sau khi daemon mới giữ lease và thao tác bốn tab hoàn tất.
+          </p>
+        </article>
+      </section>
+      <section class="mt-8 rounded-2xl border border-cyan-500/30 bg-slate-900/80 p-6 shadow-xl">
+        <article class="space-y-4">
+          <div class="flex flex-wrap items-center justify-between gap-3">
+            <h2 class="text-xl font-semibold text-cyan-200">2026-08-22 — Bốn tab editor chạy thật trên Odyssey</h2>
+            <span class="rounded-full bg-amber-400/10 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-amber-300">Pass local; chờ exact-source CI</span>
+          </div>
+          <p class="text-slate-300">
+            Phiên browser thật trên project <code>project_ee53e6df-e32b-410f-b47b-6cd6ad934023</code>
+            đã dùng chính UI để đổi Look rồi phục hồi Dark, lưu motion Drift cho scene 2, cài title-card,
+            sửa headline/subhead tiếng Việt, audition Ambient và chạy transport chính. Sáu screenshot nằm ở
+            <code>evidence/live-odyssey-r20</code>; Storyboard và preview đều hiện nội dung cụ thể thay vì placeholder.
+          </p>
+          <p class="text-slate-400 text-sm">
+            Audio được kiểm ở runtime lồng, không suy luận từ icon: tại 1,48 giây, BGM volume 0,18 và narration
+            volume 1 đều <code>paused=false</code>, <code>readyState=4</code>. Thất bại trước đó ở 2:33 là phép đo sai
+            vì BGM dài 150 giây còn proof-only title card bắt đầu ở giây 153; gate được sửa để đo nơi cả hai track
+            thực sự tồn tại. Media authored dùng <code>preload="none"</code> để preview không tải đồng loạt toàn bộ
+            18 narration trước khi người dùng bấm Play.
+          </p>
+          <p class="text-slate-400 text-sm">
+            Kiểm tra ảnh còn tìm ra title và subtitle của template bị chồng do hai child <code>clip</code> bị runtime
+            định vị tuyệt đối. Template nguồn bỏ hai marker này, manifest được sinh lại, catalog matrix 23/23 PASS,
+            rồi scene cũ được xoá và cài lại bằng UI. Ảnh cuối cho thấy hai dòng căn giữa và inspector báo Saved.
+            Local gate mới: focused 79/79, browser 27/27, R4.1c 218/190/301/297 ms, typecheck/build/MCP/golden/runtime
+            đều PASS. Actions cũ trên <code>345b014</code> chỉ còn lịch sử; P25.1/P25.2 đã mở lại cho commit kế tiếp.
+          </p>
+        </article>
+      </section>
+      <section class="mt-8 rounded-2xl border border-cyan-500/30 bg-slate-900/80 p-6 shadow-xl">
+        <article class="space-y-4">
+          <div class="flex flex-wrap items-center justify-between gap-3">
+            <h2 class="text-xl font-semibold text-cyan-200">2026-08-22 — Odyssey revision 6 qua story gate thật</h2>
+            <span class="rounded-full bg-emerald-400/10 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-emerald-300">Pass project validation</span>
+          </div>
+          <p class="text-slate-300">
+            Project cuối giữ đúng 18 scene, mỗi scene 8,5 giây, tổng 153 giây. Proof-only title card đã
+            được xoá qua UI. Arrange trên scene đang chọn từng làm playhead nhảy về đầu scene khi pointerdown;
+            browser regression tái hiện currentTime về 0 trước khi production truyền selected scene xuống
+            overlay. Sau sửa, drag hiện tại không chọn lại scene, vẫn tạo đúng một PUT và authoritative paint
+            dưới 500 ms; thao tác thật trên Odyssey đã lưu offset của <code>hf-sk7k</code> và vẫn có Undo.
+          </p>
+          <p class="text-slate-400 text-sm">
+            Validation đầu tiên đỏ cả 18 <code>story-motion-shallow</code>: animation có chạy nhưng nằm trong
+            một root script nên không chứng minh được choreography theo scene. Source chỉ được thay qua MCP
+            <code>save_file</code> với hash precondition. Mỗi scene nay có timeline cục bộ, selector bắt đầu bằng
+            scene ID, ba phase setup/development/payoff và motif riêng: route, fleet, storm, lotus, eye, name,
+            wave, spiral, mask, tunnel, rope, sound, balance, count, choice, lens, arrow và home.
+          </p>
+          <p class="text-slate-400 text-sm">
+            Snapshot render còn phát hiện modifier <code>motif-*</code> gắn nhầm lên toàn section, làm cả frame
+            bị co và xoay; modifier đã được chuyển vào element motif qua cùng MCP authority. Copy clip-path
+            entrance cũng tạo hai false-positive overlap và frame đầu khó đọc, nên đổi thành scale reveal trong
+            khi motif vẫn giữ chuyển động khác nhau. <code>validate_project</code> tại source revision 6 không còn
+            error; hash hiện tại là <code>sha256:d9f6b79016babf07572da7dadf73b3e2e1b7c8a260704bfb74a3d7fe30146b80</code>.
+            Còn bốn warning không chặn render về ảnh dùng lại có chủ ý, kích thước một file và heavy-overlay count.
+          </p>
+        </article>
+      </section>
+      <section class="mt-8 rounded-2xl border border-cyan-500/30 bg-slate-900/80 p-6 shadow-xl">
+        <article class="space-y-4">
+          <div class="flex flex-wrap items-center justify-between gap-3">
+            <h2 class="text-xl font-semibold text-cyan-200">2026-08-22 — Regression cuối và evidence trực quan revision 6</h2>
+            <span class="rounded-full bg-emerald-400/10 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-emerald-300">Pass worktree; chờ exact-source Actions</span>
+          </div>
+          <p class="text-slate-300">
+            Full gate với FFmpeg bắt buộc đạt 331 test file và 2.726 test; browser-session đạt 27/27,
+            bốn phép đo R4.1c là 184, 187, 268 và 296 ms. MCP contract 94/94, golden 51/51,
+            production build và runtime smoke đều xanh; lint có 0 error và 5 warning baseline.
+            Hai lỗi trong full run đầu được sửa trước khi đi tiếp: kỳ vọng catalog còn tính wrapper write
+            đã bị thiết kế mới loại bỏ, và fixture download-cache chưa cô lập <code>CHROME_PATH</code> kế thừa.
+          </p>
+          <p class="text-slate-400 text-sm">
+            HyperFrames chụp midpoint của đủ 18 scene và ghép hai contact sheet. Visual review thủ công cho
+            thấy frame đầy đủ, chữ dễ đọc và 18 motif mang nghĩa khác nhau thay vì lặp một animation trang trí.
+            Browser mới chụp Storyboard có thumbnail thật, preview đang chạy, Arrange outline trên motif,
+            cùng bốn công cụ đã đổi tên theo việc người dùng muốn làm: Look &amp; subtitles, Motion &amp; sound,
+            Add scene và Music. Mỗi panel có câu hướng dẫn, trạng thái hiện tại và action trực tiếp.
+          </p>
+          <p class="text-slate-400 text-sm">
+            Trong lần chạy evidence, BGM <code>cinematic.wav</code> và narration <code>s08-aeolus.wav</code>
+            cùng báo <code>paused=false</code>, <code>readyState=4</code>. Thumbnail được cấp theo cửa sổ đang
+            nhìn thấy để giữ bounded concurrency; toàn bộ card hiện trong viewport đã chuyển từ trạng thái
+            tải sang ảnh WebP. Evidence này vẫn cần được buộc vào commit sạch và năm workflow Actions trước
+            khi xin human review cho MP4.
           </p>
         </article>
       </section>

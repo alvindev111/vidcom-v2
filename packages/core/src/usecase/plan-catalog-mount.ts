@@ -1,4 +1,4 @@
-import { type ContentHash, type DomainError, type RelPath } from "@vidcom/contracts";
+import { ErrorCode, type ContentHash, type DomainError, type RelPath } from "@vidcom/contracts";
 
 import { catalogProvenanceAttribute } from "../domain/catalog-install-guard";
 import { type VerifiedCatalogItem } from "../domain/catalog";
@@ -78,15 +78,26 @@ function nextSceneId(scenes: readonly SceneClip[]): string {
 function packageLayer(
   instanceId: string,
   item: VerifiedCatalogItem,
+  source: string,
   timing: { start: number; duration: number; trackIndex: number },
 ): string {
   // Provenance is escaped by Core before it reaches this string: the canonical
   // JSON has no `<`, `>` or `&` left, and quotes are entity-escaped.
   return `<div id="${instanceId}" class="catalog-instance comp-layer clip"`
-    + ` data-composition-src="${item.entry}"`
+    + ` data-composition-id="${instanceId}"`
+    + ` data-composition-src="${source}"`
     + ` data-start="${timing.start}" data-duration="${timing.duration}"`
     + ` data-track-index="${timing.trackIndex}"`
     + ` data-catalog-provenance="${catalogProvenanceAttribute(item)}"></div>`;
+}
+
+function relativeCatalogReference(owner: RelPath, target: RelPath): string {
+  const ownerSegments = owner.split("/").slice(0, -1);
+  const targetSegments = target.split("/");
+  let shared = 0;
+  while (shared < ownerSegments.length && ownerSegments[shared] === targetSegments[shared]) shared += 1;
+  const up = ownerSegments.slice(shared).map(() => "..");
+  return [...up, ...targetSegments.slice(shared)].join("/") || ".";
 }
 
 export async function planCatalogMountDocuments(
@@ -113,7 +124,15 @@ export async function planCatalogMountDocuments(
     const applied = await input.composition.applyOps(ref, target, [{
       kind: "addElement",
       target: `@${scene.id}`,
-      value: { index: -1, html: packageLayer(instanceId, item, { start: 0, duration, trackIndex }) },
+      value: {
+        index: -1,
+        html: packageLayer(
+          instanceId,
+          item,
+          relativeCatalogReference(target, item.entry),
+          { start: 0, duration, trackIndex },
+        ),
+      },
     } as CompositionOp]);
     if (!applied.ok) return err({ code: "composition_rejected", error: applied.error });
     return ok({
@@ -130,10 +149,33 @@ export async function planCatalogMountDocuments(
   }
 
   const sceneId = nextSceneId(scenes);
-  const scenePath = `compositions/${sceneId}.html` as RelPath;
+  // Mount the package entry directly from the root. HyperFrames resolves one
+  // external composition level; wrapping the package in another external scene
+  // produces a valid-looking install whose frame is blank at runtime.
+  const scenePath = item.entry;
   const duration = item.durationSeconds ?? 4;
-  const reference = scenes[mount.toIndex] ?? scenes[scenes.length - 1] ?? null;
+  const storyboard = [...scenes]
+    .sort((left, right) => left.start - right.start || left.id.localeCompare(right.id));
+  if (!Number.isInteger(mount.toIndex) || mount.toIndex < 0 || mount.toIndex > storyboard.length) {
+    return err({
+      code: "insertion_rejected",
+      error: {
+        code: ErrorCode.SchemaInvalid,
+        message: "toIndex is outside the storyboard",
+        field: "toIndex",
+      },
+    });
+  }
+  const reference = storyboard[mount.toIndex] ?? storyboard[storyboard.length - 1] ?? null;
   const trackIndex = mount.trackIndex ?? reference?.trackIndex ?? 0;
+  // The catalog intent addresses the storyboard, while the shared insertion
+  // planner addresses one target track. Convert the global storyboard slot to
+  // that track's local slot so a composition with one scene per lane can still
+  // append a catalog scene after the final card.
+  const trackToIndex = storyboard
+    .slice(0, mount.toIndex)
+    .filter((scene) => scene.trackIndex === trackIndex)
+    .length;
   const insertion = planSceneInsertion(
     scenes.map((scene) => ({
       sceneId: scene.id,
@@ -145,7 +187,7 @@ export async function planCatalogMountDocuments(
       sceneId,
       scenePath,
       duration,
-      toIndex: mount.toIndex,
+      toIndex: trackToIndex,
       trackIndex,
       rootDuration: project.duration,
     },
@@ -154,13 +196,6 @@ export async function planCatalogMountDocuments(
   if (!insertion.ok) return err({ code: "insertion_rejected", error: insertion.error });
 
   const instanceId = `${item.name}-${sceneId}`;
-  const wrapper = `<!doctype html><html><head><meta charset="UTF-8" /></head><body><template>`
-    + `<div id="${sceneId}" data-composition-id="${sceneId}"`
-    + ` data-width="${project.width}" data-height="${project.height}"`
-    + ` data-start="0" data-duration="${duration}">`
-    + packageLayer(instanceId, item, { start: 0, duration, trackIndex: 0 })
-    + `</div></template></body></html>\n`;
-
   const documentIndex = insertion.value.beforeSceneId
     ? scenes.findIndex((scene) => scene.id === insertion.value.beforeSceneId)
     : -1;
@@ -170,10 +205,12 @@ export async function planCatalogMountDocuments(
       target: "@root",
       value: {
         index: documentIndex,
-        html: `<div id="${sceneId}-layer" class="comp-layer clip" data-composition-id="${sceneId}"`
-          + ` data-composition-src="${scenePath}" data-start="${insertion.value.scene.start}"`
+        html: `<div id="${instanceId}" class="catalog-instance comp-layer clip" data-composition-id="${sceneId}"`
+          + ` data-composition-src="${relativeCatalogReference(ref.entry, item.entry)}"`
+          + ` data-start="${insertion.value.scene.start}"`
           + ` data-duration="${duration}" data-track-index="${trackIndex}"`
-          + ` data-width="${project.width}" data-height="${project.height}"></div>`,
+          + ` data-width="${project.width}" data-height="${project.height}"`
+          + ` data-catalog-provenance="${catalogProvenanceAttribute(item)}"></div>`,
       },
     },
     ...insertion.value.changes.map((change) => ({
@@ -189,7 +226,6 @@ export async function planCatalogMountDocuments(
 
   return ok({
     documents: [
-      { path: scenePath, content: wrapper, expectedContentHash: null },
       {
         path: `narration/${sceneId}.json` as RelPath,
         content: serializeNarrationSidecar(

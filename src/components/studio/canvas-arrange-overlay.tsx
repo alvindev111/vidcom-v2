@@ -45,6 +45,7 @@ export function CanvasArrangeOverlay({
   scenes,
   files,
   controls,
+  selectedId,
   onSelectScene,
   onProjectChanged,
 }: {
@@ -52,6 +53,7 @@ export function CanvasArrangeOverlay({
   scenes: Scene[];
   files: SourceFile[];
   controls: PlayerControls;
+  selectedId: string;
   onSelectScene: (scene: Scene) => void;
   onProjectChanged: ProjectChanged;
 }) {
@@ -214,6 +216,7 @@ export function CanvasArrangeOverlay({
         <div
           ref={overlayRef}
           data-arrange-overlay
+          data-arrange-selected-scene-id={selectedId}
           className="absolute inset-0 z-20 touch-none select-none"
           style={{ containerType: "size" }}
           role="application"
@@ -250,7 +253,7 @@ export function CanvasArrangeOverlay({
             setProblem(null);
             selectionRef.current = resolved;
             setSelection(resolved);
-            onSelectScene(resolved.scene);
+            if (resolved.scene.id !== selectedId) onSelectScene(resolved.scene);
             dragRef.current = { pointerId: event.pointerId, start: point, latest: point, plan: null };
             event.currentTarget.setPointerCapture(event.pointerId);
             requestAnimationFrame(() => paint(null));

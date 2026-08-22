@@ -50,7 +50,7 @@ const hashContent = (content: string | Uint8Array): ContentHash =>
   `sha256:${createHash("sha256").update(content).digest("hex")}` as ContentHash;
 const digestOf = (content: string | Uint8Array) => createHash("sha256").update(content).digest("hex");
 
-const ENTRY_BYTES = "<section data-composition-id=\"lower-third\"><p>lower third</p></section>\n";
+const ENTRY_BYTES = "<section data-composition-id=\"lower-third\"><p data-hf-id=\"lower-third-copy\">lower third</p></section>\n";
 const STYLE_BYTES = ".lower-third { color: red }\n";
 const POSTER_BYTES = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 1, 2, 3]);
 const FONT_BYTES = new Uint8Array([0x77, 0x4f, 0x46, 0x32, 4, 5, 6, 7]);
@@ -352,14 +352,45 @@ describe("catalog install over real SQLite and a real filesystem", () => {
     expect(await readFile(path.join(projectRoot, STYLE_TARGET), "utf8")).toBe(STYLE_BYTES);
     const entry = await readFile(path.join(projectRoot, "index.html"), "utf8");
     expect(entry).toContain(executed.value.sceneId ?? "scene-2");
-    const wrapper = await readFile(
-      path.join(projectRoot, "compositions", `${executed.value.sceneId}.html`),
-      "utf8",
-    );
-    expect(wrapper).toContain(`data-composition-src="${ENTRY_TARGET}"`);
-    expect(wrapper).toContain("data-catalog-provenance=");
+    expect(entry).toContain(`data-composition-src="${ENTRY_TARGET}"`);
+    expect(entry).toContain("data-catalog-provenance=");
+    const parsed = await composition.parseProject({
+      id: projectId,
+      slug: "project",
+      root: projectRoot as AbsolutePath,
+      entry: "index.html" as RelPath,
+    });
+    expect(parsed.scenes.find((scene) => scene.id === executed.value.sceneId)?.script).toEqual([{
+      id: "lower-third-copy",
+      text: "lower third",
+      file: ENTRY_TARGET,
+    }]);
     expect(executed.value.provenance).toEqual(catalogProvenanceOf(verifiedItem()));
     expect(releases).toBeGreaterThan(0);
+  });
+
+  it("appends through the real parser when storyboard scenes occupy separate tracks", async () => {
+    await writeFile(path.join(projectRoot, "index.html"), `<!doctype html><html><body>
+<main data-hf-id="root" data-composition-id="root" data-width="1920" data-height="1080" data-duration="8">
+  <section data-no-timeline id="scene-1" class="clip story" data-composition-id="scene-1" data-start="0" data-duration="4" data-track-index="1"><h1>One</h1></section>
+  <section data-no-timeline id="scene-2" class="clip story" data-composition-id="scene-2" data-start="4" data-duration="4" data-track-index="2"><h1>Two</h1></section>
+</main></body></html>`);
+
+    const { executed } = await installOnce(await dependencies(), {
+      mount: { kind: "new-scene", toIndex: 2 },
+    });
+
+    expect(executed?.ok).toBe(true);
+    if (!executed?.ok) return;
+    const parsed = await composition.parseProject({
+      id: projectId,
+      slug: "project",
+      root: projectRoot as AbsolutePath,
+      entry: "index.html" as RelPath,
+    });
+    const mounted = parsed.scenes.find((scene) => scene.id === executed.value.sceneId);
+    expect(mounted).toMatchObject({ start: 8, duration: 4, trackIndex: 2 });
+    expect(parsed.project.duration).toBe(12);
   });
 
   it("writes nothing when a materialized digest drifts from the manifest", async () => {
@@ -501,10 +532,9 @@ describe("catalog install over real SQLite and a real filesystem", () => {
     );
     expect(undone.ok).toBe(true);
 
-    // The package files and the wrapper are gone; the untouched file stays.
+    // The package files and direct root mount are gone; the untouched file stays.
     expect(await absent(path.join(projectRoot, ENTRY_TARGET))).toBe(true);
     expect(await absent(path.join(projectRoot, STYLE_TARGET))).toBe(true);
-    expect(await absent(path.join(projectRoot, "compositions", `${executed.value.sceneId}.html`))).toBe(true);
     expect(await readFile(path.join(projectRoot, "untouched.txt"), "utf8")).toBe("keep me\n");
     const entry = await readFile(path.join(projectRoot, "index.html"), "utf8");
     expect(entry).not.toContain(String(executed.value.sceneId));

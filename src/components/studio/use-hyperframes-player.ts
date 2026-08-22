@@ -89,12 +89,16 @@ export function useHyperframesPlayer(projectId: string, previewUrl: string) {
       if (containerRef.current) {
         containerRef.current.dataset.previewChangeSeq = String(result.visibleChangeSeq);
         delete containerRef.current.dataset.previewError;
+        delete containerRef.current.dataset.previewHealth;
       }
       desiredChangeSeqRef.current = Math.max(desiredChangeSeqRef.current, result.visibleChangeSeq);
       setState((current) => ({ ...current, error: null }));
     } else if (result.kind === "rejected") {
       setState((current) => ({ ...current, error: result.reason }));
-      if (containerRef.current) containerRef.current.dataset.previewError = result.reason;
+      if (containerRef.current) {
+        containerRef.current.dataset.previewError = result.reason;
+        containerRef.current.dataset.previewHealth = JSON.stringify(result.health);
+      }
     }
     return result;
   }, []);
@@ -156,6 +160,8 @@ export function useHyperframesPlayer(projectId: string, previewUrl: string) {
       if (disposed || hostRef.current !== host) return;
       if (result.kind === "rejected") {
         setState((current) => ({ ...current, ready: false, error: result.reason }));
+        container.dataset.previewError = result.reason;
+        container.dataset.previewHealth = JSON.stringify(result.health);
         return;
       }
       if (result.kind !== "mounted") return;

@@ -338,18 +338,17 @@ describe("repeat mounts, LIFO undo and a shared package across sessions", () => 
     if (!undoSecond.claimed.ok) console.error("CLAIM2", JSON.stringify(undoSecond.claimed.error));
     if (undoSecond.undone && !undoSecond.undone.ok) console.error("UNDO2", JSON.stringify(undoSecond.undone.error));
     expect(undoSecond.undone?.ok).toBe(true);
-    expect(await absent(path.join(projectRoot, "compositions", `${second.executed.value.sceneId}.html`)))
-      .toBe(true);
     expect(await readFile(path.join(projectRoot, ENTRY_TARGET), "utf8")).toBe(ENTRY_BYTES);
-    expect(await absent(path.join(projectRoot, "compositions", `${first.executed.value.sceneId}.html`)))
-      .toBe(false);
+    let rootSource = await readFile(path.join(projectRoot, "index.html"), "utf8");
+    expect(rootSource).not.toContain(String(second.executed.value.sceneId));
+    expect(rootSource).toContain(String(first.executed.value.sceneId));
 
     const undoFirst = await undoTop(SESSION_A);
     expect(undoFirst.undone?.ok).toBe(true);
     // Only now is the package file removed, by the mutation that created it.
     expect(await absent(path.join(projectRoot, ENTRY_TARGET))).toBe(true);
-    expect(await absent(path.join(projectRoot, "compositions", `${first.executed.value.sceneId}.html`)))
-      .toBe(true);
+    rootSource = await readFile(path.join(projectRoot, "index.html"), "utf8");
+    expect(rootSource).not.toContain(String(first.executed.value.sceneId));
   });
 
   it("replaces an unmanaged collision and restores the author's bytes on undo", async () => {

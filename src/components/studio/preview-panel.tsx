@@ -65,6 +65,7 @@ export function PreviewPanel({
             scenes={scenes}
             files={files}
             controls={controls}
+            selectedId={selectedId}
             onSelectScene={onSelectScene}
             onProjectChanged={onProjectChanged}
           />

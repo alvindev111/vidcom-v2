@@ -18,9 +18,11 @@ import {
   getStudioSnapshot,
   listProjects,
   openAssetRange,
+  openPreviewAssetRange,
   readSourceFile,
   resolveProjectIdBySlug,
   statAsset,
+  statPreviewAsset,
   type EventOutboxPort,
   type ProjectReadDependencies,
   type MediaProbePort,
@@ -132,9 +134,10 @@ async function assetResponse(
   id: ProjectId,
   path: RelPath,
   mime: string,
+  preview = false,
 ): Promise<Response> {
   const parsedRange = parseRange(c.req.header("Range"));
-  const metadata = valueOf(await statAsset(dependencies, id, path));
+  const metadata = valueOf(await (preview ? statPreviewAsset : statAsset)(dependencies, id, path));
   const range = requestedRange(parsedRange, metadata.size);
   const headers = {
     "Accept-Ranges": "bytes",
@@ -161,7 +164,7 @@ async function assetResponse(
   };
   if (partial) responseHeaders["Content-Range"] = `bytes ${start}-${end}/${metadata.size}`;
   if (metadata.size === 0) return new Response(null, { status: 200, headers: responseHeaders });
-  const opened = valueOf(await openAssetRange(dependencies, id, path, {
+  const opened = valueOf(await (preview ? openPreviewAssetRange : openAssetRange)(dependencies, id, path, {
     start,
     end,
     identity: metadata.identity,
@@ -215,7 +218,7 @@ export function createProjectReadRoutes(dependencies: ProjectReadRouteDependenci
     const path = assetPath(c);
     const mime = dependencies.mimeFromPath(path);
     if (!mime) fail({ code: ErrorCode.AssetNotAllowed, message: "asset type is not served" });
-    return assetResponse(c, dependencies, projectId(c), path, mime);
+    return assetResponse(c, dependencies, projectId(c), path, mime, true);
   });
 
   routes.get("/v1/runtime", (c) => c.body(dependencies.runtimeSource(), 200, {

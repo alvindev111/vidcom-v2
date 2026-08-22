@@ -4,8 +4,8 @@ import { join } from "node:path";
 
 import { afterEach, describe, expect, it } from "vitest";
 
-import { buildNarrationHtml, readNarrationClips } from "@vidcom/adapter";
-import type { ProjectRef } from "@vidcom/core";
+import { buildBgmHtml, buildNarrationHtml, readNarrationClips } from "@vidcom/adapter";
+import { DEFAULT_PREVIEW_SETTINGS, type ProjectRef } from "@vidcom/core";
 
 const roots: string[] = [];
 
@@ -181,6 +181,7 @@ describe("buildNarrationHtml", () => {
     expect(html).toContain('src="/api/hf/demo/files/narration/intro.wav"');
     expect(html).toContain('data-start="0"');
     expect(html).toContain('data-duration="4.5"');
+    expect(html).toContain('preload="none"');
   });
 
   it("leaves the duration off when it is unknown", () => {
@@ -202,5 +203,20 @@ describe("buildNarrationHtml", () => {
 
   it("produces nothing when no scene has narration", () => {
     expect(buildNarrationHtml([], "/files/")).toBe("");
+  });
+
+  it("does not preload the whole music bed while preview health is still settling", () => {
+    const html = buildBgmHtml({
+      ...DEFAULT_PREVIEW_SETTINGS,
+      bgm: {
+        enabled: true,
+        volume: 0.25,
+        loop: true,
+        track: { name: "cinematic.wav", path: "preview-assets/bgm/cinematic.wav" },
+      },
+    }, "/files/");
+
+    expect(html).toContain('preload="none"');
+    expect(html).toContain('src="/files/preview-assets/bgm/cinematic.wav"');
   });
 });

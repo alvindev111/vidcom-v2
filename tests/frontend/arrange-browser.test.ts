@@ -25,6 +25,14 @@ describe("direct preview arrangement", () => {
       const overlay = await page.waitForSelector("[data-arrange-overlay]", { timeout: 10_000 });
       const bounds = await overlay!.boundingBox();
       if (!bounds) throw new Error("arrange overlay has no bounds");
+      expect(await overlay!.evaluate((node) => node.getAttribute("data-arrange-selected-scene-id")))
+        .toBe("scene-1");
+      await page.focus('[data-slot="slider-thumb"][aria-label="Seek"]');
+      await page.keyboard.press("ArrowRight");
+      await page.keyboard.press("ArrowRight");
+      const beforeArrange = await page.$eval('[data-slot="slider-thumb"][aria-label="Seek"]', (node) =>
+        Number(node.getAttribute("aria-valuenow")));
+      expect(beforeArrange).toBeGreaterThan(0);
 
       let mutations = 0;
       page.on("request", (request) => {
@@ -36,6 +44,9 @@ describe("direct preview arrangement", () => {
       await page.mouse.move(bounds.x + bounds.width / 2, bounds.y + bounds.height * 0.45);
       await page.mouse.down();
       await page.mouse.move(bounds.x + bounds.width / 2 + 40, bounds.y + bounds.height * 0.45 + 24, { steps: 5 });
+      const duringArrange = await page.$eval('[data-slot="slider-thumb"][aria-label="Seek"]', (node) =>
+        Number(node.getAttribute("aria-valuenow")));
+      expect(duringArrange).toBeGreaterThanOrEqual(beforeArrange);
       const releasedAt = Date.now();
       await page.mouse.up();
       const saved = await response.catch(async (cause) => {

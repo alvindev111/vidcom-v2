@@ -144,6 +144,7 @@ export class PlayerHost<Engine extends PreviewBufferEngine> {
     this.mounting?.controller.abort();
     if (this.coordinator) this.coordinator.dispose();
     else if (this.mounting) this.environment.dispose(this.mounting.engine);
+    this.environment.disposeIdle?.();
     this.mounting = null;
     this.coordinator = null;
     this.visible = null;

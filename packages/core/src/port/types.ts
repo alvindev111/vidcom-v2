@@ -26,7 +26,7 @@ export type PathRejection = {
 };
 
 /** Supported read purposes for project paths. */
-export type ReadPurpose = "read-source" | "read-asset" | "read-package-target";
+export type ReadPurpose = "read-source" | "read-asset" | "read-package-target" | "read-preview-reference";
 
 /** Supported write purposes for project paths. */
 export type WritePurpose =

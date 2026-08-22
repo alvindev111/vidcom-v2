@@ -298,6 +298,26 @@ async function parseScenes(
       }
       const scriptFile = host.src ? (hostFile === host.src ? hostFile : null) : ref.entry;
       const composition = scriptFile ? await open(scriptFile, raw) : null;
+      const ownScript = composition && scriptFile ? sceneScriptLines(composition, scriptFile, host) : [];
+      const catalogHost = host.src
+        ? root.querySelector?.("[data-catalog-provenance][data-composition-src]") ?? null
+        : null;
+      const catalogSource = catalogHost
+        ? canonicalProjectReference(hostFile, catalogHost.getAttribute("data-composition-src"))
+        : null;
+      let catalogScript: SceneScriptLine[] = [];
+      if (catalogSource) {
+        const filename = safeProjectFile(ref, catalogSource);
+        if (filename) {
+          const catalogRaw = readFileSync(filename, "utf8");
+          recordSource(catalogSource, catalogRaw);
+          const catalogComposition = await open(catalogSource, catalogRaw);
+          catalogScript = sceneScriptLines(catalogComposition, catalogSource, {
+            id: host.id,
+            src: catalogSource,
+          });
+        }
+      }
       const block = await readBlock(registryBaseUrl, raw);
       const isTransition = block?.category === "transitions" || (block?.tags.includes("transition") ?? false);
       const metadata = root.querySelector?.(`[data-composition-id="${host.id}"]`) ?? host.element;
@@ -333,7 +353,7 @@ async function parseScenes(
         block,
         isTransition,
         media: collectMedia(ref, hostFile, root),
-        script: composition && scriptFile ? sceneScriptLines(composition, scriptFile, host) : [],
+        script: [...ownScript, ...catalogScript],
         narration: readNarration(ref, host.id),
         ...readSceneElements(root, host.id, () => true, host.src ? undefined : authoredRoot),
       };

@@ -91,7 +91,10 @@ describe("loopback request router", () => {
     const host = await router.handle(previewGet("/preview-host.html"));
     expect(await host.text()).toBe("static");
     expect(host.headers.get("content-security-policy")).toContain("connect-src 'none'");
-    expect(await (await router.handle(previewGet("/preview-host.js"))).text()).toBe("static");
+    expect(host.headers.get("cache-control")).toBe("no-store");
+    const script = await router.handle(previewGet("/preview-host.js"));
+    expect(await script.text()).toBe("static");
+    expect(script.headers.get("cache-control")).toBe("no-store");
     expect((await router.handle(previewGet("/"))).status).toBe(403);
     expect((await router.handle(previewGet("/projects/demo"))).status).toBe(403);
     expect(await (await router.handle(previewGet("/api/preview/v1/c/token/projects/p/runtime"))).text()).toBe("api");

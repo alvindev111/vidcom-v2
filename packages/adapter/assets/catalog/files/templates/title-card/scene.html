@@ -1,6 +1,14 @@
-<section class="title-card" data-composition-id="title-card" data-width="1920" data-height="1080" data-fps="30" data-duration="4">
-  <div class="title-card__stack">
-    <h1 class="title-card__headline clip" data-start="0" data-duration="4">Your headline</h1>
-    <p class="title-card__subhead clip" data-start="0.4" data-duration="3.6">Supporting line of context</p>
-  </div>
-</section>
+<template id="title-card-template">
+  <section class="title-card" data-composition-id="title-card" data-width="1920" data-height="1080" data-fps="30" data-duration="4">
+    <style>
+      .title-card{display:grid;place-items:center;width:100%;height:100%;background:#0b1120;color:#f8fafc;font-family:system-ui,sans-serif}
+      .title-card__stack{display:grid;gap:16px;text-align:center;padding:0 96px}
+      .title-card__headline{margin:0;font-size:96px;font-weight:700;letter-spacing:-.02em}
+      .title-card__subhead{margin:0;font-size:40px;color:#94a3b8}
+    </style>
+    <div class="title-card__stack">
+      <h1 data-hf-id="title-card-headline" class="title-card__headline">Your headline</h1>
+      <p data-hf-id="title-card-subhead" class="title-card__subhead">Supporting line of context</p>
+    </div>
+  </section>
+</template>

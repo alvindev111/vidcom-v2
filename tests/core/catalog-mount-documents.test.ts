@@ -62,7 +62,7 @@ function compositionPort() {
 }
 
 describe("catalog mount document planning", () => {
-  it("wraps a new scene around the package entry and inserts it through the shared planner", async () => {
+  it("mounts a new scene directly from the package entry through the shared planner", async () => {
     const composition = compositionPort();
     const planned = await planCatalogMountDocuments({
       ref,
@@ -77,19 +77,19 @@ describe("catalog mount document planning", () => {
     if (!planned.ok) return;
     const { documents, sceneId, scenePath } = planned.value;
     expect(sceneId).toBe("scene-3");
-    expect(scenePath).toBe("compositions/scene-3.html");
+    expect(scenePath).toBe(ENTRY);
     expect(documents.map((document) => document.path)).toEqual([
-      "compositions/scene-3.html",
       "narration/scene-3.json",
       "index.html",
     ]);
 
-    const wrapper = documents[0]!;
-    // The wrapper mounts the package entry as a sub-composition and carries the
-    // provenance for this instance; the package file itself is never rewritten.
-    expect(wrapper.content).toContain(`data-composition-src="${ENTRY}"`);
-    expect(wrapper.expectedContentHash).toBeNull();
-    const attribute = /data-catalog-provenance="([^"]*)"/u.exec(wrapper.content)?.[1] ?? "";
+    // The root mounts the package directly and carries instance provenance; a
+    // second external wrapper would render blank in the one-level runtime.
+    const root = documents[1]!;
+    const added = composition.calls[0]!.ops[0] as Extract<CompositionOp, { kind: "addElement" }>;
+    expect(added.value.html).toContain(`data-composition-src="${ENTRY}"`);
+    expect(added.value.html).toContain('data-composition-id="scene-3"');
+    const attribute = /data-catalog-provenance="([^"]*)"/u.exec(added.value.html)?.[1] ?? "";
     expect(parseCatalogProvenance(attribute.replaceAll("&quot;", '"'))).toMatchObject({
       name: "lower-third",
       version: "1.2.0",
@@ -98,7 +98,6 @@ describe("catalog mount document planning", () => {
     });
 
     // Root timing comes from the shared insertion planner, not from new arithmetic.
-    const root = documents[2]!;
     expect(root.expectedContentHash).toBe(hash("e".repeat(64)));
     expect(composition.calls).toHaveLength(1);
     expect(composition.calls[0]!.path).toBe("index.html");
@@ -125,7 +124,53 @@ describe("catalog mount document planning", () => {
     });
     if (!second.ok) throw new Error("expected a plan");
     expect(second.value.sceneId).not.toBe(first.value.sceneId);
-    expect(second.value.scenePath).not.toBe(first.value.scenePath);
+    expect(second.value.scenePath).toBe(first.value.scenePath);
+  });
+
+  it("maps a storyboard append to the local slot of the selected track", async () => {
+    const composition = compositionPort();
+    const multiTrack = {
+      project: { id: "project_x", width: 1920, height: 1080, duration: 8, sceneCount: 2 },
+      scenes: [
+        { id: "scene-1", src: "compositions/scene-1.html", start: 0, duration: 4, trackIndex: 0 },
+        { id: "scene-2", src: "compositions/scene-2.html", start: 4, duration: 4, trackIndex: 1 },
+      ],
+    } as never;
+    const planned = await planCatalogMountDocuments({
+      ref,
+      model: multiTrack,
+      item: item(),
+      mount: { kind: "new-scene", toIndex: 2 },
+      entryHash: null,
+      composition,
+      now: () => new Date(),
+    });
+
+    expect(planned.ok).toBe(true);
+    if (!planned.ok) return;
+    expect(planned.value.rootDuration).toBe(12);
+    const added = composition.calls[0]!.ops[0] as Extract<CompositionOp, { kind: "addElement" }>;
+    expect(added.value.html).toContain('data-start="8"');
+    expect(added.value.html).toContain('data-track-index="1"');
+  });
+
+  it("rejects a storyboard slot beyond the global scene list", async () => {
+    const planned = await planCatalogMountDocuments({
+      ref,
+      model,
+      item: item(),
+      mount: { kind: "new-scene", toIndex: 3 },
+      entryHash: null,
+      composition: compositionPort(),
+      now: () => new Date(),
+    });
+    expect(planned).toMatchObject({
+      ok: false,
+      error: {
+        code: "insertion_rejected",
+        error: { code: ErrorCode.SchemaInvalid, field: "toIndex" },
+      },
+    });
   });
 
   it("adds one clamped overlay layer when mounting into an existing scene", async () => {

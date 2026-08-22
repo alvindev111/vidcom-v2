@@ -114,6 +114,12 @@ export function checkPathPurpose(path: string, purpose: PathPurpose): PathReject
       // browser-serving capability.
       allowed = true;
       break;
+    case "read-preview-reference":
+      // The preview read use case separately proves that this exact path is a
+      // parsed composition source/reference. This layer still limits the bytes
+      // to browser-safe media/source extensions and blocks hidden paths above.
+      allowed = ASSET_EXTENSIONS.has(extension(lower));
+      break;
     case "write-asset":
       allowed = WRITE_ASSET_ROOTS.some((root) => lower.startsWith(root));
       break;

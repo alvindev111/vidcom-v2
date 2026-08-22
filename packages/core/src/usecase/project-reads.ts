@@ -308,6 +308,82 @@ export async function statAsset(
   }
 }
 
+async function resolvePreviewReference(
+  dependencies: ProjectReadDependencies,
+  projectId: ProjectId,
+  path: RelPath,
+) {
+  const found = await projectRef(dependencies, projectId);
+  if (!found.ok) return found;
+  // Existing asset roots remain intentionally available for generated preview
+  // additions such as narration and BGM. Catalog files outside those roots are
+  // served only when the parser proved this exact path belongs to the current
+  // composition graph; a capability cannot be used to browse sibling files.
+  const ordinaryAsset = checkPathPurpose(path, "read-asset") === null;
+  if (!ordinaryAsset) {
+    let model: Awaited<ReturnType<CompositionPort["parseProject"]>>;
+    try { model = await dependencies.composition.parseProject(found.value); }
+    catch { return storageError("preview composition references could not be read"); }
+    const allowed = model.sources.some((source) => source.path === path)
+      || model.references.some((reference) => reference.path === path);
+    if (!allowed) {
+      return err({ code: ErrorCode.AssetNotAllowed, message: "preview path is not a composition reference" });
+    }
+  }
+  const resolved = await dependencies.workspace.resolve(
+    found.value,
+    path,
+    ordinaryAsset ? "read-asset" : "read-preview-reference",
+  );
+  return resolved.ok
+    ? ok(resolved.value)
+    : err({ code: ErrorCode.AssetNotAllowed, message: "preview path was rejected" });
+}
+
+/** Stats a normal asset or one exact parsed composition reference for the isolated preview origin. */
+export async function statPreviewAsset(
+  dependencies: ProjectReadDependencies,
+  projectId: ProjectId,
+  path: RelPath,
+) {
+  try {
+    const resolved = await resolvePreviewReference(dependencies, projectId, path);
+    if (!resolved.ok) return resolved;
+    const metadata = await dependencies.workspace.statAsset(resolved.value);
+    return metadata
+      ? ok({ path, ...metadata })
+      : err({ code: ErrorCode.NotFound, message: "preview asset was not found" });
+  } catch {
+    return storageError("preview asset metadata could not be read");
+  }
+}
+
+/** Opens a range only after the requested preview path is re-proved against the current graph. */
+export async function openPreviewAssetRange(
+  dependencies: ProjectReadDependencies,
+  projectId: ProjectId,
+  path: RelPath,
+  input: { start: number; end: number; identity: AssetFileIdentity; signal?: AbortSignal },
+) {
+  try {
+    const resolved = await resolvePreviewReference(dependencies, projectId, path);
+    if (!resolved.ok) return resolved;
+    const stream = await dependencies.workspace.openAssetRange(resolved.value, input);
+    return stream
+      ? ok({ stream })
+      : err({
+          code: ErrorCode.WriteConflict,
+          message: "preview asset changed before the requested range could be opened",
+          details: { path },
+        });
+  } catch (error) {
+    if ((error as Error).name === "AbortError") {
+      return err({ code: ErrorCode.WriteConflict, message: "preview asset range request was cancelled" });
+    }
+    return storageError("preview asset range could not be opened");
+  }
+}
+
 /** Opens an inclusive range only while the file still matches the identity returned by statAsset. */
 export async function openAssetRange(
   dependencies: ProjectReadDependencies,

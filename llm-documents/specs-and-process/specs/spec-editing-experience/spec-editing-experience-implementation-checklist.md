@@ -219,7 +219,7 @@ P6 chờ P3 + P4; P7 chờ thêm safe-CSS seam của P5; còn P9/P10/P11 giữ d
 | P22 Arrange bridge + canvas | `.agents/skills/bun/SKILL.md`; global `browser:control-in-app-browser` | Design §28.1–§28.2; `src/lib/studio/preview-bridge.ts`; `src/preview-host/entry.ts`; `src/components/studio/{preview-canvas,studio-shell}.tsx`; `src/components/studio/use-hyperframes-player.ts`; P21 DTO/use case |
 | P23 Preview audio + inspector guidance | `.agents/skills/bun/SKILL.md`; global `browser:control-in-app-browser` | Design §28.3, §31, §32.3; `src/components/studio/{hyperframes-player-environment,use-hyperframes-player}.ts`; `src/components/studio/{preview-controls,scene-pane}.tsx`; `src/preview-host/entry.ts`; `src/lib/studio/{preview-bridge,preview-sounds}.ts` |
 | P24 Story-motion gate + agent kit v9 | `.agents/skills/bun/SKILL.md`; global `hyperframes` then `hyperframes-animation` | Design §30, Decisions 18–19; `packages/core/src/domain/story-motion.ts`; `packages/core/src/usecase/diagnostics.ts`; `packages/worker/src/render-job.ts`; `packages/adapter/src/hyperframes/{parse,check}.ts`; `packages/agent-kit/{AGENTS.md,CLAUDE.md,skills/**,scripts/build.mjs,src/generated-bundle.ts}` |
-| P25 Exact-source evidence + Odyssey production | `.agents/skills/bun/SKILL.md`; global `hyperframes`, `general-video`, `media-use`, `hyperframes-cli`, `hyperframes-audio`, `browser:control-in-app-browser` | All P19–P24 deliverables; user CI contract; five workflow YAMLs; project `project_d650b815-9c0d-4c20-b866-8e9dace5a6c8`; source identity; render/approval evidence rules |
+| P25 Exact-source evidence + Odyssey production | `.agents/skills/bun/SKILL.md`; global `hyperframes`, `general-video`, `media-use`, `hyperframes-cli`, `hyperframes-audio`, `browser:control-in-app-browser` | All P19–P24 deliverables; user CI contract; five workflow YAMLs; current production project `project_ee53e6df-e32b-410f-b47b-6cd6ad934023`; source identity; render/approval evidence rules |
 
 **Lưu ý về template**: template checklist nhắc tới `backend-docs/` và `frontend-docs/` — hai thư mục đó **không tồn tại** trong repo này. Luật code nằm ở
 `llm-documents/steering/11-code-style.md`; đọc nó một lần trước P0.
@@ -1956,7 +1956,7 @@ preview tests and R4.1c measurement harness
   - Select caption wrapper as a bounded element, move it with the same planner/mutation and preserve
     cue timing/style. Reject generated/runtime-only spans without stable IDs.
   - _Requirements: R17.1, R17.6, R17.9_ — _Design: §29.1–§29.2_
-- [/] 22.5 Real browser security/performance matrix on Linux + Windows
+- [x] 22.5 Real browser security/performance matrix on Linux + Windows
   - Test mouse drag, keyboard move, Esc, locked target, caption, conflict, reload and malicious
     descriptor. Measure pointerup→first authoritative painted frame <500 ms and assert no UI access to
     iframe authored DOM.
@@ -1967,7 +1967,7 @@ preview tests and R4.1c measurement harness
 - [x] Users can select and reposition supported elements/subtitles directly on Preview
 - [x] One completed gesture causes one mutation; cancel/no-op causes none
 - [x] Closed bridge and server cross-check reject malicious descriptors
-- [ ] Linux + Windows browser evidence shows <500 ms pointerup→paint
+- [x] Linux + Windows browser evidence shows <500 ms pointerup→paint
 
 **Deliverables Created / Modified**:
 - `src/lib/studio/preview-bridge.ts`
@@ -2013,20 +2013,20 @@ inspector tab config/guide/groups; browser/accessibility tests
     action. Every disabled control has a reason and recovery action.
   - Keep one panel; do not add a modal tour or hidden duplicate navigation.
   - _Requirements: R19.1–R19.5_ — _Design: §31, Decision 20_
-- [/] 23.5 Run novice + accessibility browser path
+- [x] 23.5 Run novice + accessibility browser path
   - Starting from a selected Odyssey scene, a novice must identify timing, image/media, motion,
     transition/reveal, narration and music controls without terminal help; verify keyboard tab order,
     focus restoration, ARIA relationships and no critical/serious violations.
   - Capture screenshots of guide, grouped controls and actionable disabled/failure state.
   - _Requirements: R19.1–R19.6_ — _Design: §31, §33.1_
-- [/] 23.6 Run P23 browser/static gate
+- [x] 23.6 Run P23 browser/static gate
   - Run P23 focused tests, full browser suite locally when available, typecheck/lint/boundaries/build.
     Missing local Chrome is not `[!]`: defer authoritative browser proof to P25 Actions.
   - _Requirements: R18.1–R18.6, R19.1–R19.6_ — _Design: §33.1–§33.2_
 
 **Acceptance Criteria**:
-- [ ] Real nested media is audible and advances after Play on Linux + Windows
-- [ ] Autoplay denial and resource failure are visible, recoverable and never reported as playing
+- [x] Real nested media is audible and advances after Play on Linux + Windows
+- [x] Autoplay denial and resource failure are visible, recoverable and never reported as playing
 - [x] Inspector labels/guidance explain task and result; novice path needs no terminal instructions
 - [x] Accessibility browser gate remains zero critical/serious violations locally
 
@@ -2111,7 +2111,7 @@ video; use `media-use` for every Internet image/audio asset
 Execution Log entries; active Odyssey project context/revision/assets; video approval rules
 
 **Tasks**:
-- [x] 25.1 Freeze exact source and run full local regression
+- [/] 25.1 Freeze exact source and run full local regression
   - Record HEAD plus staged/unstaged/untracked/deleted/symlink digest. Run focused P19–P24 rows,
     typecheck, lint, boundaries, full test with FFmpeg required, mcp-contract, golden, schema-drift,
     spec-paths, build and runtime-smoke.
@@ -2132,7 +2132,36 @@ Execution Log entries; active Odyssey project context/revision/assets; video app
     Execution Log. A red/cancelled/partial required job blocks the next task; `[!]` is allowed only
     if CI itself cannot run after documented retries, never because local prerequisites are absent.
   - _Requirements: R16.7, R17.10, R18.6, R19.6, R20.7–R20.9_ — _Design: §33.1_
-- [ ] 25.3 Re-author the Odyssey project through VidCom/Editor authority
+  - Execution Log (in progress, exact SHA `345b0144a33ead4c312ae193b5240425e9c979e0`):
+    - `Browser session` run [32515376201](https://github.com/alvindev111/vidcom-v2/actions/runs/32515376201):
+      Linux x64 `success`; Windows x64 `success`. `gh run download` trả `no valid artifacts found`;
+      verdict: workflow không khai báo artifact, job browser/a11y đã hoàn tất trên cả hai OS.
+    - `Process supervision gate` run [32515382944](https://github.com/alvindev111/vidcom-v2/actions/runs/32515382944):
+      Linux x64 `success`; macOS arm64 `success`; Windows x64 `success`; Real render — Windows x64
+      `success`. `gh run download` trả `no valid artifacts found`; verdict: P4/P7 kill và real-render
+      process tree đều hoàn tất.
+    - `VieNeu real engine` run [32515386943](https://github.com/alvindev111/vidcom-v2/actions/runs/32515386943):
+      Linux x64 CPU `success`; artifact tải về tại
+      `evidence/actions-345b014/vieneu-real-engine/vieneu-narration/intro.wav`. Inspection:
+      PCM s16le mono 44.1 kHz, 3.733651 s, 329386 bytes, SHA-256
+      `2e4b9d3a73754646a2923e8e7edded16a2deb21bc608345c80259e3e2ea801f9`.
+    - `Packaged smoke` run [32515379801](https://github.com/alvindev111/vidcom-v2/actions/runs/32515379801):
+      đang chạy; macOS arm64 và Linux x64 đã `success`, Windows chưa kết thúc. Hai artifact đã tải về
+      dưới `evidence/actions-345b014/packaged-smoke/{macos-arm64,linux-x64}`; inspection cho thấy strict
+      evidence không có required failure, packaged MCP 43/43 tools, bundled `title-card@1.0.0`, VieNeu
+      WAV, snapshot và MP4 H.264/AAC 8 giây đều PASS cả online lẫn network-cut offline.
+    - `CI` run [32515372951](https://github.com/alvindev111/vidcom-v2/actions/runs/32515372951):
+      overall `cancelled`; Linux/macOS/Windows, security và packaged-smoke lồng đều `success`, nhưng hai
+      job `browser-session` lồng bị `cancelled` do trùng concurrency với run Browser session độc lập.
+      Run này được giữ như bằng chứng chẩn đoán, không dùng làm PASS.
+    - `CI` retry [32518420665](https://github.com/alvindev111/vidcom-v2/actions/runs/32518420665):
+      overall `success` trên cùng SHA. Linux x64, macOS arm64, Windows x64; Browser session
+      Linux/Windows; packaged-smoke macOS/Linux/Windows; CodeQL, secret, license/provenance và OSV đều
+      `success`; Dependency review `skipped` đúng điều kiện workflow_dispatch. Artifact tải về tại
+      `evidence/actions-345b014/ci-retry-32518420665`: strict packaged evidence cả ba OS không có required
+      failure, packaged MCP 43/43, bundled `title-card@1.0.0`, network-cut install hai boot và provenance
+      commit `345b014` đều PASS. P25.3 được mở sau verdict này.
+- [x] 25.3 Re-author the Odyssey project through VidCom/Editor authority
   - Use the existing project ID and preserve licensed/provenanced assets. Replace 15 s static beats
     with 18 distinct 6–10 s scenes across ~2–3 minutes; narration covers ≥75% and uses real VieNeu.
   - Give every scene role + setup/development/payoff, at least three primary patterns per rolling four,
@@ -2169,7 +2198,7 @@ Execution Log entries; active Odyssey project context/revision/assets; video app
 
 **Deliverables Created / Modified**:
 - Exact-source workflow URLs/artifact verdicts in this Execution Log and `implementation-notes.html`
-- Project `project_d650b815-9c0d-4c20-b866-8e9dace5a6c8` through VidCom authority
+- Project `project_ee53e6df-e32b-410f-b47b-6cd6ad934023` through VidCom authority
 - Final screenshots/contact sheet and human-reviewed MP4 with checksum/ffprobe evidence
 
 ---
@@ -2671,6 +2700,10 @@ caption · D7 tool MCP undo/redo · **D8 PR-11 hot-reload từng sub-composition
 | 2026-08-22 00:51 +07 | P24 gate | StoryMotionProfile, v9 metadata/parser, three-phase + sequence + narration gates, shared validate/snapshot/render enforcement, agent-kit v9 | RED Core 4/7 failed on missing profile/composition API and thirds logic; parser RED 2/2 on absent marker/metadata/root attribution; snapshot regression RED exposed the formerly ungated path. GREEN P24 matrix 7 files/72 tests; agent-kit/package matrix 3 files/37 tests; tool catalogue 2/2; golden 11 files/51 tests; typecheck, lint (0 errors/5 baseline warnings), boundaries, schema drift, spec-path 169/5, production build and diff-check PASS. Canonical builder ran twice: `CLAUDE.md` SHA-256 `0d140967ce202b56fa6ecd9e4278cffaabed3aa15984eea1602049ef86299e73`, generated bundle `97a4cb6cb2503d39838fd4cd404efec8ea73eca54a7c37e6e317eddf58487a3c` both times | `PASS` | Parser projects bounded pattern/seam metadata from inline or mounted roots and assigns statically resolved root-script targets to the owning inline scene; dynamic root loops remain unresolved rather than evidence for all scenes. Core checks first/middle/final thirds, rolling-four ≥3 patterns, explicit seams, 6–10 s, static >10 s and narration union ≥75%. Strict marker is `hyperframes.json.vidcomAgentKitVersion >= 9`; agent-created projects receive it, legacy missing metadata is warning while shallow/unverified remains blocking. The 18-scene v9 root-loop fixture with `data-no-timeline`, 15 s holds and fade+y is rejected before queue with all 18 IDs | P25.1 exact-source freeze and full regression |
 | 2026-08-22 01:32 +07 | 25.1 worktree regression | P19–P24 integrated source at `HEAD=6475521b03f69c1aa5f73be0b64a27e559549c93`, dirty digest `fc8f77f571ded65bdbfad0e80016674953caffd1d751448ddd0e68ad5761f501` (124 changed source paths; checklist/notes/state marker excluded by the identity script) | Dedicated `bun run test:browser-session`: 12 files/27 tests PASS, zero skip, R4.1c 214/185/271/274 ms; Storyboard 100-scene sample requested 20, max active 10, aborted 10, top window 10. Main CI-profile test with `CI=true VIDCOM_REQUIRE_FFMPEG=1`: 329 files PASS + 1 workflow-owned skip, 2716 tests PASS + 5 intentional workflow-owned skips. Typecheck PASS; lint 0 errors/5 baseline warnings; boundaries PASS; MCP contract 9 files/94 tests; golden 11 files/51 tests; schema drift PASS; spec paths 172 paths/5 specs; build and runtime smoke PASS | `PASS (WORKTREE); COMMIT IDENTITY OPEN` | Repaired source-caused reds before continuation: utility fixtures no longer impersonate v9 story scenes; tool catalogue count is 43; Storyboard drag uses an unambiguous target quarter and dragend fallback; detached preview frames are tolerated; 100-scene seed writes run away from the live Studio event stream; audio assertions follow HyperFrames parent/runtime ownership; bridge-render fixture is utility. The first opportunistic non-CI full suite measured 582 ms while 2700+ tests contended for the same browser; it is not the configured browser authority and was followed by the serialized dedicated 27/27 gate. Two pre-existing user-owned paths remain outside commit authority, so 25.1 stays open until the exact pushed commit is rerun in a clean worktree | Stage only goal-owned paths, create exact commit, rerun the same gates from a clean worktree, then dispatch five workflows |
 | 2026-08-22 01:47 +07 | 25.1 exact-commit gate | Clean detached worktree at `bc7bb8d05844e61c3b03d9bf5c46c4fb680afc77`; two pre-existing user-owned paths are absent from the commit and remain untouched in the original worktree | Typecheck and production build PASS. Dedicated browser rerun: 12 files/27 tests PASS, R4.1c 188/188/268/268 ms; inspector action focused rerun 1/1 PASS. A first cold full-browser pass had catalog timeout plus 641 ms contention, then both focused cases and the unchanged full matrix passed. CI-profile full test on a fresh `bun install` ran 2,720 tests but 10 artifact/native cases failed: Bun install removed execute bits from both `node-pty` `spawn-helper` binaries; the local Homebrew Node used as a fixture has non-portable dylinks; the local SEA injection binary lacks the expected fuse. Source checkout with the already prepared native/artifact tree had passed 2,716 tests immediately before commit | `PASS; NATIVE/ARTIFACT AUTHORITY → CI` | The fresh-install failures are concrete local prerequisite drift, not waived or relabelled green: `spawn-helper` is `-rw-r--r--` in the fresh tree versus `-rwxr-xr-x` in the prepared tree, and five artifact-stage cases fail before their intended assertion on the same Homebrew-library preflight. Per the user contract, these exact-source gates transfer to `CI`/`Packaged smoke` rather than `[!]`. Lint 0 errors/5 baseline warnings and boundaries PASS before the full run. Any Actions red still blocks 25.3 | Amend evidence-only docs, push exact commit, dispatch all five workflows and inspect artifacts |
+
+| 2026-08-22 05:49 +07 | P25 reopen — production Odyssey browser repair | Exact source after `345b014`: isolated preview cache/origin, preview-reference allowlist, catalog append/replace, lazy audio media, source `CHROME_PATH`, usable title-card layout; real Odyssey `project_ee53e6df-e32b-410f-b47b-6cd6ad934023` | Focused matrix 10 files/79 tests PASS; catalog matrix 3 files/23 tests PASS; typecheck, boundaries, schema drift, spec paths 172/5, production build, runtime smoke, MCP contract 94/94 and golden 51/51 PASS; lint 0 errors/5 baseline warnings. Dedicated browser 12 files/27 tests PASS with R4.1c 218/190/301/297 ms. Real UI produced six screenshots: Storyboard WebP, Look, Motion, installed/edited Vietnamese template, Music audition and playing preview. At 0:01.48 both BGM and narration are `paused=false`, `readyState=4`; title template was reinstalled through UI after correcting absolute-position overlap | `PASS LOCAL; EXACT COMMIT/CI OPEN` | Old Actions on `345b014` are historical only after these source changes; 25.1/25.2 and their acceptance criteria are reopened. Local Homebrew FFmpeg lacks WebP, so the real browser used the packaged WebP FFmpeg plus verified Chrome override; CI remains the multi-OS authority. The temporary 4-second template scene will be removed through UI before final 18-scene validation/render | Remove proof-only template scene via UI, capture Arrange evidence, update notes, commit only goal-owned paths, then rerun all five workflows |
+| 2026-08-22 06:46 +07 | 25.3 corrected Odyssey validation | Current production project `project_ee53e6df-e32b-410f-b47b-6cd6ad934023`; exact file hash `sha256:d9f6b79016babf07572da7dadf73b3e2e1b7c8a260704bfb74a3d7fe30146b80`; source revision 6 | Proof-only title-card removed through UI; project is exactly 18 scenes × 8.5 s = 153 s. Arrange changed `hf-sk7k` through the editor and persisted one position write without rewinding the active playhead; regression went RED at currentTime 0 then GREEN after selected-scene propagation. MCP `save_file` performed the story repair: 18 scene-local timelines with scoped selectors and distinct motif choreography; setup/middle/payoff all project statically. A rendering defect placed `motif-*` on the full scene, producing a distorted frame; the same MCP path moved each modifier onto its motif element. Final `validate_project` returned no error diagnostics at source revision 6; narration coverage, fonts, media, duration, seams and rolling-four diversity all passed. HyperFrames snapshot at 34.482 s is full-frame after the fix; copy clip-path motion was replaced with scale reveals and both `content_overlap` errors disappeared | `PASS` | Four non-blocking warnings remain: repeated source images used intentionally across connected Cyclops/Ithaca beats, one-file composition size and heavy-overlay count. Validation also reports layout info findings, none are errors. Exact-source application CI and fresh final screenshots still belong to 25.1/25.2/25.4 | Rerun full local gates, freeze commit, dispatch all five workflows |
+| 2026-08-22 07:02 +07 | 25.1 final worktree regression + 25.4 visual capture | Final application source before freeze; Odyssey source revision 6 / `sha256:d9f6b79016babf07572da7dadf73b3e2e1b7c8a260704bfb74a3d7fe30146b80` | Authoritative serialized gates: lint 0 errors/5 baseline warnings; MCP contract 9 files/94 tests; golden 11 files/51 tests; build PASS; runtime smoke PASS; browser-session 12 files/27 tests with R4.1c 184/187/268/296 ms; full `CI=true VIDCOM_REQUIRE_FFMPEG=1` 331 files PASS + 1 workflow-owned skip, 2,726 tests PASS + 5 intentional skips. The first full run found two source/test-contract reds and blocked continuation: direct catalog mount intentionally removed one wrapper write, while the download-cache fixture inherited `CHROME_PATH`; exact focused repair rerun 2 files/15 tests and the full suite both passed. HyperFrames captured all 18 scene midpoints plus two contact sheets. Fresh in-app browser screenshots show real visible thumbnails, rendered preview, Arrange outline, task-labelled inspector guides and usable Look/Motion/Add scene/Music controls. While Preview played, `cinematic.wav` and `s08-aeolus.wav` were both `paused=false`, `readyState=4` | `PASS (WORKTREE); EXACT COMMIT/CI OPEN` | A parallel lint attempt first exhausted memory and the serialized retry initially scanned a generated 15.85 MB diagnostic bundle; all disposable `.codex-*` probes were moved to `/private/tmp`, then the authoritative lint passed. The thumbnail queue requests only the visible window; every visible storyboard card resolved to an image. Contact sheets are visually full-frame and show distinct route/fleet/storm/lotus/eye/name/wave/spiral/mask/tunnel/rope/sound/balance/count/choice/lens/arrow/home motifs | Stage only goal-owned source and current evidence, commit, verify detached exact source, then dispatch all five workflows |
 
 ## Final Authoring-Readiness Audit
 

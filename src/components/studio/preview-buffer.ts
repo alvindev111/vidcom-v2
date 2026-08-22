@@ -102,6 +102,8 @@ export interface PreviewBufferEnvironment<Engine extends PreviewBufferEngine> {
   /** Makes the prepared candidate visible without removing the old engine. */
   show(engine: Engine): void;
   dispose(engine: Engine): void;
+  /** Releases environment-owned warm resources that are not represented by an engine. */
+  disposeIdle?(): void;
 }
 
 export type PreviewReloadResult =

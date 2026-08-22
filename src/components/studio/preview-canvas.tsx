@@ -21,6 +21,7 @@ export function PreviewCanvas({
   scenes,
   files,
   controls,
+  selectedId,
   onSelectScene,
   onProjectChanged,
 }: {
@@ -32,6 +33,7 @@ export function PreviewCanvas({
   scenes: Scene[];
   files: SourceFile[];
   controls: PlayerControls;
+  selectedId: string;
   onSelectScene: (scene: Scene) => void;
   onProjectChanged: ProjectChanged;
 }) {
@@ -67,6 +69,7 @@ export function PreviewCanvas({
             scenes={scenes}
             files={files}
             controls={controls}
+            selectedId={selectedId}
             onSelectScene={onSelectScene}
             onProjectChanged={onProjectChanged}
           />

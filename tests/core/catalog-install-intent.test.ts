@@ -268,7 +268,7 @@ describe("exact-intent catalog install", () => {
     expect(state.mutations).toHaveLength(1);
     expect(state.mutations[0]!.grant).toEqual({ id: "grant_1", binding: prepared.value.binding });
     expect(state.mutations[0]!.steps.map((step) => step.kind))
-      .toEqual(["mkdir", "mkdir", "write-staged", "write", "write", "write"]);
+      .toEqual(["mkdir", "mkdir", "write-staged", "write", "write"]);
   });
 
   it("never mutates when the grant does not match and still releases the pin", async () => {

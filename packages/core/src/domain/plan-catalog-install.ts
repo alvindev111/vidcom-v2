@@ -14,7 +14,12 @@ import { type CatalogProvenance } from "./catalog-install-guard";
  */
 
 export type CatalogInstallMount =
-  | { kind: "new-scene"; toIndex: number; trackIndex?: number }
+  | {
+    kind: "new-scene";
+    /** Global storyboard slot; Core maps it to a slot inside the selected track. */
+    toIndex: number;
+    trackIndex?: number;
+  }
   | { kind: "into-scene"; sceneId: string };
 
 export type CatalogFileAction = "create" | "replace" | "reuse";

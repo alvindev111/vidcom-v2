@@ -1,9 +1,12 @@
 // @vitest-environment node
 
+import { readFile } from "node:fs/promises";
+
 import { describe, expect, it } from "vitest";
 
 import {
   MAX_PREVIEW_BRIDGE_SCENES,
+  PREVIEW_BRIDGE_VERSION,
   acceptPreviewBridgeEvent,
   createPreviewBridgeNonce,
   parsePreviewHostMessage,
@@ -13,6 +16,11 @@ import {
 const nonce = "n".repeat(43);
 
 describe("preview postMessage protocol", () => {
+  it("cache-busts the stable bridge script name with the protocol version", async () => {
+    const host = await readFile("public/preview-host.html", "utf8");
+    expect(host).toContain(`/preview-host.js?v=${PREVIEW_BRIDGE_VERSION}`);
+  });
+
   it("uses a 256-bit nonce and accepts only the exact source and origin", () => {
     const source = {};
     const other = {};

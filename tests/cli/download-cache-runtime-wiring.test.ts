@@ -11,17 +11,70 @@ import {
 import { ErrorCode } from "@vidcom/contracts";
 import { createDoctorContext, createInfrastructure } from "@vidcom/cli";
 import type { AbsolutePath } from "@vidcom/core";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { createChromiumExecutable } from "../support/chromium-executable";
 
 const roots: string[] = [];
+const inheritedChromePath = process.env.CHROME_PATH;
+
+beforeEach(() => {
+  delete process.env.CHROME_PATH;
+});
 
 afterEach(async () => {
+  if (inheritedChromePath === undefined) delete process.env.CHROME_PATH;
+  else process.env.CHROME_PATH = inheritedChromePath;
   await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
 });
 
 describe("production download-cache runtime wiring", () => {
+  it("honors CHROME_PATH in source infrastructure without a managed browser download", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "vidcom-source-browser-override-"));
+    roots.push(root);
+    const appDataRoot = path.join(root, "app-data");
+    const workspaceRoot = path.join(root, "workspace") as AbsolutePath;
+    const projectRoot = path.join(workspaceRoot, "project") as AbsolutePath;
+    const browser = await createChromiumExecutable(root);
+    const ffmpeg = path.join(root, process.platform === "win32" ? "ffmpeg.exe" : "ffmpeg") as AbsolutePath;
+    const ffprobe = path.join(root, process.platform === "win32" ? "ffprobe.exe" : "ffprobe") as AbsolutePath;
+    await Promise.all([
+      mkdir(projectRoot, { recursive: true }),
+      writeFile(ffmpeg, "binary", "utf8"),
+      writeFile(ffprobe, "binary", "utf8"),
+    ]);
+    await Promise.all([chmod(ffmpeg, 0o755), chmod(ffprobe, 0o755)]);
+
+    const previousChromePath = process.env.CHROME_PATH;
+    process.env.CHROME_PATH = browser;
+    const infrastructure = createInfrastructure({
+      appDataRoot,
+      workspaceRoot,
+      runtimePaths: resolveRuntimePaths({ mode: "development", appDataRoot }),
+      renderBinaryPaths: { ffmpegPath: ffmpeg, ffprobePath: ffprobe },
+      processes: {
+        run: async () => ({
+          exitCode: 1,
+          stdout: "",
+          stderr: "managed download must not run when CHROME_PATH is set",
+          timedOut: false,
+        }),
+      },
+    });
+    try {
+      expect(await infrastructure.renderBinaries.probe(projectRoot)).toMatchObject({
+        ok: true,
+        value: { browserPath: browser },
+      });
+      expect(await infrastructure.downloads.status(DOWNLOAD_CACHE_COMPONENTS.browser))
+        .toMatchObject({ state: "missing" });
+    } finally {
+      if (previousChromePath === undefined) delete process.env.CHROME_PATH;
+      else process.env.CHROME_PATH = previousChromePath;
+      await infrastructure.database.destroy();
+    }
+  });
+
   it("downloads Chromium into RuntimePaths.browserCacheRoot and reuses it after restart", async () => {
     const root = await mkdtemp(path.join(tmpdir(), "vidcom-browser-wiring-"));
     roots.push(root);

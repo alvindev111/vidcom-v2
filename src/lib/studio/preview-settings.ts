@@ -631,7 +631,7 @@ export function buildBgmHtml(
   if (!bgm.enabled || !bgm.track) return "";
 
   const src = `${fileBaseUrl}${bgm.track.path}`;
-  return `<audio id="hf-preview-bgm" class="clip" src="${src}" data-start="0" data-volume="${bgm.volume}"${
+  return `<audio id="hf-preview-bgm" class="clip" preload="none" src="${src}" data-start="0" data-volume="${bgm.volume}"${
     bgm.loop ? " loop" : ""
   }></audio>`;
 }

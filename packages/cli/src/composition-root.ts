@@ -277,6 +277,7 @@ export function createInfrastructure(config: CompositionRootConfig) {
   const downloads = new DownloadCacheCoordinator({ cacheRoot: config.appDataRoot });
   const browserCacheRoot = (config.runtimePaths?.browserCacheRoot
     ?? downloads.componentRoot(DOWNLOAD_CACHE_COMPONENTS.browser)) as AbsolutePath;
+  const browserPath = process.env.CHROME_PATH?.trim();
   const workspace = new WorkspaceFs(config.workspaceRoot);
   const largeContent = new LargePreviousContentStore(config.appDataRoot);
   const mutationObserver = new MutationHistory(largeContent);
@@ -309,6 +310,7 @@ export function createInfrastructure(config: CompositionRootConfig) {
   const renderBinaries = new NodeRenderBinaryProbe({
     ...binaries,
     browserCacheRoot,
+    ...(browserPath ? { browserPath: browserPath as AbsolutePath } : {}),
     ...config.runtimePaths ? {
       hyperframesCliPath: config.runtimePaths.hyperframesCliPath as AbsolutePath,
       hyperframesPackagePath: config.runtimePaths.hyperframesPackagePath as AbsolutePath,
@@ -325,6 +327,7 @@ export function createInfrastructure(config: CompositionRootConfig) {
   const thumbnailBinaries = new NodeRenderBinaryProbe({
     ...binaries,
     browserCacheRoot,
+    ...(browserPath ? { browserPath: browserPath as AbsolutePath } : {}),
     ...config.runtimePaths ? {
       hyperframesCliPath: config.runtimePaths.hyperframesCliPath as AbsolutePath,
       hyperframesPackagePath: config.runtimePaths.hyperframesPackagePath as AbsolutePath,

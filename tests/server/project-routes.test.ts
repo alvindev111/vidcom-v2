@@ -50,6 +50,8 @@ function fixture(initialProjectChangeSeq = 8) {
   ]);
   const assets = new Map<string, Uint8Array>([
     ["assets/pixel.png", new Uint8Array([1, 2, 3, 4])],
+    ["templates/title-card/scene.html", new TextEncoder().encode("<template>Title card</template>")],
+    ["templates/title-card/secret.json", new TextEncoder().encode('{"private":true}')],
   ]);
   const assetIo = {
     fullReads: 0,
@@ -150,7 +152,14 @@ function fixture(initialProjectChangeSeq = 8) {
           }],
           rootTrack: null,
           diagnostics: [],
-          sources: [{ path: "index.html" as RelPath, contentHash: contentHash("entry"), byteSize: 5 }],
+          sources: [
+            { path: "index.html" as RelPath, contentHash: contentHash("entry"), byteSize: 5 },
+            {
+              path: "templates/title-card/scene.html" as RelPath,
+              contentHash: contentHash("<template>Title card</template>"),
+              byteSize: 31,
+            },
+          ],
           references: [],
         };
       },
@@ -302,6 +311,12 @@ describe("project read routing contracts", () => {
     expect(await vendor.text()).toBe("globalThis.gsap = {};");
     const asset = await previewRequest(`${capabilityPath}/assets/assets/pixel.png`);
     expect([...new Uint8Array(await asset.arrayBuffer())]).toEqual([1, 2, 3, 4]);
+    const catalogSource = await previewRequest(`${capabilityPath}/assets/templates/title-card/scene.html`);
+    expect(catalogSource.status).toBe(200);
+    expect(await catalogSource.text()).toBe("<template>Title card</template>");
+    const catalogSibling = await previewRequest(`${capabilityPath}/assets/templates/title-card/secret.json`);
+    expect(catalogSibling.status).toBe(403);
+    expect(ErrorResponseSchema.parse(await catalogSibling.json()).error.code).toBe("asset_not_allowed");
 
     const uiOrigin = await request(`${capabilityPath}/runtime`);
     expect(uiOrigin.status).toBe(403);

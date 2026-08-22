@@ -52,10 +52,17 @@ export function createRequestRouter(initial: {
       }
       const target = isApi ? api : staticHost;
       const response = await target(request);
-      if (url.hostname !== "preview.localhost" || url.pathname !== "/preview-host.html") return response;
+      if (url.hostname !== "preview.localhost" || !PREVIEW_STATIC_PATHS.has(url.pathname)) return response;
       const headers = new Headers(response.headers);
-      headers.set("Content-Security-Policy", PREVIEW_HOST_CSP);
-      headers.set("Referrer-Policy", "no-referrer");
+      // The host and bridge script form one versioned protocol but keep stable
+      // public names. Revalidation is not enough after a daemon upgrade: a
+      // browser may pair a cached v1 script with a v2 editor and reject every
+      // message before the preview document can load.
+      headers.set("Cache-Control", "no-store");
+      if (url.pathname === "/preview-host.html") {
+        headers.set("Content-Security-Policy", PREVIEW_HOST_CSP);
+        headers.set("Referrer-Policy", "no-referrer");
+      }
       return new Response(response.body, { status: response.status, statusText: response.statusText, headers });
     },
     swapApi(target: FetchTarget): void {

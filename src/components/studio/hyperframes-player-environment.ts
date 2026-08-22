@@ -76,6 +76,10 @@ export function previewHostUrl(previewOrigin: string, nonce: string, parentOrigi
   return url.href;
 }
 
+export function previewSourceUrl(previewOrigin: string, source: string): string {
+  return new URL(source, previewOrigin).href;
+}
+
 function createBridgeFrame(input: {
   container: HTMLDivElement;
   previewOrigin: string;
@@ -147,6 +151,7 @@ function createBridgeFrame(input: {
     frame,
     send(command) {
       const requestId = `preview-${++sequence}`;
+      if (command.type === "load") frame.dataset.previewLoaded = "true";
       post({
         channel: PREVIEW_BRIDGE_CHANNEL,
         version: PREVIEW_BRIDGE_VERSION,
@@ -292,7 +297,7 @@ export function createHyperframesPlayerEnvironment(input: {
         notify(engine);
       });
       bridges.set(engine, bridge);
-      bridge.send({ type: "load", url: new URL(url, window.location.href).href });
+      bridge.send({ type: "load", url: previewSourceUrl(input.previewOrigin, url) });
 
       if (!spare) spare = freshBridge();
       return engine;
@@ -313,6 +318,10 @@ export function createHyperframesPlayerEnvironment(input: {
       bridge?.dispose();
       bridges.delete(engine);
       if (visible === engine) visible = null;
+    },
+    disposeIdle() {
+      spare?.dispose();
+      spare = null;
     },
   };
 }

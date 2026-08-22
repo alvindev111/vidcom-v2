@@ -307,7 +307,7 @@ export function buildNarrationHtml(
     // shorter than its scene must stop when it stops, and one that overruns is
     // a timing problem the author needs to see rather than have trimmed away.
     const duration = clip.durationSeconds === null ? "" : ` data-duration="${clip.durationSeconds}"`;
-    return `<audio class="clip hf-narration" data-narration-scene="${htmlAttribute(clip.sceneId)}"`
+    return `<audio class="clip hf-narration" preload="none" data-narration-scene="${htmlAttribute(clip.sceneId)}"`
       + ` src="${source}" data-start="${clip.startSeconds}"${duration}></audio>`;
   }).join("");
 }
@@ -316,5 +316,5 @@ export function buildBgmHtml(settings: RenderablePreviewSettings, fileBaseUrl: s
   const { bgm } = settings;
   if (!bgm.enabled || !bgm.track) return "";
   const source = htmlAttribute(`${fileBaseUrl}${encodedProjectPath(bgm.track.path)}`);
-  return `<audio id="hf-preview-bgm" class="clip" src="${source}" data-start="0" data-volume="${bgm.volume}"${bgm.loop ? " loop" : ""}></audio>`;
+  return `<audio id="hf-preview-bgm" class="clip" preload="none" src="${source}" data-start="0" data-volume="${bgm.volume}"${bgm.loop ? " loop" : ""}></audio>`;
 }
