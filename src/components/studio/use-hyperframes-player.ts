@@ -21,6 +21,7 @@ export interface PlayerControls {
   hitTest: (xRatio: number, yRatio: number) => Promise<PreviewArrangeTarget | null>;
   previewOffset: (sceneId: string, hfId: string, offsetX: number, offsetY: number) => void;
   resetOffset: (sceneId: string, hfId: string) => void;
+  confirmVisibleChange: (changeSeq: number) => void;
 }
 
 export interface PlayerState {
@@ -216,6 +217,16 @@ export function useHyperframesPlayer(projectId: string, previewUrl: string) {
         hostRef.current?.currentEngine()?.previewOffset(sceneId, hfId, offsetX, offsetY),
       resetOffset: (sceneId: string, hfId: string) =>
         hostRef.current?.currentEngine()?.resetOffset(sceneId, hfId),
+      confirmVisibleChange: (changeSeq: number) => {
+        if (!Number.isSafeInteger(changeSeq) || changeSeq < 0 || !hostRef.current) return;
+        visibleChangeSeqRef.current = Math.max(visibleChangeSeqRef.current, changeSeq);
+        desiredChangeSeqRef.current = Math.max(desiredChangeSeqRef.current, changeSeq);
+        if (containerRef.current) {
+          containerRef.current.dataset.previewChangeSeq = String(visibleChangeSeqRef.current);
+          delete containerRef.current.dataset.previewError;
+          delete containerRef.current.dataset.previewHealth;
+        }
+      },
     }),
     [timeStore],
   );

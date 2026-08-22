@@ -3885,6 +3885,26 @@
       <section class="mt-8 rounded-2xl border border-rose-500/30 bg-slate-900/80 p-6 shadow-xl">
         <article class="space-y-4">
           <div class="flex flex-wrap items-center justify-between gap-3">
+            <h2 class="text-xl font-semibold text-rose-200">2026-08-22 — Arrange vượt 11 ms và được đưa ra khỏi critical path reload</h2>
+            <span class="rounded-full bg-amber-400/10 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-amber-300">Sửa local pass; chờ SHA mới</span>
+          </div>
+          <p class="text-slate-300">
+            CI <code>32545245318</code> trên <code>336a2d6c0dc6d5658fd717fd58c03d218ea48258</code>
+            đỏ nested Browser Linux vì Arrange đạt 511 ms, vượt hard budget 500 ms đúng 11 ms. Các job còn lại
+            được cancel vì run đã đỏ; workflow kế tiếp không được dispatch.
+          </p>
+          <p class="text-slate-400 text-sm">
+            Instrumentation tách được PUT chỉ 54–67 ms, còn chờ fresh engine 217–426 ms; năm tổng local trước
+            sửa đã sát ngưỡng 279/470/483/488/489 ms. Frame drag vốn đã vẽ đúng exact offset. Sau response thành
+            công, app khởi động reload source-backed như cũ rồi promote frame hiện tại tới durable change-seq;
+            failure không promote và vẫn reset. Focused 5/5 còn 64–75 ms; full browser 27/27, Arrange 68 ms,
+            bốn R4.1c 215/188/219/191 ms. Threshold 500 ms và health quiet window không đổi.
+          </p>
+        </article>
+      </section>
+      <section class="mt-8 rounded-2xl border border-rose-500/30 bg-slate-900/80 p-6 shadow-xl">
+        <article class="space-y-4">
+          <div class="flex flex-wrap items-center justify-between gap-3">
             <h2 class="text-xl font-semibold text-rose-200">2026-08-22 — Browser Windows giữ đúng ngưỡng R4.1c</h2>
             <span class="rounded-full bg-amber-400/10 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-amber-300">Sửa latency, không nới gate</span>
           </div>

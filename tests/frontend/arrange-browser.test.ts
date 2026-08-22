@@ -59,10 +59,13 @@ describe("direct preview arrangement", () => {
       });
       const payload = await saved.json() as { changeSeq: number; error?: unknown };
       if (!saved.ok()) throw new Error(`position mutation failed (${saved.status()}): ${JSON.stringify(payload)}`);
+      const savedAt = Date.now();
       await page.waitForFunction((seq) => Number(
         (document.querySelector("[data-preview-change-seq]") as HTMLElement | null)?.dataset.previewChangeSeq,
       ) >= seq, { timeout: 20_000, polling: 16 }, payload.changeSeq);
-      expect(Date.now() - releasedAt).toBeLessThan(500);
+      const paintedAt = Date.now();
+      process.stdout.write(`Arrange pointerup→response=${savedAt - releasedAt} ms; response→paint=${paintedAt - savedAt} ms; total=${paintedAt - releasedAt} ms\n`);
+      expect(paintedAt - releasedAt).toBeLessThan(500);
       expect(mutations).toBe(1);
       const written = await readFile(scenePath, "utf8");
       expect(written).toContain("data-vidcom-layout-offset");

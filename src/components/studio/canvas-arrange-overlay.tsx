@@ -164,7 +164,12 @@ export function CanvasArrangeOverlay({
       setSelection(next);
       paint(null);
       if (statusRef.current) statusRef.current.textContent = `Saved x ${Math.round(plan.offsetX)} · y ${Math.round(plan.offsetY)}`;
-      onProjectChanged(mutationChangeSeq(payload));
+      const changeSeq = mutationChangeSeq(payload);
+      // The current engine already painted this exact offset during the drag.
+      // Once the authoritative write confirms it, promote that visible frame
+      // immediately while the normal source-backed engine reload continues.
+      onProjectChanged(changeSeq);
+      if (changeSeq !== null) controls.confirmVisibleChange(changeSeq);
     } catch (cause) {
       setProblem(cause instanceof Error ? cause.message : "position save failed");
     } finally {
