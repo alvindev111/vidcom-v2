@@ -3885,6 +3885,28 @@
       <section class="mt-8 rounded-2xl border border-rose-500/30 bg-slate-900/80 p-6 shadow-xl">
         <article class="space-y-4">
           <div class="flex flex-wrap items-center justify-between gap-3">
+            <h2 class="text-xl font-semibold text-rose-200">2026-08-22 — Browser Windows giữ đúng ngưỡng R4.1c</h2>
+            <span class="rounded-full bg-amber-400/10 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-amber-300">Sửa latency, không nới gate</span>
+          </div>
+          <p class="text-slate-300">
+            CI <code>32542780582</code> trên <code>47c31c14c9d8bf036cf26e6462f7753d2715569f</code>
+            đã xanh toàn bộ và ba artifact exact-source đều strict. Standalone Browser <code>32544686811</code>
+            xanh Linux; Windows chứng minh thumbnail held-response đã PASS nhưng đo external index write 636 ms,
+            vượt hard budget 500 ms, nên chuỗi dừng trước Packaged smoke.
+          </p>
+          <p class="text-slate-400 text-sm">
+            Preview của external write trước đây đợi cùng debounce 75 ms với snapshot source/tree, rồi hai việc
+            nặng khởi động cạnh nhau. Luồng mới cập nhật external change sequence ngay khi SSE event được nhận để
+            double-buffer bắt đầu tải frame lập tức; snapshot UI vẫn debounce/coalesce 75 ms. Quiet-health 150 ms,
+            threshold 500 ms và latest-wins semantics đều giữ nguyên. Focused external-write gate PASS ba lượt
+            ở 221/218, 219/190 và 228/190 ms; full browser 27/27 với bốn số đo 216/216/218/220 ms.
+            Unit contract 10/10, build, typecheck, lint, boundaries và spec-paths đều PASS trước commit mới.
+          </p>
+        </article>
+      </section>
+      <section class="mt-8 rounded-2xl border border-rose-500/30 bg-slate-900/80 p-6 shadow-xl">
+        <article class="space-y-4">
+          <div class="flex flex-wrap items-center justify-between gap-3">
             <h2 class="text-xl font-semibold text-rose-200">2026-08-22 — Standalone Browser Windows tìm thấy khe revalidation thứ hai</h2>
             <span class="rounded-full bg-amber-400/10 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-amber-300">Sửa local pass; chờ SHA mới</span>
           </div>

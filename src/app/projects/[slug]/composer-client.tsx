@@ -142,7 +142,6 @@ function MountedStudio({
     if (!attached) return;
     const controller = new AbortController();
     let queued: ReturnType<typeof setTimeout> | null = null;
-    let queuedChangeSeq: number | null = null;
     // The snapshot already represents all events through this cursor. Starting
     // at zero would replay stale writes and can falsely conflict with typing in
     // a freshly loaded editor.
@@ -161,19 +160,18 @@ function MountedStudio({
         const touched = studioEventPaths(event, projectId);
         if (touched) setSourceEvent((current) => current && current.seq >= touched.seq ? current : touched);
       }
-      queuedChangeSeq = latestStudioChangeSeq(queuedChangeSeq, event, projectId);
       // The newest durable event this tab has actually received, stamped where
       // it can be observed: it is the start of the "outside write to visible
       // frame" window the budget is measured over.
       const received = studioEventChangeSeq(event, projectId);
-      if (received !== null) document.documentElement.dataset.studioEventSeq = String(received);
+      if (received !== null) {
+        document.documentElement.dataset.studioEventSeq = String(received);
+        // Preview reload is the latency-sensitive path. Start it from the event
+        // itself; the heavier source/tree snapshot remains debounced below.
+        setExternalChangeSeq((current) => latestStudioChangeSeq(current, event, projectId));
+      }
       if (queued) clearTimeout(queued);
       queued = setTimeout(() => {
-        if (queuedChangeSeq !== null) {
-          const latest = queuedChangeSeq;
-          queuedChangeSeq = null;
-          setExternalChangeSeq((current) => current === null ? latest : Math.max(current, latest));
-        }
         setEventRevision((current) => current + 1);
         void loadSnapshot().catch(() => undefined);
       }, 75);

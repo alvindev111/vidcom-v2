@@ -53,7 +53,8 @@ describe("preview reload contract", () => {
       new URL("../../src/app/projects/[slug]/composer-client.tsx", import.meta.url),
       "utf8",
     );
-    expect(composer).toContain("latestStudioChangeSeq(queuedChangeSeq, event, projectId)");
+    expect(composer).toContain("setExternalChangeSeq((current) => latestStudioChangeSeq(current, event, projectId))");
+    expect(composer).not.toContain("queuedChangeSeq");
     expect(composer).toContain("externalChangeSeq={externalChangeSeq}");
     expect(shell).toContain("previewReloadRequest(previewUrl, externalChangeSeq)");
   });
