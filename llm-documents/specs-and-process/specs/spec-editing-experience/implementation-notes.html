@@ -3948,6 +3948,35 @@
           </p>
         </article>
       </section>
+      <section class="mt-8 rounded-2xl border border-emerald-500/30 bg-slate-900/80 p-6 shadow-xl">
+        <article class="space-y-4">
+          <div class="flex flex-wrap items-center justify-between gap-3">
+            <h2 class="text-xl font-semibold text-cyan-200">2026-08-22 — Năm workflow exact-source xanh hoàn toàn</h2>
+            <span class="rounded-full bg-emerald-400/10 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-emerald-300">Pass Actions; chờ human review</span>
+          </div>
+          <p class="text-slate-300">
+            Source cuối <code>1342d7556379e1ec35c2d8f7439737df6c22700f</code> đã qua CI chính
+            <code>32545697518</code>, Browser session <code>32546984076</code>, Packaged smoke
+            <code>32547364826</code>, Process supervision <code>32549386104</code> và VieNeu real engine
+            <code>32549616087</code>. Tất cả required job đều success; không có <code>[!]</code> hay kết quả
+            cũ được dùng thay thế.
+          </p>
+          <p class="text-slate-400 text-sm">
+            Browser Linux/Windows đều 27/27; Arrange đạt 68/149 ms và tám phép đo R4.1c nằm trong 209–260 ms.
+            Storyboard 100 scene giữ requested 20, maxActive 10, aborted 10, topWindow 10. Ba packaged artifact
+            đều strict, không required failure, MCP 43/43, VieNeu WAV, MP4 H.264/AAC, title-card chạy offline
+            qua hai boot và provenance đúng commit. Process gate qua ba OS cùng Windows real render; exhaustive
+            kill proof không còn survivor.
+          </p>
+          <p class="text-slate-400 text-sm">
+            Artifact VieNeu thật là PCM s16le mono 44,1 kHz, dài 3,621769 giây, SHA-256
+            <code>c98000c07f42bfd37b36c1be9ca2a5648f7f3d73cd7d90044327a2f598c14a39</code>. Browser và Process
+            không khai báo artifact nên <code>gh run download</code> trả <code>no valid artifacts found</code>;
+            URL/log exact-source là authority của hai workflow này. P25.1 và P25.2 được đóng; P25.4 vẫn chờ
+            người dùng duyệt revision 6 trước khi ghi <code>human_reviewed</code> và render MP4.
+          </p>
+        </article>
+      </section>
     </main>
   </body>
 </html>

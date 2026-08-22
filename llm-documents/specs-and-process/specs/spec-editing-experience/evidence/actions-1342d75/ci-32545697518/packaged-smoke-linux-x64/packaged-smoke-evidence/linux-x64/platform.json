@@ -1,0 +1,23 @@
+{
+  "version": 1,
+  "tag": "linux-x64",
+  "os": "linux",
+  "architecture": "x64",
+  "node": "v24.9.0",
+  "runnerOs": "Linux",
+  "runnerArchitecture": "X64",
+  "artifact": {
+    "identity": {
+      "vidcom": "0.1.0",
+      "hyperframes": "0.7.86",
+      "buildCommit": null,
+      "platform": "linux-x64",
+      "runtimeManifest": "0.1.0-1342d7556379e1ec35c2d8f7439737df6c22700f"
+    },
+    "manifest": {
+      "platform": "linux-x64",
+      "commit": "1342d7556379e1ec35c2d8f7439737df6c22700f",
+      "runtimeManifest": "0.1.0-1342d7556379e1ec35c2d8f7439737df6c22700f"
+    }
+  }
+}

@@ -1,0 +1,366 @@
+{
+  "version": 1,
+  "platform": "darwin-arm64",
+  "strict": true,
+  "measurements": {
+    "doctor": {
+      "coldMs": 15879,
+      "warmMs": 5302
+    },
+    "startup": {
+      "runner": "darwin-arm64",
+      "coldServe": 3643,
+      "warmServe": 3637,
+      "baselinePresent": true,
+      "evaluation": [
+        {
+          "name": "coldServe",
+          "status": "ok",
+          "value": 3643,
+          "limit": 29105
+        },
+        {
+          "name": "warmServe",
+          "status": "ok",
+          "value": 3637,
+          "limit": 7918
+        }
+      ]
+    },
+    "startupTrace": {
+      "cold": [
+        {
+          "scope": "hosted-runtime",
+          "phases": {
+            "settings-read": 1,
+            "settings-ensure": 23,
+            "runtime-prepare": 1426,
+            "workspace-select": 0,
+            "foundation:migration": 0,
+            "foundation:lease": 2,
+            "foundation:reconciliation": 1,
+            "foundation:job-recovery": 2,
+            "foundation:identity-backfill": 0,
+            "foundation:scheduler": 0,
+            "foundation:watcher": 0,
+            "foundation:listener": 0,
+            "foundation-total": 11,
+            "agent-mcp": 2,
+            "server-apps": 3
+          }
+        },
+        {
+          "scope": "serve",
+          "phases": {
+            "port": 5,
+            "hosted-runtime": 1466,
+            "static-assets": 0,
+            "listener": 3,
+            "discovery": 2
+          }
+        }
+      ],
+      "warm": [
+        {
+          "scope": "hosted-runtime",
+          "phases": {
+            "settings-read": 6,
+            "settings-ensure": 0,
+            "runtime-prepare": 1717,
+            "workspace-select": 1,
+            "foundation:migration": 0,
+            "foundation:lease": 1,
+            "foundation:reconciliation": 2,
+            "foundation:job-recovery": 1,
+            "foundation:identity-backfill": 0,
+            "foundation:scheduler": 0,
+            "foundation:watcher": 1,
+            "foundation:listener": 0,
+            "foundation-total": 11,
+            "agent-mcp": 2,
+            "server-apps": 2
+          }
+        },
+        {
+          "scope": "serve",
+          "phases": {
+            "port": 5,
+            "hosted-runtime": 1740,
+            "static-assets": 1,
+            "listener": 2,
+            "discovery": 2
+          }
+        }
+      ]
+    },
+    "ffprobe": {
+      "online": {
+        "programs": [],
+        "streams": [
+          {
+            "codec_name": "h264",
+            "codec_type": "video"
+          },
+          {
+            "codec_name": "aac",
+            "codec_type": "audio"
+          }
+        ],
+        "format": {
+          "duration": "8.000000"
+        }
+      },
+      "offline": {
+        "programs": [],
+        "streams": [
+          {
+            "codec_name": "h264",
+            "codec_type": "video"
+          },
+          {
+            "codec_name": "aac",
+            "codec_type": "audio"
+          }
+        ],
+        "format": {
+          "duration": "8.000000"
+        }
+      }
+    },
+    "tts": {
+      "online": {
+        "providerId": "vieneu",
+        "voiceId": "vieneu-v3-minh-duc",
+        "platform": "darwin-arm64",
+        "assets": [
+          {
+            "sceneId": "scene-1",
+            "path": "narration/scene-1.wav",
+            "durationSeconds": 1.596
+          }
+        ]
+      },
+      "offline": {
+        "providerId": "vieneu",
+        "voiceId": "vieneu-v3-minh-duc",
+        "platform": "darwin-arm64",
+        "assets": [
+          {
+            "sceneId": "scene-1",
+            "path": "narration/scene-1.wav",
+            "durationSeconds": 1.596
+          }
+        ]
+      }
+    },
+    "postMediaDoctor": {
+      "version": 1,
+      "platform": "darwin-arm64",
+      "items": [
+        {
+          "id": "app-data.writable",
+          "status": "ok"
+        },
+        {
+          "id": "db.migration",
+          "status": "ok"
+        },
+        {
+          "id": "runtime.manifest",
+          "status": "ok"
+        },
+        {
+          "id": "runtime.integrity",
+          "status": "ok",
+          "detail": "verified 8074 files across 3 runtime archives"
+        },
+        {
+          "id": "runtime.ffmpeg",
+          "status": "ok",
+          "detail": "ffmpeg version 6.0 Copyright (c) 2000-2023 the FFmpeg developers"
+        },
+        {
+          "id": "runtime.esbuild-binary",
+          "status": "ok"
+        },
+        {
+          "id": "compiler.probe",
+          "status": "ok",
+          "detail": "compiler transform completed"
+        },
+        {
+          "id": "runtime.hyperframes",
+          "status": "ok"
+        },
+        {
+          "id": "runtime.motion",
+          "status": "ok"
+        },
+        {
+          "id": "runtime.bgm",
+          "status": "ok"
+        },
+        {
+          "id": "runtime.python",
+          "status": "ok",
+          "detail": "55"
+        },
+        {
+          "id": "runtime.python-utf8",
+          "status": "ok"
+        },
+        {
+          "id": "chrome.cache",
+          "status": "ok",
+          "detail": "Google Chrome for Testing 152.0.7928.2"
+        },
+        {
+          "id": "tts.model-cache",
+          "status": "ok"
+        },
+        {
+          "id": "workspace.active",
+          "status": "missing",
+          "detail": "no workspace has been chosen yet",
+          "remedy": "exercise this component once, or run without VIDCOM_DOCTOR_STRICT to see it as pending"
+        },
+        {
+          "id": "port.available",
+          "status": "ok"
+        },
+        {
+          "id": "settings.file",
+          "status": "ok"
+        },
+        {
+          "id": "tts.elevenlabs",
+          "status": "missing",
+          "detail": "no key configured",
+          "remedy": "add an ElevenLabs API key in the settings file to use that voice provider"
+        }
+      ]
+    },
+    "renderCancellation": {
+      "jobId": "job_b8274e11-f58b-45db-8f40-03386360541f",
+      "proof": {
+        "reason": "abort",
+        "rootPid": 33407,
+        "capturedPids": [
+          33407
+        ],
+        "capturedGroups": [
+          33407
+        ],
+        "survivors": [],
+        "sweeps": 2,
+        "exhaustive": true
+      }
+    },
+    "leaseLoss": {
+      "ui": "no-workspace",
+      "headless": "non-zero-exit"
+    }
+  },
+  "steps": [
+    {
+      "id": "build",
+      "required": true,
+      "status": "passed",
+      "durationMs": 484,
+      "detail": "artifact provenance verified at darwin-arm64"
+    },
+    {
+      "id": "clean-environment",
+      "required": true,
+      "status": "passed",
+      "durationMs": 10,
+      "detail": "no node, python or bun on PATH; working directory empty"
+    },
+    {
+      "id": "restore-caches",
+      "required": true,
+      "status": "passed",
+      "durationMs": 1,
+      "detail": "cache restore: HOME 1, browser 3, models 2; app-data/runtime empty"
+    },
+    {
+      "id": "identify",
+      "required": true,
+      "status": "passed",
+      "durationMs": 42539,
+      "detail": "version 0.1.0/0.1.0-1342d7556379e1ec35c2d8f7439737df6c22700f; doctor 15879/5302ms; serve 3643/3637ms"
+    },
+    {
+      "id": "ui-lifecycle",
+      "required": true,
+      "status": "passed",
+      "durationMs": 3735,
+      "detail": "served on http://127.0.0.1:49489; nonce exchanged and a project created"
+    },
+    {
+      "id": "import",
+      "required": true,
+      "status": "passed",
+      "durationMs": 3978,
+      "detail": "imported a fixture from outside the workspace as job job_9f8e52e7-9d3c-47d8-ac03-fe4476a98fbb"
+    },
+    {
+      "id": "bridge",
+      "required": true,
+      "status": "passed",
+      "durationMs": 16553,
+      "detail": "bridge read/write and packaged MCP stdio 43/43 tools ran beside one UI lease; state and credential survived restart; stale handshake rejected"
+    },
+    {
+      "id": "render-media",
+      "required": true,
+      "status": "passed",
+      "durationMs": 57478,
+      "detail": "VieNeu 1 WAV; snapshot succeeded; MP4 8.000000s with video and audio"
+    },
+    {
+      "id": "upload-and-progress",
+      "required": true,
+      "status": "passed",
+      "durationMs": 4343,
+      "detail": "20 MB accepted (400), 21 MB refused with 413, event stream unbuffered"
+    },
+    {
+      "id": "render-cli",
+      "required": true,
+      "status": "passed",
+      "durationMs": 39976,
+      "detail": "render wait succeeded; detach returned job_b8274e11-f58b-45db-8f40-03386360541f; mid-render cancel recorded exhaustive zero-survivor proof"
+    },
+    {
+      "id": "offline",
+      "required": true,
+      "status": "passed",
+      "durationMs": 32159,
+      "detail": "two IPv4 and two IPv6 runner reject routes, loopback preserved; warm VieNeu and MP4 render succeeded offline (8.000000s)"
+    },
+    {
+      "id": "lease-loss",
+      "required": true,
+      "status": "passed",
+      "durationMs": 32267,
+      "detail": "UI kept listener with bridge inaccessible and winner wrote; headless withdrew discovery and exited non-zero"
+    },
+    {
+      "id": "editing-experience-runtime",
+      "required": true,
+      "status": "passed",
+      "durationMs": 7880,
+      "detail": "two IPv4 and two IPv6 runner reject routes, loopback preserved; first bundled 1; second bundled 1; title-card@1.0.0:706656513781b9175f3bb4a9a88c5dcbad3297b1bb711e43beda6e4b28ddb7ce; scene scene-1; installed templates/title-card/scene.html across two boots offline"
+    },
+    {
+      "id": "provenance",
+      "required": true,
+      "status": "passed",
+      "durationMs": 640,
+      "detail": "only SHA256SUMS, artifact-manifest.json, vidcom beside the artifact; commit 1342d75"
+    }
+  ],
+  "cacheWriteBack": [],
+  "evidenceError": null
+}

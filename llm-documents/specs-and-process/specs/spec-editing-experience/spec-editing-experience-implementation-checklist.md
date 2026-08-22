@@ -2111,14 +2111,14 @@ video; use `media-use` for every Internet image/audio asset
 Execution Log entries; active Odyssey project context/revision/assets; video approval rules
 
 **Tasks**:
-- [/] 25.1 Freeze exact source and run full local regression
+- [x] 25.1 Freeze exact source and run full local regression
   - Record HEAD plus staged/unstaged/untracked/deleted/symlink digest. Run focused P19–P24 rows,
     typecheck, lint, boundaries, full test with FFmpeg required, mcp-contract, golden, schema-drift,
     spec-paths, build and runtime-smoke.
   - Local missing Chrome/FFmpeg/artifact is not a waiver; continue to exact-source Actions. Any red
     caused by the source is repaired, fully rerun and logged before 25.2.
   - _Requirements: R16–R20_ — _Design: §33.1_
-- [ ] 25.2 Dispatch, watch and download the five authoritative workflows
+- [x] 25.2 Dispatch, watch and download the five authoritative workflows
   - Load `.env` without printing it; map shell-local `GH_KEY` → `GH_TOKEN`; never persist token in
     command output, notes or artifacts. Use `gh workflow run "<name>" --ref <branch>`,
     `gh run watch`, then `gh run download` for each run.
@@ -2161,6 +2161,33 @@ Execution Log entries; active Odyssey project context/revision/assets; video app
       `evidence/actions-345b014/ci-retry-32518420665`: strict packaged evidence cả ba OS không có required
       failure, packaged MCP 43/43, bundled `title-card@1.0.0`, network-cut install hai boot và provenance
       commit `345b014` đều PASS. P25.3 được mở sau verdict này.
+  - Final exact-source verdict (SHA `1342d7556379e1ec35c2d8f7439737df6c22700f`):
+    - `CI` run [32545697518](https://github.com/alvindev111/vidcom-v2/actions/runs/32545697518):
+      overall `success`; main Linux x64, macOS arm64, Windows x64; nested Browser Linux/Windows;
+      nested packaged-smoke Linux/macOS/Windows; CodeQL, secret scan, license/provenance và OSV đều
+      `success`; Dependency review `skipped` đúng điều kiện dispatch. Ba artifact đã tải về tại
+      `evidence/actions-1342d75/ci-32545697518`; inspection cho thấy `strict=true`, không evidence error
+      hay required failure, MCP 43/43, VieNeu WAV, MP4 H.264/AAC 8 giây, title-card offline hai boot và
+      provenance commit `1342d75` đều PASS.
+    - `Browser session` run [32546984076](https://github.com/alvindev111/vidcom-v2/actions/runs/32546984076):
+      Linux x64 `success`, Windows x64 `success`; mỗi OS 27/27 browser và 1/1 accessibility. Storyboard
+      100 scene đều requested 20, maxActive 10, aborted 10, topWindow 10. R4.1c Linux
+      244/210/229/209 ms, Windows 260/242/257/228 ms; Arrange pointerup→confirmed-frame Linux 68 ms,
+      Windows 149 ms. `gh run download` trả `no valid artifacts found` vì workflow không publish artifact;
+      URL/log là evidence authority.
+    - `Packaged smoke` run [32547364826](https://github.com/alvindev111/vidcom-v2/actions/runs/32547364826):
+      Linux x64, macOS arm64 và Windows x64 đều `success`. Artifact tải về tại
+      `evidence/actions-1342d75/packaged-smoke-32547364826`; cả ba `strict=true`, không required failure,
+      có MCP 43/43, VieNeu WAV, MP4 video+audio, title-card offline hai boot và exact provenance.
+    - `Process supervision gate` run [32549386104](https://github.com/alvindev111/vidcom-v2/actions/runs/32549386104):
+      Linux x64, macOS arm64, Windows x64 và Real render — Windows x64 đều `success`; exhaustive kill
+      proof không survivor. `gh run download` trả `no valid artifacts found` vì workflow không publish
+      artifact; URL/log là evidence authority.
+    - `VieNeu real engine` run [32549616087](https://github.com/alvindev111/vidcom-v2/actions/runs/32549616087):
+      Linux x64 CPU `success`; artifact tại
+      `evidence/actions-1342d75/vieneu-real-32549616087/vieneu-narration/intro.wav`. Inspection: PCM s16le
+      mono 44.1 kHz, 3.621769 s, SHA-256
+      `c98000c07f42bfd37b36c1be9ca2a5648f7f3d73cd7d90044327a2f598c14a39`.
 - [x] 25.3 Re-author the Odyssey project through VidCom/Editor authority
   - Use the existing project ID and preserve licensed/provenanced assets. Replace 15 s static beats
     with 18 distinct 6–10 s scenes across ~2–3 minutes; narration covers ≥75% and uses real VieNeu.
@@ -2169,7 +2196,7 @@ Execution Log entries; active Odyssey project context/revision/assets; video app
     single-writer paths with current preconditions; no host-side direct project-file edits.
   - Validate after each slice; any story-motion/audio/font/media error blocks snapshot/render.
   - _Requirements: R20.1–R20.9_ — _Design: §30, §33.1_
-- [ ] 25.4 Capture real UX and visual-story evidence
+- [/] 25.4 Capture real UX and visual-story evidence
   - Capture screenshots showing: Storyboard with real thumbnails; Arrange selection/drag guides and
     subtitle movement; audible Preview state; renamed inspector with guide; opening/middle/payoff
     frames/contact sheet proving visual diversity and cross-scene handoffs.
@@ -2190,9 +2217,9 @@ Execution Log entries; active Odyssey project context/revision/assets; video app
   - _Requirements: process closeout_ — _Design: §33.3–§34_
 
 **Acceptance Criteria**:
-- [ ] Five required workflows are green on one exact source identity with artifacts inspected
-- [ ] Linux/Windows browser evidence proves thumbnails, Arrange <500 ms, audible media and inspector UX
-- [ ] Corrected Odyssey has 18 scenes at 6–10 s, narration coverage ≥75%, diverse motion/seams and real images
+- [x] Five required workflows are green on one exact source identity with artifacts inspected
+- [x] Linux/Windows browser evidence proves thumbnails, Arrange <500 ms, audible media and inspector UX
+- [x] Corrected Odyssey has 18 scenes at 6–10 s, narration coverage ≥75%, diverse motion/seams and real images
 - [ ] Exact human-reviewed MP4 passes ffprobe/frame/audio inspection and is delivered with screenshots
 - [ ] Spec returns to `complete` only after SM/PO/Dev council PASS
 
@@ -2708,6 +2735,7 @@ caption · D7 tool MCP undo/redo · **D8 PR-11 hot-reload từng sub-composition
 | 2026-08-22 08:10 +07 | 25.2 exact-source CI + Browser session repair 2 | Exact pushed source `b5255b2a9fc2e0aa202dc73cedf3a7c2663366b6`; [`CI` run 32540503154](https://github.com/alvindev111/vidcom-v2/actions/runs/32540503154); [`Browser session` run 32542003917](https://github.com/alvindev111/vidcom-v2/actions/runs/32542003917) | `CI` is fully green: main Linux/macOS/Windows, nested Browser Linux/Windows, nested packaged-smoke Linux/macOS/Windows and required security jobs all `success`; dependency review is conditionally `skipped`. Downloaded packaged artifacts under `evidence/actions-b5255b2/ci-32540503154`; all three report `strict=true`, no evidence error/required failure, 43/43 packaged MCP, VieNeu WAV, H.264/AAC MP4 and offline bundled `title-card@1.0.0` across two boots. The standalone Browser run then exposed a narrower Windows-only timeout after reorder while Linux passed. Inspector actions, audio and the other 26/27 Windows cases passed; R4.1c was 263/248/359/342 ms. A deterministic regression now holds the post-reorder response: old behavior is RED with `loading`, while the scene-identity last-ready cache stays visible across remount/revision and still revalidates. Focused held-response case PASS 3/3; full browser PASS 12 files/27 tests with R4.1c 214/190/296/305 ms; typecheck, lint (0 errors/5 baseline warnings), boundaries, spec paths 172/5 and build PASS | `CI PASS; BROWSER SESSION RED; REPAIR PASS LOCAL` | The standalone red remains authoritative and blocks Packaged smoke/Process/VieNeu dispatch. The new test proves continuity while the new response is deliberately unresolved, rather than relying on a fast runner | Commit and push the narrow repair, then restart all five workflows from `CI` on the new SHA |
 | 2026-08-22 09:05 +07 | 25.2 exact-source CI pass + Browser R4.1c repair | Exact pushed source `47c31c14c9d8bf036cf26e6462f7753d2715569f`; [`CI` run 32542780582](https://github.com/alvindev111/vidcom-v2/actions/runs/32542780582); [`Browser session` run 32544686811](https://github.com/alvindev111/vidcom-v2/actions/runs/32544686811) | CI is fully `success`: main Linux/macOS/Windows, nested Browser Linux/Windows, packaged Linux/macOS/Windows and security. Three downloaded artifacts at `evidence/actions-47c31c1/ci-32542780582` are strict with no required failure, exact provenance, MCP 43/43, VieNeu WAV, MP4 video+audio and two-boot offline title-card install. Standalone Browser then passed Linux; Windows passed the held-response thumbnail regression plus inspector/audio and 26/27 total, but external `index.html` event→frame measured 636 ms against the fixed 500 ms gate (other completed values 270/281 ms). The prior 75 ms event debounce delayed preview reload and launched it beside the heavier snapshot parse. Repair starts the latest-wins preview reload immediately from the durable event while retaining debounced/coalesced source snapshot refresh and the unchanged 150 ms health quiet window. Focused external-write gate PASS 3/3 at 221/218, 219/190 and 228/190 ms; full browser PASS 12 files/27 tests at 216/216/218/220 ms; unit contract 10/10, typecheck, lint (0 errors/5 baseline warnings), boundaries, spec paths 172/5 and build PASS | `CI PASS; BROWSER SESSION RED; R4.1c REPAIR PASS LOCAL` | No threshold or retry changed; the failed 636 ms measurement remains recorded and later workflows stay blocked until a new exact SHA reruns green | Commit and push the repair, then restart all five workflows from CI |
 | 2026-08-22 09:17 +07 | 25.2 Arrange pointerup budget repair | Exact pushed source `336a2d6c0dc6d5658fd717fd58c03d218ea48258`; [`CI` run 32545245318](https://github.com/alvindev111/vidcom-v2/actions/runs/32545245318) | Nested Browser Linux passed thumbnail and all four external/source R4.1c measurements after the immediate-event repair, but Arrange measured 511 ms from pointerup to authoritative sequence, 11 ms over the fixed budget; remaining CI jobs were cancelled because the run was already red. Segment instrumentation showed the position PUT itself at 54–67 ms while response→fresh-engine paint consumed 217–426 ms and put five local totals at 279/470/483/488/489 ms. The dragged frame already contains the exact requested offset. After a successful authoritative response, UI now starts the normal source-backed reload and immediately promotes that already-painted frame to the returned durable change sequence; failures never promote and still reset. Focused Arrange PASS 5/5 at 71/75/70/64/64 ms; full browser PASS 27/27, Arrange 68 ms and R4.1c 215/188/219/191 ms; typecheck, build, lint (0 errors/5 baseline warnings), boundaries and spec paths 172/5 PASS | `CI RED/CANCELLED; REPAIR PASS LOCAL` | The 511 ms failure stays recorded. No budget/quiet window changed, and source-backed double-buffer reload still starts before the confirmed frame is promoted | Commit/push new SHA and restart all five workflows from CI |
+| 2026-08-22 10:42 +07 | 25.1–25.2 final exact-source Actions gate | Exact pushed SHA `1342d7556379e1ec35c2d8f7439737df6c22700f`; five workflow URLs; downloaded CI/Packaged/VieNeu evidence under `evidence/actions-1342d75` | [`CI` 32545697518](https://github.com/alvindev111/vidcom-v2/actions/runs/32545697518) success across main 3 OS, nested Browser 2 OS, packaged 3 OS and security. [`Browser` 32546984076](https://github.com/alvindev111/vidcom-v2/actions/runs/32546984076) success Linux/Windows: 27/27 each, Arrange 68/149 ms, R4.1c all 209–260 ms, bounded Storyboard 20/10/10/10. [`Packaged` 32547364826](https://github.com/alvindev111/vidcom-v2/actions/runs/32547364826) success 3 OS with strict artifacts, no required failure, MCP 43/43, real VieNeu, H.264/AAC render, offline title-card two boots and exact provenance. [`Process` 32549386104](https://github.com/alvindev111/vidcom-v2/actions/runs/32549386104) success 3 OS plus Windows real render, exhaustive zero-survivor proof. [`VieNeu` 32549616087](https://github.com/alvindev111/vidcom-v2/actions/runs/32549616087) success with PCM s16le mono 44.1 kHz 3.621769 s artifact, SHA-256 `c98000c07f42bfd37b36c1be9ca2a5648f7f3d73cd7d90044327a2f598c14a39` | `PASS` | Browser/Process workflows intentionally publish no artifact; `gh run download` returned `no valid artifacts found`, so their exact URL/log is retained. No required `[!]`. Historical red/cancelled runs remain above and are not relabelled | Present revision-6 screenshots/contact sheets for explicit human review; render only after approval |
 
 ## Final Authoring-Readiness Audit
 

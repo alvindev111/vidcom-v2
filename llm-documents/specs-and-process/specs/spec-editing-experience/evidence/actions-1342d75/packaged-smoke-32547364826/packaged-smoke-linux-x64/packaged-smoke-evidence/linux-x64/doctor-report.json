@@ -1,0 +1,87 @@
+{
+  "version": 1,
+  "platform": "linux-x64",
+  "items": [
+    {
+      "id": "app-data.writable",
+      "status": "ok"
+    },
+    {
+      "id": "db.migration",
+      "status": "ok"
+    },
+    {
+      "id": "runtime.manifest",
+      "status": "ok"
+    },
+    {
+      "id": "runtime.integrity",
+      "status": "ok",
+      "detail": "verified 10954 files across 3 runtime archives"
+    },
+    {
+      "id": "runtime.ffmpeg",
+      "status": "ok",
+      "detail": "ffmpeg version 7.0.2-static https://johnvansickle.com/ffmpeg/  Copyright (c) 2000-2024 the FFmpeg developers"
+    },
+    {
+      "id": "runtime.esbuild-binary",
+      "status": "ok"
+    },
+    {
+      "id": "compiler.probe",
+      "status": "ok",
+      "detail": "compiler transform completed"
+    },
+    {
+      "id": "runtime.hyperframes",
+      "status": "ok"
+    },
+    {
+      "id": "runtime.motion",
+      "status": "ok"
+    },
+    {
+      "id": "runtime.bgm",
+      "status": "ok"
+    },
+    {
+      "id": "runtime.python",
+      "status": "ok",
+      "detail": "55"
+    },
+    {
+      "id": "runtime.python-utf8",
+      "status": "ok"
+    },
+    {
+      "id": "chrome.cache",
+      "status": "ok",
+      "detail": "Google Chrome for Testing 152.0.7928.2"
+    },
+    {
+      "id": "tts.model-cache",
+      "status": "ok"
+    },
+    {
+      "id": "workspace.active",
+      "status": "missing",
+      "detail": "no workspace has been chosen yet",
+      "remedy": "exercise this component once, or run without VIDCOM_DOCTOR_STRICT to see it as pending"
+    },
+    {
+      "id": "port.available",
+      "status": "ok"
+    },
+    {
+      "id": "settings.file",
+      "status": "ok"
+    },
+    {
+      "id": "tts.elevenlabs",
+      "status": "missing",
+      "detail": "no key configured",
+      "remedy": "add an ElevenLabs API key in the settings file to use that voice provider"
+    }
+  ]
+}

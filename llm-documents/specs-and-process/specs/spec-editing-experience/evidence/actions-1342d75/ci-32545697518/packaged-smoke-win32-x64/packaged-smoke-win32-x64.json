@@ -1,0 +1,366 @@
+{
+  "version": 1,
+  "platform": "win32-x64",
+  "strict": true,
+  "measurements": {
+    "doctor": {
+      "coldMs": 130334,
+      "warmMs": 23352
+    },
+    "startup": {
+      "runner": "win32-x64",
+      "coldServe": 13667,
+      "warmServe": 14434,
+      "baselinePresent": true,
+      "evaluation": [
+        {
+          "name": "coldServe",
+          "status": "ok",
+          "value": 13667,
+          "limit": 18442.5
+        },
+        {
+          "name": "warmServe",
+          "status": "ok",
+          "value": 14434,
+          "limit": 18639
+        }
+      ]
+    },
+    "startupTrace": {
+      "cold": [
+        {
+          "scope": "hosted-runtime",
+          "phases": {
+            "settings-read": 2,
+            "settings-ensure": 49,
+            "runtime-prepare": 6075,
+            "workspace-select": 1,
+            "foundation:migration": 0,
+            "foundation:lease": 23,
+            "foundation:reconciliation": 6,
+            "foundation:job-recovery": 2,
+            "foundation:identity-backfill": 0,
+            "foundation:scheduler": 1,
+            "foundation:watcher": 0,
+            "foundation:listener": 0,
+            "foundation-total": 340,
+            "agent-mcp": 9,
+            "server-apps": 5
+          }
+        },
+        {
+          "scope": "serve",
+          "phases": {
+            "port": 11,
+            "hosted-runtime": 6482,
+            "static-assets": 0,
+            "listener": 4,
+            "discovery": 40
+          }
+        }
+      ],
+      "warm": [
+        {
+          "scope": "hosted-runtime",
+          "phases": {
+            "settings-read": 40,
+            "settings-ensure": 0,
+            "runtime-prepare": 7145,
+            "workspace-select": 2,
+            "foundation:migration": 0,
+            "foundation:lease": 27,
+            "foundation:reconciliation": 4,
+            "foundation:job-recovery": 2,
+            "foundation:identity-backfill": 0,
+            "foundation:scheduler": 1,
+            "foundation:watcher": 0,
+            "foundation:listener": 0,
+            "foundation-total": 403,
+            "agent-mcp": 8,
+            "server-apps": 5
+          }
+        },
+        {
+          "scope": "serve",
+          "phases": {
+            "port": 11,
+            "hosted-runtime": 7605,
+            "static-assets": 0,
+            "listener": 4,
+            "discovery": 52
+          }
+        }
+      ]
+    },
+    "ffprobe": {
+      "online": {
+        "programs": [],
+        "streams": [
+          {
+            "codec_name": "h264",
+            "codec_type": "video"
+          },
+          {
+            "codec_name": "aac",
+            "codec_type": "audio"
+          }
+        ],
+        "format": {
+          "duration": "8.000000"
+        }
+      },
+      "offline": {
+        "programs": [],
+        "streams": [
+          {
+            "codec_name": "h264",
+            "codec_type": "video"
+          },
+          {
+            "codec_name": "aac",
+            "codec_type": "audio"
+          }
+        ],
+        "format": {
+          "duration": "8.000000"
+        }
+      }
+    },
+    "tts": {
+      "online": {
+        "providerId": "vieneu",
+        "voiceId": "vieneu-v3-minh-duc",
+        "platform": "win32-x64",
+        "assets": [
+          {
+            "sceneId": "scene-1",
+            "path": "narration/scene-1.wav",
+            "durationSeconds": 1.726
+          }
+        ]
+      },
+      "offline": {
+        "providerId": "vieneu",
+        "voiceId": "vieneu-v3-minh-duc",
+        "platform": "win32-x64",
+        "assets": [
+          {
+            "sceneId": "scene-1",
+            "path": "narration/scene-1.wav",
+            "durationSeconds": 1.726
+          }
+        ]
+      }
+    },
+    "postMediaDoctor": {
+      "version": 1,
+      "platform": "win32-x64",
+      "items": [
+        {
+          "id": "app-data.writable",
+          "status": "ok"
+        },
+        {
+          "id": "db.migration",
+          "status": "ok"
+        },
+        {
+          "id": "runtime.manifest",
+          "status": "ok"
+        },
+        {
+          "id": "runtime.integrity",
+          "status": "ok",
+          "detail": "verified 10037 files across 3 runtime archives"
+        },
+        {
+          "id": "runtime.ffmpeg",
+          "status": "ok",
+          "detail": "ffmpeg version 6.1.1-essentials_build-www.gyan.dev Copyright (c) 2000-2023 the FFmpeg developers\r"
+        },
+        {
+          "id": "runtime.esbuild-binary",
+          "status": "ok"
+        },
+        {
+          "id": "compiler.probe",
+          "status": "ok",
+          "detail": "compiler transform completed"
+        },
+        {
+          "id": "runtime.hyperframes",
+          "status": "ok"
+        },
+        {
+          "id": "runtime.motion",
+          "status": "ok"
+        },
+        {
+          "id": "runtime.bgm",
+          "status": "ok"
+        },
+        {
+          "id": "runtime.python",
+          "status": "ok",
+          "detail": "57"
+        },
+        {
+          "id": "runtime.python-utf8",
+          "status": "ok"
+        },
+        {
+          "id": "chrome.cache",
+          "status": "ok",
+          "detail": "Google Chrome for Testing 152.0.7928.2"
+        },
+        {
+          "id": "tts.model-cache",
+          "status": "ok"
+        },
+        {
+          "id": "workspace.active",
+          "status": "missing",
+          "detail": "no workspace has been chosen yet",
+          "remedy": "exercise this component once, or run without VIDCOM_DOCTOR_STRICT to see it as pending"
+        },
+        {
+          "id": "port.available",
+          "status": "ok"
+        },
+        {
+          "id": "settings.file",
+          "status": "ok"
+        },
+        {
+          "id": "tts.elevenlabs",
+          "status": "missing",
+          "detail": "no key configured",
+          "remedy": "add an ElevenLabs API key in the settings file to use that voice provider"
+        }
+      ]
+    },
+    "renderCancellation": {
+      "jobId": "job_cc1010a1-127d-4c7d-ade4-e0c3e1cfb7b4",
+      "proof": {
+        "reason": "abort",
+        "rootPid": 2468,
+        "capturedPids": [
+          4092,
+          1868,
+          2468
+        ],
+        "capturedGroups": [],
+        "survivors": [],
+        "sweeps": 2,
+        "exhaustive": true
+      }
+    },
+    "leaseLoss": {
+      "ui": "no-workspace",
+      "headless": "non-zero-exit"
+    }
+  },
+  "steps": [
+    {
+      "id": "build",
+      "required": true,
+      "status": "passed",
+      "durationMs": 731,
+      "detail": "artifact provenance verified at win32-x64"
+    },
+    {
+      "id": "clean-environment",
+      "required": true,
+      "status": "passed",
+      "durationMs": 14,
+      "detail": "no node, python or bun on PATH; working directory empty"
+    },
+    {
+      "id": "restore-caches",
+      "required": true,
+      "status": "passed",
+      "durationMs": 1,
+      "detail": "cache restore: HOME 1, browser 4, models 2; app-data/runtime empty"
+    },
+    {
+      "id": "identify",
+      "required": true,
+      "status": "passed",
+      "durationMs": 290086,
+      "detail": "version 0.1.0/0.1.0-1342d7556379e1ec35c2d8f7439737df6c22700f; doctor 130334/23352ms; serve 13667/14434ms"
+    },
+    {
+      "id": "ui-lifecycle",
+      "required": true,
+      "status": "passed",
+      "durationMs": 17343,
+      "detail": "served on http://127.0.0.1:51226; nonce exchanged and a project created"
+    },
+    {
+      "id": "import",
+      "required": true,
+      "status": "passed",
+      "durationMs": 18543,
+      "detail": "imported a fixture from outside the workspace as job job_9c1fe906-0428-46ec-ab83-63503b298337"
+    },
+    {
+      "id": "bridge",
+      "required": true,
+      "status": "passed",
+      "durationMs": 77240,
+      "detail": "bridge read/write and packaged MCP stdio 43/43 tools ran beside one UI lease; state and credential survived restart; stale handshake rejected"
+    },
+    {
+      "id": "render-media",
+      "required": true,
+      "status": "passed",
+      "durationMs": 263295,
+      "detail": "VieNeu 1 WAV; snapshot succeeded; MP4 8.000000s with video and audio"
+    },
+    {
+      "id": "upload-and-progress",
+      "required": true,
+      "status": "passed",
+      "durationMs": 17599,
+      "detail": "20 MB accepted (400), 21 MB refused with 413, event stream unbuffered"
+    },
+    {
+      "id": "render-cli",
+      "required": true,
+      "status": "passed",
+      "durationMs": 95695,
+      "detail": "render wait succeeded; detach returned job_cc1010a1-127d-4c7d-ade4-e0c3e1cfb7b4; mid-render cancel recorded exhaustive zero-survivor proof"
+    },
+    {
+      "id": "offline",
+      "required": true,
+      "status": "passed",
+      "durationMs": 83436,
+      "detail": "Windows outbound firewall rules for the packaged process set; warm VieNeu and MP4 render succeeded offline (8.000000s)"
+    },
+    {
+      "id": "lease-loss",
+      "required": true,
+      "status": "passed",
+      "durationMs": 60906,
+      "detail": "UI kept listener with bridge inaccessible and winner wrote; headless withdrew discovery and exited non-zero"
+    },
+    {
+      "id": "editing-experience-runtime",
+      "required": true,
+      "status": "passed",
+      "durationMs": 30911,
+      "detail": "Windows outbound firewall rules for the packaged process set; first bundled 1; second bundled 1; title-card@1.0.0:706656513781b9175f3bb4a9a88c5dcbad3297b1bb711e43beda6e4b28ddb7ce; scene scene-1; installed templates/title-card/scene.html across two boots offline"
+    },
+    {
+      "id": "provenance",
+      "required": true,
+      "status": "passed",
+      "durationMs": 1156,
+      "detail": "only SHA256SUMS, artifact-manifest.json, vidcom.exe beside the artifact; commit 1342d75"
+    }
+  ],
+  "cacheWriteBack": [],
+  "evidenceError": null
+}
