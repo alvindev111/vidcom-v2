@@ -162,6 +162,11 @@ describe("editing experience in a browser", () => {
       const failedSceneId = sceneIds[1]!;
       const attempts = new Map<string, number>();
       const requests: Array<{ sceneId: string; atSeconds: number[]; profile: string }> = [];
+      let markRevalidationStarted!: () => void;
+      const revalidationStarted = new Promise<void>((resolve) => { markRevalidationStarted = resolve; });
+      let releaseRevalidation!: () => void;
+      const revalidationRelease = new Promise<void>((resolve) => { releaseRevalidation = resolve; });
+      let heldRevalidation = false;
 
       await page.setRequestInterception(true);
       page.on("request", (request) => {
@@ -187,11 +192,16 @@ describe("editing experience in a browser", () => {
                   status: "ready",
                   url: `${thumbnails}/${payload.sceneId === failedSceneId ? "b".repeat(64) : "a".repeat(64)}`,
                 });
-          void request.respond({
+          const response = {
             status: 200,
             contentType: "application/x-ndjson; charset=utf-8",
             body: `${lines.map((line) => JSON.stringify(line)).join("\n")}\n`,
-          });
+          };
+          if (payload.sceneId === failedSceneId && count >= 3 && !heldRevalidation) {
+            heldRevalidation = true;
+            markRevalidationStarted();
+            void revalidationRelease.then(() => request.respond(response));
+          } else void request.respond(response);
           return;
         }
         if (request.method() === "GET" && /^\/api\/v1\/projects\/[^/]+\/thumbnails\/[a-f0-9]{64}$/u.test(url.pathname)) {
@@ -273,6 +283,18 @@ describe("editing experience in a browser", () => {
       await page.waitForFunction((id) =>
         document.querySelector("[data-storyboard-scene-id]")?.getAttribute("data-storyboard-scene-id") === id,
       { timeout: 15_000 }, failedSceneId);
+      await Promise.race([
+        revalidationStarted,
+        new Promise<never>((_resolve, reject) => setTimeout(
+          () => reject(new Error("post-reorder thumbnail revalidation did not start")),
+          15_000,
+        )),
+      ]);
+      expect(await page.$eval(
+        `[data-storyboard-scene-id="${failedSceneId}"] [data-storyboard-thumbnail-state]`,
+        (node) => node.getAttribute("data-storyboard-thumbnail-state"),
+      )).toBe("ready");
+      releaseRevalidation();
       await page.waitForFunction((id) =>
         document.querySelector(`[data-storyboard-scene-id="${id}"] [data-storyboard-thumbnail-state="ready"]`) !== null,
       { timeout: 15_000 }, failedSceneId);

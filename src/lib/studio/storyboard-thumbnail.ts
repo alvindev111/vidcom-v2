@@ -35,6 +35,7 @@ interface PendingRequest {
 }
 
 const readyCache = new Map<string, ReadyStoryboardThumbnail>();
+const latestReadyCache = new Map<string, ReadyStoryboardThumbnail>();
 const failureCache = new Map<string, FailedStoryboardThumbnail>();
 const pendingRequests = new Map<string, PendingRequest>();
 
@@ -50,14 +51,30 @@ export function storyboardThumbnailKey(input: StoryboardThumbnailRequest): strin
   ].join(":");
 }
 
-function cacheReady(key: string, value: ReadyStoryboardThumbnail): void {
+function storyboardThumbnailIdentityKey(input: StoryboardThumbnailRequest): string {
+  const atSeconds = representativeSceneTime(input.duration, input.frameRate);
+  return [input.projectId, input.sceneId, input.duration, input.frameRate, atSeconds].join(":");
+}
+
+function cacheReady(
+  key: string,
+  identityKey: string,
+  value: ReadyStoryboardThumbnail,
+): void {
   failureCache.delete(key);
   readyCache.delete(key);
   readyCache.set(key, value);
+  latestReadyCache.delete(identityKey);
+  latestReadyCache.set(identityKey, value);
   while (readyCache.size > READY_CACHE_LIMIT) {
     const oldest = readyCache.keys().next().value as string | undefined;
     if (oldest === undefined) break;
     readyCache.delete(oldest);
+  }
+  while (latestReadyCache.size > READY_CACHE_LIMIT) {
+    const oldest = latestReadyCache.keys().next().value as string | undefined;
+    if (oldest === undefined) break;
+    latestReadyCache.delete(oldest);
   }
 }
 
@@ -121,7 +138,7 @@ export function acquireStoryboardThumbnail(
     };
     pending.promise = requestThumbnail(input, requestInit, controller.signal)
       .then((result) => {
-        if (result.status === "ready") cacheReady(key, result);
+        if (result.status === "ready") cacheReady(key, storyboardThumbnailIdentityKey(input), result);
         else cacheFailure(key, result);
         return result;
       })
@@ -149,7 +166,10 @@ export function peekStoryboardThumbnail(
   input: StoryboardThumbnailRequest,
 ): StoryboardThumbnailResult | null {
   const key = storyboardThumbnailKey(input);
-  return readyCache.get(key) ?? failureCache.get(key) ?? null;
+  return readyCache.get(key)
+    ?? failureCache.get(key)
+    ?? latestReadyCache.get(storyboardThumbnailIdentityKey(input))
+    ?? null;
 }
 
 export function forgetStoryboardThumbnailFailure(input: StoryboardThumbnailRequest): void {
@@ -160,5 +180,6 @@ export function resetStoryboardThumbnailCache(): void {
   for (const pending of pendingRequests.values()) pending.controller.abort();
   pendingRequests.clear();
   readyCache.clear();
+  latestReadyCache.clear();
   failureCache.clear();
 }

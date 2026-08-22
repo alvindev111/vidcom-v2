@@ -59,7 +59,9 @@ export function StoryboardThumbnail({
     const currentGeneration = ++generation.current;
     const acquired = acquireStoryboardThumbnail(request, requestInit);
     queueMicrotask(() => {
-      if (generation.current === currentGeneration) setResult(peekStoryboardThumbnail(request));
+      if (generation.current === currentGeneration) {
+        setResult((current) => peekStoryboardThumbnail(request) ?? (current?.status === "ready" ? current : null));
+      }
     });
     void acquired.promise.then((next) => {
       if (generation.current === currentGeneration) setResult(next);

@@ -3882,6 +3882,30 @@
           </p>
         </article>
       </section>
+      <section class="mt-8 rounded-2xl border border-rose-500/30 bg-slate-900/80 p-6 shadow-xl">
+        <article class="space-y-4">
+          <div class="flex flex-wrap items-center justify-between gap-3">
+            <h2 class="text-xl font-semibold text-rose-200">2026-08-22 — Standalone Browser Windows tìm thấy khe revalidation thứ hai</h2>
+            <span class="rounded-full bg-amber-400/10 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-amber-300">Sửa local pass; chờ SHA mới</span>
+          </div>
+          <p class="text-slate-300">
+            Exact-source <code>CI</code> run <code>32540503154</code> trên
+            <code>b5255b2a9fc2e0aa202dc73cedf3a7c2663366b6</code> đã xanh toàn bộ, gồm main,
+            browser và packaged smoke trên mọi OS được yêu cầu. Ba artifact P8 đều strict, không có
+            required failure và xác nhận catalog bundled hoạt động qua hai boot offline.
+          </p>
+          <p class="text-slate-400 text-sm">
+            Workflow Browser độc lập <code>32542003917</code> sau đó xanh Linux nhưng đỏ đúng case thumbnail
+            sau reorder trên Windows; 26 case khác vẫn xanh, gồm inspector bốn action và preview audio.
+            R4.1c Windows vẫn đạt 263/248/359/342 ms. Điều tra cho thấy effect acquire nền còn một lệnh
+            đặt result về null khi cache revision mới chưa có, nên vô tình phá frame ready mà effect đổi request
+            vừa giữ. Cache last-ready theo danh tính scene nay sống qua remount nhưng cache failure của revision
+            mới vẫn có ưu tiên. Regression giữ response mới chưa resolve đã RED với trạng thái loading trước sửa
+            và PASS 3/3 sau sửa; full browser 27/27, R4.1c 214/190/296/305 ms, typecheck, lint, boundaries,
+            spec-paths và build đều PASS. Workflow kế tiếp vẫn bị khóa cho đến exact-source rerun mới.
+          </p>
+        </article>
+      </section>
     </main>
   </body>
 </html>
