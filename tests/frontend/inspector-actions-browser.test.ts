@@ -47,6 +47,41 @@ async function awaitSettingsWrite(
   return payload.changeSeq;
 }
 
+async function awaitScriptWrites(
+  page: import("puppeteer-core").Page,
+  count: number,
+  action: () => Promise<void>,
+): Promise<void> {
+  const responses: import("puppeteer-core").HTTPResponse[] = [];
+  let settle!: () => void;
+  let fail!: (cause: Error) => void;
+  const completed = new Promise<void>((resolve, reject) => {
+    settle = resolve;
+    fail = reject;
+  });
+  const timeout = setTimeout(() => fail(new Error(`timed out waiting for ${count} script writes`)), 30_000);
+  const onResponse = (response: import("puppeteer-core").HTTPResponse) => {
+    if (response.request().method() !== "PATCH"
+      || !new URL(response.url()).pathname.endsWith("/script")) return;
+    responses.push(response);
+    if (responses.length === count) settle();
+  };
+  page.on("response", onResponse);
+  try {
+    await action();
+    await completed;
+  } finally {
+    clearTimeout(timeout);
+    page.off("response", onResponse);
+  }
+  for (const response of responses) {
+    const payload = await response.json() as { changeSeq?: number; error?: unknown };
+    if (!response.ok() || payload.changeSeq === undefined) {
+      throw new Error(`script write failed (${response.status()}): ${JSON.stringify(payload)}`);
+    }
+  }
+}
+
 async function waitForFrameMarker(
   page: import("puppeteer-core").Page,
   selector: string,
@@ -198,21 +233,21 @@ describe("storyboard inspector actions", () => {
       const headline = await page.waitForSelector('textarea[title$="title-card-headline"]', { timeout: 20_000 });
       const subhead = await page.waitForSelector('textarea[title$="title-card-subhead"]', { timeout: 20_000 });
       if (!headline || !subhead) throw new Error("mounted title-card copy is not editable");
-      await headline.focus();
-      await page.keyboard.down("Control");
-      await page.keyboard.press("A");
-      await page.keyboard.up("Control");
-      await headline.type("ODYSSEUS");
-      await subhead.focus();
-      await page.keyboard.down("Control");
-      await page.keyboard.press("A");
-      await page.keyboard.up("Control");
-      await subhead.type("A changed return");
-      await page.keyboard.press("Tab");
-      await page.waitForFunction(() => !document.body.innerText.includes("the project changed since it was read")
-        && [...document.querySelectorAll('textarea[title*="title-card-"]')]
-          .every((field) => field.parentElement?.textContent?.includes("Saved")),
-      { timeout: 20_000, polling: 50 });
+      await awaitScriptWrites(page, 2, async () => {
+        await headline.focus();
+        await page.keyboard.down("Control");
+        await page.keyboard.press("A");
+        await page.keyboard.up("Control");
+        await headline.type("ODYSSEUS");
+        await subhead.focus();
+        await page.keyboard.down("Control");
+        await page.keyboard.press("A");
+        await page.keyboard.up("Control");
+        await subhead.type("A changed return");
+        await page.keyboard.press("Tab");
+      });
+      expect(await page.$eval("body", (body) => body.innerText.includes("the project changed since it was read")))
+        .toBe(false);
       const titleCardSource = await readFile(
         path.join(projectRoot, "templates", "title-card", "scene.html"),
         "utf8",

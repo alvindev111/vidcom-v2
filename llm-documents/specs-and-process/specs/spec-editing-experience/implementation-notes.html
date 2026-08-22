@@ -3857,6 +3857,31 @@
           </p>
         </article>
       </section>
+      <section class="mt-8 rounded-2xl border border-rose-500/30 bg-slate-900/80 p-6 shadow-xl">
+        <article class="space-y-4">
+          <div class="flex flex-wrap items-center justify-between gap-3">
+            <h2 class="text-xl font-semibold text-rose-200">2026-08-22 — CI Windows đỏ và sửa trước khi đi tiếp</h2>
+            <span class="rounded-full bg-amber-400/10 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-amber-300">Chờ exact-source rerun</span>
+          </div>
+          <p class="text-slate-300">
+            Workflow <code>CI</code> run <code>32539553278</code> trên source
+            <code>0c4410f358986e6012585c5266177625dc3429a3</code> đỏ ở browser-session Windows:
+            26/27 browser case xanh, riêng thumbnail sau reorder không trở lại trạng thái ready trong 15 giây.
+            Chuỗi workflow được dừng tại đây đúng gate; không dispatch workflow kế tiếp và không đổi run đỏ thành PASS.
+          </p>
+          <p class="text-slate-400 text-sm">
+            Scene không thay nội dung khi chỉ đổi thứ tự, vì vậy thumbnail đang đúng của chính scene được giữ lại
+            trong lúc cache revision mới revalidate nền. Điều này bỏ frame đen/nhấp nháy nhưng vẫn giữ request mới,
+            abort khi rời viewport và giới hạn concurrency. Focused browser case xanh sáu lần liên tiếp.
+          </p>
+          <p class="text-slate-400 text-sm">
+            Full browser rerun đầu còn tìm thấy assertion của inspector có thể đọc file trước khi hai PATCH text
+            trong mutation queue hoàn tất. Test đã chuyển sang đợi và kiểm cả hai HTTP response thành công trước
+            khi đọc source. Inspector focused xanh ba lần; full browser xanh 27/27 với R4.1c 217/189/304/296 ms;
+            typecheck và lint cũng xanh. Bản sửa phải có commit/SHA mới và chạy lại CI từ đầu.
+          </p>
+        </article>
+      </section>
     </main>
   </body>
 </html>

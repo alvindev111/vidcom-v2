@@ -48,7 +48,9 @@ export function StoryboardThumbnail({
   React.useEffect(() => {
     const currentGeneration = ++generation.current;
     queueMicrotask(() => {
-      if (generation.current === currentGeneration) setResult(peekStoryboardThumbnail(request));
+      if (generation.current !== currentGeneration) return;
+      const cached = peekStoryboardThumbnail(request);
+      setResult((current) => cached ?? (current?.status === "ready" ? current : null));
     });
   }, [request]);
 
