@@ -117,7 +117,7 @@ describe("composition parse structure", () => {
     expect(model.references).toEqual([
       { owner: "index.html", path: "compositions/nested.html" },
       { owner: "compositions/nested.html", path: "assets/logo.svg" },
-      { owner: "compositions/nested.html", path: "compositions/logo.svg" },
+      { owner: "compositions/nested.html", path: "logo.svg" },
       { owner: "index.html", path: "assets/root.svg" },
     ]);
   });

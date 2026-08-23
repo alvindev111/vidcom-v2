@@ -37,7 +37,7 @@ describe("HyperframesCompositionDependencyGraph", () => {
   it("walks canonical HTML, CSS, font and JavaScript dependencies once across cycles", async () => {
     const ref = await project({
       "index.html": `<main data-composition-id="main"><div data-composition-id="scene-a" data-composition-src="scenes/a.html"></div></main>`,
-      "scenes/a.html": `<template><section data-composition-id="scene-a"><link rel="stylesheet" href="../styles/a.css"><img src="../media/poster.png"><script type="module" src="../scripts/a.js"></script></section></template>`,
+      "scenes/a.html": `<template><section data-composition-id="scene-a"><link rel="stylesheet" href="styles/a.css"><img src="media/poster.png"><script type="module" src="scripts/a.js"></script></section></template>`,
       "styles/a.css": `@import "shared.css"; :root { --color: red } @font-face { font-family: Demo; src: url("../fonts/demo.woff2") } .hero { color: var(--color); background: url('../media/bg.png'); content: "url('../media/not-real.png')" } /* url('../media/also-not-real.png') */`,
       "styles/shared.css": `@import url("a.css");`,
       "scripts/a.js": `import "./shared.js"; export { value } from "./exported.js"; import("./lazy.js"); const icon = new URL("../media/icon.svg", import.meta.url); import "./missing.js";`,

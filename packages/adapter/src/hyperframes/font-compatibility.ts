@@ -63,11 +63,11 @@ async function stylesheetChunks(
   issues: FontCompatibilityIssue[],
 ): Promise<CssChunk[]> {
   const chunks: CssChunk[] = [...document.querySelectorAll("style")]
-    .map((element) => ({ path: sourcePath, css: element.textContent ?? "" }));
+    .map((element) => ({ path: sourcePath, css: element.textContent ?? "", projectRootRelative: true }));
   const queue = [...document.querySelectorAll("link[rel~='stylesheet']")]
     .flatMap((element) => {
       const href = element.getAttribute("href");
-      const resolved = href ? cssResourcePath(sourcePath, href) : null;
+      const resolved = href ? cssResourcePath(sourcePath, href, true) : null;
       return resolved ? [resolved] : [];
     });
   const seen = new Set<RelPath>();

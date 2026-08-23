@@ -125,6 +125,25 @@ describe("font compatibility with real files", () => {
     }
   });
 
+  it("resolves an inline sub-composition font URL from the project root", async (context) => {
+    const font = await latinFontFixture();
+    if (!font) return context.skip("no known Latin system font is installed");
+    const nested = `<!doctype html><html><head><style>
+      @font-face { font-family: "Verified Latin"; src: url("assets/verified.ttf"); }
+      body { font-family: "Verified Latin", sans-serif; }
+    </style></head><body><section data-composition-id="scene"><p>Tiếng Việt đẹp</p></section></body></html>`;
+    const value = await projectFixture("<main data-composition-id=\"root\"></main>");
+    await mkdir(path.join(value.root, "compositions"), { recursive: true });
+    await copyFile(font, path.join(value.root, "assets/verified.ttf"));
+    await writeFile(path.join(value.root, "compositions/scene.html"), nested);
+    const nestedSource: CompositionSource = {
+      ...source(Buffer.byteLength(nested)),
+      path: "compositions/scene.html" as RelPath,
+    };
+
+    await expect(new FontkitCompatibilityInspector().inspect(value.ref, [nestedSource])).resolves.toEqual([]);
+  });
+
   it("distinguishes malformed UTF-8 from unverified machine-dependent font fallback", async () => {
     const value = await projectFixture(composition("日本語", "system-ui, sans-serif"));
     const inspector = new FontkitCompatibilityInspector();

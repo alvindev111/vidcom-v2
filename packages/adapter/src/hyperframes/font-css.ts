@@ -5,6 +5,7 @@ import type { RelPath } from "@vidcom/contracts";
 export interface CssChunk {
   path: RelPath;
   css: string;
+  projectRootRelative?: boolean;
 }
 
 export interface FontFace {
@@ -25,11 +26,12 @@ export interface TextRun {
   family: string | null;
 }
 
-export function cssResourcePath(owner: RelPath, raw: string): RelPath | null {
+export function cssResourcePath(owner: RelPath, raw: string, projectRootRelative = false): RelPath | null {
   const clean = raw.trim().split(/[?#]/u, 1)[0]?.split("\\").join("/") ?? "";
   if (!clean || clean.startsWith("/") || clean.startsWith("//")
     || clean.startsWith("#") || /^[a-z][a-z0-9+.-]*:/iu.test(clean)) return null;
-  const resolved = path.posix.normalize(path.posix.join(path.posix.dirname(owner), clean)).replace(/^\.\//u, "");
+  const base = projectRootRelative && !clean.startsWith("../") ? "" : path.posix.dirname(owner);
+  const resolved = path.posix.normalize(path.posix.join(base, clean)).replace(/^\.\//u, "");
   return resolved === ".." || resolved.startsWith("../") ? null : resolved as RelPath;
 }
 
@@ -58,7 +60,7 @@ export function parseFontFaces(chunks: readonly CssChunk[]): Map<string, FontFac
       const paths: RelPath[] = [];
       let hasUninspectableSource = /\blocal\s*\(/iu.test(source);
       for (const url of source.matchAll(/url\(\s*["']?([^"')\s]+)["']?\s*\)/giu)) {
-        const resolved = cssResourcePath(chunk.path, url[1]!);
+        const resolved = cssResourcePath(chunk.path, url[1]!, chunk.projectRootRelative === true);
         if (resolved) paths.push(resolved);
         else hasUninspectableSource = true;
       }

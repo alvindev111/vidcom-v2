@@ -4041,6 +4041,35 @@
           </p>
         </article>
       </section>
+      <section class="mt-8 rounded-2xl border border-cyan-500/30 bg-slate-900/80 p-6 shadow-xl">
+        <article class="space-y-4">
+          <div class="flex flex-wrap items-center justify-between gap-3">
+            <h2 class="text-xl font-semibold text-cyan-200">2026-08-23 — Bỏ blob nhúng và sửa hợp đồng asset project-root</h2>
+            <span class="rounded-full bg-cyan-400/10 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-cyan-300">P25.3 đang chạy</span>
+          </div>
+          <p class="text-slate-300">
+            Sau phản hồi rằng video vẫn đi theo một lối mòn xấu, toàn bộ 18 scene được dựng lại theo 18
+            cấu trúc kể chuyện khác nhau: bản đồ tuyến, sổ đội tàu, áp suất bão, xóa ký ức, chú giải tảng đá,
+            tín hiệu tên gọi, đảo tuyến, thước độ sâu, khóa cột buồm, hành lang rủi ro, lớp ngụy trang và trục
+            chính xác. Các scene không còn dùng công thức nền ảnh + tiêu đề trái + motif phải lặp lại.
+          </p>
+          <p class="text-slate-400 text-sm">
+            Snapshot revision 132 render đủ 18/18 scene và các frame s01, s06, s08, s10, s14, s16, s18 đã
+            được kiểm tra trực quan. Sau đó 15 ảnh cùng hai font Noto Sans subset được upload qua editor
+            authority. HTML mỗi scene giảm từ hàng trăm KiB base64 xuống khoảng 19 KiB; narration VieNeu thật
+            phủ 138,621/153 giây (90,6%), BGM project-local bật ở mức 0,18.
+          </p>
+          <p class="text-slate-400 text-sm">
+            Lần validate revision 188 phát hiện xung đột thật trong application: lint/Studio quy định
+            <code>assets/...</code> là đường dẫn từ project root, nhưng parser, dependency graph và font
+            inspector lại ghép với thư mục <code>compositions/</code>. Việc tăng timeout hoặc quay lại
+            <code>../assets</code> chỉ che lỗi. Adapter được sửa theo document base của Studio, kèm regression
+            cho media, dependency và font trong sub-composition; focused suite 3 file/14 test, typecheck và
+            lint đều xanh (lint còn đúng 5 warning baseline, 0 error). P25.3 giữ <code>[/]</code> cho đến khi
+            exact daemon tải source mới và real project validate/snapshot xanh.
+          </p>
+        </article>
+      </section>
     </main>
   </body>
 </html>

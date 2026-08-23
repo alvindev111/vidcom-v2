@@ -68,6 +68,11 @@ function canonicalProjectReference(owner: RelPath, raw: string | null): RelPath 
   }
 }
 
+function canonicalProjectRootReference(owner: RelPath, raw: string | null): RelPath | null {
+  const value = raw?.trim().split("\\").join("/") ?? "";
+  return canonicalProjectReference(value.startsWith("../") ? owner : "index.html" as RelPath, raw);
+}
+
 function isExternalMediaReference(raw: string): boolean {
   const value = raw.trim();
   return value.startsWith("//") || /^(?:https?|data|blob):/iu.test(value);
@@ -87,22 +92,24 @@ function collectProjectReferences(
 ): CompositionReference[] {
   const availableSources = new Set(sources.map(({ path }) => path));
   const references = new Map<string, CompositionReference>();
-  const add = (owner: RelPath, raw: string | null) => {
-    const referenced = canonicalProjectReference(owner, raw);
+  const add = (owner: RelPath, raw: string | null, projectRootRelative = false) => {
+    const referenced = projectRootRelative
+      ? canonicalProjectRootReference(owner, raw)
+      : canonicalProjectReference(owner, raw);
     if (referenced) references.set(`${owner}\0${referenced}`, { owner, path: referenced });
     return referenced;
   };
   for (const scene of scenes) {
     const source = add(entry, scene.src);
     const owner = source && availableSources.has(source) ? source : entry;
-    for (const media of scene.media) add(owner, media.src);
-    for (const element of scene.elements) add(owner, element.src);
+    for (const media of scene.media) add(owner, media.src, true);
+    for (const element of scene.elements) add(owner, element.src, true);
     // Narration sidecars store project-relative paths. Unlike media authored in
     // a scene HTML file, their audio path is not relative to the scene source.
-    if (scene.narration?.status === "generated") add(entry, scene.narration.audioPath);
+    if (scene.narration?.status === "generated") add(entry, scene.narration.audioPath, true);
   }
-  for (const media of entryMedia) add(entry, media.src);
-  for (const element of rootTrack?.elements ?? []) add(entry, element.src);
+  for (const media of entryMedia) add(entry, media.src, true);
+  for (const element of rootTrack?.elements ?? []) add(entry, element.src, true);
   return [...references.values()];
 }
 
@@ -194,7 +201,10 @@ function collectMedia(ref: ProjectRef, hostFile: string, root: ParentNode): Scen
     if (!kind || !src) return [];
     const timing = readClipTiming(owner);
     const external = isExternalMediaReference(src);
-    const relative = external ? null : canonicalProjectReference(hostFile as RelPath, src);
+    // HyperFrames serves authored HTML with the project root as document base.
+    // A scene under compositions/ therefore still resolves assets/foo.png from
+    // the project root, not from compositions/assets/foo.png.
+    const relative = external ? null : canonicalProjectRootReference(hostFile as RelPath, src);
     return [{
       kind,
       src,

@@ -53,4 +53,33 @@ describe("scene media", () => {
       { src: "https://example.com/remote.png", missing: false },
     ]);
   });
+
+  it("resolves plain asset paths from the project root inside a sub-composition", async () => {
+    const nested = `<!doctype html><html><body>
+      <section data-composition-id="scene-1">
+        <img class="clip" src="assets/kept.png" data-start="0" data-duration="4" />
+      </section>
+    </body></html>`;
+    await mkdir(path.join(root, "compositions"), { recursive: true });
+    await writeFile(path.join(root, "assets/kept.png"), "image-bytes");
+    await writeFile(path.join(root, "compositions/scene-1.html"), nested);
+    await writeFile(path.join(root, "index.html"), `<!doctype html><html><body>
+      <main data-composition-id="root" data-width="1920" data-height="1080" data-duration="4">
+        <div data-composition-id="scene-1" data-composition-src="compositions/scene-1.html"
+          data-start="0" data-duration="4"></div>
+      </main>
+    </body></html>`);
+
+    const model = await new CompositionHf().parseProject(ref);
+
+    expect(model.scenes[0]!.media).toContainEqual(expect.objectContaining({
+      src: "assets/kept.png",
+      missing: false,
+      url: "/api/v1/projects/project_missing/assets/assets/kept.png",
+    }));
+    expect(model.references).toContainEqual({
+      owner: "compositions/scene-1.html",
+      path: "assets/kept.png",
+    });
+  });
 });

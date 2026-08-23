@@ -31,11 +31,12 @@ function unavailable(message: string): never {
   throw new GraphUnavailable(message);
 }
 
-function canonicalReference(owner: RelPath, raw: string): RelPath | null {
+function canonicalReference(owner: RelPath, raw: string, projectRootRelative = false): RelPath | null {
   const value = raw.trim().split(/[?#]/u, 1)[0]?.split("\\").join("/") ?? "";
   if (!value || value.startsWith("/") || value.startsWith("//") || value.startsWith("#")
     || /^[a-z][a-z0-9+.-]*:/iu.test(value)) return null;
-  const resolved = path.posix.normalize(path.posix.join(path.posix.dirname(owner), value)).replace(/^\.\//u, "");
+  const base = projectRootRelative && !value.startsWith("../") ? "" : path.posix.dirname(owner);
+  const resolved = path.posix.normalize(path.posix.join(base, value)).replace(/^\.\//u, "");
   return resolved === ".." || resolved.startsWith("../") ? null : resolved as RelPath;
 }
 
@@ -76,13 +77,13 @@ function cssPropertyMayReferenceResource(property: string): boolean {
     || name === "mask" || name.startsWith("mask-");
 }
 
-function cssReferences(css: string, owner: RelPath): PendingDependency[] {
+function cssReferences(css: string, owner: RelPath, projectRootRelative = false): PendingDependency[] {
   let root;
   try { root = postcss.parse(css, { from: undefined }); }
   catch { return unavailable(`CSS dependency parsing failed for ${owner}`); }
   const found: PendingDependency[] = [];
   const add = (raw: string, fallback: DependencyKind) => {
-    const reference = canonicalReference(owner, raw);
+    const reference = canonicalReference(owner, raw, projectRootRelative);
     if (reference) found.push({ path: reference, kind: kindFor(reference, fallback) });
   };
   root.walkAtRules((rule) => {
@@ -138,7 +139,7 @@ function memberName(node: Node): string | null {
   return member.computed ? stringValue(member.property) : null;
 }
 
-function javascriptReferences(source: string, owner: RelPath): PendingDependency[] {
+function javascriptReferences(source: string, owner: RelPath, projectRootRelative = false): PendingDependency[] {
   let syntax;
   try { syntax = parse(source, { ecmaVersion: "latest", sourceType: "module" }); }
   catch { return unavailable(`JavaScript dependency parsing failed for ${owner}`); }
@@ -179,7 +180,7 @@ function javascriptReferences(source: string, owner: RelPath): PendingDependency
   });
   return rawReferences.flatMap(({ value, bareImport }) => {
     if (bareImport && !value.startsWith("./") && !value.startsWith("../")) return [];
-    const reference = canonicalReference(owner, value);
+    const reference = canonicalReference(owner, value, projectRootRelative);
     return reference ? [{ path: reference, kind: kindFor(reference, bareImport ? "javascript" : "asset") }] : [];
   });
 }
@@ -190,29 +191,31 @@ function htmlReferences(html: string, owner: RelPath): PendingDependency[] {
   catch { return unavailable(`HTML dependency parsing failed for ${owner}`); }
   const root = authoredCompositionRoot(document);
   const found: PendingDependency[] = [];
-  const add = (raw: string, fallback: DependencyKind) => {
-    const reference = canonicalReference(owner, raw);
+  const add = (raw: string, fallback: DependencyKind, projectRootRelative = true) => {
+    const reference = canonicalReference(owner, raw, projectRootRelative);
     if (reference) found.push({ path: reference, kind: kindFor(reference, fallback) });
   };
   for (const element of [...root.querySelectorAll("[src], [href], [data-composition-src]")]) {
     const compositionSource = element.getAttribute("data-composition-src");
     const source = element.getAttribute("src");
     const href = element.getAttribute("href");
-    if (compositionSource) add(compositionSource, "html");
+    if (compositionSource) add(compositionSource, "html", false);
     if (source) add(source, element.tagName.toUpperCase() === "SCRIPT" ? "javascript" : "asset");
     if (href) add(href, element.tagName.toUpperCase() === "LINK"
       && element.getAttribute("rel")?.toLowerCase().split(/\s+/u).includes("stylesheet")
       ? "css"
       : "asset");
   }
-  for (const style of [...root.querySelectorAll("style")]) found.push(...cssReferences(style.textContent ?? "", owner));
+  for (const style of [...root.querySelectorAll("style")]) {
+    found.push(...cssReferences(style.textContent ?? "", owner, true));
+  }
   for (const element of [...root.querySelectorAll("[style]")]) {
-    found.push(...cssReferences(`x{${element.getAttribute("style") ?? ""}}`, owner));
+    found.push(...cssReferences(`x{${element.getAttribute("style") ?? ""}}`, owner, true));
   }
   for (const script of [...root.querySelectorAll("script:not([src])")]) {
     const type = script.getAttribute("type")?.toLowerCase();
     if (type && type !== "module" && type !== "text/javascript" && type !== "application/javascript") continue;
-    found.push(...javascriptReferences(script.textContent ?? "", owner));
+    found.push(...javascriptReferences(script.textContent ?? "", owner, true));
   }
   return found;
 }
