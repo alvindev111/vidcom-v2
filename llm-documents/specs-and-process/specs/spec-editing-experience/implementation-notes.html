@@ -4015,6 +4015,20 @@
             commit xanh typecheck, golden 11 file/51 test, production build và focused Chrome thumbnail 1/1.
             P25.1 đóng; P25.2 mở từ CI chính và vẫn giữ quy tắc đỏ thì dừng.
           </p>
+          <p class="text-slate-400 text-sm">
+            CI <code>32633892015</code> trên <code>352df47</code> xanh toàn bộ và ba artifact packaged đều
+            strict 14/14. Standalone Browser <code>32635308500</code> sau đó xanh Windows 28/28 và regression
+            thumbnail mới cũng xanh trên Linux, nhưng Linux đỏ case Add scene vì Chrome revalidate cache
+            template bằng <code>304</code> kèm body đầy đủ trong khi test chỉ chấp nhận <code>200</code>.
+            Chuỗi đã dừng trước Packaged smoke. Assertion sửa hẹp: chỉ chấp nhận 200/304 và vẫn
+            bắt buộc body chứa <code>title-card-template</code>; response không dùng được vẫn fail.
+          </p>
+          <p class="text-slate-400 text-sm">
+            Focused inspector lần đầu sau sửa giữ thumbnail xanh nhưng fixture cục bộ tạm báo
+            <code>render_binary_missing</code> trước khi catalog xuất hiện; rerun nguyên file xanh 2/2. Full
+            Browser tiếp theo xanh 12 file/28 test, R4.1c 208–225 ms, Arrange 73 ms; typecheck xanh và lint
+            0 error/5 warning baseline. Không nới timeout, không đổi product cache, không hạ budget.
+          </p>
         </article>
       </section>
     </main>

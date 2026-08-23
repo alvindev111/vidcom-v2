@@ -253,7 +253,9 @@ describe("storyboard inspector actions", () => {
       await page.waitForFunction((count) => document.querySelectorAll("[data-storyboard-scene-id]").length > count,
         { timeout: 30_000, polling: 50 }, scenesBefore);
       const titleCardResponse = await titleCardFetched;
-      expect(titleCardResponse.status(), await titleCardResponse.text()).toBe(200);
+      const titleCardBody = await titleCardResponse.text();
+      expect([200, 304], titleCardBody).toContain(titleCardResponse.status());
+      expect(titleCardBody).toContain('id="title-card-template"');
       const cards = await page.$$('[data-storyboard-scene-id]');
       expect(cards.length).toBeGreaterThan(scenesBefore);
       expect(await readFile(path.join(projectRoot, "index.html"), "utf8")).toMatch(/data-composition-src=/u);
