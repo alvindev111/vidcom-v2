@@ -59,12 +59,21 @@ async function readProjectBytes(ref: ProjectRef, relativePath: RelPath): Promise
 async function stylesheetChunks(
   ref: ProjectRef,
   document: Document,
+  authoredRoot: ParentNode,
   sourcePath: RelPath,
   issues: FontCompatibilityIssue[],
 ): Promise<CssChunk[]> {
-  const chunks: CssChunk[] = [...document.querySelectorAll("style")]
+  const styleElements = [...new Set([
+    ...document.querySelectorAll("style"),
+    ...authoredRoot.querySelectorAll("style"),
+  ])];
+  const linkElements = [...new Set([
+    ...document.querySelectorAll("link[rel~='stylesheet']"),
+    ...authoredRoot.querySelectorAll("link[rel~='stylesheet']"),
+  ])];
+  const chunks: CssChunk[] = styleElements
     .map((element) => ({ path: sourcePath, css: element.textContent ?? "", projectRootRelative: true }));
-  const queue = [...document.querySelectorAll("link[rel~='stylesheet']")]
+  const queue = linkElements
     .flatMap((element) => {
       const href = element.getAttribute("href");
       const resolved = href ? cssResourcePath(sourcePath, href, true) : null;
@@ -114,9 +123,10 @@ export class FontkitCompatibilityInspector implements FontCompatibilityPort {
         continue;
       }
       const { document } = parseHTML(html);
-      const chunks = await stylesheetChunks(ref, document, source.path, issues);
+      const authoredRoot = authoredCompositionRoot(document);
+      const chunks = await stylesheetChunks(ref, document, authoredRoot, source.path, issues);
       const faces = parseFontFaces(chunks);
-      const runs = collectTextRuns(authoredCompositionRoot(document), chunks);
+      const runs = collectTextRuns(authoredRoot, chunks);
       for (const run of runs) {
         await this.inspectRun(ref, source.path, run, faces, coverage, issues);
       }

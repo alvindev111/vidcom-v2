@@ -621,5 +621,5 @@ describe("catalog install over real SQLite and a real filesystem", () => {
     // History kept its own content refs, so redo does not need the catalog cache.
     expect(await readFile(path.join(projectRoot, ENTRY_TARGET), "utf8")).toBe(ENTRY_BYTES);
     expect(await readFile(path.join(projectRoot, STYLE_TARGET), "utf8")).toBe(STYLE_BYTES);
-  });
+  }, 15_000);
 });

@@ -4068,6 +4068,24 @@
             lint đều xanh (lint còn đúng 5 warning baseline, 0 error). P25.3 giữ <code>[/]</code> cho đến khi
             exact daemon tải source mới và real project validate/snapshot xanh.
           </p>
+          <p class="text-slate-400 text-sm">
+            Exact-source CI <code>32644993925</code> trên <code>d26ebef</code> đỏ nên chuỗi workflow dừng.
+            Browser Linux gặp cache <code>304</code> không còn response body; Browser Windows hụt assertion
+            prompt khi test dùng DOM click; main Linux vượt timeout 5 giây ở đúng integration test catalog
+            chạy SQLite/filesystem thật. macOS main, packaged Linux/macOS và security đã xanh tại thời điểm
+            ghi nhận; Windows main/packaged còn chạy. R4.1c trên chính hai runner vẫn xanh: Linux
+            247/218/250/210 ms, Windows 260/254/265/252 ms — budget 500 ms không bị đổi.
+          </p>
+          <p class="text-slate-400 text-sm">
+            Repair không làm yếu bằng chứng: 304 phải fetch lại no-store và vẫn chứng minh template ID;
+            deletion dùng click Puppeteer thật rồi yêu cầu confirm đồng bộ ngay; chỉ test integration thật
+            được 15 giây, trong khi chạy riêng 343 ms. Font inspector đồng thời đọc style/link ở cả document
+            và bên trong authored <code>template</code>, thay vì bỏ sót hai font project-local của Odyssey.
+            Focused 15/15, deletion ba lần liên tiếp, R4.1c ba lần 187–214 ms, RSS 250 MiB ba lần, typecheck,
+            boundaries và golden 51/51 đều xanh; lint giữ đúng 0 error/5 warning baseline. Full local suite có
+            hai mẫu 550–579 ms khi Chrome người dùng đang giữ nhiều renderer nặng, nên không được relabel;
+            runner CI sạch mới là authority cho gate này.
+          </p>
         </article>
       </section>
     </main>

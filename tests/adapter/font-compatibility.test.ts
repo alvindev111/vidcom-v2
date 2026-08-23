@@ -128,10 +128,10 @@ describe("font compatibility with real files", () => {
   it("resolves an inline sub-composition font URL from the project root", async (context) => {
     const font = await latinFontFixture();
     if (!font) return context.skip("no known Latin system font is installed");
-    const nested = `<!doctype html><html><head><style>
+    const nested = `<!doctype html><html><body><template><style>
       @font-face { font-family: "Verified Latin"; src: url("assets/verified.ttf"); }
-      body { font-family: "Verified Latin", sans-serif; }
-    </style></head><body><section data-composition-id="scene"><p>Tiếng Việt đẹp</p></section></body></html>`;
+      section { font-family: "Verified Latin", sans-serif; }
+    </style><section data-composition-id="scene"><p>Tiếng Việt đẹp</p></section></template></body></html>`;
     const value = await projectFixture("<main data-composition-id=\"root\"></main>");
     await mkdir(path.join(value.root, "compositions"), { recursive: true });
     await copyFile(font, path.join(value.root, "assets/verified.ttf"));

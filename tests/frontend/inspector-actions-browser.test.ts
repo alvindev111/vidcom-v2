@@ -253,8 +253,17 @@ describe("storyboard inspector actions", () => {
       await page.waitForFunction((count) => document.querySelectorAll("[data-storyboard-scene-id]").length > count,
         { timeout: 30_000, polling: 50 }, scenesBefore);
       const titleCardResponse = await titleCardFetched;
-      const titleCardBody = await titleCardResponse.text();
-      expect([200, 304], titleCardBody).toContain(titleCardResponse.status());
+      expect([200, 304]).toContain(titleCardResponse.status());
+      const titleCardBody = await titleCardResponse.text().catch(async (cause) => {
+        if (titleCardResponse.status() !== 304) throw cause;
+        return page.evaluate(async (sourceUrl) => {
+          const url = new URL(sourceUrl);
+          url.searchParams.set("browser-proof", "1");
+          const response = await fetch(url, { cache: "no-store" });
+          if (!response.ok) throw new Error(`template proof request failed: ${response.status}`);
+          return response.text();
+        }, titleCardResponse.url());
+      });
       expect(titleCardBody).toContain('id="title-card-template"');
       const cards = await page.$$('[data-storyboard-scene-id]');
       expect(cards.length).toBeGreaterThan(scenesBefore);
