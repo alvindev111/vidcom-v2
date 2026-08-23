@@ -1,6 +1,6 @@
 // @vitest-environment node
 
-import { readFile, stat } from "node:fs/promises";
+import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 import { describe, expect, it } from "vitest";
@@ -143,6 +143,40 @@ async function waitForFrameMarker(
 }
 
 describe("storyboard inspector actions", () => {
+  it("loads a local image thumbnail through the browser-safe project asset route", async () => {
+    await withStudioBrowser("inspector-media-thumbnail", async ({ page, projectId }) => {
+      await clickExactButton(page, "Video Scene");
+      const image = await page.waitForSelector(
+        'img[data-scene-media-thumbnail-state="loaded"]',
+        { timeout: 20_000 },
+      );
+      if (!image) throw new Error("scene inspector exposed no image thumbnail");
+      const thumbnail = await image.evaluate((node) => ({
+        complete: (node as HTMLImageElement).complete,
+        naturalWidth: (node as HTMLImageElement).naturalWidth,
+        pathname: new URL((node as HTMLImageElement).src).pathname,
+      }));
+      expect(thumbnail.pathname).toBe(
+        `/api/v1/projects/${encodeURIComponent(projectId)}/assets/assets/thumbnail.png`,
+      );
+      expect(thumbnail.complete).toBe(true);
+      expect(thumbnail.naturalWidth).toBeGreaterThan(0);
+    }, async (project) => {
+      await mkdir(path.join(project.root, "assets"), { recursive: true });
+      await writeFile(
+        path.join(project.root, "assets", "thumbnail.png"),
+        Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M/wHwAF/gL+waGzAAAAAElFTkSuQmCC", "base64"),
+      );
+      const sourcePath = path.join(project.root, project.sceneSource);
+      const source = await readFile(sourcePath, "utf8");
+      await writeFile(
+        sourcePath,
+        source.replace("    <h1", '    <img src="../assets/thumbnail.png?rev=1#frame" alt="" />\n    <h1'),
+        "utf8",
+      );
+    });
+  }, 60_000);
+
   it("makes Preview, Motion, Templates and Music persistently affect the video", async () => {
     await withStudioBrowser("inspector-actions", async ({ page, projectRoot }) => {
       await page.waitForFunction(() => [...document.querySelectorAll("[data-player-host-id] iframe")]

@@ -240,7 +240,7 @@ describe("composition parse structure", () => {
       {
         kind: "image",
         src: "../assets/%E1%BA%A3nh%20bi%E1%BB%83n.png?v=2#focus",
-        url: "/api/hf/project-references/files/assets/ảnh biển.png",
+        url: "/api/v1/projects/project-references/assets/assets/%E1%BA%A3nh%20bi%E1%BB%83n.png",
         start: 0,
         duration: null,
         missing: false,
@@ -248,7 +248,7 @@ describe("composition parse structure", () => {
       {
         kind: "image",
         src: "../assets/poster.jpg#cover",
-        url: "/api/hf/project-references/files/assets/poster.jpg",
+        url: "/api/v1/projects/project-references/assets/assets/poster.jpg",
         start: 0,
         duration: null,
         missing: false,
@@ -256,7 +256,7 @@ describe("composition parse structure", () => {
       {
         kind: "image",
         src: "../assets/tile.webp?rev=4",
-        url: "/api/hf/project-references/files/assets/tile.webp",
+        url: "/api/v1/projects/project-references/assets/assets/tile.webp",
         start: 0,
         duration: null,
         missing: false,

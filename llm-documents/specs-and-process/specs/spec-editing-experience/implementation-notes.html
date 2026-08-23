@@ -3977,6 +3977,39 @@
           </p>
         </article>
       </section>
+      <section class="mt-8 rounded-2xl border border-amber-500/30 bg-slate-900/80 p-6 shadow-xl">
+        <article class="space-y-4">
+          <div class="flex flex-wrap items-center justify-between gap-3">
+            <h2 class="text-xl font-semibold text-amber-200">2026-08-23 — Sửa thumbnail Images &amp; Media bị route bảo mật từ chối</h2>
+            <span class="rounded-full bg-amber-400/10 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-amber-300">Local pass; exact-source gate mở lại</span>
+          </div>
+          <p class="text-slate-300">
+            Ảnh <code>assets/image_001.png</code> của Odyssey vẫn tồn tại và đọc được, nhưng Scene inspector
+            nhận URL cũ <code>/api/hf/:slug/files/:path</code>. Request ảnh no-cors cùng origin bị perimeter
+            trả <code>403 origin_not_allowed</code>, vì policy thụ động chỉ cho phép route chuẩn
+            <code>/api/v1/projects/:id/assets/:path</code>. Đây là lỗi transport của editor, không phải asset mất.
+          </p>
+          <p class="text-slate-400 text-sm">
+            Parser nay phát URL theo immutable project ID và encode từng segment để giữ đúng tên có khoảng trắng,
+            Unicode, query và fragment. Golden test đã RED trên ba URL legacy rồi GREEN 18/18. Chrome test mới
+            ghi một PNG thật, mở editor và chỉ PASS khi pathname chuẩn, request hoàn tất và
+            <code>naturalWidth &gt; 0</code>; focused browser PASS 1/1. UI có fallback accessible nếu file thật sự
+            thiếu hoặc request lỗi, thay vì để biểu tượng ảnh vỡ mặc định.
+          </p>
+          <p class="text-slate-400 text-sm">
+            Vì application source đã đổi sau SHA <code>1342d75</code>, năm workflow cũ chỉ còn là lịch sử.
+            P25.1/P25.2 được mở lại, human-review/render tiếp tục khóa; revision 6 của Odyssey chưa bị thay đổi.
+          </p>
+          <p class="text-slate-400 text-sm">
+            Full Browser rerun xanh 12 file/28 test, R4.1c 186–226 ms và Arrange 70 ms. Full CI-profile với
+            FFmpeg bắt buộc xanh 331 file + 1 workflow-owned skip, 2.727 test + 5 skip có chủ đích. Runtime
+            source mới và Chrome thật sau đó đọc đúng Odyssey <code>image_001.png</code> qua HTTP 200,
+            <code>complete=true</code>, kích thước ảnh 2.384×686. Evidence panel nằm tại
+            <code>evidence/live-odyssey-r20/08-images-media-thumbnail-fixed-panel.png</code>. Project revision 6
+            không có write nào trong lần xác minh này.
+          </p>
+        </article>
+      </section>
     </main>
   </body>
 </html>

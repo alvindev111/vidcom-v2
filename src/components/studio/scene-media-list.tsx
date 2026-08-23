@@ -1,7 +1,35 @@
-import { FileAudioIcon, FilmIcon } from "lucide-react";
+import { useState } from "react";
+
+import { FileAudioIcon, FilmIcon, ImageOffIcon } from "lucide-react";
 
 import { formatTimecode } from "@/lib/studio/format";
 import type { SceneMedia } from "@/lib/studio/types";
+
+function ImageThumbnail({ item }: { item: SceneMedia }) {
+  const [status, setStatus] = useState<"loading" | "loaded" | "error">("loading");
+  if (item.missing || status === "error") {
+    return (
+      <ImageOffIcon
+        aria-label={item.missing ? "Image file is missing" : "Image thumbnail could not be loaded"}
+        className="text-muted-foreground size-4"
+        data-scene-media-thumbnail-state={item.missing ? "missing" : status}
+      />
+    );
+  }
+  return (
+    // Project assets use the browser-safe same-origin route. next/image cannot
+    // know their dimensions and would require a loader for this dynamic path.
+    // eslint-disable-next-line @next/next/no-img-element
+    <img
+      src={item.url}
+      alt=""
+      className="h-full w-full object-cover"
+      onLoad={() => setStatus("loaded")}
+      onError={() => setStatus("error")}
+      data-scene-media-thumbnail-state={status}
+    />
+  );
+}
 
 export function SceneMediaList({ media }: { media: SceneMedia[] }) {
   if (media.length === 0) {
@@ -21,14 +49,7 @@ export function SceneMediaList({ media }: { media: SceneMedia[] }) {
         >
           <span className="bg-background grid h-10 w-16 shrink-0 place-items-center overflow-hidden rounded border">
             {item.kind === "image" ? (
-              // Project asset served by the files route; next/image would need a
-              // loader config for a path it cannot know the dimensions of.
-              // eslint-disable-next-line @next/next/no-img-element
-              <img
-                src={item.url}
-                alt=""
-                className="h-full w-full object-cover"
-              />
+              <ImageThumbnail item={item} />
             ) : item.kind === "video" ? (
               <FilmIcon className="text-muted-foreground size-4" />
             ) : (

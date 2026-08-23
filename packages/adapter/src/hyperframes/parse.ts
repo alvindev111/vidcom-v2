@@ -73,6 +73,11 @@ function isExternalMediaReference(raw: string): boolean {
   return value.startsWith("//") || /^(?:https?|data|blob):/iu.test(value);
 }
 
+function projectAssetUrl(ref: ProjectRef, relative: RelPath): string {
+  const path = relative.split("/").map((segment) => encodeURIComponent(segment)).join("/");
+  return `/api/v1/projects/${encodeURIComponent(ref.id)}/assets/${path}`;
+}
+
 function collectProjectReferences(
   entry: RelPath,
   scenes: Scene[],
@@ -193,7 +198,7 @@ function collectMedia(ref: ProjectRef, hostFile: string, root: ParentNode): Scen
     return [{
       kind,
       src,
-      url: external || relative === null ? src : `/api/hf/${ref.slug}/files/${relative}`,
+      url: external || relative === null ? src : projectAssetUrl(ref, relative),
       start: timing.start,
       duration: timing.duration ?? timing.end,
       // Only a file this project owns can be missing; a remote source is not
