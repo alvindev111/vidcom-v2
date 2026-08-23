@@ -4008,6 +4008,13 @@
             <code>evidence/live-odyssey-r20/08-images-media-thumbnail-fixed-panel.png</code>. Project revision 6
             không có write nào trong lần xác minh này.
           </p>
+          <p class="text-slate-400 text-sm">
+            Commit source/evidence <code>fe00620</code> sau đó được checkout trong detached worktree. Lần
+            typecheck đầu dùng symlink <code>node_modules</code> gốc nên thiếu các dependency link cục bộ của
+            Bun; đây là lỗi setup, không phải lỗi source. Sau <code>bun install --frozen-lockfile</code>, exact
+            commit xanh typecheck, golden 11 file/51 test, production build và focused Chrome thumbnail 1/1.
+            P25.1 đóng; P25.2 mở từ CI chính và vẫn giữ quy tắc đỏ thì dừng.
+          </p>
         </article>
       </section>
     </main>
