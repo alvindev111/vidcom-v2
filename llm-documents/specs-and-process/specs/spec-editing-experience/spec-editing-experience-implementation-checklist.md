@@ -2118,7 +2118,7 @@ Execution Log entries; active Odyssey project context/revision/assets; video app
   - Local missing Chrome/FFmpeg/artifact is not a waiver; continue to exact-source Actions. Any red
     caused by the source is repaired, fully rerun and logged before 25.2.
   - _Requirements: R16–R20_ — _Design: §33.1_
-- [/] 25.2 Dispatch, watch and download the five authoritative workflows
+- [x] 25.2 Dispatch, watch and download the five authoritative workflows
   - Load `.env` without printing it; map shell-local `GH_KEY` → `GH_TOKEN`; never persist token in
     command output, notes or artifacts. Use `gh workflow run "<name>" --ref <branch>`,
     `gh run watch`, then `gh run download` for each run.
@@ -2186,6 +2186,35 @@ Execution Log entries; active Odyssey project context/revision/assets; video app
     - `VieNeu real engine` run [32549616087](https://github.com/alvindev111/vidcom-v2/actions/runs/32549616087):
       Linux x64 CPU `success`; artifact tại
       `evidence/actions-1342d75/vieneu-real-32549616087/vieneu-narration/intro.wav`. Inspection: PCM s16le
+      mono 44.1 kHz, 3.621769 s, SHA-256
+      `c98000c07f42bfd37b36c1be9ca2a5648f7f3d73cd7d90044327a2f598c14a39`.
+  - Thumbnail-repair final verdict (exact application/test SHA
+    `fe7ea9d862a5b7c75186cfbcba363dbf80a0106b`):
+    - `CI` run [32635881172](https://github.com/alvindev111/vidcom-v2/actions/runs/32635881172):
+      overall `success`; main Linux x64, macOS arm64, Windows x64; nested Browser Linux/Windows;
+      nested packaged-smoke Linux/macOS/Windows; CodeQL, secret scan, license/provenance và OSV đều
+      `success`; Dependency review `skipped` đúng điều kiện dispatch. Artifact tải tại
+      `evidence/actions-fe7ea9d/ci-32635881172`; ba OS đều `strict=true`, 14/14 required step,
+      không evidence error, VieNeu và MP4 H.264/AAC.
+    - `Browser session` run [32637838797](https://github.com/alvindev111/vidcom-v2/actions/runs/32637838797):
+      Linux x64 và Windows x64 đều `success`, mỗi OS 28/28 browser + 1/1 accessibility; regression
+      Images & Media PNG thật nằm trong matrix. Storyboard 100 scene cùng requested/maxActive/aborted/
+      topWindow = 20/10/10/10. R4.1c Linux 244/211/244/210 ms, Windows 303/233/394/266 ms; Arrange
+      Linux 61 ms, Windows 120 ms. `gh run download` trả `no valid artifacts found` vì workflow không
+      publish artifact; URL/log là evidence authority.
+    - `Packaged smoke` run [32638206130](https://github.com/alvindev111/vidcom-v2/actions/runs/32638206130):
+      Linux x64, macOS arm64 và Windows x64 đều `success`. Artifact tại
+      `evidence/actions-fe7ea9d/packaged-32638206130`; cả ba `strict=true`, 14/14 required step,
+      MCP 43/43, real VieNeu, H.264/AAC và bundled `title-card@1.0.0` được cài qua hai boot offline.
+    - `Process supervision gate` run
+      [32639559389](https://github.com/alvindev111/vidcom-v2/actions/runs/32639559389): Linux x64,
+      macOS arm64, Windows x64 và Real render — Windows x64 đều `success`; three-phase/repeat kill và
+      exhaustive ground-truth proof không để survivor sau termination. `gh run download` trả
+      `no valid artifacts found`; URL/log là evidence authority.
+    - `VieNeu real engine` run
+      [32639830793](https://github.com/alvindev111/vidcom-v2/actions/runs/32639830793): Linux x64 CPU
+      `success`; artifact tại
+      `evidence/actions-fe7ea9d/vieneu-32639830793/vieneu-narration/intro.wav`. Inspection: PCM s16le
       mono 44.1 kHz, 3.621769 s, SHA-256
       `c98000c07f42bfd37b36c1be9ca2a5648f7f3d73cd7d90044327a2f598c14a39`.
 - [x] 25.3 Re-author the Odyssey project through VidCom/Editor authority
@@ -2741,6 +2770,7 @@ caption · D7 tool MCP undo/redo · **D8 PR-11 hot-reload từng sub-composition
 | 2026-08-23 17:28 +07 | 25.1 thumbnail repair exact-commit gate | Detached worktree at exact application/source-evidence commit `fe00620` | Fresh `bun install --frozen-lockfile` established Bun's package-local isolated dependency links; detached typecheck, golden 11 files/51 tests, production build and focused real-browser media-thumbnail test 1/1 all PASS. The exact commit contains only the parser route repair, explicit UI load/error state, two regressions, one Odyssey screenshot and its contemporaneous execution notes | `PASS` | The first detached typecheck used a root-only `node_modules` symlink and failed because package-local dependency links were absent; this was an environment setup error. Replacing it with the frozen lockfile install changed no source and all exact-source gates passed | Commit this evidence-only log update, push the resulting branch, then run CI first; no later workflow may start if it is red |
 | 2026-08-23 18:08 +07 | 25.2 exact-source CI pass; standalone Browser red | Exact pushed HEAD `352df47585cd75df34559ea82a3078276d1c5815`; [`CI` run 32633892015](https://github.com/alvindev111/vidcom-v2/actions/runs/32633892015); [`Browser session` run 32635308500](https://github.com/alvindev111/vidcom-v2/actions/runs/32635308500) | CI success across main Linux/macOS/Windows, nested Browser Linux/Windows, packaged Linux/macOS/Windows and required security jobs; dependency review conditionally skipped. Downloaded three packaged artifacts under `evidence/actions-352df47/ci-32633892015`: each `strict=true`, 14/14 required steps passed, no evidence error, VieNeu present, H.264/AAC output. Standalone Browser then passed Windows 28/28 and passed the new real-image thumbnail regression on Linux, but Linux failed the pre-existing Add scene assertion because Chrome returned a valid conditional-cache `304` plus the full `title-card-template` body while the test required literal `200`. R4.1c Linux was 211–249 ms; Arrange 74 ms | `CI PASS; BROWSER SESSION RED; REPAIR IN PROGRESS` | The failed Browser run remains authoritative and later workflows were not dispatched. Product installation and mounted template succeeded; the failure is a test contract that rejected normal HTTP cache revalidation. Repair accepts only 200/304 and additionally requires the expected template body, so an unusable response still fails | Run focused inspector and full Browser locally; commit/push new exact SHA and restart all five workflows from CI |
 | 2026-08-23 18:11 +07 | 25.2 Browser 304 test-contract repair local gate | Application worktree after run 32635308500 | Focused inspector first rerun kept thumbnail green but hit the known fixture-side `render_binary_missing` transient before catalog exposure; unchanged whole-file retry PASS 2/2. Full serialized Browser PASS 12 files/28 tests with R4.1c 208–225 ms and Arrange 73 ms. Typecheck PASS; lint 0 errors/5 baseline warnings. The revised assertion permits only HTTP 200 or standards-compliant conditional 304 and still requires the fetched body to contain `id="title-card-template"` | `REPAIR PASS LOCAL; NEW EXACT SHA REQUIRED` | No product timeout, cache policy or acceptance budget changed. The transient local red and the authoritative Linux 304 red both remain recorded rather than relabelled | Commit only the assertion and contemporaneous notes, push, then restart all five workflows from CI |
+| 2026-08-23 19:38 +07 | 25.2 thumbnail-repair final exact-source Actions gate | Exact application/test SHA `fe7ea9d862a5b7c75186cfbcba363dbf80a0106b`; five workflow URLs and downloaded evidence under `evidence/actions-fe7ea9d` | [`CI` 32635881172](https://github.com/alvindev111/vidcom-v2/actions/runs/32635881172) success main 3 OS, Browser 2 OS, packaged 3 OS and required security. [`Browser` 32637838797](https://github.com/alvindev111/vidcom-v2/actions/runs/32637838797) success Linux/Windows 28/28 + a11y, including real media thumbnail; R4.1c 210–394 ms and Arrange 61/120 ms. [`Packaged` 32638206130](https://github.com/alvindev111/vidcom-v2/actions/runs/32638206130) success 3 OS; strict 14/14, MCP 43/43, real VieNeu, H.264/AAC and title-card two-boot offline. [`Process` 32639559389](https://github.com/alvindev111/vidcom-v2/actions/runs/32639559389) success 3 OS + Windows real render and termination proof. [`VieNeu` 32639830793](https://github.com/alvindev111/vidcom-v2/actions/runs/32639830793) success; PCM s16le mono 44.1 kHz 3.621769 s, SHA-256 `c98000c07f42bfd37b36c1be9ca2a5648f7f3d73cd7d90044327a2f598c14a39` | `PASS` | Browser/Process intentionally publish no artifact and GitHub returned `no valid artifacts found`; URL/log is authoritative. No required `[!]`. Historical Browser Linux 304 red remains above and is not relabelled | Present the repaired Odyssey Scene panel screenshot for explicit human review; do not render revision 6 until approval is bound to that revision |
 
 ## Final Authoring-Readiness Audit
 
