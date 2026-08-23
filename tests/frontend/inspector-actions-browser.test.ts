@@ -254,16 +254,14 @@ describe("storyboard inspector actions", () => {
         { timeout: 30_000, polling: 50 }, scenesBefore);
       const titleCardResponse = await titleCardFetched;
       expect([200, 304]).toContain(titleCardResponse.status());
-      const titleCardBody = await titleCardResponse.text().catch(async (cause) => {
-        if (titleCardResponse.status() !== 304) throw cause;
-        return page.evaluate(async (sourceUrl) => {
-          const url = new URL(sourceUrl);
-          url.searchParams.set("browser-proof", "1");
-          const response = await fetch(url, { cache: "no-store" });
-          if (!response.ok) throw new Error(`template proof request failed: ${response.status}`);
-          return response.text();
-        }, titleCardResponse.url());
-      });
+      // CDP may discard a completed response body for both 200 and 304. The
+      // browser response above proves loading; a fresh loopback request proves
+      // exact installed bytes without depending on CDP's optional body cache.
+      const proofUrl = new URL(titleCardResponse.url());
+      proofUrl.searchParams.set("browser-proof", crypto.randomUUID());
+      const proofResponse = await fetch(proofUrl, { cache: "no-store" });
+      if (!proofResponse.ok) throw new Error(`template proof request failed: ${proofResponse.status}`);
+      const titleCardBody = await proofResponse.text();
       expect(titleCardBody).toContain('id="title-card-template"');
       const cards = await page.$$('[data-storyboard-scene-id]');
       expect(cards.length).toBeGreaterThan(scenesBefore);

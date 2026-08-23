@@ -4086,6 +4086,15 @@
             hai mẫu 550–579 ms khi Chrome người dùng đang giữ nhiều renderer nặng, nên không được relabel;
             runner CI sạch mới là authority cho gate này.
           </p>
+          <p class="text-slate-400 text-sm">
+            CI kế tiếp <code>32646171125</code> trên <code>694aced</code> vẫn đỏ Browser Linux ở cùng proof,
+            nhưng lần này response là HTTP 200: CDP có thể bỏ body của cả 200 lẫn 304. Mọi case trước đó
+            đều xanh, gồm deletion, R4.1c 251/239/255/217 ms, thumbnail và Arrange 113 ms. Thử fetch lại từ
+            UI page cũng đỏ đúng vì URL thuộc capability preview origin — UI không được cấp quyền đọc origin đó.
+            Repair cuối giữ status response thật làm bằng chứng browser đã tải, rồi test Node gửi request loopback
+            mới với query duy nhất và vẫn bắt buộc byte chứa <code>id="title-card-template"</code>. URL capability
+            không được log. Full inspector xanh 2/2 ba lần liên tiếp; workflow đỏ vẫn được giữ nguyên.
+          </p>
         </article>
       </section>
     </main>
