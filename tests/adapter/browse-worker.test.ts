@@ -15,8 +15,8 @@ afterEach(async () => {
   await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
 });
 
-function pool(concurrency = 2, timeoutMs = 5_000) {
-  const created = new BrowseWorkerPool(concurrency, timeoutMs);
+function pool(concurrency = 2, timeoutMs = 5_000, createWorker?: () => Worker) {
+  const created = new BrowseWorkerPool(concurrency, timeoutMs, createWorker);
   pools.push(created);
   return created;
 }
@@ -76,8 +76,20 @@ describe("browse worker", () => {
 
   it("keeps working after a request times out", async () => {
     const root = await tree();
-    // A budget nothing can meet, so the timeout path is the one taken.
-    const instance = pool(1, 1);
+    let workerNumber = 0;
+    const instance = pool(1, 1_000, () => {
+      workerNumber += 1;
+      if (workerNumber === 1) {
+        // The first worker accepts work but never answers. This forces the
+        // timeout path on every runner instead of depending on filesystem
+        // work losing a race against an arbitrary one-millisecond budget.
+        return new Worker(
+          'require("node:worker_threads").parentPort.on("message", () => {});',
+          { eval: true },
+        );
+      }
+      return new Worker(BROWSE_WORKER_SOURCE, { eval: true });
+    });
     const timedOut = await instance.run({ kind: "read", path: root });
     expect(timedOut.ok).toBe(false);
     if (timedOut.ok) return;
@@ -85,8 +97,9 @@ describe("browse worker", () => {
 
     // The timed-out worker was terminated rather than abandoned, and the pool
     // replaced it — otherwise a single slow read would retire the pool.
-    const recovered = await pool(1, 5_000).run({ kind: "read", path: root });
+    const recovered = await instance.run({ kind: "read", path: root });
     expect(recovered.ok).toBe(true);
+    expect(workerNumber).toBe(2);
   });
 
   it("refuses work once closed instead of hanging", async () => {

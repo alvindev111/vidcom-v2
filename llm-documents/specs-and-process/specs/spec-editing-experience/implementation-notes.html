@@ -4104,6 +4104,18 @@
             không phụ thuộc DNS Node hay CDP body cache, vẫn bắt buộc template ID. Full inspector sau sửa xanh
             2/2 ba lần liên tiếp. Run đỏ không được relabel.
           </p>
+          <p class="text-slate-400 text-sm">
+            CI <code>32647147176</code> trên <code>b14d723</code> đã chứng minh repair preview-origin xanh cả
+            Browser Linux lẫn Windows, kể cả accessibility; main Linux cũng xanh. Main macOS lại đỏ đúng một
+            regression của browse worker: test lấy thao tác đọc thư mục thật đua với timer 1 ms, nên runner
+            nhanh trả thành công trước khi timer nổ. Nó còn dùng một pool mới ở bước recovery, vì vậy chưa
+            chứng minh pool vừa timeout tự hồi phục. Repair xác định inject worker factory nhưng giữ nguyên
+            eval worker mặc định của production: worker đầu nhận message rồi cố ý không trả lời, request bắt
+            buộc timeout; request kế tiếp đi qua chính pool đó và phải được worker thật thứ hai xử lý. Không
+            nới timeout sản phẩm. Focused file xanh 8/8 trong năm lần liên tiếp; run CI đỏ vẫn khóa mọi workflow
+            kế tiếp. Typecheck, boundaries, golden 51/51, spec paths 172/5, production build và diff-check đều
+            xanh; lint giữ đúng 0 error/5 warning baseline.
+          </p>
         </article>
       </section>
     </main>

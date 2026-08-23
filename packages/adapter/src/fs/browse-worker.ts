@@ -88,13 +88,14 @@ export class BrowseWorkerPool {
   constructor(
     private readonly concurrency: number = BROWSE_WORKER_CONCURRENCY,
     private readonly timeoutMs: number = BROWSE_WORKER_TIMEOUT_MS,
+    private readonly createWorker: () => Worker = () => new Worker(BROWSE_WORKER_SOURCE, { eval: true }),
   ) {}
 
   // Named startWorker, not spawn: this creates a thread, not a child process,
   // and the spawn audit rightly looks for the latter.
   private startWorker(): Worker {
     // `eval: true` is the whole point; see BROWSE_WORKER_SOURCE.
-    const worker = new Worker(BROWSE_WORKER_SOURCE, { eval: true });
+    const worker = this.createWorker();
     worker.unref();
     this.live.add(worker);
     return worker;
