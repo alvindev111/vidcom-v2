@@ -4095,6 +4095,15 @@
             mới với query duy nhất và vẫn bắt buộc byte chứa <code>id="title-card-template"</code>. URL capability
             không được log. Full inspector xanh 2/2 ba lần liên tiếp; workflow đỏ vẫn được giữ nguyên.
           </p>
+          <p class="text-slate-400 text-sm">
+            CI <code>32646546097</code> trên <code>dac6297</code> đã xanh Browser Linux nhưng đỏ Windows vì
+            Node Windows trả <code>ENOTFOUND preview.localhost</code>; chính Chromium Windows vẫn tải origin
+            đó bình thường và đã xanh deletion, thumbnail, R4.1c 258/220/254/221 ms cùng Arrange 186 ms.
+            Đổi URL sang 127.0.0.1 bị perimeter trả 403, đúng với security contract. Vì vậy proof cuối chạy
+            trong chính frame preview đã được authorize: fetch no-store cùng origin, không cấp quyền cho UI,
+            không phụ thuộc DNS Node hay CDP body cache, vẫn bắt buộc template ID. Full inspector sau sửa xanh
+            2/2 ba lần liên tiếp. Run đỏ không được relabel.
+          </p>
         </article>
       </section>
     </main>
