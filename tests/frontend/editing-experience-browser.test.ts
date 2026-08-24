@@ -549,79 +549,91 @@ describe("editing experience in a browser", () => {
       const projectRef = await runtime.foundation.infrastructure.workspace.readProjectRef(projectId as ProjectId);
       if (!projectRef) throw new Error("external deletion fixture has no project ref");
       const deletionReads: Array<{ status: number; body: string }> = [];
-      page.on("response", (response) => {
+      const deletionReadsInFlight = new Set<Promise<void>>();
+      const onDeletionResponse = (response: import("puppeteer-core").HTTPResponse) => {
         const url = new URL(response.url());
         if (response.request().method() !== "GET" || !url.pathname.endsWith("/files")) return;
         if (url.searchParams.get("path") !== relativePath) return;
-        void response.text().then((body) => deletionReads.push({ status: response.status(), body }));
-      });
+        const read = response.text()
+          .then((body) => { deletionReads.push({ status: response.status(), body }); })
+          // A response observer is diagnostic only; the user-visible state and
+          // status assertions below remain authoritative if the target swaps.
+          .catch(() => undefined);
+        deletionReadsInFlight.add(read);
+      };
+      page.on("response", onDeletionResponse);
 
-      await openTreeSource(page, relativePath);
-      deletionReads.length = 0;
-      const beforeDeleteSeq = Number(await page.evaluate(() => document.documentElement.dataset.studioEventSeq ?? "0"));
-      await rm(sourcePath);
-      // fs.watch does not promise that every platform reports unlink. `observe`
-      // is the production watcher's deterministic post-filesystem seam: it
-      // samples the real absence, writes the real durable event and wakes SSE.
-      await runtime.foundation.infrastructure.watcher.observe(projectRef, relativePath);
-      await page.waitForFunction((before) =>
-        Number(document.documentElement.dataset.studioEventSeq ?? "0") > before,
-      { timeout: 10_000 }, beforeDeleteSeq);
-      await expect.poll(() => deletionReads.at(-1)?.status, { timeout: 10_000 }).toBe(404);
-      await page.waitForFunction(() => document.body.innerText.includes("This file was deleted outside the editor"), {
-        timeout: 10_000,
-      }).catch(async (cause) => {
-        const state = await page.evaluate(() => ({
-          text: document.body.innerText.slice(0, 1_500),
-          alerts: [...document.querySelectorAll('[role="alert"]')].map((node) => node.textContent?.trim()),
-        }));
-        throw new Error(`external deletion did not reach the editor: ${JSON.stringify({ state, deletionReads })}`, { cause });
-      });
-      await page.waitForFunction(() => ["Recreate", "Close"].every((label) =>
-        [...document.querySelectorAll("button")].some((button) => button.textContent?.trim() === label)));
-      expect(await page.$$eval("button", (buttons) => buttons
-        .filter((button) => button.textContent?.includes("Save"))
-        .every((button) => (button as HTMLButtonElement).disabled))).toBe(true);
-      await page.evaluate(() => {
-        const asked: string[] = [];
-        (window as unknown as { deletionExitPrompts: string[] }).deletionExitPrompts = asked;
-        window.confirm = (message?: string) => { asked.push(message ?? ""); return false; };
-      });
-      await page.waitForFunction(() => document.documentElement.dataset.studioUnsavedCount === "1", {
-        timeout: 10_000,
-        polling: 16,
-      });
-      await page.click('a[href="/"]');
-      expect(await page.evaluate(() =>
-        (window as unknown as { deletionExitPrompts: string[] }).deletionExitPrompts.length)).toBe(1);
-      expect(new URL(page.url()).pathname).not.toBe("/");
-      await clickExactButton(page, "Close");
-      await page.waitForFunction((label) => ![...document.querySelectorAll("button")]
-        .some((button) => button.getAttribute("aria-label")?.startsWith(`Close ${label}`)),
-      { timeout: 10_000 }, filename);
+      try {
+        await openTreeSource(page, relativePath);
+        deletionReads.length = 0;
+        const beforeDeleteSeq = Number(await page.evaluate(() => document.documentElement.dataset.studioEventSeq ?? "0"));
+        await rm(sourcePath);
+        // fs.watch does not promise that every platform reports unlink. `observe`
+        // is the production watcher's deterministic post-filesystem seam: it
+        // samples the real absence, writes the real durable event and wakes SSE.
+        await runtime.foundation.infrastructure.watcher.observe(projectRef, relativePath);
+        await page.waitForFunction((before) =>
+          Number(document.documentElement.dataset.studioEventSeq ?? "0") > before,
+        { timeout: 10_000 }, beforeDeleteSeq);
+        await expect.poll(() => deletionReads.at(-1)?.status, { timeout: 10_000 }).toBe(404);
+        await page.waitForFunction(() => document.body.innerText.includes("This file was deleted outside the editor"), {
+          timeout: 10_000,
+        }).catch(async (cause) => {
+          const state = await page.evaluate(() => ({
+            text: document.body.innerText.slice(0, 1_500),
+            alerts: [...document.querySelectorAll('[role="alert"]')].map((node) => node.textContent?.trim()),
+          }));
+          throw new Error(`external deletion did not reach the editor: ${JSON.stringify({ state, deletionReads })}`, { cause });
+        });
+        await page.waitForFunction(() => ["Recreate", "Close"].every((label) =>
+          [...document.querySelectorAll("button")].some((button) => button.textContent?.trim() === label)));
+        expect(await page.$$eval("button", (buttons) => buttons
+          .filter((button) => button.textContent?.includes("Save"))
+          .every((button) => (button as HTMLButtonElement).disabled))).toBe(true);
+        await page.evaluate(() => {
+          const asked: string[] = [];
+          (window as unknown as { deletionExitPrompts: string[] }).deletionExitPrompts = asked;
+          window.confirm = (message?: string) => { asked.push(message ?? ""); return false; };
+        });
+        await page.waitForFunction(() => document.documentElement.dataset.studioUnsavedCount === "1", {
+          timeout: 10_000,
+          polling: 16,
+        });
+        await page.click('a[href="/"]');
+        expect(await page.evaluate(() =>
+          (window as unknown as { deletionExitPrompts: string[] }).deletionExitPrompts.length)).toBe(1);
+        expect(new URL(page.url()).pathname).not.toBe("/");
+        await clickExactButton(page, "Close");
+        await page.waitForFunction((label) => ![...document.querySelectorAll("button")]
+          .some((button) => button.getAttribute("aria-label")?.startsWith(`Close ${label}`)),
+        { timeout: 10_000 }, filename);
 
-      await writeFile(sourcePath, sourceBytes);
-      await runtime.foundation.infrastructure.watcher.observe(projectRef, relativePath);
-      await openTreeSource(page, relativePath);
-      const beforeDelete = await page.$eval(".cm-content", (element) => element.textContent ?? "");
-      await page.locator(".cm-content").fill(`${beforeDelete}\n<!-- recreate-dirty-delete -->`);
-      await page.waitForFunction(() => document.body.innerText.includes("Unsaved changes"));
-      deletionReads.length = 0;
-      const beforeDirtyDeleteSeq = Number(await page.evaluate(() => document.documentElement.dataset.studioEventSeq ?? "0"));
-      await rm(sourcePath);
-      await runtime.foundation.infrastructure.watcher.observe(projectRef, relativePath);
-      await page.waitForFunction((before) =>
-        Number(document.documentElement.dataset.studioEventSeq ?? "0") > before,
-      { timeout: 10_000 }, beforeDirtyDeleteSeq);
-      await expect.poll(() => deletionReads.at(-1)?.status, { timeout: 10_000 }).toBe(404);
-      await page.waitForFunction(() => document.body.innerText.includes("This file was deleted outside the editor"));
-      const recreateResponse = page.waitForResponse((response) =>
-        response.request().method() === "PUT" && new URL(response.url()).pathname.endsWith("/files"),
-      { timeout: 10_000 });
-      await clickExactButton(page, "Recreate");
-      expect((await recreateResponse).ok()).toBe(true);
-      await page.waitForFunction(() => !document.body.innerText.includes("This file was deleted outside the editor"));
-      expect(await readFile(sourcePath, "utf8")).toContain("recreate-dirty-delete");
+        await writeFile(sourcePath, sourceBytes);
+        await runtime.foundation.infrastructure.watcher.observe(projectRef, relativePath);
+        await openTreeSource(page, relativePath);
+        const beforeDelete = await page.$eval(".cm-content", (element) => element.textContent ?? "");
+        await page.locator(".cm-content").fill(`${beforeDelete}\n<!-- recreate-dirty-delete -->`);
+        await page.waitForFunction(() => document.body.innerText.includes("Unsaved changes"));
+        deletionReads.length = 0;
+        const beforeDirtyDeleteSeq = Number(await page.evaluate(() => document.documentElement.dataset.studioEventSeq ?? "0"));
+        await rm(sourcePath);
+        await runtime.foundation.infrastructure.watcher.observe(projectRef, relativePath);
+        await page.waitForFunction((before) =>
+          Number(document.documentElement.dataset.studioEventSeq ?? "0") > before,
+        { timeout: 10_000 }, beforeDirtyDeleteSeq);
+        await expect.poll(() => deletionReads.at(-1)?.status, { timeout: 10_000 }).toBe(404);
+        await page.waitForFunction(() => document.body.innerText.includes("This file was deleted outside the editor"));
+        const recreateResponse = page.waitForResponse((response) =>
+          response.request().method() === "PUT" && new URL(response.url()).pathname.endsWith("/files"),
+        { timeout: 10_000 });
+        await clickExactButton(page, "Recreate");
+        expect((await recreateResponse).ok()).toBe(true);
+        await page.waitForFunction(() => !document.body.innerText.includes("This file was deleted outside the editor"));
+        expect(await readFile(sourcePath, "utf8")).toContain("recreate-dirty-delete");
+      } finally {
+        page.off("response", onDeletionResponse);
+        await Promise.all(deletionReadsInFlight);
+      }
     });
   }, 180_000);
 

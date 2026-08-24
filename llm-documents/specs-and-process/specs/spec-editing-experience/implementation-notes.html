@@ -4259,6 +4259,21 @@
             xanh ba lượt liên tiếp và remote guard xanh 2/2. Vì tracked test source đổi, exact-source chain phải
             chạy lại từ CI.
           </p>
+          <p class="text-slate-400 text-sm">
+            CI <code>32744901834</code> trên SHA <code>f3a9106</code> lại đỏ sau khi Windows Browser đã chạy
+            xanh đủ 12 file/28 test, R4.1c 222–264 ms và Arrange 114 ms. Vitest bắt một rejection nền
+            <code>Network.getResponseBody: Target closed</code>: case external-delete gắn listener response nhưng
+            không tháo listener và không sở hữu promise <code>response.text()</code>, nên browser teardown có thể
+            đóng CDP target trong lúc body còn được đọc. Run được hủy ngay. Repair đặt tên listener, thu mọi body
+            read vào một tập in-flight, xử lý lỗi của observer chẩn đoán, rồi tháo listener và drain trong
+            <code>finally</code> trước khi fixture đóng browser. Bundle exact local sau sửa xanh 12/12 file,
+            28/28 test, không còn unhandled error; R4.1c 185–222 ms và Arrange 71 ms. Một thử nghiệm tạm trì
+            hoãn snapshot đã gây 409 stale revision trong flow kế tiếp nên bị loại hoàn toàn; final diff không đổi
+            product order, threshold hay timeout. Lint draft đầu đỏ <code>prefer-const</code>, được sửa bằng tập
+            bounded giữ các promise cho đến cuối case thay vì self-reference mutable. Full regression cuối cùng
+            xanh 331 file cộng một workflow skip, 2.730 test cộng năm intentional skip; typecheck, boundaries,
+            spec paths 172/5, build và lint 0 error/5 baseline warning đều xanh.
+          </p>
         </article>
       </section>
     </main>
