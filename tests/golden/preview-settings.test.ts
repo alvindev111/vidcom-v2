@@ -9,6 +9,7 @@ import {
 import path from "node:path";
 
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { parseHTML } from "linkedom";
 
 import { buildPreviewCss, injectPreviewSettingsDocument } from "@vidcom/adapter";
 import { DEFAULT_PREVIEW_SETTINGS as CORE_DEFAULT_PREVIEW_SETTINGS } from "@vidcom/core";
@@ -144,5 +145,37 @@ describe("preview settings matrix", () => {
     expect(buildPreviewCss(settingsFor("off", "none", false, false))).not.toContain(
       "@keyframes hf-scene-",
     );
+  });
+
+  it("keeps preview audio inside the root composition observed by HyperFrames", () => {
+    const settings = mergePreviewSettings(DEFAULT_PREVIEW_SETTINGS, {
+      bgm: {
+        enabled: true,
+        volume: 0.25,
+        loop: true,
+        track: { name: "cinematic.wav", path: "preview-assets/bgm/cinematic.wav" },
+      },
+    });
+    const rendered = injectPreviewSettingsDocument(BASE_HTML, settings, {
+      root: true,
+      fileBaseUrl: "/files/",
+      narration: [{
+        sceneId: "scene-a",
+        path: "narration/scene-a.wav",
+        startSeconds: 0,
+        durationSeconds: 3.5,
+      }],
+    });
+    const { document } = parseHTML(rendered);
+    const composition = document.querySelector('[data-composition-id="main"]');
+    const timedAudio = [...document.querySelectorAll("audio[data-start]")];
+
+    expect(timedAudio).toHaveLength(2);
+    expect(timedAudio.every((audio) => composition?.contains(audio))).toBe(true);
+    expect(() => injectPreviewSettingsDocument(
+      "<!doctype html><html><head></head><body></body></html>",
+      settings,
+      { root: true, fileBaseUrl: "/files/" },
+    )).toThrow("no root composition for preview media");
   });
 });

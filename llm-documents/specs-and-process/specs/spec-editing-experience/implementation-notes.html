@@ -4116,6 +4116,108 @@
             kế tiếp. Typecheck, boundaries, golden 51/51, spec paths 172/5, production build và diff-check đều
             xanh; lint giữ đúng 0 error/5 warning baseline.
           </p>
+          <p class="text-slate-400 text-sm">
+            Exact application/test SHA <code>4dfbc87</code> đã xanh CI <code>32647845188</code>: main ba OS,
+            Browser Linux/Windows, packaged ba OS và security đều thành công; dependency review skip đúng điều
+            kiện. R4.1c Linux 246/212/279/211 ms, Windows 266/256/298/253 ms; Arrange 75/237 ms. Artifact tải
+            về <code>evidence/actions-4dfbc87/ci-32647845188</code> cho cả ba OS đều strict, không evidence error,
+            đủ 14/14 bước bắt buộc, có VieNeu online/offline và MP4 H.264/AAC 8 giây; OSV không có result.
+            Lần tải bulk đầu gặp signed URL Linux hết hạn và trả 403; lấy URL mới theo từng artifact đã thành
+            công, không artifact nào bị waive. Gate standalone Browser được mở trên đúng remote SHA này.
+          </p>
+          <p class="text-slate-400 text-sm">
+            Standalone Browser <code>32657667723</code> trên cùng <code>4dfbc87</code> xanh Linux và Windows,
+            gồm accessibility. R4.1c Linux 244/232/300/210 ms, Windows 254/242/255/220 ms; Arrange 62/96 ms,
+            đều dưới budget cố định 500 ms. Workflow này không publish artifact theo thiết kế nên
+            <code>gh run download</code> trả <code>no valid artifacts found</code>; URL và log exact run được
+            giữ làm authority. Chuỗi được mở sang Packaged smoke, chưa bỏ qua gate nào.
+          </p>
+          <p class="text-slate-400 text-sm">
+            Standalone Packaged smoke <code>32660333759</code> trên cùng SHA xanh Linux, macOS và Windows.
+            Ba artifact tại <code>evidence/actions-4dfbc87/packaged-32660333759</code> đều strict, không evidence
+            error, đủ 14/14 bước bắt buộc, packaged MCP 43/43, VieNeu online/offline, MP4 H.264/AAC 8 giây và
+            bundled <code>title-card@1.0.0</code> được cài qua hai boot offline. Process supervision mới được mở
+            sau khi đọc đủ ba summary này.
+          </p>
+          <p class="text-slate-400 text-sm">
+            Process supervision <code>32664149581</code> xanh Linux, macOS, Windows và Windows real render.
+            Real render trả <code>TERMINATED_CLEAN</code>, exhaustive, <code>survivors=[]</code>; ba-phase kill
+            lặp lại PASS và degraded proof công khai giới hạn thay vì nhận sai zero-survivor. Workflow không
+            publish artifact nên <code>gh run download</code> trả <code>no valid artifacts found</code>; URL/log
+            exact run là authority. VieNeu real engine mới được mở sau kết luận này.
+          </p>
+          <p class="text-slate-400 text-sm">
+            VieNeu real engine <code>32667331533</code> trên cùng SHA xanh Linux CPU: engine 3.2.4, 14 voice
+            thật, model revision <code>2da0efab622a1722125991736524f080b751ef5b</code>, integration 3/3 và
+            voice tổng hợp <code>vieneu-v3-minh-duc</code>. Artifact <code>intro.wav</code> là PCM s16le mono
+            44,1 kHz, 3,621769 giây, 319.518 byte, SHA-256
+            <code>c98000c07f42bfd37b36c1be9ca2a5648f7f3d73cd7d90044327a2f598c14a39</code>. Chuỗi CI, Browser,
+            Packaged, Process và VieNeu đã hoàn tất không có <code>[!]</code>; bước kế tiếp quay lại exact
+            Odyssey revision 188 để validate và snapshot thật.
+          </p>
+          <p class="text-slate-400 text-sm">
+            Closeout Odyssey không tiếp tục vá bố cục cũ. Toàn bộ 18 beat được chuyển sang 18 cấu trúc kể
+            chuyện riêng: route, fleet ledger, pressure field, memory erasure, boulder logic, identity
+            redaction, signal, reversal, pins, depth scale, mast constraint, protected channel, risk corridor,
+            taboo attrition, mortality split, disguise layer, precision axis và closure route. Hai font subset
+            cũ được thay bằng byte Noto Sans/Noto Sans Symbols đầy đủ, project-local; validate hết lỗi glyph
+            tiếng Việt và ký hiệu ở revision 229. Ảnh mở đầu dạng poster thương mại được thay bằng tranh khắc
+            public-domain <em>The Destruction of Troy by Jones</em> (1854), SHA-256
+            <code>058355dbffa51c10625103f83e3afc53714e4cdfdb350b8b5ca237afa993cf34</code>, upload qua editor asset
+            endpoint và đóng băng tại <code>assets/troy-destruction-public-domain.png</code>.
+          </p>
+          <p class="text-slate-400 text-sm">
+            Vòng motion đầu làm sáu scene rơi vào <code>story-motion-shallow</code>; đây là gate thật nên đã
+            dừng snapshot. Nguyên nhân midpoint bị cắt chữ là GSAP áp trạng thái <code>from</code> của tween
+            payoff muộn ngay khi timeline khởi tạo. Repair giữ payoff ở khoảng 5,9 giây nhưng thêm
+            <code>immediateRender:false</code>, vì vậy setup/middle/payoff vẫn đủ mà copy không bị giữ ngoài
+            khung trước khi tween chạy. Snapshot revision 247 hoàn tất 18/18; kiểm trực quan xác nhận scene 1
+            sạch poster, scene 3/13 hết cắt heading và scene 18 hết blur.
+          </p>
+          <p class="text-slate-400 text-sm">
+            Audit động sau đó truy hai warning contrast về đúng scene 14: nhãn
+            <code>ĐƯỜNG CẤM BỊ PHÁ</code> và folio trên vùng tranh sáng. Hai vùng được thêm backing plate tối
+            thật, không dùng ignore. Các camera crop của 18 plate và ba hit occlusion do khoảng trắng/
+            strikethrough được khai báo đúng ý đồ layout. Validate revision 268 còn 0 error, 0 warning và chỉ
+            18 info <code>.grain</code> có <code>pointer-events:none</code>. Snapshot job
+            <code>job_435a9a37-757c-430c-ada4-dab7aacd5410</code> hoàn tất 18/18 tại đúng revision 268;
+            contact sheet cùng scene 14 đã được xem trực tiếp. Render MP4 vẫn khóa cho đến khi có screenshot
+            editor và <code>human_reviewed</code> mới gắn với revision này.
+          </p>
+          <p class="text-slate-400 text-sm">
+            Browser editor sau revision 272 đã phơi ra lỗi contract độc lập với thiết kế scene: BGM và 18
+            audio narration đều được adapter nối ngay trước <code>&lt;/body&gt;</code>, nằm ngoài mọi
+            <code>[data-composition-id]</code>. HyperFrames cảnh báo và cố ý không observe 19 media này, nên
+            nút Play không thể phát âm thanh dù file WAV/BGM đều trả 200. Regression mới trước tiên đỏ vì hai
+            audio mẫu không thuộc root composition, rồi xanh sau khi tone/BGM/narration được chèn trực tiếp
+            dưới root host; caption/FX runtime vẫn ở body scope. Golden matrix, caption runtime và narration
+            matrix xanh 19/19; typecheck, boundaries và lint 0 error/5 baseline warning cũng xanh. Đây là sửa
+            ownership của preview/render, không tiếp tục đánh bóng bố cục cũ. Ảnh Troy public-domain đồng thời
+            được đóng băng thành JPEG rộng 1920 px ở revision 272 để tránh giải mã PNG 7,5 MB trong editor;
+            browser proof và exact-source CI vẫn còn mở.
+          </p>
+          <p class="text-slate-400 text-sm">
+            Browser proof tiếp theo không chấp nhận frame chỉ có ảnh nền. Computed style chứng minh 18 scene
+            body đã mount nhưng <code>&lt;style&gt;</code> và timeline script là sibling trong template nên Studio
+            bundler bỏ chúng: document chỉ có một stylesheet, không có key nào trong
+            <code>window.__timelines</code>, ảnh 1920×1438 nằm trong normal flow và <code>.frame</code> cao gần
+            2950 px. Đúng 18 source được sửa tuần tự qua
+            <code>read_composition</code> + <code>save_file</code>, đưa style và paused GSAP script vào chính
+            composition root. Validate revision 310 trở lại 0 error, 0 warning và 18 info grain; browser hiện
+            19 stylesheet, đủ 18 timeline key và frame 4,10 giây có đầy đủ tiêu đề tiếng Việt, tuyến Troy →
+            Ithaca, caption, folio và ảnh đã grade. Chín card Storyboard đang nhìn thấy đều có WebP hoàn chỉnh;
+            thumbnail Images &amp; Media là JPEG 1920×1438 hoàn chỉnh. Cả 19 audio đều ready và nằm dưới
+            composition; lúc Play có đúng BGM + narration cùng chạy. Snapshot
+            <code>job_0fe45d41-9a6e-4f6c-acf5-b94e3116fc54</code> hoàn tất 18/18 tại revision 310.
+          </p>
+          <p class="text-slate-400 text-sm">
+            Full CI-profile local lần đầu đỏ gate streaming 500 MiB: RSS delta 108 MiB trong lúc daemon cũ còn
+            nhiều request asset bị abort. Theo quy tắc đỏ chặn bước kế, tiến trình editor được dừng; case cô lập
+            xanh ở 44,5 MiB rồi toàn suite sạch chạy lại xanh 331 file + một workflow skip, 2.730 test + năm
+            intentional skip; cùng gate đạt 41,5 MiB. Không đổi threshold hay sản phẩm để che đỏ. Local
+            Storyboard dùng binary FFmpeg đóng gói có libwebp thay cho Homebrew thiếu encoder. Exact commit và
+            chuỗi năm workflow vẫn là gate kế tiếp; MP4 chưa được render trước human review revision 310.
+          </p>
         </article>
       </section>
     </main>

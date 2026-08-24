@@ -66,6 +66,23 @@ export function buildHyperframesBaseDocument(
   return buildSubCompositionHtml(projectRoot, entry, runtimeUrl, fileBaseUrl);
 }
 
+/**
+ * Places runtime-managed media below the first composition host in the body.
+ * HyperFrames intentionally ignores timed media outside a composition subtree,
+ * so appending preview audio beside the root makes it visible but unplayable.
+ */
+function injectIntoRootCompositionDocument(html: string, markup: string): string {
+  if (!markup) return html;
+  const body = /<body\b[^>]*>/iu.exec(html);
+  const searchStart = body?.index === undefined ? 0 : body.index + body[0].length;
+  const root = /<[a-z][a-z0-9:-]*\b(?=[^>]*\bdata-composition-id\s*=)[^>]*>/iu.exec(html.slice(searchStart));
+  if (!root) {
+    throw new Error("HyperFrames document has no root composition for preview media");
+  }
+  const insertion = searchStart + root.index + root[0].length;
+  return `${html.slice(0, insertion)}${markup}${html.slice(insertion)}`;
+}
+
 /** Injects settings into an already-built document; exported for golden compatibility checks. */
 export function injectPreviewSettingsDocument(
   html: string,
@@ -80,12 +97,12 @@ export function injectPreviewSettingsDocument(
   const style = `<style id="hf-preview-settings">\n${buildPreviewCss(settings)}\n</style>`;
   let output = html.includes("</head>") ? html.replace("</head>", `${style}\n</head>`) : `${style}\n${html}`;
   if (options.root) {
-    const body = buildToneOverlayHtml(settings)
+    const composition = buildToneOverlayHtml(settings)
       + buildBgmHtml(settings, options.fileBaseUrl)
-      + buildNarrationHtml(options.narration ?? [], options.fileBaseUrl)
-      + buildCaptionRuntimeScript()
-      + buildFxPauseScript(settings);
-    output = output.includes("</body>") ? output.replace("</body>", `${body}\n</body>`) : output + body;
+      + buildNarrationHtml(options.narration ?? [], options.fileBaseUrl);
+    output = injectIntoRootCompositionDocument(output, composition);
+    const runtime = buildCaptionRuntimeScript() + buildFxPauseScript(settings);
+    output = output.includes("</body>") ? output.replace("</body>", `${runtime}\n</body>`) : output + runtime;
   }
   return output;
 }
