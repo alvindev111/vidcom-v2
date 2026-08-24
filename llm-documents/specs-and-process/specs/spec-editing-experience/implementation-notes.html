@@ -4218,6 +4218,15 @@
             Storyboard dùng binary FFmpeg đóng gói có libwebp thay cho Homebrew thiếu encoder. Exact commit và
             chuỗi năm workflow vẫn là gate kế tiếp; MP4 chưa được render trước human review revision 310.
           </p>
+          <p class="text-slate-400 text-sm">
+            Exact-source CI <code>32733538253</code> trên SHA <code>a9271ce</code> sau đó đỏ ở Linux
+            <code>remote-asset-browser</code>. Dấu vết <code>assetRequests=0</code> xác nhận CSP sản phẩm vẫn chặn
+            ảnh từ xa; lỗi nằm ở test đóng violation guard sau sleep cố định 400 ms trước khi Linux chuyển event
+            <code>securitypolicyviolation</code>. Workflow được hủy ngay sau đỏ và không mở Packaged/Process/VieNeu.
+            Repair chỉ thay sleep bằng chờ đúng event, giới hạn 10 giây và polling 16 ms; không nới CSP hay assertion.
+            Focused browser xanh năm lượt liên tiếp, mỗi lượt 2/2; toàn browser matrix cục bộ xanh 12 file/28 test,
+            R4.1c 210–222 ms và Arrange 71 ms. Cần một exact SHA mới và chạy lại chuỗi workflow từ CI.
+          </p>
         </article>
       </section>
     </main>

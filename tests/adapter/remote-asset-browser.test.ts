@@ -109,7 +109,10 @@ describe.skipIf(!executablePath)("remote asset guard in a real browser", () => {
     const page = await browser.newPage();
     try {
       await page.goto(`http://127.0.0.1:${documentPort}/`, { waitUntil: "load" });
-      await new Promise((resolve) => setTimeout(resolve, 400));
+      await page.waitForFunction(
+        () => (globalThis as typeof globalThis & { __guardViolation?: boolean }).__guardViolation === true,
+        { timeout: 10_000, polling: 16 },
+      );
       const snapshot = await guard.close(jobId, opened.token);
       guardClosed = true;
       expect(assetRequests).toBe(0);
