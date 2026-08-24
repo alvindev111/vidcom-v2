@@ -171,6 +171,7 @@ export async function withStudioBrowser(
     browser = await puppeteer.launch({
       executablePath: available.chromePath,
       headless: true,
+      userDataDir: path.join(root, "chrome-profile"),
       args: ["--no-sandbox", "--disable-dev-shm-usage"],
     });
     const page = await browser.newPage();

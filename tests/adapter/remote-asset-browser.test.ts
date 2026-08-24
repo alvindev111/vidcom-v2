@@ -1,6 +1,8 @@
 import { execFileSync } from "node:child_process";
 import { existsSync } from "node:fs";
+import { mkdtemp, rm } from "node:fs/promises";
 import { createServer, type Server } from "node:http";
+import { tmpdir } from "node:os";
 import path from "node:path";
 
 import puppeteer, { type Browser } from "puppeteer-core";
@@ -68,16 +70,22 @@ if (!executablePath) console.warn("SKIPPING remote-asset browser integration: Ch
 
 describe.skipIf(!executablePath)("remote asset guard in a real browser", () => {
   let browser: Browser;
+  let browserRoot: string;
 
   beforeAll(async () => {
+    browserRoot = await mkdtemp(path.join(tmpdir(), "vidcom-remote-asset-browser-"));
     browser = await puppeteer.launch({
       executablePath: executablePath!,
       headless: true,
+      userDataDir: path.join(browserRoot, "chrome-profile"),
       args: ["--no-sandbox", "--disable-setuid-sandbox"],
     });
   }, BROWSER_LAUNCH_TIMEOUT_MS);
 
-  afterAll(async () => { await browser?.close(); });
+  afterAll(async () => {
+    await browser?.close();
+    if (browserRoot) await rm(browserRoot, { recursive: true, force: true });
+  });
 
   it("blocks a runtime-created remote image before the asset server receives any request", async () => {
     const jobId = "job_runtime_media_browser" as JobId;

@@ -6,6 +6,8 @@ import path from "node:path";
 
 import { describe, expect, it } from "vitest";
 
+import type { ProjectId, RelPath } from "@vidcom/contracts";
+
 import { withStudioBrowser } from "../support/browser-studio";
 
 interface AttemptResult {
@@ -96,6 +98,9 @@ describe("isolated authored preview", () => {
           })();
         </script>`;
         await writeFile(sourcePath, source.replace("</body>", `${authored}</body>`), "utf8");
+        const projectRef = await runtime.foundation.infrastructure.workspace.readProjectRef(projectId as ProjectId);
+        if (!projectRef) throw new Error("preview security fixture has no project ref");
+        await runtime.foundation.infrastructure.watcher.observe(projectRef, "index.html" as RelPath);
 
         await page.waitForFunction(() => Boolean(
           (window as unknown as { __previewSecurityResult?: unknown }).__previewSecurityResult,

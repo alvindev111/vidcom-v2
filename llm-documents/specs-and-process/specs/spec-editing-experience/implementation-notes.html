@@ -4238,6 +4238,16 @@
             R4.1c 186–226 ms, Arrange 65 ms. Một lượt stress lặp browser từng đo 549/553 ms do contention và được
             giữ là local red; workflow-equivalent clean run ngay sau đó xanh toàn bộ mà không nới budget 500 ms.
           </p>
+          <p class="text-slate-400 text-sm">
+            Run <code>32737598918</code> trên SHA <code>3ec5c27</code> xanh core Linux/macOS, Browser Linux,
+            Packaged Linux/macOS và năm security job nhưng lại đỏ Windows Browser sau một runner đặc biệt chậm
+            (riêng <code>bun install</code> 5 phút 18 giây). Own-write R4.1c vẫn đạt 243/212 ms; external index
+            reload là 615 ms và Arrange 668 ms. Hai lỗi harness khác cũng lộ ra: preview-security còn phụ thuộc
+            <code>fs.watch</code> Windows, remote-asset Chrome va vào default Puppeteer profile chưa thoát. Run bị
+            hủy, nên core/packaged Windows không được gọi PASS. Mọi browser fixture nay có
+            <code>userDataDir</code> riêng; security write gọi deterministic <code>watcher.observe</code>. Full
+            matrix cục bộ sau sửa xanh 12 file/28 test, R4.1c 213–250 ms và Arrange 74 ms; budget không đổi.
+          </p>
         </article>
       </section>
     </main>
