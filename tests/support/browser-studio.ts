@@ -205,6 +205,9 @@ export async function withStudioBrowser(
       if (value === undefined) delete process.env[key];
       else process.env[key] = value;
     }
-    await rm(root, { recursive: true, force: true });
+    // Windows may keep a just-closed Chrome profile or skill file handle for a
+    // few scheduler turns. Node's bounded retry is the platform-supported way
+    // to finish cleanup without turning a green browser assertion into ENOTEMPTY.
+    await rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
   }
 }

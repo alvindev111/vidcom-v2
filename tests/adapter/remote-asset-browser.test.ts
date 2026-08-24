@@ -84,7 +84,9 @@ describe.skipIf(!executablePath)("remote asset guard in a real browser", () => {
 
   afterAll(async () => {
     await browser?.close();
-    if (browserRoot) await rm(browserRoot, { recursive: true, force: true });
+    if (browserRoot) {
+      await rm(browserRoot, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
+    }
   });
 
   it("blocks a runtime-created remote image before the asset server receives any request", async () => {

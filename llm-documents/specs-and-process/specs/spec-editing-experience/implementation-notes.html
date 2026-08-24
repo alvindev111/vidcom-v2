@@ -4248,6 +4248,17 @@
             <code>userDataDir</code> riêng; security write gọi deterministic <code>watcher.observe</code>. Full
             matrix cục bộ sau sửa xanh 12 file/28 test, R4.1c 213–250 ms và Arrange 74 ms; budget không đổi.
           </p>
+          <p class="text-slate-400 text-sm">
+            CI <code>32740086537</code> trên SHA <code>a8513c0</code> cuối cùng xanh core 3 OS, Browser Linux/
+            Windows, Packaged 3 OS và security; artifact packaged đã tải về
+            <code>evidence/actions-a8513c0/ci-32740086537</code>. Standalone Browser <code>32743386396</code>
+            tiếp tục chứng minh matrix 28/28 xanh trên cả hai OS, Linux R4.1c 202–221 ms/Arrange 53 ms và
+            Windows 219–266 ms/Arrange 216 ms. Tuy vậy workflow vẫn đỏ đúng vì teardown accessibility Windows
+            gặp <code>ENOTEMPTY</code> khi xóa <code>.agents/skills/vidcom</code> vừa được writer đóng. Repair dùng
+            tùy chọn retry bounded chính thức của Node cho hai browser root; không skip axe. Accessibility local
+            xanh ba lượt liên tiếp và remote guard xanh 2/2. Vì tracked test source đổi, exact-source chain phải
+            chạy lại từ CI.
+          </p>
         </article>
       </section>
     </main>
