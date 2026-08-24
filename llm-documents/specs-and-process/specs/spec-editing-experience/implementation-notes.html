@@ -4227,6 +4227,17 @@
             Focused browser xanh năm lượt liên tiếp, mỗi lượt 2/2; toàn browser matrix cục bộ xanh 12 file/28 test,
             R4.1c 210–222 ms và Arrange 71 ms. Cần một exact SHA mới và chạy lại chuỗi workflow từ CI.
           </p>
+          <p class="text-slate-400 text-sm">
+            CI kế tiếp <code>32735068088</code> trên SHA <code>f9386f9</code> xác nhận remote-asset đã xanh cả
+            Linux lẫn Windows, nhưng Windows browser còn đỏ 2/28 case. Case external-delete đọc cảnh báo đã paint
+            rồi bấm Back trước khi registry guard công bố count; case inspector giữ response iframe qua đúng lúc
+            double-buffer thay preview nên CDP báo execution context bị hủy. Run được hủy ngay: Linux browser và
+            năm security job xanh, các job core/packaged còn lại là <code>cancelled</code>. Repair công bố aggregate
+            guard count vào dataset chẩn đoán và chờ đúng count 1; template proof chuyển sang iframe hiện tại đang
+            sở hữu title-card và chỉ retry khi swap thay context. Full browser matrix sau sửa xanh 12 file/28 test,
+            R4.1c 186–226 ms, Arrange 65 ms. Một lượt stress lặp browser từng đo 549/553 ms do contention và được
+            giữ là local red; workflow-equivalent clean run ngay sau đó xanh toàn bộ mà không nới budget 500 ms.
+          </p>
         </article>
       </section>
     </main>

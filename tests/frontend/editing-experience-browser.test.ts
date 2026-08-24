@@ -587,6 +587,10 @@ describe("editing experience in a browser", () => {
         (window as unknown as { deletionExitPrompts: string[] }).deletionExitPrompts = asked;
         window.confirm = (message?: string) => { asked.push(message ?? ""); return false; };
       });
+      await page.waitForFunction(() => document.documentElement.dataset.studioUnsavedCount === "1", {
+        timeout: 10_000,
+        polling: 16,
+      });
       await page.click('a[href="/"]');
       expect(await page.evaluate(() =>
         (window as unknown as { deletionExitPrompts: string[] }).deletionExitPrompts.length)).toBe(1);

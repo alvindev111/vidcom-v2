@@ -9,10 +9,19 @@
 
 const owners = new Map<string, number>();
 
+function publishUnsavedCount(): void {
+  if (typeof document === "undefined") return;
+  document.documentElement.dataset.studioUnsavedCount = String(unsavedCount());
+}
+
 /** Reports how many unsaved drafts one owner is holding. */
 export function reportUnsaved(ownerId: string, count: number): void {
   if (count > 0) owners.set(ownerId, count);
   else owners.delete(ownerId);
+  // Navigation tests and assistive diagnostics need to observe the same
+  // registry that confirmDiscard reads, rather than infer readiness from a
+  // warning painted by a different component.
+  publishUnsavedCount();
 }
 
 export function unsavedCount(): number {

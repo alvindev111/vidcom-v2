@@ -142,6 +142,35 @@ async function waitForFrameMarker(
   throw new Error(`preview frame did not expose ${selector}${text ? ` containing ${text}` : ""}: ${JSON.stringify({ frames, observedExternalHosts })}`);
 }
 
+async function readResourceFromCurrentFrame(
+  page: import("puppeteer-core").Page,
+  selector: string,
+  sourceUrl: string,
+): Promise<string> {
+  const deadline = Date.now() + 10_000;
+  while (Date.now() < deadline) {
+    for (const frame of page.frames()) {
+      try {
+        const body = await frame.evaluate(async (marker, input) => {
+          if (!document.querySelector(marker)) return null;
+          const url = new URL(input);
+          url.searchParams.set("browser-proof", crypto.randomUUID());
+          const response = await fetch(url, { cache: "no-store" });
+          if (!response.ok) throw new Error(`template proof request failed: ${response.status}`);
+          return response.text();
+        }, selector, sourceUrl);
+        if (body !== null) return body;
+      } catch {
+        // Preview swaps replace the execution context. Retry against the frame
+        // that currently owns the mounted composition instead of retaining a
+        // response frame that may already be detached.
+      }
+    }
+    await new Promise<void>((resolve) => setTimeout(resolve, 25));
+  }
+  throw new Error(`current preview frame could not read ${sourceUrl}`);
+}
+
 describe("storyboard inspector actions", () => {
   it("loads a local image thumbnail through the browser-safe project asset route", async () => {
     await withStudioBrowser("inspector-media-thumbnail", async ({ page, projectId }) => {
@@ -254,24 +283,21 @@ describe("storyboard inspector actions", () => {
         { timeout: 30_000, polling: 50 }, scenesBefore);
       const titleCardResponse = await titleCardFetched;
       expect([200, 304]).toContain(titleCardResponse.status());
-      // CDP may discard a completed response body for both 200 and 304. The
-      // browser response above proves loading; a fresh same-preview-origin
-      // request proves exact bytes without granting the UI cross-origin access.
-      const proofFrame = titleCardResponse.frame();
-      if (!proofFrame) throw new Error("template proof response has no preview frame");
-      const titleCardBody = await proofFrame.evaluate(async (sourceUrl) => {
-        const url = new URL(sourceUrl);
-        url.searchParams.set("browser-proof", crypto.randomUUID());
-        const response = await fetch(url, { cache: "no-store" });
-        if (!response.ok) throw new Error(`template proof request failed: ${response.status}`);
-        return response.text();
-      }, titleCardResponse.url());
-      expect(titleCardBody).toContain('id="title-card-template"');
       const cards = await page.$$('[data-storyboard-scene-id]');
       expect(cards.length).toBeGreaterThan(scenesBefore);
       expect(await readFile(path.join(projectRoot, "index.html"), "utf8")).toMatch(/data-composition-src=/u);
       await cards.at(-1)!.click();
       await waitForFrameMarker(page, ".title-card__headline", "Your headline");
+      // CDP may discard a completed response body for both 200 and 304. The
+      // browser response above proves loading; a fresh request from the frame
+      // that currently owns the mounted scene proves the exact bytes without
+      // retaining an execution context that a preview swap is about to destroy.
+      const titleCardBody = await readResourceFromCurrentFrame(
+        page,
+        ".title-card__headline",
+        titleCardResponse.url(),
+      );
+      expect(titleCardBody).toContain('id="title-card-template"');
 
       // Two quick edits to the newly mounted template used to race on the same
       // file hash: the second PATCH saw the pre-first-write hash and failed 409.
