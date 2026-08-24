@@ -108,19 +108,23 @@ async function openTreeSource(page: Page, relativePath: string): Promise<void> {
 /** Selects a tree entry for rename/delete without requiring it to open in the editor. */
 async function selectTreeEntry(page: Page, relativePath: string): Promise<void> {
   const segments = relativePath.split("/");
-  for (const [index] of segments.slice(0, -1).entries()) {
-    const folderPath = segments.slice(0, index + 1).join("/");
-    await page.waitForFunction((path) => [...document.querySelectorAll("button[data-file-path]")]
-      .some((button) => button.getAttribute("data-file-path") === path), { timeout: 10_000 }, folderPath);
-    await page.evaluate((path) => {
-      const button = [...document.querySelectorAll("button[data-file-path]")]
-        .find((candidate) => candidate.getAttribute("data-file-path") === path) as HTMLButtonElement | undefined;
-      if (button?.getAttribute("aria-expanded") !== "true") button?.click();
-    }, folderPath);
-  }
   if (!segments.at(-1)) throw new Error(`managed path has no filename: ${relativePath}`);
-  await page.waitForFunction((path) => [...document.querySelectorAll("button[data-file-path]")]
-    .some((button) => button.getAttribute("data-file-path") === path), { timeout: 10_000 }, relativePath);
+  const folders = segments.slice(0, -1).map((_, index) => segments.slice(0, index + 1).join("/"));
+  // Snapshot refreshes replace the keyed explorer. On a slow runner that can
+  // happen immediately after a folder click, so re-open the new ancestor node
+  // until the target from the latest tree is actually mounted.
+  await page.waitForFunction(({ folderPaths, target }) => {
+    const buttons = [...document.querySelectorAll("button[data-file-path]")];
+    for (const path of folderPaths) {
+      const folder = buttons.find((button) => button.getAttribute("data-file-path") === path) as HTMLButtonElement | undefined;
+      if (!folder) return false;
+      if (folder.getAttribute("aria-expanded") !== "true") {
+        folder.click();
+        return false;
+      }
+    }
+    return buttons.some((button) => button.getAttribute("data-file-path") === target);
+  }, { timeout: 10_000, polling: 50 }, { folderPaths: folders, target: relativePath });
   await page.evaluate((path) => {
     const button = [...document.querySelectorAll("button[data-file-path]")]
       .find((candidate) => candidate.getAttribute("data-file-path") === path) as HTMLButtonElement | undefined;

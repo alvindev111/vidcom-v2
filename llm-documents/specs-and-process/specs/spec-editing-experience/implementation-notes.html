@@ -4274,6 +4274,19 @@
             xanh 331 file cộng một workflow skip, 2.730 test cộng năm intentional skip; typecheck, boundaries,
             spec paths 172/5, build và lint 0 error/5 baseline warning đều xanh.
           </p>
+          <p class="text-slate-400 text-sm">
+            CI <code>32749033674</code> trên SHA <code>b68e26d</code> xác nhận lỗi unhandled đã biến mất và Linux
+            Browser xanh; Linux/macOS core cùng packaged và các gate security hoàn tất xanh. Windows Browser
+            đạt 27/28, R4.1c 223–270 ms và Arrange 122 ms nhưng file CRUD timeout khi chọn child vừa rename.
+            Log chứng minh PATCH đã thành công ở revision 2, snapshot trả về đã chứa
+            <code>assets/dialog-renamed.txt</code> và DOM cũng ở revision 2; một keyed explorer rerender đồng thời
+            thay node <code>assets</code> vừa được mở bằng node collapsed mới. Run bị hủy nên Windows core/
+            packaged là <code>cancelled</code>. Repair không retry mutation: helper chỉ resolve lại và mở lại mọi
+            ancestor sau mỗi rerender cho đến khi target từ tree mới thật sự mount, trong timeout 10 giây cũ.
+            CRUD focused xanh năm lượt liên tiếp; full browser xanh 12 file/28 test với R4.1c
+            218/461/228/226 ms và Arrange 70 ms. Full regression 331 file cộng một workflow skip, 2.730 test cộng
+            năm intentional skip; typecheck, lint, boundaries, spec paths và build đều xanh.
+          </p>
         </article>
       </section>
     </main>
